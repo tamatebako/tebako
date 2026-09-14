@@ -437,10 +437,38 @@ pub fn file_path_from_url(remainder: &str) -> &str {
     remainder
 }
 
+/// The ambient GitHub token: `TEBAKO_GITHUB_TOKEN` wins, `GITHUB_TOKEN`
+/// is the CI spelling (Actions sets it ambiently). Resolution reads
+/// against the GitHub API authenticate when one is present — the
+/// anonymous budget is 60 requests/h per egress IP and CI NAT pools
+/// share theirs across tenants, so an unauthenticated install in CI is
+/// a coin flip against a bucket other tenants already drained.
+pub fn github_token_from_env() -> Option<String> {
+    std::env::var("TEBAKO_GITHUB_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+        .or_else(|| std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty()))
+}
+
+/// The one host the ambient token may ride. Asset downloads
+/// (`github.com/.../releases/download/...`) are pre-signed redirects
+/// that need no credential; attaching a bearer to any other host —
+/// including a redirect target off GitHub — leaks it.
+fn carries_ambient_github_token(url: &str) -> bool {
+    url.starts_with("https://api.github.com/")
+}
+
 /// GET `url` and return the response body. `https://` (redirects
-/// followed, HTTPS-only) or `file://`.
+/// followed, HTTPS-only) or `file://`. A `TEBAKO_GITHUB_TOKEN` /
+/// `GITHUB_TOKEN` env authenticates `api.github.com` reads (see
+/// [`github_token_from_env`]); every other host rides anonymous.
 pub fn get(url: &str) -> Result<Vec<u8>, FetchError> {
-    get_bearer(url, None)
+    let token = if carries_ambient_github_token(url) {
+        github_token_from_env()
+    } else {
+        None
+    };
+    get_bearer(url, token.as_deref())
 }
 
 /// [`get`] with an optional bearer token. The releases-API reads
@@ -718,6 +746,53 @@ mod tests {
             get("http://example.com/"),
             Err(FetchError::DownloadFailed(_))
         ));
+    }
+
+    #[test]
+    fn ambient_token_is_carried_only_to_the_github_api_host() {
+        assert!(carries_ambient_github_token(
+            "https://api.github.com/repos/o/r/releases/tags/v1"
+        ));
+        // asset downloads and every other host stay anonymous (a bearer
+        // sent off api.github.com is a leaked credential)
+        assert!(!carries_ambient_github_token(
+            "https://github.com/o/r/releases/download/v1/a.tfs"
+        ));
+        assert!(!carries_ambient_github_token(
+            "https://objects.githubusercontent.com/o/r/a.tfs"
+        ));
+        assert!(!carries_ambient_github_token(
+            "https://api.github.com.evil.example/phish"
+        ));
+        assert!(!carries_ambient_github_token("file:///tmp/x"));
+    }
+
+    #[test]
+    fn ambient_token_env_precedence_and_empty_handling() {
+        // the only test touching these vars (env is process-global)
+        let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN"]
+            .iter()
+            .map(|k| (*k, std::env::var(k).ok()))
+            .collect();
+        std::env::remove_var("TEBAKO_GITHUB_TOKEN");
+        std::env::remove_var("GITHUB_TOKEN");
+        assert_eq!(github_token_from_env(), None);
+
+        std::env::set_var("GITHUB_TOKEN", "ci-token");
+        assert_eq!(github_token_from_env().as_deref(), Some("ci-token"));
+
+        std::env::set_var("TEBAKO_GITHUB_TOKEN", "tebako-token");
+        assert_eq!(github_token_from_env().as_deref(), Some("tebako-token"));
+
+        std::env::set_var("TEBAKO_GITHUB_TOKEN", "");
+        assert_eq!(github_token_from_env().as_deref(), Some("ci-token"));
+
+        for (k, v) in saved {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
     }
 
     #[test]

@@ -861,16 +861,12 @@ pub fn publish_full(
             root: mirror.clone(),
         }),
         None => {
-            let token = std::env::var("TEBAKO_GITHUB_TOKEN")
-                .ok()
-                .filter(|t| !t.is_empty())
-                .or_else(|| std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty()))
-                .ok_or_else(|| {
-                    err(
-                        EX_USAGE,
-                        "uploading to the live GitHub API needs TEBAKO_GITHUB_TOKEN (or GITHUB_TOKEN); --upload-mirror <dir> rehearses file://-only",
-                    )
-                })?;
+            let token = tebako_http::github_token_from_env().ok_or_else(|| {
+                err(
+                    EX_USAGE,
+                    "uploading to the live GitHub API needs TEBAKO_GITHUB_TOKEN (or GITHUB_TOKEN); --upload-mirror <dir> rehearses file://-only",
+                )
+            })?;
             Box::new(GithubStore { token })
         }
     };
