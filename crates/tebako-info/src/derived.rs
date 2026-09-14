@@ -11,7 +11,7 @@
 //! - **dependency names**: payload names reachable via `requires`
 //!   (1 level — the full closure is the dispatcher's job).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tpkg::{PayloadManifest, Provides, Requirement};
 
@@ -73,18 +73,14 @@ fn parse_entry_name(name: &str) -> Option<RuntimeEntry> {
     })
 }
 
-/// The runtime cache root (`$TEBAKO_HOME/runtimes`, else
-/// `~/.tebako/runtimes`) — the same root convention as the resolver.
+/// The runtime cache root — `tpkg::runtime_store::tebako_home` owns the
+/// home grammar (spec 00 §8/§10, spec 05 §3.1); this crate adds the
+/// runtimes/ subdir. The `./.tebako` fallback preserves the degenerate
+/// nothing-resolveable spelling.
 pub fn runtime_cache_dir() -> PathBuf {
-    if let Ok(home) = std::env::var("TEBAKO_HOME") {
-        if !home.is_empty() {
-            return PathBuf::from(home).join("runtimes");
-        }
-    }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    Path::new(&home).join(".tebako").join("runtimes")
+    tpkg::runtime_store::tebako_home(|k| std::env::var(k).ok())
+        .unwrap_or_else(|_| PathBuf::from(".").join(".tebako"))
+        .join("runtimes")
 }
 
 /// List the runtime cache (entry names, sorted) — read-only.

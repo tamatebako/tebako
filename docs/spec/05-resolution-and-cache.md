@@ -125,6 +125,43 @@ is suffix-less; the loader execs by full path and CreateProcess needs no
 spelling, used only when no index entry is available (fat-payload
 installs, pre-identity manifests).
 
+### 3.1 Home discovery
+
+The store root resolves by precedence (single owner:
+`tpkg::runtime_store::tebako_home`; every component — CLI, shim,
+bootstrap, driver, journal — reads through it):
+
+1. **`$TEBAKO_HOME`** (non-empty) — the explicit override.
+2. **The bundle-sibling tier** — the process image sits inside a tebako
+   store tree, making that tree the home. Three seats:
+   - `<root>/<seat>/<tool>` beside a grammar-carrying `<root>/home` (the
+     bundle layout's `bin/`; the seat name is irrelevant — the grammar is
+     the witness, so `/usr/local/bin` never false-triggers);
+   - `<home>/shims/<tool>` (the windows shim copies; a unix shim is a
+     symlink, resolves to the real binary, and takes the first seat or no
+     seat instead);
+   - `<home>/runtimes/<entry>/<exe>` (a store runtime — the driver's
+     seat).
+   The **store-grammar markers** are: any of `config.yaml`, `shims/`,
+   `payloads/`, `runtimes/`, `registries/`, `keys/`, `trust/`. A
+   directory carrying none of them is not a home and the tier does not
+   fire.
+3. **The platform default** — `~/.tebako`; windows:
+   `%LOCALAPPDATA%\tebako` (falling back to `%USERPROFILE%\.tebako`).
+
+The tier is identity-preserving for managed installs: every managed seat
+resolves to the home the default tier would pick anyway (or does not
+fire), so the tier only ever lights up for a foreign tree — a bundle
+(spec 16 §7's MSI/pkg `bin/` + `home/` layout). When the bundle tier
+wins, the shim and the bootstrap export `TEBAKO_HOME` early so the whole
+process tree — dispatch execs, the runtime driver, spawned grandchildren
+— agrees on the one home.
+
+A bundle home may be **read-only** (installed under
+`Program Files` / `/opt`): runs work (mounts never write), mutating
+verbs fail with a named IO error naming the unwritable path, and the
+audit journal degrades to best-effort silence.
+
 ## 4. Install and trust rules (locked)
 
 - Per-entry **flock** (120 s timeout with stale-lock hint); install is

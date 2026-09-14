@@ -71,22 +71,13 @@ const RELEASE_NAME: &str = "tebako-runtime-ruby";
 /// (invariant 7).
 const INDEX_FILES: &[&str] = &["manifest.json", "SHA256SUMS.txt"];
 
-/// $TEBAKO_HOME or ~/.tebako (LOCALAPPDATA\tebako on Windows).
+/// `$TEBAKO_HOME` or the platform default — the grammar's single owner
+/// is `tpkg::runtime_store::tebako_home` (spec 00 §8/§10; spec 05 §3.1's
+/// bundle-sibling tier included). The `./.tebako` fallback preserves the
+/// degenerate nothing-resolveable spelling.
 pub fn default_cache_root() -> PathBuf {
-    if let Ok(home) = std::env::var("TEBAKO_HOME") {
-        if !home.is_empty() {
-            return PathBuf::from(home);
-        }
-    }
-    if cfg!(windows) {
-        if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-            return PathBuf::from(lad).join("tebako");
-        }
-    }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".tebako")
+    tpkg::runtime_store::tebako_home(|k| std::env::var(k).ok())
+        .unwrap_or_else(|_| PathBuf::from(".").join(".tebako"))
 }
 
 #[derive(Debug, Clone)]

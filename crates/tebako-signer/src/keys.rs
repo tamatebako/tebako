@@ -37,19 +37,11 @@ impl PressKey {
     }
 }
 
-/// The tebako home directory: $TEBAKO_HOME, else `~/.tebako`.
+/// The tebako home directory — the grammar's single owner is
+/// `tpkg::runtime_store::tebako_home` (spec 00 §8/§10; spec 05 §3.1's
+/// bundle-sibling tier included).
 pub fn default_home() -> Result<PathBuf, SignerError> {
-    if let Ok(home) = std::env::var("TEBAKO_HOME") {
-        if !home.is_empty() {
-            return Ok(PathBuf::from(home));
-        }
-    }
-    match std::env::var("HOME") {
-        Ok(home) if !home.is_empty() => Ok(PathBuf::from(home).join(".tebako")),
-        _ => Err(SignerError::KeyStore(
-            "cannot determine tebako home (set TEBAKO_HOME)".into(),
-        )),
-    }
+    tpkg::runtime_store::tebako_home(|k| std::env::var(k).ok()).map_err(SignerError::KeyStore)
 }
 
 /// Load the press-local key from `home`, generating and caching it on

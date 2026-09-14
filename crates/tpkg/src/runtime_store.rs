@@ -751,29 +751,123 @@ pub fn resolve_locked(
 // the store root (spec 00 §8) — the home resolution grammar
 // ---------------------------------------------------------------------
 
-/// The tebako home resolution (spec 00 §8): `$TEBAKO_HOME` >
-/// platform default (`~/.tebako`; windows: `%LOCALAPPDATA%\tebako` >
+/// Where the resolved tebako home came from (spec 05 §3.1). Reported by
+/// [`tebako_home_with`]; [`tebako_home`] discards it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HomeSource {
+    /// `$TEBAKO_HOME` (non-empty).
+    Env,
+    /// The bundle-sibling tier: the process image sits inside a tebako
+    /// store tree (spec 05 §3.1's three seats).
+    BundleSibling,
+    /// The platform default.
+    Default,
+}
+
+/// The store-grammar markers the bundle-sibling tier probes (spec 05
+/// §3.1): any one present makes a directory a tebako home.
+const STORE_GRAMMAR_MARKERS: &[&str] = &[
+    "config.yaml",
+    "shims",
+    "payloads",
+    "runtimes",
+    "registries",
+    "keys",
+    "trust",
+];
+
+fn has_store_grammar(dir: &Path) -> bool {
+    STORE_GRAMMAR_MARKERS
+        .iter()
+        .any(|marker| dir.join(marker).exists())
+}
+
+/// The bundle-sibling probe (spec 05 §3.1): the process image `exe`
+/// sitting in a tebako store tree makes that tree the home. Three seats:
+///
+/// - `<root>/<seat>/<tool>` beside a grammar-carrying `<root>/home`
+///   (the bundle's `bin/`; any seat name — the grammar is the witness,
+///   so `/usr/local/bin` never false-triggers);
+/// - `<home>/shims/<tool>` (the windows shim copies);
+/// - `<home>/runtimes/<entry>/<exe>` (a store runtime — what the driver
+///   resolves through at spawn).
+///
+/// Identity-preserving for managed installs: every managed seat resolves
+/// to the home the default tier would pick anyway (or does not fire),
+/// so the tier only ever lights up for a foreign tree — a bundle.
+pub fn bundle_sibling_home(exe: &Path) -> Option<PathBuf> {
+    let dir = exe.parent()?;
+    // <root>/<seat>/<tool> beside <root>/home.
+    if let Some(root) = dir.parent() {
+        let home = root.join("home");
+        if home.is_dir() && has_store_grammar(&home) {
+            return Some(home);
+        }
+    }
+    // <home>/shims/<tool> (windows copies; a unix shim symlink resolves
+    // to the real binary and takes the first seat instead).
+    if dir.file_name().and_then(|n| n.to_str()) == Some("shims") {
+        if let Some(home) = dir.parent() {
+            if has_store_grammar(home) {
+                return Some(home.to_path_buf());
+            }
+        }
+    }
+    // <home>/runtimes/<entry>/<exe>.
+    if dir
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        == Some("runtimes")
+    {
+        if let Some(home) = dir.parent().and_then(|p| p.parent()) {
+            if has_store_grammar(home) {
+                return Some(home.to_path_buf());
+            }
+        }
+    }
+    None
+}
+
+/// The tebako home resolution (spec 00 §8, spec 05 §3.1): the first hit
+/// wins of `$TEBAKO_HOME`, then the bundle-sibling tier
+/// ([`bundle_sibling_home`] over the current process image), then the
+/// platform default (`~/.tebako`; windows: `%LOCALAPPDATA%\tebako` then
 /// `%USERPROFILE%\.tebako`). The SINGLE owner of the grammar (spec 00
 /// §10) — tebako-shim's dispatcher and tebako-driver's spawn
 /// interception both resolve through here; `get` reads the caller's
 /// environment (tests inject a map).
 pub fn tebako_home(get: impl Fn(&str) -> Option<String>) -> Result<PathBuf, String> {
+    tebako_home_with(get, std::env::current_exe().ok().as_deref()).map(|(home, _source)| home)
+}
+
+/// [`tebako_home`] with the exe path injected (tests) and the winning
+/// tier reported. `exe: None` skips the bundle-sibling tier.
+pub fn tebako_home_with(
+    get: impl Fn(&str) -> Option<String>,
+    exe: Option<&Path>,
+) -> Result<(PathBuf, HomeSource), String> {
     if let Some(home) = get("TEBAKO_HOME").filter(|v| !v.is_empty()) {
-        return Ok(PathBuf::from(home));
+        return Ok((PathBuf::from(home), HomeSource::Env));
+    }
+    if let Some(exe) = exe {
+        if let Some(home) = bundle_sibling_home(exe) {
+            return Ok((home, HomeSource::BundleSibling));
+        }
     }
     #[cfg(windows)]
     {
         if let Some(home) = get("LOCALAPPDATA").filter(|v| !v.is_empty()) {
-            return Ok(PathBuf::from(home).join("tebako"));
+            return Ok((PathBuf::from(home).join("tebako"), HomeSource::Default));
         }
         if let Some(home) = get("USERPROFILE").filter(|v| !v.is_empty()) {
-            return Ok(PathBuf::from(home).join(".tebako"));
+            return Ok((PathBuf::from(home).join(".tebako"), HomeSource::Default));
         }
     }
     #[cfg(not(windows))]
     {
         if let Some(home) = get("HOME").filter(|v| !v.is_empty()) {
-            return Ok(PathBuf::from(home).join(".tebako"));
+            return Ok((PathBuf::from(home).join(".tebako"), HomeSource::Default));
         }
     }
     Err("cannot determine tebako home (set TEBAKO_HOME)".to_string())
@@ -1243,6 +1337,107 @@ mod tests {
         assert_eq!(home, PathBuf::from("C:/App/Local\\tebako"));
         // Nothing resolveable is a named error, never a guess.
         assert!(tebako_home(|_| None).is_err());
+    }
+
+    /// The bundle probe's scratch tree; returns the root (callers
+    /// remove). Manual tempdir + cleanup, this module's house style.
+    fn bundle_tree(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "tpkg-bundle-home-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        root
+    }
+
+    #[test]
+    fn bundle_sibling_home_recognizes_the_three_seats() {
+        let root = bundle_tree("seats");
+        // Seat 1: <root>/bin/<tool> beside a grammar-carrying home/.
+        let home = root.join("bundle").join("home");
+        std::fs::create_dir_all(home.join("shims")).unwrap();
+        let exe = root.join("bundle").join("bin").join("tebako-shim");
+        assert_eq!(bundle_sibling_home(&exe).as_deref(), Some(home.as_path()));
+        // Seat 2: <home>/shims/<tool>.exe (the windows shim copy).
+        let exe = home.join("shims").join("hello-ruby.exe");
+        assert_eq!(bundle_sibling_home(&exe).as_deref(), Some(home.as_path()));
+        // Seat 3: <home>/runtimes/<entry>/<exe> — the driver's seat.
+        let exe = home
+            .join("runtimes")
+            .join("ruby-4.0.6-0.16.6-aarch64-macos")
+            .join("tebako-runtime-0.16.6-4.0.6-aarch64-macos");
+        assert_eq!(bundle_sibling_home(&exe).as_deref(), Some(home.as_path()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bundle_sibling_home_never_fires_without_the_grammar() {
+        let root = bundle_tree("no-grammar");
+        // A sibling "home" that carries no store grammar is not one.
+        std::fs::create_dir_all(root.join("bundle").join("home")).unwrap();
+        let exe = root.join("bundle").join("bin").join("tebako");
+        assert_eq!(bundle_sibling_home(&exe), None);
+        // Nothing anywhere.
+        let exe = root.join("elsewhere").join("bin").join("tebako");
+        assert_eq!(bundle_sibling_home(&exe), None);
+        // A config.yaml alone is grammar (the minimal seeded home).
+        let home = root.join("seeded").join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("config.yaml"), "defaults: {}\n").unwrap();
+        let exe = root.join("seeded").join("bin").join("tebako");
+        assert_eq!(bundle_sibling_home(&exe).as_deref(), Some(home.as_path()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn tebako_home_with_orders_env_then_bundle_then_default() {
+        let root = bundle_tree("order");
+        let bundle_home = root.join("bundle").join("home");
+        std::fs::create_dir_all(bundle_home.join("payloads")).unwrap();
+        let exe = root.join("bundle").join("bin").join("tebako");
+        // The env wins over a bundle seat.
+        let (home, source) = tebako_home_with(
+            |k| (k == "TEBAKO_HOME").then(|| "/x/env".to_string()),
+            Some(&exe),
+        )
+        .unwrap();
+        assert_eq!(home, PathBuf::from("/x/env"));
+        assert_eq!(source, HomeSource::Env);
+        // The bundle seat beats the platform default.
+        let (home, source) = tebako_home_with(
+            |k| match k {
+                #[cfg(not(windows))]
+                "HOME" => Some("/u".to_string()),
+                #[cfg(windows)]
+                "LOCALAPPDATA" => Some("C:/App/Local".to_string()),
+                _ => None,
+            },
+            Some(&exe),
+        )
+        .unwrap();
+        assert_eq!(home, bundle_home);
+        assert_eq!(source, HomeSource::BundleSibling);
+        // No bundle seat: the default answers, reported as such.
+        let (home, source) = tebako_home_with(
+            |k| match k {
+                #[cfg(not(windows))]
+                "HOME" => Some("/u".to_string()),
+                #[cfg(windows)]
+                "LOCALAPPDATA" => Some("C:/App/Local".to_string()),
+                _ => None,
+            },
+            Some(&root.join("elsewhere").join("bin").join("tebako")),
+        )
+        .unwrap();
+        #[cfg(not(windows))]
+        assert_eq!(home, PathBuf::from("/u/.tebako"));
+        #[cfg(windows)]
+        assert_eq!(home, PathBuf::from("C:/App/Local\\tebako"));
+        assert_eq!(source, HomeSource::Default);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

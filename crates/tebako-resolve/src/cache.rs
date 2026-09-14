@@ -28,23 +28,13 @@ const TMP_DIR: &str = "tmp";
 /// Spec 05 §4: 120 s with stale-lock hint.
 const LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// `$TEBAKO_HOME` or `~/.tebako` (`%LOCALAPPDATA%\tebako` on Windows) —
-/// identical to tebako-cli's `default_cache_root`.
+/// `$TEBAKO_HOME` or the platform default — the grammar's single owner is
+/// `tpkg::runtime_store::tebako_home` (spec 00 §8/§10; spec 05 §3.1's
+/// bundle-sibling tier included). The `.` fallback preserves this
+/// crate's infallible signature for the nothing-resolveable case.
 pub fn default_cache_root() -> PathBuf {
-    if let Ok(home) = std::env::var("TEBAKO_HOME") {
-        if !home.is_empty() {
-            return PathBuf::from(home);
-        }
-    }
-    if cfg!(windows) {
-        if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-            return PathBuf::from(lad).join("tebako");
-        }
-    }
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".tebako")
+    tpkg::runtime_store::tebako_home(|k| std::env::var(k).ok())
+        .unwrap_or_else(|_| PathBuf::from("."))
 }
 
 /// TEBAKO_OFFLINE truthiness, identical to tebako-cli (`1|true|yes`).
