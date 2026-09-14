@@ -181,6 +181,15 @@ fn get_bytes(transport: &dyn Transport, url: &str) -> Result<Vec<u8>, ResolveErr
 /// `tfs:github:` — GitHub releases API first.
 pub struct GithubAdapter;
 
+/// The asset-INDEX read-after-write backoff (asset_named's retry
+/// schedule): the listing can answer stale for seconds after an upload.
+/// Zero-filled under cfg(test) so the retry contract is exercised
+/// without wall-clock cost.
+#[cfg(not(test))]
+const ASSET_INDEX_BACKOFF_SECS: [u64; 4] = [1, 2, 4, 8];
+#[cfg(test)]
+const ASSET_INDEX_BACKOFF_SECS: [u64; 4] = [0, 0, 0, 0];
+
 impl ServiceAdapter for GithubAdapter {
     fn service(&self) -> Service {
         Service::Github
@@ -205,6 +214,36 @@ impl ServiceAdapter for GithubAdapter {
             .iter()
             .filter_map(|a| Some((strings(a, "name")?, strings(a, "browser_download_url")?)))
             .collect())
+    }
+
+    /// `#artifact` fetches race the release's asset INDEX on GitHub: the
+    /// listing read can answer STALE for seconds after an asset upload
+    /// lands (proven live — the publish verify installs moments after
+    /// its own upload; one app's verify passed at +10 s while the next
+    /// app's listing still lacked its assets at +7 s). Retry the listing
+    /// on absence before declaring the asset missing; a genuine absence
+    /// (a `#typo`) costs the same bounded wait and still names itself.
+    fn asset_named(
+        &self,
+        transport: &dyn Transport,
+        owner: &str,
+        repo: &str,
+        version: &str,
+        name: &str,
+    ) -> Result<Option<Asset>, ResolveError> {
+        for attempt in 0..5u32 {
+            if let Some(asset) = self
+                .assets(transport, owner, repo, version)?
+                .into_iter()
+                .find(|(n, _)| n == name)
+            {
+                return Ok(Some(asset));
+            }
+            if let Some(&backoff) = ASSET_INDEX_BACKOFF_SECS.get(attempt as usize) {
+                std::thread::sleep(std::time::Duration::from_secs(backoff));
+            }
+        }
+        Ok(None)
     }
 
     /// The contents API names the default branch implicitly; the file's
@@ -600,6 +639,60 @@ mod tests {
         assert_eq!(
             GithubAdapter
                 .asset_named(&t, "o", "r", "v1", "r-windows-v1.tfs")
+                .unwrap(),
+            None
+        );
+    }
+
+    /// A transport that answers one URL from a QUEUE (each GET pops the
+    /// next body) — the asset-index read-after-write race needs a listing
+    /// that CHANGES between reads.
+    struct SeqTransport {
+        queue: std::sync::Mutex<std::collections::VecDeque<Vec<u8>>>,
+    }
+    impl SeqTransport {
+        fn with(bodies: &[&str]) -> Self {
+            SeqTransport {
+                queue: std::sync::Mutex::new(
+                    bodies.iter().map(|b| b.as_bytes().to_vec()).collect(),
+                ),
+            }
+        }
+    }
+    impl Transport for SeqTransport {
+        fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+            self.queue
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| FetchError::IndexUnavailable(url.to_string()))
+        }
+    }
+
+    #[test]
+    fn asset_named_retries_the_stale_index_read() {
+        // The first listing answers stale (the upload landed a beat
+        // ago); the retry finds the asset.
+        let stale = r#"{"assets":[]}"#;
+        let fresh = r#"{"assets":[
+            {"name":"r-v1.tfs","browser_download_url":"https://dl/r-v1.tfs"}]}"#;
+        let t = SeqTransport::with(&[stale, fresh]);
+        let got = GithubAdapter.asset_named(&t, "o", "r", "v1", "r-v1.tfs").unwrap();
+        assert_eq!(
+            got,
+            Some(("r-v1.tfs".to_string(), "https://dl/r-v1.tfs".to_string()))
+        );
+    }
+
+    #[test]
+    fn asset_named_absent_stays_absent_after_the_bounded_retries() {
+        // A genuine absence (#typo) exhausts the retries and still
+        // answers None — never a pick, never a hang.
+        let empty = r#"{"assets":[]}"#;
+        let t = SeqTransport::with(&[empty, empty, empty, empty, empty]);
+        assert_eq!(
+            GithubAdapter
+                .asset_named(&t, "o", "r", "v1", "nope.tfs")
                 .unwrap(),
             None
         );
