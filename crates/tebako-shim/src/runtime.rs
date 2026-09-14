@@ -665,6 +665,41 @@ fn tebako_line_from_artifact(
     (!line.is_empty()).then(|| line.to_string())
 }
 
+/// A composite line-id row's split into (lang_version, tebako line),
+/// cross-validated against the row's declared artifact. Factory
+/// registries key runtime rows EITHER by the bare language version
+/// (openjdk: `21.0.12`) OR by the composite line id `<lang>-<tebako>`
+/// (ruby: `4.0.6-0.16.23` — the same interpreter version ships on
+/// several tebako lines, and registry versions are unique per payload,
+/// so the line id is the only collision-free key). The artifact stem is
+/// the SSOT witness (spec 05 §2): the row parses as a composite exactly
+/// when ONE dash-split of the row version spells the stem
+/// `tebako-runtime-<tebako>-<lang>-<platform>` — zero matching splits
+/// (a bare-version row) or several (a genuinely ambiguous id) are both
+/// `None`, and the caller keeps the bare-row behavior.
+fn split_line_id(
+    artifact: &str,
+    row_version: &str,
+    host: tpkg::Platform,
+) -> Option<(String, String)> {
+    let stem = artifact.strip_suffix(".tfs").unwrap_or(artifact);
+    let platform = host.release_asset_name();
+    let mut found = None;
+    for (i, _) in row_version.match_indices('-') {
+        let (lang, tebako) = (&row_version[..i], &row_version[i + 1..]);
+        if lang.is_empty() || tebako.is_empty() {
+            continue;
+        }
+        if stem == format!("tebako-runtime-{tebako}-{lang}-{platform}") {
+            if found.is_some() {
+                return None;
+            }
+            found = Some((lang.to_string(), tebako.to_string()));
+        }
+    }
+    found
+}
+
 /// spec 05 §2's registry facet of the download-target selection
 /// (roadmap 85): derive the factory's in-repo L3 registry
 /// (`tfs:github:<owner>/<repo>`) from the download base — every channel,
@@ -719,6 +754,10 @@ fn registry_selected_target(
         tag: String,
         signer_pin: Option<String>,
         withdrawn: bool,
+        /// The registry's own version key (the composite line id when
+        /// the row is one) — the withdrawn refusal names what the
+        /// registry shows, not the split-down pref.
+        row_version: String,
     }
     let mut candidates: Vec<Candidate> = Vec::new();
     // Every host-covered row, satisfying or not — the availability
@@ -783,22 +822,36 @@ fn registry_selected_target(
             // The row's tebako line: the declared artifact's stem (the
             // openjdk v2.5.1 shape — tag v2.5.1, rows riding tebako
             // 2.5.0), else the tag minus its 'v' (the factory convention
-            // `v<tebako>`).
+            // `v<tebako>`). A COMPOSITE row version (`<lang>-<tebako>`,
+            // the ruby factory's collision-free key) splits against the
+            // artifact witness first — the pick's pref names the bare
+            // language version or every downstream spelling double-
+            // suffixes (`tebako-runtime-0.16.23-4.0.6-0.16.23-…`).
             let from_tag = tag.strip_prefix('v').unwrap_or(&tag).to_string();
-            let tebako = match &selection {
+            let (lang_version, tebako) = match &selection {
                 tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
-                    tebako_line_from_artifact(artifact, &row.version, host).unwrap_or(from_tag)
+                    match split_line_id(artifact, &row.version, host) {
+                        Some((lang, line)) => (lang, line),
+                        None => (
+                            row.version.clone(),
+                            tebako_line_from_artifact(artifact, &row.version, host)
+                                .unwrap_or(from_tag),
+                        ),
+                    }
                 }
-                tebako_resolve::registry::PlatformSelection::Universal => from_tag,
+                tebako_resolve::registry::PlatformSelection::Universal => {
+                    (row.version.clone(), from_tag)
+                }
             };
             candidates.push(Candidate {
                 payload: entry.name.clone(),
-                lang_version: row.version.clone(),
+                lang_version,
                 tebako,
                 base,
                 tag,
                 signer_pin: row.signature.as_ref().map(|s| s.keyid.clone()),
                 withdrawn: row.is_withdrawn(),
+                row_version: row.version.clone(),
             });
         }
     }
@@ -838,7 +891,7 @@ fn registry_selected_target(
             EX_TEBAKO_UNAVAILABLE,
             tebako_resolve::RegistryError::Withdrawn {
                 payload: pick.payload,
-                version: pick.lang_version,
+                version: pick.row_version,
             }
             .to_string(),
         );
@@ -2755,6 +2808,116 @@ payloads:
         assert_eq!(source.tag.as_deref(), Some("v2.5.1"));
         assert_eq!(source.signer_pin.as_deref(), Some("efc3c250f7862a48"));
         assert_eq!(source.channel, "registry");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn split_line_id_parses_only_the_witnessed_composite() {
+        let host = tpkg::Platform::host();
+        let asset = host.release_asset_name();
+        // the ruby factory shape: composite row version, artifact stem
+        // witnesses the (lang, tebako) split
+        assert_eq!(
+            split_line_id(
+                &format!("tebako-runtime-0.16.23-4.0.6-{asset}.tfs"),
+                "4.0.6-0.16.23",
+                host
+            ),
+            Some(("4.0.6".to_string(), "0.16.23".to_string()))
+        );
+        // a bare row version never splits (the openjdk shape)
+        assert_eq!(
+            split_line_id(
+                &format!("tebako-runtime-2.5.0-21.0.12-{asset}.tfs"),
+                "21.0.12",
+                host
+            ),
+            None
+        );
+        // a composite claim the artifact does not witness never splits
+        assert_eq!(
+            split_line_id(
+                &format!("tebako-runtime-0.16.23-4.0.6-{asset}.tfs"),
+                "4.0.6-0.16.22",
+                host
+            ),
+            None
+        );
+        // a single-dash version splits uniquely when the stem witnesses it
+        assert_eq!(
+            split_line_id(&format!("tebako-runtime-2-1-{asset}.tfs"), "1-2", host),
+            Some(("1".to_string(), "2".to_string()))
+        );
+    }
+
+    /// The ruby factory's registry shape (composite line-id rows) — the
+    /// pick must name the BARE language version in the pref, or the
+    /// download recomposes a double-suffixed asset spelling and the
+    /// contract gate answers pre-era (hello-runtimes dogfood, 2026-09-14).
+    fn line_id_registry() -> String {
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        format!(
+            "schema_version: 1\npayloads:\n  - name: ruby\n    kind: runtime\n    engine: ruby\n    versions:\n      - version: '3.3.12-0.16.23'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.16.23-3.3.12-{asset}, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.16.23'}}\n      - version: '4.0.6-0.16.23'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.16.23-4.0.6-{asset}, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.16.23'}}\n",
+            sha64('c'),
+            sha64('d'),
+        )
+    }
+
+    #[test]
+    fn the_registry_facet_splits_a_composite_line_id_row() {
+        let home = temp_home("regfacet-lineid");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-ruby",
+            line_id_registry().as_bytes(),
+        )
+        .unwrap();
+        let source = RuntimeSource {
+            base: "https://github.com/acme/tebako-runtime-ruby/releases/download".to_string(),
+            tag: None,
+            channel: "default",
+            signer_pin: None,
+        };
+        let (pref, source) =
+            registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
+                .unwrap()
+                .expect("an informative registry picks");
+        // the bare language version + the line — the download composes
+        // tebako-runtime-0.16.23-4.0.6-<platform> from these
+        assert_eq!(pref.version, "4.0.6");
+        assert_eq!(pref.tebako, "0.16.23");
+        assert_eq!(source.tag.as_deref(), Some("v0.16.23"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_matches_composite_rows_against_the_constraint() {
+        // the constraint math rides the COMPOSITE row key: ">= 4.0"
+        // satisfies 4.0.6-0.16.23 but not 3.3.12-0.16.23
+        let home = temp_home("regfacet-lineid-range");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-ruby",
+            line_id_registry().as_bytes(),
+        )
+        .unwrap();
+        let source = RuntimeSource {
+            base: "https://github.com/acme/tebako-runtime-ruby/releases/download".to_string(),
+            tag: None,
+            channel: "default",
+            signer_pin: None,
+        };
+        let (pref, _) = registry_selected_target(&reqs("ruby", ">= 4.0"), &source, &ctx)
+            .unwrap()
+            .expect("4.0.6-0.16.23 satisfies >= 4.0");
+        assert_eq!(pref.version, "4.0.6");
+        let err = registry_selected_target(&reqs("ruby", ">= 5.0"), &source, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(err.message.contains("4.0.6-0.16.23"), "{err:?}");
         let _ = std::fs::remove_dir_all(&home);
     }
 
