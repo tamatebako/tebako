@@ -103,8 +103,8 @@ pub fn attach(
         _ => &[],
     };
     let base_gems: &[tpkg::GemVersion] = match &base.provides {
-        tpkg::Provides::App(p) => &p.gems,
-        tpkg::Provides::Data(p) => &p.gems,
+        tpkg::Provides::App(p) => p.gems.as_deref().unwrap_or(&[]),
+        tpkg::Provides::Data(p) => p.gems.as_deref().unwrap_or(&[]),
         _ => &[],
     };
     let cfg = config::load_config(&ctx.home)?;
@@ -283,8 +283,8 @@ fn check_candidate(
 /// A slice manifest's gem inventory, whichever provides kind carries it.
 fn slice_gems(m: &tpkg::PayloadManifest) -> Vec<tpkg::GemVersion> {
     match &m.provides {
-        tpkg::Provides::App(p) => p.gems.clone(),
-        tpkg::Provides::Data(p) => p.gems.clone(),
+        tpkg::Provides::App(p) => p.gems.clone().unwrap_or_default(),
+        tpkg::Provides::Data(p) => p.gems.clone().unwrap_or_default(),
         _ => Vec::new(),
     }
 }

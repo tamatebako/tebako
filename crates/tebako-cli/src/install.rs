@@ -1691,7 +1691,7 @@ fn synthesize_manifest(
                 // points and the gems inventory live in the embedded
                 // manifest only.
                 extension_points: Vec::new(),
-                gems: Vec::new(),
+                gems: None,
                 capabilities: tpkg::Capabilities {
                     exec: true,
                     read: true,
@@ -1708,7 +1708,7 @@ fn synthesize_manifest(
                 suggested: "/".to_string(),
             },
             consumers: Vec::new(),
-            gems: Vec::new(),
+            gems: None,
             capabilities: tpkg::Capabilities {
                 exec: false,
                 read: true,

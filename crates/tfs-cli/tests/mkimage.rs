@@ -518,12 +518,12 @@ augments:
                 tpkg::ExtensionLayout::GemHome
             );
             assert_eq!(app.extension_points[1].layout, tpkg::ExtensionLayout::Files);
-            assert_eq!(app.gems.len(), 2);
+            assert_eq!(app.gems.as_deref().expect("gems inventory").len(), 2);
         } else {
             let tpkg::Provides::Data(data) = &m.provides else {
                 panic!("data kind round-trips")
             };
-            assert_eq!(data.gems.len(), 1);
+            assert_eq!(data.gems.as_deref().expect("gems inventory").len(), 1);
             assert_eq!(m.augments.len(), 1);
             let edge = &m.augments[0];
             assert_eq!(edge.payload, "metanorma");

@@ -1683,7 +1683,7 @@ fn extension_base_fixture_shape() {
     assert_eq!(app.extension_points[1].layout, ExtensionLayout::Files);
     assert_eq!(
         app.gems,
-        vec![
+        Some(vec![
             GemVersion {
                 name: "nokogiri".into(),
                 version: "1.18.9".into(),
@@ -1692,7 +1692,7 @@ fn extension_base_fixture_shape() {
                 name: "metanorma-cli".into(),
                 version: "1.16.9".into(),
             },
-        ]
+        ])
     );
 }
 
@@ -1706,8 +1706,9 @@ fn extension_slice_fixture_shape() {
     };
     // the slice's own inventory feeds the slice-overlap journal
     // (spec 07 §2 step 3a)
-    assert_eq!(data.gems.len(), 1);
-    assert_eq!(data.gems[0].name, "metanorma-bsi");
+    let gems = data.gems.as_deref().expect("gems inventory");
+    assert_eq!(gems.len(), 1);
+    assert_eq!(gems[0].name, "metanorma-bsi");
     assert_eq!(m.augments.len(), 1);
     let edge = &m.augments[0];
     assert_eq!(edge.payload, "metanorma");
@@ -1825,6 +1826,26 @@ fn gem_home_point_requires_the_gems_inventory_at_authoring() {
         "",
     );
     PayloadManifest::from_yaml_authoring(&files_only).unwrap();
+}
+
+#[test]
+fn gem_home_point_accepts_an_empty_gems_inventory() {
+    // `gems: []` SATISFIES the authoring gate — the KEY's presence, not
+    // its length (spec 03 §2.8): a base whose gems all ride the runtime
+    // stages none of its own and declares the empty inventory. The press
+    // round-trip must keep the key present — a re-emitted manifest that
+    // dropped it would fail the gate on re-read.
+    let doc = ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: /flavors.d, layout: gem-home}\n  gems: []\n",
+        "",
+    );
+    let m = PayloadManifest::from_yaml_authoring(&doc).unwrap();
+    let rendered = m.to_yaml().unwrap();
+    assert!(rendered.contains("gems: []"), "{rendered}");
+    let back = PayloadManifest::from_yaml_authoring(&rendered).unwrap();
+    assert_eq!(back, m);
+    // …and the consumer arm reads the same document.
+    PayloadManifest::from_yaml(&doc).unwrap();
 }
 
 #[test]
