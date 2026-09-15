@@ -262,29 +262,12 @@ fn journal_path(lookup: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
     tebako_home(lookup).map(|h| journal_file_of(&h))
 }
 
-/// The tebako home: `$TEBAKO_HOME` > the platform default (the bootstrap's
-/// cache-root rule: `%LOCALAPPDATA%\tebako` / `%USERPROFILE%\.tebako` on
-/// Windows, `~/.tebako` elsewhere).
+/// The tebako home — the grammar's single owner is
+/// `tpkg::runtime_store::tebako_home` (spec 00 §8/§10, spec 05 §3.1's
+/// bundle-sibling tier included). `None` = unresolvable; the journal is
+/// best-effort and simply absent then.
 fn tebako_home(lookup: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
-    if let Some(home) = lookup("TEBAKO_HOME").filter(|v| !v.is_empty()) {
-        return Some(PathBuf::from(home));
-    }
-    #[cfg(windows)]
-    {
-        if let Some(home) = lookup("LOCALAPPDATA").filter(|v| !v.is_empty()) {
-            return Some(PathBuf::from(home).join("tebako"));
-        }
-        if let Some(home) = lookup("USERPROFILE").filter(|v| !v.is_empty()) {
-            return Some(PathBuf::from(home).join(".tebako"));
-        }
-        None
-    }
-    #[cfg(not(windows))]
-    {
-        lookup("HOME")
-            .filter(|v| !v.is_empty())
-            .map(|home| PathBuf::from(home).join(".tebako"))
-    }
+    tpkg::runtime_store::tebako_home(lookup).ok()
 }
 
 #[cfg(test)]

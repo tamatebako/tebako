@@ -16,3 +16,4 @@ rnp = { package = "rnp-rs", version = "0.1.15", features = ["vendored"] }
 # unpinned to 3.13.0 with the RSA short-MPI padding backport,
 # rnpgp/rnp#2465); older rnp-rs build scripts break against it.
 sha2 = "0.10"
+tpkg = { version = "2.0.0", path = "../tpkg" }

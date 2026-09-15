@@ -129,10 +129,12 @@ impl Ctx {
     }
 }
 
-/// The tebako home resolution: `$TEBAKO_HOME` > platform default. The
-/// grammar's single owner is `tpkg::runtime_store::tebako_home` (spec 00
-/// §8/§10 — the store root is the store grammar's concern; the driver
-/// resolves through the same function at spawn).
+/// The tebako home resolution: `$TEBAKO_HOME` > bundle-sibling >
+/// platform default. The grammar's single owner is
+/// `tpkg::runtime_store::tebako_home` (spec 00 §8/§10, spec 05 §3.1 —
+/// the bundle-sibling tier included; main.rs exports a bundle-sourced
+/// home as TEBAKO_HOME before Ctx is built, so the run and everything
+/// it spawns resolve the same store).
 pub fn tebako_home(env: &BTreeMap<String, String>) -> Result<PathBuf, ShimError> {
     tpkg::runtime_store::tebako_home(|k| env.get(k).cloned())
         .map_err(|m| ShimError::new(EX_TEBAKO_IO, m))

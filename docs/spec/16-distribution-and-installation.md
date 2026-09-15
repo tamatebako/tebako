@@ -249,6 +249,14 @@ The locked rules:
    install.sh stay the developer paths. No channel forks the binaries —
    every channel ships the SAME signed bytes.
 
+The bundle and tool-only shapes install the same on-disk layout:
+`<root>\bin\<tools>` beside `<root>\home\` (the pre-seeded store, empty
+for tool-only), with `<root>\home\shims` added to PATH. Home discovery is
+spec 05 §3.1's: the installed tools resolve the bundle's `home` by the
+bundle-sibling tier with zero configuration, and a read-only install root
+(Program Files, /opt) still runs — the per-user `TEBAKO_HOME` override
+remains the escape for writable-state needs.
+
 ## 8. Implementation gaps (roadmap 28)
 
 - ~~`tpkg-registry.yaml` fetch/listing (the resolver tail of item 07)~~ —

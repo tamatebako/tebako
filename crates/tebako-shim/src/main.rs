@@ -11,6 +11,17 @@ use tebako_shim::{Action, Ctx};
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
+    // spec 05 §3.1: a bundle-sourced home is exported up front so every
+    // downstream tier (Ctx, the exec'd runtime, spawned payloads) agrees
+    // on the store the run resolves from; an explicit TEBAKO_HOME is
+    // never overridden.
+    if std::env::var_os("TEBAKO_HOME").map_or(true, |v| v.is_empty()) {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(home) = tpkg::runtime_store::bundle_sibling_home(&exe) {
+                std::env::set_var("TEBAKO_HOME", &home);
+            }
+        }
+    }
     let ctx = match Ctx::from_env() {
         Ok(ctx) => ctx,
         Err(e) => {

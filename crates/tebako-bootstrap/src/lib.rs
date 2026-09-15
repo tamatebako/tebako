@@ -508,32 +508,11 @@ fn cache_root() -> Result<PathBuf, BootError> {
 }
 
 fn cache_root_path() -> Result<PathBuf, BootError> {
-    if let Ok(home) = std::env::var("TEBAKO_HOME") {
-        if !home.is_empty() {
-            return Ok(PathBuf::from(home));
-        }
-    }
-    #[cfg(windows)]
-    {
-        if let Ok(home) = std::env::var("LOCALAPPDATA") {
-            if !home.is_empty() {
-                return Ok(PathBuf::from(home).join("tebako"));
-            }
-        }
-        if let Ok(home) = std::env::var("USERPROFILE") {
-            if !home.is_empty() {
-                return Ok(PathBuf::from(home).join(".tebako"));
-            }
-        }
-        io_fail("cannot determine tebako cache root (set TEBAKO_HOME)".into())
-    }
-    #[cfg(not(windows))]
-    {
-        match std::env::var("HOME") {
-            Ok(home) if !home.is_empty() => Ok(PathBuf::from(home).join(".tebako")),
-            _ => io_fail("cannot determine tebako cache root (set TEBAKO_HOME)".into()),
-        }
-    }
+    // spec 00 §8/§10 + spec 05 §3.1: the grammar's single owner — the
+    // bundle-sibling tier included (a stitched package seated in a
+    // bundle's bin/ resolves the bundle's home).
+    tpkg::runtime_store::tebako_home(|k| std::env::var(k).ok())
+        .map_err(|e| BootError::new(EX_TEBAKO_IO, e))
 }
 
 fn offline_mode() -> bool {
@@ -4240,6 +4219,16 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
     let self_path = std::env::current_exe()
         .and_then(|p| p.canonicalize())
         .map_err(|_| BootError::new(EX_TEBAKO_IO, "cannot determine own executable path".into()))?;
+
+    // spec 05 §3.1: a bundle-sourced home is exported up front so the
+    // whole process tree (this process's own resolution, the driver,
+    // spawned payloads) agrees on the store; an explicit TEBAKO_HOME is
+    // never overridden (the env tier already won).
+    if std::env::var_os("TEBAKO_HOME").map_or(true, |v| v.is_empty()) {
+        if let Some(home) = tpkg::runtime_store::bundle_sibling_home(&self_path) {
+            std::env::set_var("TEBAKO_HOME", &home);
+        }
+    }
 
     let mut f = std::fs::File::open(&self_path).map_err(|e| {
         BootError::new(
