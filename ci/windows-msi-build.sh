@@ -78,8 +78,10 @@ case "$MODE" in
     # payload names compose a SELF-LOCATING seed script (%~dp0 is the
     # install root) the template installs beside bin/ and runs once
     # (deferred, SYSTEM, failure-ignored). Re-runnable by hand — tebako
-    # install is idempotent.
-    BOOTSTRAP_BIND=()
+    # install is idempotent. The Bootstrap define must exist EITHER WAY —
+    # WiX's $(var.Bootstrap) errors (WIX0150) on an undefined variable
+    # even inside a false <?if?>; the unbound shape binds it empty.
+    BOOTSTRAP_BIND=(-d "Bootstrap=")
     if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
       : "${BOOTSTRAP_PAYLOADS:?BOOTSTRAP_PAYLOADS is required when BOOTSTRAP_REGISTRY is set (space-separated payload names)}"
       # WixQuietExec64 lives in the Util extension — pinned to the WiX

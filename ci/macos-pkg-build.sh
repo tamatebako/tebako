@@ -76,7 +76,6 @@ sed -e "s/@PRODUCT_NAME@/$PRODUCT_NAME/g" -e "s/@VERSION@/$PKG_VERSION/g" \
     templates/installers/macos/distribution.xml > build/distribution.xml
 sed -e "s/@PRODUCT_NAME@/$PRODUCT_NAME/g" -e "s|@INSTALL_ROOT@|$INSTALL_ROOT|g" \
     templates/installers/macos/scripts/postinstall > build/scripts/postinstall
-chmod +x build/scripts/postinstall
 # Optional web-bootstrapper seed (spec 16 §7; the MSI leg's contract,
 # mirrored): a self-locating, user-re-runnable seed script at the install
 # root + the home/shims store-grammar marker (spec 05 §3.1); the
@@ -123,6 +122,10 @@ fi
 sed -e "/@BOOTSTRAP_HOOK@/r build/bootstrap-hook" -e "/@BOOTSTRAP_HOOK@/d" \
     build/scripts/postinstall > build/scripts/postinstall.rendered
 mv build/scripts/postinstall.rendered build/scripts/postinstall
+# The splice recreates the file (umask 644) — the exec bit goes LAST, on
+# the file that actually ships (an un-executable postinstall fails the
+# install: "an error occurred while running scripts from the package").
+chmod +x build/scripts/postinstall
 if grep -qE '@(PRODUCT_NAME|VERSION|ORG_ID|MIN_MACOS|INSTALL_ROOT|BOOTSTRAP_HOOK)@' build/distribution.xml build/scripts/postinstall; then
   echo "::error::unrendered template token left in the pkg inputs — the template drifted from this script"; exit 1
 fi
