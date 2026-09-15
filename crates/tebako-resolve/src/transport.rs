@@ -18,6 +18,33 @@ pub const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 /// GET `url` (`https://` or `file://`) and return the body.
 pub trait Transport {
     fn get(&self, url: &str) -> Result<Vec<u8>, FetchError>;
+
+    /// GET an asset honoring the fetch requirements the adapter declared
+    /// on it (spec 04 §3): `accept` is a required Accept header (the
+    /// GitHub asset API serves JSON metadata without
+    /// `application/octet-stream` — a poisoned cache entry, not an
+    /// error); `authenticate` marks the fetch credential-eligible (the
+    /// transport attaches whatever it holds for the URL's host — and
+    /// nothing otherwise). The default is a plain GET: test mocks key on
+    /// the URL only.
+    fn get_asset(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        authenticate: bool,
+    ) -> Result<Vec<u8>, FetchError> {
+        let _ = (accept, authenticate);
+        self.get(url)
+    }
+
+    /// Whether this transport authenticates to the service APIs (an
+    /// ambient GitHub token). Adapters consult it to choose asset URLs:
+    /// authenticated transports get the API asset URL — private repos
+    /// answer 404 on the anonymous browser URL — everyone else gets
+    /// `browser_download_url` (the CDN path, no rate budget spent).
+    fn authenticated(&self) -> bool {
+        false
+    }
 }
 
 /// The real transport: tebako-http with the gem's retry discipline.
@@ -25,11 +52,46 @@ pub trait Transport {
 pub struct HttpTransport;
 
 impl Transport for HttpTransport {
+    fn authenticated(&self) -> bool {
+        tebako_http::github_token_from_env().is_some()
+    }
+
+    fn get_asset(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        authenticate: bool,
+    ) -> Result<Vec<u8>, FetchError> {
+        self.get_with_retry(url, || {
+            tebako_http::get_with_options(
+                url,
+                &tebako_http::GetOptions {
+                    accept,
+                    authenticate,
+                },
+            )
+        })
+    }
+
     fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+        self.get_with_retry(url, || tebako_http::get(url))
+    }
+}
+
+impl HttpTransport {
+    /// One GET through tebako-http under the gem's retry discipline
+    /// (throttle schedule honored; download failures retried
+    /// [`DOWNLOAD_ATTEMPTS`] times; deterministic configuration answers
+    /// surface verbatim, never retried).
+    fn get_with_retry(
+        &self,
+        url: &str,
+        attempt: impl Fn() -> Result<Vec<u8>, FetchError>,
+    ) -> Result<Vec<u8>, FetchError> {
         let mut attempts = 0;
         let mut throttles = 0;
         loop {
-            match tebako_http::get(url) {
+            match attempt() {
                 Ok(body) => return Ok(body),
                 Err(FetchError::IndexUnavailable(msg)) => {
                     return Err(FetchError::IndexUnavailable(msg))

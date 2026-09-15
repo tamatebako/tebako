@@ -44,6 +44,39 @@ pub(crate) fn hex_digest(digest: &[u8]) -> String {
     out
 }
 
+/// The fetch error mapping, shared by plain and asset GETs: a missing
+/// object is `NotFound` (the next-index walk), everything else
+/// `DownloadFailed`; the named networking failures ride their own
+/// messages, never NotFound.
+fn map_fetch_error(url: &str, e: FetchError) -> ResolveError {
+    match e {
+        FetchError::IndexUnavailable(_) => ResolveError::NotFound {
+            origin: url.to_string(),
+        },
+        FetchError::Throttled { .. } => ResolveError::DownloadFailed {
+            origin: url.to_string(),
+            reason: e.to_string(),
+        },
+        FetchError::DownloadFailed(reason) => ResolveError::DownloadFailed {
+            origin: url.to_string(),
+            reason,
+        },
+        // TODO.v2-1/33's named networking failures ride their own
+        // messages; never NotFound (no next-index walk).
+        FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_) => {
+            ResolveError::DownloadFailed {
+                origin: url.to_string(),
+                reason: e.to_string(),
+            }
+        }
+        #[cfg(feature = "network")]
+        FetchError::NetConfig(_) => ResolveError::DownloadFailed {
+            origin: url.to_string(),
+            reason: e.to_string(),
+        },
+    }
+}
+
 /// A reference fetcher over an injected transport.
 pub struct Fetcher<T: Transport> {
     pub(crate) transport: T,
@@ -124,32 +157,16 @@ impl<T: Transport> Fetcher<T> {
     }
 
     fn get(&self, url: &str) -> Result<Vec<u8>, ResolveError> {
-        self.transport.get(url).map_err(|e| match e {
-            FetchError::IndexUnavailable(_) => ResolveError::NotFound {
-                origin: url.to_string(),
-            },
-            FetchError::Throttled { .. } => ResolveError::DownloadFailed {
-                origin: url.to_string(),
-                reason: e.to_string(),
-            },
-            FetchError::DownloadFailed(reason) => ResolveError::DownloadFailed {
-                origin: url.to_string(),
-                reason,
-            },
-            // TODO.v2-1/33's named networking failures ride their own
-            // messages; never NotFound (no next-index walk).
-            FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_) => {
-                ResolveError::DownloadFailed {
-                    origin: url.to_string(),
-                    reason: e.to_string(),
-                }
-            }
-            #[cfg(feature = "network")]
-            FetchError::NetConfig(_) => ResolveError::DownloadFailed {
-                origin: url.to_string(),
-                reason: e.to_string(),
-            },
-        })
+        self.transport.get(url).map_err(|e| map_fetch_error(url, e))
+    }
+
+    /// An asset fetch honors the requirements the adapter declared on the
+    /// descriptor (accept / authenticate) — the URL alone carries
+    /// nothing (spec 04 §3).
+    fn get_asset(&self, asset: &crate::adapters::Asset) -> Result<Vec<u8>, ResolveError> {
+        self.transport
+            .get_asset(&asset.url, asset.accept.as_deref(), asset.authenticate)
+            .map_err(|e| map_fetch_error(&asset.url, e))
     }
 
     /// Apply the multi-artifact selection rule (spec 04 §1, locked):
@@ -166,7 +183,7 @@ impl<T: Transport> Fetcher<T> {
         artifact: Option<&str>,
     ) -> Result<(Vec<u8>, String), ResolveError> {
         let adapter = adapter_for(service);
-        let (_, url) = match artifact {
+        let asset = match artifact {
             Some(name) => adapter
                 .asset_named(&self.transport, owner, repo, version, name)?
                 .ok_or_else(|| ResolveError::AssetNotFound {
@@ -181,7 +198,8 @@ impl<T: Transport> Fetcher<T> {
                 crate::adapters::select_candidate(service, owner, repo, version, assets)?
             }
         };
-        let bytes = self.get(&url)?;
+        let url = asset.url.clone();
+        let bytes = self.get_asset(&asset)?;
         Ok((bytes, url))
     }
 }
@@ -311,6 +329,66 @@ mod tests {
         };
         assert_eq!(assets, &["r-macos-v1.tfs", "r-linux-v1.tfs"]);
         assert!(err.to_string().contains("r-macos-v1.tfs"));
+    }
+
+    /// Records the fetch requirements the asset descriptor declared —
+    /// the wiring the URL string alone cannot carry (spec 04 §3).
+    struct ReqTransport {
+        seen: std::sync::Mutex<Vec<(String, Option<String>, bool)>>,
+    }
+    impl Transport for ReqTransport {
+        fn get(&self, _url: &str) -> Result<Vec<u8>, FetchError> {
+            // the release-INDEX read
+            Ok(br#"{"assets":[{"name":"r-v1.tfs","url":"https://api.github.com/repos/o/r/releases/assets/11","browser_download_url":"https://dl/r-v1.tfs"}]}"#
+                .to_vec())
+        }
+        fn get_asset(
+            &self,
+            url: &str,
+            accept: Option<&str>,
+            authenticate: bool,
+        ) -> Result<Vec<u8>, FetchError> {
+            self.seen.lock().unwrap().push((
+                url.to_string(),
+                accept.map(str::to_string),
+                authenticate,
+            ));
+            Ok(b"img".to_vec())
+        }
+        fn authenticated(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn service_fetch_honors_the_asset_descriptor_requirements() {
+        let t = ReqTransport {
+            seen: std::sync::Mutex::new(Vec::new()),
+        };
+        let f = Fetcher::with_transport(t);
+        let r = Reference::Service {
+            service: Service::Github,
+            owner: "o".into(),
+            repo: "r".into(),
+            version: "v1".into(),
+            artifact: None,
+            sha256: None,
+        };
+        let got = f.fetch(&r).unwrap();
+        assert_eq!(got.bytes, b"img");
+        assert_eq!(
+            got.origin,
+            "https://api.github.com/repos/o/r/releases/assets/11"
+        );
+        let seen = f.transport.seen.lock().unwrap();
+        assert_eq!(
+            seen.as_slice(),
+            &[(
+                "https://api.github.com/repos/o/r/releases/assets/11".to_string(),
+                Some("application/octet-stream".to_string()),
+                true
+            )]
+        );
     }
 
     #[test]
