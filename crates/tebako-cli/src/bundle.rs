@@ -33,6 +33,12 @@
 //! and the shim symlinks (unix) are RELATIVE so the tree relocates as
 //! one piece. v1 builds for the HOST platform only — a cross-target
 //! bundle rides the per-platform CI leg.
+//!
+//! `--also <name[@ver]>` (repeatable) stages an EXTENSION SLICE (spec 03
+//! §2.8) into the same staging home through the same install path as the
+//! target, and pins the target in the rendered config in spec 07 §4's
+//! map form (`defaults: {<tool>: {version, slices: [name@ver, …]}}`, in
+//! CLI order — the pin order is the dispatch mount order).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -88,6 +94,9 @@ pub struct BundleOutcome {
     pub archive: Option<PathBuf>,
     /// The primary payload (name, version).
     pub payload: (String, String),
+    /// The staged extension slices as (name, version), in `--also`
+    /// order.
+    pub slices: Vec<(String, String)>,
     /// Every staged runtime as (engine, language version, tebako line).
     pub runtimes: Vec<(String, String, String)>,
     /// The commands the bundle's shims materialize onto PATH.
@@ -106,6 +115,10 @@ pub struct BundleRequest<'a> {
     pub tools_dir: &'a Path,
     /// The bundle target: `<ref | name[@ver]>`.
     pub target: &'a str,
+    /// Extension slices to stage beside the target and pin on it
+    /// (`--also`, repeatable, `<name[@ver]>` each; spec 16 §6, spec 07
+    /// §4). Empty when no `--also` was given.
+    pub also: &'a [String],
     /// The output directory (created; must not exist).
     pub output: &'a Path,
     /// The `--config` org overlay (a config.yaml fragment).
@@ -118,8 +131,8 @@ pub struct BundleRequest<'a> {
     pub env: &'a BTreeMap<String, String>,
 }
 
-/// `tebako bundle <ref | name[@ver]> --output <dir> [--config org.yaml]
-/// [--archive tar.gz|zip]`.
+/// `tebako bundle <ref | name[@ver]> --output <dir> [--also <name[@ver]>]...
+/// [--config org.yaml] [--archive tar.gz|zip]`.
 pub fn bundle_with<T: Transport>(
     req: &BundleRequest,
     fetcher: &Fetcher<T>,
@@ -216,6 +229,19 @@ fn stage<T: Transport>(
     let shim_binary = bin.join(shim_tool_name());
     let outcome = install::install_with(&home, req.target, None, Some(&shim_binary), fetcher)?;
 
+    // `--also` slices: the SAME install path as the main target, into
+    // the same staging home — registry resolution, sha256/signature
+    // verification, the dependency closure. An unresolvable slice is
+    // install's named error, never skipped.
+    let mut slices: Vec<(String, String)> = Vec::new();
+    for also in req.also {
+        let o = install::install_with(&home, also, None, Some(&shim_binary), fetcher)?;
+        slices.push((o.name, o.version));
+    }
+    if !slices.is_empty() {
+        pin_also_slices(&home, &outcome.name, &outcome.version, &slices)?;
+    }
+
     warm_primary_runtime(&home, &outcome.name, &outcome.version, req.env)?;
 
     let runtimes = pin_runtimes_from_reality(&home)?;
@@ -233,11 +259,12 @@ fn stage<T: Transport>(
     journal(
         &home,
         &format!(
-            "event=bundle-staged name={} version={} runtimes={} commands={}",
+            "event=bundle-staged name={} version={} runtimes={} commands={} slices={}",
             outcome.name,
             outcome.version,
             runtimes.len(),
-            outcome.commands.len()
+            outcome.commands.len(),
+            slices.len()
         ),
     );
 
@@ -245,6 +272,7 @@ fn stage<T: Transport>(
         dir: tmp.to_path_buf(),
         archive: None,
         payload: (outcome.name, outcome.version),
+        slices,
         runtimes,
         commands: outcome.commands,
     })
@@ -524,6 +552,38 @@ fn warm_primary_runtime(
         }
     }
     Ok(())
+}
+
+/// Pin the `--also` slices on the MAIN target's `defaults:` entry (spec
+/// 07 §4's map form): the resolved main version plus one `name@version`
+/// per staged slice, in CLI order — the pin order is the dispatch mount
+/// order. The pin always carries RESOLVED versions (a bare `--also`
+/// name resolved to the registry default at install), never bare names;
+/// it replaces any builder/overlay pin for the same tool (the bundle
+/// pins what it staged) and rides the config the runtime re-pin pass
+/// re-renders, so it survives to the shipped tree.
+fn pin_also_slices(
+    home: &Path,
+    name: &str,
+    version: &str,
+    slices: &[(String, String)],
+) -> Result<(), TebakoError> {
+    let mut cfg = config::load_config(home).map_err(map_shim)?;
+    cfg.defaults.insert(
+        name.to_string(),
+        config::DefaultPin::Full {
+            version: Some(version.to_string()),
+            slices: slices.iter().map(|(n, v)| format!("{n}@{v}")).collect(),
+        },
+    );
+    write_config(
+        home,
+        &cfg.registries,
+        &cfg.runtimes,
+        &cfg.defaults,
+        cfg.auto_slices,
+        &cfg.network,
+    )
 }
 
 /// Re-pin the staging config's `runtimes:` from the staged reality

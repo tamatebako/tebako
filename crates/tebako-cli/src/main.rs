@@ -52,10 +52,13 @@ const USAGE: &str = "Usage:
   tebako update-registries             refresh the dispatch-time registry cache
   tebako install <ref | name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
-  tebako bundle <name[@ver]> --output <dir> [--config <org.yaml>] [--archive tar.gz]
+  tebako bundle <name[@ver]> --output <dir> [--also <name[@ver]>]...
+               [--config <org.yaml>] [--archive tar.gz]
                                        an offline bundle: the payload closure + its
                                        runtimes + registry caches + the CLI tool set,
-                                       pre-staged for an installer (spec 16 §6)
+                                       pre-staged for an installer (spec 16 §6);
+                                       --also stages an extension slice beside the
+                                       target and pins it on the target's defaults
   tebako shim <verb> …                 the dispatcher's management verbs (spec 07 §3;
                                        ≡ tebako-shim <verb> …: list|use|enable|disable|which|doctor|install-shell|uninstall-shell)
   tebako info [topic] [--remote] [--json]
@@ -533,17 +536,20 @@ fn run_uninstall(args: &[String]) -> Result<(), CliExit> {
 /// platform's CLI tool set, staged from the builder's own TEBAKO_HOME
 /// (its registry registrations and runtime preferences seed the bundle's
 /// config; `--config` layers the org overlay) into `<out>/{bin,home}` +
-/// BUNDLE.yaml, optionally packed (`--archive tar.gz`).
+/// BUNDLE.yaml, optionally packed (`--archive tar.gz`). `--also`
+/// (repeatable) stages an extension slice beside the target and pins it
+/// on the target's `defaults:` entry (spec 07 §4's map form).
 fn run_bundle(args: &[String]) -> Result<(), CliExit> {
-    const USAGE_BUNDLE: &str = "usage: tebako bundle <name[@version]> --output <dir> [--config <org.yaml>] [--archive tar.gz]";
+    const USAGE_BUNDLE: &str = "usage: tebako bundle <name[@version]> --output <dir> [--also <name[@version]>]... [--config <org.yaml>] [--archive tar.gz]";
     let mut target: Option<String> = None;
     let mut output: Option<String> = None;
     let mut overlay: Option<String> = None;
+    let mut also: Vec<String> = Vec::new();
     let mut archive: Option<tebako_cli::bundle::ArchiveFormat> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--output" | "-o" | "--config" | "--archive" => {
+            "--output" | "-o" | "--config" | "--archive" | "--also" => {
                 let flag = args[i].as_str();
                 i += 1;
                 let Some(value) = args.get(i) else {
@@ -551,6 +557,7 @@ fn run_bundle(args: &[String]) -> Result<(), CliExit> {
                 };
                 match flag {
                     "--config" => overlay = Some(value.clone()),
+                    "--also" => also.push(value.clone()),
                     "--archive" => {
                         archive = Some(
                             tebako_cli::bundle::ArchiveFormat::parse(value)
@@ -587,6 +594,7 @@ fn run_bundle(args: &[String]) -> Result<(), CliExit> {
         builder_home: &tebako_home()?,
         tools_dir: &tools_dir,
         target: &target,
+        also: &also,
         output: std::path::Path::new(&output),
         overlay: overlay.as_deref().map(std::path::Path::new),
         archive,
@@ -598,6 +606,9 @@ fn run_bundle(args: &[String]) -> Result<(), CliExit> {
         outcome.payload.1,
         outcome.dir.display()
     );
+    for (name, version) in &outcome.slices {
+        println!("  slice {name} {version}");
+    }
     for (engine, lang, tebako) in &outcome.runtimes {
         println!("  runtime {engine} {lang} (tebako {tebako})");
     }
