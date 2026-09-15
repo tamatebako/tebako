@@ -41,9 +41,12 @@ echo "== clang-19 (llvm.org apt) =="
 # apt.llvm.org flakes on connection setup (curl: (7) — a v2.8.x release
 # rerun died here before any artifact wrote): retry with backoff, then
 # fail loud instead of letting the pipe's exit status vanish into the
-# dearmor.
+# dearmor. NO --retry-all-errors: the focal floor's curl is 7.68 and the
+# flag needs 7.71 (v2.8.3's gnu legs died on exactly that — the outer
+# loop alone is the retry discipline; with -f an HTTP error already
+# fails the pipe and re-enters it).
 for attempt in 1 2 3 4 5; do
-  if curl -fsSL --retry 3 --retry-all-errors https://apt.llvm.org/llvm-snapshot.gpg.key \
+  if curl -fsSL --retry 3 https://apt.llvm.org/llvm-snapshot.gpg.key \
        | gpg --dearmor -o /usr/share/keyrings/llvm.gpg; then
     break
   fi
