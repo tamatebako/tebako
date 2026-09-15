@@ -118,7 +118,10 @@ fn add_registry_registers_and_preserves_config_keys() {
 
     // existing keys survive; the ref is registered once
     let cfg = tebako_shim::config::load_config(&fx.home).unwrap();
-    assert_eq!(cfg.defaults.get("metanorma").unwrap(), "1.2.3");
+    assert_eq!(
+        cfg.defaults.get("metanorma").and_then(|p| p.version()),
+        Some("1.2.3")
+    );
     assert_eq!(cfg.registries, vec![reg_ref.clone()]);
     assert_eq!(
         install::list_registries(&fx.home).unwrap(),

@@ -5,7 +5,14 @@
 
 use tpkg::*;
 
-const FIXTURES: [&str; 4] = ["runtime", "app-suite", "data", "executable-edge"];
+const FIXTURES: [&str; 6] = [
+    "runtime",
+    "app-suite",
+    "data",
+    "executable-edge",
+    "extension-base",
+    "extension-slice",
+];
 
 fn fixture_path(name: &str) -> String {
     format!(
@@ -1630,4 +1637,300 @@ fn on_runtime_field_validation() {
         OWNER_EDGE,
     );
     assert!(PayloadManifest::from_yaml(&text).is_err());
+}
+
+// ---------------------------------------------------------------------
+// spec 03 §2.8 (schema_minor 10) — extension points, the gems
+// inventory, and the augments reverse edge
+// ---------------------------------------------------------------------
+
+/// A minimal kind:app document; `provides_extra` lands inside the
+/// provides block (before capabilities), `tail` appends at the end.
+fn ext_app_doc(provides_extra: &str, tail: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: 1.16.2\n  producer: {{tool: test, tool_version: \"1\"}}\n  created: \"2026-09-11T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: metanorma\n      path: /bin/metanorma\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n{provides_extra}  capabilities: {{exec: true, read: true}}\n{tail}",
+        "a".repeat(64),
+        "b".repeat(64)
+    )
+}
+
+/// A minimal kind:data document (the slice's kind); `provides_extra`
+/// lands inside the provides block (before capabilities), `tail`
+/// appends at the end.
+fn ext_data_doc(provides_extra: &str, tail: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: data\n  name: metanorma-bsi\n  version: 1.2.0\n  producer: {{tool: test, tool_version: \"1\"}}\n  created: \"2026-09-11T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  mount_semantics: {{suggested: /__slices__/metanorma-bsi}}\n{provides_extra}  capabilities: {{exec: false, read: true}}\n{tail}",
+        "a".repeat(64),
+        "b".repeat(64)
+    )
+}
+
+/// The gem-closure slice's edge (exact pin + built_against provenance).
+const AUGMENTS_PIN: &str = "augments:\n  - payload: metanorma\n    constraint: \"= 1.16.2\"\n    extension_point: flavors\n    built_against:\n      version: 1.16.2\n      closure_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n";
+
+#[test]
+fn extension_base_fixture_shape() {
+    let text = read(&fixture_path("extension-base"));
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    let Provides::App(app) = &m.provides else {
+        panic!("app provides, got {:?}", m.provides);
+    };
+    assert_eq!(app.extension_points.len(), 2);
+    assert_eq!(app.extension_points[0].name, "flavors");
+    assert_eq!(app.extension_points[0].mount, "/flavors.d");
+    assert_eq!(app.extension_points[0].layout, ExtensionLayout::GemHome);
+    assert_eq!(app.extension_points[1].name, "codelists");
+    assert_eq!(app.extension_points[1].layout, ExtensionLayout::Files);
+    assert_eq!(
+        app.gems,
+        vec![
+            GemVersion {
+                name: "nokogiri".into(),
+                version: "1.18.9".into(),
+            },
+            GemVersion {
+                name: "metanorma-cli".into(),
+                version: "1.16.9".into(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn extension_slice_fixture_shape() {
+    let text = read(&fixture_path("extension-slice"));
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    assert_eq!(m.identity.kind, PayloadKind::Data);
+    let Provides::Data(data) = &m.provides else {
+        panic!("data provides, got {:?}", m.provides);
+    };
+    // the slice's own inventory feeds the slice-overlap journal
+    // (spec 07 §2 step 3a)
+    assert_eq!(data.gems.len(), 1);
+    assert_eq!(data.gems[0].name, "metanorma-bsi");
+    assert_eq!(m.augments.len(), 1);
+    let edge = &m.augments[0];
+    assert_eq!(edge.payload, "metanorma");
+    assert_eq!(edge.constraint.as_str(), "= 1.16.2");
+    assert_eq!(edge.extension_point, "flavors");
+    let built = edge.built_against.as_ref().expect("built_against");
+    assert_eq!(built.version, "1.16.2");
+    assert_eq!(built.closure_sha256.len(), 64);
+}
+
+#[test]
+fn extension_keys_are_additive_on_the_wire() {
+    // Absent keys never serialize — old readers see the document they
+    // always saw (spec 03 §2.8: pre-minor-10 readers ignore both keys).
+    let app = PayloadManifest::from_yaml(&ext_app_doc("", "")).unwrap();
+    let rendered = app.to_yaml().unwrap();
+    assert!(!rendered.contains("extension_points"), "{rendered}");
+    assert!(!rendered.contains("gems"), "{rendered}");
+    let data = PayloadManifest::from_yaml(&ext_data_doc("", "")).unwrap();
+    let rendered = data.to_yaml().unwrap();
+    assert!(!rendered.contains("gems"), "{rendered}");
+    assert!(!rendered.contains("augments"), "{rendered}");
+    // …and the declared forms round-trip through to_yaml/from_yaml.
+    let slice = PayloadManifest::from_yaml(&ext_data_doc(
+        "  gems:\n    - {name: metanorma-bsi, version: \"1.2.0\"}\n",
+        AUGMENTS_PIN,
+    ))
+    .unwrap();
+    let back = PayloadManifest::from_yaml(&slice.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, slice);
+}
+
+#[test]
+fn extension_point_mount_rules() {
+    // relative mount
+    let err = PayloadManifest::from_yaml(&ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: flavors.d, layout: files}\n",
+        "",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("extension_points"), "{err}");
+    // "/" itself — the slice mounts at <mount>/<slice.name>, a child path
+    let err = PayloadManifest::from_yaml(&ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: /, layout: files}\n",
+        "",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("must not be \"/\""), "{err}");
+    // a '..' component
+    let err = PayloadManifest::from_yaml(&ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: /a/../b, layout: files}\n",
+        "",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains(".."), "{err}");
+    // an empty point name
+    let err = PayloadManifest::from_yaml(&ext_app_doc(
+        "  extension_points:\n    - {name: \"\", mount: /flavors.d, layout: files}\n",
+        "",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("name"), "{err}");
+    // a re-declared point name — an authoring ambiguity, never a silent
+    // winner
+    let err = PayloadManifest::from_yaml(&ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: /flavors.d, layout: gem-home}\n    - {name: flavors, mount: /other.d, layout: files}\n  gems:\n    - {name: nokogiri, version: \"1.18.9\"}\n",
+        "",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("duplicate"), "{err}");
+    // a layout outside the enum is a named STRUCTURAL error (strict
+    // enum, the PayloadKind discipline)
+    let err = PayloadManifest::from_yaml(&ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: /flavors.d, layout: union}\n",
+        "",
+    ))
+    .unwrap_err();
+    assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
+}
+
+#[test]
+fn gems_entries_must_be_non_empty() {
+    for extra in [
+        "  gems:\n    - {name: \"\", version: \"1.0\"}\n",
+        "  gems:\n    - {name: nokogiri, version: \"\"}\n",
+    ] {
+        let err = PayloadManifest::from_yaml(&ext_app_doc(extra, "")).unwrap_err();
+        assert!(err.to_string().contains("gems"), "app: {err}");
+        let err = PayloadManifest::from_yaml(&ext_data_doc(extra, "")).unwrap_err();
+        assert!(err.to_string().contains("gems"), "data: {err}");
+    }
+}
+
+#[test]
+fn gem_home_point_requires_the_gems_inventory_at_authoring() {
+    let doc = ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: /flavors.d, layout: gem-home}\n",
+        "",
+    );
+    // The consumer arm tolerates the omission (the inventory feeds only
+    // the informational overlap journal — dispatch never refuses).
+    PayloadManifest::from_yaml(&doc).unwrap();
+    // The producer arm enforces the REQUIRED coupling (spec 03 §2.8).
+    let err = PayloadManifest::from_yaml_authoring(&doc).unwrap_err();
+    assert!(err.to_string().contains("provides.gems"), "{err}");
+    // …satisfied by the generated inventory.
+    let ok = ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: /flavors.d, layout: gem-home}\n  gems:\n    - {name: nokogiri, version: \"1.18.9\"}\n",
+        "",
+    );
+    PayloadManifest::from_yaml_authoring(&ok).unwrap();
+    // A files-only point carries no gems requirement.
+    let files_only = ext_app_doc(
+        "  extension_points:\n    - {name: codelists, mount: /codelists.d, layout: files}\n",
+        "",
+    );
+    PayloadManifest::from_yaml_authoring(&files_only).unwrap();
+}
+
+#[test]
+fn augments_binding_rule() {
+    // A gem-closure slice (built_against present) pins EXACTLY — a range
+    // is the named binding-rule error (spec 03 §2.8).
+    let range_with_provenance = "augments:\n  - payload: metanorma\n    constraint: \">= 1.16, < 2.0\"\n    extension_point: flavors\n    built_against:\n      version: 1.16.2\n      closure_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n";
+    let err = PayloadManifest::from_yaml(&ext_data_doc("", range_with_provenance)).unwrap_err();
+    assert!(err.to_string().contains("pin exactly"), "{err}");
+    // The schema is deliberately coarse here (the exact-pin rule is the
+    // model's): the same document validates structurally.
+    assert!(
+        schema_validator().is_valid(&yaml_text_to_json(&ext_data_doc("", range_with_provenance))),
+        "the schema stays coarse where the model is strict"
+    );
+    // Exact pins pass — the `=` spelling and the bare-version spelling
+    // (exact by grammar) alike.
+    for pin in ["= 1.16.2", "1.16.2"] {
+        let doc = format!(
+            "augments:\n  - payload: metanorma\n    constraint: \"{pin}\"\n    extension_point: flavors\n    built_against:\n      version: 1.16.2\n      closure_sha256: {}\n",
+            "c".repeat(64)
+        );
+        PayloadManifest::from_yaml(&ext_data_doc("", &doc))
+            .unwrap_or_else(|e| panic!("pin {pin:?}: {e}"));
+    }
+    // Range constraints remain legal for content that honestly spans —
+    // a files pack carries no built_against.
+    let spanning = "augments:\n  - {payload: metanorma, constraint: \">= 1.16, < 2.0\", extension_point: codelists}\n";
+    PayloadManifest::from_yaml(&ext_data_doc("", spanning)).unwrap();
+}
+
+#[test]
+fn augments_is_content_only() {
+    // An app payload (exec: true by its truth table) carrying augments is
+    // a named error — an extension carrying executables rides the
+    // requires/expose machinery (spec 03 §2.8, MECE).
+    let err = PayloadManifest::from_yaml(&ext_app_doc("", AUGMENTS_PIN)).unwrap_err();
+    assert!(err.to_string().contains("CONTENT"), "{err}");
+    // kind data (exec: false) is the slice's home.
+    PayloadManifest::from_yaml(&ext_data_doc("", AUGMENTS_PIN)).unwrap();
+}
+
+#[test]
+fn augments_edge_grammar() {
+    // empty payload
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - {payload: \"\", constraint: \"= 1.16.2\", extension_point: flavors}\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("payload"), "{err}");
+    // empty extension_point
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - {payload: metanorma, constraint: \"= 1.16.2\", extension_point: \"\"}\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("extension_point"), "{err}");
+    // built_against.version must not be empty
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - payload: metanorma\n    constraint: \"= 1.16.2\"\n    extension_point: flavors\n    built_against:\n      version: \"\"\n      closure_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("built_against"), "{err}");
+    // closure_sha256 is 64 lowercase hex
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - payload: metanorma\n    constraint: \"= 1.16.2\"\n    extension_point: flavors\n    built_against:\n      version: 1.16.2\n      closure_sha256: nothex\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("closure_sha256"), "{err}");
+    // a malformed constraint is a STRUCTURAL error (the Constraint
+    // newtype validates at parse)
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - {payload: metanorma, constraint: \">= x\", extension_point: flavors}\n",
+    ))
+    .unwrap_err();
+    assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
+}
+
+#[test]
+fn extension_keys_are_schema_checked() {
+    // The new blocks ride the same MECE cross-check: what the schema
+    // rejects structurally, the model rejects too.
+    let validator = schema_validator();
+    // an augments entry without extension_point — required on both sides
+    let doc = ext_data_doc(
+        "",
+        "augments:\n  - {payload: metanorma, constraint: \"= 1.16.2\"}\n",
+    );
+    assert!(PayloadManifest::from_yaml(&doc).is_err());
+    assert!(!validator.is_valid(&yaml_text_to_json(&doc)));
+    // a layout outside the enum
+    let doc = ext_app_doc(
+        "  extension_points:\n    - {name: flavors, mount: /flavors.d, layout: union}\n",
+        "",
+    );
+    assert!(PayloadManifest::from_yaml(&doc).is_err());
+    assert!(!validator.is_valid(&yaml_text_to_json(&doc)));
+    // a non-hex closure digest
+    let doc = ext_data_doc(
+        "",
+        "augments:\n  - payload: metanorma\n    constraint: \"= 1.16.2\"\n    extension_point: flavors\n    built_against:\n      version: 1.16.2\n      closure_sha256: nothex\n",
+    );
+    assert!(PayloadManifest::from_yaml(&doc).is_err());
+    assert!(!validator.is_valid(&yaml_text_to_json(&doc)));
 }

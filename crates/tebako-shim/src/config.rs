@@ -27,9 +27,12 @@ use crate::{fail, Ctx, ShimError, EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 
 #[derive(Debug, Default, Deserialize)]
 pub struct UserConfig {
-    /// Tool/command name → version (`tebako use <tool>@<version>`).
+    /// Tool/command name → default pin (`tebako use <tool>@<version>`).
+    /// The value is either a bare version string or the widened map form
+    /// `{version: "…", slices: [name@ver, …]}` (spec 07 §4 — extension
+    /// slices); [`DefaultPin`] covers both spellings.
     #[serde(default)]
-    pub defaults: BTreeMap<String, String>,
+    pub defaults: BTreeMap<String, DefaultPin>,
     /// Spec 04 registry refs. v1: `file://` refs and plain local paths.
     #[serde(default)]
     pub registries: Vec<String>,
@@ -38,10 +41,103 @@ pub struct UserConfig {
     /// preference names it until the runtime registry ships).
     #[serde(default)]
     pub runtimes: BTreeMap<String, RuntimePref>,
+    /// Document-level auto-slice gate (spec 07 §4): `false` kills the
+    /// spec 07 §2 step-3 store scan; explicit slice pins still attach.
+    /// Absent = auto discovery on. A project file's `auto_slices:` wins
+    /// over this user-config value (same precedence as versions).
+    #[serde(default)]
+    pub auto_slices: Option<bool>,
     /// Enterprise networking (TODO.v2-1/33, spec 04 amendment): proxy +
     /// trust anchors. Env wins per key; see [`install_network_config`].
     #[serde(default)]
     pub network: NetworkSection,
+}
+
+/// One `defaults:` entry (spec 07 §4). The pre-slices shape is a bare
+/// version string; the widened shape is a map carrying an optional
+/// `version:` plus a `slices:` list of `name@version` pins. Both
+/// spellings deserialize here; accessors keep every consumer off the
+/// shape detail.
+///
+/// The hand-rolled Deserialize goes through `serde_yaml::Value` because
+/// serde_yaml hands a bare-`String` target the RAW scalar text — the
+/// pre-slices `defaults: {tool: version}` grammar has always accepted
+/// unquoted scalars (`app: 1.0` → "1.0"), and untagged-enum buffering
+/// would silently lose that leniency.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DefaultPin {
+    /// `tool: "1.16.2"` — the pre-slices spelling.
+    Version(String),
+    /// `tool: {version: "1.16.2", slices: [metanorma-bsi@1.2.0]}` —
+    /// either key may be absent (a slices-only entry does not pin the
+    /// base version).
+    Full {
+        version: Option<String>,
+        slices: Vec<String>,
+    },
+}
+
+impl<'de> Deserialize<'de> for DefaultPin {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error as _;
+        match serde_yaml::Value::deserialize(deserializer)? {
+            serde_yaml::Value::String(s) => Ok(DefaultPin::Version(s)),
+            serde_yaml::Value::Number(n) => Ok(DefaultPin::Version(n.to_string())),
+            serde_yaml::Value::Bool(b) => Ok(DefaultPin::Version(b.to_string())),
+            serde_yaml::Value::Mapping(m) => {
+                let mut version = None;
+                let mut slices = Vec::new();
+                for (k, v) in m {
+                    let key = k.as_str().ok_or_else(|| {
+                        D::Error::custom("a `defaults` map entry's keys must be strings")
+                    })?;
+                    match key {
+                        "version" => {
+                            version =
+                                match v {
+                                    serde_yaml::Value::Null => None,
+                                    serde_yaml::Value::String(s) => Some(s),
+                                    serde_yaml::Value::Number(n) => Some(n.to_string()),
+                                    _ => return Err(D::Error::custom(
+                                        "a `defaults` map entry's `version:` is a version string",
+                                    )),
+                                };
+                        }
+                        "slices" => {
+                            slices = serde_yaml::from_value(v).map_err(D::Error::custom)?;
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(DefaultPin::Full { version, slices })
+            }
+            _ => Err(D::Error::custom(
+                "a `defaults` entry is a version string or a {version, slices} map",
+            )),
+        }
+    }
+}
+
+impl DefaultPin {
+    /// The pinned base version, if this entry pins one.
+    pub fn version(&self) -> Option<&str> {
+        match self {
+            DefaultPin::Version(v) => Some(v.as_str()),
+            DefaultPin::Full { version, .. } => version.as_deref(),
+        }
+    }
+
+    /// The pinned slices (`name@version` strings, the grammar of
+    /// `tpkg::toolpin::ToolPin` with a required payload part).
+    pub fn slices(&self) -> &[String] {
+        match self {
+            DefaultPin::Version(_) => &[],
+            DefaultPin::Full { slices, .. } => slices,
+        }
+    }
 }
 
 /// The `network:` section of `~/.tebako/config.yaml` — all keys optional.
@@ -393,12 +489,16 @@ fn edit_config(
 
 /// Set or clear (`None`) the user-default pin for `tool` — the
 /// `use <tool> <pin>` / `use --clear <tool>` write. The caller validates
-/// the pin against `tpkg::toolpin::ToolPin` BEFORE calling. Returns
+/// the pin against `tpkg::toolpin::ToolPin` BEFORE calling. A widened
+/// map entry (spec 07 §4) keeps its `slices:` across both verbs: `use`
+/// rewrites only `version:`, `--clear` drops only `version:` (a
+/// slices-only entry survives; a left-empty entry goes). Returns
 /// whether the file changed.
 pub fn set_default(home: &Path, tool: &str, pin: Option<&str>) -> Result<bool, ShimError> {
     let mut changed = false;
     edit_config(home, |mapping| {
         let key = serde_yaml::Value::String("defaults".to_string());
+        let version_key = serde_yaml::Value::String("version".to_string());
         match pin {
             Some(pin) => {
                 let entry = mapping
@@ -414,10 +514,35 @@ pub fn set_default(home: &Path, tool: &str, pin: Option<&str>) -> Result<bool, S
                     )
                 })?;
                 let tool_key = serde_yaml::Value::String(tool.to_string());
-                let new = serde_yaml::Value::String(pin.to_string());
-                if defaults.get(&tool_key) != Some(&new) {
-                    defaults.insert(tool_key, new);
-                    changed = true;
+                match defaults.get_mut(&tool_key) {
+                    Some(serde_yaml::Value::Mapping(tool_map)) => {
+                        // Widened entry: rewrite `version:`, keep `slices:`.
+                        let new = serde_yaml::Value::String(pin.to_string());
+                        if tool_map.get(&version_key) != Some(&new) {
+                            tool_map.insert(version_key, new);
+                            changed = true;
+                        }
+                    }
+                    Some(serde_yaml::Value::String(_)) => {
+                        let new = serde_yaml::Value::String(pin.to_string());
+                        if defaults.get(&tool_key) != Some(&new) {
+                            defaults.insert(tool_key, new);
+                            changed = true;
+                        }
+                    }
+                    Some(_) => {
+                        return fail(
+                            EX_TEBAKO_MANIFEST,
+                            format!(
+                                "{}: `defaults.{tool}` must be a version string or a mapping",
+                                config_path(home).display()
+                            ),
+                        )
+                    }
+                    None => {
+                        defaults.insert(tool_key, serde_yaml::Value::String(pin.to_string()));
+                        changed = true;
+                    }
                 }
             }
             None => {
@@ -431,9 +556,19 @@ pub fn set_default(home: &Path, tool: &str, pin: Option<&str>) -> Result<bool, S
                             ),
                         )
                     })?;
-                    changed = defaults
-                        .remove(serde_yaml::Value::String(tool.to_string()))
-                        .is_some();
+                    let tool_key = serde_yaml::Value::String(tool.to_string());
+                    match defaults.get_mut(&tool_key) {
+                        Some(serde_yaml::Value::Mapping(tool_map)) => {
+                            changed = tool_map.remove(&version_key).is_some();
+                            if tool_map.is_empty() {
+                                defaults.remove(&tool_key);
+                            }
+                        }
+                        Some(_) => {
+                            changed = defaults.remove(&tool_key).is_some();
+                        }
+                        None => {}
+                    }
                 }
             }
         }

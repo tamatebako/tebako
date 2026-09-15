@@ -16,7 +16,7 @@
 
 schema: store-config
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 3 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them; 3: env per-tool interpreter-option maps — tebako#559)
+schema_minor: 4 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them; 3: env per-tool interpreter-option maps — tebako#559; 4: defaults values may carry slices: + top-level auto_slices: — spec 07 §4 extension slices)
 status: normative
 owner: crates/tebako-shim (the config model of record) in tamatebako/tebako
 edge: C13 (everything local → store)
@@ -59,14 +59,27 @@ declaration:
 
 grammar:
   defaults:
-    type: map(command name → [payload@]version pin string)
+    type: map(command name → [payload@]version pin string | {version?, slices?})
     required: false
     notes: >-
       Per-tool version pins, written by `tebako-shim use <tool> <pin>` —
       the version chain's user-default link (S28). MINOR 2: the pin VALUE
       is the [payload@]version qualified grammar (spec 07 §0/§2 step 0.5;
       tpkg::toolpin::ToolPin is the ONE parser) — a payload-qualified
-      value makes the named payload THE provider.
+      value makes the named payload THE provider. MINOR 4 (spec 07 §4):
+      the value may instead be the map form {version: "…", slices:
+      [<slice>@<version>, …]} — either key may be absent (a slices-only
+      entry pins no base version); `tebako-shim use` rewrites `version:`
+      in place and preserves `slices:`.
+  auto_slices:
+    type: boolean
+    required: false
+    notes: >-
+      MINOR 4 (spec 07 §4): `false` kills the spec 07 §2 step-3a
+      store scan (auto-discovered extension slices never attach);
+      explicit slice pins still attach. Absent = auto discovery ON. A
+      project file's document-level `auto_slices:` wins over this value,
+      the same precedence as versions.
   registries:
     type: list of string
     required: false

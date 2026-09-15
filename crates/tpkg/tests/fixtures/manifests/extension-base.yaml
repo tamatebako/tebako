@@ -1,0 +1,46 @@
+# Golden fixture — kind: app with EXTENSION POINTS (spec 03 §2.8,
+# schema_minor 10)
+#
+# The BASE side of the reverse edge: `provides.extension_points` declares
+# WHERE slices may land (the dispatcher's slice scan gates on this key —
+# spec 07 §2 step 3a), `provides.gems` is the staged gem inventory the
+# builder GENERATES from specifications/*.gemspec (never hand-authored;
+# REQUIRED at authoring when a gem-home point is declared, and exported
+# verbatim as the release's closure.json asset).
+identity:
+  schema_version: 1
+  kind: app
+  name: metanorma
+  version: 1.16.2
+  producer: {tool: tebako-cli, tool_version: 0.16.0}
+  created: "2026-09-10T11:20:00Z"
+  source:
+    commit: 4f3c2b1a9d8e7f605a4b3c2d1e0f9a8b7c6d5e4f
+  digest:
+    tree_hash: sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3
+    blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1
+  signing: {state: unsigned}
+  encryption: {state: none}
+provides:
+  entrypoints:
+    - name: metanorma
+      path: /__app__/bin/metanorma
+      runtime_requirement:
+        engine: ruby
+        constraint: ">= 3.3, < 5.0"
+  platforms: universal
+  extension_points:
+    - name: flavors               # symbolic; slices reference it by name
+      mount: /flavors.d           # slices mount BELOW at /flavors.d/<slice.name>
+      layout: gem-home            # each mounted child is a mini GEM_HOME
+    - name: codelists
+      mount: /codelists.d
+      layout: files               # opaque content the app enumerates itself
+  gems:
+    - {name: nokogiri, version: "1.18.9"}
+    - {name: metanorma-cli, version: "1.16.9"}
+  capabilities: {exec: true, read: true}
+requires:
+  - kind: language
+    engine: ruby
+    constraint: ">= 3.3, < 5.0"

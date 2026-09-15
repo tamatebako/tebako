@@ -265,7 +265,10 @@ fn bundle_overlay_layers_the_org_config() {
     let out = fx.output();
     fx.run(&out, Some(&overlay), None).unwrap();
     let cfg = tebako_shim::config::load_config(&out.join("home")).unwrap();
-    assert_eq!(cfg.defaults.get("app").unwrap(), "1.0");
+    assert_eq!(
+        cfg.defaults.get("app").and_then(|p| p.version()),
+        Some("1.0")
+    );
     assert_eq!(cfg.network.proxy.as_deref(), Some("http://corp:3128"));
     // The from-reality pin still lands over the overlay.
     assert_eq!(cfg.runtimes.get("ruby").unwrap().version, "3.3.5");

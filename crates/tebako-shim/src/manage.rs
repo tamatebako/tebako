@@ -946,12 +946,16 @@ fn doctor_routing(ctx: &Ctx, problems: &mut Vec<String>) {
     // pins: config defaults + project files (nearest-wins per tool)
     let mut pins: Vec<(String, String, String)> = Vec::new(); // (tool, value, origin)
     if let Ok(cfg) = config::load_config(&ctx.home) {
-        for (tool, value) in &cfg.defaults {
-            pins.push((
-                tool.clone(),
-                value.clone(),
-                "~/.tebako/config.yaml defaults".to_string(),
-            ));
+        for (tool, pin) in &cfg.defaults {
+            // A slices-only entry (spec 07 §4) pins no version — nothing
+            // for the version-pin check.
+            if let Some(version) = pin.version() {
+                pins.push((
+                    tool.clone(),
+                    version.to_string(),
+                    "~/.tebako/config.yaml defaults".to_string(),
+                ));
+            }
         }
     }
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -967,7 +971,25 @@ fn doctor_routing(ctx: &Ctx, problems: &mut Vec<String>) {
                 Ok(value) => {
                     if let Some(m) = value.as_mapping() {
                         for (k, v) in m {
-                            if let (Some(tool), Some(pin)) = (k.as_str(), v.as_str()) {
+                            let Some(tool) = k.as_str() else {
+                                continue;
+                            };
+                            // `auto_slices` is a reserved document-level
+                            // key (spec 07 §4), never a tool pin.
+                            if tool == "auto_slices" {
+                                continue;
+                            }
+                            // Bare string, or the spec 07 §4 map form's
+                            // `version:` — a slices-only entry pins no
+                            // version (nothing for the pin check).
+                            let pin = match v {
+                                serde_yaml::Value::String(s) => Some(s.as_str()),
+                                serde_yaml::Value::Mapping(m) => m
+                                    .get(serde_yaml::Value::String("version".to_string()))
+                                    .and_then(|v| v.as_str()),
+                                _ => None,
+                            };
+                            if let Some(pin) = pin {
                                 if seen.insert(tool.to_string()) {
                                     pins.push((
                                         tool.to_string(),

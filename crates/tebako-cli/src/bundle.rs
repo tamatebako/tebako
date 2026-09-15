@@ -334,6 +334,7 @@ fn stage_config(
     }
     let mut runtimes = builder.runtimes.clone();
     let mut defaults = builder.defaults.clone();
+    let mut auto_slices = builder.auto_slices;
     let mut network = builder.network;
     if let Some(ov) = overlay {
         for (engine, pref) in ov.runtimes {
@@ -342,6 +343,9 @@ fn stage_config(
         for (tool, pin) in ov.defaults {
             defaults.insert(tool, pin);
         }
+        if ov.auto_slices.is_some() {
+            auto_slices = ov.auto_slices;
+        }
         if ov.network.proxy.is_some()
             || ov.network.tls_roots.is_some()
             || !ov.network.extra_ca.is_empty()
@@ -349,7 +353,14 @@ fn stage_config(
             network = ov.network;
         }
     }
-    write_config(home, &registries, &runtimes, &defaults, &network)
+    write_config(
+        home,
+        &registries,
+        &runtimes,
+        &defaults,
+        auto_slices,
+        &network,
+    )
 }
 
 /// Serialize a config.yaml — YAML by hand (the store grammar's rule:
@@ -361,15 +372,40 @@ fn write_config(
     home: &Path,
     registries: &[String],
     runtimes: &BTreeMap<String, config::RuntimePref>,
-    defaults: &BTreeMap<String, String>,
+    defaults: &BTreeMap<String, config::DefaultPin>,
+    auto_slices: Option<bool>,
     network: &config::NetworkSection,
 ) -> Result<(), TebakoError> {
     let mut out = String::new();
     if !defaults.is_empty() {
         out.push_str("defaults:\n");
-        for (tool, ver) in defaults {
-            out.push_str(&format!("  {}: {}\n", scalar(tool)?, scalar(ver)?));
+        for (tool, pin) in defaults {
+            match pin {
+                config::DefaultPin::Version(ver) => {
+                    out.push_str(&format!("  {}: {}\n", scalar(tool)?, scalar(ver)?));
+                }
+                config::DefaultPin::Full { version, slices } if slices.is_empty() => {
+                    // No slices ride along — collapse to the bare form.
+                    if let Some(ver) = version {
+                        out.push_str(&format!("  {}: {}\n", scalar(tool)?, scalar(ver)?));
+                    }
+                }
+                config::DefaultPin::Full { version, slices } => {
+                    // The spec 07 §4 map form.
+                    out.push_str(&format!("  {}:\n", scalar(tool)?));
+                    if let Some(ver) = version {
+                        out.push_str(&format!("    version: {}\n", scalar(ver)?));
+                    }
+                    out.push_str("    slices:\n");
+                    for s in slices {
+                        out.push_str(&format!("      - {}\n", scalar(s)?));
+                    }
+                }
+            }
         }
+    }
+    if let Some(auto) = auto_slices {
+        out.push_str(&format!("auto_slices: {auto}\n"));
     }
     if !registries.is_empty() {
         out.push_str("registries:\n");
@@ -535,6 +571,7 @@ fn pin_runtimes_from_reality(home: &Path) -> Result<Vec<(String, String, String)
         &cfg.registries,
         &cfg.runtimes,
         &cfg.defaults,
+        cfg.auto_slices,
         &cfg.network,
     )
     .map_err(|e| {

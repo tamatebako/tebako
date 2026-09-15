@@ -106,6 +106,28 @@ pub fn version_env_var(tool: &str) -> String {
     var
 }
 
+/// The env var that pins a tool's extension slices:
+/// `TEBAKO_<TOOL>_SLICES` — a comma-separated list of `<slice>@<version>`
+/// pins, PREPENDED to the pinned set (spec 07 §4).
+pub fn slices_env_var(tool: &str) -> String {
+    let mut var = version_env_var(tool);
+    var.truncate(var.len() - "_VERSION".len());
+    var.push_str("_SLICES");
+    var
+}
+
+/// One pinned extension slice (spec 07 §4): the pin grammar is
+/// `tpkg::toolpin::ToolPin` with a REQUIRED payload part
+/// (`<slice>@<version>` — a slice pin without the name is meaningless).
+#[derive(Debug, Clone)]
+pub struct SlicePin {
+    pub name: String,
+    pub version: String,
+    /// Which link of the slice chain produced the pin (named in the
+    /// SliceIncompatible error, spec 07 §7).
+    pub source: VersionSource,
+}
+
 /// Installed payload versions: the `<version>.tfs` files under
 /// `~/.tebako/payloads/<name>/` (a version with no image is not
 /// installed, whatever else the record holds). The path grammar is
@@ -374,8 +396,81 @@ fn no_provider(home: &Path, tool: &str) -> ShimError {
     )
 }
 
-/// Nearest `.tebako-tools.yaml` walking up from `start`; the file is a
-/// flat YAML mapping of command name → version.
+/// One tool entry of a `.tebako-tools.yaml` document (spec 07 §4): the
+/// pre-slices bare-string form carries only a version; the map form
+/// carries `version:` and/or `slices:` (either key may be absent).
+struct ToolEntry {
+    version: Option<String>,
+    slices: Vec<String>,
+}
+
+/// The entry for `tool` in one parsed project document — strict shape
+/// (spec 07 §4): a string is a version pin; a mapping may carry
+/// `version:` (string) and `slices:` (list of `<slice>@<version>`
+/// strings) and NOTHING else. A malformed entry is a named error naming
+/// the file, never a silent skip (invariant 9).
+fn tool_entry(
+    root: &serde_yaml::Mapping,
+    path: &Path,
+    tool: &str,
+) -> Result<Option<ToolEntry>, ShimError> {
+    let Some(value) = root.get(serde_yaml::Value::String(tool.to_string())) else {
+        return Ok(None);
+    };
+    let bad = |why: &str| {
+        ShimError::new(
+            EX_TEBAKO_MANIFEST,
+            format!("{}: `{tool}`: {why}", path.display()),
+        )
+    };
+    match value {
+        serde_yaml::Value::String(v) => Ok(Some(ToolEntry {
+            version: Some(v.clone()),
+            slices: Vec::new(),
+        })),
+        serde_yaml::Value::Mapping(m) => {
+            let mut version = None;
+            let mut slices = Vec::new();
+            for (k, v) in m {
+                match k.as_str() {
+                    Some("version") => {
+                        let s = v.as_str().ok_or_else(|| bad("`version` must be a string"))?;
+                        version = Some(s.to_string());
+                    }
+                    Some("slices") => {
+                        let seq = v.as_sequence().ok_or_else(|| {
+                            bad("`slices` must be a list of `<slice>@<version>` strings")
+                        })?;
+                        for item in seq {
+                            slices.push(
+                                item.as_str()
+                                    .ok_or_else(|| {
+                                        bad("`slices` entries must be `<slice>@<version>` strings")
+                                    })?
+                                    .to_string(),
+                            );
+                        }
+                    }
+                    _ => {
+                        return Err(bad(
+                            "unknown key — the map form is `{version: \"…\", slices: […]}` (spec 07 §4)",
+                        ))
+                    }
+                }
+            }
+            Ok(Some(ToolEntry { version, slices }))
+        }
+        _ => Err(bad(
+            "expected a version string or a `{version, slices}` mapping (spec 07 §4)",
+        )),
+    }
+}
+
+/// Nearest `.tebako-tools.yaml` walking up from `start`; the file maps
+/// command name → version pin, either a bare string or the spec 07 §4
+/// map form. The VERSION chain's shadow rule applies per key: a nearer
+/// entry without `version:` does NOT shadow a farther file's version
+/// pin — keep walking.
 fn project_pin(start: &Path, tool: &str) -> Result<Option<(String, PathBuf)>, ShimError> {
     let mut dir: Option<&Path> = Some(start);
     while let Some(d) = dir {
@@ -393,15 +488,97 @@ fn project_pin(start: &Path, tool: &str) -> Result<Option<(String, PathBuf)>, Sh
                     format!("cannot parse {} ({e})", candidate.display()),
                 )
             })?;
-            if let Some(version) = value
-                .as_mapping()
-                .and_then(|m| m.get(serde_yaml::Value::String(tool.to_string())))
-                .and_then(|v| v.as_str())
-            {
-                return Ok(Some((version.to_string(), candidate)));
+            if let Some(root) = value.as_mapping() {
+                if let Some(ToolEntry {
+                    version: Some(version),
+                    ..
+                }) = tool_entry(root, &candidate, tool)?
+                {
+                    return Ok(Some((version, candidate)));
+                }
             }
-            // A nearer file that does not pin this tool does NOT shadow a
-            // farther one that does — keep walking.
+            // A nearer file that does not pin this tool's version does
+            // NOT shadow a farther one that does — keep walking.
+        }
+        dir = d.parent();
+    }
+    Ok(None)
+}
+
+/// The SLICE pin list for `tool` from the nearest `.tebako-tools.yaml`
+/// whose entry carries `slices:` (spec 07 §4). The shadow rule mirrors
+/// the version chain's: a nearer entry without `slices:` keeps walking.
+pub fn project_slices(
+    start: &Path,
+    tool: &str,
+) -> Result<Option<(Vec<String>, PathBuf)>, ShimError> {
+    let mut dir: Option<&Path> = Some(start);
+    while let Some(d) = dir {
+        let candidate = d.join(".tebako-tools.yaml");
+        if candidate.is_file() {
+            let text = std::fs::read_to_string(&candidate).map_err(|e| {
+                ShimError::new(
+                    crate::EX_TEBAKO_IO,
+                    format!("cannot read {}: {e}", candidate.display()),
+                )
+            })?;
+            let value: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!("cannot parse {} ({e})", candidate.display()),
+                )
+            })?;
+            if let Some(root) = value.as_mapping() {
+                if let Some(entry) = tool_entry(root, &candidate, tool)? {
+                    if !entry.slices.is_empty() {
+                        return Ok(Some((entry.slices, candidate)));
+                    }
+                }
+            }
+        }
+        dir = d.parent();
+    }
+    Ok(None)
+}
+
+/// The document-level `auto_slices:` of the nearest `.tebako-tools.yaml`
+/// that sets it (spec 07 §4 — a reserved key, never a tool entry). The
+/// project file wins over the user config's `auto_slices:`, the same
+/// precedence as versions.
+pub fn project_auto_slices(start: &Path) -> Result<Option<bool>, ShimError> {
+    let mut dir: Option<&Path> = Some(start);
+    while let Some(d) = dir {
+        let candidate = d.join(".tebako-tools.yaml");
+        if candidate.is_file() {
+            let text = std::fs::read_to_string(&candidate).map_err(|e| {
+                ShimError::new(
+                    crate::EX_TEBAKO_IO,
+                    format!("cannot read {}: {e}", candidate.display()),
+                )
+            })?;
+            let value: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!("cannot parse {} ({e})", candidate.display()),
+                )
+            })?;
+            if let Some(v) = value
+                .as_mapping()
+                .and_then(|m| m.get(serde_yaml::Value::String("auto_slices".to_string())))
+            {
+                return match v.as_bool() {
+                    Some(b) => Ok(Some(b)),
+                    None => fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "{}: `auto_slices` must be true or false",
+                            candidate.display()
+                        ),
+                    ),
+                };
+            }
+            // A nearer file that does not set the key keeps walking —
+            // the same shadow rule as the tool entries.
         }
         dir = d.parent();
     }
@@ -428,8 +605,9 @@ pub fn chain_pick(
         } else {
             cfg.defaults
                 .get(tool)
+                .and_then(|pin| pin.version())
                 .filter(|v| !v.is_empty())
-                .map(|v| (v.clone(), VersionSource::UserDefault))
+                .map(|v| (v.to_string(), VersionSource::UserDefault))
         };
     match raw {
         Some((value, source)) => {
@@ -439,6 +617,73 @@ pub fn chain_pick(
         }
         None => Ok(None),
     }
+}
+
+/// The pinned extension slices for `tool` (spec 07 §4), highest-
+/// precedence first: `TEBAKO_<TOOL>_SLICES` (a comma-separated list,
+/// PREPENDED to the pinned set) → the nearest project file's `slices:` →
+/// the user config's `defaults.<tool>.slices`. Per slice NAME the first
+/// pin wins (env > project > user); names a later link alone pins still
+/// attach. An unparseable pin is a NAMED grammar error naming the link
+/// and value (the chain_pick rule extended to the slice chain).
+pub fn slice_pins(
+    tool: &str,
+    ctx: &Ctx,
+    cfg: &config::UserConfig,
+) -> Result<Vec<SlicePin>, ShimError> {
+    let mut raw: Vec<(String, VersionSource)> = Vec::new();
+    let var = slices_env_var(tool);
+    if let Some(v) = ctx.env_get(&var).filter(|v| !v.is_empty()) {
+        for item in v.split(',') {
+            let item = item.trim();
+            if !item.is_empty() {
+                raw.push((item.to_string(), VersionSource::Env(var.clone())));
+            }
+        }
+    }
+    if let Some((slices, path)) = project_slices(&ctx.cwd, tool)? {
+        for s in slices {
+            raw.push((s, VersionSource::ProjectFile(path.clone())));
+        }
+    }
+    if let Some(pin) = cfg.defaults.get(tool) {
+        for s in pin.slices() {
+            raw.push((s.clone(), VersionSource::UserDefault));
+        }
+    }
+    let mut pins: Vec<SlicePin> = Vec::new();
+    for (value, source) in raw {
+        let parsed = ToolPin::parse(&value)
+            .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, format!("{source}: {e}")))?;
+        let Some(name) = parsed.payload else {
+            return fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "{source}: invalid slice pin \"{value}\" — the grammar is <slice>@<version> (spec 07 §4)"
+                ),
+            );
+        };
+        if pins.iter().any(|p| p.name == name) {
+            continue; // per-name first hit wins (env > project > user)
+        }
+        pins.push(SlicePin {
+            name,
+            version: parsed.version,
+            source,
+        });
+    }
+    Ok(pins)
+}
+
+/// Whether the spec 07 §2 step-3 store scan runs (spec 07 §4): the
+/// nearest project file's document-level `auto_slices:` wins over the
+/// user config's `auto_slices:`; absent both, auto discovery is ON.
+/// Explicit slice pins are NOT gated by this flag.
+pub fn auto_slices_enabled(ctx: &Ctx, cfg: &config::UserConfig) -> Result<bool, ShimError> {
+    if let Some(b) = project_auto_slices(&ctx.cwd)? {
+        return Ok(b);
+    }
+    Ok(cfg.auto_slices.unwrap_or(true))
 }
 
 /// The expose edge of `m` that names `tool` (spec 30 §3 + spec 32 §3)
@@ -668,8 +913,13 @@ fn resolve_named(
         }
         // 3. user default (tebako-shim use <tool> <pin>)
         if picked.is_none() {
-            if let Some(version) = cfg.defaults.get(tool).filter(|v| !v.is_empty()) {
-                picked = Some((version.clone(), VersionSource::UserDefault));
+            if let Some(version) = cfg
+                .defaults
+                .get(tool)
+                .and_then(|pin| pin.version())
+                .filter(|v| !v.is_empty())
+            {
+                picked = Some((version.to_string(), VersionSource::UserDefault));
             }
         }
         // 4. registry default

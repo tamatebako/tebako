@@ -433,10 +433,13 @@ fn use_writes_clears_and_preserves_the_authored_config() {
     assert_eq!(code, 0, "{text}");
     let cfg = tebako_shim::config::load_config(&home).unwrap();
     assert_eq!(
-        cfg.defaults.get("pandoc").map(String::as_str),
+        cfg.defaults.get("pandoc").and_then(|p| p.version()),
         Some("pandorc@1.2.0")
     );
-    assert_eq!(cfg.defaults.get("other").map(String::as_str), Some("9.9"));
+    assert_eq!(
+        cfg.defaults.get("other").and_then(|p| p.version()),
+        Some("9.9")
+    );
     assert_eq!(
         cfg.registries,
         vec!["file:///opt/lib/tpkg-registry.yaml".to_string()]
@@ -454,7 +457,7 @@ fn use_writes_clears_and_preserves_the_authored_config() {
     );
     let cfg = tebako_shim::config::load_config(&home).unwrap();
     assert_eq!(
-        cfg.defaults.get("pandoc").map(String::as_str),
+        cfg.defaults.get("pandoc").and_then(|p| p.version()),
         Some("1.0.0")
     );
 
@@ -470,7 +473,10 @@ fn use_writes_clears_and_preserves_the_authored_config() {
     );
     let cfg = tebako_shim::config::load_config(&home).unwrap();
     assert!(!cfg.defaults.contains_key("pandoc"));
-    assert_eq!(cfg.defaults.get("other").map(String::as_str), Some("9.9"));
+    assert_eq!(
+        cfg.defaults.get("other").and_then(|p| p.version()),
+        Some("9.9")
+    );
 
     // an unparseable pin is the named grammar error, and writes nothing
     let err = tebako_shim::run(
