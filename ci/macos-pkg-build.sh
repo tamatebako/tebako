@@ -18,7 +18,14 @@
 # §7): BOOTSTRAP_REGISTRY (the client's registry ref) + BOOTSTRAP_PAYLOADS
 # (space-separated names) — stages <root>/bootstrap-seed.sh (self-locating,
 # user-re-runnable) + the home/shims grammar marker (spec 05 §3.1) and the
-# postinstall runs the seed best-effort.
+# postinstall runs the seed best-effort. Optional third knob
+# BOOTSTRAP_WARM (a subset of BOOTSTRAP_PAYLOADS): the seed also dispatches
+# each named shim once, pulling its RUNTIME into the shared home at
+# install time (as the install user). After a warm, every user's dispatch
+# is read-only against the root-owned home — the runtime download is the
+# only dispatch-time write (the registry refresh degrades to loud
+# stale-serve, the journal is best-effort). Warm only bounded,
+# print-and-exit entrypoints: the seed runs no timeout.
 # Gate env (the workflow's setup step): APPLE_INSTALLER_SIGNING_ENABLED,
 # INSTALLER_SIGN_HASH, INSTALLER_KEYCHAIN; notary: APPLE_ASC_KEY_P8,
 # APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID.
@@ -88,6 +95,16 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
     echo "\"\$ROOT/bin/tebako\" add-registry \"$BOOTSTRAP_REGISTRY\""
     for p in $BOOTSTRAP_PAYLOADS; do
       echo "\"\$ROOT/bin/tebako\" install \"$p\""
+    done
+    # Optional warm (spec 16 §7): dispatch each named shim once so its
+    # RUNTIME lands in the shared home at install time — after that a
+    # user dispatch is read-only against the root-owned home.
+    for w in ${BOOTSTRAP_WARM:-}; do
+      case " $BOOTSTRAP_PAYLOADS " in
+        *" $w "*) ;;
+        *) echo "::error::BOOTSTRAP_WARM entry $w is not in BOOTSTRAP_PAYLOADS — warm is a subset"; exit 1 ;;
+      esac
+      echo "\"\$ROOT/home/shims/$w\" || echo \"warning: warm dispatch of $w failed (offline?) — the first user run downloads its runtime\" >&2"
     done
   } > "pkg-root$INSTALL_ROOT/bootstrap-seed.sh"
   chmod 755 "pkg-root$INSTALL_ROOT/bootstrap-seed.sh"
@@ -182,6 +199,13 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
   for p in $BOOTSTRAP_PAYLOADS; do
     [ -d "$INSTALL_ROOT/home/payloads/$p" ] || { echo "::error::seed payload $p missing under $INSTALL_ROOT/home/payloads"; exit 1; }
   done
+  if [ -n "${BOOTSTRAP_WARM:-}" ]; then
+    # The warm dispatch cached each warmed payload's RUNTIME at install
+    # time: the shared home is complete and a user's dispatch is read-only.
+    [ -d "$INSTALL_ROOT/home/runtimes" ] && [ -n "$(ls -A "$INSTALL_ROOT/home/runtimes")" ] \
+      || { echo "::error::BOOTSTRAP_WARM bound but $INSTALL_ROOT/home/runtimes is empty — the warm dispatch did not land"; exit 1; }
+    echo "warm rehearsal OK (runtimes cached: $(ls "$INSTALL_ROOT/home/runtimes" | tr '\n' ' '))"
+  fi
   echo "bootstrap seed rehearsal OK (registry registered, payloads cached, shims on PATH)"
 fi
 sudo rm -rf "$INSTALL_ROOT" "/etc/paths.d/$PRODUCT_NAME"

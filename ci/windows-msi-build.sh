@@ -22,7 +22,14 @@
 # pass their own). Web-bootstrapper (spec 16 §7): BOOTSTRAP_REGISTRY (the
 # client's registry ref) + BOOTSTRAP_PAYLOADS (space-separated names) —
 # stages <root>\bootstrap-seed.cmd (self-locating, user-re-runnable) and
-# binds the template's Bootstrap block.
+# binds the template's Bootstrap block. Optional third knob
+# BOOTSTRAP_WARM (a subset of BOOTSTRAP_PAYLOADS): the seed also
+# dispatches each named shim once, pulling its RUNTIME into the shared
+# home at install time (as SYSTEM) — after a warm, every user's dispatch
+# is read-only against the machine home (the runtime download is the only
+# dispatch-time write; the registry refresh degrades to loud stale-serve,
+# the journal is best-effort). Warm only bounded, print-and-exit
+# entrypoints: the seed runs no timeout.
 #
 # The staged tool set is CURATED (the 4 PATH tools: tebako, tebako-shim,
 # tfs, tebako-pkg) — the bootstrap and runtime-launcher ship on the
@@ -86,6 +93,16 @@ case "$MODE" in
         printf '"%%~dp0bin\\tebako.exe" add-registry %s\r\n' "$BOOTSTRAP_REGISTRY"
         for p in $BOOTSTRAP_PAYLOADS; do
           printf '"%%~dp0bin\\tebako.exe" install %s\r\n' "$p"
+        done
+        # Optional warm (spec 16 §7): dispatch each named shim once so its
+        # RUNTIME lands in the shared home at install time — after that a
+        # user dispatch is read-only against the machine home.
+        for w in ${BOOTSTRAP_WARM:-}; do
+          case " $BOOTSTRAP_PAYLOADS " in
+            *" $w "*) ;;
+            *) echo "::error::BOOTSTRAP_WARM entry $w is not in BOOTSTRAP_PAYLOADS — warm is a subset"; exit 1 ;;
+          esac
+          printf '"%%TEBAKO_HOME%%\\shims\\%s.exe" >NUL 2>&1\r\n' "$w"
         done
       } > msi-input/bootstrap-seed.cmd
       BOOTSTRAP_BIND=(-d Bootstrap=1)

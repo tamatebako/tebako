@@ -227,6 +227,18 @@ machine's failed seed never rolls back the tools install — and (4) puts
 effects (registry registered, payloads cached), so a broken seed fails
 the leg, never a user machine.
 
+The optional third knob `BOOTSTRAP_WARM` (a subset of
+`BOOTSTRAP_PAYLOADS`, default empty) makes the seed dispatch each named
+shim once at install time: the payload's RUNTIME downloads into the
+shared home as the install user (root / SYSTEM). The shared home is
+root-owned, so an un-warmed first user dispatch cannot write the runtime
+download into it — warming is what makes the machine-scope home complete
+(after a warm, a user's dispatch is read-only: payload + runtime cached,
+the registry refresh degrades to spec 05 §4's loud stale-serve, the
+journal write is best-effort). Warm only bounded, print-and-exit
+entrypoints — the seed runs no timeout, and a hung warm would stall the
+installer's post-install until it returns (failure-ignored, never fatal).
+
 The locked rules:
 
 1. **Containers ship signed-only.** The MSI ships exactly when spec 34's

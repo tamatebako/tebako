@@ -39,6 +39,10 @@ bundle-sibling home tier's seat), appends the shims dir to the system
 PATH, and runs the seed once at install (deferred, SYSTEM, failure-ignored
 — an offline machine keeps its tools install; the user re-runs the seed
 later). Needs the WixToolset.Util extension (the script adds it).
+Optional third knob `BOOTSTRAP_WARM` (a subset of `BOOTSTRAP_PAYLOADS`):
+the seed also dispatches each named shim once so its runtime lands in the
+machine home at install time — later user dispatches are then read-only
+against the machine home. Warm only bounded, print-and-exit entrypoints.
 
 ## macos/distribution.xml + macos/scripts/postinstall
 
@@ -60,9 +64,14 @@ mechanism), then: pkgbuild (component pkg from the staged root
 `BOOTSTRAP_PAYLOADS` env pair: the pkg additionally installs
 `<root>/bootstrap-seed.sh` + the empty `<root>/home/shims/` grammar
 marker, and the postinstall runs the seed best-effort and appends the
-shims dir to `/etc/paths.d/<name>`. The install rehearsal in
+shims dir to `/etc/paths.d/<name>`. Optional third knob `BOOTSTRAP_WARM`
+(a subset of `BOOTSTRAP_PAYLOADS`): the seed also dispatches each named
+shim once so its runtime lands in the shared home at install time — later
+user dispatches are then read-only against the root-owned home. Warm only
+bounded, print-and-exit entrypoints. The install rehearsal in
 `ci/macos-pkg-build.sh` asserts the seed's effects (registry registered,
-payloads cached) — a broken seed fails CI, never a user machine.
+payloads cached, runtimes cached when warm is bound) — a broken seed
+fails CI, never a user machine.
 
 ## The signing credentials (owner provisioning, per identity)
 
