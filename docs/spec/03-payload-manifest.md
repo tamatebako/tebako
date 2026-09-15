@@ -344,6 +344,74 @@ spec 15 §4. A declaration is a DEFAULT, never a requirement: a
 pre-minor-8 consumer ignores the key and ships the interpreter's
 built-in behavior.
 
+### 2.8 AUGMENTS (`augments:`) and EXTENSION POINTS (`extension_points:`) — additive, schema_minor 10
+
+The reverse dependency edge: a slice that extends a base payload it
+cannot be enumerated BY. The mount rule (§2.3) is unchanged — the
+CONSUMER declares; here there are two consumers and both keep their
+say: the BASE declares WHERE extensions land, the SLICE declares WHICH
+base it extends. Neither touches the other's bytes.
+
+**Base side — PROVIDES gains `extension_points:`** (any kind that can
+host in-process content; practically `app`):
+
+```yaml
+provides:
+  entrypoints: [...]
+  extension_points:
+    - name: flavors              # symbolic; slices reference it by name
+      mount: /flavors.d          # VFS-absolute; the slices mount BELOW it
+      layout: gem-home           # enum: gem-home | files (extensible)
+```
+
+- `layout: gem-home` — each mounted child is a mini GEM_HOME
+  (`gems/`, `specifications/`); composition is the language
+  ecosystem's own multi-home search list (GEM_PATH), never a union
+  mount: two slices carrying different versions of one gem stay
+  VISIBLE-and-resolvable (requirement-based activation) instead of
+  one shadowing the other by mount precedence.
+- `layout: files` — opaque content the application reads itself
+  (fonts, codelists). The app enumerates `<mount>/<slice>/…`.
+
+**Slice side — a new top-level block `augments:`** (sibling of
+`requires:`):
+
+```yaml
+augments:
+  - payload: metanorma           # the base payload's name
+    constraint: "= 1.16.2"       # vs the base's RESOLVED version
+    extension_point: flavors     # names the base's declared point
+    built_against:               # provenance, written by the press
+      version: "1.16.2"          #   tooling — the exact base release
+      closure_sha256: "…"        #   whose inventory was subtracted
+```
+
+`augments` IS a dependency declaration, and the slice is NOT
+self-contained by construction (a deduped slice's gems resolve against
+the BASE's gem home at run time). Dispatch semantics live in spec 07
+§2 step 3a; the store scan in spec 05 §3. The scope locks:
+
+- **Root-only.** `augments` attaches slices to the DISPATCHED (root)
+  payload. A slice augmenting a slice is the named NestedAugment
+  error; `augments` on a root payload's own manifest is ignored
+  (journaled `slice-ignored`) — attachment is declared by the slice,
+  never claimed by the base.
+- **Content-only.** Slices are in-process CONTENT (gem homes, files) —
+  `capabilities.exec: false`. An extension carrying executables rides
+  the forward `requires`/`expose` machinery (spec 30), never
+  `augments`. MECE.
+- **No runtime of its own.** The slice's `requires` language edge is
+  satisfied by the BASE's resolved runtime (abi line included — a
+  mismatch is the dispatch-time loud skip, never a segfault).
+- **The binding rule.** A slice deduped against the base's closure
+  pins EXACTLY (`constraint: "= x.y.z"` — one slice release per base
+  release, shipped in lockstep): subtraction is sound only against
+  the exact inventory it subtracted, and the slice's tests ran against
+  exactly that base. Range constraints remain legal for content that
+  honestly spans (`layout: files` asset packs); gem-closure slices
+  MUST pin exactly. Pre-minor-10 readers ignore both keys (the slice
+  then simply attaches nothing — loud at install, never silent).
+
 ## 3. Platform axis (locked, vcpkg-triplet form)
 
 `platforms` is EITHER `"universal"` (pure-ruby/data) OR an explicit list:
