@@ -59,15 +59,23 @@ impl Fixture {
 
         // The app payload (fake bytes — install stores them verbatim and
         // synthesizes the manifest mirror from the registry's tier-3
-        // fields) and its registry.
+        // fields) and its registry. The two `ext-*` payloads are the
+        // `--also` fixtures: content-only data payloads (no entrypoints,
+        // no runtime edge) resolving through the same registry.
         let payload_path = mirror.join("app-1.0.tfs");
         fs::write(&payload_path, b"app-bytes").unwrap();
+        let ext_one_path = mirror.join("ext-one-1.0.tfs");
+        fs::write(&ext_one_path, b"ext-one-bytes").unwrap();
+        let ext_two_path = mirror.join("ext-two-2.0.tfs");
+        fs::write(&ext_two_path, b"ext-two-bytes").unwrap();
         let registry_path = mirror.join("tpkg-registry.yaml");
         fs::write(
             &registry_path,
             format!(
-                "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app, app-helper]\n    default: 1.0\n",
-                tebako_http::file_url(&payload_path)
+                "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app, app-helper]\n    default: 1.0\n  - name: ext-one\n    kind: data\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {}}}\n    default: 1.0\n  - name: ext-two\n    kind: data\n    versions:\n      - version: 2.0\n        platforms: universal\n        release: {{ref: {}}}\n    default: 2.0\n",
+                tebako_http::file_url(&payload_path),
+                tebako_http::file_url(&ext_one_path),
+                tebako_http::file_url(&ext_two_path),
             ),
         )
         .unwrap();
@@ -113,23 +121,27 @@ impl Fixture {
     }
 
     /// Bundle `app` against this fixture. TEBAKO_RUNTIME_MIRROR rides
-    /// the injected env map (the warm's channel-2 download).
+    /// the injected env map (the warm's channel-2 download). `also` is
+    /// the `--also` slice list (CLI order).
     fn run(
         &self,
         out: &Path,
         overlay: Option<&Path>,
         archive: Option<ArchiveFormat>,
+        also: &[&str],
     ) -> Result<BundleOutcome, TebakoError> {
         let mut env = BTreeMap::new();
         env.insert(
             "TEBAKO_RUNTIME_MIRROR".to_string(),
             self.mirror.to_string_lossy().to_string(),
         );
+        let also: Vec<String> = also.iter().map(|s| s.to_string()).collect();
         bundle::bundle_with(
             &BundleRequest {
                 builder_home: &self.builder_home,
                 tools_dir: &self.tools,
                 target: "app",
+                also: &also,
                 output: out,
                 overlay,
                 archive,
@@ -162,7 +174,7 @@ fn exe_suffix() -> &'static str {
 fn bundle_stages_a_self_consistent_offline_tree() {
     let fx = Fixture::new("happy");
     let out = fx.output();
-    let outcome = fx.run(&out, None, None).unwrap();
+    let outcome = fx.run(&out, None, None, &[]).unwrap();
 
     assert_eq!(outcome.payload, ("app".to_string(), "1.0".to_string()));
 
@@ -204,6 +216,11 @@ fn bundle_stages_a_self_consistent_offline_tree() {
     let ruby = cfg.runtimes.get("ruby").expect("ruby pin");
     assert_eq!(ruby.version, "3.3.5");
     assert_eq!(ruby.tebako, "0.0.1");
+    // No --also: no defaults pin on the target — slices are opt-in.
+    assert!(
+        !cfg.defaults.contains_key("app"),
+        "no defaults pin without --also"
+    );
 
     // BUNDLE.yaml: the installer's descriptor — and version round-trips
     // as a STRING ("1.0" must not re-type as a float).
@@ -263,7 +280,7 @@ fn bundle_overlay_layers_the_org_config() {
     )
     .unwrap();
     let out = fx.output();
-    fx.run(&out, Some(&overlay), None).unwrap();
+    fx.run(&out, Some(&overlay), None, &[]).unwrap();
     let cfg = tebako_shim::config::load_config(&out.join("home")).unwrap();
     assert_eq!(
         cfg.defaults.get("app").and_then(|p| p.version()),
@@ -280,14 +297,14 @@ fn bundle_refuses_an_occupied_output_and_a_partial_tool_set() {
     // Occupied output: refused by name, nothing staged.
     let out = fx.output();
     fs::create_dir_all(&out).unwrap();
-    let err = fx.run(&out, None, None).unwrap_err();
+    let err = fx.run(&out, None, None, &[]).unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
     assert!(err.message.contains("already exists"), "{err:?}");
 
     // A missing tool: named, not silently skipped.
     fs::remove_file(fx.tools.join(format!("tfs{}", exe_suffix()))).unwrap();
     let out2 = fx.dir.join("out2");
-    let err = fx.run(&out2, None, None).unwrap_err();
+    let err = fx.run(&out2, None, None, &[]).unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
     assert!(err.message.contains("incomplete"), "{err:?}");
     assert!(!out2.exists(), "a failed bundle leaves no tree");
@@ -297,7 +314,7 @@ fn bundle_refuses_an_occupied_output_and_a_partial_tool_set() {
 fn bundle_packs_a_relocatable_tarball() {
     let fx = Fixture::new("archive");
     let out = fx.output();
-    let outcome = fx.run(&out, None, Some(ArchiveFormat::TarGz)).unwrap();
+    let outcome = fx.run(&out, None, Some(ArchiveFormat::TarGz), &[]).unwrap();
     let archive = outcome.archive.expect("the archive path");
     assert!(archive.is_file(), "the tarball landed");
     assert_eq!(archive.extension().and_then(|e| e.to_str()), Some("gz"));
@@ -335,7 +352,9 @@ fn bundle_packs_a_relocatable_tarball() {
 fn bundle_zip_is_a_named_error_until_pr2() {
     let fx = Fixture::new("zipstub");
     let out = fx.output();
-    let err = fx.run(&out, None, Some(ArchiveFormat::Zip)).unwrap_err();
+    let err = fx
+        .run(&out, None, Some(ArchiveFormat::Zip), &[])
+        .unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
     assert!(
         err.message.contains("zip bundle leg is not written yet"),
@@ -343,4 +362,69 @@ fn bundle_zip_is_a_named_error_until_pr2() {
     );
     // The tree still staged and renamed — the pack failure post-dates it.
     assert!(out.join("BUNDLE.yaml").is_file());
+}
+
+#[test]
+fn bundle_also_stages_the_slices_and_pins_them_on_the_target() {
+    let fx = Fixture::new("also");
+    let out = fx.output();
+    // CLI order — deliberately non-alphabetical — is the pin order (the
+    // dispatch mount order); a bare name pins the RESOLVED version.
+    let outcome = fx
+        .run(&out, None, None, &["ext-two@2.0", "ext-one"])
+        .unwrap();
+
+    assert_eq!(outcome.payload, ("app".to_string(), "1.0".to_string()));
+    assert_eq!(
+        outcome.slices,
+        vec![
+            ("ext-two".to_string(), "2.0".to_string()),
+            ("ext-one".to_string(), "1.0".to_string()),
+        ]
+    );
+
+    // Both slices land in the SAME staging home, byte-identical with what
+    // the registry published (image + the sha256 trust anchor).
+    let one = out.join("home/payloads/ext-one/1.0.tfs");
+    let two = out.join("home/payloads/ext-two/2.0.tfs");
+    assert!(one.is_file(), "ext-one staged");
+    assert!(two.is_file(), "ext-two staged");
+    assert_eq!(fs::read(&one).unwrap(), b"ext-one-bytes");
+    assert_eq!(fs::read(&two).unwrap(), b"ext-two-bytes");
+    assert!(out.join("home/payloads/ext-one/1.0.tfs.sha256").is_file());
+    assert!(out.join("home/payloads/ext-two/2.0.tfs.sha256").is_file());
+
+    // The rendered config pins the MAIN target in spec 07 §4's map form:
+    // the resolved main version plus one name@version per slice, in CLI
+    // order — concrete versions, never bare names.
+    let cfg = tebako_shim::config::load_config(&out.join("home")).unwrap();
+    let pin = cfg.defaults.get("app").expect("the app pin");
+    assert_eq!(pin.version(), Some("1.0"));
+    assert_eq!(
+        pin.slices(),
+        &["ext-two@2.0".to_string(), "ext-one@1.0".to_string()]
+    );
+    // …and the raw render IS the map form (the pin survives the
+    // from-reality runtime re-pin, which re-renders the same shape).
+    let text = fs::read_to_string(out.join("home/config.yaml")).unwrap();
+    assert!(
+        text.contains(
+            "defaults:\n  app:\n    version: \"1.0\"\n    slices:\n      - ext-two@2.0\n      - ext-one@1.0\n"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
+fn bundle_also_unknown_payload_is_a_named_error() {
+    let fx = Fixture::new("also-missing");
+    let out = fx.output();
+    let err = fx.run(&out, None, None, &["ghost"]).unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(
+        err.message
+            .contains("no registered registry carries a payload named 'ghost'"),
+        "{err:?}"
+    );
+    assert!(!out.exists(), "a failed bundle leaves no tree");
 }

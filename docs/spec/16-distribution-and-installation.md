@@ -127,7 +127,7 @@ artifacts, pre-positioned so the target machine may never see the
 network.
 
 ```
-tebako bundle <name[@ver]> --output <dir> [--config <org.yaml>] [--archive tar.gz]
+tebako bundle <name[@ver]> --output <dir> [--also <name[@ver]>]... [--config <org.yaml>] [--archive tar.gz]
 ```
 
 The two hard rules:
@@ -161,6 +161,15 @@ Staging semantics:
 
 - The payload installs through `tebako install`'s own path — the eager
   closure (dependencies, spawned-edge runtimes, spec 30/32) included.
+- `--also <name[@ver]>` (repeatable) stages an EXTENSION SLICE (spec 03
+  §2.8) into the same staging home through that same install path —
+  registry resolution, verification, the closure; an unresolvable slice
+  is a named error, never skipped — and pins the target in the shipped
+  `config.yaml` in spec 07 §4's map form: `defaults: {<name>: {version:
+  <resolved>, slices: [<slice>@<resolved>, …]}}`, one entry per `--also`
+  IN CLI ORDER (the pin order is the dispatch mount order). The pin
+  carries resolved versions, never bare names; the slices attach from
+  the bundle's own store at dispatch — no day-1 fetch.
 - The PRIMARY runtime is additionally **warmed**: install alone leaves
   the payload's own `kind: language` edge to first dispatch, which an
   offline machine cannot do — the bundle resolves it at stage time
