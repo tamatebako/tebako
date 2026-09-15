@@ -25,7 +25,9 @@
 # is read-only against the root-owned home — the runtime download is the
 # only dispatch-time write (the registry refresh degrades to loud
 # stale-serve, the journal is best-effort). Warm only bounded,
-# print-and-exit entrypoints: the seed runs no timeout.
+# print-and-exit entrypoints: the seed runs no timeout. The rehearsal
+# re-dispatches the warmed shim with BOOTSTRAP_WARM_CMD (default
+# --version).
 # Gate env (the workflow's setup step): APPLE_INSTALLER_SIGNING_ENABLED,
 # INSTALLER_SIGN_HASH, INSTALLER_KEYCHAIN; notary: APPLE_ASC_KEY_P8,
 # APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID.
@@ -188,8 +190,12 @@ fi
 
 # ---- 5. the install rehearsal (always — signed or not) --------------------
 sudo installer -pkg "out/$ASSET" -target /
-[ -x "$INSTALL_ROOT/bin/$PRODUCT_NAME" ] || { echo "::error::$INSTALL_ROOT/bin/$PRODUCT_NAME missing after install"; exit 1; }
-"$INSTALL_ROOT/bin/$PRODUCT_NAME" --version
+# The payload lays down the toolset as bin/tebako in EVERY product shape:
+# in the product's own shape (PRODUCT_NAME=tebako) and in a client
+# product's alike — a client's product name lives on its seeded shims
+# (home/shims/<product>), never on a bin/<product> binary.
+[ -x "$INSTALL_ROOT/bin/tebako" ] || { echo "::error::$INSTALL_ROOT/bin/tebako missing after install"; exit 1; }
+"$INSTALL_ROOT/bin/tebako" --version
 [ -f "/etc/paths.d/$PRODUCT_NAME" ] || { echo "::error::/etc/paths.d/$PRODUCT_NAME missing — postinstall did not run"; exit 1; }
 grep -q "$INSTALL_ROOT/bin" "/etc/paths.d/$PRODUCT_NAME" || { echo "::error::/etc/paths.d/$PRODUCT_NAME content wrong"; exit 1; }
 if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
@@ -207,7 +213,15 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
     # time: the shared home is complete and a user's dispatch is read-only.
     [ -d "$INSTALL_ROOT/home/runtimes" ] && [ -n "$(ls -A "$INSTALL_ROOT/home/runtimes")" ] \
       || { echo "::error::BOOTSTRAP_WARM bound but $INSTALL_ROOT/home/runtimes is empty — the warm dispatch did not land"; exit 1; }
-    echo "warm rehearsal OK (runtimes cached: $(ls "$INSTALL_ROOT/home/runtimes" | tr '\n' ' '))"
+    # The warmed shim is the client product's user-facing command: it must
+    # be registered and dispatch read-only against the warmed home (the
+    # seed already proved the cold path; this proves the installed state).
+    for w in $BOOTSTRAP_WARM; do
+      [ -x "$INSTALL_ROOT/home/shims/$w" ] || { echo "::error::$INSTALL_ROOT/home/shims/$w missing — the seed did not register the warmed shim"; exit 1; }
+      TEBAKO_HOME="$INSTALL_ROOT/home" "$INSTALL_ROOT/home/shims/$w" ${BOOTSTRAP_WARM_CMD:---version} >/dev/null \
+        || { echo "::error::the warmed shim $w did not dispatch (${BOOTSTRAP_WARM_CMD:---version})"; exit 1; }
+    done
+    echo "warm rehearsal OK (runtimes cached: $(ls "$INSTALL_ROOT/home/runtimes" | tr '\n' ' '); shims dispatch: $BOOTSTRAP_WARM)"
   fi
   echo "bootstrap seed rehearsal OK (registry registered, payloads cached, shims on PATH)"
 fi
