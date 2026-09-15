@@ -732,6 +732,58 @@ fn env_image_plus_payload_coexist_at_nested_points() {
 }
 
 #[test]
+fn a_slice_mount_below_a_declared_point_walks_the_boundary() {
+    // spec 03 §2.8 on spec 17 §1's multi-mount: the slice mounts BELOW a
+    // point dir no image holds; the boundary still answers stat/readdir
+    // (GEM_PATH expansion realpaths each mounted home component-wise, the
+    // base's drop-in enumerates the point with plain Dir).
+    let g = guard("slice-boundary");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let slice = g.path().join("slice.zip");
+    build_zip(
+        &slice,
+        &["gems/", "gems/hello-flavor-acme-0.1.0/"],
+        &[(
+            "gems/hello-flavor-acme-0.1.0/lib.rb",
+            b"module HelloFlavor\n",
+        )],
+    );
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let out = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-image",
+            &format!("{}:0:/flavors.d/hello-flavor-acme", slice.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    assert_eq!(out.argv, argv(&["ruby", "/bin/app"]));
+    // The slice's content resolves through the nested mount…
+    assert_eq!(
+        read_file("/flavors.d/hello-flavor-acme/gems/hello-flavor-acme-0.1.0/lib.rb"),
+        b"module HelloFlavor\n"
+    );
+    // …the point dir stats as a (synthesized, read-only) directory…
+    let ctx = context();
+    let ctx = ctx.read().unwrap();
+    let st = ctx.stat("/flavors.d").unwrap();
+    assert_eq!(st.entry_type, tfs::backend::EntryType::Directory);
+    assert_eq!(st.perms & 0o222, 0);
+    // …and a nested path inside the point answers through the slice.
+    let st = ctx.stat("/flavors.d/hello-flavor-acme/gems").unwrap();
+    assert_eq!(st.entry_type, tfs::backend::EntryType::Directory);
+}
+
+#[test]
 fn slot_beyond_zero_on_a_bare_image_is_a_named_error_and_rolls_back() {
     let g = guard("bare-n");
     let payload = write_payload_image(g.path());

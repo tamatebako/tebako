@@ -30,7 +30,15 @@ learns which pattern a runtime uses.
   (spec 33) the OWNER's env image, immediately followed by the DEPENDING
   runtime's env image as the first triple — then payload triples in argv
   order; the table is longest-prefix and nested mounts are legal; any
-  failure unmounts everything — never a partial mount.
+  failure unmounts everything — never a partial mount. A mount whose
+  ancestors exist in no mounted image MATERIALIZES them as synthesized
+  read-only directories: `stat`/`readdir`/`realpath` walk the boundary
+  (a `gem-home` slice's point dir enumerates its mounted children with
+  plain `Dir`, and `Gem.paths=`'s component-wise realpath resolves each
+  mounted home); a readdir at a boundary merges the image's own entries
+  with the mounted-children names, the image's entry winning a name
+  collision. The synthesis is read-path only — it writes nothing and
+  changes no image.
 - **The uniform VFS namespace (locked 2026-08-06):** declared mount
   points are POSIX absolute paths on every platform — in manifests, in
   trailer slot records, and on this wire. On windows the namespace
