@@ -19,6 +19,25 @@
 //! Rename, never hide: hiding per-object breaks intra-archive
 //! references; renaming preserves them.
 //!
+//! COFF import-library members (the dlltool long form: `.idata$N`
+//! sections) are link-editor directives, not code, and GNU ld's PE
+//! scripts collect each DLL's chunks via SORT_BY_NAME on the
+//! `archive(member)` string — a DLL's lookup run terminates correctly
+//! only when its members sort h < sNNNNN < t. rustc's staticlib bundler
+//! disambiguates duplicate member names with a numeric "NNNNN_" prefix,
+//! which then sorts by bundle position instead: the null terminator (t)
+//! lands ahead of the entries (s), and the descriptor's lookup run
+//! swallows the NEXT DLL's functions (the v2.8.4 windows runtime defect:
+//! miniruby imported WaitOnAddress from ncrypt.dll, the loader answered
+//! STATUS_ENTRYPOINT_NOT_FOUND 0xC0000139, the shell reported exit 127).
+//! The rewrite therefore restores the canonical member name (strips the
+//! numeric prefix) and drops byte-identical duplicates; a same-name
+//! member with different bytes is a hard error. Symbol scoping itself
+//! applies to import members exactly as to code members — the prefix is
+//! consistent within the archive and the factory link proven against it
+//! (prefixed symbols + canonical names produce a clean import table in
+//! every member/pull order).
+//!
 //! Two ELF-only repairs ride the same pass (tebako#413): defined
 //! STB_GNU_UNIQUE symbols demote to STB_WEAK — the rewrite drops the
 //! SHT_GROUP the binding folds through, and binutils < 2.35 reads a
@@ -72,8 +91,8 @@ fn main() -> ExitCode {
     match run(&paths[0], &paths[1], &keep, &prefix) {
         Ok(report) => {
             println!(
-                "arscope: {} -> {} ({} member(s), {} symbol(s) scoped, {} kept public)",
-                paths[0], paths[1], report.members, report.scoped, report.kept
+                "arscope: {} -> {} ({} member(s), {} symbol(s) scoped, {} kept public, {} import member(s))",
+                paths[0], paths[1], report.members, report.scoped, report.kept, report.imports
             );
             ExitCode::SUCCESS
         }
@@ -103,11 +122,12 @@ fn skipped_bookkeeping(name: &[u8]) -> bool {
         || name.starts_with(b".rel.")
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Report {
     members: usize,
     scoped: usize,
     kept: usize,
+    imports: usize,
 }
 
 fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, String> {
@@ -147,12 +167,20 @@ fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, St
     // (post-rename) for the archive symbol index.
     let mut report = Report::default();
     let mut members: Vec<(String, Vec<u8>, Vec<String>)> = Vec::new();
+    // Canonical-name registry for import members: name -> index of the
+    // surviving member in `members`. Byte-identical duplicates (rustc's
+    // bundler ships the same generated import lib through several crate
+    // paths) collapse; a same-name member with different bytes means two
+    // import sets disagree on a slot — a hard error, never a silent pick.
+    let mut import_names: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for member in archive.members() {
         let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
         let name = String::from_utf8_lossy(member.name()).into_owned();
         let data = member
             .data(&bytes[..])
             .map_err(|e| format!("cannot read member {name} of {input}: {e}"))?;
+        let canonical = canonical_import_member_name(&name, data);
         let (mut rewritten, exported) = scope_object(data, keep, prefix, &defined, &mut report)
             .map_err(|reason| format!("member {name}: {reason}"))?;
         let _ = &exported;
@@ -166,6 +194,22 @@ fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, St
         // Mach-O object (all load-command offsets are unaffected).
         let pad4 = (4 - rewritten.len() % 4) % 4;
         rewritten.extend_from_slice(&[0; 4][..pad4]);
+        let name = match canonical {
+            Some(canon) => {
+                report.imports += 1;
+                if let Some(&prev) = import_names.get(&canon) {
+                    if members[prev].1 == rewritten {
+                        continue;
+                    }
+                    return Err(format!(
+                        "import member name collision on {canon}: two members with different contents"
+                    ));
+                }
+                import_names.insert(canon.clone(), members.len());
+                canon
+            }
+            None => name,
+        };
         report.members += 1;
         members.push((name, rewritten, exported));
     }
@@ -403,6 +447,44 @@ fn logical_name(name: &str, format: object::BinaryFormat) -> &str {
     } else {
         name
     }
+}
+
+/// The sort-canonical name for a dlltool-style long-form import member
+/// (a COFF object carrying `.idata$N` sections), or None for any other
+/// member. GNU ld's PE scripts collect each DLL's `.idata$4`/`.idata$5`
+/// chunks via SORT_BY_NAME on the `archive(member)` string, and a DLL's
+/// import lookup run terminates at its null chunk only when the DLL's
+/// members sort h < sNNNNN < t. rustc's staticlib bundler disambiguates
+/// duplicate member names with a numeric "NNNNN_" prefix, which then
+/// sorts by bundle position instead of by the h/s/t suffix — the null
+/// terminator (t) lands ahead of the entries (s) and the descriptor
+/// swallows the next DLL's functions (the v2.8.4 windows runtime defect:
+/// miniruby imported WaitOnAddress from ncrypt.dll, the loader answered
+/// STATUS_ENTRYPOINT_NOT_FOUND 0xC0000139, the shell reported exit 127).
+/// Stripping exactly one leading numeric prefix restores the canonical
+/// order; members already canonical pass through unchanged. Short-format
+/// import objects carry their DLL name in-band and never reach here (the
+/// object-crate parse fails on them, so they keep today's loud error).
+fn canonical_import_member_name(name: &str, data: &[u8]) -> Option<String> {
+    let obj = File::parse(data).ok()?;
+    if obj.format() != object::BinaryFormat::Coff {
+        return None;
+    }
+    let is_import = obj.sections().any(|s| {
+        s.name_bytes()
+            .map(|n| n.starts_with(b".idata$"))
+            .unwrap_or(false)
+    });
+    if !is_import {
+        return None;
+    }
+    let stripped = match name.find('_') {
+        Some(at) if !name[..at].is_empty() && name[..at].bytes().all(|b| b.is_ascii_digit()) => {
+            &name[at + 1..]
+        }
+        _ => name,
+    };
+    Some(stripped.to_string())
 }
 
 /// Rewrite one object member: sections and symbols copied, defined
@@ -1283,5 +1365,176 @@ mod tests {
         let strsize =
             u32::from_le_bytes(out[strsize_at..strsize_at + 4].try_into().unwrap()) as usize;
         assert_eq!(strsize % 8, 0, "the SYMDEF string table is 8-padded");
+    }
+
+    /// A minimal dlltool-style long-form import member: a COFF object
+    /// whose import identity is its `.idata$N` section set.
+    fn coff_import_fixture(sections: &[&str], symbol: &str) -> Vec<u8> {
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::X86_64,
+            object::Endianness::Little,
+        );
+        let mut first = None;
+        for name in sections {
+            let id = out.add_section(
+                Vec::new(),
+                name.as_bytes().to_vec(),
+                object::SectionKind::Data,
+            );
+            out.section_mut(id).set_data(vec![0; 8], 8);
+            first = first.or(Some(id));
+        }
+        out.add_symbol(object::write::Symbol {
+            name: symbol.as_bytes().to_vec(),
+            value: 0,
+            size: 8,
+            kind: object::SymbolKind::Data,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(first.unwrap()),
+            flags: object::SymbolFlags::None,
+        });
+        out.write().expect("import fixture object")
+    }
+
+    /// A plain COFF code member (no .idata sections) — must keep its
+    /// name and keep riding the symbol scoping unchanged.
+    fn coff_code_fixture() -> Vec<u8> {
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::X86_64,
+            object::Endianness::Little,
+        );
+        let text = out.add_section(Vec::new(), b".text".to_vec(), object::SectionKind::Text);
+        out.section_mut(text).set_data(b"\x90\x90\xc3", 1);
+        out.add_symbol(object::write::Symbol {
+            name: b"tebako_probe".to_vec(),
+            value: 0,
+            size: 1,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        out.write().expect("code fixture object")
+    }
+
+    fn archive_member_names(bytes: &[u8]) -> Vec<String> {
+        let archive = object::read::archive::ArchiveFile::parse(bytes).expect("parse output");
+        archive
+            .members()
+            .map(|m| String::from_utf8_lossy(m.expect("member").name()).into_owned())
+            .filter(|n| n != "/" && n != "//")
+            .collect()
+    }
+
+    /// rustc's staticlib bundler disambiguates duplicate import member
+    /// names with a numeric "NNNNN_" prefix, and GNU ld's PE scripts sort
+    /// .idata chunks by the member NAME — the prefix sorts the null
+    /// terminator ahead of the entries and the DLL descriptor swallows
+    /// the next DLL's functions (the v2.8.4 miniruby 0xC0000139 defect).
+    /// The rewrite must restore the canonical `<dll>.dll[h|sNNNNN|t].o`
+    /// names, collapse byte-identical duplicates, and leave the symbol
+    /// scoping itself untouched.
+    #[test]
+    fn coff_import_members_get_sort_canonical_names() {
+        let h = coff_import_fixture(&[".idata$2"], "_head_ncrypt");
+        let s = coff_import_fixture(&[".idata$4", ".idata$5"], "__imp_NCryptFreeObject");
+        let t = coff_import_fixture(&[".idata$4", ".idata$5", ".idata$7"], "ncrypt_thunks");
+        let code = coff_code_fixture();
+
+        let mut input = b"!<arch>\n".to_vec();
+        write_member(&mut input, "00007_ncrypt.dllh.o", &h, false).expect("h member");
+        write_member(&mut input, "00008_ncrypt.dlls00000.o", &s, false).expect("s member");
+        // rustc bundles the same generated import lib through several
+        // crate paths: after the prefix strip the duplicate collides by
+        // name and must collapse (byte-identical).
+        write_member(&mut input, "00009_ncrypt.dlls00000.o", &s, false).expect("dup s member");
+        write_member(&mut input, "00010_ncrypt.dllt.o", &t, false).expect("t member");
+        write_member(&mut input, "code.o", &code, false).expect("code member");
+
+        let tmp = std::env::temp_dir().join(format!("arscope-import-{}.a", std::process::id()));
+        let tmp_out =
+            std::env::temp_dir().join(format!("arscope-import-out-{}.a", std::process::id()));
+        std::fs::write(&tmp, &input).expect("write the input archive");
+        let report = run(
+            tmp.to_str().unwrap(),
+            tmp_out.to_str().unwrap(),
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+        )
+        .expect("scope the archive");
+        let out = std::fs::read(&tmp_out).expect("read the scoped archive");
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp_out);
+
+        assert_eq!(
+            archive_member_names(&out),
+            vec![
+                "ncrypt.dllh.o",
+                "ncrypt.dlls00000.o",
+                "ncrypt.dllt.o",
+                "code.o"
+            ],
+            "numeric prefixes stripped, the byte-identical dup collapsed, order preserved"
+        );
+        assert_eq!(report.imports, 4, "four import members seen (dup included)");
+
+        // Symbol scoping applies to import members exactly as to code:
+        // the defined import thunk rides the prefix (the prefixed
+        // symbols + canonical names shape is link-proven clean).
+        let archive = object::read::archive::ArchiveFile::parse(&out[..]).expect("reparse");
+        let s_member = archive
+            .members()
+            .find_map(|m| {
+                let m = m.expect("member");
+                (String::from_utf8_lossy(m.name()) == "ncrypt.dlls00000.o")
+                    .then(|| m.data(&out[..]).expect("member data"))
+            })
+            .expect("the s member");
+        let obj = File::parse(s_member).expect("parse the s member");
+        let names: Vec<String> = obj
+            .symbols()
+            .filter_map(|s| s.name().ok().map(str::to_string))
+            .collect();
+        assert!(
+            names
+                .iter()
+                .any(|n| n == "__tebako_internal___imp_NCryptFreeObject"),
+            "the import thunk definition is scoped like any other: {names:?}"
+        );
+    }
+
+    /// Two import members that canonicalize to the same name but differ
+    /// in content are a hard error — never a silent pick.
+    #[test]
+    fn coff_import_member_name_conflict_is_a_hard_error() {
+        let s1 = coff_import_fixture(&[".idata$4", ".idata$5"], "__imp_NCryptFreeObject");
+        // Same canonical name, different content (a different thunk).
+        let s2 = coff_import_fixture(&[".idata$4", ".idata$5"], "__imp_NCryptOpenKey");
+
+        let mut input = b"!<arch>\n".to_vec();
+        write_member(&mut input, "00001_ncrypt.dlls00000.o", &s1, false).expect("s1");
+        write_member(&mut input, "00002_ncrypt.dlls00000.o", &s2, false).expect("s2");
+
+        let tmp = std::env::temp_dir().join(format!("arscope-conflict-{}.a", std::process::id()));
+        let tmp_out =
+            std::env::temp_dir().join(format!("arscope-conflict-out-{}.a", std::process::id()));
+        std::fs::write(&tmp, &input).expect("write the input archive");
+        let err = run(
+            tmp.to_str().unwrap(),
+            tmp_out.to_str().unwrap(),
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+        )
+        .expect_err("a same-name different-bytes import member must fail");
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp_out);
+        assert!(
+            err.contains("import member name collision"),
+            "the error names the collision: {err}"
+        );
     }
 }
