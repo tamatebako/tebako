@@ -72,20 +72,25 @@ impl AssetSpace for DirSpace {
 /// A service release (`tfs:github:`/gitlab/bb): the adapter's asset
 /// listing, reads through the spec-04 transport.
 struct ServiceSpace {
-    assets: Vec<(String, String)>,
+    assets: Vec<tebako_resolve::adapters::Asset>,
     transport: HttpTransport,
 }
 
 impl AssetSpace for ServiceSpace {
     fn names(&self) -> Vec<String> {
-        self.assets.iter().map(|(n, _)| n.clone()).collect()
+        self.assets.iter().map(|a| a.name.clone()).collect()
     }
 
     fn read(&self, name: &str) -> Result<Option<String>, String> {
-        let Some((_, url)) = self.assets.iter().find(|(n, _)| n == name) else {
+        let Some(asset) = self.assets.iter().find(|a| a.name == name) else {
             return Ok(None);
         };
-        let bytes = self.transport.get(url).map_err(|e| e.to_string())?;
+        // the asset descriptor's declared requirements ride the fetch
+        // (spec 04 §3 — an API asset URL answers JSON without them)
+        let bytes = self
+            .transport
+            .get_asset(&asset.url, asset.accept.as_deref(), asset.authenticate)
+            .map_err(|e| e.to_string())?;
         String::from_utf8(bytes)
             .map(Some)
             .map_err(|e| format!("invalid UTF-8 in {name}: {e}"))

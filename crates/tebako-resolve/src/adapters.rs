@@ -29,8 +29,35 @@ use crate::error::ResolveError;
 use crate::reference::Service;
 use crate::transport::Transport;
 
-/// One downloadable asset: `(file name, download URL)`.
-pub type Asset = (String, String);
+/// One downloadable asset: its file name, the URL to GET, and the fetch
+/// requirements that choice implies. The URL string carries nothing
+/// implicit (spec 04 §3):
+/// - `accept`: a required Accept header — GitHub's asset API serves the
+///   asset's JSON metadata unless asked for `application/octet-stream`,
+///   and a metadata body is a poisoned cache entry, not an error.
+/// - `authenticate`: the fetch is credential-eligible — the transport
+///   attaches whatever credential it holds for the URL's host (today: a
+///   GitHub token for api.github.com only), anonymous when it holds
+///   none. `false` is the credential-free declaration (browser/CDN URLs).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asset {
+    pub name: String,
+    pub url: String,
+    pub accept: Option<String>,
+    pub authenticate: bool,
+}
+
+impl Asset {
+    /// A plain asset: no header requirements, credential-free.
+    pub fn plain(name: String, url: String) -> Self {
+        Asset {
+            name,
+            url,
+            accept: None,
+            authenticate: false,
+        }
+    }
+}
 
 /// The registry file name at the default-branch root (spec 04 §2).
 pub const REGISTRY_FILE: &str = "tpkg-registry.yaml";
@@ -64,7 +91,7 @@ pub trait ServiceAdapter {
         Ok(self
             .assets(transport, owner, repo, version)?
             .into_iter()
-            .find(|(n, _)| n == name))
+            .find(|a| a.name == name))
     }
     /// `tpkg-registry.yaml` from the repo's default-branch root (spec 04
     /// §2 registry resolution, first form).
@@ -99,7 +126,7 @@ pub fn select_candidate(
 ) -> Result<Asset, ResolveError> {
     let candidates: Vec<Asset> = assets
         .into_iter()
-        .filter(|(name, _)| name.ends_with(".tfs"))
+        .filter(|a| a.name.ends_with(".tfs"))
         .collect();
     match candidates.as_slice() {
         [] => Err(ResolveError::AssetNotFound {
@@ -115,7 +142,7 @@ pub fn select_candidate(
             owner: owner.to_string(),
             repo: repo.to_string(),
             version: version.to_string(),
-            assets: many.iter().map(|(n, _)| n.clone()).collect(),
+            assets: many.iter().map(|a| a.name.clone()).collect(),
         }),
     }
 }
@@ -212,7 +239,29 @@ impl ServiceAdapter for GithubAdapter {
         };
         Ok(assets
             .iter()
-            .filter_map(|a| Some((strings(a, "name")?, strings(a, "browser_download_url")?)))
+            .filter_map(|a| {
+                let name = strings(a, "name")?;
+                // Private repos 404 the anonymous browser URL, so an
+                // authenticated transport takes the API asset URL — and
+                // the descriptor DECLARES what that choice needs: the
+                // bytes ride Accept: application/octet-stream (else the
+                // API answers JSON metadata), and the fetch is
+                // credential-eligible (tebako-http attaches the ambient
+                // token to api.github.com only; ureq never forwards it
+                // on redirect). Anonymous transports keep the browser
+                // URL: the CDN path spends no API rate budget and
+                // carries no credential.
+                Some(if transport.authenticated() {
+                    Asset {
+                        name,
+                        url: strings(a, "url")?,
+                        accept: Some("application/octet-stream".to_string()),
+                        authenticate: true,
+                    }
+                } else {
+                    Asset::plain(name, strings(a, "browser_download_url")?)
+                })
+            })
             .collect())
     }
 
@@ -235,7 +284,7 @@ impl ServiceAdapter for GithubAdapter {
             if let Some(asset) = self
                 .assets(transport, owner, repo, version)?
                 .into_iter()
-                .find(|(n, _)| n == name)
+                .find(|a| a.name == name)
             {
                 return Ok(Some(asset));
             }
@@ -344,7 +393,7 @@ impl ServiceAdapter for GitlabAdapter {
         };
         Ok(links
             .iter()
-            .filter_map(|a| Some((strings(a, "name")?, strings(a, "url")?)))
+            .filter_map(|a| Some(Asset::plain(strings(a, "name")?, strings(a, "url")?)))
             .collect())
     }
 
@@ -384,7 +433,7 @@ impl ServiceAdapter for BitbucketAdapter {
     ) -> Result<Vec<Asset>, ResolveError> {
         Ok(downloads(transport, owner, repo)?
             .into_iter()
-            .filter(|(name, _)| name.contains(version))
+            .filter(|a| a.name.contains(version))
             .collect())
     }
 
@@ -401,7 +450,7 @@ impl ServiceAdapter for BitbucketAdapter {
     ) -> Result<Option<Asset>, ResolveError> {
         Ok(downloads(transport, owner, repo)?
             .into_iter()
-            .find(|(n, _)| n == name))
+            .find(|a| a.name == name))
     }
 
     /// Bitbucket's src API needs an explicit ref: read the repo's
@@ -460,7 +509,7 @@ fn downloads(
                 .find("links")
                 .and_then(|l| l.find("self"))
                 .and_then(|s| strings(s, "href"))?;
-            Some((name, href))
+            Some(Asset::plain(name, href))
         })
         .collect())
 }
@@ -496,22 +545,65 @@ mod tests {
     fn github_lists_every_asset_unfiltered() {
         let api = "https://api.github.com/repos/o/r/releases/tags/v1";
         let body = r#"{"assets":[
-            {"name":"r-v1.tfs","browser_download_url":"https://dl/r-v1.tfs"},
-            {"name":"notes.txt","browser_download_url":"https://dl/notes.txt"}]}"#;
+            {"name":"r-v1.tfs","url":"https://api.github.com/repos/o/r/releases/assets/11","browser_download_url":"https://dl/r-v1.tfs"},
+            {"name":"notes.txt","url":"https://api.github.com/repos/o/r/releases/assets/12","browser_download_url":"https://dl/notes.txt"}]}"#;
         let t = MockTransport::with(&[(api, body)]);
         // the adapter lists everything; .tfs filtering is the selection rule's
         let assets = GithubAdapter.assets(&t, "o", "r", "v1").unwrap();
         assert_eq!(
             assets,
             vec![
-                ("r-v1.tfs".to_string(), "https://dl/r-v1.tfs".to_string()),
-                ("notes.txt".to_string(), "https://dl/notes.txt".to_string()),
+                Asset::plain("r-v1.tfs".to_string(), "https://dl/r-v1.tfs".to_string()),
+                Asset::plain("notes.txt".to_string(), "https://dl/notes.txt".to_string()),
             ]
         );
         assert!(matches!(
             GithubAdapter.assets(&t, "o", "missing", "v1"),
             Err(ResolveError::NotFound { .. })
         ));
+    }
+
+    /// A transport with an ambient credential (Transport::authenticated).
+    struct AuthTransport {
+        inner: MockTransport,
+    }
+    impl Transport for AuthTransport {
+        fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+            self.inner.get(url)
+        }
+        fn authenticated(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn github_authenticated_picks_the_api_asset_url() {
+        // Private repos 404 the anonymous browser URL; under a credential
+        // the adapter hands back the API asset URL AND declares the
+        // fetch requirements on the descriptor (octet-stream Accept,
+        // credential-eligible) — the URL string alone carries nothing.
+        let api = "https://api.github.com/repos/o/r/releases/tags/v1";
+        let body = r#"{"assets":[
+            {"name":"r-v1.tfs","url":"https://api.github.com/repos/o/r/releases/assets/11","browser_download_url":"https://dl/r-v1.tfs"}]}"#;
+        let expected = Asset {
+            name: "r-v1.tfs".to_string(),
+            url: "https://api.github.com/repos/o/r/releases/assets/11".to_string(),
+            accept: Some("application/octet-stream".to_string()),
+            authenticate: true,
+        };
+        let t = AuthTransport {
+            inner: MockTransport::with(&[(api, body)]),
+        };
+        let assets = GithubAdapter.assets(&t, "o", "r", "v1").unwrap();
+        assert_eq!(assets, vec![expected.clone()]);
+        // …and the #artifact form inherits the choice (it rides assets())
+        let t = AuthTransport {
+            inner: MockTransport::with(&[(api, body)]),
+        };
+        let got = GithubAdapter
+            .asset_named(&t, "o", "r", "v1", "r-v1.tfs")
+            .unwrap();
+        assert_eq!(got, Some(expected));
     }
 
     #[test]
@@ -524,7 +616,10 @@ mod tests {
         let assets = GitlabAdapter.assets(&t, "g/sub", "r", "v2").unwrap();
         assert_eq!(
             assets,
-            vec![("r-v2.tfs".to_string(), "https://gl/dl/r-v2.tfs".to_string())]
+            vec![Asset::plain(
+                "r-v2.tfs".to_string(),
+                "https://gl/dl/r-v2.tfs".to_string()
+            )]
         );
     }
 
@@ -538,7 +633,7 @@ mod tests {
         let assets = BitbucketAdapter.assets(&t, "o", "r", "1.0").unwrap();
         assert_eq!(
             assets,
-            vec![(
+            vec![Asset::plain(
                 "tool-1.0.tfs".to_string(),
                 "https://bb/dl/tool-1.0.tfs".to_string()
             )]
@@ -560,7 +655,7 @@ mod tests {
     fn assets(names: &[&str]) -> Vec<Asset> {
         names
             .iter()
-            .map(|n| (n.to_string(), format!("https://dl/{n}")))
+            .map(|n| Asset::plain(n.to_string(), format!("https://dl/{n}")))
             .collect()
     }
 
@@ -574,7 +669,7 @@ mod tests {
             assets(&["notes.txt", "r-v1.tfs", "r-v1.tfs.asc"]),
         )
         .unwrap();
-        assert_eq!(got.0, "r-v1.tfs");
+        assert_eq!(got.name, "r-v1.tfs");
     }
 
     #[test]
@@ -631,7 +726,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             got,
-            Some((
+            Some(Asset::plain(
                 "tpkg-registry.yaml".to_string(),
                 "https://dl/tpkg-registry.yaml".to_string()
             ))
@@ -682,7 +777,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             got,
-            Some(("r-v1.tfs".to_string(), "https://dl/r-v1.tfs".to_string()))
+            Some(Asset::plain(
+                "r-v1.tfs".to_string(),
+                "https://dl/r-v1.tfs".to_string()
+            ))
         );
     }
 
@@ -715,7 +813,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             got,
-            Some((
+            Some(Asset::plain(
                 "tpkg-registry.yaml".to_string(),
                 "https://bb/dl/tpkg-registry.yaml".to_string()
             ))

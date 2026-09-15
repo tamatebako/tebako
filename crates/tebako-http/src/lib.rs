@@ -450,12 +450,62 @@ pub fn github_token_from_env() -> Option<String> {
         .or_else(|| std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty()))
 }
 
-/// The one host the ambient token may ride. Asset downloads
-/// (`github.com/.../releases/download/...`) are pre-signed redirects
-/// that need no credential; attaching a bearer to any other host —
-/// including a redirect target off GitHub — leaks it.
+/// The one host the ambient token may ride. Browser-URL asset downloads
+/// (`github.com/.../releases/download/...`) are pre-signed redirects that
+/// need no credential; attaching a bearer to any other host — including a
+/// redirect target off GitHub — leaks it. (ureq never forwards auth
+/// headers on redirect — `RedirectAuthHeaders::Never` is its default —
+/// so the pre-signed redirect target of an api.github.com asset GET
+/// never sees the token either.)
 fn carries_ambient_github_token(url: &str) -> bool {
     url.starts_with("https://api.github.com/")
+}
+
+/// What one GET needs beyond the URL (spec 04 §3). The caller — the
+/// resolve adapter that CHOSE the URL — declares the requirements; this
+/// crate never infers them from URL text:
+/// - `accept`: a required Accept header. GitHub's asset API serves the
+///   asset's JSON metadata unless asked for `application/octet-stream`,
+///   and a metadata body is a poisoned cache entry, not an error.
+/// - `authenticate`: the fetch is credential-eligible. The ambient
+///   bearer still rides ONLY when the URL's host is one we hold a
+///   credential for ([`carries_ambient_github_token`]) — `false` is the
+///   credential-free declaration for the browser/CDN asset class.
+#[derive(Debug, Clone, Copy)]
+pub struct GetOptions<'a> {
+    pub accept: Option<&'a str>,
+    pub authenticate: bool,
+}
+
+impl Default for GetOptions<'_> {
+    /// `get`'s discipline: API-host reads authenticate when a token is
+    /// ambient. Adapters pass `authenticate: false` for URLs that must
+    /// stay credential-free.
+    fn default() -> Self {
+        GetOptions {
+            accept: None,
+            authenticate: true,
+        }
+    }
+}
+
+/// The one request-shaping path: the declared Accept, plus the ambient
+/// bearer iff the caller allows credentials AND the host is the GitHub
+/// API. Every GET entry point builds through here so no path can drift.
+fn apply_options<'a>(
+    url: &str,
+    mut req: ureq::RequestBuilder<ureq::typestate::WithoutBody>,
+    opts: &GetOptions<'a>,
+) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
+    if let Some(accept) = opts.accept {
+        req = req.header("Accept", accept);
+    }
+    if opts.authenticate && carries_ambient_github_token(url) {
+        if let Some(token) = github_token_from_env() {
+            req = req.header("Authorization", &format!("Bearer {token}"));
+        }
+    }
+    req
 }
 
 /// GET `url` and return the response body. `https://` (redirects
@@ -463,35 +513,47 @@ fn carries_ambient_github_token(url: &str) -> bool {
 /// `GITHUB_TOKEN` env authenticates `api.github.com` reads (see
 /// [`github_token_from_env`]); every other host rides anonymous.
 pub fn get(url: &str) -> Result<Vec<u8>, FetchError> {
-    let token = if carries_ambient_github_token(url) {
-        github_token_from_env()
-    } else {
-        None
-    };
-    get_bearer(url, token.as_deref())
+    get_with_options(url, &GetOptions::default())
 }
 
-/// [`get`] with an optional bearer token. The releases-API reads
-/// authenticate: GitHub's unauthenticated tag-lookup lags (or 404s
-/// outright) on fresh public releases, and the anonymous rate limit is
-/// tight on CI egress IPs.
+/// [`get`] honoring explicit fetch requirements ([`GetOptions`]) — the
+/// resolve adapter's asset descriptors ride this entry point.
+pub fn get_with_options(url: &str, opts: &GetOptions) -> Result<Vec<u8>, FetchError> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return read_file_url(file_path_from_url(path));
+    }
+    require_https(url)?;
+    network_guard()?;
+    // http_status_as_error(false): statuses are mapped HERE, because the
+    // throttle schedule lives in the response headers (ureq's StatusCode
+    // error drops them).
+    let response = apply_options(url, agent()?.get(url), opts)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    let mut response = classify(response, url)?;
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY_SIZE)
+        .read_to_vec()
+        .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))
+}
+
+/// [`get`] with an explicit bearer token (the publish/verify channel —
+/// the caller holds the credential; the ambient-token rule does not
+/// apply). The releases-API reads authenticate: GitHub's unauthenticated
+/// tag-lookup lags (or 404s outright) on fresh public releases, and the
+/// anonymous rate limit is tight on CI egress IPs.
 pub fn get_bearer(url: &str, bearer: Option<&str>) -> Result<Vec<u8>, FetchError> {
     if let Some(path) = url.strip_prefix("file://") {
         return read_file_url(file_path_from_url(path));
     }
-    if !url.starts_with("https://") {
-        return Err(FetchError::DownloadFailed(format!(
-            "refusing non-HTTPS URL {url} (https:// and file:// are supported)"
-        )));
-    }
+    require_https(url)?;
     network_guard()?;
     let mut req = agent()?.get(url);
     if let Some(token) = bearer {
         req = req.header("Authorization", &format!("Bearer {token}"));
     }
-    // http_status_as_error(false): statuses are mapped HERE, because the
-    // throttle schedule lives in the response headers (ureq's StatusCode
-    // error drops them).
     let response = req.call().map_err(map_ureq_error(url))?;
     let mut response = classify(response, url)?;
     response
@@ -511,22 +573,32 @@ pub fn get_with_progress(
     url: &str,
     on_progress: Option<&mut dyn FnMut(u64, Option<u64>)>,
 ) -> Result<Vec<u8>, FetchError> {
+    get_with_progress_and_options(url, on_progress, &GetOptions::default())
+}
+
+/// [`get_with_progress`] honoring explicit fetch requirements
+/// ([`GetOptions`]). The progress path shapes the request through the
+/// same [`apply_options`] as every other GET — a download must not ride
+/// anonymous (or headerless) just because a progress hook is attached.
+pub fn get_with_progress_and_options(
+    url: &str,
+    on_progress: Option<&mut dyn FnMut(u64, Option<u64>)>,
+    opts: &GetOptions,
+) -> Result<Vec<u8>, FetchError> {
     let Some(cb) = on_progress else {
-        return get(url);
+        return get_with_options(url, opts);
     };
     if let Some(path) = url.strip_prefix("file://") {
         let bytes = read_file_url(file_path_from_url(path))?;
         cb(bytes.len() as u64, Some(bytes.len() as u64));
         return Ok(bytes);
     }
-    if !url.starts_with("https://") {
-        return Err(FetchError::DownloadFailed(format!(
-            "refusing non-HTTPS URL {url} (https:// and file:// are supported)"
-        )));
-    }
+    require_https(url)?;
     use std::io::Read as _;
     network_guard()?;
-    let response = agent()?.get(url).call().map_err(map_ureq_error(url))?;
+    let response = apply_options(url, agent()?.get(url), opts)
+        .call()
+        .map_err(map_ureq_error(url))?;
     let mut response = classify(response, url)?;
     let content_length = response.body().content_length();
     let mut reader = response
@@ -768,8 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn ambient_token_env_precedence_and_empty_handling() {
-        // the only test touching these vars (env is process-global)
+    fn ambient_token_env_precedence_and_request_shaping() {
         let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN"]
             .iter()
             .map(|k| (*k, std::env::var(k).ok()))
@@ -786,6 +857,40 @@ mod tests {
 
         std::env::set_var("TEBAKO_GITHUB_TOKEN", "");
         assert_eq!(github_token_from_env().as_deref(), Some("ci-token"));
+
+        // apply_options shapes the request: the declared Accept always
+        // lands; the ambient bearer lands iff `authenticate` AND the
+        // api.github.com host. (No request is sent — headers are read
+        // off the builder.)
+        let builder = || -> ureq::Agent { ureq::Agent::config_builder().build().into() };
+        let asset_api = "https://api.github.com/repos/o/r/releases/assets/1";
+        let req = apply_options(
+            asset_api,
+            builder().get(asset_api),
+            &GetOptions {
+                accept: Some("application/octet-stream"),
+                authenticate: true,
+            },
+        );
+        let headers = req.headers_ref().unwrap();
+        assert_eq!(headers["Accept"], "application/octet-stream");
+        assert_eq!(headers["Authorization"], "Bearer ci-token");
+
+        // the credential-free declaration: no bearer even on the API host
+        let req = apply_options(
+            asset_api,
+            builder().get(asset_api),
+            &GetOptions {
+                accept: None,
+                authenticate: false,
+            },
+        );
+        assert!(!req.headers_ref().unwrap().contains_key("Authorization"));
+
+        // and credential-eligibility never extends past the API host
+        let cdn = "https://github.com/o/r/releases/download/v1/a.tfs";
+        let req = apply_options(cdn, builder().get(cdn), &GetOptions::default());
+        assert!(!req.headers_ref().unwrap().contains_key("Authorization"));
 
         for (k, v) in saved {
             match v {

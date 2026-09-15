@@ -151,6 +151,20 @@ payloads:
 - Atomic fetch: download to tmp, verify digest, rename; concurrent
   fetchers coordinate via the cache lock (spec 05); a partial fetch is
   invisible. `TEBAKO_OFFLINE=1`: cache hit or hard error.
+- **Private GitHub repos (2026-09-15 amendment):** with
+  `TEBAKO_GITHUB_TOKEN`/`GITHUB_TOKEN` ambient, the GitHub adapter
+  resolves assets to their API URL
+  (`/repos/{o}/{r}/releases/assets/{id}`) instead of
+  `browser_download_url` — private repos answer 404 on the anonymous
+  browser URL. The fetch requirements the choice implies are declared ON
+  the asset descriptor the adapter returns (`accept` — the API serves
+  JSON metadata without `application/octet-stream`; `authenticate` —
+  credential-eligibility), never inferred from URL text downstream; the
+  bearer rides `api.github.com` ONLY (never the browser or CDN hosts,
+  never a redirect target). Anonymous transports keep the browser URL:
+  the CDN path spends no API rate budget and carries no credential. A
+  private asset with NO token is the ordinary named `NotFound`, never a
+  fallback chain.
 - Digest mismatch → the named sha error (exit 70); nothing enters the
   cache.
 
