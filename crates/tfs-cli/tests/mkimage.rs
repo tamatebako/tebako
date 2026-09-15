@@ -378,3 +378,160 @@ fn mkimage_error_surfaces() {
         "{err}"
     );
 }
+
+/// The feedstock-CI acceptance (spec 03 §2.8 + §7's stamp): `tfs mkimage`
+/// parses the source manifest into the tpkg model and RE-EMITS it with
+/// the stamped tree hash — the §2.8 extension keys must survive the
+/// parse→serialize round-trip into the image. Two presses: the BASE
+/// (kind app — `provides.extension_points` + `provides.gems`) and the
+/// SLICE (kind data — top-level `augments` + `provides.gems`). (No single
+/// manifest can carry all three: §2.8 locks a slice to content-only
+/// `capabilities.exec: false` while kind app is exactly `{exec: true}` —
+/// the pair IS the full key set.)
+#[test]
+fn mkimage_stamped_manifest_keeps_the_extension_keys() {
+    let w = TempDir::new("mkimgextkeys");
+
+    let base_src = w.0.join("base");
+    std::fs::create_dir_all(base_src.join("__tpkg__")).unwrap();
+    std::fs::write(
+        base_src.join("__tpkg__/manifest.yaml"),
+        "\
+identity:
+  schema_version: 1
+  kind: app
+  name: metanorma
+  version: 1.16.2
+  producer: {tool: tebako-cli, tool_version: 0.16.0}
+  created: \"2026-09-15T00:00:00Z\"
+  source:
+    commit: 4f3c2b1a9d8e7f605a4b3c2d1e0f9a8b7c6d5e4f
+  digest:
+    tree_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1
+  signing: {state: unsigned}
+  encryption: {state: none}
+provides:
+  entrypoints:
+    - name: metanorma
+      path: /__app__/bin/metanorma
+      runtime_requirement:
+        engine: ruby
+        constraint: \">= 3.3, < 5.0\"
+  platforms: universal
+  extension_points:
+    - {name: flavors, mount: /flavors.d, layout: gem-home}
+    - {name: codelists, mount: /codelists.d, layout: files}
+  gems:
+    - {name: nokogiri, version: \"1.18.9\"}
+    - {name: metanorma-cli, version: \"1.16.9\"}
+  capabilities: {exec: true, read: true}
+",
+    )
+    .unwrap();
+    std::fs::write(base_src.join("content.txt"), "x").unwrap();
+
+    let slice_src = w.0.join("slice");
+    std::fs::create_dir_all(slice_src.join("__tpkg__")).unwrap();
+    std::fs::write(
+        slice_src.join("__tpkg__/manifest.yaml"),
+        "\
+identity:
+  schema_version: 1
+  kind: data
+  name: metanorma-bsi
+  version: 1.2.0
+  producer: {tool: tebako-cli, tool_version: 0.16.0}
+  created: \"2026-09-15T00:00:00Z\"
+  source:
+    commit: 9d8e7f605a4b3c2d1e0f9a8b7c6d5e4f4f3c2b1a
+  digest:
+    tree_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    blob_sha256: 3131eae802653f4b67e306960ec2f351b6f38e6980caebefae4b4d94d5a2bf69
+  signing: {state: unsigned}
+  encryption: {state: none}
+provides:
+  mount_semantics: {suggested: /__slices__/metanorma-bsi}
+  consumers: [metanorma]
+  gems:
+    - {name: metanorma-bsi, version: \"1.2.0\"}
+  capabilities: {exec: false, read: true}
+requires:
+  - kind: language
+    engine: ruby
+    constraint: \">= 3.3, < 5.0\"
+augments:
+  - payload: metanorma
+    constraint: \"= 1.16.2\"
+    extension_point: flavors
+    built_against:
+      version: 1.16.2
+      closure_sha256: 61c92e8ab39ded5e9e0a29e740dec3f1fc780d4707fe04b3273666deda2f195d
+",
+    )
+    .unwrap();
+    std::fs::write(slice_src.join("content.txt"), "x").unwrap();
+
+    for (dir, img_name) in [(&base_src, "base.tfs"), (&slice_src, "slice.tfs")] {
+        let img = w.0.join(img_name);
+        let (rc, _, err) = run(
+            &[
+                "mkimage",
+                dir.to_str().unwrap(),
+                "-o",
+                img.to_str().unwrap(),
+            ],
+            &w.0,
+        );
+        assert_eq!((rc, err.as_str()), (0, ""), "mkimage must succeed: {err}");
+
+        // The stamped manifest IN the image still carries the §2.8 keys.
+        let (rc, out, _) = run(
+            &["cat", img.to_str().unwrap(), "__tpkg__/manifest.yaml"],
+            &w.0,
+        );
+        assert_eq!(rc, 0);
+        let keys: &[&str] = if img_name == "base.tfs" {
+            &["extension_points:", "gems:"]
+        } else {
+            &["augments:", "built_against:", "gems:"]
+        };
+        for key in keys {
+            assert!(
+                out.contains(key),
+                "the stamped {img_name} manifest dropped `{key}`:\n{out}"
+            );
+        }
+
+        // …and the re-emitted manifest re-parses to the same model.
+        let m = tpkg::PayloadManifest::from_yaml(&out)
+            .unwrap_or_else(|e| panic!("{img_name} re-parse: {e}"));
+        if img_name == "base.tfs" {
+            let tpkg::Provides::App(app) = &m.provides else {
+                panic!("app kind round-trips")
+            };
+            assert_eq!(app.extension_points.len(), 2);
+            assert_eq!(app.extension_points[0].name, "flavors");
+            assert_eq!(app.extension_points[0].mount, "/flavors.d");
+            assert_eq!(
+                app.extension_points[0].layout,
+                tpkg::ExtensionLayout::GemHome
+            );
+            assert_eq!(app.extension_points[1].layout, tpkg::ExtensionLayout::Files);
+            assert_eq!(app.gems.as_deref().expect("gems inventory").len(), 2);
+        } else {
+            let tpkg::Provides::Data(data) = &m.provides else {
+                panic!("data kind round-trips")
+            };
+            assert_eq!(data.gems.as_deref().expect("gems inventory").len(), 1);
+            assert_eq!(m.augments.len(), 1);
+            let edge = &m.augments[0];
+            assert_eq!(edge.payload, "metanorma");
+            assert_eq!(edge.constraint.as_str(), "= 1.16.2");
+            assert_eq!(edge.extension_point, "flavors");
+            let built = edge.built_against.as_ref().expect("built_against rides");
+            assert_eq!(built.version, "1.16.2");
+            assert_eq!(built.closure_sha256.len(), 64);
+        }
+    }
+}

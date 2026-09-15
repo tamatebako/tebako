@@ -287,6 +287,8 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
             Provides::App(AppProvides {
                 entrypoints,
                 platforms,
+                extension_points: Vec::new(),
+                gems: None,
                 capabilities: Capabilities {
                     exec: true,
                     read: true,
@@ -331,6 +333,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
         Provides::Data(DataProvides {
             mount_semantics: MountSemantics { suggested: s },
             consumers,
+            gems: None,
             capabilities: Capabilities {
                 exec: false,
                 read: true,
@@ -430,6 +433,7 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
                 identity,
                 provides,
                 requires,
+                augments: Vec::new(),
                 materialize,
                 library_aliases,
                 checks,

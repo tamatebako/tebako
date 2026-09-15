@@ -1249,32 +1249,45 @@ fn protected_payload_versions(
             e.message
         ))
     })?;
-    for (tool, value) in &cfg.defaults {
-        let pin = tpkg::toolpin::ToolPin::parse(value)
-            .map_err(|e| plain_error(format!("config.yaml default `{tool}: {e}")))?;
-        match pin.payload {
-            Some(payload) => {
-                protected.insert((payload, pin.version));
-            }
-            None => {
-                match tebako_shim::resolve::provider_for_bare_default(home, tool).map_err(|e| {
-                    plain_error(format!(
-                        "cannot build the prune protected set: {}",
-                        e.message
-                    ))
-                })? {
-                    tebako_shim::resolve::BareProvider::One(payload) => {
-                        protected.insert((payload, pin.version));
-                    }
-                    tebako_shim::resolve::BareProvider::Ambiguous(claims) => {
-                        notes.push(format!(
-                        "default `{tool}: {value}` is bare and more than one payload provides it ({}) — protecting nothing extra; pin `{tool}: <payload>@{version}` to protect exactly",
-                        claims.join(", "),
-                        version = pin.version,
-                    ));
-                    }
-                    tebako_shim::resolve::BareProvider::None => {}
+    for (tool, entry) in &cfg.defaults {
+        if let Some(value) = entry.version() {
+            let pin = tpkg::toolpin::ToolPin::parse(value)
+                .map_err(|e| plain_error(format!("config.yaml default `{tool}: {e}")))?;
+            match pin.payload {
+                Some(payload) => {
+                    protected.insert((payload, pin.version));
                 }
+                None => {
+                    match tebako_shim::resolve::provider_for_bare_default(home, tool).map_err(
+                        |e| {
+                            plain_error(format!(
+                                "cannot build the prune protected set: {}",
+                                e.message
+                            ))
+                        },
+                    )? {
+                        tebako_shim::resolve::BareProvider::One(payload) => {
+                            protected.insert((payload, pin.version));
+                        }
+                        tebako_shim::resolve::BareProvider::Ambiguous(claims) => {
+                            notes.push(format!(
+                            "default `{tool}: {value}` is bare and more than one payload provides it ({}) — protecting nothing extra; pin `{tool}: <payload>@{version}` to protect exactly",
+                            claims.join(", "),
+                            version = pin.version,
+                        ));
+                        }
+                        tebako_shim::resolve::BareProvider::None => {}
+                    }
+                }
+            }
+        }
+        // A pinned slice's bytes are as load-bearing as the base's
+        // (spec 07 §4) — prune never strands a pin.
+        for s in entry.slices() {
+            let sp = tpkg::toolpin::ToolPin::parse(s)
+                .map_err(|e| plain_error(format!("config.yaml default `{tool}` slices: {e}")))?;
+            if let Some(payload) = sp.payload {
+                protected.insert((payload, sp.version));
             }
         }
     }

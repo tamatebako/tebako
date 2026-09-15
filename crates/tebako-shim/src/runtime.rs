@@ -915,7 +915,7 @@ fn registry_selected_target(
 // download — the bootstrap discipline, reimplemented (see module docs)
 // ---------------------------------------------------------------------
 
-fn offline_mode(ctx: &Ctx) -> bool {
+pub(crate) fn offline_mode(ctx: &Ctx) -> bool {
     ctx.env_get("TEBAKO_OFFLINE")
         .is_some_and(|v| !v.is_empty() && v != "0")
 }
@@ -972,7 +972,7 @@ pub(crate) fn journal(home: &Path, line: &str) {
 }
 
 /// `TEBAKO_REQUIRE_SIGNED=1` (spec 09 §4): set, non-empty, not "0".
-fn require_signed(ctx: &Ctx) -> bool {
+pub(crate) fn require_signed(ctx: &Ctx) -> bool {
     ctx.env_get("TEBAKO_REQUIRE_SIGNED")
         .is_some_and(|v| !v.is_empty() && v != "0")
 }

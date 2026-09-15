@@ -1,0 +1,43 @@
+# Golden fixture — kind: data EXTENSION SLICE (spec 03 §2.8,
+# schema_minor 10)
+#
+# The SLICE side: the top-level `augments:` reverse edge names the base
+# payload, the constraint binds against the base's RESOLVED version, and
+# `built_against` is the press tooling's provenance — the exact base
+# release whose closure inventory was subtracted (its presence makes the
+# exact pin mandatory: the binding rule). A slice is in-process CONTENT
+# (capabilities.exec: false) and carries no runtime of its own — its
+# `requires` language edge is satisfied by the BASE's resolved runtime
+# (abi line included). The slice's own `provides.gems` feeds the
+# dispatcher's slice-overlap journal (spec 07 §2 step 3a).
+identity:
+  schema_version: 1
+  kind: data
+  name: metanorma-bsi
+  version: 1.2.0
+  producer: {tool: tebako-cli, tool_version: 0.16.0}
+  created: "2026-09-11T08:00:00Z"
+  source:
+    commit: 9d8e7f605a4b3c2d1e0f9a8b7c6d5e4f4f3c2b1a
+  digest:
+    tree_hash: sha256:8e809d0241ad26bd5bfe8dafbf09bd32c161a9af4e9ac4d87ba24f86ad8248c0
+    blob_sha256: 3131eae802653f4b67e306960ec2f351b6f38e6980caebefae4b4d94d5a2bf69
+  signing: {state: unsigned}
+  encryption: {state: none}
+provides:
+  mount_semantics: {suggested: /__slices__/metanorma-bsi}   # moot for a slice: the base's extension point decides the mount
+  consumers: [metanorma]
+  gems:
+    - {name: metanorma-bsi, version: "1.2.0"}
+  capabilities: {exec: false, read: true}
+requires:
+  - kind: language
+    engine: ruby
+    constraint: ">= 3.3, < 5.0"
+augments:
+  - payload: metanorma          # the base payload's name
+    constraint: "= 1.16.2"      # vs the base's RESOLVED version — exact (gem-closure)
+    extension_point: flavors    # names the base's declared point
+    built_against:              # press-tooling provenance
+      version: 1.16.2
+      closure_sha256: 61c92e8ab39ded5e9e0a29e740dec3f1fc780d4707fe04b3273666deda2f195d

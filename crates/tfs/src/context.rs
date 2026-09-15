@@ -544,6 +544,47 @@ impl FsContext {
             .max_by_key(|m| m.mount_point.len())
     }
 
+    /// The names of the mount points DIRECTLY below `path` — the
+    /// synthesized directory entries a mount boundary materializes (spec
+    /// 17 §1's multi-mount: a slice mounts BELOW a point dir no image
+    /// holds, and stat/readdir/realpath must still walk the boundary —
+    /// GEM_PATH expansion realpaths each mounted home component-wise).
+    /// Sorted, deduped; never `.`/`..`.
+    fn synthesized_children(&self, path: &str) -> Vec<String> {
+        let prefix = match path {
+            "/" => "/".to_string(),
+            p => format!("{p}/"),
+        };
+        let mut names: Vec<String> = self
+            .mounts
+            .values()
+            .filter_map(|m| {
+                let rest = m.mount_point.strip_prefix(prefix.as_str())?;
+                if rest.is_empty() {
+                    return None;
+                }
+                match rest.split('/').next() {
+                    Some(first) if !first.is_empty() => Some(first.to_string()),
+                    _ => None,
+                }
+            })
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// The synthesized directory answer for a mount-boundary ancestor:
+    /// read-only like every VFS entry, zero times (images own no clock).
+    fn synth_dir_stat() -> RawStat {
+        RawStat {
+            entry_type: EntryType::Directory,
+            perms: 0o555,
+            size: 0,
+            mtime: 0,
+        }
+    }
+
     /// Strip the mount point: the in-image path for `path` under `mount`
     /// ("" for the mount root).
     fn relative_path<'a>(mount: &Mount, path: &'a str) -> &'a str {
@@ -1097,11 +1138,30 @@ impl FsContext {
         };
         let rel = Self::relative_path(mount, path);
         let entries = match mount.backend.read_dir(rel) {
-            Ok(entries) => entries,
-            // Covered but not held: a host path (see open()).
+            Ok(mut entries) => {
+                // The mount-boundary merge: mount points BELOW this dir
+                // join the image's own listing (a point dir the image
+                // also holds keeps its entry — the name dedupes).
+                for name in self.synthesized_children(path) {
+                    if !entries.iter().any(|e| e.name == name) {
+                        entries.push(RawDirEntry { name, is_dir: true });
+                    }
+                }
+                entries
+            }
+            // Covered but not held: a host path (see open()) — unless a
+            // mount lives BELOW, in which case the boundary answers with
+            // the synthesized listing of its mounted children.
             Err(e) if e == libc::ENOENT => {
-                self.host_check(path, HostAccess::Ro)?;
-                return Err(libc::ENOENT);
+                let synth = self.synthesized_children(path);
+                if synth.is_empty() {
+                    self.host_check(path, HostAccess::Ro)?;
+                    return Err(libc::ENOENT);
+                }
+                synth
+                    .into_iter()
+                    .map(|name| RawDirEntry { name, is_dir: true })
+                    .collect()
             }
             Err(e) => return Err(e),
         };
@@ -1239,6 +1299,19 @@ impl FsContext {
             return Err(libc::ENOENT);
         }
         let Some(mount) = self.find_mount(path) else {
+            // A mount-boundary ancestor: no mount owns the path, but a
+            // mount lives BELOW it — the synthesized directory answers
+            // (see opendir).
+            if !self.synthesized_children(path).is_empty() {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Stat, path, "synth")
+                            .detail("reason", Value::String("mount-ancestor".to_string()))
+                            .dur(start),
+                    );
+                }
+                return Ok(Self::synth_dir_stat());
+            }
             // Host-passthrough decision (spec 08), see open().
             if let Err(e) = self.host_check(path, HostAccess::Ro) {
                 if let Some(start) = trace_start {
@@ -1261,8 +1334,21 @@ impl FsContext {
         };
         let rel = Self::relative_path(mount, path);
         match mount.backend.stat(rel) {
-            // Covered but not held: a host path (see open()).
+            // Covered but not held: a host path (see open()) — unless a
+            // mount lives BELOW, in which case the boundary answers with
+            // the synthesized directory (the image's own entry always
+            // wins: it answers Ok above and never reaches this arm).
             Err(e) if e == libc::ENOENT => {
+                if !self.synthesized_children(path).is_empty() {
+                    if let Some(start) = trace_start {
+                        trace::emit(
+                            trace::Event::new(trace::Op::Stat, path, "synth")
+                                .detail("reason", Value::String("mount-ancestor".to_string()))
+                                .dur(start),
+                        );
+                    }
+                    return Ok(Self::synth_dir_stat());
+                }
                 if let Err(e) = self.host_check(path, HostAccess::Ro) {
                     if let Some(start) = trace_start {
                         trace::emit(
@@ -2925,6 +3011,72 @@ mod tests {
         let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
         let handle = ctx.mount_checked(mount).unwrap();
         (ctx, handle)
+    }
+
+    /// Collect one directory's entry names through the ABI (opendir →
+    /// readdir → closedir).
+    fn dir_names(ctx: &mut FsContext, path: &str) -> Vec<String> {
+        let d = ctx.opendir(path).unwrap();
+        let mut names = Vec::new();
+        while ctx.readdir_abi(d).unwrap() {
+            let cur = ctx.dir_current(d).unwrap();
+            let end = cur
+                .d_name
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(cur.d_name.len());
+            names.push(cur.d_name[..end].iter().map(|&c| c as u8 as char).collect());
+        }
+        ctx.closedir(d).unwrap();
+        names
+    }
+
+    #[test]
+    fn mount_boundary_ancestors_synthesize_directories() {
+        // spec 17 §1's multi-mount: a mount at /flavors.d/hello-flavor-acme
+        // over a root image holding no `flavors.d` entry — the point dir
+        // still stats as a directory, lists its mounted child, and merges
+        // into the parent's listing (GEM_PATH expansion realpaths each
+        // mounted home component-wise; spec 03 §2.8's gem-home layout
+        // needs the walk).
+        let dir = std::env::temp_dir().join(format!("tfs-synth-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // The root image, with an EXPLICIT "data/" entry so its own
+        // listing is non-empty (fixture_zip deliberately omits it).
+        let image = dir.join("root.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.add_directory("data/", options).unwrap();
+        writer.start_file("data/secret.txt", options).unwrap();
+        writer.write_all(b"hush").unwrap();
+        std::fs::write(&image, writer.finish().unwrap().into_inner()).unwrap();
+        let mut ctx = FsContext::new();
+        ctx.mount_checked(crate::mount::build_from_file(image.to_str().unwrap(), "/").unwrap())
+            .unwrap();
+        ctx.mount_checked(
+            crate::mount::build_from_file(image.to_str().unwrap(), "/flavors.d/hello-flavor-acme")
+                .unwrap(),
+        )
+        .unwrap();
+
+        // The boundary ancestor stats as a read-only directory…
+        let st = ctx.stat("/flavors.d").unwrap();
+        assert_eq!(st.entry_type, EntryType::Directory);
+        assert_eq!(st.perms & 0o222, 0);
+        // …the nested mount's own content resolves through it…
+        let st = ctx
+            .stat("/flavors.d/hello-flavor-acme/data/secret.txt")
+            .unwrap();
+        assert_eq!(st.entry_type, EntryType::File);
+        // …the point dir lists its mounted child…
+        assert_eq!(dir_names(&mut ctx, "/flavors.d"), ["hello-flavor-acme"]);
+        // …and the parent's listing merges the boundary name with the
+        // image's own entries.
+        assert_eq!(dir_names(&mut ctx, "/"), ["data", "flavors.d"]);
+        // A non-ancestor still answers ENOENT (the host fallthrough).
+        assert_eq!(ctx.stat("/nope"), Err(libc::ENOENT));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -1687,6 +1687,11 @@ fn synthesize_manifest(
                     })
                     .collect(),
                 platforms: tpkg::Platforms::Universal,
+                // The mirror is identity-only (spec 05 §3.0a): extension
+                // points and the gems inventory live in the embedded
+                // manifest only.
+                extension_points: Vec::new(),
+                gems: None,
                 capabilities: tpkg::Capabilities {
                     exec: true,
                     read: true,
@@ -1703,6 +1708,7 @@ fn synthesize_manifest(
                 suggested: "/".to_string(),
             },
             consumers: Vec::new(),
+            gems: None,
             capabilities: tpkg::Capabilities {
                 exec: false,
                 read: true,
@@ -1749,6 +1755,10 @@ fn synthesize_manifest(
         },
         provides,
         requires: Vec::new(),
+        // …and no augments edge (spec 03 §2.8 — the same mirror rule: the
+        // store layout gives the embedded manifest the win; the mirror is
+        // synthesized LOUDLY and carries identity only).
+        augments: Vec::new(),
         // A synthesized mirror declares nothing to materialize — only an
         // embedded manifest can (the store layout: the embedded manifest
         // wins; the mirror is synthesized LOUDLY).

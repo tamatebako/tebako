@@ -476,6 +476,11 @@ pub fn plan(
     allow_download: bool,
     jail_env: Vec<(String, String)>,
 ) -> Result<ExecPlan, ShimError> {
+    // NestedAugment (spec 07 §7): the ROOT payload's own manifest carries
+    // `augments:` — a slice dispatched as the root. First check, every
+    // arm (exposed, zero-runtime, …): a slice attaches through the base's
+    // dispatch, never heads one.
+    crate::slices::refuse_root_augments(res)?;
     // spec 30 §3: an exposed name dispatches the RUNTIME's own boot. The
     // consumer payload is never mounted (nothing of it exists in the
     // child's VFS); the bare entry name resolves against the runtime's
@@ -609,6 +614,12 @@ pub fn plan(
     let mut mounts = compose_mounts(res, ctx)?;
     let runtime =
         runtime::resolve_runtime(entry.runtime_requirement.as_ref(), allow_download, ctx)?;
+    // Extension slices (spec 03 §2.8 + spec 07 §2 step 3a): the attached
+    // slices' triples append AFTER the app's own mounts, ahead of the
+    // triple render in both Ready arms below (the Zero arm carries no
+    // VFS — attach notes and returns empty there).
+    let slice_mounts = crate::slices::attach(res, &runtime, allow_download, ctx)?;
+    mounts.extend(slice_mounts);
     tebako_log::log!(
         tebako_log::Level::Debug,
         "shim",
