@@ -132,7 +132,31 @@ per declared entrypoint name — never as re-exec wrappers.
    compatible (spec 05 §5). **Swapping runtimes needs no payload change**
    — the payload is immutable; only the dispatch-time choice changes
    (`tebako use --runtime ruby@3.4.2`, or a per-project pin).
-3. **Hand-off:** mount payload + ZERO OR MORE runtime payloads (native
+3. **EXTENSION-SLICE scan (additive — schema_minor 10, spec 03 §2.8):**
+   when the resolved root payload declares `extension_points:`, the
+   dispatcher scans the STORE's payload manifest mirrors
+   (`payloads/*/*.manifest.yaml`, spec 05 §3) for slices whose
+   `augments[].payload` names the root — store-local, never a network
+   fetch. Per candidate: bind `extension_point` → mount
+   `<point.mount>/<slice.name>` (an unknown point name = loud skip);
+   check the slice's `constraint` against the RESOLVED base version and
+   its language edge against the RESOLVED runtime (engine + abi line).
+   Newest compatible version per slice name attaches (the store layout
+   makes same-version duplicates impossible); an auto-discovered
+   mismatch = loud skip + journal (`event=slice-skip slice=…
+   reason=…`); a successful attach journals `event=slice-augment
+   slice=… base=… mount=…`. Compatible slices append `--tebako-image
+   <slice-path>:-:<mount>` triples AFTER the app's (spec 17 multi-mount
+   — nested under the app's `/` mount, longest-prefix dispatch; a mount
+   failure is the driver's all-or-nothing teardown). Config-pinned
+   slices (§4) override auto-discovery per slice name, fetch on miss
+   (parity with the runtime fetch; `TEBAKO_OFFLINE=1` = cache-or-error),
+   and a pinned mismatch is the named SliceIncompatible error, never a
+   skip. When base and attaching slice both carry `provides.gems`, a
+   same-name gem pair journals `event=slice-overlap slice=… gem=…` —
+   informational only (gem homes compose by requirement-based
+   activation; the fix is a slice rebuild against the newer base).
+4. **Hand-off:** mount payload + ZERO OR MORE runtime payloads (native
    entrypoints need none — spec 03) + declared dependency mounts
    (spec 03 §2.3), apply the jail view (spec 08), exec the entrypoint.
    Signed payloads are verified at install time, not per run. When the
@@ -200,6 +224,19 @@ per declared entrypoint name — never as re-exec wrappers.
   written implicitly by a dispatch.)
 - Project pins: `.tebako-tools.yaml` at any directory — the dispatcher
   walks up from cwd; nearest wins.
+- **Extension slices (schema_minor 10):** per-tool keys in the same two
+  documents (project file wins over user config, as with versions):
+  ```yaml
+  metanorma:
+    version: "1.16"                  # the existing chain, unchanged
+    slices: [metanorma-bsi@1.2.0]    # explicit pins: fetch-on-miss, a
+                                     # constraint mismatch = SliceIncompatible
+  auto_slices: true                  # false kills the §2 step-3 store scan
+  ```
+  One-off env: `TEBAKO_<TOOL>_SLICES=metanorma-bsi@1.2.0,…` (prepended
+  to the pinned set). Pins override auto-discovery for the same slice
+  name; a pin naming a slice installed at a DIFFERENT version attaches
+  the pin exactly.
 
 ## 5. Distribution forms (both produced by `tebako press`)
 
@@ -243,6 +280,19 @@ signed `.tfs` per (version × ruby line) → registry → dispatcher).
   host) → the named "not available on this platform" refusal
   (`EX_TEBAKO_UNAVAILABLE`, 69), naming the claiming payloads — never
   the generic no-provider error, never a silent fallback.
+- **Extension slices (schema_minor 10):**
+  - A CONFIG-PINNED slice whose `augments` constraint fails the
+    resolved base, whose language/abi edge fails the resolved runtime,
+    or whose named `extension_point` the base does not declare →
+    `SliceIncompatible` (`EX_TEBAKO_MANIFEST`), naming the slice, the
+    pin's source link, and the failed check. (Auto-discovered slices
+    fail SOFT — loud skip + journal; only pins fail hard.)
+  - `augments` on the root payload's own manifest, or a slice whose
+    mount would nest under another slice → `NestedAugment`
+    (`EX_TEBAKO_MANIFEST`). Slices attach to the root payload, full
+    stop.
+  - A slice fetch that misses offline (`TEBAKO_OFFLINE=1`, pin not in
+    the store) → the spec 05 cache-or-error shape, naming the slice.
 
 ## 8. Native exec from inside an image (the whole-chain model, locked)
 

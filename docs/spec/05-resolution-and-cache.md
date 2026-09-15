@@ -112,6 +112,7 @@ runtimes/<lang>-<lv>-<ver>-<triplet>/
   <image>.origin                              # source URL
 payloads/<name>/<version>.tfs                 # registry payloads (0444)
 payloads/<name>/<version>.tfs.sha256          # trust anchor
+payloads/<name>/<version>.manifest.yaml       # manifest mirror (embedded wins; else synthesized LOUDLY)
 shims/                                        # spec 07
 registries/<sha>.yaml (+.fetched-at)          # dispatch-time registry cache (24 h TTL, spec 07; §4's stale-serve)
 config.yaml                                   # spec 07 (YAML — never JSON)
@@ -124,6 +125,19 @@ is suffix-less; the loader execs by full path and CreateProcess needs no
 `.exe`). The `[.exe]` diagram notation marks the synthesized fallback
 spelling, used only when no index entry is available (fat-payload
 installs, pre-identity manifests).
+
+### 3.0a The manifest mirrors and the extension-slice scan
+
+Every installed payload carries its L1 manifest beside the image as
+`<version>.manifest.yaml` (the embedded manifest transcribed at install;
+a legacy image without one gets a LOUDLY synthesized minimal mirror —
+identity only, no `augments`). The mirrors are the dispatcher's
+store-local reading of the extension-slice graph (spec 07 §2 step 3a):
+the scan for slices augmenting the dispatched payload reads ONLY these
+files — never the network, never the registry caches (trust was already
+enforced at install; a run re-verifies nothing). A corrupt or unparseable
+mirror is a loud skip of that one payload (`event=slice-skip
+reason=manifest-unreadable`), never a dispatch failure.
 
 ### 3.1 Home discovery
 
