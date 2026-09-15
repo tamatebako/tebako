@@ -373,6 +373,24 @@ provides:
 - `layout: files` — opaque content the application reads itself
   (fonts, codelists). The app enumerates `<mount>/<slice>/…`.
 
+**Base side, dedup inventory — PROVIDES gains `gems:`** (any payload
+staging a gem home; REQUIRED when it declares a `gem-home` extension
+point):
+
+```yaml
+provides:
+  gems:
+    - {name: nokogiri, version: "1.18.9"}
+    - {name: metanorma-cli, version: "1.16.9"}
+```
+
+- Generated, never hand-authored (spec 00 §10): the builder scans the
+  staged gem home's `specifications/*.gemspec` before the image seals.
+  One generator, two consumers — the dispatcher reads the manifest key
+  (the overlap journal, spec 07 §2 step 3a); the release exports the
+  same inventory as its `closure.json` asset, the slice press's
+  subtraction source. A second hand-written copy anywhere is a bug.
+
 **Slice side — a new top-level block `augments:`** (sibling of
 `requires:`):
 

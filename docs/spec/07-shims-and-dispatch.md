@@ -152,7 +152,10 @@ per declared entrypoint name — never as re-exec wrappers.
    slices (§4) override auto-discovery per slice name, fetch on miss
    (parity with the runtime fetch; `TEBAKO_OFFLINE=1` = cache-or-error),
    and a pinned mismatch is the named SliceIncompatible error, never a
-   skip.
+   skip. When base and attaching slice both carry `provides.gems`, a
+   same-name gem pair journals `event=slice-overlap slice=… gem=…` —
+   informational only (gem homes compose by requirement-based
+   activation; the fix is a slice rebuild against the newer base).
 4. **Hand-off:** mount payload + ZERO OR MORE runtime payloads (native
    entrypoints need none — spec 03) + declared dependency mounts
    (spec 03 §2.3), apply the jail view (spec 08), exec the entrypoint.
