@@ -180,6 +180,16 @@ audit journal degrades to best-effort silence.
 
 - Per-entry **flock** (120 s timeout with stale-lock hint); install is
   tmp + rename — a partial install is invisible.
+- **Commit order (locked 2026-09-16):** an install lands in three
+  stages — the image + trust anchor stage first (dispatch-invisible
+  bytes), the payload's `requires:` closure walks second, and the
+  **manifest mirror's save is the commit point**. A version whose
+  mirror is absent was never installed, whatever else the record
+  holds: consumers keying on "installed" (the closure's cached-pin
+  short-circuit included) test the mirror, and an aborted attempt's
+  staged bytes re-run the tail from the cache hit — never a
+  re-download, never a half-installed record masquerading as
+  standing.
 - The `.sha256` marker IS the trust anchor: present ⇒ the artifact was
   sha256-verified at install; re-verify only on re-fetch, **never per
   run**.
