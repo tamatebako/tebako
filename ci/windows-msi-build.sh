@@ -19,7 +19,17 @@
 # Optional: PLATFORM (default windows-ucrt64), PRODUCT_NAME (default
 # tebako), MANUFACTURER (default tamatebako), MSI_UPGRADE_CODE (REQUIRED
 # for build — the pipeline passes the locked per-product GUID; clients
-# pass their own).
+# pass their own). Web-bootstrapper (spec 16 §7): BOOTSTRAP_REGISTRY (the
+# client's registry ref) + BOOTSTRAP_PAYLOADS (space-separated names) —
+# stages <root>\bootstrap-seed.cmd (self-locating, user-re-runnable) and
+# binds the template's Bootstrap block. Optional third knob
+# BOOTSTRAP_WARM (a subset of BOOTSTRAP_PAYLOADS): the seed also
+# dispatches each named shim once, pulling its RUNTIME into the shared
+# home at install time (as SYSTEM) — after a warm, every user's dispatch
+# is read-only against the machine home (the runtime download is the only
+# dispatch-time write; the registry refresh degrades to loud stale-serve,
+# the journal is best-effort). Warm only bounded, print-and-exit
+# entrypoints: the seed runs no timeout.
 #
 # The staged tool set is CURATED (the 4 PATH tools: tebako, tebako-shim,
 # tfs, tebako-pkg) — the bootstrap and runtime-launcher ship on the
@@ -64,6 +74,42 @@ case "$MODE" in
       cp "$SRC_DIR/$exe" "msi-input/$tool.exe"
     done
     echo "staged + verified against the leg's signed-byte fragments: $TOOLS"
+    # Optional web-bootstrapper seed (spec 16 §7): the client's registry +
+    # payload names compose a SELF-LOCATING seed script (%~dp0 is the
+    # install root) the template installs beside bin/ and runs once
+    # (deferred, SYSTEM, failure-ignored). Re-runnable by hand — tebako
+    # install is idempotent. The Bootstrap define must exist EITHER WAY —
+    # WiX's $(var.Bootstrap) errors (WIX0150) on an undefined variable
+    # even inside a false <?if?>; the unbound shape binds it empty.
+    BOOTSTRAP_BIND=(-d "Bootstrap=")
+    if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
+      : "${BOOTSTRAP_PAYLOADS:?BOOTSTRAP_PAYLOADS is required when BOOTSTRAP_REGISTRY is set (space-separated payload names)}"
+      # WixQuietExec64 lives in the Util extension — pinned to the WiX
+      # tool's line (the workflow installs wix 5.0.2; bump in lockstep).
+      wix extension add --global WixToolset.Util.wixext/5.0.2 >/dev/null
+      {
+        printf '@echo off\r\n'
+        printf 'rem %s bootstrap seed (spec 16 §7) — composed at build time; safe to re-run.\r\n' "$PRODUCT_NAME"
+        printf 'set "TEBAKO_HOME=%%~dp0home"\r\n'
+        printf 'if not exist "%%TEBAKO_HOME%%\\shims" mkdir "%%TEBAKO_HOME%%\\shims"\r\n'
+        printf '"%%~dp0bin\\tebako.exe" add-registry %s\r\n' "$BOOTSTRAP_REGISTRY"
+        for p in $BOOTSTRAP_PAYLOADS; do
+          printf '"%%~dp0bin\\tebako.exe" install %s\r\n' "$p"
+        done
+        # Optional warm (spec 16 §7): dispatch each named shim once so its
+        # RUNTIME lands in the shared home at install time — after that a
+        # user dispatch is read-only against the machine home.
+        for w in ${BOOTSTRAP_WARM:-}; do
+          case " $BOOTSTRAP_PAYLOADS " in
+            *" $w "*) ;;
+            *) echo "::error::BOOTSTRAP_WARM entry $w is not in BOOTSTRAP_PAYLOADS — warm is a subset"; exit 1 ;;
+          esac
+          printf '"%%TEBAKO_HOME%%\\shims\\%s.exe" >NUL 2>&1\r\n' "$w"
+        done
+      } > msi-input/bootstrap-seed.cmd
+      BOOTSTRAP_BIND=(-d Bootstrap=1)
+      echo "bootstrap seed staged: registry $BOOTSTRAP_REGISTRY — payloads: $BOOTSTRAP_PAYLOADS"
+    fi
     mkdir -p out
     command -v wix >/dev/null 2>&1 || { echo "::error::wix (WiX v5 dotnet tool) not on PATH — the workflow installs it"; exit 1; }
     # MSI ProductVersion is a strict numeric triplet — a roadmap-89
@@ -82,6 +128,7 @@ case "$MODE" in
       -d "ProductVersion=$MSI_VERSION" \
       -d "Manufacturer=$MANUFACTURER" \
       -d "UpgradeCode=$MSI_UPGRADE_CODE" \
+      ${BOOTSTRAP_BIND[@]+"${BOOTSTRAP_BIND[@]}"} \
       -d "BinDir=$BIN_BINDIR" \
       -o "out/$ASSET"
     echo "built: out/$ASSET (unsigned — the Azure step signs in place when armed)"

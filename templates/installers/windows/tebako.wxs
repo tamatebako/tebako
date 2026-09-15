@@ -17,9 +17,29 @@
                     <root>\bin — curated by the caller's staging, spec 34 §7.3's
                     enumeration-by-extension applies to what the caller stages)
 
+  Optional bind (the spec 16 §7 "Web bootstrapper" row):
+    Bootstrap       any non-empty value (the build script passes 1 when
+                    BOOTSTRAP_REGISTRY is set). The package then also:
+                    (1) authors <root>\home\shims\ — the spec 05 §3.1
+                    store-grammar marker that seats the bundle-sibling home
+                    tier for the machine-scope store;
+                    (2) installs <root>\bootstrap-seed.cmd (composed by
+                    ci/windows-msi-build.sh: the client's add-registry +
+                    install line set, self-locating, user-re-runnable);
+                    (3) runs it ONCE — deferred, SYSTEM-scope,
+                    failure-IGNORED (an offline machine's failed seed never
+                    rolls back the tools install), console-hidden
+                    (WixQuietExec64; output lands in the msi log);
+                    (4) appends <root>\home\shims to the system PATH (the
+                    seeded commands land there).
+                    Absent/empty: byte-identical tool-only container.
+
   Layout installed (per-machine):
     %ProgramFiles%\<ProductName>\bin\*.exe
-    PATH (system, part=last) gains <root>\bin
+    %ProgramFiles%\<ProductName>\bootstrap-seed.cmd   (Bootstrap bound only)
+    %ProgramFiles%\<ProductName>\home\shims\          (Bootstrap bound only)
+    PATH (system, part=last) gains <root>\bin (and <root>\home\shims when
+    Bootstrap is bound)
     HKLM\Software\<Manufacturer>\<ProductName> InstallDir = <root>
 
   Per-user data stays per-user: the store is ~/.tebako (TEBAKO_HOME honored);
@@ -43,6 +63,11 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="$(var.ProductName)">
         <Directory Id="BINFOLDER" Name="bin" />
+<?if $(var.Bootstrap) != "" ?>
+        <Directory Id="HOMEFOLDER" Name="home">
+          <Directory Id="HOMESHIMSFOLDER" Name="shims" />
+        </Directory>
+<?endif?>
       </Directory>
     </StandardDirectory>
 
@@ -57,6 +82,9 @@
     <Feature Id="Main" Level="1">
       <ComponentGroupRef Id="BinFiles" />
       <ComponentRef Id="PathEnvironment" />
+<?if $(var.Bootstrap) != "" ?>
+      <ComponentRef Id="BundleHome" />
+<?endif?>
     </Feature>
 
     <!-- PATH append, system scope, non-permanent (uninstall removes it).
@@ -77,5 +105,50 @@
                      Value="[INSTALLFOLDER]"
                      KeyPath="yes" />
     </Component>
+
+<?if $(var.Bootstrap) != "" ?>
+    <!-- The web-bootstrapper payload (spec 16 §7): the seed script at the
+         install root + the home\shims grammar marker (spec 05 §3.1) + the
+         shims dir on PATH. -->
+    <Component Id="BundleHome" Directory="INSTALLFOLDER">
+      <File Source="$(var.BinDir)\bootstrap-seed.cmd" />
+      <CreateFolder Directory="HOMESHIMSFOLDER" />
+      <Environment Id="BundleShimsPath"
+                   Name="PATH"
+                   Action="set"
+                   Part="last"
+                   System="yes"
+                   Permanent="no"
+                   Value="[HOMESHIMSFOLDER]" />
+      <RegistryValue Root="HKLM"
+                     Key="Software\$(var.Manufacturer)\$(var.ProductName)"
+                     Name="BundleHome"
+                     Type="string"
+                     Value="[HOMEFOLDER]"
+                     KeyPath="yes" />
+    </Component>
+
+    <!-- The seed: ONE deferred custom action, SYSTEM (writes the
+         machine-scope home), Return=ignore (a failed seed never rolls
+         back the tools install — the user re-runs bootstrap-seed.cmd
+         later), WixQuietExec64 (no console flash). Requires the Util
+         extension (ci/windows-msi-build.sh adds it when
+         BOOTSTRAP_REGISTRY is set); WiX v5 names the extension's CA
+         binary Wix4UtilCA_X64 (x64 package). -->
+    <CustomAction Id="BootstrapSeed.SetProperty"
+                  Property="BootstrapSeed"
+                  Value='"[INSTALLFOLDER]bootstrap-seed.cmd"'
+                  Execute="immediate" />
+    <CustomAction Id="BootstrapSeed"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="BootstrapSeed.SetProperty" Before="BootstrapSeed" />
+      <Custom Action="BootstrapSeed" After="InstallFiles">NOT Installed</Custom>
+    </InstallExecuteSequence>
+<?endif?>
   </Package>
 </Wix>

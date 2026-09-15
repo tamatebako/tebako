@@ -14,7 +14,18 @@
 # frag-<platform> artifact — the sign-then-hash anchors; THIS release's
 # SHA256SUMS does not exist yet, finalize makes it AFTER us), RUNNER_TEMP.
 # Optional: PRODUCT_NAME (tebako), ORG_ID (org.tamatebako),
-# INSTALL_ROOT (/opt/tebako), MIN_MACOS (12.0).
+# INSTALL_ROOT (/opt/tebako), MIN_MACOS (12.0). Web-bootstrapper (spec 16
+# §7): BOOTSTRAP_REGISTRY (the client's registry ref) + BOOTSTRAP_PAYLOADS
+# (space-separated names) — stages <root>/bootstrap-seed.sh (self-locating,
+# user-re-runnable) + the home/shims grammar marker (spec 05 §3.1) and the
+# postinstall runs the seed best-effort. Optional third knob
+# BOOTSTRAP_WARM (a subset of BOOTSTRAP_PAYLOADS): the seed also dispatches
+# each named shim once, pulling its RUNTIME into the shared home at
+# install time (as the install user). After a warm, every user's dispatch
+# is read-only against the root-owned home — the runtime download is the
+# only dispatch-time write (the registry refresh degrades to loud
+# stale-serve, the journal is best-effort). Warm only bounded,
+# print-and-exit entrypoints: the seed runs no timeout.
 # Gate env (the workflow's setup step): APPLE_INSTALLER_SIGNING_ENABLED,
 # INSTALLER_SIGN_HASH, INSTALLER_KEYCHAIN; notary: APPLE_ASC_KEY_P8,
 # APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID.
@@ -65,8 +76,57 @@ sed -e "s/@PRODUCT_NAME@/$PRODUCT_NAME/g" -e "s/@VERSION@/$PKG_VERSION/g" \
     templates/installers/macos/distribution.xml > build/distribution.xml
 sed -e "s/@PRODUCT_NAME@/$PRODUCT_NAME/g" -e "s|@INSTALL_ROOT@|$INSTALL_ROOT|g" \
     templates/installers/macos/scripts/postinstall > build/scripts/postinstall
+# Optional web-bootstrapper seed (spec 16 §7; the MSI leg's contract,
+# mirrored): a self-locating, user-re-runnable seed script at the install
+# root + the home/shims store-grammar marker (spec 05 §3.1); the
+# postinstall splices the best-effort hook at @BOOTSTRAP_HOOK@ (the
+# placeholder is deleted outright when unbound).
+if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
+  : "${BOOTSTRAP_PAYLOADS:?BOOTSTRAP_PAYLOADS is required when BOOTSTRAP_REGISTRY is set (space-separated payload names)}"
+  {
+    echo '#!/bin/bash'
+    echo "# $PRODUCT_NAME bootstrap seed (spec 16 §7) — composed at build time; safe to re-run (tebako install is idempotent)."
+    echo 'set -u'
+    echo 'ROOT="$(cd "$(dirname "$0")" && pwd)"'
+    echo 'export TEBAKO_HOME="$ROOT/home"'
+    echo 'mkdir -p "$TEBAKO_HOME/shims"'
+    echo "echo \"seeding the $PRODUCT_NAME payload set into \$TEBAKO_HOME (network required)…\""
+    echo "\"\$ROOT/bin/tebako\" add-registry \"$BOOTSTRAP_REGISTRY\""
+    for p in $BOOTSTRAP_PAYLOADS; do
+      echo "\"\$ROOT/bin/tebako\" install \"$p\""
+    done
+    # Optional warm (spec 16 §7): dispatch each named shim once so its
+    # RUNTIME lands in the shared home at install time — after that a
+    # user dispatch is read-only against the root-owned home.
+    for w in ${BOOTSTRAP_WARM:-}; do
+      case " $BOOTSTRAP_PAYLOADS " in
+        *" $w "*) ;;
+        *) echo "::error::BOOTSTRAP_WARM entry $w is not in BOOTSTRAP_PAYLOADS — warm is a subset"; exit 1 ;;
+      esac
+      echo "\"\$ROOT/home/shims/$w\" || echo \"warning: warm dispatch of $w failed (offline?) — the first user run downloads its runtime\" >&2"
+    done
+  } > "pkg-root$INSTALL_ROOT/bootstrap-seed.sh"
+  chmod 755 "pkg-root$INSTALL_ROOT/bootstrap-seed.sh"
+  mkdir -p "pkg-root$INSTALL_ROOT/home/shims"
+  cat > build/bootstrap-hook <<EOF
+
+# --- web-bootstrapper seed (spec 16 §7): best-effort — a failed seed (an
+# offline machine) never fails the install; the user re-runs it later.
+printf '%s\n' "$INSTALL_ROOT/home/shims" >> "/etc/paths.d/$PRODUCT_NAME"
+"$INSTALL_ROOT/bootstrap-seed.sh" || echo "warning: the $PRODUCT_NAME payload seed failed (offline?) — re-run later: $INSTALL_ROOT/bootstrap-seed.sh" >&2
+EOF
+  echo "bootstrap seed staged: registry $BOOTSTRAP_REGISTRY — payloads: $BOOTSTRAP_PAYLOADS"
+else
+  : > build/bootstrap-hook
+fi
+sed -e "/@BOOTSTRAP_HOOK@/r build/bootstrap-hook" -e "/@BOOTSTRAP_HOOK@/d" \
+    build/scripts/postinstall > build/scripts/postinstall.rendered
+mv build/scripts/postinstall.rendered build/scripts/postinstall
+# The splice recreates the file (umask 644) — the exec bit goes LAST, on
+# the file that actually ships (an un-executable postinstall fails the
+# install: "an error occurred while running scripts from the package").
 chmod +x build/scripts/postinstall
-if grep -qE '@(PRODUCT_NAME|VERSION|ORG_ID|MIN_MACOS|INSTALL_ROOT)@' build/distribution.xml build/scripts/postinstall; then
+if grep -qE '@(PRODUCT_NAME|VERSION|ORG_ID|MIN_MACOS|INSTALL_ROOT|BOOTSTRAP_HOOK)@' build/distribution.xml build/scripts/postinstall; then
   echo "::error::unrendered template token left in the pkg inputs — the template drifted from this script"; exit 1
 fi
 
@@ -132,6 +192,25 @@ sudo installer -pkg "out/$ASSET" -target /
 "$INSTALL_ROOT/bin/$PRODUCT_NAME" --version
 [ -f "/etc/paths.d/$PRODUCT_NAME" ] || { echo "::error::/etc/paths.d/$PRODUCT_NAME missing — postinstall did not run"; exit 1; }
 grep -q "$INSTALL_ROOT/bin" "/etc/paths.d/$PRODUCT_NAME" || { echo "::error::/etc/paths.d/$PRODUCT_NAME content wrong"; exit 1; }
+if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
+  # The seed ran during the install (the runner is networked): its effects
+  # are the rehearsal — registry registered, every payload cached into the
+  # machine home, the shims dir on PATH.
+  [ -x "$INSTALL_ROOT/bootstrap-seed.sh" ] || { echo "::error::bootstrap-seed.sh missing after install"; exit 1; }
+  grep -q "$INSTALL_ROOT/home/shims" "/etc/paths.d/$PRODUCT_NAME" || { echo "::error::/etc/paths.d/$PRODUCT_NAME lacks the shims line"; exit 1; }
+  [ -f "$INSTALL_ROOT/home/config.yaml" ] || { echo "::error::the seed did not register the registry ($INSTALL_ROOT/home/config.yaml missing)"; exit 1; }
+  for p in $BOOTSTRAP_PAYLOADS; do
+    [ -d "$INSTALL_ROOT/home/payloads/$p" ] || { echo "::error::seed payload $p missing under $INSTALL_ROOT/home/payloads"; exit 1; }
+  done
+  if [ -n "${BOOTSTRAP_WARM:-}" ]; then
+    # The warm dispatch cached each warmed payload's RUNTIME at install
+    # time: the shared home is complete and a user's dispatch is read-only.
+    [ -d "$INSTALL_ROOT/home/runtimes" ] && [ -n "$(ls -A "$INSTALL_ROOT/home/runtimes")" ] \
+      || { echo "::error::BOOTSTRAP_WARM bound but $INSTALL_ROOT/home/runtimes is empty — the warm dispatch did not land"; exit 1; }
+    echo "warm rehearsal OK (runtimes cached: $(ls "$INSTALL_ROOT/home/runtimes" | tr '\n' ' '))"
+  fi
+  echo "bootstrap seed rehearsal OK (registry registered, payloads cached, shims on PATH)"
+fi
 sudo rm -rf "$INSTALL_ROOT" "/etc/paths.d/$PRODUCT_NAME"
 echo "install rehearsal OK (payload lands, postinstall writes the paths.d entry, the installed tool runs)"
 

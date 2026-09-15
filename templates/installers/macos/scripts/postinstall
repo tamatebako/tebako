@@ -6,6 +6,15 @@
 #   @PRODUCT_NAME@   e.g. tebako
 # Per-user state (the ~/.tebako store, the shims dir) is created by the
 # CLI itself at first use — the pkg installs NO per-user files.
+#
+# Optional web-bootstrapper seed (spec 16 §7's "Web bootstrapper" row):
+# ci/macos-pkg-build.sh splices the composed seed hook in place of the
+# BOOTSTRAP_HOOK placeholder below when BOOTSTRAP_REGISTRY is bound —
+# the add-registry + install line set, run best-effort into the
+# machine-scope home (@INSTALL_ROOT@/home, grammar-marked so spec 05
+# §3.1's bundle-sibling tier resolves it zero-config). Unbound: the
+# placeholder line is deleted outright.
 set -e
 printf '%s\n' "@INSTALL_ROOT@/bin" > "/etc/paths.d/@PRODUCT_NAME@"
 chmod 644 "/etc/paths.d/@PRODUCT_NAME@"
+@BOOTSTRAP_HOOK@
