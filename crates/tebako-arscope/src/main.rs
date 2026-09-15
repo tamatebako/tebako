@@ -168,10 +168,21 @@ fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, St
     let mut report = Report::default();
     let mut members: Vec<(String, Vec<u8>, Vec<String>)> = Vec::new();
     // Canonical-name registry for import members: name -> index of the
-    // surviving member in `members`. Byte-identical duplicates (rustc's
-    // bundler ships the same generated import lib through several crate
-    // paths) collapse; a same-name member with different bytes means two
-    // import sets disagree on a slot — a hard error, never a silent pick.
+    // first surviving member in `members`. Byte-identical duplicates
+    // (rustc's bundler ships the same generated import lib through
+    // several crate paths) collapse. A same-name member with DIFFERENT
+    // bytes is a second import set for the same DLL — the dependency
+    // graph legitimately carries two windows-targets lines whose
+    // per-DLL thunk sets differ (the v2.8.5 windows link-unit:
+    // bcryptprimitives.dllt.o twice) — and archives have no
+    // unique-member-name rule: ld pulls members by SYMBOL through the
+    // index, never by name, and its PE script's
+    // SORT_BY_NAME(archive(member)) still groups both sets adjacently
+    // under the one canonical name. Keep both; a genuine same-symbol
+    // redefinition surfaces as ld's own duplicate-definition error,
+    // never a silent pick. (The dedup compares against the first
+    // survivor only: a third member byte-identical to a kept later set
+    // is kept too — redundant, never wrong.)
     let mut import_names: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
     for member in archive.members() {
@@ -197,15 +208,13 @@ fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, St
         let name = match canonical {
             Some(canon) => {
                 report.imports += 1;
-                if let Some(&prev) = import_names.get(&canon) {
-                    if members[prev].1 == rewritten {
-                        continue;
+                match import_names.get(&canon) {
+                    Some(&prev) if members[prev].1 == rewritten => continue,
+                    Some(_) => {}
+                    None => {
+                        import_names.insert(canon.clone(), members.len());
                     }
-                    return Err(format!(
-                        "import member name collision on {canon}: two members with different contents"
-                    ));
                 }
-                import_names.insert(canon.clone(), members.len());
                 canon
             }
             None => name,
@@ -1508,33 +1517,72 @@ mod tests {
     }
 
     /// Two import members that canonicalize to the same name but differ
-    /// in content are a hard error — never a silent pick.
+    /// in content are two import sets for the SAME DLL (the dependency
+    /// graph legitimately carries two windows-targets lines — the v2.8.5
+    /// windows link-unit's bcryptprimitives.dllt.o twice). ld pulls
+    /// members by symbol, never by name, and SORT_BY_NAME still groups
+    /// both sets adjacently: both survive under the one canonical name;
+    /// only byte-identical duplicates collapse.
     #[test]
-    fn coff_import_member_name_conflict_is_a_hard_error() {
+    fn coff_import_member_same_name_different_sets_are_both_kept() {
         let s1 = coff_import_fixture(&[".idata$4", ".idata$5"], "__imp_NCryptFreeObject");
-        // Same canonical name, different content (a different thunk).
+        // Same canonical name, different content (a disjoint thunk set).
         let s2 = coff_import_fixture(&[".idata$4", ".idata$5"], "__imp_NCryptOpenKey");
 
         let mut input = b"!<arch>\n".to_vec();
         write_member(&mut input, "00001_ncrypt.dlls00000.o", &s1, false).expect("s1");
         write_member(&mut input, "00002_ncrypt.dlls00000.o", &s2, false).expect("s2");
+        write_member(&mut input, "00003_ncrypt.dlls00000.o", &s1, false).expect("dup of s1");
 
-        let tmp = std::env::temp_dir().join(format!("arscope-conflict-{}.a", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("arscope-dupsets-{}.a", std::process::id()));
         let tmp_out =
-            std::env::temp_dir().join(format!("arscope-conflict-out-{}.a", std::process::id()));
+            std::env::temp_dir().join(format!("arscope-dupsets-out-{}.a", std::process::id()));
         std::fs::write(&tmp, &input).expect("write the input archive");
-        let err = run(
+        let report = run(
             tmp.to_str().unwrap(),
             tmp_out.to_str().unwrap(),
             KEEP_PREFIX,
             SCOPE_PREFIX,
         )
-        .expect_err("a same-name different-bytes import member must fail");
+        .expect("two import sets for one DLL are kept, never an error");
+        let out = std::fs::read(&tmp_out).expect("read the scoped archive");
         let _ = std::fs::remove_file(&tmp);
         let _ = std::fs::remove_file(&tmp_out);
-        assert!(
-            err.contains("import member name collision"),
-            "the error names the collision: {err}"
+
+        assert_eq!(
+            archive_member_names(&out),
+            vec!["ncrypt.dlls00000.o", "ncrypt.dlls00000.o"],
+            "both sets survive under the canonical name; the byte-identical dup collapsed"
+        );
+        assert_eq!(
+            report.imports, 3,
+            "three import members seen (dup included)"
+        );
+
+        let archive = object::read::archive::ArchiveFile::parse(&out[..]).expect("reparse");
+        let mut symbols: Vec<String> = archive
+            .members()
+            .filter_map(|m| {
+                let m = m.expect("member");
+                (String::from_utf8_lossy(m.name()) == "ncrypt.dlls00000.o")
+                    .then(|| m.data(&out[..]).expect("member data"))
+            })
+            .flat_map(|data| {
+                File::parse(data)
+                    .expect("parse a surviving member")
+                    .symbols()
+                    .filter_map(|s| s.name().ok().map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        symbols.sort();
+        assert_eq!(
+            symbols,
+            vec![
+                "__tebako_internal___imp_NCryptFreeObject",
+                "__tebako_internal___imp_NCryptOpenKey"
+            ],
+            "each surviving member carries its own scoped thunk symbol: {symbols:?}"
         );
     }
 }
