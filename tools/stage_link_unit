@@ -91,27 +91,28 @@ end
 # COFF scoping landed with the GNU index form (the windows-gnu link unit is
 # now sealed like the POSIX hosts): every defined non-tebako_* symbol is
 # renamed __tebako_internal_*, definitions and references alike.
-%w[libtebako_driver.a libtfs.a].each do |name|
-  system({ "CARGO_NET_GIT_FETCH_WITH_CLI" => "true", "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"].to_s,
-           "VCPKG_ROOT" => ENV["VCPKG_ROOT"].to_s, "SQFS_SYS_VCPKG_ROOT" => ENV["SQFS_SYS_VCPKG_ROOT"].to_s },
-         "cargo", "run", "-q", "-p", "tebako-arscope", "--",
-         File.join(build_dir, name), File.join(out, name), chdir: root, exception: true)
-end
-
-# --- 2b. dedupe the driver against tfs --------------------------------------
+#
 # cargo's staticlib bundling packs tfs's whole native closure into the
 # driver archive too (the driver's crate graph includes tfs), so the two
 # carry the same objects byte-for-byte. Linked together that is a
 # duplicate definition of every shared member — GNU ld shrugs first-wins,
 # but Apple ld asserts (ld_prime) or errors "duplicate symbol"
-# (ld_classic). The blake3 SIMD members surfaced it on the 0.16.3-era
-# macos x86_64 legs. Drop the driver's copies; the driver's own members
-# stay, and the pair links clean on every host linker. Members are
-# matched by (name, content), never by name alone.
-require_relative "lib/ar_cross_deduper"
-
-dropped = ArCrossDeduper.new.dedupe(File.join(out, "libtfs.a"), File.join(out, "libtebako_driver.a"))
-puts "  deduped libtebako_driver.a against libtfs.a (dropped #{dropped} bundled members)" if dropped.positive?
+# (ld_classic, the 0.16.3-era macos x86_64 legs). The cross-dedupe rides
+# INSIDE arscope (--dedupe-against): the tool owns archive writing, so
+# the surviving members keep their arscope-canonical names — a separate
+# re-archiver (the Ruby ArCrossDeduper) renamed every survivor from
+# tempfile basenames and thereby re-broke the import members' sort order
+# AFTER arscope had restored it (the v2.8.6 windows miniruby 0xC0000139).
+# tfs scopes first; the driver's dedupe reads the SCOPED tfs so raw
+# byte-identical members meet post-rewrite. Members match on
+# (name, content), never by name alone.
+arscope_env = { "CARGO_NET_GIT_FETCH_WITH_CLI" => "true", "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"].to_s,
+                "VCPKG_ROOT" => ENV["VCPKG_ROOT"].to_s, "SQFS_SYS_VCPKG_ROOT" => ENV["SQFS_SYS_VCPKG_ROOT"].to_s }
+system(arscope_env, "cargo", "run", "-q", "-p", "tebako-arscope", "--",
+       File.join(build_dir, "libtfs.a"), File.join(out, "libtfs.a"), chdir: root, exception: true)
+system(arscope_env, "cargo", "run", "-q", "-p", "tebako-arscope", "--",
+       File.join(build_dir, "libtebako_driver.a"), File.join(out, "libtebako_driver.a"),
+       "--dedupe-against", File.join(out, "libtfs.a"), chdir: root, exception: true)
 
 # --- 3. the closure --------------------------------------------------------
 # Newest build-script out dir per family (mtime — the one the current
