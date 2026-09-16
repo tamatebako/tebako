@@ -626,6 +626,13 @@ fn path_is_embedded_multi_mounts() {
         unsafe { tfs::c_api::tebako_path_is_embedded(c("/tmp/file.txt").as_ptr()) },
         0
     );
+    // A mount-boundary ancestor is covered even with nothing mounted at
+    // `/` (tebako#615): the interpreter's route gate must hand the
+    // boundary walk to the engine.
+    assert_eq!(
+        unsafe { tfs::c_api::tebako_path_is_embedded(c("/").as_ptr()) },
+        1
+    );
 }
 
 #[test]
