@@ -71,6 +71,7 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut keep = KEEP_PREFIX.to_string();
     let mut prefix = SCOPE_PREFIX.to_string();
+    let mut dedupe_against = None;
     let mut paths = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -82,17 +83,27 @@ fn main() -> ExitCode {
                 Some(v) => prefix = v,
                 None => return usage("--prefix needs a value"),
             },
+            "--dedupe-against" => match args.next() {
+                Some(v) => dedupe_against = Some(v),
+                None => return usage("--dedupe-against needs a value"),
+            },
             _ => paths.push(arg),
         }
     }
     if paths.len() != 2 {
-        return usage("expected: tebako-arscope <in.a> <out.a> [--keep-prefix P] [--prefix P]");
+        return usage("expected: tebako-arscope <in.a> <out.a> [--keep-prefix P] [--prefix P] [--dedupe-against base.a]");
     }
-    match run(&paths[0], &paths[1], &keep, &prefix) {
+    match run(
+        &paths[0],
+        &paths[1],
+        &keep,
+        &prefix,
+        dedupe_against.as_deref(),
+    ) {
         Ok(report) => {
             println!(
-                "arscope: {} -> {} ({} member(s), {} symbol(s) scoped, {} kept public, {} import member(s))",
-                paths[0], paths[1], report.members, report.scoped, report.kept, report.imports
+                "arscope: {} -> {} ({} member(s), {} symbol(s) scoped, {} kept public, {} import member(s), {} cross-deduped)",
+                paths[0], paths[1], report.members, report.scoped, report.kept, report.imports, report.deduped
             );
             ExitCode::SUCCESS
         }
@@ -128,9 +139,48 @@ struct Report {
     scoped: usize,
     kept: usize,
     imports: usize,
+    deduped: usize,
 }
 
-fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, String> {
+/// The (name, content) index of an already-scoped base archive, for
+/// `--dedupe-against`. cargo's staticlib bundling packs the base crate's
+/// whole native closure into every dependent archive (the driver's graph
+/// includes tfs, so libtebako_driver.a ships libtfs.a's objects byte for
+/// byte); linked together that is a duplicate definition of every shared
+/// member — GNU ld shrugs first-wins, but Apple ld asserts (ld_prime) or
+/// errors "duplicate symbol" (ld_classic, the 0.16.3-era macos x86_64
+/// legs). Members match on (final name, final bytes) — post-scope and
+/// post-canonicalization, so raw byte-identical members still meet (the
+/// rewrite is deterministic), and a name-shared member whose content
+/// differs is KEPT (the keep-both import sets below: two windows-targets
+/// lines, one canonical name, different thunk sets — dropping by name
+/// alone would silently lose one).
+fn base_member_keys(path: &str) -> Result<std::collections::HashSet<(String, Vec<u8>)>, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let archive = object::read::archive::ArchiveFile::parse(&bytes[..])
+        .map_err(|e| format!("cannot parse {path} as an archive: {e}"))?;
+    let mut keys = std::collections::HashSet::new();
+    for member in archive.members() {
+        let member = member.map_err(|e| format!("cannot read a member of {path}: {e}"))?;
+        let name = String::from_utf8_lossy(member.name()).into_owned();
+        if name == "/" || name == "//" || name.starts_with("__.SYMDEF") {
+            continue;
+        }
+        let data = member
+            .data(&bytes[..])
+            .map_err(|e| format!("cannot read member {name} of {path}: {e}"))?;
+        keys.insert((name, data.to_vec()));
+    }
+    Ok(keys)
+}
+
+fn run(
+    input: &str,
+    output: &str,
+    keep: &str,
+    prefix: &str,
+    dedupe_against: Option<&str>,
+) -> Result<Report, String> {
     let bytes = std::fs::read(input).map_err(|e| format!("cannot read {input}: {e}"))?;
     let archive = object::read::archive::ArchiveFile::parse(&bytes[..])
         .map_err(|e| format!("cannot parse {input} as an archive: {e}"))?;
@@ -185,6 +235,10 @@ fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, St
     // is kept too — redundant, never wrong.)
     let mut import_names: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
+    let base_keys = match dedupe_against {
+        Some(base) => Some(base_member_keys(base)?),
+        None => None,
+    };
     for member in archive.members() {
         let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
         let name = String::from_utf8_lossy(member.name()).into_owned();
@@ -205,20 +259,37 @@ fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, St
         // Mach-O object (all load-command offsets are unaffected).
         let pad4 = (4 - rewritten.len() % 4) % 4;
         rewritten.extend_from_slice(&[0; 4][..pad4]);
-        let name = match canonical {
+        let (name, is_import) = match canonical {
             Some(canon) => {
                 report.imports += 1;
-                match import_names.get(&canon) {
-                    Some(&prev) if members[prev].1 == rewritten => continue,
-                    Some(_) => {}
-                    None => {
-                        import_names.insert(canon.clone(), members.len());
-                    }
-                }
-                canon
+                (canon, true)
             }
-            None => name,
+            None => (name, false),
         };
+        // The cross-archive dedupe (stage 2b of the old staging tool, moved
+        // here): a member the base archive already carries, byte for byte
+        // under the same final name, is dropped — re-archiving through
+        // tempfile basenames (the Ruby deduper's `%05d_` prefix) is what
+        // re-broke the import members' h < sNNNNN < t sort AFTER arscope
+        // had restored it (the v2.8.6 windows miniruby: ncrypt.dll's
+        // lookup run swallowed api-ms-win-core-synch's, 0xC0000139). It
+        // runs before the import registry below so a dropped member never
+        // claims a survivors' slot index.
+        if let Some(keys) = &base_keys {
+            if keys.contains(&(name.clone(), rewritten.clone())) {
+                report.deduped += 1;
+                continue;
+            }
+        }
+        if is_import {
+            match import_names.get(&name) {
+                Some(&prev) if members[prev].1 == rewritten => continue,
+                Some(_) => {}
+                None => {
+                    import_names.insert(name.clone(), members.len());
+                }
+            }
+        }
         report.members += 1;
         members.push((name, rewritten, exported));
     }
@@ -1304,6 +1375,7 @@ mod tests {
             tmp_out.to_str().unwrap(),
             KEEP_PREFIX,
             SCOPE_PREFIX,
+            None,
         )
         .expect("scope the archive");
         let out = std::fs::read(&tmp_out).expect("read the scoped archive");
@@ -1473,6 +1545,7 @@ mod tests {
             tmp_out.to_str().unwrap(),
             KEEP_PREFIX,
             SCOPE_PREFIX,
+            None,
         )
         .expect("scope the archive");
         let out = std::fs::read(&tmp_out).expect("read the scoped archive");
@@ -1543,6 +1616,7 @@ mod tests {
             tmp_out.to_str().unwrap(),
             KEEP_PREFIX,
             SCOPE_PREFIX,
+            None,
         )
         .expect("two import sets for one DLL are kept, never an error");
         let out = std::fs::read(&tmp_out).expect("read the scoped archive");
@@ -1583,6 +1657,95 @@ mod tests {
                 "__tebako_internal___imp_NCryptOpenKey"
             ],
             "each surviving member carries its own scoped thunk symbol: {symbols:?}"
+        );
+    }
+
+    /// `--dedupe-against` drops from the derived archive every member the
+    /// (already scoped) base carries under the same final name with the
+    /// same final bytes — cargo's staticlib bundling packs the base's
+    /// closure into the derived archive and the pair would otherwise
+    /// duplicate-define every shared member at link (Apple ld errors,
+    /// GNU ld shrugs first-wins). Matching is (name, content), never name
+    /// alone: a same-name import member with different bytes is a second
+    /// import set and survives. The base is scoped FIRST (the production
+    /// order) so raw byte-identical members meet post-rewrite.
+    #[test]
+    fn cross_dedupe_drops_base_carried_members_by_name_and_content() {
+        let code = coff_code_fixture();
+        let s1 = coff_import_fixture(&[".idata$4", ".idata$5"], "__imp_NCryptFreeObject");
+        let s2 = coff_import_fixture(&[".idata$4", ".idata$5"], "__imp_NCryptOpenKey");
+
+        // The base archive, scoped exactly as the staging tool does first.
+        let mut base_raw = b"!<arch>\n".to_vec();
+        write_member(&mut base_raw, "code.o", &code, false).expect("base code");
+        write_member(&mut base_raw, "00001_ncrypt.dlls00000.o", &s1, false).expect("base s1");
+        let pid = std::process::id();
+        let base_in = std::env::temp_dir().join(format!("arscope-xded-base-{pid}.a"));
+        let base_out = std::env::temp_dir().join(format!("arscope-xded-base-scoped-{pid}.a"));
+        std::fs::write(&base_in, &base_raw).expect("write the raw base");
+        run(
+            base_in.to_str().unwrap(),
+            base_out.to_str().unwrap(),
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            None,
+        )
+        .expect("scope the base");
+
+        // The derived archive: the base's code + import members byte for
+        // byte (cargo's bundling), a same-canonical-name import member with
+        // DIFFERENT bytes (a second set — must survive), and its own code.
+        let mut derived_raw = b"!<arch>\n".to_vec();
+        write_member(&mut derived_raw, "code.o", &code, false).expect("derived code");
+        write_member(&mut derived_raw, "00007_ncrypt.dlls00000.o", &s1, false).expect("derived s1");
+        write_member(&mut derived_raw, "00008_ncrypt.dlls00000.o", &s2, false).expect("derived s2");
+        write_member(&mut derived_raw, "unique.o", &code, false).expect("derived unique");
+        let der_in = std::env::temp_dir().join(format!("arscope-xded-der-{pid}.a"));
+        let der_out = std::env::temp_dir().join(format!("arscope-xded-der-scoped-{pid}.a"));
+        std::fs::write(&der_in, &derived_raw).expect("write the raw derived");
+        let report = run(
+            der_in.to_str().unwrap(),
+            der_out.to_str().unwrap(),
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            Some(base_out.to_str().unwrap()),
+        )
+        .expect("scope + cross-dedupe the derived archive");
+        let out = std::fs::read(&der_out).expect("read the result");
+        for f in [&base_in, &base_out, &der_in, &der_out] {
+            let _ = std::fs::remove_file(f);
+        }
+
+        assert_eq!(
+            report.deduped, 2,
+            "code.o and the byte-identical s1 dropped"
+        );
+        assert_eq!(
+            archive_member_names(&out),
+            vec!["ncrypt.dlls00000.o", "unique.o"],
+            "the different-bytes import set survives under the shared canonical name"
+        );
+
+        // The surviving import member is s2's (scoped), not s1's.
+        let archive = object::read::archive::ArchiveFile::parse(&out[..]).expect("reparse");
+        let member = archive
+            .members()
+            .find_map(|m| {
+                let m = m.expect("member");
+                (String::from_utf8_lossy(m.name()) == "ncrypt.dlls00000.o")
+                    .then(|| m.data(&out[..]).expect("member data"))
+            })
+            .expect("the surviving import member");
+        let names: Vec<String> = File::parse(member)
+            .expect("parse the survivor")
+            .symbols()
+            .filter_map(|s| s.name().ok().map(str::to_string))
+            .collect();
+        assert!(
+            names
+                .iter()
+                .any(|n| n == "__tebako_internal___imp_NCryptOpenKey"),
+            "the second set's thunk survives scoped: {names:?}"
         );
     }
 }
