@@ -1131,41 +1131,61 @@ impl FsContext {
         if Self::dlmap_tail(path).is_some() {
             return Err(libc::ENOENT);
         }
-        let Some(mount) = self.find_mount(path) else {
-            // Host-passthrough decision (spec 08), see open().
-            self.host_check(path, HostAccess::Ro)?;
-            return Err(libc::ENOENT);
-        };
-        let rel = Self::relative_path(mount, path);
-        let entries = match mount.backend.read_dir(rel) {
-            Ok(mut entries) => {
-                // The mount-boundary merge: mount points BELOW this dir
-                // join the image's own listing (a point dir the image
-                // also holds keeps its entry — the name dedupes).
-                for name in self.synthesized_children(path) {
-                    if !entries.iter().any(|e| e.name == name) {
-                        entries.push(RawDirEntry { name, is_dir: true });
+        let (entries, owner) = match self.find_mount(path) {
+            Some(mount) => {
+                let rel = Self::relative_path(mount, path);
+                let entries = match mount.backend.read_dir(rel) {
+                    Ok(mut entries) => {
+                        // The mount-boundary merge: mount points BELOW this
+                        // dir join the image's own listing (a point dir the
+                        // image also holds keeps its entry — the name
+                        // dedupes).
+                        for name in self.synthesized_children(path) {
+                            if !entries.iter().any(|e| e.name == name) {
+                                entries.push(RawDirEntry { name, is_dir: true });
+                            }
+                        }
+                        entries
                     }
-                }
-                entries
+                    // Covered but not held: a host path (see open()) —
+                    // unless a mount lives BELOW, in which case the
+                    // boundary answers with the synthesized listing of its
+                    // mounted children.
+                    Err(e) if e == libc::ENOENT => {
+                        let synth = self.synthesized_children(path);
+                        if synth.is_empty() {
+                            self.host_check(path, HostAccess::Ro)?;
+                            return Err(libc::ENOENT);
+                        }
+                        synth
+                            .into_iter()
+                            .map(|name| RawDirEntry { name, is_dir: true })
+                            .collect()
+                    }
+                    Err(e) => return Err(e),
+                };
+                (entries, mount.handle)
             }
-            // Covered but not held: a host path (see open()) — unless a
-            // mount lives BELOW, in which case the boundary answers with
-            // the synthesized listing of its mounted children.
-            Err(e) if e == libc::ENOENT => {
+            // No mount owns the path: a mount-boundary ancestor answers
+            // with the synthesized listing of its mounted children — the
+            // same materialization stat() performs, reachable now that
+            // path_is_embedded claims the boundary (tebako#615). The
+            // listing owns no mount: owner -1 never matches the unmount
+            // sweep. Anything else is the host-passthrough decision
+            // (spec 08), see open().
+            None => {
                 let synth = self.synthesized_children(path);
                 if synth.is_empty() {
                     self.host_check(path, HostAccess::Ro)?;
                     return Err(libc::ENOENT);
                 }
-                synth
+                let entries = synth
                     .into_iter()
                     .map(|name| RawDirEntry { name, is_dir: true })
-                    .collect()
+                    .collect();
+                (entries, -1)
             }
-            Err(e) => return Err(e),
         };
-        let owner = mount.handle;
         let id = self.next_dir_id;
         self.next_dir_id += 1;
         self.dir_table.insert(
@@ -1496,9 +1516,14 @@ impl FsContext {
     // Utility
     // ---------------------------------------------------------------
 
-    /// tebako_path_is_embedded.
+    /// tebako_path_is_embedded. Coverage is the mount table's claim on
+    /// the NAMESPACE, not only the points below a mount: a mount-boundary
+    /// ancestor (no mount owns it, but a mount lives BELOW it — spec 17
+    /// §1's synthesized directories) is covered too, so the interpreter's
+    /// route gate hands stat/opendir to the engine for the boundary walk
+    /// even when nothing mounts at `/` (tebako#615).
     pub fn path_is_embedded(&self, path: &str) -> bool {
-        self.find_mount(path).is_some()
+        self.find_mount(path).is_some() || !self.synthesized_children(path).is_empty()
     }
 
     /// tebako_fs_mount_of: the mount point of the longest-prefix mount
@@ -3076,6 +3101,44 @@ mod tests {
         assert_eq!(dir_names(&mut ctx, "/"), ["data", "flavors.d"]);
         // A non-ancestor still answers ENOENT (the host fallthrough).
         assert_eq!(ctx.stat("/nope"), Err(libc::ENOENT));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mount_boundary_ancestors_route_without_a_root_mount() {
+        // tebako#615: spec 17 §1's boundary materialization is not
+        // conditioned on a `/` mount. With mounts at /x and
+        // /flavors.d/hello-flavor-acme and NOTHING at /, the interpreter's
+        // coverage gate (tebako_path_is_embedded) must still claim the
+        // boundary ancestors — else the patched interpreter never routes
+        // stat/opendir for them and the host's ENOENT answers instead —
+        // and opendir must synthesize the listing the way stat does.
+        let dir = std::env::temp_dir().join(format!("tfs-synth-noroot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_zip(&dir);
+        let mut ctx = FsContext::new();
+        ctx.mount_checked(crate::mount::build_from_file(image.to_str().unwrap(), "/x").unwrap())
+            .unwrap();
+        ctx.mount_checked(
+            crate::mount::build_from_file(image.to_str().unwrap(), "/flavors.d/hello-flavor-acme")
+                .unwrap(),
+        )
+        .unwrap();
+
+        // The coverage gate claims the boundary ancestors…
+        assert!(ctx.path_is_embedded("/flavors.d"));
+        assert!(ctx.path_is_embedded("/"));
+        // …without claiming component-misaligned or unrelated paths.
+        assert!(!ctx.path_is_embedded("/flavors.deeper"));
+        assert!(!ctx.path_is_embedded("/nope"));
+        // stat walks the boundary (the pre-existing arm)…
+        let st = ctx.stat("/flavors.d").unwrap();
+        assert_eq!(st.entry_type, EntryType::Directory);
+        // …and opendir synthesizes the listing: the point dir enumerates
+        // its mounted child, the root enumerates both mount tops.
+        assert_eq!(dir_names(&mut ctx, "/flavors.d"), ["hello-flavor-acme"]);
+        assert_eq!(dir_names(&mut ctx, "/"), ["flavors.d", "x"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
