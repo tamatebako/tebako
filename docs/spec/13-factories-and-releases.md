@@ -206,7 +206,7 @@ sets, and release line:
 
 ```
 tebako-packages/inkscape/         # one repo per package (a "feedstock")
-  recipe.yml            # upstream url+sha256, versions, build system,
+  Tebakofile            # upstream url+sha256, versions, build system,
                         # link mode, deps (other toolkits), platforms
   patches/              # per-version patch sets, ruby-factory naming rules
   manifests/            # payload manifest templates (provides/exec tier)
