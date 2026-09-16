@@ -316,7 +316,7 @@ same law applies to every future multi-implementation language.
 Bake (the feedstock matrix — one pipeline, two passes):
 
 ```
-recipe.yml build.runtime: [{engine: ruby, implementation: mri, version: "3.3.12", tebako: "0.16.10"},
+Tebakofile build.runtime: [{engine: ruby, implementation: mri, version: "3.3.12", tebako: "0.16.10"},
                            {engine: ruby, implementation: mri, version: "4.0.6",  tebako: "0.16.10"}]
 → metanorma-1.16.9-ruby3.3-*.tfs and …-ruby4.0-*.tfs, one registry
   version entry, two variants (§3): ruby-mri-3.3, ruby-mri-4.0

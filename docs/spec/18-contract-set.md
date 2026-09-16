@@ -262,7 +262,7 @@ key ring with per-key ids + validity eras; old artifacts verify against
 the key that signed them; revoked key → strict failure naming it.
 
 ### C16 · feedstock → product tools
-Owner: tebako-packages/index. Declaration: `recipe.yml`
+Owner: tebako-packages/index. Declaration: `Tebakofile`
 (`schema_version`) + **the product release the feedstock pins**
 (currently tracks `main` — a drift bomb; pin the 2.0 release tag).
 
