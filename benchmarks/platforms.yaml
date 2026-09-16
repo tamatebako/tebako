@@ -7,7 +7,7 @@ schema_version: 1
 # Old world: the packed-mn release the v1-exe arm downloads (+ .sha256.txt
 # sidecar, bare-hash format — spec 27 §9 spike c). packed-mn tags track
 # metanorma-cli: this tag IS the v1 arm's metanorma version (1.14.4).
-packed_mn: { repo: metanorma/packed-mn, tag: v1.14.4 }
+packed_mn: { repo: metanorma/packed-metanorma, tag: v1.14.4 }
 
 # v2_payload: whether the metanorma payload (suite targets' metanorma@1.16.9)
 # is published for the triplet. Payload 1.16.9-3 ships 3 of 7 triplets

@@ -1240,6 +1240,123 @@ fn dep_walk_requires_cycle_is_a_named_error() {
 }
 
 #[test]
+fn dep_walk_failure_leaves_the_parent_invisible_and_the_retry_heals() {
+    // spec 05 §3: a partial install is invisible. The closure walks
+    // BEFORE the parent's landing, so a dep failure aborts the install
+    // with nothing but the parent's staged bytes behind — no mirror, no
+    // shim, no journal line — and the retry resumes from the cache hit
+    // (never a re-download) and lands.
+    let fx = Fixture::new("depabort");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    let inkscape_ref = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));
+    let inkscape_reg = fx.registry(
+        "inkscape-registry.yaml",
+        &versions_registry_yaml("inkscape", "toolkit", &[("1.4.3", &inkscape_ref)]),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    // inkscape's registry is deliberately NOT registered yet: the first
+    // attempt fails inside the closure walk.
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(
+        err.message.contains(
+            "app 1.0 requires toolkit inkscape (>= 1.3) but no registered registry carries it"
+        ),
+        "{err}"
+    );
+
+    // The abort leaves the staged bytes and NOTHING else: the record is
+    // invisible (no mirror), PATH is untouched, the journal is silent.
+    assert!(
+        fx.payloads_dir().join("app/1.0.tfs").is_file(),
+        "the staged bytes survive (the retry never re-downloads)"
+    );
+    assert!(
+        !fx.payloads_dir().join("app/1.0.manifest.yaml").exists(),
+        "no mirror — the aborted install is invisible"
+    );
+    assert!(!shim_path(&fx.home, "app").exists(), "no shim");
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        !journal.contains("event=payload-installed name=app"),
+        "no install journal line for the aborted payload: {journal}"
+    );
+
+    // The retry heals: register the dep's registry, re-run — the cache
+    // hit stands, the closure completes, both records land, dep first.
+    install::add_registry(&fx.home, &inkscape_reg).unwrap();
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["app"]);
+    assert_eq!(out.status, tebako_resolve::InstallStatus::Hit);
+    assert!(fx.payloads_dir().join("app/1.0.manifest.yaml").is_file());
+    assert!(fx
+        .payloads_dir()
+        .join("inkscape/1.4.3.manifest.yaml")
+        .is_file());
+    assert!(shim_path(&fx.home, "app").exists());
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    let dep_at = journal
+        .find("event=payload-installed name=inkscape version=1.4.3")
+        .expect("the dep landed: {journal}");
+    let app_at = journal
+        .find("event=payload-installed name=app version=1.0")
+        .expect("the parent landed: {journal}");
+    assert!(
+        dep_at < app_at,
+        "the dep lands before its consumer (post-order): {journal}"
+    );
+}
+
+#[test]
+fn dep_walk_reruns_an_aborted_dep_whose_mirror_never_landed() {
+    // The closure's cached-pin short-circuit keys on the LANDED record
+    // (mirror = the commit point), never on the bare image: an aborted
+    // dep (.tfs + anchor, no mirror) re-runs the full tail on the next
+    // install instead of standing as a silent skip.
+    let fx = Fixture::new("depheal");
+    let inkscape_ref = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));
+    let inkscape_reg = fx.registry(
+        "inkscape-registry.yaml",
+        &versions_registry_yaml("inkscape", "toolkit", &[("1.4.3", &inkscape_ref)]),
+    );
+    install::add_registry(&fx.home, &inkscape_reg).unwrap();
+    install::install(&fx.home, "inkscape@1.4.3", None, Some(&fx.shim_binary)).unwrap();
+
+    // Simulate the abort: the record loses its commit point.
+    fs::remove_file(fx.payloads_dir().join("inkscape/1.4.3.manifest.yaml")).unwrap();
+
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+
+    install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert!(
+        fx.payloads_dir()
+            .join("inkscape/1.4.3.manifest.yaml")
+            .is_file(),
+        "the aborted dep was re-run to landing, not short-circuited"
+    );
+}
+
+#[test]
 fn dep_walk_prefers_a_cached_satisfying_version_over_a_newer_registry_one() {
     let fx = Fixture::new("depcached");
     let i143 = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));

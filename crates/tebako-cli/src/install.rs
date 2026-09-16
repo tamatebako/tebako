@@ -958,7 +958,7 @@ pub(crate) fn host_platform() -> Result<Platform, TebakoError> {
     })
 }
 
-// ---- the shared tail: fetch → verify → cache → mirror → shims → deps --------
+// ---- the shared tail: fetch → verify → cache(stage) → closure → land ----
 
 /// `chain` is the dependency path from the top-level install down to
 /// this plan (spec 18 §5.6 S32): the closure walk pushes each payload's
@@ -1000,23 +1000,38 @@ fn finish_install<T: Transport>(
         }
     };
 
-    // The manifest mirror (the dispatcher-visible record, spec 07 §0):
-    // the embedded manifest when the image carries one (tier 1,
-    // authoritative), else the registry's tier-3 mirror fields.
+    // The manifest mirror, IN MEMORY for now (the dispatcher-visible
+    // record, spec 07 §0): the embedded manifest when the image carries
+    // one (tier 1, authoritative), else the registry's tier-3 mirror
+    // fields. The closure walk below reads this object; the record file
+    // itself is saved only after the closure completes — the save is
+    // the install's commit point.
     let mirror = build_mirror(&entry, &plan, &mut notes)?;
     let record: PayloadRecord = manifest::payload_record(home, &plan.name, &plan.version);
-    mirror.save(&record.manifest_mirror).map_err(map_shim)?;
 
-    // Zero-runtime entrypoints: materialize the native program + its
-    // exec closure into the store tree NOW (a run never materializes —
-    // install is the explicit verb, spec 07 §2).
+    // The dependency closure (spec 03 §2.3): the mirror's toolkit/data
+    // edges resolve to cached-or-registry installs, recursively. The
+    // closure walks BEFORE this payload's own landing (mirror save,
+    // materialize, shims, journal): the cache entry above is the
+    // STAGING — bytes + trust anchor, dispatch-invisible — and the
+    // manifest mirror is the commit point (spec 05 §3: a partial
+    // install is invisible). A closure failure aborts the install with
+    // nothing but the staged bytes behind: no mirror, no shims, no
+    // journal line, and a retry resumes from the cache hit — never a
+    // half-installed payload masquerading as standing. Every payload
+    // is cached BEFORE its own edges walk, so a re-encountered name
+    // short-circuits on the cache check — the chain guard (S32) turns
+    // a true cycle into the named error first.
+    chain.push(plan.name.clone());
+    let closure = install_dependency_closure(home, fetcher, &mirror, shim_binary, chain);
+    chain.pop();
+    closure?;
+
+    // The landing tail, in commit order: the zero-runtime tree (the
+    // last failure-prone producer), then the mirror — the record's
+    // commit point — then the PATH surface, then the journal line.
     materialize_zero_runtime(home, &entry, &mirror)?;
-
-    // Register the shims the payload PROVIDES declares ACTIVE (spec 07 §1
-    // + spec 03 §2.2 `active`): app entrypoints ∪ toolkit executables, one
-    // dispatchable view. The FULL declared set rides the manifest mirror;
-    // an inactive-by-default command links on demand (`tebako shim
-    // enable <name>`).
+    mirror.save(&record.manifest_mirror).map_err(map_shim)?;
     let commands: Vec<String> = mirror
         .dispatchables()
         .iter()
@@ -1043,16 +1058,6 @@ fn finish_install<T: Transport>(
         ),
     );
 
-    // The dependency closure (spec 03 §2.3): the mirror's toolkit/data
-    // edges resolve to cached-or-registry installs, recursively. Every
-    // payload is cached BEFORE its own edges walk, so a re-encountered
-    // name short-circuits on the cache check — the chain guard (S32)
-    // turns a true cycle into the named error first.
-    chain.push(plan.name.clone());
-    let closure = install_dependency_closure(home, fetcher, &mirror, shim_binary, chain);
-    chain.pop();
-    closure?;
-
     Ok(InstallOutcome {
         name: plan.name,
         version: plan.version,
@@ -1064,6 +1069,26 @@ fn finish_install<T: Transport>(
         signer,
         notes,
     })
+}
+
+/// Versions of `name` whose install LANDED — image + trust anchor +
+/// manifest mirror (the record's commit point, spec 05 §3). The
+/// closure walk short-circuits on this, never on the bare image list:
+/// a cached image whose mirror never saved is an aborted install —
+/// staged bytes, dispatch-invisible — and the edge re-runs the full
+/// tail (the cache hit keeps the bytes, the closure retries, the
+/// mirror lands). `installed_versions` alone would treat the aborted
+/// record as standing and skip its closure forever.
+fn landed_versions(home: &Path, name: &str) -> Result<Vec<String>, TebakoError> {
+    let installed = tebako_shim::resolve::installed_versions(home, name).map_err(map_shim)?;
+    Ok(installed
+        .into_iter()
+        .filter(|v| {
+            manifest::payload_record(home, name, v)
+                .manifest_mirror
+                .is_file()
+        })
+        .collect())
 }
 
 /// Install the dependency closure a mirror declares (spec 03 §2.3):
@@ -1174,7 +1199,9 @@ fn install_dependency_closure<T: Transport>(
             ));
         }
         let eval = versions::from_validated(constraint);
-        let installed = tebako_shim::resolve::installed_versions(home, name).map_err(map_shim)?;
+        // The pin the user installed stands — LANDED installs only (an
+        // aborted attempt's staged bytes re-run the tail and heal).
+        let installed = landed_versions(home, name)?;
         if installed.iter().any(|v| eval.matches(v)) {
             continue;
         }
@@ -1331,7 +1358,9 @@ fn install_executable_edge<T: Transport>(
             ),
         ));
     }
-    let installed = tebako_shim::resolve::installed_versions(home, &provider).map_err(map_shim)?;
+    // The newest LANDED satisfying version stands (the pin the user
+    // installed); an aborted attempt's staged bytes re-run the tail.
+    let installed = landed_versions(home, &provider)?;
     let version = installed
         .iter()
         .filter(|v| eval.matches(v))
