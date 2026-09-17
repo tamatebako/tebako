@@ -153,7 +153,13 @@ fn tebako_main_boots_with_the_ruby_root_and_exports_the_contract() {
     let program = unsafe { CStr::from_ptr(*argvp) }.to_string_lossy();
     assert_eq!(program, "ruby", "argv0 stays the interpreter's name");
     let entry = unsafe { CStr::from_ptr(*argvp.offset(1)) }.to_string_lossy();
+    // The resolved entry rides the QUALIFIED mount spelling: the memfs
+    // is its own drive on windows (`A:/bin/app`), a root-level dir
+    // elsewhere (the same convention as the mount point below).
+    #[cfg(not(windows))]
     assert_eq!(entry, "/bin/app");
+    #[cfg(windows)]
+    assert_eq!(entry, "A:/bin/app");
     assert_eq!(
         std::env::var("TEBAKO_CONTRACT_VERSION").as_deref(),
         Ok("2"),

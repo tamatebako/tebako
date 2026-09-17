@@ -208,7 +208,16 @@ fn a_granted_runtime_boots_from_the_extracted_trees() {
     // The second boot is the digest-pinned reuse: same roots, and the
     // cache tree is served (extraction would rewrite the read-only
     // files' times — the path equality + a fresh boot's success with
-    // the same images is the contract-level assertion).
+    // the same images is the contract-level assertion). The first boot's
+    // mounts still ride the process-global context — the tier extracts
+    // FROM them and leaves them in place (production hands off to a
+    // child process; the parent's table is irrelevant) — so the re-boot
+    // re-establishes the namespace from scratch, as the guard does.
+    context().write().unwrap().unmount();
+    context()
+        .write()
+        .unwrap()
+        .set_host_policy(tfs::policy::HostPolicy::open(), None);
     let out2 = boot(
         &argv(&[
             "python",

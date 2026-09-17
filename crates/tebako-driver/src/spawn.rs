@@ -1837,8 +1837,13 @@ mod tests {
             plan.argv
         );
         assert_eq!(plan.argv[1], "--tebako-image");
+        // The store path rides the platform's separators (the slot:mount
+        // grammar tail stays POSIX — the orthogonality law).
+        let store_suffix = std::path::Path::new("payloads")
+            .join("xml2rfc")
+            .join("3.34.0.tfs");
         assert!(
-            plan.argv[2].ends_with("payloads/xml2rfc/3.34.0.tfs:0:/"),
+            plan.argv[2].ends_with(&format!("{}:0:/", store_suffix.display())),
             "{:?}",
             plan.argv
         );
@@ -2124,8 +2129,13 @@ mod tests {
             "/__tfs__",
         );
         let seeded = plan("xml2rfc", &[], &[]).unwrap().expect("planned");
+        let store_suffix = std::path::Path::new("payloads")
+            .join("xml2rfc")
+            .join("3.34.0.tfs");
         assert!(
-            seeded.argv[2].ends_with("payloads/xml2rfc/3.34.0.tfs:0:/"),
+            seeded
+                .argv[2]
+                .ends_with(&format!("{}:0:/", store_suffix.display())),
             "{:?}",
             seeded.argv
         );
