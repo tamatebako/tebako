@@ -304,9 +304,27 @@ variant version still satisfies an open constraint, so a platform where
 ONLY the variant exists still resolves — the variant simply never wins
 a max pick against the plain twin. A variant is SELECTED through the pin
 surface (the config `version:` pin, the registry default), which names
-versions exactly and never compares; the constraint grammar itself
-(spec 03) admits only plain dot-decimal clauses, so a suffixed clause
-stays a named parse error.
+versions exactly and never compares.
+
+**Variant suffixes in constraints (payload-manifest schema_minor 12).**
+The constraint grammar (spec 03) admits the SAME suffixed component
+shape versions carry — each dot-separated component is leading decimals
+plus an optional `-label` (`[0-9A-Za-z-]+`) — so an exact pin can NAME
+a variant line (`= 1.16.9-ruby4.0` — the spec 03 §2.8 binding rule
+against a line-split base, one slice per base line). Matching semantics
+(`tpkg::versions`, the single owner): equality clauses are suffix-exact
+— the variant and its plain twin are DIFFERENT versions (`= 1.16.9`
+never matches `1.16.9-ruby4.0`); ordering clauses follow `compare()`
+unchanged — a plain bound excludes variants ranking below it
+(`>= 1.16.9` does not match `1.16.9-ruby4.0`), a suffixed bound admits
+its own line upward (`>= 1.16.9-ruby4.0` matches the variant, the plain
+twin, and everything newer); `~>` computes its upper bound from the
+numeric core under the same component model as `compare()` — the
+label's own dot counts (`~> 1.16.9-ruby4.0` is a four-component
+spelling, so the bound is `< 1.16.10`; for `< 1.17` write the explicit
+range).
+Readers older than minor 12 reject a suffixed clause by name (exit 65)
+— fail-closed, never a misread pin.
 
 **The implementation axis (spec 28 §8):** `engine` names the LANGUAGE —
 mri, jruby and truffleruby are all `engine: ruby`, told apart by the

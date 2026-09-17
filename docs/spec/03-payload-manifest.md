@@ -431,10 +431,16 @@ the BASE's gem home at run time). Dispatch semantics live in spec 07
   pins EXACTLY (`constraint: "= x.y.z"` — one slice release per base
   release, shipped in lockstep): subtraction is sound only against
   the exact inventory it subtracted, and the slice's tests ran against
-  exactly that base. Range constraints remain legal for content that
+  exactly that base. When the base ships runtime LINES as suffixed
+  versions (spec 28; `1.16.9` and `1.16.9-ruby4.0` of one payload
+  version), the closures differ per line, so the pin names the LINE's
+  exact version (`= 1.16.9-ruby4.0` — the schema_minor-12 grammar,
+  spec 05 §5) and one slice release exists per (slice, base LINE)
+  pair. Range constraints remain legal for content that
   honestly spans (`layout: files` asset packs); gem-closure slices
   MUST pin exactly. Pre-minor-10 readers ignore both keys (the slice
-  then simply attaches nothing — loud at install, never silent).
+  then simply attaches nothing — loud at install, never silent);
+  pre-minor-12 readers reject a suffixed pin by name (exit 65).
 
 ## 3. Platform axis (locked, vcpkg-triplet form)
 

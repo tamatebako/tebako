@@ -19,10 +19,16 @@
 //! prefix falls back to whole-component string order. Constraint MATCHING
 //! is unaffected by the ordering rule: a variant version still satisfies
 //! an open constraint (a platform where ONLY the variant exists still
-//! resolves) — it just never wins a max pick against the plain twin. A
-//! variant is SELECTED through the pin surface (config `version:`, the
-//! registry default), which names versions exactly; the constraint
-//! grammar itself (spec 03) admits only plain dot-decimal clauses.
+//! resolves) — it just never wins a max pick against the plain twin.
+//!
+//! Since payload-manifest schema_minor 12 the constraint grammar (spec 03)
+//! admits the same suffixed component shape versions carry, so an exact
+//! pin can NAME a variant line (`= 1.16.9-ruby4.0` — spec 03 §2.8's
+//! binding rule against a line-split base). Matching semantics: equality
+//! clauses are suffix-exact (`= 1.16.9` never matches `1.16.9-ruby4.0`);
+//! ordering clauses follow [`compare()`] unchanged (a plain bound excludes
+//! variants ranking below it; a suffixed bound admits its own line
+//! upward); `~>` computes its upper bound from the numeric core.
 //!
 //! Constraint GRAMMAR is not re-implemented here: [`Constraint`] (the
 //! manifest model) validates at parse (spec 03 — the unified model), and
@@ -167,10 +173,14 @@ pub fn from_validated(validated: &crate::Constraint) -> Constraint {
 
 /// The pessimistic upper bound: drop the last component, increment the
 /// new last (`~> 3.3.0` → `< 3.4`; `~> 3.3` → `< 4`; `~> 3` → `< 4`).
+/// Components are read by numeric PREFIX (schema_minor 12: a suffixed
+/// component contributes its decimals) and the label's own dot counts
+/// under the same component model as [`compare()`] — `~> 1.16.9-ruby4.0`
+/// is a four-component spelling, so the bound is `< 1.16.10`.
 fn pessimistic_upper(version: &str) -> String {
     let mut parts: Vec<u64> = version
         .split('.')
-        .map(|c| c.parse::<u64>().unwrap_or(0))
+        .map(|c| numeric_prefix(c).map(|(n, _)| n).unwrap_or(0))
         .collect();
     if parts.len() > 1 {
         parts.pop();
@@ -268,11 +278,60 @@ mod tests {
             .filter(|v| c.matches(v))
             .max_by(|a, b| compare(a, b));
         assert_eq!(pick.map(String::as_str), Some("3.13.15"));
-        // The constraint grammar (spec 03) admits only plain dot-decimal
-        // clauses — a suffixed pin is a named parse error there; variant
-        // selection rides the pin surface (config `version:`, registry
-        // default), which names versions exactly and never compares.
-        assert!(parse_constraint("= 3.13.15-jit").is_err());
+    }
+
+    #[test]
+    fn suffixed_clauses_name_a_variant_line() {
+        // schema_minor 12: the grammar admits the variant-suffixed
+        // component shape versions already carry, so an exact pin names
+        // a base/runtime LINE (spec 03 §2.8's binding rule).
+        let c = parse_constraint("= 1.16.9-ruby4.0").unwrap();
+        assert!(c.matches("1.16.9-ruby4.0"));
+        // suffix-exact: the plain twin, a neighboring variant, and a
+        // newer release are all DIFFERENT versions.
+        assert!(!c.matches("1.16.9"));
+        assert!(!c.matches("1.16.9-ruby4.1"));
+        assert!(!c.matches("1.16.10"));
+        // …and the plain pin never matches the variant.
+        assert!(!parse_constraint("= 1.16.9")
+            .unwrap()
+            .matches("1.16.9-ruby4.0"));
+        // Ordering clauses follow compare(): a plain bound excludes the
+        // variants ranking below it…
+        assert!(!parse_constraint(">= 1.16.9")
+            .unwrap()
+            .matches("1.16.9-ruby4.0"));
+        // …while a suffixed bound admits its own line upward — the
+        // variant, the plain twin, and newer releases.
+        let line = parse_constraint(">= 1.16.9-ruby4.0, < 1.17").unwrap();
+        assert!(line.matches("1.16.9-ruby4.0"));
+        assert!(line.matches("1.16.9"));
+        assert!(line.matches("1.16.12"));
+        assert!(!line.matches("1.16.9-ruby3.0")); // an older-labeled variant
+        assert!(!line.matches("1.17.0"));
+        // The pessimistic bound reads the numeric core under the same
+        // component model as compare(): the label's own dot counts, so
+        // this four-component spelling is `>= 1.16.9-ruby4.0, < 1.16.10`.
+        let p = parse_constraint("~> 1.16.9-ruby4.0").unwrap();
+        assert!(p.matches("1.16.9-ruby4.0"));
+        assert!(p.matches("1.16.9"));
+        assert!(!p.matches("1.16.10"));
+        assert!(!p.matches("1.17.0"));
+        // …including on a single-component clause.
+        let p = parse_constraint("~> 3-jit").unwrap();
+        assert!(p.matches("3.13.15-jit"));
+        assert!(!p.matches("4.0.0"));
+    }
+
+    #[test]
+    fn malformed_labels_are_named_errors() {
+        // An empty suffix, a non-ASCII byte, and a charset outsider are
+        // all named parse errors, never silently accepted.
+        assert!(parse_constraint("= 1.16.9-").is_err());
+        assert!(parse_constraint("= 1.16.9-rüby").is_err());
+        assert!(parse_constraint("= 1.16.9-ruby_4").is_err());
+        // …and a component must still lead with decimals.
+        assert!(parse_constraint("= 1.16.-ruby4").is_err());
     }
 
     #[test]

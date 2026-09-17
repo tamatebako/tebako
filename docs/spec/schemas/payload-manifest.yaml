@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 11 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env, 9: per-edge triplets conditioning on requires edges — data/runtime/executable gain the toolkit edge's triplets key; kind: language refuses it, 10: augments + provides.extension_points + provides.gems — the reverse extension-slice edge and its dedup inventory, spec 03 §2.8, 11: windows_boot on runtime provides — the windows materialize boot tier, spec 17 §7)
+schema_minor: 12 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env, 9: per-edge triplets conditioning on requires edges — data/runtime/executable gain the toolkit edge's triplets key; kind: language refuses it, 10: augments + provides.extension_points + provides.gems — the reverse extension-slice edge and its dedup inventory, spec 03 §2.8, 11: windows_boot on runtime provides — the windows materialize boot tier, spec 17 §7, 12: the constraint grammar admits the variant-suffixed component shape versions already carry — each component is leading decimals plus an optional -label ([0-9A-Za-z-]+) — so an exact pin can name a base/runtime LINE (spec 05 §5; pre-minor-12 readers reject a suffixed clause by name, exit 65))
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -306,7 +306,7 @@ grammar:
     notes: "since schema_minor 10 (spec 03 §2.8) — the REVERSE edge: this slice extends the named base payload, attaching below the base's declared extension point. Slices are in-process CONTENT only (capabilities.exec false); a slice is never the dispatched root payload; nested augmentation is the named NestedAugment error. The constraint binds against the base's RESOLVED version; gem-closure slices MUST pin exactly (the binding rule — the dedup subtraction is sound only against the exact inventory it subtracted). Dispatch semantics: spec 07 §2 step 3a."
     entry:
       payload: {type: string, required: true, notes: "the base payload's name"}
-      constraint: {type: string, required: true, notes: "vs the base's RESOLVED version; exact pin (= x.y.z) for gem-closure slices"}
+      constraint: {type: string, required: true, notes: "vs the base's RESOLVED version; exact pin (= x.y.z) for gem-closure slices — naming the base LINE's exact version when the base ships suffixed runtime lines (= 1.16.9-ruby4.0; schema_minor 12 grammar, spec 05 §5)"}
       extension_point: {type: string, required: true, notes: "names the base's declared extension_points[].name"}
       built_against:
         type: map
