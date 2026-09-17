@@ -978,9 +978,7 @@ fn validate_entries_shared_slice_skips() {
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
     assert_eq!(rc, 0, "{out}");
     assert!(
-        out.contains(
-            "  entry[probe]: skip — shared slice — resolved and checked at run time\n"
-        ),
+        out.contains("  entry[probe]: skip — shared slice — resolved and checked at run time\n"),
         "{out}"
     );
     assert!(out.contains("result: PASS\n"), "{out}");

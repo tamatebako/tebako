@@ -212,7 +212,9 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
             if opts.carry.is_some() || opts.share.is_some() {
                 return Err(packaging_error(
                     130,
-                    Some("--carry/--share refine a composition and require --compose <tebako.yaml>"),
+                    Some(
+                        "--carry/--share refine a composition and require --compose <tebako.yaml>",
+                    ),
                 ));
             }
             None

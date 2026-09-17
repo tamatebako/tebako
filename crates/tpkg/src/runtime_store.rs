@@ -381,9 +381,7 @@ pub fn on_runtime_mirror(
     let Some(key) = entry.find("on_runtime") else {
         return Ok(None);
     };
-    let bad = |why: String| {
-        format!("the cached release index's on_runtime for {exe_name}: {why}")
-    };
+    let bad = |why: String| format!("the cached release index's on_runtime for {exe_name}: {why}");
     if !matches!(key, tebako_json::Value::Object(_)) {
         return Err(bad("must be a map".to_string()));
     }

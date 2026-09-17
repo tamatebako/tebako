@@ -434,7 +434,9 @@ fn tool_entry(
             for (k, v) in m {
                 match k.as_str() {
                     Some("version") => {
-                        let s = v.as_str().ok_or_else(|| bad("`version` must be a string"))?;
+                        let s = v
+                            .as_str()
+                            .ok_or_else(|| bad("`version` must be a string"))?;
                         version = Some(s.to_string());
                     }
                     Some("slices") => {
