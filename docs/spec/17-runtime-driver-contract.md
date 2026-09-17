@@ -155,7 +155,8 @@ learns which pattern a runtime uses.
 | `TEBAKO_EXEC_CACHE` | spec 22 §6: the boot's exec-cache root — materialized binaries/libraries live under it (per-process on POSIX; leave-in-place and content-keyed on windows, spec 22 §2.1); read-only to payloads |
 | `TEBAKO_RUNTIME_DLL` | spec 22 §2.1 (windows only): the runtime's own PE module basename (e.g. `x64-ucrt-ruby340.dll`), flowed from the factory record — the single owner — and exported by the driver at boot. The tfs PE closure walk excludes a bare import name matching it (case-insensitive, bare names only); POSIX legs never read it |
 | `TEBAKO_PRELOAD_SHIM` | spec 22 §3: the preload shim's in-VFS path, flowed from the env image's `preload_shim` layout grant — the interpreter's spawn hook reads it (never a hand-written copy); the driver additionally arms `LD_PRELOAD` (ELF) / `DYLD_INSERT_LIBRARIES` (macOS) with the materialized host copy |
-| `TEBAKO_MOUNT_<SLUG>` | spec 22 §6 + v2-1/20: per co-mounted payload image, its physical mount point (drive-qualified on windows). SLUG is the mount's mechanical uppercase form: `/tools/inkscape` → `TEBAKO_MOUNT_TOOLS_INKSCAPE`; two mounts slugging alike is a named boot error (65). The root mount `/` exports nothing — `TEBAKO_MOUNT_ROOT` stays the mount-root override (§1) |
+| `TEBAKO_MOUNT_<SLUG>` | spec 22 §6 + v2-1/20: per co-mounted payload image, its physical mount point (drive-qualified on windows). SLUG is the mount's mechanical uppercase form: `/tools/inkscape` → `TEBAKO_MOUNT_TOOLS_INKSCAPE`; two mounts slugging alike is a named boot error (65). The root mount `/` exports nothing — `TEBAKO_MOUNT_ROOT` stays the mount-root override (§1). Under the §7 materialize tier the value is the extracted HOST dir, never the VFS point |
+| `TEBAKO_MATERIALIZE_BOOT` | spec 17 §7 (windows only): the materialize tier's respawn marker, exported together with the rewired `TEBAKO_MOUNT_ROOT`; a boot finding it scrubs both before §1's override is read and re-derives the tier from the env image's grant |
 | `PATH` | spec 22 §3.2: led by the launcher dir (`<exec-cache-leaf>/wrap-bin/`) when the env image delivers the preload shim — every declared dependency executable materialized as a self-injecting wrapper (unix; the SIP-strip answer) — then every co-mounted DEPENDENCY image's declared bin dirs (the dirname of each `provides.entrypoints[].path` / `provides.executables[].path` in the image's own `/__tpkg__/manifest.yaml`, joined under its mount, in triple order). The first triple (the app payload) never contributes; an image without a readable manifest declares no bins; a corrupt manifest or an unmaterializable declared executable is a named 65. On windows the boot-materialized library-alias directories complete the same lead (spec 22 §2.1's bare-name rule) — every co-mounted image contributing, the env image and the app payload included; the lead order is locked: launcher dir → dependency bin dirs → alias dirs → the inherited `PATH` |
 | `SSL_CERT_FILE` | spec 22 §4 (the cert convention's env surface — driver-owned, the driver being the single owner of the materialized host path): when a mounted image declares a `materialize:` entry ending `ssl/cert.pem`, the driver exports the cert's materialized HOST path at boot, in both boot shapes. An unset/empty value is set; a value lexically under the effective runtime mount root (a stale in-VFS spelling — `A:/t/ssl/cert.pem` — resolved by the patched IO but unreadable by libcrypto's native CRT IO) is rewritten; a real host path is the user's own configuration and always wins. No declared cert → nothing is set (the POSIX no-op). When the trust bridge (§2.3) is in force the exported path names the MERGED bundle, content-keyed by the merge inputs |
 
@@ -317,3 +318,108 @@ multi-mount, direct `--tebako-entry` execution) declare
 **`contract_version` 2** in their release manifest (spec 06 §6); the
 compiled-in constant (`tebako_driver_contract_version()`) and the
 manifest must agree.
+
+## 7. The windows materialize tier (locked 2026-09-17)
+
+A runtime whose interpreter CANNOT consume the driver's mounted images —
+the zero-patch contract: no io-routing patches, and windows has no
+preload interposition tier (spec 22 §2) — boots on windows from
+EXTRACTED host trees instead. This section is a boot-time behavior
+tier, not a wire change: §1's grammar, the mount table, and every
+verification step are untouched, and **POSIX is unchanged** — the tier
+never engages there (POSIX runtimes read the mounts directly, ruby's
+patched IO being the reference case).
+
+**The trigger is a grant, never a heuristic.** The runtime's env image
+manifest (`/__tpkg__/manifest.yaml`, kind `runtime`) declares
+`provides.windows_boot: materialize` (spec 03 §2.2,
+`payload-manifest.yaml` schema_minor 11 — old readers ignore the key and
+keep the mounted-boot behavior, which for such a runtime is its standing
+named refusal). On windows, after the env image and payload mounts are
+established and verified exactly as §1 describes, the driver reads that
+manifest: the grant present selects this tier; absent, the boot proceeds
+exactly as before.
+
+**Extract.** Every mounted image of the boot — the env image first,
+then each payload triple in order — is extracted as a TREE (not per
+file; spec 22 §4's class-R per-file discipline is the per-file ancestor
+of this one) into the exec cache:
+
+```
+<TEBAKO_EXEC_CACHE>/trees/<tree-key>/        the extracted image tree
+<TEBAKO_EXEC_CACHE>/trees/<tree-key>.tfs-digest   the verification record
+```
+
+- `<tree-key>` is the image's own content key — the store sidecar's
+  sha256 prefix (the exec cache's segregation idiom, spec 22 §6), with
+  the slot number appended (`-<slot>`) when the image is a package
+  region, so two slots of one package never share a tree; a no-store
+  dev boot keys the path, exactly as the cache root itself does.
+- **Write-once, tmp+rename, per-entry flock.** Extraction streams the
+  mounted tree into a per-process staging dir
+  (`.<tree-key>.part-<pid>`), hashing in flight (per file the
+  tfs-merkle-1 file construction; the tree digest is the sha256 over the
+  sorted walk's `D <rel>/` / `F <rel> <merkle>` lines), then renames the
+  record into place BEFORE the tree — content without a record is
+  foreign by construction, and a partial tree is never visible at the
+  final path. Installed files are read-only (Rule R3). Concurrent boots
+  serialize on the per-entry flock (120 s timeout, then a named error
+  with the stale-lock hint — the store's spec 05 §4 discipline).
+- **Digest-pinned reuse.** A cached tree is served only after it
+  re-verifies against its record (the host tree re-walked and re-hashed
+  to the recorded digest). A match is served with zero extraction — the
+  second boot is free. A mismatch, a missing record, or a corrupt
+  record is the cache tampered or corrupt: the tree is wiped and
+  re-extracted ONCE from the (mounted, verified) image; a tree that
+  still fails verification after re-extraction is the named 70
+  (`EX_TEBAKO_SHA`), never a silently served corruption. Extraction IO
+  failures mid-tree are named 74s with the staging dir abandoned (never
+  renamed into place). A tree holding a symlink or a special entry is a
+  named 74 — the tier extracts regular files and directories only.
+- **The trust chain is untouched.** Images are verified at
+  fetch/install (spec 09) and mounted exactly as before; the tier only
+  changes WHERE the interpreter's bytes are read from. The record pins
+  the cache tree to the bytes the verified image served; the per-boot
+  re-walk pins the tree to the record.
+
+**Rewire.** With the trees in place the driver rewires the handoff for
+the interpreter's plain host IO:
+
+- `TEBAKO_MOUNT_ROOT` is set to the extracted env-image tree (a
+  drive-qualified host path) — the era-2 rbconfig pattern
+  (`ENV["TEBAKO_MOUNT_ROOT"] || <baked>`, generalized to any runtime)
+  then resolves every runtime-relative path onto plain host files. This
+  is the tier's own rewiring, NOT a §1 user override: the
+  `mount_root_override` layout grant does not gate it (the runtime opted
+  in by declaring the tier), and the driver's own mounts were already
+  established at the baked root before the var is set.
+- The mount-discovery surface (§2's `TEBAKO_MOUNT_<SLUG>` table) points
+  at the extracted HOST dirs, not the VFS points — a consumer reading a
+  co-mounted payload's files reads host files, as the interpreter must.
+- The rewritten argv's entry (§1) resolves to its host path inside the
+  extracted tree of the image that mounted it.
+- **Respawn.** The driver also exports `TEBAKO_MATERIALIZE_BOOT=1` with
+  the rewired root. A boot that finds the marker present treats an
+  inherited `TEBAKO_MOUNT_ROOT` as the tier's own state — both are
+  scrubbed BEFORE §1's override is read (the child's driver mounts at
+  the baked root, re-derives the tier from the env image's grant, and
+  serves the cached trees). Without the marker an inherited root keeps
+  §1's semantics exactly.
+- The mounts stay established for the driver's own reads (manifests,
+  spawn planning) for the process's life; the interpreter simply never
+  consults them.
+
+**The jail deviation (documented, loud).** Host IO under an extracted
+tree cannot be interposed, so on a windows-materialize boot
+`TEBAKO_JAIL` does not confine the payload's reads of host files —
+there is no VFS on the consumption path to enforce it. POSIX mounts
+enforce the jail exactly as spec 08 describes. A boot under the tier
+emits a LOUD notice to stderr naming the deviation, once, before the
+interpreter handoff.
+
+**Exit codes** stay inside the loader's named allocation: 65 (a tier
+declared on a corrupt/lying manifest surfaces through the existing
+manifest checks), 70 (a tree that fails verification after its one
+re-extraction), 74 (extraction IO failure, a symlink/special entry in
+the tree, the flock timeout). Runtime-side failures keep the
+interpreter's own codes (§4).

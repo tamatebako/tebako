@@ -496,8 +496,11 @@ mod tests {
 
     #[test]
     fn compose_prepends_ahead_of_the_inherited_path() {
+        // The inherited PATH rides the platform's own separator (the
+        // compose splits it with std::env::split_paths — `;` on windows).
+        let inherited = std::env::join_paths(["/usr/bin", "/bin"].map(PathBuf::from)).unwrap();
         let joined = compose(
-            Some("/usr/bin:/bin".to_string()),
+            Some(inherited.to_string_lossy().into_owned()),
             &["/opt/openjdk/bin".to_string()],
         )
         .unwrap()

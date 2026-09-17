@@ -57,6 +57,13 @@ pub use driver::{
 pub use handoff::{Handoff, ImageSource, ImageSpec, SlotRef};
 pub use wrapper::{BootAction, Launch};
 
+/// The tfs context and the process env are process-global: unit tests
+/// that mount, unmount, or mutate the process env serialize on this
+/// lock (each integration-test binary carries its own file-local LOCK —
+/// the same pattern, one process each).
+#[cfg(test)]
+pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The bootstrap↔runtime contract semantics this driver implements
 /// (spec 06 §6): spec 17's widened grammar — image-path triples,
 /// bare-file slot tokens (`0` ≡ `-`), env-image-first multi-mount, and

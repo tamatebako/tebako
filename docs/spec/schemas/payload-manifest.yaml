@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 10 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env, 9: per-edge triplets conditioning on requires edges — data/runtime/executable gain the toolkit edge's triplets key; kind: language refuses it, 10: augments + provides.extension_points + provides.gems — the reverse extension-slice edge and its dedup inventory, spec 03 §2.8)
+schema_minor: 11 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env, 9: per-edge triplets conditioning on requires edges — data/runtime/executable gain the toolkit edge's triplets key; kind: language refuses it, 10: augments + provides.extension_points + provides.gems — the reverse extension-slice edge and its dedup inventory, spec 03 §2.8, 11: windows_boot on runtime provides — the windows materialize boot tier, spec 17 §7)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -239,6 +239,7 @@ grammar:
             mount: {type: string, required: true, notes: "POSIX-absolute, spec 17 §1's uniform namespace; never /; colliding with an occupied point is the boot's EEXIST"}
             argv_template: {type: list of string, required: true, notes: "the single placeholder is {mount} — expanded to this boot's effective mount point (drive-qualified on windows); an unknown placeholder or a post-expansion escape of the mount is a named boot error (65)"}
             owner_contract: {type: string, required: false, notes: "constraint on the owner's contract_version (fail-closed, exit 75 class); default \">= 2\""}
+        windows_boot: {type: string, required: false, notes: "since schema_minor 11 (spec 17 §7) — the windows boot tier; the single locked value is `materialize`: the runtime's interpreter cannot consume the driver's mounts on windows, so the driver extracts the mounted+verified images into the exec cache and rewires the runtime root to the extracted host tree. Absent = the interpreter reads the mounts directly (ruby); POSIX boots never read the key"}
         capabilities:
           type: map
           required: true

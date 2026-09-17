@@ -2709,11 +2709,14 @@ fn path_is_in_mount(path: &str, mount: &str) -> bool {
 
 /// Basename of a mount point for per-mount extraction subtrees
 /// (mirrors the C++ `mount_point_basename`): strips trailing slashes and
-/// takes the last component; "root" when nothing usable remains.
+/// takes the last component; "root" when nothing usable remains. A bare
+/// memfs drive root (`A:/` — the windows-qualified root mount) has no
+/// name of its own either: joining a `A:` component onto the destination
+/// would drive-swap the path, so it slugs like the POSIX root.
 fn mount_point_basename(mount_point: &str) -> &str {
     let mp = mount_point.trim_end_matches('/');
     let base = mp.rsplit('/').next().unwrap_or(mp);
-    if base.is_empty() {
+    if base.is_empty() || base.ends_with(':') {
         "root"
     } else {
         base
@@ -3014,6 +3017,19 @@ pub(crate) fn lock_global_context() -> std::sync::MutexGuard<'static, ()> {
 mod tests {
     use super::*;
     use std::io::Write as _;
+
+    #[test]
+    fn mount_point_basename_slugs_the_bare_roots_alike() {
+        assert_eq!(mount_point_basename("/"), "root");
+        assert_eq!(mount_point_basename("/tfs"), "tfs");
+        assert_eq!(mount_point_basename("/opt/tool/"), "tool");
+        // The windows-qualified root mount: a bare drive qualifier owns
+        // no name — it slugs like the POSIX root (joining a `A:`
+        // component onto the destination would drive-swap the path).
+        assert_eq!(mount_point_basename("A:/"), "root");
+        assert_eq!(mount_point_basename("A:/t"), "t");
+        assert_eq!(mount_point_basename("A:/opt/tool"), "tool");
+    }
 
     /// A zip holding ONLY "data/secret.txt" — no explicit "data/" entry:
     /// the zip backend's implied-parent case (production dwarfs images

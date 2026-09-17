@@ -121,8 +121,15 @@ fn build_zip(path: &Path, dirs: &[&str], files: &[(&str, &[u8])]) {
     w.finish().unwrap();
 }
 
-/// The era-2 layout declaration for the tests' root (spec 18 C3).
-const GOOD_LAYOUT: &str = "schema_version: 1\nera: 2\nimage_layout: 1\nmount_root: /__tfs__\ninterpreter_api_version: \"21\"\n";
+/// The era-2 layout declaration for the tests' root (spec 18 C3) — the
+/// declared mount root pairs the platform's baked root (the wrapper's
+/// own constant: `A:/t` on windows, `/__tfs__` elsewhere), flowed from
+/// the one spelling, never a second hand-written copy.
+fn good_layout() -> String {
+    format!(
+        "schema_version: 1\nera: 2\nimage_layout: 1\nmount_root: {WRAPPER_RUNTIME_ROOT}\ninterpreter_api_version: \"21\"\n"
+    )
+}
 
 /// The fake interpreter bytes the fixtures carry at `bin/stub`.
 const STUB: &[u8] = b"#!/bin/sh\necho stub\n";
@@ -133,7 +140,7 @@ const STUB: &[u8] = b"#!/bin/sh\necho stub\n";
 /// preload mechanism's arming input (materialized, never loaded, in
 /// these in-process tests).
 fn write_env_image(dir: &Path, spec29_keys: &str, shim: bool) -> PathBuf {
-    let layout = format!("{GOOD_LAYOUT}{spec29_keys}");
+    let layout = format!("{}{spec29_keys}", good_layout());
     let mut files: Vec<(&str, &[u8])> = vec![
         ("lib/tebako/layout.yaml", layout.as_bytes()),
         ("bin/stub", STUB),
@@ -251,7 +258,13 @@ fn exec_cache_composes_argv_and_bridges_the_entry() {
     // The boot armed the handoff env (the exec-cache root export).
     assert!(env.get("TEBAKO_EXEC_CACHE").is_some());
     let mounts = env.get("TEBAKO_TFS_MOUNTS").expect("the mounts list");
-    assert!(mounts.contains(&format!("{}:/", app.display())), "{mounts}");
+    // The mounts list carries the QUALIFIED point (`A:/` on windows —
+    // the drive-qualified root mount, driver.rs's qualify_mount).
+    let want_mount = if cfg!(windows) { "A:/" } else { "/" };
+    assert!(
+        mounts.contains(&format!("{}:{}", app.display(), want_mount)),
+        "{mounts}"
+    );
 }
 
 #[cfg(unix)]
@@ -364,7 +377,7 @@ fn the_runtime_entrypoint_execs_directly() {
     // spawn surface (spec 30 §2) rides next to the layout — `jing` is a
     // declared runtime entrypoint at /bin/stub with its own
     // args_default.
-    let layout = format!("{GOOD_LAYOUT}{EXEC_CACHE}");
+    let layout = format!("{}{EXEC_CACHE}", good_layout());
     let manifest = payload_manifest(
         "runtime",
         "provides:\n  \
@@ -530,14 +543,17 @@ fn extract_dumps_the_mounts_and_never_launches() {
     assert_eq!(skipped_symlinks, 0);
     // Two mounts: each extracts into <dest>/<mount-point-basename> (the
     // context's extract_all contract) — the env image's tree and the
-    // app payload's tree, both whole.
+    // app payload's tree, both whole. The basename of the platform's
+    // baked root: `t` on windows (`A:/t`), `__tfs__` elsewhere; the
+    // qualified root mount slugs `root` on every platform.
+    let env_sub = if cfg!(windows) { "t" } else { "__tfs__" };
     assert_eq!(
-        std::fs::read(dest.join("__tfs__/bin/stub")).unwrap(),
+        std::fs::read(dest.join(env_sub).join("bin/stub")).unwrap(),
         STUB,
         "the env image's interpreter landed"
     );
     assert!(
-        dest.join("__tfs__/lib/tebako/layout.yaml").is_file(),
+        dest.join(env_sub).join("lib/tebako/layout.yaml").is_file(),
         "the env image's layout declaration landed"
     );
     assert!(dest.join("root/bin/app").is_file(), "the payload landed");
@@ -632,7 +648,13 @@ fn an_unresolvable_interpreter_names_the_path_and_the_mount() {
     let err = run_err(&["tebako-runtime-launcher", "--version"], &env);
     assert_eq!(err.code, 65, "{}", err.message);
     assert!(err.message.contains("/bin/java"), "{}", err.message);
-    assert!(err.message.contains("/__tfs__"), "{}", err.message);
+    // The mount the interpreter resolved against: the platform's baked
+    // root (`A:/t` on windows).
+    assert!(
+        err.message.contains(WRAPPER_RUNTIME_ROOT),
+        "{}",
+        err.message
+    );
     assert!(!context().read().unwrap().is_mounted());
 }
 

@@ -129,6 +129,12 @@ entrypoints:                          # OPTIONAL (additive — schema_minor 4, s
                                       # runtime_requirement (a runtime runs on itself).
                                       # Absent/empty = the runtime serves only as a
                                       # primary co-mounted runtime.
+windows_boot: materialize             # OPTIONAL (additive — schema_minor 11, spec 17 §7):
+                                      # the runtime's interpreter cannot consume the
+                                      # driver's mounted images on windows (zero-patch,
+                                      # no interposition tier) — boot from the extracted
+                                      # exec-cache tree instead. Absent = the interpreter
+                                      # reads the mounts directly (ruby). POSIX never reads it.
 capabilities: {exec: true, read: true, runtime: true}
 ```
 

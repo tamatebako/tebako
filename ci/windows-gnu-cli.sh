@@ -3,7 +3,9 @@
 # (ucrt64), end to end: tebako-cli, tfs-cli and tebako-pkg — the full
 # dependency-stack build (tfs vendored-dwarfs via dwarfs-t-sys's
 # CMake/vcpkg build against the x64-mingw-static baseline, tebako-signer's
-# vendored rnp/Botan), DLL-import forensics, then the serialized test run.
+# vendored rnp/Botan), DLL-import forensics, then the serialized test run;
+# plus tebako-driver's tests — the windows legs' only driver coverage
+# (the spec 17 §7 materialize tier's windows-gated boot proof runs here).
 #
 # Everything the leg needs is HERE, not inline in the workflow YAML —
 # run-blocks get string-edited and break silently; a script is reviewed
@@ -104,3 +106,23 @@ bash ci/windows-gnu-import-gate.sh \
 
 # --- 3. test (serialized) ---------------------------------------------------
 cargo test -p tebako-cli -p tfs-cli -p tebako-pkg --target "$TARGET" -- "$SERIAL" --nocapture
+
+# --- 4. tebako-driver (the spec-17 boot surfaces, windows-gated included) ---
+# The runtime driver links the same vendored-dwarfs tfs this leg already
+# builds; its tests are the windows legs' coverage of the driver
+# contract — the spec 17 §7 materialize tier's boot proof
+# (tests/materialize_tier.rs) is windows-gated and runs ONLY here.
+if ! cargo test -p tebako-driver --target "$TARGET" -- "$SERIAL" --nocapture; then
+  # A driver test dying hard (an abort/access-violation kills the test
+  # binary mid-line, and the step's log ends without a failure line)
+  # localizes per test: re-run each test in its own process so the last
+  # name printed IS the one that died. Green runs never pay for this.
+  echo "tebako-driver tests failed — re-running per-test to localize" >&2
+  cargo test -p tebako-driver --target "$TARGET" -- --list --format terse 2>/dev/null \
+    | sed -n 's/: test$//p' | while read -r t; do
+        echo "=== $t"
+        cargo test -p tebako-driver --target "$TARGET" -- "$t" --exact "$SERIAL" --nocapture \
+          || echo "=== FAILED: $t"
+      done
+  exit 1
+fi

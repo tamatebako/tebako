@@ -51,6 +51,15 @@ tfs = { version = "2.0.0", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+# The spec-17 §7 tree cache's per-entry flock (materialize/tree.rs —
+# LockFileEx on one byte at offset 0, the tebako-resolve cache.rs
+# shape). Unix uses libc's flock(2); all Win32 FFI is confined to that
+# module's lock submodule.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+] }
 
 # build.rs compiles the interpose dylib for darwin targets only (its
 # TARGET check early-returns elsewhere), but it references the cc crate

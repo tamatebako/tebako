@@ -504,9 +504,13 @@ fn resolve_events_cover_the_whole_and_slot_decisions() {
     let text = std::fs::read_to_string(&capture).unwrap();
     let lines: Vec<&str> = text.lines().collect();
     let at = |op: &str, image: &str| {
+        // The capture is JSONL text — on windows the image path's
+        // backslashes ride escaped (`C:\\…`), so the needle is the
+        // JSON spelling, not the display spelling.
+        let needle = image.replace('\\', "\\\\");
         lines
             .iter()
-            .position(|l| l.contains(&format!("\"op\":\"{op}\"")) && l.contains(image))
+            .position(|l| l.contains(&format!("\"op\":\"{op}\"")) && l.contains(&needle))
             .unwrap_or_else(|| panic!("a {op} event naming {image}: {text}"))
     };
     for image in [bare.display().to_string(), packaged.display().to_string()] {
@@ -2096,6 +2100,33 @@ fn joined_path(dirs: &[&str]) -> String {
         .into_owned()
 }
 
+/// The PATH-export assertion (spec 22 §3.2): on every platform the
+/// dependency's declared bin dirs lead the inherited value — on windows
+/// the host tier (no preload shim exists on the platform) additionally
+/// LEADS with the materialized executables' parent dirs, which live
+/// under the per-process `<tmp>/tebako-dl-<hex>/` root and so are
+/// asserted by suffix, never by exact spelling.
+fn assert_path_prepend(actual: Option<String>, host_suffix: &str, tail: &[&str]) {
+    let actual = actual.expect("PATH exported");
+    if cfg!(windows) {
+        let mut entries = actual.split(';');
+        let lead = entries.next().expect("the materialized host dir leads");
+        assert!(
+            lead.replace('\\', "/").ends_with(host_suffix),
+            "the materialized executable's parent dir leads ({host_suffix}): {actual}"
+        );
+        let rest: Vec<&str> = entries.collect();
+        let want = joined_path(tail);
+        let want: Vec<&str> = want.split(';').collect();
+        assert_eq!(
+            rest, want,
+            "the VFS bin dirs + the inherited PATH follow: {actual}"
+        );
+    } else {
+        assert_eq!(actual, joined_path(tail));
+    }
+}
+
 #[test]
 fn the_dependency_bin_dirs_prepend_path_in_triple_order() {
     let g = guard("path-env");
@@ -2104,7 +2135,7 @@ fn the_dependency_bin_dirs_prepend_path_in_triple_order() {
     let toolkit = write_toolkit_image(g.path());
     let mut env = MapEnv::new();
     env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
-    env.set("PATH", "/usr/bin:/bin");
+    env.set("PATH", joined_path(&["/usr/bin", "/bin"]));
 
     boot(
         &argv(&[
@@ -2121,9 +2152,10 @@ fn the_dependency_bin_dirs_prepend_path_in_triple_order() {
     )
     .unwrap();
 
-    assert_eq!(
-        env.var("PATH").as_deref(),
-        Some(joined_path(&["/opt/openjdk/bin", "/usr/bin", "/bin"]).as_str())
+    assert_path_prepend(
+        env.var("PATH"),
+        "/opt/openjdk/bin",
+        &["/opt/openjdk/bin", "/usr/bin", "/bin"],
     );
 }
 
@@ -2172,9 +2204,10 @@ fn the_app_payloads_own_bins_are_never_prepended() {
     .unwrap();
 
     // Only the dependency contributes: the app's own /bin stays off PATH.
-    assert_eq!(
-        env.var("PATH").as_deref(),
-        Some(joined_path(&["/opt/dep/sbin", "/usr/bin"]).as_str())
+    assert_path_prepend(
+        env.var("PATH"),
+        "/opt/dep/sbin",
+        &["/opt/dep/sbin", "/usr/bin"],
     );
 }
 

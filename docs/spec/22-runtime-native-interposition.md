@@ -863,6 +863,14 @@ Payload authors and runtime factories may rely on, forever:
   bookkeeping — the verification record, never a consumption path.
   Images that ship resources document their consumption path in their
   own manifests (spec 03 annotations).
+- **The materialized-TREE convention (spec 17 §7).** The windows
+  materialize tier extracts a mounted image WHOLE to
+  `<exec-cache>/trees/<tree-key>/` (`<tree-key>` per Rule R1, with the
+  package slot appended for a slot-mounted region), with the same
+  digest-record bookkeeping (`<tree-key>.tfs-digest`), write-once +
+  per-boot-rehash discipline, and per-entry flock as the per-file
+  convention. Its content is an implementation detail; the
+  per-image-sha segregation is contractual.
 - **The discovery surface.** `TEBAKO_MOUNT_<SLUG>` per dependency mount
   (spec 17 §2's env table; v2-1/20) — the portable way to reference a
   dependency payload's files, windows included. **The slug grammar is
