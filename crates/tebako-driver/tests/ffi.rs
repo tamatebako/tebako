@@ -100,6 +100,18 @@ impl CArgv {
     }
 }
 
+/// The platform's ruby runtime root (the factory convention: `A:/t` on
+/// windows, `/__tfs__` elsewhere). Every boot in this test process must
+/// use it — the driver's mount-point export is a process-lifetime
+/// OnceLock, so two different roots across tests are order-dependent.
+fn platform_root() -> CString {
+    #[cfg(not(windows))]
+    let root = "/__tfs__";
+    #[cfg(windows)]
+    let root = "A:/t";
+    CString::new(root).unwrap()
+}
+
 #[test]
 fn contract_version_is_2() {
     assert_eq!(
@@ -207,7 +219,7 @@ fn boot_rewrites_argv_in_place() {
         "/bin/app",
         "--version",
     ]);
-    let root = CString::new("/__tfs__").unwrap();
+    let root = platform_root();
     let mut argc: c_int = 6;
     let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
 
@@ -222,7 +234,14 @@ fn boot_rewrites_argv_in_place() {
                 .into_owned()
         })
         .collect();
+    // The entry rides the QUALIFIED spelling of the platform root (the
+    // memfs is its own drive on windows) — and the root must match the
+    // tebako_main boots': the mount-point export is a process-lifetime
+    // OnceLock, so one process carrying two roots is order-dependent.
+    #[cfg(not(windows))]
     assert_eq!(rewritten, vec!["ruby", "/bin/app", "--version"]);
+    #[cfg(windows)]
+    assert_eq!(rewritten, vec!["ruby", "A:/bin/app", "--version"]);
     // The mount happened (the entry resolved inside it).
     assert!(context().read().unwrap().is_mounted());
 }
@@ -238,7 +257,7 @@ fn boot_failure_returns_the_named_code_and_leaves_argv_alone() {
         "--tebako-entry",
         "/bin/app",
     ]);
-    let root = CString::new("/__tfs__").unwrap();
+    let root = platform_root();
     let mut argc: c_int = 5;
     let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
 
