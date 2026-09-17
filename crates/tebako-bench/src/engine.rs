@@ -58,13 +58,29 @@ pub struct RunRequest {
 /// One target after acquisition: either its measured program is staged
 /// or the arm is a named gap (§6: explicit data, never a silent skip).
 pub enum Prepared {
-    Ready { program: PathBuf },
-    Unavailable { reason: String },
+    Ready {
+        program: PathBuf,
+        /// runtime-exe arms: the staged env image (TEBAKO_RUNTIME_IMAGE).
+        image: Option<PathBuf>,
+    },
+    Unavailable {
+        reason: String,
+    },
 }
 
 pub struct PreparedTarget {
     pub target: Target,
     pub state: Prepared,
+}
+
+/// Leg-level staged resources the workload runs share (spec 27 §10):
+/// the ioread fixture (host bytes, plus the in-leg-built image the
+/// tebako arms mount) and the in-leg compiled Java classes.
+#[derive(Debug, Default)]
+pub struct LegContext {
+    pub fixture_host: Option<PathBuf>,
+    pub fixture_image: Option<PathBuf>,
+    pub classes_dir: Option<PathBuf>,
 }
 
 /// The `run` surface: acquire, execute, emit, and return the exit code
@@ -92,12 +108,13 @@ pub fn run(request: &RunRequest) -> Result<u8, BenchError> {
     }
 
     let layout = BenchLayout::new(&request.out)?;
-    let (prepared, versions, tools) = prepare_targets(
+    let (prepared, versions, tools, leg) = prepare_targets(
         &layout,
         &request.suite,
         &request.platforms,
         &request.triplet,
         request.tebako_release.as_deref(),
+        &request.repo_root,
     )?;
 
     // The §5 cold flow's unmeasured half: the engine calls this only for
@@ -118,6 +135,7 @@ pub fn run(request: &RunRequest) -> Result<u8, BenchError> {
         &request.suite,
         &request.opt_in,
         &prepared,
+        &leg,
         &request.repo_root,
         &mut cold_reprime,
     )?;
@@ -140,17 +158,25 @@ pub fn run(request: &RunRequest) -> Result<u8, BenchError> {
 }
 
 /// The acquisition half: stage every target's measured program (or name
-/// its gap) and collect the resolved versions (§6: what actually ran,
-/// never what was requested). Acquisition FAILURES degrade the arm to a
-/// named gap whose reason carries the error — one broken download never
-/// costs the other arms their numbers.
+/// its gap), collect the resolved versions (§6: what actually ran, never
+/// what was requested), and stage the leg-level resources (the ioread
+/// fixture, the compiled java classes). Acquisition FAILURES degrade the
+/// arm to a named gap whose reason carries the error — one broken
+/// download never costs the other arms their numbers.
+///
+/// The runtime-suite passes (spec 27 §10), in order: stage all arms →
+/// apply the platforms document's declared `runtime_gaps` → the parity
+/// probes (the fair-comparison invariant) → fixture/classes staging →
+/// the pairing-law sweep (one arm of a lang pair unavailable gaps the
+/// other — a single-arm measurement is not the comparison).
 fn prepare_targets(
     layout: &BenchLayout,
     suite: &SuiteFile,
     platforms: &PlatformFile,
     triplet: &str,
     tebako_release: Option<&str>,
-) -> Result<(Vec<PreparedTarget>, Versions, Option<TebakoTools>), BenchError> {
+    repo_root: &Path,
+) -> Result<(Vec<PreparedTarget>, Versions, Option<TebakoTools>, LegContext), BenchError> {
     let entry = platforms.triplets.get(triplet).ok_or_else(|| {
         BenchError::operational(format!(
             "engine: platforms.yaml has no triplet '{triplet}' (known: {})",
@@ -184,7 +210,10 @@ fn prepare_targets(
                         let tag = &platforms.packed_mn.tag;
                         versions.packed_mn =
                             Some(format!("{tag} (metanorma-cli {})", tag.trim_start_matches('v')));
-                        Prepared::Ready { program: exe }
+                        Prepared::Ready {
+                            program: exe,
+                            image: None,
+                        }
                     }
                     Err(e) => Prepared::Unavailable {
                         reason: format!("v1 acquisition failed: {e}"),
@@ -210,6 +239,7 @@ fn prepare_targets(
                             versions.image_format = Some(staged.image_format);
                             Prepared::Ready {
                                 program: staged.program,
+                                image: None,
                             }
                         }
                         Err(e) => Prepared::Unavailable {
@@ -218,13 +248,276 @@ fn prepare_targets(
                     }
                 }
             }
+            TargetKind::OnSystem => {
+                // The workflow provisions the binary (PATH-resolved); the
+                // parity probe below is its presence + version check.
+                Prepared::Ready {
+                    program: PathBuf::from(target.program.as_deref().unwrap_or_default()),
+                    image: None,
+                }
+            }
+            TargetKind::RuntimeExe => {
+                match acquire::acquire_runtime_pair(layout, triplet, target) {
+                    Ok(pair) => Prepared::Ready {
+                        program: pair.exe,
+                        image: Some(pair.image),
+                    },
+                    Err(e) => Prepared::Unavailable {
+                        reason: format!("runtime acquisition failed: {e}"),
+                    },
+                }
+            }
         };
         prepared.push(PreparedTarget {
             target: target.clone(),
             state,
         });
     }
-    Ok((prepared, versions, tools))
+
+    // Declared gaps: the platforms document's runtime_gaps gap BOTH arms
+    // of the language pair, by declaration (never a silent skip).
+    if let Some(gaps) = &entry.runtime_gaps {
+        for (lang, reason) in gaps {
+            for pt in &mut prepared {
+                let is_pair_arm = matches!(
+                    pt.target.kind,
+                    TargetKind::OnSystem | TargetKind::RuntimeExe
+                ) && crate::suite::pair_suffix(&pt.target.id)
+                    .map(|(_, l)| l == lang.as_str())
+                    .unwrap_or(false);
+                if is_pair_arm && matches!(pt.state, Prepared::Ready { .. }) {
+                    pt.state = Prepared::Unavailable {
+                        reason: format!("platforms.yaml declares this gap: {reason}"),
+                    };
+                }
+            }
+        }
+    }
+
+    // The parity probes: every still-ready on-system/tebako pair runs the
+    // SAME probe argv; both outputs must carry version_expect. A mismatch
+    // gaps both arms with both reported lines named.
+    let langs: Vec<String> = prepared
+        .iter()
+        .filter(|pt| pt.target.kind == TargetKind::OnSystem)
+        .filter_map(|pt| crate::suite::pair_suffix(&pt.target.id).map(|(_, l)| l.to_string()))
+        .collect();
+    for lang in langs {
+        let on_idx = prepared
+            .iter()
+            .position(|pt| pt.target.id == format!("on-system-{lang}"))
+            .ok_or_else(|| {
+                BenchError::operational(format!(
+                    "engine: no on-system-{lang} target (the semantic gate pairs the arms — harness bug)"
+                ))
+            })?;
+        let tb_idx = prepared
+            .iter()
+            .position(|pt| pt.target.id == format!("tebako-{lang}"))
+            .ok_or_else(|| {
+                BenchError::operational(format!(
+                    "engine: no tebako-{lang} target (the semantic gate pairs the arms — harness bug)"
+                ))
+            })?;
+        let on_ready = matches!(prepared[on_idx].state, Prepared::Ready { .. });
+        let tb_ready = matches!(prepared[tb_idx].state, Prepared::Ready { .. });
+        if !on_ready || !tb_ready {
+            continue; // the pairing sweep below names the companion gap
+        }
+        let (probe, expect) = {
+            let t = &prepared[on_idx].target;
+            let probe = t.version_probe.clone().unwrap_or_default();
+            let expect = t.version_expect.clone().unwrap_or_default();
+            (probe, expect)
+        };
+        let probed = (|| -> Result<(String, String), BenchError> {
+            let Prepared::Ready { program, .. } = &prepared[on_idx].state else {
+                unreachable!()
+            };
+            let on_out = acquire::run_capture(
+                layout,
+                program,
+                &probe,
+                &[],
+                &format!("acquire-probe-on-system-{lang}.log"),
+            )?;
+            let Prepared::Ready { program, image } = &prepared[tb_idx].state else {
+                unreachable!()
+            };
+            let image = image.as_ref().ok_or_else(|| {
+                BenchError::operational(format!(
+                    "engine: tebako-{lang} is ready without its env image (harness bug)"
+                ))
+            })?;
+            let env = [(
+                "TEBAKO_RUNTIME_IMAGE".to_string(),
+                image.to_string_lossy().into_owned(),
+            )];
+            let tb_out = acquire::run_capture(
+                layout,
+                program,
+                &probe,
+                &env,
+                &format!("acquire-probe-tebako-{lang}.log"),
+            )?;
+            Ok((on_out, tb_out))
+        })();
+        match probed {
+            Ok((on_out, tb_out))
+                if on_out.contains(&expect) && tb_out.contains(&expect) =>
+            {
+                let first_line = |s: &str| {
+                    s.lines()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("(no output)")
+                        .trim()
+                        .to_string()
+                };
+                versions
+                    .extra
+                    .insert(format!("on-system-{lang}"), first_line(&on_out));
+                let tb_line = first_line(&tb_out);
+                let release = prepared[tb_idx]
+                    .target
+                    .runtime
+                    .as_ref()
+                    .map(|r| format!(" ({} {})", r.repo, r.tag))
+                    .unwrap_or_default();
+                versions
+                    .extra
+                    .insert(format!("tebako-{lang}"), format!("{tb_line}{release}"));
+            }
+            Ok((on_out, tb_out)) => {
+                let first_line = |s: &str| {
+                    s.lines()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("(no output)")
+                        .trim()
+                        .to_string()
+                };
+                let reason = format!(
+                    "version parity failed for {lang}: on-system reports '{}', the tebako runtime reports '{}', expected '{expect}' in both — a skewed comparison is never measured",
+                    first_line(&on_out),
+                    first_line(&tb_out)
+                );
+                prepared[on_idx].state = Prepared::Unavailable {
+                    reason: reason.clone(),
+                };
+                prepared[tb_idx].state = Prepared::Unavailable { reason };
+            }
+            Err(e) => {
+                prepared[on_idx].state = Prepared::Unavailable {
+                    reason: format!("the version probe failed: {e}"),
+                };
+                prepared[tb_idx].state = Prepared::Unavailable {
+                    reason: format!("the version probe failed: {e}"),
+                };
+            }
+        }
+    }
+
+    // The leg-level resources: the ioread fixture (host bytes + the
+    // in-leg image the tebako arms mount) and the compiled java classes.
+    let mut leg = LegContext::default();
+    if suite
+        .workloads
+        .iter()
+        .any(|w| w.argv.iter().any(|a| a == "{fixture}"))
+    {
+        let fixture_dir = layout.sources.join("_fixture");
+        let fixture = fixture_dir.join("fixture.bin");
+        std::fs::create_dir_all(&fixture_dir).map_err(|e| {
+            BenchError::operational(format!(
+                "engine: cannot create {}: {e}",
+                fixture_dir.display()
+            ))
+        })?;
+        acquire::generate_fixture(&fixture)?;
+        leg.fixture_host = Some(fixture);
+        let any_runtime_ready = prepared.iter().any(|pt| {
+            pt.target.kind == TargetKind::RuntimeExe && matches!(pt.state, Prepared::Ready { .. })
+        });
+        if any_runtime_ready {
+            let built = acquire::fetch_tfs_tool(layout, tebako_release, triplet).and_then(
+                |(tfs, version)| {
+                    let img = fixture_dir.join("fixture.tfs");
+                    acquire::build_fixture_image(layout, &tfs, &fixture_dir, &img)?;
+                    Ok((img, version))
+                },
+            );
+            match built {
+                Ok((img, version)) => {
+                    leg.fixture_image = Some(img);
+                    versions.tebako = Some(version);
+                }
+                Err(e) => {
+                    for pt in &mut prepared {
+                        if pt.target.kind == TargetKind::RuntimeExe
+                            && matches!(pt.state, Prepared::Ready { .. })
+                        {
+                            pt.state = Prepared::Unavailable {
+                                reason: format!("the fixture image build failed: {e}"),
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for pt in prepared.iter_mut() {
+        if pt.target.kind != TargetKind::OnSystem || !matches!(pt.state, Prepared::Ready { .. }) {
+            continue;
+        }
+        let Some(src_rel) = pt.target.compile_classes.clone() else {
+            continue;
+        };
+        match acquire::compile_java_classes(layout, repo_root, &src_rel) {
+            Ok(dir) => leg.classes_dir = Some(dir),
+            Err(e) => {
+                pt.state = Prepared::Unavailable {
+                    reason: format!("the in-leg javac compile failed: {e}"),
+                };
+            }
+        }
+    }
+
+    // The pairing-law sweep: one arm of a language pair unavailable gaps
+    // the other, with the original reason carried.
+    let pair_langs: Vec<String> = prepared
+        .iter()
+        .filter_map(|pt| crate::suite::pair_suffix(&pt.target.id).map(|(_, l)| l.to_string()))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    for lang in pair_langs {
+        let indices: Vec<usize> = prepared
+            .iter()
+            .enumerate()
+            .filter(|(_, pt)| {
+                crate::suite::pair_suffix(&pt.target.id)
+                    .map(|(_, l)| l == lang)
+                    .unwrap_or(false)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let gap_reason = indices.iter().find_map(|i| match &prepared[*i].state {
+            Prepared::Unavailable { reason } => Some((prepared[*i].target.id.clone(), reason.clone())),
+            _ => None,
+        });
+        if let Some((gap_id, reason)) = gap_reason {
+            for i in indices {
+                if matches!(prepared[i].state, Prepared::Ready { .. }) {
+                    prepared[i].state = Prepared::Unavailable {
+                        reason: format!(
+                            "the paired arm '{gap_id}' is unavailable — the on-system vs tebako comparison needs both arms ({reason})"
+                        ),
+                    };
+                }
+            }
+        }
+    }
+
+    Ok((prepared, versions, tools, leg))
 }
 
 /// What a staged v2 arm reports upward (the measured program plus the
@@ -268,9 +561,9 @@ fn prepare_v2(
         TargetKind::V2Press => {
             acquire::assemble_fat_package(layout, tools_ref, &payload, &runtime, target)?
         }
-        TargetKind::V1Exe => {
+        TargetKind::V1Exe | TargetKind::OnSystem | TargetKind::RuntimeExe => {
             return Err(BenchError::operational(format!(
-                "engine: prepare_v2 called for the v1 target '{}' (harness bug)",
+                "engine: prepare_v2 called for the non-v2 target '{}' (harness bug)",
                 target.id
             )))
         }
@@ -296,6 +589,7 @@ pub fn execute_matrix(
     suite: &SuiteFile,
     opt_in: &[String],
     prepared: &[PreparedTarget],
+    ctx: &LegContext,
     repo_root: &Path,
     cold_reprime: &mut dyn FnMut(&BenchLayout, &Target) -> Result<(), BenchError>,
 ) -> Result<Vec<RunRecord>, BenchError> {
@@ -353,17 +647,17 @@ pub fn execute_matrix(
         // story); a spawn failure makes the arm a named gap.
         let mut dead: BTreeSet<usize> = BTreeSet::new();
         for (t_idx, pt) in prepared.iter().enumerate() {
-            let Prepared::Ready { program } = &pt.state else {
+            if !matches!(pt.state, Prepared::Ready { .. }) {
                 continue;
-            };
+            }
             for k in 1..=suite.run_policy.warmup {
                 match run_once(
                     &mut sampler,
                     layout,
-                    &source,
+                    source.as_ref(),
                     w,
-                    &pt.target,
-                    program,
+                    pt,
+                    ctx,
                     RunMode::Warm,
                     k,
                     true,
@@ -406,19 +700,19 @@ pub fn execute_matrix(
             suite.run_policy.interleave,
         ) {
             let pt = &prepared[t_idx];
-            let Prepared::Ready { program } = &pt.state else {
+            if !matches!(pt.state, Prepared::Ready { .. }) {
                 continue;
-            };
+            }
             if dead.contains(&t_idx) {
                 continue;
             }
             let (sample, cwd) = run_once(
                 &mut sampler,
                 layout,
-                &source,
+                source.as_ref(),
                 w,
-                &pt.target,
-                program,
+                pt,
+                ctx,
                 RunMode::Warm,
                 iteration,
                 false,
@@ -435,27 +729,52 @@ pub fn execute_matrix(
 
         // The cold repetitions: wipe → unmeasured reprime → measured run.
         for (t_idx, pt) in prepared.iter().enumerate() {
-            let Prepared::Ready { program } = &pt.state else {
+            if !matches!(pt.state, Prepared::Ready { .. }) {
                 continue;
-            };
+            }
             if dead.contains(&t_idx) {
+                continue;
+            }
+            // On-system arms have no cold story — the toolchain's
+            // provisioning time is not tebako's comparison (spec 27 §10).
+            // One named row per workload, never fabricated numbers.
+            if pt.target.kind == TargetKind::OnSystem {
+                runs.push(RunRecord {
+                    workload: w.id.clone(),
+                    target: pt.target.id.clone(),
+                    mode: Some(RunMode::Cold),
+                    iteration: None,
+                    status: RunStatus::Unavailable,
+                    wall_s: None,
+                    cpu_user_s: None,
+                    cpu_sys_s: None,
+                    peak_rss_bytes: None,
+                    exit: None,
+                    error: None,
+                    reason: Some(
+                        "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+                            .to_string(),
+                    ),
+                });
                 continue;
             }
             for iteration in 1..=suite.run_policy.cold_repetitions {
                 layout.wipe_cold_caches(&pt.target.id, pt.target.kind)?;
                 // The §5 cold flow's unmeasured re-install is v2-managed's
                 // alone (v1 re-extracts in-span; the fat package needs no
-                // store) — the engine owns WHEN, the callback owns HOW.
+                // store; runtime-exe arms mount staged files, so their
+                // wipe needs no reprime) — the engine owns WHEN, the
+                // callback owns HOW.
                 if pt.target.kind == TargetKind::V2Managed {
                     cold_reprime(layout, &pt.target)?;
                 }
                 let (sample, cwd) = run_once(
                     &mut sampler,
                     layout,
-                    &source,
+                    source.as_ref(),
                     w,
-                    &pt.target,
-                    program,
+                    pt,
+                    ctx,
                     RunMode::Cold,
                     iteration,
                     false,
@@ -474,22 +793,34 @@ pub fn execute_matrix(
     Ok(runs)
 }
 
-/// One child execution: fresh scratch cell (the source tree copied in),
-/// cwd = the document's directory, `{doc}` = the document's file name,
-/// the hermetic bench-home env, output to `logs/`. Warmup cells are
-/// named `warmup-<k>` so priming outputs never pollute a measured cell.
+/// One child execution: fresh scratch cell (the source tree copied in
+/// when the workload carries one — interpreter workloads run in an empty
+/// cell), cwd = the document's directory (the cell root when source-less),
+/// `{doc}` = the document's file name, the hermetic bench-home env, output
+/// to `logs/`. Runtime-exe arms additionally get `TEBAKO_RUNTIME_IMAGE`
+/// and, when the workload reads `{fixture}`, the `--tebako-image` mount of
+/// the leg's fixture image (the fixture substitutes to its in-image path;
+/// the other arms read the host bytes). Warmup cells are named
+/// `warmup-<k>` so priming outputs never pollute a measured cell.
 #[allow(clippy::too_many_arguments)]
 fn run_once(
     sampler: &mut Sampler,
     layout: &BenchLayout,
-    source: &MaterializedSource,
+    source: Option<&MaterializedSource>,
     workload: &Workload,
-    target: &Target,
-    program: &Path,
+    pt: &PreparedTarget,
+    ctx: &LegContext,
     mode: RunMode,
     iteration: u32,
     warmup: bool,
 ) -> Result<(Sample, PathBuf), BenchError> {
+    let target = &pt.target;
+    let Prepared::Ready { program, image } = &pt.state else {
+        return Err(BenchError::operational(format!(
+            "engine: run_once called for the unavailable target '{}' (harness bug)",
+            target.id
+        )));
+    };
     let cell_name = if warmup {
         format!("warmup-{iteration}")
     } else {
@@ -505,7 +836,44 @@ fn run_once(
             BenchError::operational(format!("engine: cannot clear {}: {e}", cell.display()))
         })?;
     }
-    copy_tree(&source.root, &cell)?;
+    let (cwd, doc_name) = match source {
+        Some(src) => {
+            copy_tree(&src.root, &cell)?;
+            let cwd = cell
+                .join(src.doc_rel.parent().unwrap_or_else(|| Path::new("")))
+                .canonicalize()
+                .map_err(|e| {
+                    BenchError::operational(format!(
+                        "engine: the document directory for workload '{}' is missing under {}: {e}",
+                        workload.id,
+                        cell.display()
+                    ))
+                })?;
+            let doc_name = src
+                .doc_rel
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .ok_or_else(|| {
+                    BenchError::operational(format!(
+                        "engine: workload '{}' document path has no file name",
+                        workload.id
+                    ))
+                })?;
+            (cwd, Some(doc_name))
+        }
+        None => {
+            std::fs::create_dir_all(&cell).map_err(|e| {
+                BenchError::operational(format!("engine: cannot create {}: {e}", cell.display()))
+            })?;
+            let cwd = cell.canonicalize().map_err(|e| {
+                BenchError::operational(format!(
+                    "engine: cannot canonicalize {}: {e}",
+                    cell.display()
+                ))
+            })?;
+            (cwd, None)
+        }
+    };
     // The hermetic per-target TMPDIR must EXIST before the child boots
     // (the v1 bootstrap's temp_directory_path aborts on a missing dir —
     // the cold wipe recreates it; the first run must too).
@@ -516,38 +884,71 @@ fn run_once(
             target_tmp.display()
         ))
     })?;
-    let cwd = cell
-        .join(source.doc_rel.parent().unwrap_or_else(|| Path::new("")))
-        .canonicalize()
-        .map_err(|e| {
+    let wants_fixture = workload.argv.iter().any(|a| a == "{fixture}");
+    let mut argv = vec![program.to_string_lossy().into_owned()];
+    if wants_fixture && target.kind == TargetKind::RuntimeExe {
+        let img = ctx.fixture_image.as_ref().ok_or_else(|| {
             BenchError::operational(format!(
-                "engine: the document directory for workload '{}' is missing under {}: {e}",
-                workload.id,
-                cell.display()
-            ))
-        })?;
-    let doc_name = source
-        .doc_rel
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .ok_or_else(|| {
-            BenchError::operational(format!(
-                "engine: workload '{}' document path has no file name",
+                "engine: workload '{}' uses {{fixture}} but the leg built no fixture image (harness bug)",
                 workload.id
             ))
         })?;
-    let mut argv = vec![program.to_string_lossy().into_owned()];
-    argv.extend(workload.argv.iter().map(|a| {
-        if a == "{doc}" {
-            doc_name.clone()
-        } else {
-            a.clone()
-        }
-    }));
+        argv.push("--tebako-image".to_string());
+        argv.push(format!("{}:-:/bench-fixture", img.display()));
+    }
+    for a in &workload.argv {
+        argv.push(match a.as_str() {
+            "{doc}" => doc_name.clone().ok_or_else(|| {
+                BenchError::operational(format!(
+                    "engine: workload '{}' uses {{doc}} but carries no source (harness bug — the semantic gate rejects this)",
+                    workload.id
+                ))
+            })?,
+            "{fixture}" => match target.kind {
+                TargetKind::RuntimeExe => acquire::FIXTURE_VFS_PATH.to_string(),
+                _ => ctx
+                    .fixture_host
+                    .as_ref()
+                    .ok_or_else(|| {
+                        BenchError::operational(format!(
+                            "engine: workload '{}' uses {{fixture}} but the leg staged no fixture (harness bug)",
+                            workload.id
+                        ))
+                    })?
+                    .to_string_lossy()
+                    .into_owned(),
+            },
+            "{classes}" => ctx
+                .classes_dir
+                .as_ref()
+                .ok_or_else(|| {
+                    BenchError::operational(format!(
+                        "engine: workload '{}' uses {{classes}} but the leg compiled no classes (harness bug)",
+                        workload.id
+                    ))
+                })?
+                .to_string_lossy()
+                .into_owned(),
+            _ => a.clone(),
+        });
+    }
+    let mut env = layout.child_env(&target.id);
+    if target.kind == TargetKind::RuntimeExe {
+        let image = image.as_ref().ok_or_else(|| {
+            BenchError::operational(format!(
+                "engine: runtime-exe target '{}' is ready without its env image (harness bug)",
+                target.id
+            ))
+        })?;
+        env.push((
+            "TEBAKO_RUNTIME_IMAGE".to_string(),
+            image.to_string_lossy().into_owned(),
+        ));
+    }
     let spec = ChildSpec {
         argv,
         cwd: cwd.clone(),
-        env: layout.child_env(&target.id),
+        env,
         log_path: layout
             .logs
             .join(format!("{}--{}--{}.log", workload.id, target.id, cell_name)),
@@ -791,6 +1192,10 @@ pub fn assemble_result(
         triplet: triplet.to_string(),
         runner,
         versions,
+        baseline: suite.baseline.as_ref().map(|b| crate::result::Baseline {
+            target: b.clone(),
+            label: b.trim_end_matches('-').to_string(),
+        }),
         runs,
         stats,
     }

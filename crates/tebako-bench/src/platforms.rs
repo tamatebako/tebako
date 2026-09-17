@@ -41,6 +41,12 @@ pub struct Triplet {
     /// e.g. "aibika-packed" for the Windows old world — surfaced in reports.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub v1_note: Option<String>,
+    /// The runtime suite's DECLARED gaps on this triplet (spec 27 §10.4):
+    /// language → reason. A lang listed here gaps both arms of the pair
+    /// (on-system + tebako) with the reason named — declared, never the
+    /// silent product of a missing asset probe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_gaps: Option<std::collections::BTreeMap<String, String>>,
 }
 
 impl PlatformFile {

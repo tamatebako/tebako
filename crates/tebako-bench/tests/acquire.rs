@@ -222,6 +222,11 @@ fn fat_package_round_trips_through_tpkg() {
         payload: Some("metanorma@1.16.9".to_string()),
         registries: Some(vec!["tfs:github:tebako-packages/metanorma".to_string()]),
         fat: Some(true),
+        program: None,
+        version_probe: None,
+        version_expect: None,
+        runtime: None,
+        compile_classes: None,
     };
 
     let package = acquire::assemble_fat_package(&layout, &tools, &payload, &runtime, &target)

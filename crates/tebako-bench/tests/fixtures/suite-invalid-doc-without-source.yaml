@@ -1,0 +1,11 @@
+schema_version: 1
+name: doc-without-source-suite
+workloads:
+  - id: w-doc
+    argv: ["compile", "{doc}"]
+    expect: { exit: 0, files: ["out.xml"] }
+    timeout_s: 60
+targets:
+  - id: v1-packed-mn
+    kind: v1-exe
+run_policy: { warmup: 1, repetitions: 3, cold_repetitions: 1, interleave: true }

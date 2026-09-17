@@ -52,7 +52,9 @@ fn triplet_file(triplet: &str, runs: Vec<RunRecord>) -> ResultFile {
             payload: Some("1.16.9-3".to_string()),
             packed_mn: Some("v1.14.4 (metanorma-cli 1.14.4)".to_string()),
             image_format: None,
+            extra: Default::default(),
         },
+        baseline: None,
         stats: vec![StatRecord {
             workload: "compile-small-iso".to_string(),
             target: "v1-packed-mn".to_string(),
@@ -277,4 +279,92 @@ fn semantically_invalid_input_is_operational() {
     let (rc, _, _) = run_report(dir.path(), &[a]);
     let msg = rc.expect_err("invalid input must be an operational error");
     assert!(msg.contains("wall_s"), "{msg}");
+}
+
+// ---------------------------------------------------------------------
+// the declared baseline (spec 27 §2/§7, amended 2026-09-17)
+// ---------------------------------------------------------------------
+
+use tebako_bench::result::Baseline;
+
+fn runtime_runs() -> Vec<RunRecord> {
+    let mut v = Vec::new();
+    // on-system-ruby median 2.0, tebako-ruby median 4.0 → 0.50× vs the
+    // on-system arm (the baseline cell itself renders 1.00×).
+    for (i, w) in [1.9, 2.0, 2.1].iter().enumerate() {
+        v.push(ok_run("ruby-boot", "on-system-ruby", RunMode::Warm, i as u32 + 1, *w));
+    }
+    for (i, w) in [3.9, 4.0, 4.1].iter().enumerate() {
+        v.push(ok_run("ruby-boot", "tebako-ruby", RunMode::Warm, i as u32 + 1, *w));
+    }
+    v
+}
+
+fn runtime_file(triplet: &str) -> ResultFile {
+    let mut f = triplet_file(triplet, runtime_runs());
+    f.suite = "runtime-on-system-vs-tebako".to_string();
+    f.baseline = Some(Baseline {
+        target: "on-system".to_string(),
+        label: "on-system".to_string(),
+    });
+    f
+}
+
+#[test]
+fn declared_baseline_drives_the_ratio_label_and_notes() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = write_result(dir.path(), "a.json", &runtime_file("macos-arm64"));
+    let (rc, md, json) = run_report(dir.path(), &[a]);
+    assert_eq!(rc, Ok(0));
+    // The column takes the declared label; the prefix baseline resolves
+    // per (workload × mode) cell.
+    assert!(md.contains("| vs on-system |"), "{md}");
+    let row = md.lines().find(|l| l.contains("tebako-ruby")).unwrap();
+    assert!(row.ends_with("| 0.50× |"), "{row}");
+    let base_row = md.lines().find(|l| l.contains("on-system-ruby")).unwrap();
+    assert!(base_row.ends_with("| 1.00× |"), "{base_row}");
+    // The method notes ride the declared non-v1 baseline (footer + dash).
+    assert!(md.contains("Method notes:"), "{md}");
+    assert!(md.contains("file-backed-inclusive"), "{md}");
+    let dash: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(dash["baseline"]["target"], "on-system");
+    assert_eq!(dash["baseline"]["label"], "on-system");
+    assert!(dash["notes"].as_array().unwrap().len() == 3, "{json}");
+    let cell = dash["triplets"][0]["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["target"] == "tebako-ruby")
+        .unwrap()
+        .clone();
+    assert_eq!(cell["speedup_vs_v1"], 0.5, "the field name never changes");
+}
+
+#[test]
+fn mixed_baselines_refuse_to_merge() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = write_result(dir.path(), "a.json", &runtime_file("macos-arm64"));
+    let mut other = runtime_file("linux-gnu-x86_64");
+    other.baseline = None;
+    let b = write_result(dir.path(), "b.json", &other);
+    let (rc, _, _) = run_report(dir.path(), &[a, b]);
+    let msg = rc.expect_err("mixed baselines must refuse to merge");
+    assert!(msg.contains("baseline"), "{msg}");
+}
+
+#[test]
+fn no_declared_baseline_keeps_the_v1_law_and_emits_no_baseline_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = write_result(
+        dir.path(),
+        "a.json",
+        &triplet_file("linux-gnu-x86_64", standard_runs()),
+    );
+    let (rc, md, json) = run_report(dir.path(), &[a]);
+    assert_eq!(rc, Ok(0));
+    assert!(md.contains("| vs v1 |"), "{md}");
+    assert!(!md.contains("Method notes:"), "{md}");
+    let dash: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert!(dash.get("baseline").is_none(), "additive: absent, not null");
+    assert!(dash.get("notes").is_none(), "{json}");
 }

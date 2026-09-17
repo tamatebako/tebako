@@ -8,17 +8,22 @@
   "properties": {
     "schema_version": { "const": 1 },
     "name": { "type": "string", "minLength": 1 },
+    "baseline": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The arm the report's speedup column is computed against: an exact target id, or a prefix resolving to exactly one target per workload (e.g. \"on-system\" in the runtime suite). Absent = the v1-prefix law."
+    },
     "workloads": {
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/workload" },
-      "description": "The documents to compile. Order is not semantic; ids are unique (checked semantically)."
+      "description": "The documents to compile, or (runtime suite) the interpreter invocations. Order is not semantic; ids are unique (checked semantically)."
     },
     "targets": {
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/target" },
-      "description": "The arms under test (spec 27 §1). A full suite declares one target of each kind unless an arm is genuinely meaningless."
+      "description": "The arms under test (spec 27 §1, §10.1). A full suite declares one target of each kind unless an arm is genuinely meaningless."
     },
     "run_policy": { "$ref": "#/$defs/runPolicy" }
   },
@@ -30,7 +35,7 @@
     },
     "workload": {
       "type": "object",
-      "required": ["id", "source", "argv", "expect", "timeout_s"],
+      "required": ["id", "argv", "expect", "timeout_s"],
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "opt_in": {
@@ -38,12 +43,15 @@
           "default": false,
           "description": "When true the workload runs only on explicit opt-in (e.g. needs credentials — the OIML r060 private-fonts case). A skipped opt-in workload emits NO result rows."
         },
-        "source": { "$ref": "#/$defs/source" },
+        "source": {
+          "$ref": "#/$defs/source",
+          "description": "Optional (2026-09-17 amendment): interpreter workloads (the runtime suite) have no document; {doc} in argv is then a semantic error."
+        },
         "argv": {
           "type": "array",
           "minItems": 1,
           "items": { "type": "string", "minLength": 1 },
-          "description": "The argument vector passed to the target's entrypoint. '{doc}' is the ONE substitution — the workload document's path in the run scratch; every other token is literal."
+          "description": "The argument vector passed to the target's entrypoint. Substitutions: '{doc}' (the workload document's path in the run scratch; requires source), '{fixture}' (the ioread data file, resolved per target — in-image for runtime-exe arms, host path otherwise), '{classes}' (the in-leg compiled Java classes directory). Every other token is literal."
         },
         "expect": { "$ref": "#/$defs/expect" },
         "timeout_s": {
@@ -88,9 +96,8 @@
         },
         "files": {
           "type": "array",
-          "minItems": 1,
           "items": { "type": "string", "minLength": 1 },
-          "description": "Scratch-relative output paths that must exist and be non-empty after the run."
+          "description": "Scratch-relative output paths that must exist and be non-empty after the run. May be EMPTY (2026-09-17 amendment): interpreter workloads assert on the exit status alone."
         }
       }
     },
@@ -100,8 +107,8 @@
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "kind": {
-          "enum": ["v1-exe", "v2-managed", "v2-press"],
-          "description": "v1-exe: the packed-mn release asset (asset from platforms.yaml). v2-managed: registry install + shim dispatch, warm store. v2-press: fat tpkg assembled in-leg from verified published artifacts."
+          "enum": ["v1-exe", "v2-managed", "v2-press", "on-system", "runtime-exe"],
+          "description": "v1-exe: the packed-mn release asset (asset from platforms.yaml). v2-managed: registry install + shim dispatch, warm store. v2-press: fat tpkg assembled in-leg from verified published artifacts. on-system: the host toolchain binary (CI-provisioned, version-pinned). runtime-exe: the tebako runtime pair fetched sha256-verified from its factory release."
         },
         "payload": {
           "type": "string",
@@ -117,12 +124,55 @@
         "fat": {
           "type": "boolean",
           "description": "v2-press: carry the runtime as a slot (the one-file contract). v2 packages are fat in this harness by definition; the flag exists for the suite author's explicitness."
+        },
+        "program": {
+          "type": "string",
+          "minLength": 1,
+          "description": "on-system: the host toolchain binary, PATH-resolved (the workflow provisions it)."
+        },
+        "version_probe": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "on-system: the argv that prints the toolchain's version; the parity probe runs the tebako arm with the same argv."
+        },
+        "version_expect": {
+          "type": "string",
+          "minLength": 1,
+          "description": "on-system: the version token BOTH arms' probe output must contain (the fair-comparison invariant; a mismatch is a named skip, never a skewed comparison)."
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["repo", "tag", "lang_version"],
+          "properties": {
+            "repo": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+              "description": "The runtime factory's GitHub owner/name."
+            },
+            "tag": { "type": "string", "minLength": 1, "description": "The pinned release tag." },
+            "lang_version": { "type": "string", "minLength": 1, "description": "The interpreter version the pair carries (the asset names embed it)." }
+          },
+          "description": "runtime-exe: the factory release the tebako runtime pair is fetched from, sha256-verified against the release's per-asset sidecars."
+        },
+        "compile_classes": {
+          "type": "string",
+          "minLength": 1,
+          "description": "on-system java: the vendored .java directory (repo-relative) compiled ONCE in-leg with the on-system javac; both JVMs run the same .class files."
         }
       },
       "allOf": [
         {
           "if": { "properties": { "kind": { "enum": ["v2-managed", "v2-press"] } }, "required": ["kind"] },
           "then": { "required": ["payload", "registries"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "on-system" } }, "required": ["kind"] },
+          "then": { "required": ["program", "version_probe", "version_expect"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "runtime-exe" } }, "required": ["kind"] },
+          "then": { "required": ["runtime"] }
         }
       ]
     },

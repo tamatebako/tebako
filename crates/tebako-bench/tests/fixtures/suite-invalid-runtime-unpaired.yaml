@@ -1,0 +1,14 @@
+schema_version: 1
+name: runtime-unpaired-suite
+workloads:
+  - id: ruby-boot
+    argv: ["-e", "puts 1"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 60
+targets:
+  - id: on-system-ruby
+    kind: on-system
+    program: ruby
+    version_probe: ["-v"]
+    version_expect: "3.3.12"
+run_policy: { warmup: 1, repetitions: 3, cold_repetitions: 1, interleave: true }

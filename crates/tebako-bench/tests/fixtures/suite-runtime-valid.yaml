@@ -1,0 +1,22 @@
+schema_version: 1
+name: runtime-fixture-suite
+baseline: on-system
+workloads:
+  - id: ruby-boot
+    argv: ["-e", "puts 1"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 60
+  - id: ruby-ioread
+    argv: ["-e", "File.open(ARGV[0], 'rb') { |f| while f.read(1048576); end }", "{fixture}"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+targets:
+  - id: on-system-ruby
+    kind: on-system
+    program: ruby
+    version_probe: ["-v"]
+    version_expect: "3.3.12"
+  - id: tebako-ruby
+    kind: runtime-exe
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.25, lang_version: "3.3.12" }
+run_policy: { warmup: 1, repetitions: 3, cold_repetitions: 1, interleave: true }
