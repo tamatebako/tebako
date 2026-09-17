@@ -350,7 +350,7 @@ fn merge_bundle(
         ))
     })?;
     let target = parent.join(format!("cert-merged-{key}.pem"));
-    let label = "the merged cert bundle (spec 17 §2.3)";
+    let label = "the merged cert bundle";
     if target.exists() {
         verify_recorded(&target, &hit.dir, label)?;
         return Ok(target);

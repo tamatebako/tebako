@@ -129,12 +129,12 @@ fn mechanism(layout: &ImageLayout, image: &str) -> Result<Mechanism, DriverError
         Some("preload") => {
             if cfg!(windows) {
                 return Err(manifest(
-                    "layout.visibility 'preload' is unusable on this host: windows has no interposition API (spec 29 §3) — the factory validates the declaration against the runtime's platform list at press",
+                    "layout.visibility 'preload' is unusable on this host: windows has no interposition API — the factory validates the declaration against the runtime's platform list at press",
                 ));
             }
             if layout.preload_shim.is_none() {
                 return Err(manifest(format!(
-                    "layout.visibility 'preload' but env image '{image}' declares no preload_shim — the interposition cannot arm (spec 29 §3): ship libtfs-preload in the image or declare exec-cache"
+                    "layout.visibility 'preload' but env image '{image}' declares no preload_shim — the interposition cannot arm: ship libtfs-preload in the image or declare exec-cache"
                 )));
             }
             Mechanism::Preload
@@ -142,12 +142,12 @@ fn mechanism(layout: &ImageLayout, image: &str) -> Result<Mechanism, DriverError
         Some("exec-cache") => Mechanism::ExecCache,
         Some("seccomp-notify") => {
             return Err(manifest(
-                "layout.visibility 'seccomp-notify' is not reachable in this driver build (the linux tier-2a surface is unimplemented — spec 29 §3) — the factory must not declare it for this runtime",
+                "layout.visibility 'seccomp-notify' is not reachable in this driver build (the linux tier-2a surface is unimplemented) — the factory must not declare it for this runtime",
             ));
         }
         Some(other) => {
             return Err(manifest(format!(
-                "layout.visibility '{other}' is not a known mechanism (preload | seccomp-notify | exec-cache — spec 29 §3)"
+                "layout.visibility '{other}' is not a known mechanism (preload | seccomp-notify | exec-cache)"
             )));
         }
         None => {
@@ -160,7 +160,7 @@ fn mechanism(layout: &ImageLayout, image: &str) -> Result<Mechanism, DriverError
                 // gates: without it there is no interposition to arm,
                 // and a silent tier-2b slide is the forbidden fallback.
                 return Err(manifest(format!(
-                    "env image '{image}' declares no layout.visibility and no preload_shim — the default mechanism (preload, spec 29 §3) cannot arm: ship libtfs-preload in the image or declare exec-cache"
+                    "env image '{image}' declares no layout.visibility and no preload_shim — the default mechanism (preload) cannot arm: ship libtfs-preload in the image or declare exec-cache"
                 )));
             }
         }
@@ -213,7 +213,7 @@ fn interpreter_vfs_path(
 ) -> Result<String, DriverError> {
     let declared = layout.interpreter.as_deref().ok_or_else(|| {
         manifest(format!(
-            "env image '{image}' declares no layout.interpreter — the wrapper pattern requires it (spec 29 §2); a layout block without interpreter is the LINKED pattern"
+            "env image '{image}' declares no layout.interpreter — the wrapper pattern requires it; a layout block without interpreter is the LINKED pattern"
         ))
     })?;
     let well_formed = declared.len() > 1
@@ -223,7 +223,7 @@ fn interpreter_vfs_path(
             .any(|c| c == ".." || c.contains(':') || c.contains('\\'));
     if !well_formed {
         return Err(manifest(format!(
-            "layout.interpreter '{declared}' is not a usable in-image path (want POSIX-absolute, no drive qualifier, no '..') — the env image's declaration lies (spec 29 §2)"
+            "layout.interpreter '{declared}' is not a usable in-image path (want POSIX-absolute, no drive qualifier, no '..') — the env image's declaration lies"
         )));
     }
     let vfs = join_mount(root, declared);
@@ -234,7 +234,7 @@ fn interpreter_vfs_path(
             Ok(vfs)
         }
         Err(e) => Err(manifest(format!(
-            "layout.interpreter '{declared}' does not resolve at '{vfs}' inside the env image mounted at '{root}' ({}) — the env image's declaration lies (spec 29 §2)",
+            "layout.interpreter '{declared}' does not resolve at '{vfs}' inside the env image mounted at '{root}' ({}) — the env image's declaration lies",
             errno_text(e)
         ))),
     }
@@ -424,7 +424,7 @@ fn bridge_template_compound(
         .map(|c| c.to_string_lossy().into_owned())
         .map_err(|e| {
             manifest(format!(
-                "on_runtime.argv_template token '{token}' embeds the depending runtime's mount '{mount}' but the image does not materialize as a home tree ({}) — the depending image must carry identity.annotations.home (or the legacy java_home spelling) marking its root a tool home (spec 33 §3, spec 22 §3); a per-file closure cannot serve the host-plain owner's reads",
+                "on_runtime.argv_template token '{token}' embeds the depending runtime's mount '{mount}' but the image does not materialize as a home tree ({}) — the depending image must carry identity.annotations.home (or the legacy java_home spelling) marking its root a tool home; a per-file closure cannot serve the host-plain owner's reads",
                 errno_text(e)
             ))
         })?;
@@ -486,12 +486,12 @@ fn payload_entrypoint(
 fn runtime_entrypoint(runtime_root: &str, name: &str) -> Result<tpkg::Entrypoint, DriverError> {
     let manifest_doc = mounted_manifest_at(runtime_root)?.ok_or_else(|| {
         manifest(format!(
-            "--tebako-entry '{name}' names a runtime entrypoint but no env image is mounted (TEBAKO_RUNTIME_IMAGE unset) — spec 30 §2"
+            "--tebako-entry '{name}' names a runtime entrypoint but no env image is mounted (TEBAKO_RUNTIME_IMAGE unset)"
         ))
     })?;
     let tpkg::Provides::Runtime(runtime) = &manifest_doc.provides else {
         return Err(manifest(format!(
-            "--tebako-entry '{name}' names a runtime entrypoint but the image mounted at '{runtime_root}' is not a runtime payload (spec 30 §2)"
+            "--tebako-entry '{name}' names a runtime entrypoint but the image mounted at '{runtime_root}' is not a runtime payload"
         )));
     };
     runtime
@@ -501,7 +501,7 @@ fn runtime_entrypoint(runtime_root: &str, name: &str) -> Result<tpkg::Entrypoint
         .cloned()
         .ok_or_else(|| {
             manifest(format!(
-                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name (spec 30 §2)"
+                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name"
             ))
         })
 }
@@ -535,7 +535,7 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
     }
     let layout = outcome.layout.clone().ok_or_else(|| {
         manifest(
-            "layout.interpreter cannot resolve: no env image mounted (TEBAKO_RUNTIME_IMAGE unset) — the wrapper pattern's interpreter lives in the env image (spec 29 §2)",
+            "layout.interpreter cannot resolve: no env image mounted (TEBAKO_RUNTIME_IMAGE unset) — the wrapper pattern's interpreter lives in the env image",
         )
     })?;
     let image = env_var(env, "TEBAKO_RUNTIME_IMAGE").unwrap_or_else(|| "-".to_string());

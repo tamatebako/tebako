@@ -257,7 +257,7 @@ fn resolve_provider_payload(
         _ => fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "executable \"{name}\" is provided by more than one installed payload ({}) (AmbiguousProvider)\n  pin the provider with `payload:` on the edge (spec 03 §8)",
+                "executable \"{name}\" is provided by more than one installed payload ({}) (AmbiguousProvider)\n  pin the provider with `payload:` on the edge",
                 names.join(", ")
             ),
         ),
@@ -278,7 +278,7 @@ fn provider_spawn_entrypoint<'m>(
         return fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "executable edge \"{edge_name}\": provider payload {} {} is not an app payload — it declares no entrypoints to spawn (spec 32 §1)",
+                "executable edge \"{edge_name}\": provider payload {} {} is not an app payload — it declares no entrypoints to spawn",
                 provider.name, provider.version
             ),
         );
@@ -288,7 +288,7 @@ fn provider_spawn_entrypoint<'m>(
         return fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "executable edge \"{edge_name}\": provider payload {} {} declares no entrypoint \"{exposed}\" — the expose list outruns the provider's declaration (spec 32 §7)",
+                "executable edge \"{edge_name}\": provider payload {} {} declares no entrypoint \"{exposed}\" — the expose list outruns the provider's declaration",
                 provider.name, provider.version
             ),
         );
@@ -297,7 +297,7 @@ fn provider_spawn_entrypoint<'m>(
         return fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "executable edge \"{edge_name}\": the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier (spec 32 §0/§1)",
+                "executable edge \"{edge_name}\": the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier",
             ),
         );
     }
@@ -347,7 +347,7 @@ fn provider_spawn_pair(
                 return fail(
                     EX_TEBAKO_MANIFEST,
                     format!(
-                        "executable edge \"{edge_name}\": the exposed entries disagree on the runtime pair ({} {} tebako {} vs {} {} tebako {}) — one payload row nests ONE pair (spec 32 §5); split the edge per runtime",
+                        "executable edge \"{edge_name}\": the exposed entries disagree on the runtime pair ({} {} tebako {} vs {} {} tebako {}) — one payload row nests ONE pair; split the edge per runtime",
                         p.engine, p.lang_version, p.tebako_version, rt.engine, rt.lang_version, rt.tebako_version
                     ),
                 );
@@ -420,7 +420,7 @@ fn compose_spawn_lock(
                     return fail(
                         EX_TEBAKO_MANIFEST,
                         format!(
-                            "spawn dependency cycle through provider payload \"{}\" ({}): the executable edges form a cycle — break it (spec 32 §2)",
+                            "spawn dependency cycle through provider payload \"{}\" ({}): the executable edges form a cycle — break it",
                             provider.name,
                             visiting.join(" -> ")
                         ),

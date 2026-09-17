@@ -383,7 +383,7 @@ pub fn install_local(
             }
             if runtime_slots.contains(&i) {
                 outcome.notes.push(
-                    "the carried runtime artifacts seed the runtime cache on first run (spec 05 §4) — not store-installed"
+                    "the carried runtime artifacts seed the runtime cache on first run — not store-installed"
                         .to_string(),
                 );
                 continue;
@@ -953,7 +953,7 @@ pub(crate) fn host_platform() -> Result<Platform, TebakoError> {
     Platform::from_release_asset_name(&host).ok_or_else(|| {
         err(
             EX_TEBAKO_UNAVAILABLE,
-            format!("the host platform '{host}' is not on the spec 03 §3 triplet axis"),
+            format!("the host platform '{host}' is not on the supported platform-triplet axis"),
         )
     })
 }
@@ -1193,7 +1193,7 @@ fn install_dependency_closure<T: Transport>(
             return Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "dependency cycle: {} (spec 18 §5.6 S32) — break the cycle in the payloads' requires: declarations",
+                    "dependency cycle: {} — break the cycle in the payloads' requires: declarations",
                     cycle.join(" → ")
                 ),
             ));
@@ -1353,7 +1353,7 @@ fn install_executable_edge<T: Transport>(
         return Err(err(
             EX_TEBAKO_MANIFEST,
             format!(
-                "dependency cycle: {} (spec 18 §5.6 S32) — break the cycle in the payloads' requires: declarations",
+                "dependency cycle: {} — break the cycle in the payloads' requires: declarations",
                 cycle.join(" → ")
             ),
         ));
@@ -1412,7 +1412,7 @@ fn install_executable_edge<T: Transport>(
             return Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "{} {} requires executable {name} and exposes \"{exposed}\" but the provider payload {provider} {version} declares no such entrypoint (declared: {}) — fix the expose list or the provider's manifest (spec 32 §7)",
+                    "{} {} requires executable {name} and exposes \"{exposed}\" but the provider payload {provider} {version} declares no such entrypoint (declared: {}) — fix the expose list or the provider's manifest",
                     consumer.name(),
                     consumer.version(),
                     provider_mirror
@@ -1428,7 +1428,7 @@ fn install_executable_edge<T: Transport>(
             return Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "{} {} requires executable {name}: the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier (spec 32 §0/§1)",
+                    "{} {} requires executable {name}: the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier",
                     consumer.name(),
                     consumer.version()
                 ),
@@ -1506,7 +1506,7 @@ fn capability_provider<T: Transport>(
             return Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "{} and it is provided by more than one installed payload ({}) (AmbiguousProvider)\n  pin the provider with `payload:` on the edge (spec 03 §8)",
+                    "{} and it is provided by more than one installed payload ({}) (AmbiguousProvider)\n  pin the provider with `payload:` on the edge",
                     declares(),
                     names.join(", ")
                 ),
@@ -1542,7 +1542,7 @@ fn capability_provider<T: Transport>(
             Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "{} but no installed payload or registered registry provides it (DependencyNotFound)\n  registered registries:\n{registries}\n  register one with: tebako add-registry <ref>, or pin the provider with `payload:` on the edge (spec 03 §8)",
+                    "{} but no installed payload or registered registry provides it (DependencyNotFound)\n  registered registries:\n{registries}\n  register one with: tebako add-registry <ref>, or pin the provider with `payload:` on the edge",
                     declares()
                 ),
             ))
@@ -1551,7 +1551,7 @@ fn capability_provider<T: Transport>(
         _ => Err(err(
             EX_TEBAKO_MANIFEST,
             format!(
-                "{} and it is provided by more than one registry payload ({}) (AmbiguousProvider)\n  pin the provider with `payload:` on the edge (spec 03 §8)",
+                "{} and it is provided by more than one registry payload ({}) (AmbiguousProvider)\n  pin the provider with `payload:` on the edge",
                 declares(),
                 found.join(", ")
             ),
@@ -1925,7 +1925,7 @@ pub(crate) fn verify_signature<T: Transport>(
                 return Err(err(
                     EX_TEBAKO_TRUST,
                     format!(
-                        "{} is signed by {issuer}{primary_note} but the registry pins {pin} — the signer key changed (spec 09 §9 SignerKeyChanged); refusing to install; nothing was cached",
+                        "{} is signed by {issuer}{primary_note} but the registry pins {pin} — the signer key changed (SignerKeyChanged); refusing to install; nothing was cached",
                         fetched.origin
                     ),
                 ));

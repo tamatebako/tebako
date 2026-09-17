@@ -17,7 +17,7 @@ use crate::shell::Shell;
 use crate::{fail, Action, Ctx, ShimError, EX_TEBAKO_IO, EX_USAGE};
 
 #[cfg(not(windows))]
-const USAGE: &str = "tebako-shim — the tebako dispatcher and version manager (spec 07)
+const USAGE: &str = "tebako-shim — the tebako dispatcher and version manager
 
 invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manages:
 
@@ -38,7 +38,7 @@ invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manag
                                        remove exactly the managed block";
 
 #[cfg(windows)]
-const USAGE: &str = "tebako-shim — the tebako dispatcher and version manager (spec 07)
+const USAGE: &str = "tebako-shim — the tebako dispatcher and version manager
 
 invoked as <TEBAKO_HOME>\\shims\\<tool>.exe it dispatches; invoked as tebako-shim it manages:
 
@@ -798,7 +798,7 @@ pub fn doctor_report(ctx: &Ctx) -> DoctorReport {
                         "registry {reg}: not in the dispatch cache — run `tebako update-registries` (online dispatch fetches on demand; TEBAKO_OFFLINE dispatch would fail)"
                     )),
                     regcache::RegistryFreshness::BadRef(_) => problems.push(format!(
-                        "registry {reg}: does not parse as a spec 04 §2 registry reference"
+                        "registry {reg}: does not parse as a registry reference"
                     )),
                 }
             }

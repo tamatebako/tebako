@@ -531,7 +531,7 @@ pub fn render_report(
                 out.push_str(&format!("evidence: {evidence}\n"));
             } else {
                 out.push_str(&format!(
-                    "evidence: no `{}` verdict reached the stream in {} event(s) — corroborate with the child's prelude-class stderr (spec 25 §5)\n",
+                    "evidence: no `{}` verdict reached the stream in {} event(s) — corroborate with the child's prelude-class stderr\n",
                     // The absence rule's (op, verdict), re-read from the
                     // table for the message.
                     table

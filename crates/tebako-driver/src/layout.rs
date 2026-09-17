@@ -125,7 +125,7 @@ impl ImageLayout {
         })?;
         let Some(schema_version) = view.schema_version else {
             return Err(layout(format!(
-                "env image '{image}' layout.yaml declares no schema_version — pre-era document (era 1): regenerate the image with the current factory (spec 18 §3.4)"
+                "env image '{image}' layout.yaml declares no schema_version — pre-era document (era 1): regenerate the image with the current factory"
             )));
         };
         if schema_version > LAYOUT_SCHEMA_VERSION {
@@ -136,7 +136,7 @@ impl ImageLayout {
         let era = view.era.unwrap_or(1);
         if era < 2 {
             return Err(layout(format!(
-                "env image '{image}' layout.yaml declares era {era} — pre-era images are refused by name: rebuild the runtime with the current factory (spec 18 C3)"
+                "env image '{image}' layout.yaml declares era {era} — pre-era images are refused by name: rebuild the runtime with the current factory"
             )));
         }
         if era > DRIVER_ERA {
@@ -160,7 +160,7 @@ impl ImageLayout {
         }
         if mount_root != runtime_root {
             return Err(layout(format!(
-                "env image '{image}' was built for mount root '{mount_root}' but this runtime's root is '{runtime_root}' — a mismatched exe↔image pair (spec 18 C3)"
+                "env image '{image}' was built for mount root '{mount_root}' but this runtime's root is '{runtime_root}' — a mismatched exe↔image pair"
             )));
         }
         if api_version.is_empty() {

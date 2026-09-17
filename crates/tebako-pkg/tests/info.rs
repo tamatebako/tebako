@@ -568,7 +568,7 @@ fn validate_signed_plain_slots_passes() {
     let (rc, out, err) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
     assert_eq!((rc, err.as_str()), (0, ""), "{out}");
     assert!(
-        out.contains("  trailer: ok — structural validation (spec 02 §6)\n"),
+        out.contains("  trailer: ok — structural validation\n"),
         "{out}"
     );
     assert!(
@@ -978,9 +978,7 @@ fn validate_entries_shared_slice_skips() {
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
     assert_eq!(rc, 0, "{out}");
     assert!(
-        out.contains(
-            "  entry[probe]: skip — shared slice — resolved and checked at run time (spec 23 §13)\n"
-        ),
+        out.contains("  entry[probe]: skip — shared slice — resolved and checked at run time\n"),
         "{out}"
     );
     assert!(out.contains("result: PASS\n"), "{out}");
@@ -1364,7 +1362,7 @@ fn validate_spawned_carried_per_triplet_pin_without_the_host_row_skips_loud() {
     assert_eq!(rc, 70, "{out}"); // slot 0 digest agreement, see above
     assert!(
         out.contains(&format!(
-            "  spawned[java].exe digest: skip — the lock pin covers no {} row — the host's slot bytes are unchecked (spec 23 §13.3)\n",
+            "  spawned[java].exe digest: skip — the lock pin covers no {} row — the host's slot bytes are unchecked\n",
             tpkg::Platform::host().release_asset_name()
         )),
         "{out}"

@@ -209,7 +209,7 @@ fn cwd_env_and_log_plumbing() {
     assert!(touched.is_file(), "cwd-relative touch must land in scratch");
     assert!(
         std::fs::metadata(&touched).unwrap().len() > 0,
-        "the expectation file must be non-empty (spec 27 §2)"
+        "the expectation file must be non-empty"
     );
     // log: stdout+stderr were appended to the log file.
     let log = std::fs::read_to_string(&s.log_path).unwrap();

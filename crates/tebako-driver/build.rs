@@ -39,7 +39,7 @@ fn main() {
     // product here is a dylib, not a static library.
     let tool = cc::Build::new()
         .try_get_compiler()
-        .unwrap_or_else(|e| panic!("no C compiler for the spec 22 macOS interpose dylib: {e}"));
+        .unwrap_or_else(|e| panic!("no C compiler for the macOS interpose dylib: {e}"));
     let mut cmd = tool.to_command();
     cmd.arg("-dynamiclib")
         .arg("-undefined")
@@ -54,7 +54,7 @@ fn main() {
         .unwrap_or_else(|e| panic!("failed to spawn the C compiler: {e}\n  {display}"));
     if !output.status.success() {
         panic!(
-            "the spec 22 macOS interpose dylib failed to build: {}\n  {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            "the macOS interpose dylib failed to build: {}\n  {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
             output.status,
             display,
             String::from_utf8_lossy(&output.stdout),

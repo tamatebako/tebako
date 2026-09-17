@@ -2126,7 +2126,7 @@ fn contract_gate(entry_ref: &str, card: Option<&str>, asset: &str) -> Result<(),
     let Some(text) = card else {
         return Err(TebakoError::new(
             format!(
-                "{entry_ref} is pre-era — the release provides no readable manifest.json (a checksum-only index declares no contract set) — rebuild with the current factory (spec 18 C2), or pin a runtime that declares its contract"
+                "{entry_ref} is pre-era — the release provides no readable manifest.json (a checksum-only index declares no contract set) — rebuild with the current factory, or pin a runtime that declares its contract"
             ),
             75,
         ));
@@ -2135,7 +2135,7 @@ fn contract_gate(entry_ref: &str, card: Option<&str>, asset: &str) -> Result<(),
         Ok(Some(_)) => Ok(()),
         Ok(None) => Err(TebakoError::new(
             format!(
-                "{entry_ref} is pre-era — its release manifest declares no contract set (no entry for {asset}) — rebuild with the current factory (spec 18 C2)"
+                "{entry_ref} is pre-era — its release manifest declares no contract set (no entry for {asset}) — rebuild with the current factory"
             ),
             75,
         )),

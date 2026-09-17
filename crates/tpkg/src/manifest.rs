@@ -193,7 +193,7 @@ impl Platform {
             all(target_os = "linux", target_env = "musl", target_arch = "aarch64"),
             all(target_os = "windows", target_arch = "x86_64")
         )))]
-        compile_error!("unsupported platform (outside the spec 03 §3 axis)");
+        compile_error!("unsupported platform (outside the supported platform-triplet axis)");
     }
 }
 
@@ -1013,16 +1013,16 @@ impl OnRuntime {
     fn validate(&self) -> Result<(), ManifestError> {
         check_abs_path(
             &self.mount,
-            "provides.on_runtime.mount must be absolute (spec 17 §1's uniform namespace)",
+            "provides.on_runtime.mount must be absolute (the mount namespace is uniform)",
         )?;
         if self.mount == "/" {
             return Err(ManifestError::Invalid(
-                "provides.on_runtime.mount must not be \"/\" — the depending runtime's env image never mounts over the owner's root (spec 33 §2)",
+                "provides.on_runtime.mount must not be \"/\" — the depending runtime's env image never mounts over the owner's root",
             ));
         }
         if self.argv_template.is_empty() {
             return Err(ManifestError::Invalid(
-                "provides.on_runtime.argv_template must not be empty — the template is the composition's rewrite (spec 33 §2)",
+                "provides.on_runtime.argv_template must not be empty — the template is the composition's rewrite",
             ));
         }
         for token in &self.argv_template {
@@ -1190,7 +1190,7 @@ impl AppProvides {
             if let Some(reqs) = &ep.runtime_requirement {
                 if reqs.entries().is_empty() {
                     return Err(ManifestError::Invalid(
-                        "provides.entrypoints[].runtime_requirement list must not be empty (spec 28 §8)",
+                        "provides.entrypoints[].runtime_requirement list must not be empty",
                     ));
                 }
                 let engine = reqs.engine();
@@ -1201,7 +1201,7 @@ impl AppProvides {
                     )?;
                     if req.engine != engine {
                         return Err(ManifestError::Invalid(
-                            "provides.entrypoints[].runtime_requirement: every entry of the list names the SAME engine (spec 28 §8 — the implementation is a sub-axis, never a second engine axis)",
+                            "provides.entrypoints[].runtime_requirement: every entry of the list names the SAME engine (the implementation is a sub-axis, never a second engine axis)",
                         ));
                     }
                     if let Some(implementation) = &req.implementation {
@@ -1223,7 +1223,7 @@ impl AppProvides {
                 }
                 if reqs.entries().len() > 1 && reqs.entries().iter().any(|r| r.abi.is_some()) {
                     return Err(ManifestError::Invalid(
-                        "provides.entrypoints[].runtime_requirement: the list form is forbidden for a native-extension requirement (a second implementation means a second build — one entry per variant, spec 28 §8)",
+                        "provides.entrypoints[].runtime_requirement: the list form is forbidden for a native-extension requirement (a second implementation means a second build — one entry per variant)",
                     ));
                 }
             }
@@ -1536,7 +1536,7 @@ fn check_expose_names(expose: &[String]) -> Result<(), ManifestError> {
         check_non_empty(e, "requires[].expose[] must not be empty")?;
         if e.bytes().any(|b| b == b'/' || b == b'\\' || b == b':') {
             return Err(ManifestError::Invalid(
-                "requires[].expose[] must be a bare command name — no path separator, no drive qualifier (spec 30 §1)",
+                "requires[].expose[] must be a bare command name — no path separator, no drive qualifier",
             ));
         }
         if !seen.insert(e) {
@@ -1614,7 +1614,7 @@ impl Requirement {
             })
             .unwrap_or_default();
         format!(
-            "skipping dependency edge {} — not available on this platform ({host}); the edge covers: {covers} (spec 03 §2.3)",
+            "skipping dependency edge {} — not available on this platform ({host}); the edge covers: {covers}",
             self.edge_label()
         )
     }
@@ -1636,7 +1636,7 @@ impl Requirement {
                 check_non_empty(engine, "requires[].engine must not be empty")?;
                 if triplets.is_some() {
                     return Err(ManifestError::Invalid(
-                        "requires[].triplets is not allowed on a kind: language edge — platform reach of the runtime is the payload-level platforms: axis's statement (spec 03 §2.3)",
+                        "requires[].triplets is not allowed on a kind: language edge — platform reach of the runtime is the payload-level platforms: axis's statement",
                     ));
                 }
             }
@@ -1704,7 +1704,7 @@ impl Requirement {
                 // contentless dependency, a named error.
                 if mount.is_none() && expose.is_empty() {
                     return Err(ManifestError::Invalid(
-                        "requires[] executable edge declares neither mount nor expose — a contentless edge opens no surface (spec 32 §1)",
+                        "requires[] executable edge declares neither mount nor expose — a contentless edge opens no surface",
                     ));
                 }
                 // spec 32 §1: the spawn-surface grammar is spec 30 §1's,
@@ -1712,7 +1712,7 @@ impl Requirement {
                 check_expose_names(expose)?;
                 if !expose.is_empty() && !expose.iter().any(|e| e == name) {
                     return Err(ManifestError::Invalid(
-                        "requires[] executable edge with expose requires name ∈ expose — the depended capability must be surfaced (spec 32 §1)",
+                        "requires[] executable edge with expose requires name ∈ expose — the depended capability must be surfaced",
                     ));
                 }
             }
@@ -1782,7 +1782,7 @@ impl AugmentsEdge {
             // base release, shipped in lockstep.
             if !self.constraint.is_exact_pin() {
                 return Err(ManifestError::Invalid(
-                    "augments[].constraint must pin exactly (\"= x.y.z\") when built_against is declared — the gem-closure subtraction is sound only against the exact inventory it subtracted (spec 03 §2.8's binding rule)",
+                    "augments[].constraint must pin exactly (\"= x.y.z\") when built_against is declared — the gem-closure subtraction is sound only against the exact inventory it subtracted",
                 ));
             }
         }
@@ -2048,7 +2048,7 @@ impl Check {
                 // other kind it names nothing.
                 if kind != PayloadKind::Runtime {
                     return Err(ManifestError::Invalid(
-                        "checks[].entry: \"self\" is reserved for kind runtime (spec 26 §1.1)",
+                        "checks[].entry: \"self\" is reserved for kind runtime",
                     ));
                 }
             }
@@ -2079,7 +2079,7 @@ impl Check {
                 }
                 if self.expect.image_files.is_empty() {
                     return Err(ManifestError::Invalid(
-                        "a structural check (no entry) requires a non-empty expect.image_files — its only assertion channel (spec 26 §1.1)",
+                        "a structural check (no entry) requires a non-empty expect.image_files — its only assertion channel",
                     ));
                 }
             }
@@ -2110,12 +2110,12 @@ impl Check {
         if composition {
             if self.fixtures.is_some() {
                 return Err(ManifestError::Invalid(
-                    "checks[].fixtures names an in-image dir a composition does not have — a composition check declares fixtures_inline or fixtures_host (spec 26 §2.1)",
+                    "checks[].fixtures names an in-image dir a composition does not have — a composition check declares fixtures_inline or fixtures_host",
                 ));
             }
         } else if !self.fixtures_inline.is_empty() || self.fixtures_host.is_some() {
             return Err(ManifestError::Invalid(
-                "checks[].fixtures_inline/fixtures_host belong to composition checks (spec 26 §2.1) — a slice check's fixtures are in-image (fixtures:)",
+                "checks[].fixtures_inline/fixtures_host belong to composition checks — a slice check's fixtures are in-image (fixtures:)",
             ));
         }
         for name in self.fixtures_inline.keys() {
@@ -2355,7 +2355,7 @@ impl PayloadManifest {
                     for req in reqs.entries() {
                         if req.abi.is_some() && req.implementation.is_none() {
                             return Err(ManifestError::Invalid(
-                                "provides.entrypoints[].runtime_requirement: an abi in force requires implementation (an ABI is per-implementation by construction, spec 28 §8 — authoring rule, enforced at press/publish; pre-axis published manifests stay dispatchable)",
+                                "provides.entrypoints[].runtime_requirement: an abi in force requires implementation (an ABI is per-implementation by construction — authoring rule, enforced at press/publish; pre-axis published manifests stay dispatchable)",
                             ));
                         }
                     }
@@ -2368,7 +2368,7 @@ impl PayloadManifest {
                 && app.gems.is_none()
             {
                 return Err(ManifestError::Invalid(
-                    "provides.gems is REQUIRED when a gem-home extension point is declared (spec 03 §2.8) — the KEY's presence, not its length: an empty inventory (gems: []) validly states the base stages no gems of its own; generated by the builder's specifications/*.gemspec scan, never hand-authored",
+                    "provides.gems is REQUIRED when a gem-home extension point is declared — the KEY's presence, not its length: an empty inventory (gems: []) validly states the base stages no gems of its own; generated by the builder's specifications/*.gemspec scan, never hand-authored",
                 ));
             }
         }
@@ -2439,7 +2439,7 @@ impl PayloadManifest {
             };
             if exec == Some(true) {
                 return Err(ManifestError::Invalid(
-                    "augments declares an extension slice — in-process CONTENT only: capabilities.exec must be false (spec 03 §2.8)",
+                    "augments declares an extension slice — in-process CONTENT only: capabilities.exec must be false",
                 ));
             }
         }
@@ -2460,18 +2460,18 @@ impl PayloadManifest {
                 .count();
             if owner_edges > 1 {
                 return Err(ManifestError::Invalid(
-                    "requires[] carries more than one owner edge (expose-less entries of kind: runtime) — a runtime composes on at most one owner; a runtime needing two process owners is two payloads (spec 33 §1)",
+                    "requires[] carries more than one owner edge (expose-less entries of kind: runtime) — a runtime composes on at most one owner; a runtime needing two process owners is two payloads",
                 ));
             }
             match (owner_edges, &rt.on_runtime) {
                 (1, None) => {
                     return Err(ManifestError::Invalid(
-                        "a kind: runtime payload with an owner edge (an expose-less requires entry of kind: runtime) must declare provides.on_runtime — the composition declares its rewrite or it is not a composition (spec 33 §2)",
+                        "a kind: runtime payload with an owner edge (an expose-less requires entry of kind: runtime) must declare provides.on_runtime — the composition declares its rewrite or it is not a composition",
                     ));
                 }
                 (0, Some(_)) => {
                     return Err(ManifestError::Invalid(
-                        "provides.on_runtime requires exactly one owner edge (an expose-less requires entry of kind: runtime) — the block declares the composition the edge names (spec 33 §2)",
+                        "provides.on_runtime requires exactly one owner edge (an expose-less requires entry of kind: runtime) — the block declares the composition the edge names",
                     ));
                 }
                 _ => {}
@@ -2493,7 +2493,7 @@ impl PayloadManifest {
                 for e in expose {
                     if app.entrypoints.iter().any(|ep| &ep.name == e) {
                         return Err(ManifestError::Invalid(
-                            "requires[].expose[] collides with the payload's own entrypoint name (spec 30 §3)",
+                            "requires[].expose[] collides with the payload's own entrypoint name",
                         ));
                     }
                 }

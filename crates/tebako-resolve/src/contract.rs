@@ -77,7 +77,7 @@ impl fmt::Display for ContractError {
         match self {
             ContractError::PreEra { asset, missing } => write!(
                 f,
-                "runtime release is pre-era — its manifest entry for {asset} declares no contract set (missing: {}) — rebuild with the current factory (spec 18 C2)",
+                "runtime release is pre-era — its manifest entry for {asset} declares no contract set (missing: {}) — rebuild with the current factory",
                 missing.join(", ")
             ),
             ContractError::EraTooNew { declared, spoken } => write!(

@@ -282,7 +282,7 @@ pub fn resolve_closure<T: Transport>(
         match payload.kind {
             tpkg::PayloadKind::Runtime | tpkg::PayloadKind::Language => {
                 return Err(err(format!(
-                    "compose slice '{}' is a runtime payload — the composition's runtime: row owns the engine (spec 23 §3)",
+                    "compose slice '{}' is a runtime payload — the composition's runtime: row owns the engine",
                     pending.name
                 )));
             }
@@ -544,7 +544,7 @@ pub(crate) fn compose_capability_provider<T: Transport>(
         ))),
         1 => Ok(found.pop().expect("len == 1 checked")),
         _ => Err(err(format!(
-            "compose slice '{consumer}' requires executable {name} and it is provided by more than one registry payload ({}) (AmbiguousProvider) — pin the provider with `payload:` on the edge (spec 03 §8)",
+            "compose slice '{consumer}' requires executable {name} and it is provided by more than one registry payload ({}) (AmbiguousProvider) — pin the provider with `payload:` on the edge",
             found.join(", ")
         ))),
     }

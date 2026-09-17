@@ -247,7 +247,7 @@ pub fn download_verified(url: &str, dest: &Path, expected_sha256: &str) -> Resul
     let actual = sha256_bytes_hex(&bytes);
     if actual != expected_sha256.to_lowercase() {
         return Err(BenchError::operational(format!(
-            "acquire: SHA256 mismatch for {url}\n  expected: {}\n  actual:   {actual}\n  the download was NOT written (the trust anchor is the checksum, spec 00 §8)",
+            "acquire: SHA256 mismatch for {url}\n  expected: {}\n  actual:   {actual}\n  the download was NOT written (the trust anchor is the checksum)",
             expected_sha256.to_lowercase()
         )));
     }
@@ -415,7 +415,7 @@ pub fn acquire_v1_exe(
     let sidecar = get(&format!("{base}/{asset}.sha256.txt"))?;
     let expected = parse_bare_hash(&String::from_utf8_lossy(&sidecar)).ok_or_else(|| {
         BenchError::operational(format!(
-            "acquire: {base}/{asset}.sha256.txt is not a bare 64-hex sha256 (spec 27 §9 spike c)"
+            "acquire: {base}/{asset}.sha256.txt is not a bare 64-hex sha256"
         ))
     })?;
     let dest = layout.assets.join(asset);
@@ -446,7 +446,7 @@ pub fn acquire_v1_exe(
         Ok(exe)
     } else {
         Err(BenchError::operational(format!(
-            "acquire: unsupported packed-mn asset form '{asset}' (.tgz single-member or .exe expected — spec 27 §3)"
+            "acquire: unsupported packed-mn asset form '{asset}' (.tgz single-member or .exe expected)"
         )))
     }
 }
@@ -478,7 +478,7 @@ pub fn extract_single_member_tgz(bytes: &[u8], dest_dir: &Path) -> Result<PathBu
             })?;
         if member.is_some() {
             return Err(BenchError::operational(format!(
-                "acquire: the packed-mn tgz carries more than one file member (at least '{name}' and one other) — the single-member rule (spec 27 §3) is violated"
+                "acquire: the packed-mn tgz carries more than one file member (at least '{name}' and one other) — the single-member rule is violated"
             )));
         }
         let mut buf = Vec::new();

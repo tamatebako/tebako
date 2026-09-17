@@ -169,7 +169,7 @@ pub fn check_once(home: &Path) -> Result<LayoutCheck, StoreLayoutError> {
 /// (stderr; the owner rule for the message text).
 pub fn migration_message(home: &Path) -> String {
     format!(
-        "migrated the tebako store at {} to layout {STORE_LAYOUT_VERSION} (stamped layout-version; the store predates layout versioning — spec 18 C13)",
+        "migrated the tebako store at {} to layout {STORE_LAYOUT_VERSION} (stamped layout-version; the store predates layout versioning)",
         home.display()
     )
 }

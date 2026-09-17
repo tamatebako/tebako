@@ -770,7 +770,7 @@ pub fn publish_full(
                         let r = &reqs.entries()[0];
                         if reqs.entries().len() > 1 {
                             notes.push(format!(
-                                "{}: the runtime_requirement any_of list mirrors its first entry in the registry; the full set rides the embedded manifest (spec 28 §8)",
+                                "{}: the runtime_requirement any_of list mirrors its first entry in the registry; the full set rides the embedded manifest",
                                 embedded.identity.name
                             ));
                         }

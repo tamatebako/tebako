@@ -494,7 +494,7 @@ fn print_help() {
     println!("Commands:");
     println!("  info          Dump a three-part package trailer (or archive summary);");
     println!("                --full container report, --slot N payload, --json document,");
-    println!("                --verify strict checks, --depth 0|1|2 (spec 15)");
+    println!("                --verify strict checks, --depth 0|1|2");
     println!("  validate      Strict package verification (exit 0/65/70/71/72/77)");
     println!("  bundle        Assemble a three-part package (bootstrap + images + trailer)");
     println!("  unbundle      Decompose a three-part package into a directory");
@@ -514,11 +514,11 @@ fn print_help() {
     println!("operations preserve the input's signing state. Verification of signed");
     println!("packages at run time is always strict.");
     println!("`bundle --package-manifest <file.yaml>` embeds the L2 package manifest");
-    println!("(ext block type 2, spec 02 §5b / spec 03 §6) — the press adds the spec-18");
+    println!("(ext block type 2) — the press adds the");
     println!("contract declaration (contract_era/pressed_by/reader_era) to it; rewrites");
     println!("preserve extension blocks, and `info --full` prints the package section");
     println!("when present. `validate` / `info --verify` enforce the contract gate");
-    println!("(exit 77: pre-era or era-mismatch refusal, spec 18 C6).");
+    println!("(exit 77: pre-era or era-mismatch refusal).");
     println!("Options vary per command; the default mountpoint for image slot 0 is");
     println!("{} (slot N: {}).", default_mount(0), default_mount(1));
 }

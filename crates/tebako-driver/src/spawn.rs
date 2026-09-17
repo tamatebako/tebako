@@ -231,12 +231,12 @@ pub(crate) fn capture(
         for name in expose {
             if name.contains('/') || name.contains('\\') || name.contains(':') {
                 return Err(manifest(format!(
-                    "requires[].expose name '{name}' is not a bare command name — the spawn surface never shadows a path (spec 30 §1)"
+                    "requires[].expose name '{name}' is not a bare command name — the spawn surface never shadows a path"
                 )));
             }
             if exposes.insert(name.clone(), edge.clone()).is_some() {
                 return Err(manifest(format!(
-                    "requires[].expose name '{name}' is declared by two spawn edges — the spawn surface is ambiguous (spec 30 §1, spec 32 §1)"
+                    "requires[].expose name '{name}' is declared by two spawn edges — the spawn surface is ambiguous"
                 )));
             }
         }
@@ -251,7 +251,7 @@ pub(crate) fn capture(
     ) {
         (false, Some(value)) => tpkg::runtime_store::parse_spawn_lock(&value).map_err(|e| {
             manifest(format!(
-                "{}: {e} — the dispatcher's spawn pin is torn (spec 30 §2)",
+                "{}: {e} — the dispatcher's spawn pin is torn",
                 tpkg::runtime_store::SPAWN_LOCK_VAR
             ))
         })?,
@@ -268,7 +268,7 @@ pub(crate) fn capture(
     ) {
         (false, Some(value)) => Some(HostJail::parse_env_spec(&value).map_err(|e| {
             manifest(format!(
-                "{}: {e} — the dispatcher's jail ceiling is torn (spec 32 §4)",
+                "{}: {e} — the dispatcher's jail ceiling is torn",
                 tpkg::runtime_store::JAIL_TIGHTENING_VAR
             ))
         })?),
@@ -365,7 +365,7 @@ fn compose_plan(
             let facts = runtime_facts(&rt, &state.runtime_root)?;
             if !facts.entrypoints.iter().any(|e| e.name == name) {
                 return Err(format!(
-                    "spawn '{name}': payload '{}' exposes it for engine '{engine}' but runtime {} {} declares no entrypoint of that name — the payload's expose list outruns the runtime's spawn surface (spec 30 §2)",
+                    "spawn '{name}': payload '{}' exposes it for engine '{engine}' but runtime {} {} declares no entrypoint of that name — the payload's expose list outruns the runtime's spawn surface",
                     state.payload_name, rt.lang_version, rt.tebako_version
                 ));
             }
@@ -375,7 +375,7 @@ fn compose_plan(
                 .as_ref()
                 .ok_or_else(|| {
                     format!(
-                        "spawn '{name}': runtime {} {} resolved without its env image — an exe-only cache entry cannot boot (spec 30 §2)",
+                        "spawn '{name}': runtime {} {} resolved without its env image — an exe-only cache entry cannot boot",
                         rt.lang_version, rt.tebako_version
                     )
                 })?
@@ -481,7 +481,7 @@ fn compose_payload_plan(
         .as_ref()
         .ok_or_else(|| {
             format!(
-                "spawn '{command}': runtime {} {} resolved without its env image — an exe-only cache entry cannot boot (spec 32 §2)",
+                "spawn '{command}': runtime {} {} resolved without its env image — an exe-only cache entry cannot boot",
                 rt.lang_version, rt.tebako_version
             )
         })?
@@ -569,7 +569,7 @@ fn resolve_edge(
         )
         .ok_or_else(|| {
             format!(
-                "spawn '{name}': dispatch-locked {engine}={}:{} has vanished from the store — re-run through the shim or `tebako install` the runtime (spec 30 §2)",
+                "spawn '{name}': dispatch-locked {engine}={}:{} has vanished from the store — re-run through the shim or `tebako install` the runtime",
                 locked.lang_version, locked.tebako_version
             )
         });
@@ -589,7 +589,7 @@ fn resolve_edge(
     }
     hit.ok_or_else(|| {
         format!(
-            "spawn '{name}': no cached runtime satisfies engine '{engine}' — a spawn never downloads: `tebako install` the runtime ahead, or dispatch through the shim (spec 30 §2)"
+            "spawn '{name}': no cached runtime satisfies engine '{engine}' — a spawn never downloads: `tebako install` the runtime ahead, or dispatch through the shim"
         )
     })
 }
@@ -628,7 +628,7 @@ fn resolve_provider(
             .map_err(|e| format!("spawn '{command}': {e}"))?
             .ok_or_else(|| {
                 format!(
-                    "spawn '{command}': dispatch-locked payload {locked_name}@{locked_version} has vanished from the store — re-run through the shim or `tebako install` the payload (spec 32 §5)"
+                    "spawn '{command}': dispatch-locked payload {locked_name}@{locked_version} has vanished from the store — re-run through the shim or `tebako install` the payload"
                 )
             })?;
         if pin.is_some() || declares_capability(&record, capability) {
@@ -645,7 +645,7 @@ fn resolve_provider(
             .max_by(|a, b| tpkg::versions::compare(a, b));
         let Some(version) = version else {
             return Err(format!(
-                "spawn '{command}': provider payload {pin} has no installed version satisfying '{}' — a spawn never downloads: `tebako install {pin}` ahead, or dispatch through the shim (spec 32 §5)",
+                "spawn '{command}': provider payload {pin} has no installed version satisfying '{}' — a spawn never downloads: `tebako install {pin}` ahead, or dispatch through the shim",
                 constraint.as_str()
             ));
         };
@@ -653,7 +653,7 @@ fn resolve_provider(
             .map_err(|e| format!("spawn '{command}': {e}"))?
             .ok_or_else(|| {
                 format!(
-                    "spawn '{command}': the installed record of provider payload {pin} {version} is incomplete — re-install it with `tebako install {pin}` (spec 32 §5)"
+                    "spawn '{command}': the installed record of provider payload {pin} {version} is incomplete — re-install it with `tebako install {pin}`"
                 )
             })?;
         return Ok((record, None));
@@ -665,7 +665,7 @@ fn resolve_provider(
     names.dedup();
     match names.len() {
         0 => Err(format!(
-            "spawn '{command}': no installed payload provides executable '{capability}' (DependencyNotFound) — a spawn never downloads: `tebako install` a provider ahead, or dispatch through the shim (spec 32 §5)"
+            "spawn '{command}': no installed payload provides executable '{capability}' (DependencyNotFound) — a spawn never downloads: `tebako install` a provider ahead, or dispatch through the shim"
         )),
         1 => {
             let provider_name = names.pop().unwrap_or_default();
@@ -679,7 +679,7 @@ fn resolve_provider(
                 })
         }
         _ => Err(format!(
-            "spawn '{command}': executable '{capability}' is provided by more than one installed payload ({}) (AmbiguousProvider) — pin the provider with `payload:` on the edge (spec 32 §1)",
+            "spawn '{command}': executable '{capability}' is provided by more than one installed payload ({}) (AmbiguousProvider) — pin the provider with `payload:` on the edge",
             names.join(", ")
         )),
     }
@@ -767,7 +767,7 @@ fn materialize_mirror(
     let _ = context().write().unwrap().unmount_handle(handle);
     let text = text.map_err(|e| {
         format!(
-            "the payload image '{}' carries no readable {} — the embedded manifest is the spawned payload's self-description (spec 32 §6): {}",
+            "the payload image '{}' carries no readable {} — the embedded manifest is the spawned payload's self-description: {}",
             image.display(),
             tpkg::PAYLOAD_MANIFEST_PATH,
             crate::driver::errno_text(e)
@@ -826,19 +826,19 @@ fn provider_entrypoint<'p>(
 ) -> Result<&'p Entrypoint, String> {
     let Provides::App(app) = &provider.manifest.provides else {
         return Err(format!(
-            "executable edge '{capability}': provider payload {} {} is not an app payload — it declares no entrypoints to spawn (spec 32 §1)",
+            "executable edge '{capability}': provider payload {} {} is not an app payload — it declares no entrypoints to spawn",
             provider.name, provider.version
         ));
     };
     let Some(entry) = app.entrypoints.iter().find(|e| e.name == exposed) else {
         return Err(format!(
-            "executable edge '{capability}': provider payload {} {} declares no entrypoint '{exposed}' — the expose list outruns the provider's declaration (spec 32 §1)",
+            "executable edge '{capability}': provider payload {} {} declares no entrypoint '{exposed}' — the expose list outruns the provider's declaration",
             provider.name, provider.version
         ));
     };
     if entry.runtime_requirement.is_none() {
         return Err(format!(
-            "executable edge '{capability}': the provider's entrypoint '{exposed}' carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier (spec 32 §1)"
+            "executable edge '{capability}': the provider's entrypoint '{exposed}' carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier"
         ));
     }
     Ok(entry)
@@ -867,7 +867,7 @@ fn nested_runtime(
         )
         .ok_or_else(|| {
             format!(
-                "executable edge '{capability}': dispatch-locked {}={}:{} (nested in the {}@{} row) has vanished from the store — re-run through the shim or `tebako install` the runtime (spec 32 §5)",
+                "executable edge '{capability}': dispatch-locked {}={}:{} (nested in the {}@{} row) has vanished from the store — re-run through the shim or `tebako install` the runtime",
                 row.engine, row.lang_version, row.tebako_version, provider.name, provider.version
             )
         });
@@ -897,7 +897,7 @@ fn nested_runtime(
                         if let Some(got) = &rt.abi {
                             if got != want {
                                 return format!(
-                                    "executable edge '{capability}': the exposed entry '{exposed}' requires abi '{want}' but the cached {} runtime is '{got}' — a spawn never downloads: `tebako install` a matching runtime (spec 32 §2)",
+                                    "executable edge '{capability}': the exposed entry '{exposed}' requires abi '{want}' but the cached {} runtime is '{got}' — a spawn never downloads: `tebako install` a matching runtime",
                                     req.engine
                                 );
                             }
@@ -906,7 +906,7 @@ fn nested_runtime(
                 }
             }
             format!(
-                "executable edge '{capability}': no cached runtime satisfies engine '{}' ('{}') for provider {} {} — a spawn never downloads: `tebako install` the runtime ahead, or dispatch through the shim (spec 32 §2)",
+                "executable edge '{capability}': no cached runtime satisfies engine '{}' ('{}') for provider {} {} — a spawn never downloads: `tebako install` the runtime ahead, or dispatch through the shim",
                 reqs.engine(), reqs, provider.name, provider.version
             )
         })?;
@@ -918,7 +918,7 @@ fn nested_runtime(
                     && p.tebako_version == rt.tebako_version => {}
             Some(p) => {
                 return Err(format!(
-                    "executable edge '{capability}': the exposed entries disagree on the runtime pair ({} {} tebako {} vs {} {} tebako {}) — one payload row nests ONE pair (spec 32 §5); split the edge per runtime",
+                    "executable edge '{capability}': the exposed entries disagree on the runtime pair ({} {} tebako {} vs {} {} tebako {}) — one payload row nests ONE pair; split the edge per runtime",
                     p.engine, p.lang_version, p.tebako_version, rt.engine, rt.lang_version, rt.tebako_version
                 ));
             }
@@ -988,7 +988,7 @@ fn provider_dep_mounts(
                     .max_by(|a, b| tpkg::versions::compare(a, b));
                 let Some(version) = version else {
                     return Err(format!(
-                        "provider '{}' requires payload {name} but no satisfying version is installed — a spawn never downloads: `tebako install {name}` ahead (spec 32 §2)",
+                        "provider '{}' requires payload {name} but no satisfying version is installed — a spawn never downloads: `tebako install {name}` ahead",
                         provider.name
                     ));
                 };
@@ -996,7 +996,7 @@ fn provider_dep_mounts(
                     .map_err(|e| format!("provider '{}': {e}", provider.name))?
                     .ok_or_else(|| {
                         format!(
-                            "provider '{}': the installed record of {name} {version} is incomplete — re-install it with `tebako install {name}` (spec 32 §2)",
+                            "provider '{}': the installed record of {name} {version} is incomplete — re-install it with `tebako install {name}`",
                             provider.name
                         )
                     })?;
@@ -1059,7 +1059,7 @@ fn compose_child_lock(
                         )
                         .ok_or_else(|| {
                             format!(
-                                "provider '{}' requires runtime '{engine}' but no cached runtime satisfies it — a spawn never downloads: `tebako install` the runtime ahead (spec 32 §5)",
+                                "provider '{}' requires runtime '{engine}' but no cached runtime satisfies it — a spawn never downloads: `tebako install` the runtime ahead",
                                 provider.name
                             )
                         })?;
@@ -1092,7 +1092,7 @@ fn compose_child_lock(
                 )?;
                 if visiting.iter().any(|p| p == &nested.name) {
                     return Err(format!(
-                        "spawn dependency cycle through provider payload '{}' ({}): the executable edges form a cycle — break it (spec 32 §2)",
+                        "spawn dependency cycle through provider payload '{}' ({}): the executable edges form a cycle — break it",
                         nested.name,
                         visiting.join(" -> ")
                     ));
@@ -1158,7 +1158,7 @@ fn runtime_facts(rt: &CachedRuntime, runtime_root: &str) -> Result<Arc<RuntimeFa
     let _ = context().write().unwrap().unmount_handle(handle);
     let text = text.map_err(|e| {
         format!(
-            "the env image '{}' carries no readable {} — a runtime's spawn surface is declared in its image manifest (spec 30 §2): {}",
+            "the env image '{}' carries no readable {} — a runtime's spawn surface is declared in its image manifest: {}",
             image.display(),
             tpkg::PAYLOAD_MANIFEST_PATH,
             crate::driver::errno_text(e)
@@ -1173,7 +1173,7 @@ fn runtime_facts(rt: &CachedRuntime, runtime_root: &str) -> Result<Arc<RuntimeFa
     })?;
     let Provides::Runtime(runtime) = &manifest_doc.provides else {
         return Err(format!(
-            "the env image '{}' is not a runtime payload — its spawn surface cannot resolve (spec 30 §2)",
+            "the env image '{}' is not a runtime payload — its spawn surface cannot resolve",
             image.display()
         ));
     };

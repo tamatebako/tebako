@@ -688,9 +688,9 @@ fn print_help() {
         "  mkimage  Create a dwarfs or limnifs (.tfs) image from a directory (in-process writer)"
     );
     println!("  exec     Run a dynamic native command with the VFS injected (preload shim;");
-    println!("           --compose <file.yaml> takes the whole composition, spec 23 §9)");
+    println!("           --compose <file.yaml> takes the whole composition)");
     println!("  needs    Draft a payload needs: block from a record-mode journal");
-    println!("           (--from-journal <log>; spec 23 §8)");
+    println!("           (--from-journal <log>)");
     println!("  encrypt  Encrypt an image to recipients (-o, --recipient, --subtree;");
     println!("           --rewrap --key rotates grants without touching the bulk)");
     println!("  decrypt  Decrypt an image to a plaintext tar (-o, --key)");

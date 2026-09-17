@@ -16,38 +16,38 @@ const USAGE: &str = "Usage:
                [--no-install] [--quiet-notices] [--sign[=<keyid>] | --no-sign]
                [--format dwarfs|limnifs] [--compose <tebako.yaml>]
                [--carry all|none|<name,...>] [--share <name,...>]
-               (lean/fat stay accepted as deprecated aliases, spec 23 §13.2)
+               (lean/fat stay accepted as deprecated aliases)
   tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
-               one package, N commands (spec 03 §6: per-entry slots + type-2 manifest)
+               one package, N commands (per-entry slots + type-2 manifest)
   tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
                [--] [<args>...]
   tebako trace run <pkg> [--capture <path>] [--out <path>] [--] [<args>...]
                                        run under TEBAKO_JAIL=record with the trace bus
-                                       armed; synthesize a suggested manifest (spec 25 §4)
+                                       armed; synthesize a suggested manifest
   tebako trace cover --inside <tfs.json> --outside <retrace.json> --prefix <path>
                [--pid N] [--window SECS] [--exclude-probes] [--json] [--layer libc|kernel]
-                                       the escapes report (spec 25 §6, phase T3): outside
+                                       the escapes report: outside
                                        touches under the prefix the inside stream never saw
                                        (exit 0 clean / 1 escapes / 2 error)
   tebako trace import procmon <capture.csv>
-                                       the spec 25 §6.2 offline converter: a procmon CSV
+                                       the offline converter: a procmon CSV
                                        export becomes the retrace-shaped JSON outside
                                        stream cover consumes (exit 0 converted /
                                        1 zero entries / 2 error)
   tebako trace explain <capture.jsonl>
-                                       diagnosis (spec 25 §5, phase T4): replay the
+                                       diagnosis: replay the
                                        capture into the hop chain and name the first
                                        red hop (exit 0 clean / 1 red hop / 2 error)
   tebako check <name | image.tfs | package | tebako.yaml>
                [--check <c>] [--list] [--record] [--keep-scratch]
                [--runtime <exe> --runtime-image <env.tfs>]
-                                       the payload's in-image acceptance checks (spec 26 §2)
+                                       the payload's in-image acceptance checks
   tebako cache list [--json]
   tebako cache prune [--runtimes] [--payloads] [--all] [--older-than Nd]
                                        bare = runtimes only; the payload arm never
                                        prunes a pinned or a name's newest version
                                        (no opt-out — prune never strands a pin)
-  tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
+  tebako add-registry <ref>            register a tpkg-registry.yaml
   tebako list-registries               list the registered registries
   tebako update-registries             refresh the dispatch-time registry cache
   tebako install <ref | name[@ver]>    install a payload + register its shims
@@ -56,18 +56,18 @@ const USAGE: &str = "Usage:
                [--config <org.yaml>] [--archive tar.gz]
                                        an offline bundle: the payload closure + its
                                        runtimes + registry caches + the CLI tool set,
-                                       pre-staged for an installer (spec 16 §6);
+                                       pre-staged for an installer;
                                        --also stages an extension slice beside the
                                        target and pins it on the target's defaults
-  tebako shim <verb> …                 the dispatcher's management verbs (spec 07 §3;
-                                       ≡ tebako-shim <verb> …: list|use|enable|disable|which|doctor|install-shell|uninstall-shell)
+  tebako shim <verb> …                 the dispatcher's management verbs
+                                       (≡ tebako-shim <verb> …: list|use|enable|disable|which|doctor|install-shell|uninstall-shell)
   tebako info [topic] [--remote] [--json]
                                        the store/system surface (system|runtimes|payloads|shims|registries|store)
-  tebako doctor [--json]               the spec 35 diagnostics surface (store / dispatch /
+  tebako doctor [--json]               the diagnostics surface (store / dispatch /
                                        network / trust / registries — read-only;
                                        exit 0 healthy / 1 problems)
-  tebako inspect <artifact> [flags]    payload/package introspection (spec 15);
-                                       --contract prints the spec-18 contract card
+  tebako inspect <artifact> [flags]    payload/package introspection;
+                                       --contract prints the contract card
                                        (era, contract versions, mount_root, abi, trust + verdict)
   tebako publish --name <app> [--version <v>] --release tfs:github:<owner>/<repo>[:<tag>]
                (--payload <path> | --payload <triplet>=<path>)...

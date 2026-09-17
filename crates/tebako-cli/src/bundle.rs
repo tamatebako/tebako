@@ -771,7 +771,7 @@ fn pack(dir: &Path, fmt: ArchiveFormat) -> Result<PathBuf, TebakoError> {
         }
         ArchiveFormat::Zip => {
             return Err(TebakoError::new(
-                "the zip bundle leg is not written yet — tar.gz covers the POSIX legs today; zip lands with the windows installer templates (roadmap 83's second half)",
+                "the zip bundle leg is not written yet — tar.gz covers the POSIX legs today; zip lands with the windows installer templates",
                 EX_TEBAKO_USAGE,
             ));
         }

@@ -1001,7 +1001,7 @@ fn load_composition(path: &Path, ctx: &Ctx) -> Result<CheckTarget, TebakoError> 
         };
         if !seen_mounts.insert(mount.clone()) {
             return Err(doc_err(format!(
-                "two slices mount at {mount:?} (EEXIST at boot — spec 17 §1)"
+                "two slices mount at {mount:?} (EEXIST at boot)"
             )));
         }
         if let Some((manifest, text)) = &slice.manifest {

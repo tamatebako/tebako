@@ -1205,7 +1205,7 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
     // source of truth per run).
     if opts.compose.is_some() && (!opts.images.is_empty() || opts.jail.is_some()) {
         return Err((
-            "Error: --compose cannot be combined with --image/--jail — one composition source per run (spec 23 §9)"
+            "Error: --compose cannot be combined with --image/--jail — one composition source per run"
                 .to_string(),
             1,
         ));
@@ -1325,7 +1325,7 @@ fn compose_exists(path: &str) -> bool {
 pub fn cmd_exec(_opts: &ExecOptions) -> Result<(), (String, i32)> {
     Err((
         "Error: tfs exec is not supported on this platform yet \
-         (the preload shim targets macOS and linux-gnu first; windows is roadmap 30 phase 2)"
+         (the preload shim targets macOS and linux-gnu first; windows is not implemented yet)"
             .to_string(),
         1,
     ))

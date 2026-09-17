@@ -354,7 +354,7 @@ fn network_section(home: &Path, offline: bool) -> Section {
             tebako_http::TlsProbe::EffectiveOk => s.ok(format!("tls {host}: chain verifies")),
             tebako_http::TlsProbe::PlatformOnly => s.problem(format!(
                 "tls {host}: the served chain is rejected by the effective roots but accepted by the platform store — a TLS-intercepting proxy is in the path\n  \
-                 remediation: set `network: tls_roots: platform` in {} (or TEBAKO_EXTRA_CA=/path/to/corp-ca.pem) — spec 04's enterprise-networking amendment",
+                 remediation: set `network: tls_roots: platform` in {} (or TEBAKO_EXTRA_CA=/path/to/corp-ca.pem)",
                 tebako_shim::config::config_path(home).display()
             )),
             tebako_http::TlsProbe::NeitherTrusted => s.problem(format!(

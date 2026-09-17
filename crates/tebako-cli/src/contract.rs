@@ -168,7 +168,7 @@ fn package_card(path: &Path) -> Result<ContractCard, TebakoError> {
         "bootstrap".to_string(),
         match tebako_bootstrap::artifact_info::extract(&bytes) {
             Some(yaml) => summarize_artifact_info(yaml),
-            None => "pre-era (no artifact-info block — a press must refuse it, S38)".to_string(),
+            None => "pre-era (no artifact-info block — a press must refuse it)".to_string(),
         },
     ));
 
@@ -247,7 +247,7 @@ fn bootstrap_card(bytes: &[u8]) -> Result<ContractCard, TebakoError> {
     let spoken_era = tebako_resolve::contract::SPOKEN_ERA;
     let spoken_contract = tebako_resolve::contract::SPOKEN_CONTRACT;
     let verdict = if view.era < 2 {
-        refused("pre-era bootstrap — a press must refuse it (S38)")
+        refused("pre-era bootstrap — a press must refuse it")
     } else if view.era > spoken_era {
         refused(format!(
             "bootstrap speaks era {}, this tebako speaks era {spoken_era} — upgrade tebako",
@@ -292,7 +292,7 @@ fn runtime_dir_card(path: &Path) -> ContractCard {
             class: "runtime directory",
             fields,
             verdict: refused(format!(
-                "pre-era: no readable release card at {} (spec 18 C2/S16 — a side-loaded runtime must carry the same contract fields, no special pleading)",
+                "pre-era: no readable release card at {} (a side-loaded runtime must carry the same contract fields, no special pleading)",
                 manifest_path.display()
             )),
         };
@@ -385,7 +385,7 @@ fn runtime_dir_card(path: &Path) -> ContractCard {
                 class: "runtime directory",
                 fields,
                 verdict: refused(format!(
-                    "pre-era — no contract set declared for {exe_asset} (spec 18 C2)"
+                    "pre-era — no contract set declared for {exe_asset}"
                 )),
             }
         }
@@ -631,7 +631,7 @@ mod tests {
         let card = runtime_dir_card(&empty);
         assert!(!card.verdict.accepted);
         assert!(
-            card.verdict.reason.contains("S16"),
+            card.verdict.reason.contains("no readable release card"),
             "{}",
             card.verdict.reason
         );

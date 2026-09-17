@@ -892,7 +892,7 @@ fn render_stderr(result: &Correlation, prefix: &str, layer: Layer) -> String {
         }
     };
     out.push_str(&format!(
-        "tebako: trace cover: outside capture layer: {layer_note} (spec 25 §6.1; named by \
+        "tebako: trace cover: outside capture layer: {layer_note} (named by \
          --layer, default libc)\n"
     ));
     if !result.coverage.per_surface.is_empty() {

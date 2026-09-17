@@ -79,7 +79,7 @@ impl fmt::Display for RegistryError {
             ),
             RegistryError::PreEra => write!(
                 f,
-                "the registry carries no schema_version — a pre-era (era 1) document; republish the registry with a current tebako (spec 18 C8)"
+                "the registry carries no schema_version — a pre-era (era 1) document; republish the registry with a current tebako"
             ),
             RegistryError::Yaml { reason } => {
                 write!(f, "cannot parse the registry yaml: {reason}")
@@ -87,7 +87,7 @@ impl fmt::Display for RegistryError {
             RegistryError::Invalid { reason } => write!(f, "invalid registry: {reason}"),
             RegistryError::Withdrawn { payload, version } => write!(
                 f,
-                "WithdrawnPayload: '{payload}' version '{version}' is withdrawn (status: withdrawn) — the publisher yanked it; release assets are immutable, so the fix ships as a new version line (spec 04 §2)"
+                "WithdrawnPayload: '{payload}' version '{version}' is withdrawn (status: withdrawn) — the publisher yanked it; release assets are immutable, so the fix ships as a new version line"
             ),
         }
     }

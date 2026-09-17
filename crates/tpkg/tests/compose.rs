@@ -75,7 +75,7 @@ fn spec_example_validates_against_the_json_schema() {
     let value: serde_yml::Value = serde_yml::from_str(SPEC_EXAMPLE).expect("yaml parses");
     validator
         .validate(&yaml_to_json(&value))
-        .unwrap_or_else(|e| panic!("the spec 23 example against the JSON schema: {e}"));
+        .unwrap_or_else(|e| panic!("the SPEC_EXAMPLE composition against the JSON schema: {e}"));
 }
 
 #[test]

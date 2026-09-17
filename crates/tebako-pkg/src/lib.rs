@@ -1219,7 +1219,7 @@ fn package_manifest_section(m: &Manifest) -> String {
                 out.push_str(&format!("  env: {env}\n"));
             }
             if pm.jail.is_some() {
-                out.push_str("  jail: declared (spec 08)\n");
+                out.push_str("  jail: declared\n");
             }
             out
         }
@@ -1236,7 +1236,7 @@ fn package_manifest_section(m: &Manifest) -> String {
             "  contract: era {}, pressed_by {}, reader_era {}\n",
             c.contract_era, c.pressed_by, c.reader_era
         )),
-        Ok(None) => out.push_str("  contract: none (pre-era package — spec 18 C6)\n"),
+        Ok(None) => out.push_str("  contract: none (pre-era package)\n"),
         Err(e) => out.push_str(&format!("  contract: INVALID: {e}\n")),
     }
     out

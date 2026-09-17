@@ -120,7 +120,7 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
             .any(|t: &TripletReport| t.file.triplet == file.triplet)
         {
             return Err(BenchError::operational(format!(
-                "one result file per triplet (§7): '{}' given twice ({})",
+                "one result file per triplet: '{}' given twice ({})",
                 file.triplet,
                 path.display()
             )));
@@ -307,7 +307,7 @@ fn render_markdown(suite: &str, triplets: &[TripletReport]) -> String {
          (noise inflates, never deflates).\n\n\
          Version skew: the old world is frozen at the packed-mn tag's metanorma-cli while the v2 \
          payload is current — compare ratios, not absolutes. Numbers across image formats are \
-         never mixed (spec 27 §1, §7).\n",
+         never mixed.\n",
     );
     out
 }
@@ -325,7 +325,7 @@ fn mode_suffix(r: &RunRecord) -> String {
 fn dashboard(suite: &str, triplets: &[TripletReport]) -> Dashboard {
     Dashboard {
         suite: suite.to_string(),
-        generated_by: "tebako-bench report (spec 27 §7)",
+        generated_by: "tebako-bench report",
         triplets: triplets
             .iter()
             .map(|t| {
