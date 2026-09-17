@@ -2119,8 +2119,7 @@ fn assert_path_prepend(actual: Option<String>, host_suffix: &str, tail: &[&str])
         let want = joined_path(tail);
         let want: Vec<&str> = want.split(';').collect();
         assert_eq!(
-            rest,
-            want,
+            rest, want,
             "the VFS bin dirs + the inherited PATH follow: {actual}"
         );
     } else {
@@ -2205,7 +2204,11 @@ fn the_app_payloads_own_bins_are_never_prepended() {
     .unwrap();
 
     // Only the dependency contributes: the app's own /bin stays off PATH.
-    assert_path_prepend(env.var("PATH"), "/opt/dep/sbin", &["/opt/dep/sbin", "/usr/bin"]);
+    assert_path_prepend(
+        env.var("PATH"),
+        "/opt/dep/sbin",
+        &["/opt/dep/sbin", "/usr/bin"],
+    );
 }
 
 #[test]

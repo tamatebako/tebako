@@ -2133,9 +2133,7 @@ mod tests {
             .join("xml2rfc")
             .join("3.34.0.tfs");
         assert!(
-            seeded
-                .argv[2]
-                .ends_with(&format!("{}:0:/", store_suffix.display())),
+            seeded.argv[2].ends_with(&format!("{}:0:/", store_suffix.display())),
             "{:?}",
             seeded.argv
         );

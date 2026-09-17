@@ -650,7 +650,11 @@ fn an_unresolvable_interpreter_names_the_path_and_the_mount() {
     assert!(err.message.contains("/bin/java"), "{}", err.message);
     // The mount the interpreter resolved against: the platform's baked
     // root (`A:/t` on windows).
-    assert!(err.message.contains(WRAPPER_RUNTIME_ROOT), "{}", err.message);
+    assert!(
+        err.message.contains(WRAPPER_RUNTIME_ROOT),
+        "{}",
+        err.message
+    );
     assert!(!context().read().unwrap().is_mounted());
 }
 
