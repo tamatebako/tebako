@@ -1749,7 +1749,7 @@ fn boot_exports_the_exec_cache_root_keyed_by_the_env_image_sidecar() {
 
     let cache = env
         .var("TEBAKO_EXEC_CACHE")
-        .expect("the handoff env names the exec cache (spec 22 §6)");
+        .expect("the handoff env names the exec cache");
     let want = std::env::temp_dir().join("tebako-exec-abababababababab");
     assert_eq!(Path::new(&cache), want.as_path());
 }

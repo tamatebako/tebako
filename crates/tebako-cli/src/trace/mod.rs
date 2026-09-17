@@ -348,10 +348,10 @@ fn yaml_escape(s: &str) -> String {
 pub fn render_draft(package: &str, capture: &Path, synthesis: &Synthesis) -> String {
     let mut out = String::new();
     out.push_str(&format!(
-        "# Suggested manifest additions for {package} — `tebako trace run` (spec 25 §4, discovery).\n\
+        "# Suggested manifest additions for {package} — `tebako trace run` discovery draft.\n\
          # {} interception event(s) observed; the capture is {}\n\
-         # REVIEW BEFORE MERGING: a generated suggestion never edits a manifest by itself\n\
-         # (spec 25 law 7). Flip ro/rw, delete noise, fill every `why`.\n",
+         # REVIEW BEFORE MERGING: a generated suggestion never edits a manifest by itself.\n\
+         # Flip ro/rw, delete noise, fill every `why`.\n",
         synthesis.events,
         capture.display()
     ));
@@ -370,7 +370,7 @@ pub fn render_draft(package: &str, capture: &Path, synthesis: &Synthesis) -> Str
         );
         for (path, obs) in &synthesis.materialize {
             out.push_str(&format!(
-                "  - path: \"{}\"\n    why: \"TODO — read through a materialized host copy ({})\"\n",
+                "  - path: \"{}\"\n    why: \"fill in — read through a materialized host copy ({})\"\n",
                 yaml_escape(path),
                 obs.why()
             ));
@@ -689,7 +689,7 @@ mod tests {
         .join("\n");
         let s = synthesize(&capture, &[], &[], &|_| true);
         let draft = render_draft("pkg", Path::new("/tmp/capture.jsonl"), &s);
-        assert!(draft.contains("spec 25 §4"), "{draft}");
+        assert!(draft.contains("discovery draft"), "{draft}");
         assert!(
             draft.contains("never edits a manifest by itself"),
             "{draft}"

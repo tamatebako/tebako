@@ -453,7 +453,7 @@ fn tool_entry(
                     }
                     _ => {
                         return Err(bad(
-                            "unknown key — the map form is `{version: \"…\", slices: […]}` (spec 07 §4)",
+                            "unknown key — the map form is `{version: \"…\", slices: […]}`",
                         ))
                     }
                 }
@@ -461,7 +461,7 @@ fn tool_entry(
             Ok(Some(ToolEntry { version, slices }))
         }
         _ => Err(bad(
-            "expected a version string or a `{version, slices}` mapping (spec 07 §4)",
+            "expected a version string or a `{version, slices}` mapping",
         )),
     }
 }
@@ -659,7 +659,7 @@ pub fn slice_pins(
             return fail(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "{source}: invalid slice pin \"{value}\" — the grammar is <slice>@<version> (spec 07 §4)"
+                    "{source}: invalid slice pin \"{value}\" — the grammar is <slice>@<version>"
                 ),
             );
         };
@@ -715,7 +715,7 @@ fn platform_skipped_provider(tool: &str, skipped: &[String]) -> ShimError {
     ShimError::new(
         EX_TEBAKO_UNAVAILABLE,
         format!(
-            "\"{tool}\" is not available on this platform ({}) — {} exposes it only through a dependency edge conditioned to other triplets (spec 03 §2.3)\n  the skip is by the edge's triplets: declaration; install a build covering this host, or pick another command",
+            "\"{tool}\" is not available on this platform ({}) — {} exposes it only through a dependency edge conditioned to other triplets\n  the skip is by the edge's triplets: declaration; install a build covering this host, or pick another command",
             tpkg::Platform::host(),
             skipped.join(", ")
         ),
@@ -773,7 +773,7 @@ fn resolve_pinned(
                 return fail(
                     EX_TEBAKO_UNAVAILABLE,
                     format!(
-                        "pin \"{pin}\" (from {source}): payload \"{payload_name}\" {version} exposes \"{tool}\" only through the edge {} — the command is not available on this platform ({}) (spec 03 §2.3)",
+                        "pin \"{pin}\" (from {source}): payload \"{payload_name}\" {version} exposes \"{tool}\" only through the edge {} — the command is not available on this platform ({})",
                         edge.edge_label(),
                         tpkg::Platform::host(),
                         version = res.version,
@@ -833,7 +833,7 @@ fn resolve_scanned(
                         return fail(
                             EX_TEBAKO_UNAVAILABLE,
                             format!(
-                                "payload \"{payload_name}\" {version} exposes \"{tool}\" only through a platform-skipped edge — the command is not available on this platform ({}) (spec 03 §2.3)",
+                                "payload \"{payload_name}\" {version} exposes \"{tool}\" only through a platform-skipped edge — the command is not available on this platform ({})",
                                 tpkg::Platform::host(),
                                 payload_name = res.payload_name,
                                 version = res.version,

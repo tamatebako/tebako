@@ -266,12 +266,12 @@ fn emit_yaml(
     omitted: u64,
 ) -> String {
     let mut out = String::from(
-        "# Drafted by `tfs needs --from-journal` (spec 23 §8): every host path the\n\
+        "# Drafted by `tfs needs --from-journal`: every host path the\n\
          # recorded run touched, strongest observed access. Review each `access`\n\
          # (ro|rw) and replace every `why` before merging into the payload manifest.\n\
          # Strict ancestors of granted paths are traversable by construction\n\
-         # (spec 08 §2.1) — collapsed out of this draft.\n\
-         # `write:`/`decrypt:` entries (spec 24 §6) are in-image paths relative to\n\
+         # and collapsed out of this draft.\n\
+         # `write:`/`decrypt:` entries are in-image paths relative to\n\
          # the mount named in their `why`; assign each to the slice mounted there\n\
          # and review `persistence` (the observed minimum is ephemeral).\n",
     );
@@ -299,7 +299,7 @@ fn emit_yaml(
                 out.push_str("      optional: true\n");
             }
             out.push_str(&format!(
-                "      why: \"TODO — observed: {} read, {} write\"\n",
+                "      why: \"fill in — observed: {} read, {} write\"\n",
                 o.reads, o.writes
             ));
         }
@@ -308,7 +308,7 @@ fn emit_yaml(
         out.push_str("  write:\n");
         for (path, o) in writes {
             out.push_str(&format!(
-                "    - path: \"{}\"\n      persistence: ephemeral\n      why: \"TODO — observed: {} write under mount {}\"\n",
+                "    - path: \"{}\"\n      persistence: ephemeral\n      why: \"fill in — observed: {} write under mount {}\"\n",
                 yaml_escape(path),
                 o.count,
                 o.mounts.iter().cloned().collect::<Vec<_>>().join(", ")
@@ -319,7 +319,7 @@ fn emit_yaml(
         out.push_str("  decrypt:\n");
         for (path, o) in sealed {
             out.push_str(&format!(
-                "    - part: \"{}\"\n      why: \"TODO — observed: {} sealed read under mount {}\"\n",
+                "    - part: \"{}\"\n      why: \"fill in — observed: {} sealed read under mount {}\"\n",
                 yaml_escape(path),
                 o.count,
                 o.mounts.iter().cloned().collect::<Vec<_>>().join(", ")

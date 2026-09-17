@@ -22,7 +22,7 @@ use tebako_bench::validate::{self, DocKind};
 #[command(
     name = "tebako-bench",
     version,
-    about = "tebako benchmark harness (spec 27) — CI tooling, never shipped",
+    about = "tebako benchmark harness — CI tooling, never shipped",
     long_about = None
 )]
 struct Cli {

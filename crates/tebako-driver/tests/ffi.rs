@@ -157,7 +157,7 @@ fn tebako_main_boots_with_the_ruby_root_and_exports_the_contract() {
     assert_eq!(
         std::env::var("TEBAKO_CONTRACT_VERSION").as_deref(),
         Ok("2"),
-        "the runtime exports its contract (roadmap 45)"
+        "the runtime exports its contract"
     );
     assert_eq!(
         unsafe { tebako_driver::ffi::tebako_is_running_miniruby() },

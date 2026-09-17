@@ -133,7 +133,7 @@ impl fmt::Display for NetConfigError {
                 f,
                 "extra CA {} has no OS path-list spelling (it holds the list \
                  separator, or a quote on Windows) and cannot ride the \
-                 {EXTRA_CA_ENV} env form (spec 17 §2.3's wire) — move the file",
+                 {EXTRA_CA_ENV} env form — move the file",
                 path.display()
             ),
         }

@@ -462,7 +462,7 @@ fn store_layout_check_once(root: &Path) -> Result<(), String> {
     let write_stamp = || std::fs::write(&stamp, format!("{STORE_LAYOUT_VERSION}\n"));
     let migrate = || {
         eprintln!(
-            "tebako-bootstrap: note: migrated the tebako store at {} to layout {STORE_LAYOUT_VERSION} (stamped layout-version; the store predates layout versioning — spec 18 C13)",
+            "tebako-bootstrap: note: migrated the tebako store at {} to layout {STORE_LAYOUT_VERSION} (stamped layout-version; the store predates layout versioning)",
             root.display()
         );
     };
@@ -1011,7 +1011,7 @@ fn contract_gate(
         BootError::new(
             EX_TEBAKO_CONTRACT,
             format!(
-                "runtime \"{runtime_ref}\" is pre-era — its release manifest entry declares no contract set ({detail}) — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                "runtime \"{runtime_ref}\" is pre-era — its release manifest entry declares no contract set ({detail}) — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
             ),
         )
     };
@@ -1935,7 +1935,7 @@ pub fn verify_chain_with_home(
             return fail(
                 EX_TEBAKO_SIGNATURE,
                 format!(
-                    "{} is a signed package, but this tebako-bootstrap was built WITHOUT OpenPGP verification (unverified-first) and cannot honor TEBAKO_REQUIRE_SIGNED=1\n  signer keyid: {keyid_hex}\n  run a verification-enabled bootstrap (roadmap 72 crypto toolkit), or unset TEBAKO_REQUIRE_SIGNED to proceed unverified",
+                    "{} is a signed package, but this tebako-bootstrap was built WITHOUT OpenPGP verification (unverified-first) and cannot honor TEBAKO_REQUIRE_SIGNED=1\n  signer keyid: {keyid_hex}\n  run a verification-enabled bootstrap, or unset TEBAKO_REQUIRE_SIGNED to proceed unverified",
                     self_path.display()
                 ),
             );
@@ -2178,7 +2178,7 @@ fn download_executable(
                 return fail(
                     EX_TEBAKO_CONTRACT,
                     format!(
-                        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
                     ),
                 );
             }
@@ -2451,7 +2451,7 @@ fn resolve_image(
                         BootError::new(
                             EX_TEBAKO_CONTRACT,
                             format!(
-                                "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                                "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
                             ),
                         ),
                     ));
@@ -2847,7 +2847,7 @@ fn pin_for_host<'a>(
         BootError::new(
             EX_TEBAKO_MANIFEST,
             format!(
-                "the lock's {what} digest map does not cover this platform ({}) — {} was not pressed for it\n  the assertion narrows, never extends (spec 23 §13.3)",
+                "the lock's {what} digest map does not cover this platform ({}) — {} was not pressed for it\n  the assertion narrows, never extends",
                 host.release_asset_name(),
                 self_path.display()
             ),
@@ -2891,7 +2891,7 @@ fn stage_locked_slot(
         return fail(
             EX_TEBAKO_SHA,
             format!(
-                "SHA256 mismatch for the carried {what} of {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin, spec 23 §13.4)\n  actual:   {actual}\n  the cache was not touched",
+                "SHA256 mismatch for the carried {what} of {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin)\n  actual:   {actual}\n  the cache was not touched",
                 self_path.display()
             ),
         );
@@ -3150,7 +3150,7 @@ fn resolve_shared_slices(
             } => BootError::new(
                 EX_TEBAKO_SHA,
                 format!(
-                    "SHA256 mismatch for shared slice \"{}\" {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin, spec 23 §13.4)\n  actual:   {actual}\n  the cache was not touched",
+                    "SHA256 mismatch for shared slice \"{}\" {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin)\n  actual:   {actual}\n  the cache was not touched",
                     slice.name, slice.version
                 ),
             ),
@@ -3221,7 +3221,7 @@ fn spawned_artifact_state(
         return fail(
             EX_TEBAKO_SHA,
             format!(
-                "SHA256 mismatch for the {what} — refusing to execute\n  expected: {pin} (the press-time lock pin, spec 23 §13.4)\n  recorded: {recorded} ({})\n  the cache entry {} holds bytes a different press pinned — remove that directory and run again",
+                "SHA256 mismatch for the {what} — refusing to execute\n  expected: {pin} (the press-time lock pin)\n  recorded: {recorded} ({})\n  the cache entry {} holds bytes a different press pinned — remove that directory and run again",
                 marker.display(),
                 entry_dir.display()
             ),
@@ -3726,7 +3726,7 @@ fn resolve_spawned_payload_image(
                 tebako_resolve::SeedOutcome::Conflict { existing_sha256 } => fail(
                     EX_TEBAKO_SHA,
                     format!(
-                        "SHA256 mismatch for the {what} {} — refusing to execute\n  expected: {pin} (the press-time lock pin, spec 23 §13.4)\n  recorded: {existing_sha256} (the cached entry)\n  the cache holds {}@{} under a DIFFERENT digest — remove that entry and run again",
+                        "SHA256 mismatch for the {what} {} — refusing to execute\n  expected: {pin} (the press-time lock pin)\n  recorded: {existing_sha256} (the cached entry)\n  the cache holds {}@{} under a DIFFERENT digest — remove that entry and run again",
                         row.version, row.payload, row.version
                     ),
                 ),
@@ -3757,7 +3757,7 @@ fn resolve_spawned_payload_image(
             } => BootError::new(
                 EX_TEBAKO_SHA,
                 format!(
-                    "SHA256 mismatch for the {what} {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin, spec 23 §13.4)\n  actual:   {actual}\n  the cache was not touched",
+                    "SHA256 mismatch for the {what} {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin)\n  actual:   {actual}\n  the cache was not touched",
                     row.version
                 ),
             ),

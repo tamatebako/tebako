@@ -418,7 +418,7 @@ pub fn resolve_owner(
         return fail(
             EX_TEBAKO_CONTRACT,
             format!(
-                "the resolved {} runtime {} (tebako {}) cannot own this composition: launcher line {line} predates tebako 2.5.0, the first line implementing spec 33's entry rule — the composition would mis-join the entry onto the depending runtime's env image\n  install a {} runtime on tebako >= 2.5.0",
+                "the resolved {} runtime {} (tebako {}) cannot own this composition: launcher line {line} predates tebako 2.5.0, the first line implementing the runtime-composition entry rule — the composition would mis-join the entry onto the depending runtime's env image\n  install a {} runtime on tebako >= 2.5.0",
                 mirror.engine, owner.lang_version, owner.tebako_version, mirror.engine
             ),
         );
@@ -434,7 +434,7 @@ pub fn resolve_owner(
     fail(
         EX_TEBAKO_CONTRACT,
         format!(
-            "the resolved {} runtime {} (tebako {}) cannot own this composition: it declares {} but the depending runtime requires owner_contract \"{}\" (spec 33 §4)\n  install a {} runtime whose release declares a satisfying contract_version",
+            "the resolved {} runtime {} (tebako {}) cannot own this composition: it declares {} but the depending runtime requires owner_contract \"{}\"\n  install a {} runtime whose release declares a satisfying contract_version",
             mirror.engine,
             owner.lang_version,
             owner.tebako_version,
@@ -1047,7 +1047,7 @@ fn runtime_source(
     fail(
         EX_TEBAKO_UNAVAILABLE,
         format!(
-            "no download source for {engine} runtimes — every channel of the per-engine chain (spec 05 §2) came up empty:\n  1. config.yaml `runtimes: {{{engine}: {{source: …}}}}` — not set\n  2. TEBAKO_RUNTIME_MIRROR — not set\n  3. the registered registries — none lists a `kind: runtime` entry for engine \"{engine}\" with a version satisfying \"{reqs}\"\n  4. the product default — hosts ruby runtimes only\n  register the registry that publishes the {engine} runtime (`tebako add-registry`), or pin a source"
+            "no download source for {engine} runtimes — every channel of the per-engine chain came up empty:\n  1. config.yaml `runtimes: {{{engine}: {{source: …}}}}` — not set\n  2. TEBAKO_RUNTIME_MIRROR — not set\n  3. the registered registries — none lists a `kind: runtime` entry for engine \"{engine}\" with a version satisfying \"{reqs}\"\n  4. the product default — hosts ruby runtimes only\n  register the registry that publishes the {engine} runtime (`tebako add-registry`), or pin a source"
         ),
     )
 }
@@ -1450,7 +1450,7 @@ fn contract_gate(
         Ok(None) => fail(
             EX_TEBAKO_CONTRACT,
             format!(
-                "runtime \"{runtime_ref}\" is pre-era — its release manifest entry declares no contract set (no entry for tebako_version={tebako_version} {engine}_version={lang_version} platform={platform} (asset spelling {asset})) — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                "runtime \"{runtime_ref}\" is pre-era — its release manifest entry declares no contract set (no entry for tebako_version={tebako_version} {engine}_version={lang_version} platform={platform} (asset spelling {asset})) — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
             ),
         ),
         Err(e) => fail(
@@ -1680,7 +1680,7 @@ impl FetchTrust {
                     return fail(
                         EX_TEBAKO_TRUST,
                         format!(
-                            "{what} is signed by {primary}, but {origin} {want} — the signer key changed (spec 09 §9); refusing to install or execute"
+                            "{what} is signed by {primary}, but {origin} {want} — the signer key changed; refusing to install or execute"
                         ),
                     );
                 }
@@ -1719,7 +1719,7 @@ impl FetchTrust {
             return fail(
                 EX_TEBAKO_SIGNATURE,
                 format!(
-                    "the release index declares signature \"{}\" for {asset} but it did not fetch from {asc_url} — a declared signature that does not fetch is refused (spec 09 §4)",
+                    "the release index declares signature \"{}\" for {asset} but it did not fetch from {asc_url} — a declared signature that does not fetch is refused",
                     declared.asc
                 ),
             );
@@ -1889,7 +1889,7 @@ fn acquire_index(
         }
     }
     let mut msg = format!(
-        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
     );
     if let Some(note) = &shard_note {
         msg.push_str(&format!("\n  shard: {note}"));
@@ -2177,7 +2177,7 @@ fn download_runtime(
                 );
             }
             eprintln!(
-                "tebako-shim: warning: runtime \"{runtime_ref}\" is unsigned — no verifiable signature on the release; the sha256 digest is the only integrity anchor (spec 09 §4's pre-signing keep-forever line)"
+                "tebako-shim: warning: runtime \"{runtime_ref}\" is unsigned — no verifiable signature on the release; the sha256 digest is the only integrity anchor"
             );
             journal(
                 &ctx.home,
@@ -2195,7 +2195,7 @@ fn download_runtime(
             return fail(
                 EX_TEBAKO_CONTRACT,
                 format!(
-                    "runtime \"{runtime_ref}\": only SHA256SUMS.txt verified — manifest.json is unsigned, so no trusted release contract card exists — refusing to install or execute (spec 09 §4 + spec 18 C2)\n  a spec-conformant factory signs every index form (spec 13 §2a); report the release"
+                    "runtime \"{runtime_ref}\": only SHA256SUMS.txt verified — manifest.json is unsigned, so no trusted release contract card exists — refusing to install or execute\n  a conformant factory signs every index form; report the release"
                 ),
             );
         }

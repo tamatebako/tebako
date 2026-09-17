@@ -88,7 +88,7 @@ pub(crate) fn discover(
     let declared = qualify_mount(&on.mount, runtime_root);
     if declared != first.mount {
         return Err(manifest(format!(
-            "the depending runtime's on_runtime.mount declares '{}' but its env image is mounted at '{}' — the release index's on_runtime mirror contradicts the in-image manifest (spec 33 §1); the release is lying",
+            "the depending runtime's on_runtime.mount declares '{}' but its env image is mounted at '{}' — the release index's on_runtime mirror contradicts the in-image manifest; the release is lying",
             on.mount, first.mount
         )));
     }
@@ -115,18 +115,18 @@ fn expand(template: &[String], mount: &str) -> Result<Vec<String>, DriverError> 
                 .unwrap_or(start + 1);
             let placeholder = &expanded[start..end.min(expanded.len())];
             return Err(manifest(format!(
-                "on_runtime.argv_template names an unknown placeholder '{placeholder}' — the single placeholder is {{mount}} (spec 33 §2)"
+                "on_runtime.argv_template names an unknown placeholder '{placeholder}' — the single placeholder is {{mount}}"
             )));
         }
         if expanded.contains('}') {
             return Err(manifest(format!(
-                "on_runtime.argv_template element '{token}' carries a stray '}}' — the single placeholder is {{mount}} (spec 33 §2)"
+                "on_runtime.argv_template element '{token}' carries a stray '}}' — the single placeholder is {{mount}}"
             )));
         }
         if let Some(rest) = expanded.strip_prefix(mount) {
             if rest.split('/').any(|c| c == "..") {
                 return Err(manifest(format!(
-                    "on_runtime.argv_template element '{token}' escapes the depending runtime's mount '{mount}' after expansion — a named boot error, never a host path (spec 33 §2)"
+                    "on_runtime.argv_template element '{token}' escapes the depending runtime's mount '{mount}' after expansion — a named boot error, never a host path"
                 )));
             }
         }
@@ -158,13 +158,13 @@ pub(crate) fn dep_entrypoint(
 ) -> Result<(String, Vec<String>), DriverError> {
     let doc = mounted_manifest_at(&on.mount)?.ok_or_else(|| {
         manifest(format!(
-            "--tebako-entry '{name}' names a depending-runtime entrypoint but the manifest at '{}' is gone — the composition's discovery read it moments ago (spec 33 §3)",
+            "--tebako-entry '{name}' names a depending-runtime entrypoint but the manifest at '{}' is gone — the composition's discovery read it moments ago",
             on.mount
         ))
     })?;
     let Provides::Runtime(rt) = &doc.provides else {
         return Err(manifest(format!(
-            "--tebako-entry '{name}': the image mounted at '{}' is not the depending runtime (spec 33 §3)",
+            "--tebako-entry '{name}': the image mounted at '{}' is not the depending runtime",
             on.mount
         )));
     };
@@ -174,7 +174,7 @@ pub(crate) fn dep_entrypoint(
         .find(|e| e.name == name)
         .ok_or_else(|| {
             manifest(format!(
-                "--tebako-entry '{name}': the depending runtime declares no entrypoint of that name — on a runtime-on-runtime boot the bare-name surface is the depending runtime's (spec 33 §3); the owner's own entrypoints stay spawnable through spec 30 edges"
+                "--tebako-entry '{name}': the depending runtime declares no entrypoint of that name — on a runtime-on-runtime boot the bare-name surface is the depending runtime's; the owner's own entrypoints stay spawnable through the runtime-entrypoint surface"
             ))
         })?;
     let resolved = join_mount(&on.mount, &ep.path);
@@ -189,7 +189,7 @@ pub(crate) fn dep_entrypoint(
             }
             Err(_) => {
                 return Err(manifest(format!(
-                    "depending-runtime entrypoint '{name}' resolves to '{resolved}' but the path is absent from the mounted tree — the image's declaration lies (spec 33 §3)"
+                    "depending-runtime entrypoint '{name}' resolves to '{resolved}' but the path is absent from the mounted tree — the image's declaration lies"
                 )));
             }
         }

@@ -30,14 +30,14 @@ impl PressMode {
             "lean" => Ok((
                 PressMode::Lean,
                 Some(
-                    "`--mode lean` is deprecated: the preset is now named `shared-runtime` (spec 23 §13.2)"
+                    "`--mode lean` is deprecated: the preset is now named `shared-runtime`"
                         .to_string(),
                 ),
             )),
             "fat" => Ok((
                 PressMode::Fat,
                 Some(
-                    "`--mode fat` is deprecated: the preset is now named `self-contained` — the runtime travels as two carried slots (spec 23 §13.2)"
+                    "`--mode fat` is deprecated: the preset is now named `self-contained` — the runtime travels as two carried slots"
                         .to_string(),
                 ),
             )),

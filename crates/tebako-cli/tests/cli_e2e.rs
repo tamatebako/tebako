@@ -68,7 +68,7 @@ fn dogfood_bootstrap() -> PathBuf {
         sibling.is_file(),
         "the in-workspace tebako-bootstrap binary is missing ({}): build it first \
          (cargo build -p tebako-bootstrap) or run the suite via cargo test --workspace — \
-         without it every press falls to the spec 19 §4 store flow (a network fetch of the \
+         without it every press falls to the store flow (a network fetch of the \
          released bootstrap) instead of dogfooding the in-workspace build",
         sibling.display()
     );

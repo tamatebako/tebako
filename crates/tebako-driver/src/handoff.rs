@@ -178,13 +178,13 @@ impl Handoff {
                 "--tebako-run" => {
                     return Err(DriverError::new(
                         EX_TEBAKO_MANIFEST,
-                        "--tebako-run is the v1 form — the v2 handoff is --tebako-image <image>:<slot>:<mount> --tebako-entry <entry> (spec 17 §1)".to_string(),
+                        "--tebako-run is the v1 form — the v2 handoff is --tebako-image <image>:<slot>:<mount> --tebako-entry <entry>".to_string(),
                     ));
                 }
                 _ if flag.starts_with("--tebako-") => {
                     return Err(DriverError::new(
                         EX_TEBAKO_MANIFEST,
-                        format!("unknown loader option '{flag}' — the handoff grammar is --tebako-image/--tebako-entry (spec 17 §1)"),
+                        format!("unknown loader option '{flag}' — the handoff grammar is --tebako-image/--tebako-entry"),
                     ));
                 }
                 _ => {

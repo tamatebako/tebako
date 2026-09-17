@@ -684,7 +684,7 @@ fn check_env_layout(
         DriverError::new(
             EX_TEBAKO_LAYOUT,
             format!(
-                "env image '{image}' declares no /lib/tebako/layout.yaml — pre-era image (era 1): rebuild the runtime with the current factory (spec 18 C3)"
+                "env image '{image}' declares no /lib/tebako/layout.yaml — pre-era image (era 1): rebuild the runtime with the current factory"
             ),
         )
     })?;
@@ -985,7 +985,7 @@ fn resolve_payload_entrypoint(
             }
             Err(_) => {
                 return Err(manifest(format!(
-                    "payload entrypoint '{name}' resolves to '{resolved}' but the path is absent from the mounted tree — the image's declaration lies (spec 32 §2)"
+                    "payload entrypoint '{name}' resolves to '{resolved}' but the path is absent from the mounted tree — the image's declaration lies"
                 )));
             }
         }
@@ -1010,13 +1010,13 @@ fn resolve_runtime_entrypoint(
 ) -> Result<(String, Vec<String>), DriverError> {
     let manifest_doc = mounted_manifest_at(runtime_root)?.ok_or_else(|| {
         manifest(format!(
-            "--tebako-entry '{name}' names a runtime entrypoint but no env image manifest is readable at '{runtime_root}' (TEBAKO_RUNTIME_IMAGE unset, or the image carries no {}) — a runtime's spawn surface is declared in its env image manifest (spec 30 §2)",
+            "--tebako-entry '{name}' names a runtime entrypoint but no env image manifest is readable at '{runtime_root}' (TEBAKO_RUNTIME_IMAGE unset, or the image carries no {}) — a runtime's spawn surface is declared in its env image manifest",
             tpkg::PAYLOAD_MANIFEST_PATH
         ))
     })?;
     let tpkg::Provides::Runtime(runtime) = &manifest_doc.provides else {
         return Err(manifest(format!(
-            "--tebako-entry '{name}' names a runtime entrypoint but the image mounted at '{runtime_root}' is not a runtime payload (spec 30 §2)"
+            "--tebako-entry '{name}' names a runtime entrypoint but the image mounted at '{runtime_root}' is not a runtime payload"
         )));
     };
     let ep = runtime
@@ -1025,7 +1025,7 @@ fn resolve_runtime_entrypoint(
         .find(|e| e.name == name)
         .ok_or_else(|| {
             manifest(format!(
-                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name — the parent's expose list outruns the runtime's spawn surface (spec 30 §2)"
+                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name — the parent's expose list outruns the runtime's spawn surface"
             ))
         })?;
     let resolved = join_mount(runtime_root, &ep.path);
@@ -1037,7 +1037,7 @@ fn resolve_runtime_entrypoint(
             }
             Err(_) => {
                 return Err(manifest(format!(
-                    "runtime entrypoint '{name}' resolves to '{resolved}' but the path is absent from the mounted tree — the env image's declaration lies (spec 30 §2)"
+                    "runtime entrypoint '{name}' resolves to '{resolved}' but the path is absent from the mounted tree — the env image's declaration lies"
                 )));
             }
         }

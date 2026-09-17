@@ -80,7 +80,7 @@ pub fn refuse_root_augments(res: &Resolution) -> Result<(), ShimError> {
         return fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "payload \"{}\" {} declares `augments:` — an extension slice cannot be the ROOT of a dispatch (NestedAugment, spec 07 §7)\n  slices attach through the base's dispatch: run the base command, and the slice mounts below the base's declared extension point",
+                "payload \"{}\" {} declares `augments:` — an extension slice cannot be the ROOT of a dispatch (NestedAugment)\n  slices attach through the base's dispatch: run the base command, and the slice mounts below the base's declared extension point",
                 res.payload_name, res.version
             ),
         );
@@ -177,7 +177,7 @@ pub fn attach(
                 return fail(
                     EX_TEBAKO_MANIFEST,
                     format!(
-                        "extension slice \"{}\" mounts at {}, which nests under slice \"{}\" at {} (NestedAugment, spec 07 §7) — slices mount side by side below the base's points; re-mount one at its own point",
+                        "extension slice \"{}\" mounts at {}, which nests under slice \"{}\" at {} (NestedAugment) — slices mount side by side below the base's points; re-mount one at its own point",
                         b.name, b.mount, a.name, a.mount
                     ),
                 );
@@ -313,7 +313,7 @@ fn attach_pin(
         ShimError::new(
             EX_TEBAKO_MANIFEST,
             format!(
-                "extension slice {}@{} (pinned in {}) is incompatible with {} {}: {} (SliceIncompatible, spec 07 §7)",
+                "extension slice {}@{} (pinned in {}) is incompatible with {} {}: {} (SliceIncompatible)",
                 pin.name, pin.version, pin.source, res.payload_name, res.version, reason.detail
             ),
         )
@@ -722,7 +722,7 @@ fn verify_slice_signature<T: Transport>(
         return fail(
             EX_TEBAKO_TRUST,
             format!(
-                "{} is signed by {issuer}{primary_note} but the registry pins {pin} — the signer key changed (spec 09 §9 SignerKeyChanged); refusing to install; nothing was cached",
+                "{} is signed by {issuer}{primary_note} but the registry pins {pin} — the signer key changed (SignerKeyChanged); refusing to install; nothing was cached",
                 fetched.origin
             ),
         );

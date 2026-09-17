@@ -125,7 +125,7 @@ where
                         if *e2 == engine && *i2 == implementation.as_deref())
                 }) {
                     return Err(err(format!(
-                        "the app payload declares two spawned runtime edges on engine '{engine}'{} — one lock.spawned[] row per engine+implementation (spec 23 §13.6)",
+                        "the app payload declares two spawned runtime edges on engine '{engine}'{} — one lock.spawned[] row per engine+implementation",
                         implementation
                             .as_deref()
                             .map(|i| format!(" (implementation '{i}')"))
@@ -212,7 +212,7 @@ where
                 };
                 if let Some((first, _)) = seen_providers.iter().find(|(_, p)| p == &provider) {
                     return Err(err(format!(
-                        "the executable edges \"{first}\" and \"{name}\" both resolve to the provider payload '{provider}' — one lock.spawned[] row per provider payload (spec 23 §13.6); merge the expose lists into one edge"
+                        "the executable edges \"{first}\" and \"{name}\" both resolve to the provider payload '{provider}' — one lock.spawned[] row per provider payload; merge the expose lists into one edge"
                     )));
                 }
                 seen_providers.push((name.to_string(), provider.clone()));
@@ -245,7 +245,7 @@ fn gate_carried_runtime(what: &str, preset: ComposePreset) -> Result<(), TebakoE
         return Ok(());
     }
     Err(err(format!(
-        "{what} rides the shared-runtime preset, but press resolves spawned runtimes through the machine store and a shared row would record no replayable `source:` (spec 23 §13.6) — press --mode=self-contained to carry the pair, or hand-author the lock's spawned[] row"
+        "{what} rides the shared-runtime preset, but press resolves spawned runtimes through the machine store and a shared row would record no replayable `source:` — press --mode=self-contained to carry the pair, or hand-author the lock's spawned[] row"
     )))
 }
 
@@ -623,19 +623,19 @@ fn spawned_payload_row<T: Transport>(
             Found::Entrypoint(ep) => ep,
             Found::RuntimeLess => {
                 return Err(err(format!(
-                    "{consumer} requires executable {edge_name}: the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier (spec 32 §0/§1)"
+                    "{consumer} requires executable {edge_name}: the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier"
                 )));
             }
             Found::Undeclared => {
                 return Err(err(format!(
-                    "{consumer} requires executable {edge_name} and exposes \"{exposed}\" but the provider payload {provider} {version} declares no such entrypoint (declared: {}) — fix the expose list or the provider's manifest (spec 32 §7)",
+                    "{consumer} requires executable {edge_name} and exposes \"{exposed}\" but the provider payload {provider} {version} declares no such entrypoint (declared: {}) — fix the expose list or the provider's manifest",
                     declared.join(", ")
                 )));
             }
         };
         if ep.runtime_requirement.is_none() {
             return Err(err(format!(
-                "{consumer} requires executable {edge_name}: the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier (spec 32 §0/§1)"
+                "{consumer} requires executable {edge_name}: the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier"
             )));
         }
         exposed_eps.push(ep);
@@ -654,13 +654,13 @@ fn spawned_payload_row<T: Transport>(
         let reqs = ep.runtime_requirement.as_ref().expect("checked above");
         if reqs.engine() != engine {
             return Err(err(format!(
-                "the provider payload {provider} {version}'s exposed entrypoints disagree on the runtime engine ({engine} vs {}) — one spawned row carries one nested runtime (spec 32 §6); split the expose list across edges",
+                "the provider payload {provider} {version}'s exposed entrypoints disagree on the runtime engine ({engine} vs {}) — one spawned row carries one nested runtime; split the expose list across edges",
                 reqs.engine()
             )));
         }
         if reqs.entries()[0].implementation != implementation {
             return Err(err(format!(
-                "the provider payload {provider} {version}'s exposed entrypoints disagree on the runtime implementation — one spawned row carries one nested runtime (spec 32 §6); split the expose list across edges"
+                "the provider payload {provider} {version}'s exposed entrypoints disagree on the runtime implementation — one spawned row carries one nested runtime; split the expose list across edges"
             )));
         }
     }
@@ -681,7 +681,7 @@ fn spawned_payload_row<T: Transport>(
         })
         .ok_or_else(|| {
             err(format!(
-                "the provider payload {provider} {version} declares no kind: language edge for engine '{engine}' — the spawned row's nested runtime constraint has no source (spec 32 §6)"
+                "the provider payload {provider} {version} declares no kind: language edge for engine '{engine}' — the spawned row's nested runtime constraint has no source"
             ))
         })?;
 

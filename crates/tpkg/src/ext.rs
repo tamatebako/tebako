@@ -129,7 +129,7 @@ impl fmt::Display for ExtError {
             ExtError::CriticalType(t) => write!(
                 f,
                 "unknown CRITICAL tpkg extension block type {t} \
-                 (a reader that does not understand a critical block refuses, never skips — spec 18 §3.7)"
+                 (a reader that does not understand a critical block refuses, never skips)"
             ),
         }
     }

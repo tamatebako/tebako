@@ -816,7 +816,7 @@ mod tests {
             PathRoute::Denied(libc::EPERM)
         );
         let PathRoute::Vfs(fd) = vfs_open(&secret, libc::O_RDONLY) else {
-            panic!("memfs is unaffected by a deny jail (spec 08 §3)");
+            panic!("memfs is unaffected by a deny jail");
         };
         vfs_close(fd).unwrap();
 

@@ -245,7 +245,7 @@ impl LimnifsBackend {
                 let slab_header = parse_slab_header(&mut slab_cursor).map_err(open_error)?;
                 if slab_header.is_sealed() {
                     return Err(unsupported(
-                        "AEAD-sealed slab (spec 20 §7: tebako-side encryption stays the spec-10 transform)"
+                        "AEAD-sealed slab (tebako-side encryption stays the ENC transform)"
                             .to_string(),
                     ));
                 }

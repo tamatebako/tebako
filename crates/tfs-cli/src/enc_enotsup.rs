@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 fn enotsup<T>() -> Result<T, (String, i32)> {
     Err((
         "ENOTSUP: the encryption verbs are not available in this build \
-         (the ENC transform ships in the POSIX tfs build only — TODO.v2-1/08)"
+         (the ENC transform ships in the POSIX tfs build only)"
             .to_string(),
         1,
     ))

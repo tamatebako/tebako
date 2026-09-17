@@ -143,7 +143,7 @@ fn check_contract_distinguishes_the_refusal_classes() {
     );
     let full = info_full(&pkg).unwrap();
     assert!(
-        full.contains("  contract: none (pre-era package — spec 18 C6)\n"),
+        full.contains("  contract: none (pre-era package)\n"),
         "{full}"
     );
 

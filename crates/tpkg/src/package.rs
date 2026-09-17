@@ -559,14 +559,14 @@ impl PackageLock {
                 true => {
                     if runtime.exe.is_none() || runtime.image.is_none() {
                         return Err(PackageManifestError::Invalid(
-                            "lock.runtime with carry: true requires the exe and image slots (the two-slot carried pair, spec 19 §6.1)",
+                            "lock.runtime with carry: true requires the exe and image slots (the two-slot carried pair)",
                         ));
                     }
                 }
                 false => {
                     if runtime.exe.is_some() || runtime.image.is_some() || runtime.dll.is_some() {
                         return Err(PackageManifestError::Invalid(
-                            "lock.runtime with carry: false declares no slots — a shared runtime resolves through the ordinary spec 05 §5 chain",
+                            "lock.runtime with carry: false declares no slots — a shared runtime resolves through the ordinary runtime-resolution chain",
                         ));
                     }
                 }
@@ -695,7 +695,7 @@ impl PackageLock {
                     }
                     if !row.runtime.expose.is_empty() {
                         return Err(PackageManifestError::Invalid(
-                            "lock.spawned[] payload row's nested runtime row declares no expose — the spawn surface rides the payload row's own expose list (spec 32 §6)",
+                            "lock.spawned[] payload row's nested runtime row declares no expose — the spawn surface rides the payload row's own expose list",
                         ));
                     }
                     validate_spawned_runtime_row(&row.runtime)?;

@@ -166,13 +166,13 @@ pub fn entry_signature(
         None => "the entry's signature".to_string(),
     };
     if !matches!(sig, tebako_json::Value::Object(_)) {
-        return Err(format!("{where_} must be a map (spec 13 §2a)"));
+        return Err(format!("{where_} must be a map"));
     }
     let field = |name: &str| -> Result<String, String> {
         sig.find(name)
             .and_then(|v| v.as_string())
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| format!("{where_} lacks a usable {name} (spec 13 §2a)"))
+            .ok_or_else(|| format!("{where_} lacks a usable {name}"))
     };
     Ok(Some(EntrySignature {
         keyid: field("keyid")?,
@@ -382,7 +382,7 @@ pub fn on_runtime_mirror(
         return Ok(None);
     };
     let bad = |why: String| {
-        format!("the cached release index's on_runtime for {exe_name}: {why} (spec 33 §1)")
+        format!("the cached release index's on_runtime for {exe_name}: {why}")
     };
     if !matches!(key, tebako_json::Value::Object(_)) {
         return Err(bad("must be a map".to_string()));

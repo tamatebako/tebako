@@ -280,7 +280,7 @@ pub fn verify_package(
         ));
         return Ok((checks, None));
     }
-    checks.push(Check::pass("trailer", "structural validation (spec 02 §6)"));
+    checks.push(Check::pass("trailer", "structural validation"));
 
     // 2. Per-slot sha256 (v2).
     if let Some(v2) = &trailer.v2 {
@@ -497,7 +497,7 @@ fn entry_checks(
         let Some(slot) = e.slot else {
             checks.push(Check::skip(
                 name,
-                "shared slice — resolved and checked at run time (spec 23 §13)",
+                "shared slice — resolved and checked at run time",
             ));
             continue;
         };
@@ -691,7 +691,7 @@ fn spawned_artifact_digests(
             checks.push(Check::skip(
                 name,
                 format!(
-                    "the lock pin covers no {} row — the host's slot bytes are unchecked (spec 23 §13.3)",
+                    "the lock pin covers no {} row — the host's slot bytes are unchecked",
                     host.release_asset_name()
                 ),
             ));
@@ -1230,7 +1230,7 @@ pub fn verify_image(image: &Path, require_signed: bool) -> Result<Vec<Check>, In
         if m.identity.encryption.state == tpkg::EncryptionState::Encrypted {
             checks.push(Check::skip(
                 "tree hash",
-                "encrypted image: tree_hash is the plaintext identity (spec 10 §2); recomputing needs the recipient key",
+                "encrypted image: tree_hash is the plaintext identity; recomputing needs the recipient key",
             ));
         } else {
             match recompute_tree_hash(image) {

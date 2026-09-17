@@ -34,7 +34,7 @@ impl BenchError {
     /// exit (invariant 9).
     pub fn not_implemented(surface: &str, slice: &str) -> Self {
         BenchError::operational(format!(
-            "`tebako-bench {surface}` is not implemented yet (planned: {slice} of the spec 27 benchmark plan)"
+            "`tebako-bench {surface}` is not implemented yet (planned: {slice} of the benchmark plan)"
         ))
     }
 }

@@ -236,7 +236,7 @@ pub fn cmd_encrypt(src: &Path, out: &Path, opts: &EncryptOptions) -> Result<(), 
     let mut manifest = tpkg::PayloadManifest::from_yaml(&manifest_text)
         .map_err(|e| et(format!("the source payload manifest is not valid: {e}")))?;
     if manifest.identity.encryption.state == tpkg::EncryptionState::Encrypted {
-        return err("the source image is already encrypted (nested encapsulated images are a later milestone — spec 10 §2)");
+        return err("the source image is already encrypted (nested encapsulated images are a later milestone)");
     }
     let digest = tpkg::tree_digest(&tfs::tree_walk::BackendTree(backend))
         .map_err(|e| (format!("cannot hash the source tree (errno {e})"), 1))?;

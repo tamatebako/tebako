@@ -149,7 +149,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         if opts.compose.is_some() || opts.carry.is_some() || opts.share.is_some() {
             return Err(packaging_error(
                 130,
-                Some("--compose/--carry/--share do not apply to a suite press (the suite's entries carry their own refs, spec 03 §6)"),
+                Some("--compose/--carry/--share do not apply to a suite press (the suite's entries carry their own refs)"),
             ));
         }
         let yaml = fs::read_to_string(suite_path).map_err(|e| {
@@ -212,7 +212,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
             if opts.carry.is_some() || opts.share.is_some() {
                 return Err(packaging_error(
                     130,
-                    Some("--carry/--share refine a composition (spec 23 §13) and require --compose <tebako.yaml>"),
+                    Some("--carry/--share refine a composition and require --compose <tebako.yaml>"),
                 ));
             }
             None

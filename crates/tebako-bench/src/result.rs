@@ -167,7 +167,7 @@ impl ResultFile {
                         ("exit", r.exit.is_some()),
                     ] {
                         if !present {
-                            violations.push(format!("{at}: an ok run carries {name} (spec 27 §6)"));
+                            violations.push(format!("{at}: an ok run carries {name}"));
                         }
                     }
                 }

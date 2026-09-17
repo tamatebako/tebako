@@ -134,7 +134,7 @@ impl SuiteFile {
                             && r.bytes().all(|b| b.is_ascii_digit()
                                 || (b'a'..=b'f').contains(&b)) => {}
                     other => violations.push(format!(
-                        "workloads/{}/source/ref: '{}' is not a pinned 40-hex commit — floating refs are a named error (spec 27 §2)",
+                        "workloads/{}/source/ref: '{}' is not a pinned 40-hex commit — floating refs are a named error",
                         w.id,
                         other.as_deref().unwrap_or("<missing>")
                     )),
@@ -155,7 +155,7 @@ impl SuiteFile {
                 }
                 if t.registries.is_none() {
                     violations.push(format!(
-                        "targets/{}: a v2 target needs registries (spec 04 references)",
+                        "targets/{}: a v2 target needs registries (registry references)",
                         t.id
                     ));
                 }

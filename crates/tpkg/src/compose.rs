@@ -100,14 +100,14 @@ impl ComposePreset {
             "fat" => Ok((
                 ComposePreset::SelfContained,
                 Some(
-                    "the 'fat' preset is deprecated — spell it 'self-contained' (spec 23 §13.2)"
+                    "the 'fat' preset is deprecated — spell it 'self-contained'"
                         .to_string(),
                 ),
             )),
             "lean" => Ok((
                 ComposePreset::SharedRuntime,
                 Some(
-                    "the 'lean' preset is deprecated — spell it 'shared-runtime' (spec 23 §13.2)"
+                    "the 'lean' preset is deprecated — spell it 'shared-runtime'"
                         .to_string(),
                 ),
             )),
@@ -349,7 +349,7 @@ pub fn parse_compose(yaml: &str) -> Result<(ComposeDoc, Vec<String>), ComposeErr
         };
         if present {
             return Err(invalid(format!(
-                "the '{key}:' key is the Phase-R jail wiring (spec 23 §5–§8) — not pressable today; press --jail owns a package's policy request"
+                "the '{key}:' key is the Phase-R jail wiring — not pressable today; press --jail owns a package's policy request"
             )));
         }
     }
@@ -427,7 +427,7 @@ pub fn check_platforms_assertion(
             // the declared coverage — refused by name.
             if let Platforms::Triplets(_) = declared {
                 return Err(invalid(format!(
-                    "slice '{slice}': the assertion is universal but the payload declares coverage {} — the assertion narrows, never extends (spec 23 §13.3)",
+                    "slice '{slice}': the assertion is universal but the payload declares coverage {} — the assertion narrows, never extends",
                     declared_list(declared),
                 )));
             }
@@ -437,7 +437,7 @@ pub fn check_platforms_assertion(
             let uncovered = ts.iter().find(|p| !declared.covers(**p));
             if let Some(p) = uncovered {
                 return Err(invalid(format!(
-                    "slice '{slice}': the platforms assertion names {} but the payload declares coverage {} — the assertion narrows, never extends (spec 23 §13.3)",
+                    "slice '{slice}': the platforms assertion names {} but the payload declares coverage {} — the assertion narrows, never extends",
                     p.as_triplet(),
                     declared_list(declared),
                 )));
@@ -458,7 +458,7 @@ pub fn check_platforms_assertion(
         None => {
             if !declared.covers(host) {
                 return Err(invalid(format!(
-                    "slice '{slice}': the payload's declared coverage ({}) does not cover the host triplet {} (spec 23 §13.3)",
+                    "slice '{slice}': the payload's declared coverage ({}) does not cover the host triplet {}",
                     declared_list(declared),
                     host.as_triplet(),
                 )));
