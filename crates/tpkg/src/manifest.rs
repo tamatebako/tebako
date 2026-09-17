@@ -317,8 +317,17 @@ impl<'de> Deserialize<'de> for Platforms {
 /// constraint := clause ("," clause)*
 /// clause     := op? version
 /// op         := ">=" | "<=" | "~>" | ">" | "<" | "!=" | "="
-/// version    := num ("." num){0,3}        # 1..=4 decimal components
+/// version    := component ("." component){0,3}   # 1..=4 components
+/// component  := digits ["-" label]               # label: [0-9A-Za-z-]+
 /// ```
+///
+/// The optional `-label` suffix (payload-manifest schema_minor 12) is the
+/// variant-line shape versions already carry (spec 05 §5's ordering
+/// rules) — it lets an exact pin NAME a base/runtime line
+/// (`= 1.16.9-ruby4.0`, spec 03 §2.8's binding rule against a line-split
+/// base). Matching semantics (suffix-exact equality, `compare()` ordering,
+/// numeric-core pessimistic bounds) are spec 05 §5's, owned by
+/// `tpkg::versions`.
 ///
 /// The original string is kept verbatim (lossless round-trip).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -369,16 +378,37 @@ fn check_constraint(s: &str) -> Result<(), ManifestError> {
         let parts: Vec<&str> = version.split('.').collect();
         if parts.is_empty()
             || parts.len() > 4
-            || parts
-                .iter()
-                .any(|p| p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()))
+            || parts.iter().any(|p| !check_constraint_component(p))
         {
             return Err(ManifestError::Invalid(
-                "constraint clause version must be 1..=4 dot-separated decimals",
+                "constraint clause version must be 1..=4 dot-separated components (leading decimals, optional -label suffix)",
             ));
         }
     }
     Ok(())
+}
+
+/// One constraint-version component (payload-manifest schema_minor 12):
+/// 1+ leading ASCII decimals, then an optional `-label` variant suffix of
+/// 1+ ASCII alphanumerics or `-` — the same component shape versions
+/// already carry (spec 05 §5's ordering rules).
+fn check_constraint_component(p: &str) -> bool {
+    let digits = p.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digits == 0 {
+        return false;
+    }
+    match p[digits..].strip_prefix('-') {
+        // No suffix: the component is all decimals.
+        None => digits == p.len(),
+        // A suffix must carry 1+ label chars (an empty label or a stray
+        // byte — non-ASCII, `_`, … — is a named error, never a guess).
+        Some(label) => {
+            !label.is_empty()
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        }
+    }
 }
 
 impl fmt::Display for Constraint {
@@ -2697,6 +2727,12 @@ mod tests {
             "= 1.2.3.4",
             "!= 3.0.0",
             ">2,<3",
+            // schema_minor 12: the variant-suffixed component — an exact
+            // pin names a base/runtime line (spec 05 §5).
+            "= 1.16.9-ruby4.0",
+            ">= 1.16.9-ruby4.0, < 1.17",
+            "3.3-rc1",
+            "~> 3.13.15-jit",
         ] {
             Constraint::new(ok).unwrap_or_else(|e| panic!("{ok:?} should parse: {e}"));
         }
@@ -2715,7 +2751,13 @@ mod tests {
             "3.3.3.3.3",
             "~>",
             ">= abc",
-            "3.3-rc1",
+            // The suffix grammar (schema_minor 12): an empty label, a
+            // charset outsider, and a label with no leading decimals are
+            // named errors, never silently accepted.
+            "3.3-",
+            "3.3-rc_1",
+            "3.-rc1",
+            "1.2.3.4.5-x",
         ] {
             assert!(Constraint::new(bad).is_err(), "{bad:?} should not parse");
         }

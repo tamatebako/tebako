@@ -145,7 +145,7 @@
     "constraint": {
       "type": "string",
       "minLength": 1,
-      "description": "Version constraint in the spec-03 grammar (cargo-style ranges AND ruby-style abi lines AND datever): clause (\",\" clause)*; clause := (\">=\"|\"<=\"|\"~>\"|\">\"|\"<\"|\"!=\"|\"=\")? version; version := 1..=4 dot-separated decimals. Enforced by the tpkg crate; only presence/shape is checked here."
+      "description": "Version constraint in the spec-03 grammar (cargo-style ranges AND ruby-style abi lines AND datever): clause (\",\" clause)*; clause := (\">=\"|\"<=\"|\"~>\"|\">\"|\"<\"|\"!=\"|\"=\")? version; version := 1..=4 dot-separated components, each leading decimals plus an optional -label variant suffix ([0-9A-Za-z-]+ — since schema_minor 12, so an exact pin can name a base/runtime line, spec 05 §5). Enforced by the tpkg crate; only presence/shape is checked here."
     },
     "platformTriplet": {
       "type": "string",
