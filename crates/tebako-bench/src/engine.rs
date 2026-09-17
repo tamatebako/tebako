@@ -176,7 +176,15 @@ fn prepare_targets(
     triplet: &str,
     tebako_release: Option<&str>,
     repo_root: &Path,
-) -> Result<(Vec<PreparedTarget>, Versions, Option<TebakoTools>, LegContext), BenchError> {
+) -> Result<
+    (
+        Vec<PreparedTarget>,
+        Versions,
+        Option<TebakoTools>,
+        LegContext,
+    ),
+    BenchError,
+> {
     let entry = platforms.triplets.get(triplet).ok_or_else(|| {
         BenchError::operational(format!(
             "engine: platforms.yaml has no triplet '{triplet}' (known: {})",
@@ -363,9 +371,7 @@ fn prepare_targets(
             Ok((on_out, tb_out))
         })();
         match probed {
-            Ok((on_out, tb_out))
-                if on_out.contains(&expect) && tb_out.contains(&expect) =>
-            {
+            Ok((on_out, tb_out)) if on_out.contains(&expect) && tb_out.contains(&expect) => {
                 let first_line = |s: &str| {
                     s.lines()
                         .find(|l| !l.trim().is_empty())
@@ -501,7 +507,9 @@ fn prepare_targets(
             .map(|(i, _)| i)
             .collect();
         let gap_reason = indices.iter().find_map(|i| match &prepared[*i].state {
-            Prepared::Unavailable { reason } => Some((prepared[*i].target.id.clone(), reason.clone())),
+            Prepared::Unavailable { reason } => {
+                Some((prepared[*i].target.id.clone(), reason.clone()))
+            }
             _ => None,
         });
         if let Some((gap_id, reason)) = gap_reason {

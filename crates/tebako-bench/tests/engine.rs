@@ -666,11 +666,7 @@ fn on_system_arms_have_no_cold_story_and_source_less_workloads_run() {
     assert_eq!(gaps.len(), 1, "{runs:?}");
     assert_eq!(gaps[0].mode, Some(RunMode::Cold));
     assert!(
-        gaps[0]
-            .reason
-            .as_deref()
-            .unwrap()
-            .contains("no cold story"),
+        gaps[0].reason.as_deref().unwrap().contains("no cold story"),
         "{:?}",
         gaps[0].reason
     );

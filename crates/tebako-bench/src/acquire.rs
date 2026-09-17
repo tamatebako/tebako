@@ -1204,7 +1204,10 @@ pub fn acquire_runtime_pair(
             ))
         })?
         .to_string();
-    let base = format!("https://github.com/{}/releases/download/{}", rr.repo, rr.tag);
+    let base = format!(
+        "https://github.com/{}/releases/download/{}",
+        rr.repo, rr.tag
+    );
     let stem = format!(
         "tebako-runtime-{tebako_version}-{}-{triplet}",
         rr.lang_version
@@ -1251,11 +1254,12 @@ pub fn acquire_runtime_pair(
         let dll = format!("{stem}.dll");
         match tebako_http::get(&format!("{base}/{dll}.sha256")) {
             Ok(sidecar) => {
-                let expected = parse_bare_hash(&String::from_utf8_lossy(&sidecar)).ok_or_else(|| {
-                    BenchError::operational(format!(
-                        "acquire: {base}/{dll}.sha256 is not a bare 64-hex sha256"
-                    ))
-                })?;
+                let expected =
+                    parse_bare_hash(&String::from_utf8_lossy(&sidecar)).ok_or_else(|| {
+                        BenchError::operational(format!(
+                            "acquire: {base}/{dll}.sha256 is not a bare 64-hex sha256"
+                        ))
+                    })?;
                 let asset = layout.assets.join(&dll);
                 download_verified(&format!("{base}/{dll}"), &asset, &expected)?;
                 let staged = target_dir.join(&dll);
@@ -1426,12 +1430,7 @@ pub fn compile_java_classes(
     let mut args: Vec<String> = vec!["-d".to_string(), out_dir.to_string_lossy().into_owned()];
     args.extend(sources.iter().map(|p| p.to_string_lossy().into_owned()));
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_admin(
-        layout,
-        Path::new("javac"),
-        &arg_refs,
-        "acquire-javac.log",
-    )?;
+    run_admin(layout, Path::new("javac"), &arg_refs, "acquire-javac.log")?;
     Ok(out_dir)
 }
 

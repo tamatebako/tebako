@@ -287,7 +287,14 @@ impl SuiteFile {
 pub fn pair_suffix(target_id: &str) -> Option<(&'static str, &str)> {
     for prefix in ["on-system-", "tebako-"] {
         if let Some(lang) = target_id.strip_prefix(prefix) {
-            return Some((if prefix == "on-system-" { "on-system" } else { "tebako" }, lang));
+            return Some((
+                if prefix == "on-system-" {
+                    "on-system"
+                } else {
+                    "tebako"
+                },
+                lang,
+            ));
         }
     }
     None

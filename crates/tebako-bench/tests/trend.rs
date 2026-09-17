@@ -104,8 +104,16 @@ fn trend_emits_the_overhead_ratio_from_the_declared_baseline() {
         .iter()
         .find(|c| c.target == "on-system-ruby")
         .unwrap();
-    assert_eq!(base.ratio_vs_baseline, Some(1.0), "the baseline cell is parity");
-    let tb = file.cells.iter().find(|c| c.target == "tebako-ruby").unwrap();
+    assert_eq!(
+        base.ratio_vs_baseline,
+        Some(1.0),
+        "the baseline cell is parity"
+    );
+    let tb = file
+        .cells
+        .iter()
+        .find(|c| c.target == "tebako-ruby")
+        .unwrap();
     assert_eq!(
         tb.ratio_vs_baseline,
         Some(2.5),
@@ -123,9 +131,7 @@ fn a_cell_with_no_baseline_arm_carries_null() {
     std::fs::write(&dash, dashboard_json(false)).unwrap();
     let file = run_trend(dir.path(), &[dash], None);
     assert!(
-        file.cells
-            .iter()
-            .all(|c| c.ratio_vs_baseline.is_none()),
+        file.cells.iter().all(|c| c.ratio_vs_baseline.is_none()),
         "no baseline arm → null, never an invented ratio"
     );
 }
@@ -138,7 +144,13 @@ fn trend_appends_over_the_previous_feed() {
     let previous = dir.path().join("previous.json");
     let prev = TrendFile {
         generated_by: "tebako-bench trend".to_string(),
-        cells: vec![cell("v9.9.8", "runtime-on-system-vs-tebako", "tebako-ruby", 6.0, Some(3.0))],
+        cells: vec![cell(
+            "v9.9.8",
+            "runtime-on-system-vs-tebako",
+            "tebako-ruby",
+            6.0,
+            Some(3.0),
+        )],
     };
     std::fs::write(&previous, serde_json::to_string(&prev).unwrap()).unwrap();
     let file = run_trend(dir.path(), &[dash], Some(previous));

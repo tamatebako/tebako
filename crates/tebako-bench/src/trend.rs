@@ -82,9 +82,9 @@ fn baseline_median(dash: &Dashboard, triplet: &str, workload: &str, mode: RunMod
         .iter()
         .find(|c| c.workload == workload && c.mode == mode && c.target == name)
         .or_else(|| {
-            t.cells.iter().find(|c| {
-                c.workload == workload && c.mode == mode && c.target.starts_with(name)
-            })
+            t.cells
+                .iter()
+                .find(|c| c.workload == workload && c.mode == mode && c.target.starts_with(name))
         })
         .map(|c| c.median_wall_s)
 }

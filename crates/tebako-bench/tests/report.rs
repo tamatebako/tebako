@@ -292,10 +292,22 @@ fn runtime_runs() -> Vec<RunRecord> {
     // on-system-ruby median 2.0, tebako-ruby median 4.0 → 0.50× vs the
     // on-system arm (the baseline cell itself renders 1.00×).
     for (i, w) in [1.9, 2.0, 2.1].iter().enumerate() {
-        v.push(ok_run("ruby-boot", "on-system-ruby", RunMode::Warm, i as u32 + 1, *w));
+        v.push(ok_run(
+            "ruby-boot",
+            "on-system-ruby",
+            RunMode::Warm,
+            i as u32 + 1,
+            *w,
+        ));
     }
     for (i, w) in [3.9, 4.0, 4.1].iter().enumerate() {
-        v.push(ok_run("ruby-boot", "tebako-ruby", RunMode::Warm, i as u32 + 1, *w));
+        v.push(ok_run(
+            "ruby-boot",
+            "tebako-ruby",
+            RunMode::Warm,
+            i as u32 + 1,
+            *w,
+        ));
     }
     v
 }
