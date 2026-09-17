@@ -112,4 +112,17 @@ cargo test -p tebako-cli -p tfs-cli -p tebako-pkg --target "$TARGET" -- "$SERIAL
 # builds; its tests are the windows legs' coverage of the driver
 # contract — the spec 17 §7 materialize tier's boot proof
 # (tests/materialize_tier.rs) is windows-gated and runs ONLY here.
-cargo test -p tebako-driver --target "$TARGET" -- "$SERIAL" --nocapture
+if ! cargo test -p tebako-driver --target "$TARGET" -- "$SERIAL" --nocapture; then
+  # A driver test dying hard (an abort/access-violation kills the test
+  # binary mid-line, and the step's log ends without a failure line)
+  # localizes per test: re-run each test in its own process so the last
+  # name printed IS the one that died. Green runs never pay for this.
+  echo "tebako-driver tests failed — re-running per-test to localize" >&2
+  cargo test -p tebako-driver --target "$TARGET" -- --list --format terse 2>/dev/null \
+    | sed -n 's/: test$//p' | while read -r t; do
+        echo "=== $t"
+        cargo test -p tebako-driver --target "$TARGET" -- "$t" --exact "$SERIAL" --nocapture \
+          || echo "=== FAILED: $t"
+      done
+  exit 1
+fi

@@ -111,7 +111,7 @@ impl TreeBoot {
         let mut best: Option<&(String, PathBuf)> = None;
         for pair in &self.payloads {
             if crate::driver::in_mount(vfs_path, &pair.0)
-                && best.is_none_or(|b| pair.0.len() > b.0.len())
+                && best.map_or(true, |b| pair.0.len() > b.0.len())
             {
                 best = Some(pair);
             }
