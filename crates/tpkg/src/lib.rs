@@ -187,7 +187,7 @@ pub use manifest::{
     MountSemantics, OnRuntime, PayloadKind, PayloadManifest, Platform, Platforms, Producer,
     Provides, Requirement, RuntimeProvides, RuntimeRequirement, RuntimeRequirements, Sbom, Signing,
     SigningMechanism, SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides,
-    PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
+    WindowsBoot, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
 pub use merkle::{
     render_tree_hash, tree_digest, Child, FileHasher, MerkleDigest, NodeKind, TreeWalk,

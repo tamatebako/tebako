@@ -1406,8 +1406,9 @@ mod tests {
     use std::sync::MutexGuard;
 
     // STATE, FACTS, the tfs context, and the process env (TEBAKO_HOME)
-    // are all process-global — the suite serializes.
-    static LOCK: Mutex<()> = Mutex::new(());
+    // are all process-global — the suite serializes (crate-wide: the
+    // materialize tier's tree tests mount too).
+    use crate::TEST_LOCK as LOCK;
 
     struct Guard {
         _guard: MutexGuard<'static, ()>,

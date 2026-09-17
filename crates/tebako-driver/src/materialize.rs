@@ -83,6 +83,12 @@ use crate::driver::{env_var, errno_text, join_mount, DriverError, Env};
 use crate::handoff::{ImageSource, ImageSpec};
 use crate::{EX_TEBAKO_IO, EX_TEBAKO_MANIFEST, EX_TEBAKO_SHA};
 
+/// The windows materialize tier (spec 17 §7): per-tree extraction into
+/// the exec cache + the runtime-root rewiring. Windows-gated at the
+/// call sites; the engine itself compiles everywhere so its tests run
+/// on every leg.
+pub mod tree;
+
 /// The digest record's suffix next to an extracted file (cache
 /// bookkeeping — not a consumption path; spec 22 §6).
 const RECORD_SUFFIX: &str = ".tfs-digest";
@@ -552,6 +558,12 @@ fn install_staged(target: &Path, tmp: &Path, served: &MerkleDigest) -> Result<()
     })?;
     // Rule R3: read-only. After the rename so the staging writes never
     // race the attribute.
+    set_readonly(target)
+}
+
+/// Rule R3's read-only install attribute (shared with the spec-17 §7
+/// tree tier's per-file installs).
+fn set_readonly(target: &Path) -> Result<(), DriverError> {
     let mut perms = std::fs::metadata(target)
         .map_err(|e| {
             io(format!(

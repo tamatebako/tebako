@@ -1042,6 +1042,21 @@ pub struct BuiltFrom {
     pub patch_set: String,
 }
 
+/// The windows boot tier a runtime declares (spec 17 §7, additive —
+/// schema_minor 11; old readers ignore the key and simply never
+/// materialize). The single locked value is `materialize`: the runtime's
+/// interpreter cannot consume the driver's mounted images on windows
+/// (no interposition tier exists for it — the zero-patch contract), so
+/// the driver boots it from the content-addressed exec cache instead.
+/// Absent = the runtime's interpreter reads the mounts directly (ruby's
+/// patched IO — POSIX behavior on every platform).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowsBoot {
+    /// Boot from the extracted host tree (spec 17 §7).
+    Materialize,
+}
+
 /// PROVIDES of kind `runtime` (spec 03 §2.2).
 ///
 /// `provides` is one-or-many on the wire: a single `{engine, …}` mapping
@@ -1070,6 +1085,15 @@ pub struct RuntimeProvides {
     /// ignore the key — and find no owner edge to act on either.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_runtime: Option<OnRuntime>,
+    /// The windows boot tier (spec 17 §7 — additive, schema_minor 11):
+    /// present iff this runtime's interpreter cannot consume the
+    /// driver's mounted images on windows and boots from the
+    /// materialized exec-cache tree instead. Old readers ignore the key
+    /// and keep the mounted-boot behavior (which for such a runtime is
+    /// the pre-tier refusal, never a silent change). POSIX boots never
+    /// read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows_boot: Option<WindowsBoot>,
     pub capabilities: Capabilities,
 }
 
@@ -2995,6 +3019,44 @@ mod tests {
         );
         // A scalar is a structural error, never a one-item list.
         let err = PayloadManifest::from_yaml(&minimal_data_yaml("materialize: /x\n")).unwrap_err();
+        assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
+    }
+
+    #[test]
+    fn windows_boot_defaults_absent_and_round_trips() {
+        // spec 17 §7 (schema_minor 11): the additive windows boot-tier
+        // declaration on a runtime's provides — `materialize` opts the
+        // runtime into the exec-cache tree boot (the zero-patch
+        // interpreter contract; ruby never declares it).
+        let bare = PayloadManifest::from_yaml(&minimal_runtime_yaml("")).unwrap();
+        let Provides::Runtime(rt) = &bare.provides else {
+            panic!("minimal_runtime_yaml is a runtime")
+        };
+        assert_eq!(rt.windows_boot, None);
+        // An absent key never serializes (additive on the wire: old
+        // readers see the document they always saw).
+        assert!(!bare.to_yaml().unwrap().contains("windows_boot"));
+
+        let with =
+            PayloadManifest::from_yaml(&minimal_runtime_yaml("  windows_boot: materialize\n"))
+                .unwrap();
+        let Provides::Runtime(rt) = &with.provides else {
+            panic!("minimal_runtime_yaml is a runtime")
+        };
+        assert_eq!(rt.windows_boot, Some(WindowsBoot::Materialize));
+        let rendered = with.to_yaml().unwrap();
+        assert!(rendered.contains("windows_boot: materialize"), "{rendered}");
+        let back = PayloadManifest::from_yaml(&rendered).unwrap();
+        assert_eq!(back, with);
+    }
+
+    #[test]
+    fn windows_boot_rejects_an_unknown_tier() {
+        // The enum is closed: any other spelling is a structural error,
+        // never a silent ignore.
+        let err =
+            PayloadManifest::from_yaml(&minimal_runtime_yaml("  windows_boot: mount-anyway\n"))
+                .unwrap_err();
         assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
     }
 

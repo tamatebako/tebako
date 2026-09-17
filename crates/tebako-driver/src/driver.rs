@@ -536,8 +536,10 @@ fn mount_at_point(
 /// after the LAST ':' counts as the slot only when it parses as u32 (a
 /// windows drive colon never does; `<file>:0` on a bare image ≡ whole —
 /// the spec 17 grammar's bare rule). The pure half of the slot form
-/// (spec 23 §13.1), unit-tested without a mount.
-fn env_image_ref(image: &str) -> (&str, Option<u32>) {
+/// (spec 23 §13.1), unit-tested without a mount. pub(crate): the §7
+/// materialize tier keys the env image's extracted tree by the same
+/// split.
+pub(crate) fn env_image_ref(image: &str) -> (&str, Option<u32>) {
     match image.rfind(':') {
         Some(i) if i > 0 => match image[i + 1..].parse::<u32>() {
             Ok(n) => (&image[..i], Some(n)),
@@ -883,14 +885,21 @@ fn mount_slug(mount: &str) -> String {
 /// files (the value is the QUALIFIED point on windows, re-rooting-proof).
 /// Union members share their point and get one var; two DIFFERENT
 /// physical points slugging alike is an authoring ambiguity — a named
-/// error, never a silent winner.
+/// error, never a silent winner. `host_overrides` carries the spec-17 §7
+/// materialize tier's (mount → extracted host dir) pairs: a mount in the
+/// map exports its HOST dir — the tier's interpreter reads plain host
+/// files, never the VFS point.
 ///
 /// The root mount (`/`) exports NOTHING: its slug would spell
 /// `TEBAKO_MOUNT_ROOT`, which is the mount-root OVERRIDE var (spec 17
 /// §1) — exporting it would make every child runtime read an override.
 /// The app-at-/ flow needs no discovery var by construction (the
 /// rewritten entry + `__dir__` qualify automatically — v2-1/20).
-fn export_mount_vars(images: &[ImageSpec], env: &dyn Env) -> Result<Vec<String>, DriverError> {
+fn export_mount_vars(
+    images: &[ImageSpec],
+    env: &dyn Env,
+    host_overrides: &[(String, String)],
+) -> Result<Vec<String>, DriverError> {
     let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut keys: Vec<String> = Vec::new();
     for spec in images {
@@ -898,18 +907,23 @@ fn export_mount_vars(images: &[ImageSpec], env: &dyn Env) -> Result<Vec<String>,
         if slug == "ROOT" {
             continue;
         }
+        let value = host_overrides
+            .iter()
+            .find(|(mount, _)| mount == &spec.mount)
+            .map(|(_, host)| host.clone())
+            .unwrap_or_else(|| spec.mount.clone());
         match seen.get(&slug) {
-            Some(point) if point != &spec.mount => {
+            Some(point) if point != &value => {
                 return Err(manifest(format!(
                     "mount points '{point}' and '{}' both derive TEBAKO_MOUNT_{slug} — the discovery surface is ambiguous; rename one mount",
-                    spec.mount
+                    value
                 )));
             }
             Some(_) => continue,
             None => {
-                seen.insert(slug.clone(), spec.mount.clone());
+                seen.insert(slug.clone(), value.clone());
                 let key = format!("TEBAKO_MOUNT_{slug}");
-                env.set_var(&key, &spec.mount);
+                env.set_var(&key, &value);
                 keys.push(key);
             }
         }
@@ -945,6 +959,22 @@ fn resolve_entry(
         }
     }
     Ok(resolved)
+}
+
+/// The spec-17 §7 entry handoff: under the materialize tier the
+/// resolved entry's host twin inside the extracted tree is what the
+/// interpreter can actually read; `None`/no-mapping hands the resolved
+/// path over verbatim (a path outside this boot's mounts belongs to the
+/// interpreter's own startup).
+fn host_entry(
+    tree_boot: &Option<crate::materialize::tree::TreeBoot>,
+    resolved: String,
+    runtime_root: &str,
+) -> String {
+    match tree_boot {
+        Some(tier) => tier.to_host(&resolved, runtime_root).unwrap_or(resolved),
+        None => resolved,
+    }
 }
 
 /// spec 32 §2 (spec 17 §1's bare-name rule, the payload half): a bare
@@ -1076,6 +1106,13 @@ pub fn boot_with_mount_modes(
     // downstream — the env-image mount, the drive qualification, the
     // entry resolution, the io-routing patches via tebako_mount_point —
     // sees the effective root and nothing else.
+    //
+    // Windows first (spec 17 §7's respawn rule): an inherited
+    // materialize-tier state (the marker + the parent's rewired root) is
+    // scrubbed BEFORE the override is read — the tier's own var is never
+    // a §1 user override.
+    #[cfg(windows)]
+    crate::materialize::tree::scrub_inherited(env);
     let effective = effective_root(runtime_root, env)?;
     let baked_root = runtime_root;
     let runtime_root = effective.as_str();
@@ -1127,6 +1164,15 @@ pub fn boot_with_mount_modes(
                 crate::alias::register(&alias_boot);
                 crate::alias::export_path(env, &alias_boot.dirs);
             }
+            // The windows materialize tier (spec 17 §7): when the env
+            // image's manifest grants `windows_boot: materialize`, every
+            // mounted image extracts into the exec cache and the runtime
+            // root rewires to the extracted env tree. POSIX never
+            // engages (the tier's interpreter reads plain host files).
+            #[cfg(windows)]
+            let tree_boot = crate::materialize::tree::boot_tier(&h.images, env, runtime_root)?;
+            #[cfg(not(windows))]
+            let tree_boot: Option<crate::materialize::tree::TreeBoot> = None;
             // The standalone interpreter spawns too — arm its children
             // the same way (spec 22 §3).
             crate::injection::export(env, declaration.as_ref(), runtime_root)?;
@@ -1143,7 +1189,10 @@ pub fn boot_with_mount_modes(
             Ok(BootOutcome {
                 argv: v,
                 layout: declaration,
-                runtime_root: runtime_root.to_string(),
+                runtime_root: tree_boot
+                    .as_ref()
+                    .map(|t| t.env_root_string())
+                    .unwrap_or_else(|| runtime_root.to_string()),
                 on_runtime: None,
                 entry_index: None,
             })
@@ -1182,6 +1231,16 @@ pub fn boot_with_mount_modes(
             crate::alias::register(&alias_boot);
             crate::alias::export_path(env, &alias_boot.dirs);
         }
+        // The windows materialize tier (spec 17 §7): when the env
+        // image's manifest grants `windows_boot: materialize`, every
+        // mounted image extracts into the exec cache, the runtime root
+        // rewires to the extracted env tree, the discovery surface below
+        // points at the host dirs, and the entry resolves against them.
+        // POSIX never engages.
+        #[cfg(windows)]
+        let tree_boot = crate::materialize::tree::boot_tier(&h.images, env, runtime_root)?;
+        #[cfg(not(windows))]
+        let tree_boot: Option<crate::materialize::tree::TreeBoot> = None;
         // spec 33 §1: discover the runtime-on-runtime composition from
         // the FIRST triple's mounted manifest (the depending runtime's
         // env image leads the triples at its declared mount). The
@@ -1201,7 +1260,14 @@ pub fn boot_with_mount_modes(
         // the dependency bins onto PATH (spec 22 §3.2 — the launcher
         // tier embeds the shim's materialized copy when one is
         // delivered, so injection runs first).
-        let mount_keys = export_mount_vars(&h.images, env)?;
+        let mount_keys = export_mount_vars(
+            &h.images,
+            env,
+            &tree_boot
+                .as_ref()
+                .map(|t| t.mount_overrides())
+                .unwrap_or_default(),
+        )?;
         crate::spawn::capture(app_images, env, runtime_root, mount_keys)?;
         let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
         crate::path_env::export(&h.images, env, shim_host.as_deref())?;
@@ -1251,6 +1317,7 @@ pub fn boot_with_mount_modes(
                             None => resolve_runtime_entrypoint(keyword, runtime_root, &mounted)?,
                         },
                     };
+                    let resolved = host_entry(&tree_boot, resolved, runtime_root);
                     let mut v =
                         Vec::with_capacity(h.user_args.len() + template.len() + defaults.len() + 2);
                     if let Some(program) = argv.first() {
@@ -1289,6 +1356,7 @@ pub fn boot_with_mount_modes(
                         crate::wrapper::args_default(&h, runtime_root)?,
                     ),
                 };
+                let resolved = host_entry(&tree_boot, resolved, runtime_root);
                 // spec 17 §1 / tebako#503: the entrypoint's declared
                 // `args_default` composes between the interpreter and the
                 // resolved entry — the runtime side is its single owner
@@ -1316,7 +1384,10 @@ pub fn boot_with_mount_modes(
         Ok(BootOutcome {
             argv: rewritten,
             layout: declaration,
-            runtime_root: runtime_root.to_string(),
+            runtime_root: tree_boot
+                .as_ref()
+                .map(|t| t.env_root_string())
+                .unwrap_or_else(|| runtime_root.to_string()),
             on_runtime: on_runtime
                 .as_ref()
                 .map(|on| crate::on_runtime::OnRuntimeMeta {
@@ -1483,7 +1554,7 @@ mod tests {
     #[test]
     fn mount_vars_export_per_image_with_the_physical_value() {
         let env = env_with(&[]);
-        export_mount_vars(&[image_spec("/"), image_spec("/tools/jdk")], &env).unwrap();
+        export_mount_vars(&[image_spec("/"), image_spec("/tools/jdk")], &env, &[]).unwrap();
         let m = env.0.borrow();
         // The root mount exports nothing — TEBAKO_MOUNT_ROOT is the
         // spec-17 mount-root override, never a discovery var.
@@ -1497,7 +1568,7 @@ mod tests {
     #[test]
     fn union_members_at_one_point_share_one_var() {
         let env = env_with(&[]);
-        export_mount_vars(&[image_spec("/opt/x"), image_spec("/opt/x")], &env).unwrap();
+        export_mount_vars(&[image_spec("/opt/x"), image_spec("/opt/x")], &env, &[]).unwrap();
         assert_eq!(
             env.0.borrow().get("TEBAKO_MOUNT_OPT_X").map(String::as_str),
             Some("/opt/x")
@@ -1507,10 +1578,43 @@ mod tests {
     #[test]
     fn two_different_points_slugging_alike_is_a_named_error() {
         let env = env_with(&[]);
-        let err = export_mount_vars(&[image_spec("/a-b"), image_spec("/a/b")], &env).unwrap_err();
+        let err =
+            export_mount_vars(&[image_spec("/a-b"), image_spec("/a/b")], &env, &[]).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_MANIFEST);
         assert!(err.message.contains("TEBAKO_MOUNT_A_B"), "{}", err.message);
         assert!(err.message.contains("/a-b"), "{}", err.message);
         assert!(err.message.contains("/a/b"), "{}", err.message);
+    }
+
+    #[test]
+    fn the_materialize_tiers_overrides_point_at_host_dirs() {
+        // spec 17 §7: under the windows materialize tier the discovery
+        // vars name the extracted HOST dirs, never the VFS points; a
+        // mount without an override keeps its physical point.
+        let env = env_with(&[]);
+        let overrides = vec![(
+            "/tools/jdk".to_string(),
+            "C:/cache/trees/abc123".to_string(),
+        )];
+        export_mount_vars(
+            &[
+                image_spec("/"),
+                image_spec("/tools/jdk"),
+                image_spec("/data"),
+            ],
+            &env,
+            &overrides,
+        )
+        .unwrap();
+        let m = env.0.borrow();
+        assert_eq!(
+            m.get("TEBAKO_MOUNT_TOOLS_JDK").map(String::as_str),
+            Some("C:/cache/trees/abc123")
+        );
+        assert_eq!(
+            m.get("TEBAKO_MOUNT_DATA").map(String::as_str),
+            Some("/data")
+        );
+        assert!(!m.contains_key("TEBAKO_MOUNT_ROOT"));
     }
 }

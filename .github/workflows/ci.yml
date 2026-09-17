@@ -516,11 +516,14 @@ jobs:
   # CMake/vcpkg build against the
   # x64-mingw-static baseline, the dwarfs-rs leg's proven setup) and
   # tebako-signer's vendored rnp/Botan (gcc-steered in the script) —
-  # then the serialized test run. The vcpkg baseline restore/archive
+  # then the serialized test run; tebako-driver's tests ride the same
+  # leg (the windows legs' only driver coverage — the spec 17 §7
+  # materialize tier's windows-gated proof). The vcpkg baseline
+  # restore/archive
   # cache mirrors the release link-unit leg; all build/test logic lives
   # in ci/windows-gnu-cli.sh.
   test-windows-gnu-cli:
-    name: test (windows-latest, x86_64-pc-windows-gnu, tebako-cli + tfs-cli + tebako-pkg)
+    name: test (windows-latest, x86_64-pc-windows-gnu, tebako-cli + tfs-cli + tebako-pkg + tebako-driver)
     runs-on: windows-latest
     permissions:
       # packages:write populates the org's GitHub Packages vcpkg binary
