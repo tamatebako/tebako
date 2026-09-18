@@ -187,23 +187,40 @@ impl BenchLayout {
     ///   first-boot means re-extraction inside the measured span.
     /// - v2-managed: the whole store — the payload re-installs
     ///   (UNMEASURED, spec 27 §5's cold flow) and the runtime download
-    ///   lands inside the measured span.
-    /// - v2-press: the store's `runtimes/` — the fat package carries the
-    ///   runtime EXE but NOT the env image (§9 spike a), so the env-image
-    ///   download lands inside the measured span. The package never
-    ///   touches the store's payload side, so the payload record survives
-    ///   (and the next v2-managed cold rep re-installs anyway).
+    ///   lands inside the measured span. The unmeasured re-install also
+    ///   restores any spawned-dependency runtimes the payload declared.
+    /// - v2-press: the fat package's OWN runtime entry
+    ///   (`runtimes/<entry>`, named by `runtime_dir`) — the package
+    ///   carries the runtime EXE but NOT the env image (§9 spike a), so
+    ///   the env-image download lands inside the measured span.
+    ///   Spawned-dependency runtime entries (a payload spawning a second
+    ///   interpreter, e.g. metanorma's jing validation spawning java)
+    ///   stay: a spawn never downloads, so wiping them would make the
+    ///   cold run un-runnable by construction.
     /// - runtime-exe (spec 27 §10.3): the whole store + the per-target
     ///   TMPDIR — the driver's/exec-cache's first-boot state. The runtime
     ///   pair itself stays staged (its download+verify is acquisition in
     ///   this suite; the measured span is the first mount).
     /// - on-system never reaches here: its cold cell is a declared gap.
-    pub fn wipe_cold_caches(&self, target: &str, kind: TargetKind) -> Result<(), BenchError> {
+    pub fn wipe_cold_caches(
+        &self,
+        target: &str,
+        kind: TargetKind,
+        runtime_dir: Option<&Path>,
+    ) -> Result<(), BenchError> {
         let mut wipes = vec![self.home.join(".metanorma"), self.home.join(".relaton")];
         match kind {
             TargetKind::V1Exe => wipes.push(self.tmp.join(target)),
             TargetKind::V2Managed => wipes.push(self.store()),
-            TargetKind::V2Press => wipes.push(self.store().join("runtimes")),
+            TargetKind::V2Press => wipes.push(
+                runtime_dir
+                    .ok_or_else(|| {
+                        BenchError::operational(format!(
+                            "acquire: the v2-press cold wipe for '{target}' needs the package's runtime entry dir (harness bug)"
+                        ))
+                    })?
+                    .to_path_buf(),
+            ),
             TargetKind::RuntimeExe => {
                 wipes.push(self.store());
                 wipes.push(self.tmp.join(target));
@@ -766,6 +783,9 @@ pub struct RuntimeEntry {
     pub lang_version: String,
     /// The tebako runtime release (e.g. "0.16.9").
     pub tebako_version: String,
+    /// The cache entry directory (`runtimes/<engine>-<lv>-<ver>-<triplet>`)
+    /// — the v2-press cold wipe's scoped target.
+    pub dir: PathBuf,
     /// The cached interpreter exe (the fat package's runtime slot).
     pub exe: PathBuf,
     /// The exe's verified digest (the store's `sha256` marker) — pinned
@@ -948,6 +968,7 @@ fn read_runtime_entry(
         engine,
         lang_version: lang_version.to_string(),
         tebako_version: tebako_version.to_string(),
+        dir: entry_dir,
         exe,
         exe_sha256,
     })

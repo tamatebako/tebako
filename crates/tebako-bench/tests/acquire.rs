@@ -213,6 +213,7 @@ fn fat_package_round_trips_through_tpkg() {
         engine: "ruby".to_string(),
         lang_version: "3.3.7".to_string(),
         tebako_version: "0.16.9".to_string(),
+        dir: dir.path().join("runtime-entry"),
         exe: runtime_exe,
         exe_sha256: runtime_sha.clone(),
     };
@@ -295,13 +296,20 @@ fn cold_wipe_matches_the_arm() {
         layout.home.join(".metanorma"),
         layout.home.join(".relaton"),
         layout.store(),
-        layout.store().join("runtimes"),
+        layout
+            .store()
+            .join("runtimes/ruby-3.3.12-0.16.26-linux-gnu-x86_64"),
+        layout
+            .store()
+            .join("runtimes/java-21.0.12-2.7.0-linux-gnu-x86_64"),
         layout.tmp.join("t1"),
     ] {
         mark(&d);
     }
     // v1-exe: the payload caches + the per-target TMPDIR go; the store stays.
-    layout.wipe_cold_caches("t1", TargetKind::V1Exe).unwrap();
+    layout
+        .wipe_cold_caches("t1", TargetKind::V1Exe, None)
+        .unwrap();
     assert!(!layout.home.join(".metanorma/marker").exists());
     assert!(!layout.home.join(".relaton/marker").exists());
     assert!(!layout.tmp.join("t1/marker").exists());
@@ -311,16 +319,36 @@ fn cold_wipe_matches_the_arm() {
         "v1 never wipes the store"
     );
 
-    // v2-press: runtimes/ goes (the env image re-downloads in-span); the
-    // store's payload side survives (the fat package never uses it).
-    layout.wipe_cold_caches("t1", TargetKind::V2Press).unwrap();
-    assert!(!layout.store().join("runtimes/marker").exists());
+    // v2-press: the package's OWN runtime entry goes (the env image
+    // re-downloads in-span); a spawned-dependency runtime (the java entry)
+    // survives — a spawn never downloads, so wiping it would break the
+    // cold run by construction. The store's payload side survives too.
+    let own = layout
+        .store()
+        .join("runtimes/ruby-3.3.12-0.16.26-linux-gnu-x86_64");
+    layout
+        .wipe_cold_caches("t1", TargetKind::V2Press, Some(&own))
+        .unwrap();
+    assert!(!own.join("marker").exists());
+    assert!(
+        layout
+            .store()
+            .join("runtimes/java-21.0.12-2.7.0-linux-gnu-x86_64/marker")
+            .exists(),
+        "spawned-dependency runtimes survive the v2-press cold wipe"
+    );
     assert!(layout.store().join("marker").exists());
+
+    // A v2-press wipe without the runtime dir is a named harness bug.
+    let err = layout
+        .wipe_cold_caches("t1", TargetKind::V2Press, None)
+        .unwrap_err();
+    assert!(err.message.contains("harness bug"), "{}", err.message);
 
     // v2-managed: the whole store goes (payload re-install is unmeasured,
     // the runtime download lands in the measured span).
     layout
-        .wipe_cold_caches("t1", TargetKind::V2Managed)
+        .wipe_cold_caches("t1", TargetKind::V2Managed, None)
         .unwrap();
     assert!(!layout.store().join("marker").exists());
 }

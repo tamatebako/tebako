@@ -320,6 +320,14 @@ rule (unsafe only inside FFI boundary modules).
   NOT the env image — §9 spike a — so the env-image download lands
   inside the measured span); v1-exe = wipe → measured exe run
   (re-extraction inside the span).
+- **The v2-press wipe is scoped to the package's OWN runtime entry**
+  (`runtimes/<entry>`, amended 2026-09-18 from the whole-`runtimes/`
+  wording): a payload that spawns a second interpreter (metanorma's
+  jing validation spawns java — the spawned-payload dependency) keeps
+  that runtime's entry, because a spawn NEVER downloads — wiping it
+  would make the cold run un-runnable by construction. The v2-managed
+  cold wipe stays whole-store: its unmeasured re-install restores the
+  spawned dependencies.
 - Cold results are reported SEPARATELY as install/first-boot metrics
   and are never mixed into warm medians. `mode` on every run record is
   `"warm"` or `"cold"` (§6), and statistics are computed per mode.

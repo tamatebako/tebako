@@ -62,6 +62,9 @@ pub enum Prepared {
         program: PathBuf,
         /// runtime-exe arms: the staged env image (TEBAKO_RUNTIME_IMAGE).
         image: Option<PathBuf>,
+        /// v2 arms: the resolved runtime's cache entry dir — the v2-press
+        /// cold wipe's scoped target (spec 27 §5).
+        runtime_dir: Option<PathBuf>,
     },
     Unavailable {
         reason: String,
@@ -232,6 +235,7 @@ fn prepare_targets(
                         Prepared::Ready {
                             program: exe,
                             image: None,
+                            runtime_dir: None,
                         }
                     }
                     Err(e) => Prepared::Unavailable {
@@ -259,6 +263,7 @@ fn prepare_targets(
                             Prepared::Ready {
                                 program: staged.program,
                                 image: None,
+                                runtime_dir: Some(staged.runtime_dir),
                             }
                         }
                         Err(e) => Prepared::Unavailable {
@@ -273,6 +278,7 @@ fn prepare_targets(
                 Prepared::Ready {
                     program: PathBuf::from(target.program.as_deref().unwrap_or_default()),
                     image: None,
+                    runtime_dir: None,
                 }
             }
             TargetKind::RuntimeExe => {
@@ -280,6 +286,7 @@ fn prepare_targets(
                     Ok(pair) => Prepared::Ready {
                         program: pair.exe,
                         image: Some(pair.image),
+                        runtime_dir: None,
                     },
                     Err(e) => Prepared::Unavailable {
                         reason: format!("runtime acquisition failed: {e}"),
@@ -360,7 +367,7 @@ fn prepare_targets(
                 &[],
                 &format!("acquire-probe-on-system-{lang}.log"),
             )?;
-            let Prepared::Ready { program, image } = &prepared[tb_idx].state else {
+            let Prepared::Ready { program, image, .. } = &prepared[tb_idx].state else {
                 unreachable!()
             };
             let image = image.as_ref().ok_or_else(|| {
@@ -546,6 +553,9 @@ struct StagedV2 {
     tools_version: String,
     runtime_tebako_version: String,
     runtime_lang_version: String,
+    /// The resolved runtime's store entry dir (the v2-press cold wipe's
+    /// scoped target).
+    runtime_dir: PathBuf,
     payload_release_tag: String,
     image_format: crate::result::ImageFormat,
 }
@@ -592,6 +602,7 @@ fn prepare_v2(
         tools_version: tools_ref.version.clone(),
         runtime_tebako_version: runtime.tebako_version,
         runtime_lang_version: runtime.lang_version,
+        runtime_dir: runtime.dir,
         payload_release_tag: payload.release_tag,
         image_format: payload.image_format,
     })
@@ -806,7 +817,10 @@ pub fn execute_matrix(
                 continue;
             }
             for iteration in 1..=suite.run_policy.cold_repetitions {
-                layout.wipe_cold_caches(&pt.target.id, pt.target.kind)?;
+                let Prepared::Ready { runtime_dir, .. } = &pt.state else {
+                    unreachable!("the cold loop skips non-ready arms")
+                };
+                layout.wipe_cold_caches(&pt.target.id, pt.target.kind, runtime_dir.as_deref())?;
                 // The §5 cold flow's unmeasured re-install is v2-managed's
                 // alone (v1 re-extracts in-span; the fat package needs no
                 // store; runtime-exe arms mount staged files, so their
@@ -862,7 +876,7 @@ fn run_once(
     warmup: bool,
 ) -> Result<(Sample, PathBuf), BenchError> {
     let target = &pt.target;
-    let Prepared::Ready { program, image } = &pt.state else {
+    let Prepared::Ready { program, image, .. } = &pt.state else {
         return Err(BenchError::operational(format!(
             "engine: run_once called for the unavailable target '{}' (harness bug)",
             target.id
