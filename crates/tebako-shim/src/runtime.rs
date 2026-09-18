@@ -1775,6 +1775,11 @@ impl FetchTrust {
     /// DECLARED asc that does not fetch → 71) and verify the downloaded
     /// bytes BEFORE the sha256 check. Returns the verified signer's
     /// resolved PRIMARY keyid.
+    // The params are the leg's distinct inputs (source, layout, names,
+    // the declared signature) — a params struct would only relabel them
+    // at the two call sites (the driver's spawn.rs carries the same
+    // allow for the same reason).
+    #[allow(clippy::too_many_arguments)]
     fn verify_asset(
         &self,
         ctx: &Ctx,

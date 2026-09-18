@@ -60,6 +60,13 @@ pub fn resolve_fetch_jobs(env: Option<String>, config: Option<u32>) -> Result<us
 /// The `'plan` lifetime lets commit closures borrow the caller's state
 /// (the resolver, the journal sink) — sound because [`execute_plan`]
 /// joins its scoped worker threads before returning.
+/// The commit closure's type — install the verified staged bytes (see
+/// [`FetchItem::commit`]). Aliased because the bare `Box<dyn …>`
+/// spelling trips clippy's type_complexity, and the name reads better
+/// at every use site.
+pub type CommitClosure<'plan> =
+    Box<dyn FnOnce(&StagedArtifact<'_>) -> Result<CommitReport, ResolveError> + Send + 'plan>;
+
 pub struct FetchItem<'plan> {
     /// The asset name, for progress lines and errors.
     pub display: String,
@@ -80,8 +87,7 @@ pub struct FetchItem<'plan> {
     /// origin; owns signature verification and the atomic place, and
     /// CONSUMES the tmp file on success (rename into place — on its
     /// error the pipeline removes the tmp).
-    pub commit:
-        Box<dyn FnOnce(&StagedArtifact) -> Result<CommitReport, ResolveError> + Send + 'plan>,
+    pub commit: CommitClosure<'plan>,
 }
 
 /// The commit closure's view of a staged artifact.
