@@ -365,3 +365,58 @@ manage the trust store [planned]; `tebako doctor` re-verifies installed
 artifacts against pinned keys [roadmap 50]. Unverified artifacts always
 produce the loud warning + journal (§3); `TEBAKO_REQUIRE_SIGNED=1`
 refuses them outright.
+
+## 10. Key retrieval from the trust-anchor channel (locked 2026-09-18)
+
+A signed artifact whose pinned `signature.keyid` is absent from the
+local keyring used to be a dead end ("register the publisher's key,
+then retry"). For keys ON THE TAMATEBAKO ROOT CHAIN the machine can now
+close that gap itself: the pubkey is fetched from the trust-anchor
+publication (§2's tebako.org channel) and admitted ONLY through the
+chain — **trust never extends silently, and never extends by TOFU.**
+
+- **The well-known grammar (the tebako.org publication owns these
+  spellings; consumers flow them, never re-derive):**
+  - `https://www.tebako.org/.well-known/tebako-keys/<keyid>.asc` — the
+    armored public key whose PRIMARY keyid (16 lowercase hex) is
+    `<keyid>`. The root's own key answers here as well as at the
+    legacy `tebako-key.asc` (which stays the human-facing spelling).
+  - `https://www.tebako.org/.well-known/tebako-successors/<predecessor-fingerprint>.asc`
+    — the `TEBAKO-ROOT-SUCCESSOR-V1` statement (§2's rotation format)
+    rotating FROM `<predecessor-fingerprint>` (40 uppercase hex).
+  The directory is a DIRECTORY (§9.3's keyserver rule): a fetched key
+  authenticates by chaining, never by the channel that served it.
+- **The admission rule.** A retrieved key is usable — for this
+  verification and for registration into the trusted keyring — iff:
+  1. its primary fingerprint IS the embedded root
+     (`EMBEDDED_ROOT_FINGERPRINT` / `TEBAKO_TRUSTED_ROOT`); or
+  2. it chains to a locally trusted root through verified successor
+     statements: starting at the embedded root fingerprint, each hop
+     fetches `tebako-successors/<current>.asc` and verifies the
+     statement against the current root's key (the embedded public key,
+     the trusted keyring, or a key retrieved and admitted earlier in
+     the same walk); the walk ends at the retrieved key's fingerprint
+     (admitted, basis = the verified path) or where no further
+     statement exists (NOT admitted). The walk is bounded (8 hops) —
+     a cycle is a dead end, not a hang; or
+  3. it is already in the trusted keyring (no fetch at all).
+  Anything else is the NAMED error `KeyRetrievalFailed` (exit 72, the
+  trust-failure class): the message prints the retrieved key's
+  fingerprint LOUDLY for out-of-band confirmation and names the manual
+  path (`tebako keys import <file>`) — the same refusal shape as
+  today, now with the fingerprint to compare. A `tebako-keys` URL that
+  does not resolve (404) is the same named error class naming the URL.
+- **Concurrency.** Retrieval is a tiny independent fetch and runs
+  CONCURRENT with the plan's artifact streams (spec 05 §6); an
+  artifact's signature verification starts when both its bytes and its
+  key are present. A retrieved-and-admitted key is registered into the
+  trusted keyring (§2's rotation rule: the loader TOFU-registers a
+  verified successor) so the next verification is local.
+- **The audit journal** records every retrieval: one row per event
+  with the pinned keyid, the admitted fingerprint, the source URL, and
+  the chain basis (`embedded-root` / `successor:<path>` /
+  `already-trusted`) — trust events are exactly what the journal is
+  for. Failed retrievals journal too (`event=key-retrieval-failed`).
+- **`TEBAKO_OFFLINE=1` skips retrieval entirely** (no network): the
+  verification keeps the pre-ceremony outcome — the pinned keyid is
+  absent, the named untrusted-signer error (exit 72) stands.
