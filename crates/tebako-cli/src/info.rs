@@ -490,7 +490,9 @@ fn shims(home: &Path, json: bool) -> Result<String, TebakoError> {
     };
     let ctx = Ctx {
         home: home.to_path_buf(),
-        cwd: std::env::current_dir().map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?,
+        // A deleted cwd (the detached-seed sweep) must not kill the
+        // dispatch: `/` anchors relative resolution instead of an error.
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
         env: std::env::vars().collect(),
     };
     let mut rows: Vec<(String, String)> = Vec::new();

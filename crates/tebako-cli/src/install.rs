@@ -1333,7 +1333,9 @@ fn install_runtime_edge(
 ) -> Result<(), TebakoError> {
     let ctx = tebako_shim::Ctx {
         home: home.to_path_buf(),
-        cwd: std::env::current_dir().map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?,
+        // A deleted cwd (the detached-seed sweep) must not kill the
+        // dispatch: `/` anchors relative resolution instead of an error.
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
         env: std::env::vars().collect(),
     };
     // Pre-staging the runtime IS install's job (the dispatch would
@@ -1503,7 +1505,9 @@ fn install_executable_edge<T: Transport + Sync>(
     let provider_mirror = Manifest::load(&record.manifest_mirror).map_err(map_shim)?;
     let ctx = tebako_shim::Ctx {
         home: home.to_path_buf(),
-        cwd: std::env::current_dir().map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?,
+        // A deleted cwd (the detached-seed sweep) must not kill the
+        // dispatch: `/` anchors relative resolution instead of an error.
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
         env: std::env::vars().collect(),
     };
     let mut names = Vec::new();
