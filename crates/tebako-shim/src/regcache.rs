@@ -256,6 +256,10 @@ pub fn registry_for_with<T: Transport>(
     // Stale or missing: fetch, publish, read. A PRESENT-but-stale cache
     // whose refresh failed serves LOUD (spec 05 §4's stale-serve,
     // roadmap 86); a MISSING cache keeps the named error.
+    // spec 06 §5a's wiring rule: the network read renders through
+    // tebako-term — a one-shot quiet-gated line (an index read, not an
+    // artifact stream — no bar).
+    tebako_term::set::ProgressSet::stderr().line(&format!("fetching registry {canonical}"));
     match fetcher.fetch_registry(&parsed) {
         Ok(bytes) => {
             prime_unchecked(home, &canonical, &bytes)?;
@@ -314,6 +318,10 @@ pub fn refresh_with<T: Transport>(
         )
     })?;
     let canonical = parsed.as_canonical_string();
+    // spec 06 §5a's wiring rule: the network read renders through
+    // tebako-term — a one-shot quiet-gated line (an index read, not an
+    // artifact stream — no bar).
+    tebako_term::set::ProgressSet::stderr().line(&format!("fetching registry {canonical}"));
     let bytes = fetcher
         .fetch_registry(&parsed)
         .map_err(|e| map_resolve(home, &canonical, e))?;

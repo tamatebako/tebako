@@ -42,6 +42,9 @@ tebako-http = { version = "2.0.0", path = "../tebako-http" }
 # the consumed index form's detached .asc and every declared per-artifact
 # signature verify at download. No size gate here (unlike the bootstrap).
 tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
+# The fetch pipeline's progress surface (spec 06 §5a) — the dispatch-time
+# runtime/payload downloads render through it.
+tebako-term = { version = "2.0.0", path = "../tebako-term" }
 libc = "0.2"
 sha2 = "0.10"
 

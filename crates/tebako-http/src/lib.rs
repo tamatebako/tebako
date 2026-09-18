@@ -59,6 +59,10 @@ pub enum FetchError {
     },
     /// A download failed at the transport or HTTP layer.
     DownloadFailed(String),
+    /// The caller aborted the stream (the fetch pipeline's plan-cancel
+    /// path): the progress callback returned `false`. Never retried —
+    /// the plan is already unwinding.
+    Cancelled(String),
     /// The proxy demanded authentication (HTTP 407). The credentials
     /// ride the proxy URL (`http://user:pass@host:port`) or the
     /// `network.proxy` config value.
@@ -88,6 +92,7 @@ impl fmt::Display for FetchError {
                 None => write!(f, "throttled ({status})"),
             },
             FetchError::DownloadFailed(why) => write!(f, "{why}"),
+            FetchError::Cancelled(what) => write!(f, "fetch of {what} cancelled"),
             FetchError::ProxyAuthRequired(url) => write!(
                 f,
                 "proxy authentication required (407) fetching {url} — credentials ride \
@@ -621,6 +626,85 @@ pub fn get_with_progress_and_options(
     Ok(body)
 }
 
+/// The STREAMING GET (spec 05 §6): the response body flows chunk by
+/// chunk into `writer` — the fetch pipeline's hashing writer turns this
+/// into one pass with constant memory; artifact bytes never materialize
+/// whole in memory. `on_progress` fires per chunk with
+/// `(bytes_so_far, content_length)`; returning `false` ABORTS the
+/// download (the plan-cancel path) with a [`FetchError::Cancelled`].
+/// Returns the total bytes written.
+pub fn stream_to_writer(
+    url: &str,
+    opts: &GetOptions,
+    writer: &mut dyn std::io::Write,
+    mut on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+) -> Result<u64, FetchError> {
+    if let Some(path) = url.strip_prefix("file://") {
+        let mut file = std::fs::File::open(file_path_from_url(path)).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                FetchError::IndexUnavailable(path.to_string())
+            } else {
+                FetchError::DownloadFailed(format!("{e} reading {path}"))
+            }
+        })?;
+        let total = file.metadata().ok().map(|m| m.len());
+        let mut written = 0u64;
+        let mut chunk = [0u8; 65536];
+        use std::io::Read as _;
+        loop {
+            let n = file
+                .read(&mut chunk)
+                .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {path}")))?;
+            if n == 0 {
+                break;
+            }
+            writer
+                .write_all(&chunk[..n])
+                .map_err(|e| FetchError::DownloadFailed(format!("{e} writing {url}")))?;
+            written += n as u64;
+            if let Some(cb) = on_progress.as_deref_mut() {
+                if !cb(written, total) {
+                    return Err(FetchError::Cancelled(url.to_string()));
+                }
+            }
+        }
+        return Ok(written);
+    }
+    require_https(url)?;
+    use std::io::Read as _;
+    network_guard()?;
+    let response = apply_options(url, agent()?.get(url), opts)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    let mut response = classify(response, url)?;
+    let content_length = response.body().content_length();
+    let mut reader = response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY_SIZE)
+        .reader();
+    let mut written = 0u64;
+    let mut chunk = [0u8; 65536];
+    loop {
+        let n = reader
+            .read(&mut chunk)
+            .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))?;
+        if n == 0 {
+            break;
+        }
+        writer
+            .write_all(&chunk[..n])
+            .map_err(|e| FetchError::DownloadFailed(format!("{e} writing {url}")))?;
+        written += n as u64;
+        if let Some(cb) = on_progress.as_deref_mut() {
+            if !cb(written, content_length) {
+                return Err(FetchError::Cancelled(url.to_string()));
+            }
+        }
+    }
+    Ok(written)
+}
+
 /// GET `url` as text (release indexes, manifests).
 pub fn get_text(url: &str) -> Result<String, FetchError> {
     let body = get(url)?;
@@ -917,6 +1001,74 @@ mod tests {
 
         // None is get()'s behavior, unchanged.
         assert_eq!(get_with_progress(&url, None).unwrap(), get(&url).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stream_to_writer_flows_chunked_with_progress_and_totals() {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-http-test-stream-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // > one 64 KiB chunk, so the chunked path exercises twice
+        let payload: Vec<u8> = (0..150_000u32).map(|i| (i % 251) as u8).collect();
+        let file = dir.join("asset.bin");
+        std::fs::write(&file, &payload).unwrap();
+        let url = file_url(&file);
+
+        let mut out: Vec<u8> = Vec::new();
+        let mut calls: Vec<(u64, Option<u64>)> = Vec::new();
+        let written = stream_to_writer(
+            &url,
+            &GetOptions::default(),
+            &mut out,
+            Some(&mut |so_far, total| {
+                calls.push((so_far, total));
+                true
+            }),
+        )
+        .unwrap();
+        assert_eq!(written, payload.len() as u64);
+        assert_eq!(out, payload);
+        assert!(calls.len() >= 2, "{calls:?}");
+        assert_eq!(calls.last().copied(), Some((150_000, Some(150_000))));
+
+        // no hook: same bytes
+        let mut out2: Vec<u8> = Vec::new();
+        let written = stream_to_writer(&url, &GetOptions::default(), &mut out2, None).unwrap();
+        assert_eq!(written, payload.len() as u64);
+        assert_eq!(out2, payload);
+
+        // a missing file is the missing-object error
+        let missing = file_url(&dir.join("nope.bin"));
+        let mut sink: Vec<u8> = Vec::new();
+        assert!(matches!(
+            stream_to_writer(&missing, &GetOptions::default(), &mut sink, None),
+            Err(FetchError::IndexUnavailable(_))
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stream_to_writer_abort_is_the_named_cancel() {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-http-test-cancel-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload: Vec<u8> = (0..150_000u32).map(|i| (i % 251) as u8).collect();
+        let file = dir.join("asset.bin");
+        std::fs::write(&file, &payload).unwrap();
+        let url = file_url(&file);
+
+        let mut out: Vec<u8> = Vec::new();
+        let err = stream_to_writer(
+            &url,
+            &GetOptions::default(),
+            &mut out,
+            Some(&mut |so_far, _| so_far < 65536),
+        )
+        .unwrap_err();
+        assert!(matches!(err, FetchError::Cancelled(_)), "{err:?}");
+        // the writer holds exactly the bytes up to the abort
+        assert_eq!(out.len(), 65536);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

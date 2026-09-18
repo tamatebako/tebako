@@ -61,6 +61,12 @@ fn map_fetch_error(url: &str, e: FetchError) -> ResolveError {
             origin: url.to_string(),
             reason,
         },
+        // The plan-cancel abort never reaches the buffered fetcher; map
+        // it like a transport failure if a caller ever sees one.
+        FetchError::Cancelled(reason) => ResolveError::DownloadFailed {
+            origin: url.to_string(),
+            reason,
+        },
         // TODO.v2-1/33's named networking failures ride their own
         // messages; never NotFound (no next-index walk).
         FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_) => {
@@ -100,6 +106,13 @@ impl Default for Fetcher<HttpTransport> {
 impl<T: Transport> Fetcher<T> {
     pub fn with_transport(transport: T) -> Self {
         Fetcher { transport }
+    }
+
+    /// The injected transport — the fetch pipeline (spec 05 §6) streams
+    /// through the SAME seam the one-shot [`Fetcher::fetch`] reads, so a
+    /// test mock answers plan GETs too.
+    pub fn transport(&self) -> &T {
+        &self.transport
     }
 
     /// Fetch and (when the reference carries a pin) sha256-verify.

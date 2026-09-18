@@ -20,6 +20,10 @@ pub enum SignerError {
     Envelope(String),
     /// Trusted-keyring loading/registration failed.
     Trust(String),
+    /// Trust-anchor key retrieval failed (spec 09 §10's
+    /// `KeyRetrievalFailed` — the trust-failure class, exit 72 at the
+    /// tool boundary).
+    KeyRetrieval(String),
     /// Plain i/o failure with path context.
     Io(String),
 }
@@ -33,6 +37,7 @@ impl fmt::Display for SignerError {
             SignerError::Verify(m) => write!(f, "verification failed: {m}"),
             SignerError::Envelope(m) => write!(f, "key envelope error: {m}"),
             SignerError::Trust(m) => write!(f, "trusted keyring error: {m}"),
+            SignerError::KeyRetrieval(m) => write!(f, "key retrieval failed: {m}"),
             SignerError::Io(m) => write!(f, "i/o error: {m}"),
         }
     }

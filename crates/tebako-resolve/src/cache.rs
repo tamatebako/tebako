@@ -25,6 +25,9 @@ use crate::error::ResolveError;
 use crate::fetch::FetchedPayload;
 
 const TMP_DIR: &str = "tmp";
+/// Same-process disambiguator for tmp names (two plans of one process
+/// can stage the same entry name concurrently; cross-process rides pid).
+static TMP_SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// Spec 05 §4: 120 s with stale-lock hint.
 const LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
@@ -335,6 +338,75 @@ impl PayloadCache {
         })
     }
 
+    /// The fetch pipeline's commit arm (spec 05 §6): the bytes are
+    /// ALREADY staged at `tmp` (streamed + pin-verified inline by the
+    /// plan worker); this takes the entry lock, re-checks the hit,
+    /// re-verifies the pin against the caller's anchor, and renames into
+    /// place with the markers — `install`'s exact discipline for bytes
+    /// that arrive as a file. `tmp` is always consumed (renamed on
+    /// install, removed on a hit/mismatch).
+    pub fn install_staged(
+        &self,
+        name: &str,
+        version: &str,
+        expected_sha256: Option<&str>,
+        tmp: &Path,
+        sha256: &str,
+        origin: &str,
+    ) -> Result<(CacheEntry, InstallStatus), ResolveError> {
+        let file = self.entry_file(name, version)?;
+        if let Some(entry) = self.get(name, version)? {
+            let _ = fs::remove_file(tmp);
+            return Ok((entry, InstallStatus::Hit));
+        }
+        crate::store::check_once(&self.root).map_err(|e| ResolveError::CacheIo {
+            op: "checking the store layout of",
+            path: self.root.clone(),
+            reason: e.to_string(),
+        })?;
+        let lock_path = self.lock_file(name, version);
+        let sha256 = sha256.to_ascii_lowercase();
+        let origin = origin.to_string();
+        self.with_entry_lock(&lock_path, || {
+            if let Some(entry) = self.get(name, version)? {
+                let _ = fs::remove_file(tmp);
+                return Ok((entry, InstallStatus::Hit));
+            }
+            if offline() {
+                let _ = fs::remove_file(tmp);
+                return Err(ResolveError::Offline {
+                    what: format!("payload {name}@{version}"),
+                });
+            }
+            if let Some(expected) = expected_sha256 {
+                let expected = expected.to_ascii_lowercase();
+                if sha256 != expected {
+                    let _ = fs::remove_file(tmp);
+                    return Err(ResolveError::Sha256Mismatch {
+                        origin: origin.clone(),
+                        expected,
+                        actual: sha256,
+                    });
+                }
+            }
+            let file_name = file
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "payload".to_string());
+            self.finish_place(tmp, &file, &file_name, &sha256, &origin)?;
+            Ok((
+                CacheEntry {
+                    name: name.to_string(),
+                    version: version.to_string(),
+                    path: file,
+                    sha256,
+                    origin: Some(origin),
+                },
+                InstallStatus::Installed,
+            ))
+        })
+    }
+
     /// The lazy-seed verb (spec 23 §13.4): place payload bytes the caller
     /// already holds (a carried slice read out of the running package)
     /// into the cache — sha256-verified against `expected_sha256` BEFORE
@@ -422,7 +494,10 @@ impl PayloadCache {
         })
     }
 
-    /// tmp path + the entry's file name (the place/seed prelude).
+    /// tmp path + the entry's file name (the place/seed prelude). The
+    /// tmp name carries the NAME TOO — `payloads/<name>/<version>.tfs`
+    /// keys the entry, so two entries sharing a version string (parallel
+    /// installs, spec 05 §6) must never collide on one tmp file.
     fn tmp_path(&self, file: &Path) -> Result<(PathBuf, String), ResolveError> {
         let tmp_dir = self.root.join(TMP_DIR);
         fs::create_dir_all(&tmp_dir).map_err(|e| cache_io("creating", &tmp_dir, e))?;
@@ -430,8 +505,17 @@ impl PayloadCache {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "payload".to_string());
+        let entry_name = file
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         Ok((
-            tmp_dir.join(format!("{file_name}.{}.part", std::process::id())),
+            tmp_dir.join(format!(
+                "{entry_name}-{file_name}.{}.{}.part",
+                std::process::id(),
+                TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            )),
             file_name,
         ))
     }
@@ -1018,6 +1102,92 @@ mod tests {
             .unwrap();
         std::env::remove_var("TEBAKO_OFFLINE");
         assert_eq!(outcome, SeedOutcome::Seeded);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn install_staged_places_streamed_bytes_and_rechecks_the_hit() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        let bytes = b"streamed-payload";
+        let sha = crate::fetch::sha256_hex(bytes);
+        let tmp = root.join("tmp/staged.part");
+        fs::create_dir_all(root.join("tmp")).unwrap();
+        fs::write(&tmp, bytes).unwrap();
+        let (entry, status) = cache
+            .install_staged("tool", "1.0", Some(&sha), &tmp, &sha, "https://cdn/t.tfs")
+            .unwrap();
+        assert_eq!(status, InstallStatus::Installed);
+        assert_eq!(entry.sha256, sha);
+        assert_eq!(fs::read(&entry.path).unwrap(), bytes);
+        assert!(!tmp.exists(), "the staged tmp was consumed");
+        // 0444 + both markers, install's discipline
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&entry.path).unwrap().permissions().mode() & 0o777,
+                0o444
+            );
+        }
+        assert!(root.join("payloads/tool/1.0.tfs.sha256").is_file());
+        assert!(root.join("payloads/tool/1.0.tfs.origin").is_file());
+
+        // a second staged install of the same entry is a hit — and the
+        // stray tmp is cleaned up
+        fs::write(&tmp, b"other-bytes").unwrap();
+        let other_sha = crate::fetch::sha256_hex(b"other-bytes");
+        let (entry2, status2) = cache
+            .install_staged("tool", "1.0", None, &tmp, &other_sha, "https://cdn/t2.tfs")
+            .unwrap();
+        assert_eq!(status2, InstallStatus::Hit);
+        assert_eq!(entry2.sha256, sha);
+        assert!(!tmp.exists());
+
+        // a pin mismatch deletes the staged file and caches nothing new
+        let tmp3 = root.join("tmp/staged3.part");
+        fs::write(&tmp3, b"third").unwrap();
+        let sha3 = crate::fetch::sha256_hex(b"third");
+        let err = cache
+            .install_staged("tool", "3.0", Some(&"f".repeat(64)), &tmp3, &sha3, "o")
+            .unwrap_err();
+        assert!(matches!(err, ResolveError::Sha256Mismatch { .. }));
+        assert!(!tmp3.exists());
+        assert!(!root.join("payloads/tool/3.0.tfs").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parallel_installs_of_disjoint_entries_are_safe() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let mut joins = Vec::new();
+        for i in 0..4 {
+            let cache_root = root.clone();
+            joins.push(std::thread::spawn(move || {
+                let cache = PayloadCache::with_root(cache_root);
+                let name = format!("tool{i}");
+                let bytes = format!("bytes-{i}").into_bytes();
+                cache
+                    .install(&name, "1.0", None, || Ok(fetched(&bytes)))
+                    .unwrap()
+            }));
+        }
+        for (i, j) in joins.into_iter().enumerate() {
+            let (entry, status) = j.join().unwrap();
+            assert_eq!(status, InstallStatus::Installed);
+            assert_eq!(
+                entry.sha256,
+                crate::fetch::sha256_hex(format!("bytes-{i}").as_bytes())
+            );
+        }
+        // every entry landed with its trust anchor
+        for i in 0..4 {
+            assert!(root
+                .join(format!("payloads/tool{i}/1.0.tfs.sha256"))
+                .is_file());
+        }
         let _ = fs::remove_dir_all(&root);
     }
 

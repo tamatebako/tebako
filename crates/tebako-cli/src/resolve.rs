@@ -42,10 +42,17 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use sha2::Digest;
 
 use tebako_pkg::{json_parse, JsonValue};
+use tebako_resolve::plan::{
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
+    FETCH_JOBS_ENV,
+};
+use tebako_resolve::{HttpTransport, Reference, ResolveError};
+use tebako_term::set::ProgressSet;
 use tpkg::runtime_store::EntrySignature;
 
 use crate::error::{packaging_error, TebakoError};
@@ -257,16 +264,10 @@ impl Resolver {
         let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
         self.with_entry_lock(&dir, &entry_ref, || {
             if !executable.is_file() {
-                let (entry, trust, mut signers) =
+                let (_entry, trust, mut signers) =
                     self.install(&dir, ruby_version, platform, tebako_version)?;
                 if let Some(signer) = trust.signer() {
                     signers.push(signer.to_string());
-                }
-                if let Some(image) = entry.image.clone() {
-                    signers.extend(self.install_image(&dir, &image, tebako_version)?);
-                }
-                if let Some(dll) = entry.dll.clone() {
-                    signers.extend(self.install_dll(&dir, &dll, tebako_version)?);
                 }
                 self.journal_verified(&entry_ref, &signers);
                 return Ok(());
@@ -297,18 +298,22 @@ impl Resolver {
                             .is_some();
                     self.unsigned_gate(&entry_ref, declared, crate::install::require_signed())?;
                 }
+                let sink = CommitSink::default();
+                let mut items = Vec::new();
+                if let Some(image) = &entry.image {
+                    items.extend(self.image_item(&dir, image, tebako_version, &sink)?);
+                }
+                if let Some(dll) = &entry.dll {
+                    items.extend(self.dll_item(&dir, dll, tebako_version, &sink)?);
+                }
+                self.run_fetch_plan(&format!("runtime {entry_ref} facets"), items, &sink)?;
                 let mut signers: Vec<String> = fetched
                     .trust
                     .signer()
                     .map(|s| s.to_string())
                     .into_iter()
                     .collect();
-                if let Some(image) = entry.image.clone() {
-                    signers.extend(self.install_image(&dir, &image, tebako_version)?);
-                }
-                if let Some(dll) = entry.dll.clone() {
-                    signers.extend(self.install_dll(&dir, &dll, tebako_version)?);
-                }
+                signers.extend(sink.signers());
                 self.journal_verified(&entry_ref, &signers);
             }
             Ok(())
@@ -393,93 +398,53 @@ impl Resolver {
         }
     }
 
-    /// Download + verify + install the runtime image (0444 + trusted
+    /// The plan item for the runtime image facet (0444 + trusted
     /// markers), sharing the bootstrap's cache layout (item 30b). A
-    /// declared `signature:` block verifies against the downloaded bytes
-    /// BEFORE the sha256 check (G1, spec 09 §4); the verified signer
-    /// rides back for the audit journal. Called with the entry lock
-    /// already held.
-    fn install_image(
-        &self,
+    /// declared `signature:` block verifies against the staged bytes
+    /// BEFORE the sha256 comparison (G1, spec 09 §4 — signed items
+    /// carry no inline pin; the streamed hash compares inside the
+    /// commit); the verified signer rides back for the audit journal.
+    /// `Ok(None)` when the facet is already installed.
+    fn image_item<'a>(
+        &'a self,
         dir: &Path,
         image: &ImageRef,
         tebako_version: &str,
-    ) -> Result<Option<String>, TebakoError> {
+        sink: &'a CommitSink,
+    ) -> Result<Option<FetchItem<'a>>, TebakoError> {
         let image_path = dir.join(&image.filename);
         let marker = dir.join(format!("{}.sha256", image.filename));
         if image_path.is_file() && marker.is_file() {
             return Ok(None);
         }
         let url = self.package_url(&image.filename, tebako_version);
-        let tmp_dir = self.cache_root.join(TMP_DIR);
-        let tmp = tmp_dir.join(format!("{}.{}.part", image.filename, std::process::id()));
-        let bytes = match fetch_bytes(&url) {
-            Ok(bytes) => bytes,
-            Err(FetchError::IndexUnavailable(_)) => {
-                return Err(packaging_error(122, Some(&format!("{url}: not found"))));
-            }
-            Err(e @ FetchError::Throttled { .. }) => {
-                return Err(packaging_error(122, Some(&e.to_string())));
-            }
-            Err(FetchError::DownloadFailed(msg)) => {
-                return Err(packaging_error(122, Some(&msg)));
-            }
-            Err(e) => {
-                return Err(packaging_error(122, Some(&e.to_string())));
-            }
-        };
-        let signer = image
-            .signature
-            .as_ref()
-            .map(|sig| self.verify_declared(&bytes, &image.filename, sig, tebako_version))
-            .transpose()?;
-        if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
-            let _ = fs::remove_file(&tmp);
-            return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
-        }
-        let actual = sha256_file_hex(&tmp)
-            .ok_or_else(|| packaging_error(121, Some(&format!("cannot hash {}", tmp.display()))))?;
-        let expected = image.sha256.to_ascii_lowercase();
-        if actual != expected {
-            let _ = fs::remove_file(&tmp);
-            return Err(packaging_error(
-                121,
-                Some(&format!(
-                    "{}: expected {expected}, got {actual}; download deleted",
-                    image.filename
-                )),
-            ));
-        }
-        let err = |e: std::io::Error| {
-            crate::error::plain_error(format!("{e} installing {}", image_path.display()))
-        };
-        make_readonly(&tmp).map_err(err)?;
-        fs::rename(&tmp, &image_path).map_err(err)?;
-        fs::write(&marker, format!("{expected}  {}\n", image.filename)).map_err(err)?;
-        fs::write(
-            dir.join(format!("{}.origin", image.filename)),
-            format!("{url}\n"),
-        )
-        .map_err(err)?;
-        Ok(signer)
+        Ok(Some(self.facet_item(
+            dir,
+            &image.filename,
+            &image.filename,
+            &image.sha256,
+            image.signature.clone(),
+            &url,
+            tebako_version,
+            sink,
+        )?))
     }
 
-    /// Download + verify + install the windows ruby DLL
-    /// (tebako-runtime-ruby#40) next to the executable AS `install_as` —
-    /// the PE name the exe and the extension .so's import (never the asset
-    /// name: assets are unique per leg, two same-ABI legs share the PE
-    /// name) — read-only with `<install_as>.sha256`/`<install_as>.origin`
-    /// trusted markers, the image's exact discipline (declared signature
-    /// before the sha256 check; the verified signer rides back for the
-    /// audit journal). A ref without an `install_as` (the SHA256SUMS index
-    /// form carries no PE name) is not installable: the dll facet is
-    /// manifest-keyed. Called with the entry lock already held.
-    fn install_dll(
-        &self,
+    /// The plan item for the windows ruby DLL
+    /// (tebako-runtime-ruby#40), installed next to the executable AS
+    /// `install_as` — the PE name the exe and the extension .so's
+    /// import (never the asset name) — the image's exact discipline.
+    /// A ref without an `install_as` (the SHA256SUMS index form
+    /// carries no PE name) is not installable: the dll facet is
+    /// manifest-keyed. `Ok(None)` when the facet is absent or already
+    /// installed.
+    fn dll_item<'a>(
+        &'a self,
         dir: &Path,
         dll: &DllRef,
         tebako_version: &str,
-    ) -> Result<Option<String>, TebakoError> {
+        sink: &'a CommitSink,
+    ) -> Result<Option<FetchItem<'a>>, TebakoError> {
         let Some(install_as) = dll.install_as.as_deref() else {
             return Ok(None);
         };
@@ -500,53 +465,173 @@ impl Resolver {
             return Ok(None);
         }
         let url = self.package_url(&dll.filename, tebako_version);
-        let tmp_dir = self.cache_root.join(TMP_DIR);
-        let tmp = tmp_dir.join(format!("{}.{}.part", dll.filename, std::process::id()));
-        let bytes = match fetch_bytes(&url) {
-            Ok(bytes) => bytes,
-            Err(FetchError::IndexUnavailable(_)) => {
-                return Err(packaging_error(122, Some(&format!("{url}: not found"))));
+        Ok(Some(self.facet_item(
+            dir,
+            &dll.filename,
+            install_as,
+            &dll.sha256,
+            dll.signature.clone(),
+            &url,
+            tebako_version,
+            sink,
+        )?))
+    }
+
+    /// One facet's (image / dll) plan item: stream to the store's tmp
+    /// dir, verify, land read-only with the trusted markers
+    /// (`<name>.sha256` two-column + `<name>.origin`).
+    #[allow(clippy::too_many_arguments)]
+    fn facet_item<'a>(
+        &'a self,
+        dir: &Path,
+        display: &str,
+        install_as: &str,
+        sha256: &str,
+        signature: Option<EntrySignature>,
+        url: &str,
+        tebako_version: &str,
+        sink: &'a CommitSink,
+    ) -> Result<FetchItem<'a>, TebakoError> {
+        let reference =
+            Reference::parse(url).map_err(|e| packaging_error(122, Some(&e.to_string())))?;
+        let signed = signature.is_some();
+        let dir = dir.to_path_buf();
+        let install_as = install_as.to_string();
+        let display = display.to_string();
+        let expected = sha256.to_ascii_lowercase();
+        let version = tebako_version.to_string();
+        let commit_display = display.clone();
+        let commit_expected = expected.clone();
+        let commit = move |staged: &StagedArtifact| {
+            if let Some(sig) = &signature {
+                match self.verify_declared_file(staged.tmp, &commit_display, sig, &version) {
+                    Ok(signer) => sink.add_signer(signer),
+                    Err(e) => return Err(sink.fail(e)),
+                }
             }
-            Err(e @ FetchError::Throttled { .. }) => {
-                return Err(packaging_error(122, Some(&e.to_string())));
+            if let Err(e) = check_staged_sha(staged, &commit_expected, &commit_display) {
+                return Err(sink.fail(e));
             }
-            Err(FetchError::DownloadFailed(msg)) => {
-                return Err(packaging_error(122, Some(&msg)));
-            }
-            Err(e) => {
-                return Err(packaging_error(122, Some(&e.to_string())));
-            }
+            place_facet(
+                &dir,
+                staged.tmp,
+                &install_as,
+                &commit_expected,
+                staged.origin,
+            )
+            .map_err(|e| sink.fail(e))?;
+            Ok(CommitReport { line: None })
         };
-        let signer = dll
-            .signature
-            .as_ref()
-            .map(|sig| self.verify_declared(&bytes, &dll.filename, sig, tebako_version))
-            .transpose()?;
-        if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
-            let _ = fs::remove_file(&tmp);
-            return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
+        Ok(FetchItem {
+            display,
+            reference,
+            // Signed items verify the signature FIRST (spec 09 §4) —
+            // the pin then compares inside the commit. Unsigned items
+            // get the pipeline's inline pin (spec 05 §6).
+            sha256_pin: (!signed).then_some(expected),
+            size_hint: None,
+            tmp_dir: self.cache_root.join(TMP_DIR),
+            commit: Box::new(commit),
+        })
+    }
+
+    /// The plan item for the interpreter exe: executable + the
+    /// entry-level `sha256` / `origin` markers (spec 05 §2 SSOT — the
+    /// exe installs under the index entry's `filename` verbatim).
+    fn exe_item<'a>(
+        &'a self,
+        dir: &Path,
+        entry: &IndexEntry,
+        tebako_version: &str,
+        sink: &'a CommitSink,
+    ) -> Result<FetchItem<'a>, TebakoError> {
+        let url = self.package_url(&entry.filename, tebako_version);
+        let reference =
+            Reference::parse(&url).map_err(|e| packaging_error(122, Some(&e.to_string())))?;
+        let signed = entry.signature.is_some();
+        let entry = entry.clone();
+        let dir = dir.to_path_buf();
+        let version = tebako_version.to_string();
+        let filename = entry.filename.clone();
+        let sha256 = entry.sha256.clone();
+        let commit = move |staged: &StagedArtifact| {
+            if let Some(sig) = &entry.signature {
+                match self.verify_declared_file(staged.tmp, &entry.filename, sig, &version) {
+                    Ok(signer) => sink.add_signer(signer),
+                    Err(e) => return Err(sink.fail(e)),
+                }
+            }
+            if let Err(e) = check_staged_sha(staged, &entry.sha256, &entry.filename) {
+                return Err(sink.fail(e));
+            }
+            place_exe(&dir, staged.tmp, &entry, staged.origin).map_err(|e| sink.fail(e))?;
+            Ok(CommitReport { line: None })
+        };
+        Ok(FetchItem {
+            display: filename,
+            reference,
+            sha256_pin: (!signed).then_some(sha256),
+            size_hint: None,
+            tmp_dir: self.cache_root.join(TMP_DIR),
+            commit: Box::new(commit),
+        })
+    }
+
+    /// Run one fetch plan (spec 05 §6) through the pipeline: concurrent
+    /// streams, tebako-term v2 progress, plan-cancel on the first
+    /// failure. The commit sink's precise named error (its exit code
+    /// rides back verbatim) beats the pipeline's cancel marker.
+    fn run_fetch_plan(
+        &self,
+        title: &str,
+        items: Vec<FetchItem<'_>>,
+        sink: &CommitSink,
+    ) -> Result<(), TebakoError> {
+        if items.is_empty() {
+            return Ok(());
         }
-        let actual = sha256_file_hex(&tmp)
-            .ok_or_else(|| packaging_error(121, Some(&format!("cannot hash {}", tmp.display()))))?;
-        let expected = dll.sha256.to_ascii_lowercase();
-        if actual != expected {
-            let _ = fs::remove_file(&tmp);
-            return Err(packaging_error(
+        let jobs = self.fetch_jobs()?;
+        let transport = HttpTransport;
+        let progress = ProgressSet::stderr();
+        let result = execute_plan(
+            &transport,
+            FetchPlan::new(title, items),
+            jobs,
+            Some(&progress),
+        );
+        if let Some(e) = sink.take_error() {
+            return Err(e);
+        }
+        result.map_err(|e| self.plan_error(&e))
+    }
+
+    /// The plan's worker count (spec 05 §6): `TEBAKO_FETCH_JOBS` over
+    /// `fetch_jobs:` in config.yaml over the default 3 — an
+    /// unparseable or zero value is a named error, never a clamp.
+    fn fetch_jobs(&self) -> Result<usize, TebakoError> {
+        fetch_jobs(&self.cache_root)
+    }
+
+    /// Map the pipeline's named error onto this table's codes (the
+    /// gem's PACKAGING_ERRORS rows 121/122/123).
+    fn plan_error(&self, e: &ResolveError) -> TebakoError {
+        match e {
+            ResolveError::Sha256Mismatch {
+                origin,
+                expected,
+                actual,
+            } => packaging_error(
                 121,
                 Some(&format!(
-                    "{}: expected {expected}, got {actual}; download deleted",
-                    dll.filename
+                    "{origin}: expected {expected}, got {actual}; download deleted"
                 )),
-            ));
+            ),
+            ResolveError::NotFound { origin } => {
+                packaging_error(122, Some(&format!("{origin}: not found")))
+            }
+            ResolveError::Offline { what } => packaging_error(123, Some(what)),
+            _ => packaging_error(122, Some(&e.to_string())),
         }
-        let err = |e: std::io::Error| {
-            crate::error::plain_error(format!("{e} installing {}", dll_path.display()))
-        };
-        make_readonly(&tmp).map_err(err)?;
-        fs::rename(&tmp, &dll_path).map_err(err)?;
-        fs::write(&marker, format!("{expected}  {install_as}\n")).map_err(err)?;
-        fs::write(dir.join(format!("{install_as}.origin")), format!("{url}\n")).map_err(err)?;
-        Ok(signer)
     }
 
     /// Extract the runtime package's filesystem layout next to the cached
@@ -711,7 +796,9 @@ impl Resolver {
         let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
         self.offline_check(&entry_ref, tebako_version)?;
         let fetched = self.fetch_index(ruby_version, platform, tebako_version)?;
-        let entry = self.find_entry(&fetched.entries, ruby_version, platform, tebako_version)?;
+        let entry = self
+            .find_entry(&fetched.entries, ruby_version, platform, tebako_version)?
+            .clone();
         // spec 18 C2: the release card gates BEFORE the runtime download.
         contract_gate(&entry_ref, fetched.card.as_deref(), &entry.filename)?;
         // G1 (spec 09 §4): the unsigned rule decides BEFORE any asset
@@ -731,33 +818,28 @@ impl Resolver {
                     .is_some();
             self.unsigned_gate(&entry_ref, declared, crate::install::require_signed())?;
         }
-        let url = self.package_url(&entry.filename, tebako_version);
-        let (tmp, bytes) = self.download(&url, &entry.filename)?;
-        let mut signers = Vec::new();
-        if let Some(sig) = &entry.signature {
-            match self.verify_declared(&bytes, &entry.filename, sig, tebako_version) {
-                Ok(signer) => signers.push(signer),
-                Err(e) => {
-                    let _ = fs::remove_file(&tmp);
-                    return Err(e);
-                }
-            }
+        // The fetch pipeline (spec 05 §6): exe + image + dll stream
+        // concurrently through one plan, each artifact committing right
+        // after ITS download completes; any failure cancels the plan
+        // and drops every tmp.
+        let sink = CommitSink::default();
+        let mut items = vec![self.exe_item(dir, &entry, tebako_version, &sink)?];
+        if let Some(image) = &entry.image {
+            items.extend(self.image_item(dir, image, tebako_version, &sink)?);
         }
-        self.verify(&tmp, entry)?;
-        // The exe installs under the index entry's `filename` verbatim
-        // (spec 05 §2 SSOT; tebako#456 — the factory publishes windows
-        // exe assets SUFFIX-LESS), and the index rides into the cache
-        // entry so every consumer flows the spelling from it.
-        let executable = dir.join(&entry.filename);
-        self.place(&tmp, &executable, entry, &url)?;
+        if let Some(dll) = &entry.dll {
+            items.extend(self.dll_item(dir, dll, tebako_version, &sink)?);
+        }
+        self.run_fetch_plan(&format!("runtime {entry_ref}"), items, &sink)?;
+        // The index rides into the cache entry so every consumer flows
+        // the asset spellings from it (spec 05 §2 SSOT; tebako#456).
         if let Some(card) = &fetched.card {
             let card_path = dir.join("manifest.json");
             fs::write(&card_path, card).map_err(|e| {
                 crate::error::plain_error(format!("{e} installing {}", card_path.display()))
             })?;
         }
-        let entry = entry.clone();
-        Ok((entry, fetched.trust, signers))
+        Ok((entry, fetched.trust, sink.signers()))
     }
 
     fn offline(&self) -> bool {
@@ -810,41 +892,6 @@ impl Resolver {
                 combos.join(", ")
             )),
         ))
-    }
-
-    fn verify(&self, tmp: &Path, entry: &IndexEntry) -> Result<(), TebakoError> {
-        let actual = sha256_file_hex(tmp)
-            .ok_or_else(|| packaging_error(121, Some(&format!("cannot hash {}", tmp.display()))))?;
-        let expected = entry.sha256.to_ascii_lowercase();
-        if actual == expected {
-            return Ok(());
-        }
-        let _ = fs::remove_file(tmp);
-        Err(packaging_error(
-            121,
-            Some(&format!(
-                "{}: expected {expected}, got {actual}; download deleted",
-                entry.filename
-            )),
-        ))
-    }
-
-    fn place(
-        &self,
-        tmp: &Path,
-        executable: &Path,
-        entry: &IndexEntry,
-        url: &str,
-    ) -> Result<(), TebakoError> {
-        let err = |e: std::io::Error| {
-            crate::error::plain_error(format!("{e} installing {}", executable.display()))
-        };
-        make_executable(tmp).map_err(err)?;
-        fs::rename(tmp, executable).map_err(err)?;
-        let dir = executable.parent().unwrap_or_else(|| Path::new("."));
-        fs::write(dir.join(SHA256_FILE), format!("{}\n", entry.sha256)).map_err(err)?;
-        fs::write(dir.join(ORIGIN_FILE), format!("{url}\n")).map_err(err)?;
-        Ok(())
     }
 
     /// The release index plus, when it parsed from a JSON card (the
@@ -929,10 +976,11 @@ impl Resolver {
     /// form — entries AND the contract card come from those verified
     /// bytes. A present `.asc` that does not verify is a hard 71 (the
     /// signed bytes are corrupt or tampered); one whose signer is not
-    /// in the keyring is a hard 72 (register the publisher's key
-    /// first); neither falls through to an unsigned form. A form
-    /// without an `.asc` is skipped here and left for the legacy chain.
-    /// `Ok(None)` = nothing verifiable.
+    /// in the keyring first runs the spec 09 §10 retrieval ceremony
+    /// (the trust-anchor channel, root-chain admission, never TOFU) and
+    /// a still-unknown signer is a hard 72; neither falls through to an
+    /// unsigned form. A form without an `.asc` is skipped here and left
+    /// for the legacy chain. `Ok(None)` = nothing verifiable.
     fn fetch_verified_index(
         &self,
         ruby_version: &str,
@@ -973,44 +1021,7 @@ impl Resolver {
                 }
                 Err(e) => return Err(packaging_error(122, Some(&e.to_string()))),
             };
-            if keyring.is_none() {
-                keyring = Some(self.keyring()?);
-            }
-            let keyring = keyring.as_deref().expect("built above");
-            let signer = match tebako_signer::verify_detached_full(keyring, body.as_bytes(), &asc) {
-                Ok(tebako_signer::VerifyOutcome::Trusted(signer)) => {
-                    // The signature may issue from a signing subkey —
-                    // the identity that journals is the resolved
-                    // PRIMARY keyid (spec 09 §9).
-                    let signer = signer.to_ascii_lowercase();
-                    tebako_signer::primary_keyid_of(keyring, &signer)
-                        .map_err(|e| TebakoError::new(format!("{name}.asc: {e}"), 71))?
-                        .unwrap_or(signer)
-                }
-                Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) => {
-                    return Err(TebakoError::new(
-                        format!(
-                            "the {RELEASE_NAME} release index {name} (v{tebako_version}) is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
-                        ),
-                        72,
-                    ));
-                }
-                Ok(tebako_signer::VerifyOutcome::Invalid(keyid)) => {
-                    return Err(TebakoError::new(
-                        format!(
-                            "the {RELEASE_NAME} release index {name} (v{tebako_version}) carries a signature that does not verify (signer {}) — the index or its signature is corrupt; nothing was cached",
-                            keyid.unwrap_or_else(|| "unknown".to_string())
-                        ),
-                        71,
-                    ));
-                }
-                Err(e) => {
-                    return Err(TebakoError::new(
-                        format!("cannot verify the release index signature {name}.asc: {e}"),
-                        71,
-                    ));
-                }
-            };
+            let signer = self.verify_index_form(&mut keyring, name, tebako_version, &body, &asc)?;
             let parsed: Result<IndexAndCard, ParseFail> = if name == shard.as_str() {
                 self.parse_shard(&body, ruby_version, platform, tebako_version)
                     .map(|entry| (vec![entry], Some(format!("[{body}]"))))
@@ -1041,6 +1052,85 @@ impl Resolver {
             }
         }
         Ok(None)
+    }
+
+    /// Verify one index form's detached `.asc` against the fetch keyring
+    /// (built lazily, rebuilt after a retrieval widened it), running the
+    /// spec 09 §10 retrieval ceremony when the signer is unknown: the
+    /// index forms carry no declared pin, so the signature's ISSUER
+    /// keyid names the key to retrieve — admitted ONLY through the root
+    /// chain (never TOFU), then the verification re-runs. Strict (spec
+    /// 09 §4): Invalid → 71, a still-untrusted signer → 72. Returns the
+    /// resolved PRIMARY keyid of the verified signer.
+    fn verify_index_form(
+        &self,
+        keyring: &mut Option<Vec<u8>>,
+        name: &str,
+        tebako_version: &str,
+        body: &str,
+        asc: &[u8],
+    ) -> Result<String, TebakoError> {
+        if keyring.is_none() {
+            *keyring = Some(self.keyring()?);
+        }
+        let mut retrieved = false;
+        loop {
+            let outcome = tebako_signer::verify_detached_full(
+                keyring.as_deref().expect("built above"),
+                body.as_bytes(),
+                asc,
+            );
+            match outcome {
+                Ok(tebako_signer::VerifyOutcome::Trusted(signer)) => {
+                    // The signature may issue from a signing subkey —
+                    // the identity that journals is the resolved
+                    // PRIMARY keyid (spec 09 §9).
+                    let signer = signer.to_ascii_lowercase();
+                    let ring = keyring.as_deref().expect("built above");
+                    return tebako_signer::primary_keyid_of(ring, &signer)
+                        .map_err(|e| TebakoError::new(format!("{name}.asc: {e}"), 71))
+                        .map(|primary| primary.unwrap_or(signer));
+                }
+                Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) if !retrieved => {
+                    retrieved = true;
+                    match self.retrieve_signer_keyid(&keyid)? {
+                        Some(retrieval) => {
+                            crate::install::journal(
+                                &self.cache_root,
+                                &format!(
+                                    "event=key-retrieval keyid={} fingerprint={} source={} basis={}",
+                                    retrieval.keyid,
+                                    retrieval.fingerprint,
+                                    retrieval.source_url,
+                                    retrieval.basis.journal_label()
+                                ),
+                            );
+                            *keyring = Some(self.keyring()?);
+                        }
+                        // Offline: the pre-ceremony outcome stands.
+                        None => return Err(untrusted_index_signer(name, tebako_version, &keyid)),
+                    }
+                }
+                Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) => {
+                    return Err(untrusted_index_signer(name, tebako_version, &keyid));
+                }
+                Ok(tebako_signer::VerifyOutcome::Invalid(keyid)) => {
+                    return Err(TebakoError::new(
+                        format!(
+                            "the {RELEASE_NAME} release index {name} (v{tebako_version}) carries a signature that does not verify (signer {}) — the index or its signature is corrupt; nothing was cached",
+                            keyid.unwrap_or_else(|| "unknown".to_string())
+                        ),
+                        71,
+                    ));
+                }
+                Err(e) => {
+                    return Err(TebakoError::new(
+                        format!("cannot verify the release index signature {name}.asc: {e}"),
+                        71,
+                    ));
+                }
+            }
+        }
     }
 
     fn parse_index(
@@ -1260,42 +1350,6 @@ impl Resolver {
         out
     }
 
-    /// Fetch `url` into the store's tmp/ dir; returns the tmp path AND
-    /// the bytes (a declared `signature:` block verifies against the
-    /// bytes in memory — before they are ever re-read from disk).
-    fn download(&self, url: &str, filename: &str) -> Result<(PathBuf, Vec<u8>), TebakoError> {
-        let tmp_dir = self.cache_root.join(TMP_DIR);
-        fs::create_dir_all(&tmp_dir).map_err(|e| {
-            crate::error::plain_error(format!("{e} creating {}", tmp_dir.display()))
-        })?;
-        let tmp = tmp_dir.join(format!("{filename}.{}.part", std::process::id()));
-        match fetch_bytes(url) {
-            Ok(bytes) => {
-                if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
-                    let _ = fs::remove_file(&tmp);
-                    return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
-                }
-                Ok((tmp, bytes))
-            }
-            Err(FetchError::IndexUnavailable(_)) => {
-                let _ = fs::remove_file(&tmp);
-                Err(packaging_error(122, Some(&format!("{url}: not found"))))
-            }
-            Err(e @ FetchError::Throttled { .. }) => {
-                let _ = fs::remove_file(&tmp);
-                Err(packaging_error(122, Some(&e.to_string())))
-            }
-            Err(FetchError::DownloadFailed(msg)) => {
-                let _ = fs::remove_file(&tmp);
-                Err(packaging_error(122, Some(&msg)))
-            }
-            Err(e) => {
-                let _ = fs::remove_file(&tmp);
-                Err(packaging_error(122, Some(&e.to_string())))
-            }
-        }
-    }
-
     // ---- trust (spec 09 §4/§5, roadmap 80 G1) ------------------------
 
     /// The spec 09 §9 zero-interaction keyring: the user's trusted
@@ -1308,12 +1362,38 @@ impl Resolver {
         })
     }
 
+    /// [`Self::verify_declared`] over the pipeline's staged tmp file:
+    /// the download streamed with its sha256 computed inline; the
+    /// signature pass reads the staged bytes once (spec 05 §6 — never
+    /// after the rename).
+    fn verify_declared_file(
+        &self,
+        tmp: &Path,
+        asset: &str,
+        sig: &EntrySignature,
+        tebako_version: &str,
+    ) -> Result<String, TebakoError> {
+        let bytes = fs::read(tmp).map_err(|e| {
+            TebakoError::new(
+                format!(
+                    "cannot read the staged {} for the signature check: {e}",
+                    tmp.display()
+                ),
+                74,
+            )
+        })?;
+        self.verify_declared(&bytes, asset, sig, tebako_version)
+    }
+
     /// Verify one artifact's declared `signature:` block (spec 13 §2a)
     /// against its downloaded bytes BEFORE the sha256 check: the `.asc`
     /// fetches from the same release, the signer must be in the keyring
     /// AND be the pinned key (a signing subkey pins by its resolved
-    /// PRIMARY keyid, spec 09 §9). Returns the primary keyid that
-    /// verified (the audit journal's signer identity).
+    /// PRIMARY keyid, spec 09 §9). An unknown pinned keyid runs the
+    /// trust-anchor key-retrieval ceremony first (spec 09 §10 — admitted
+    /// through the root chain, never TOFU) and re-verifies against the
+    /// widened keyring. Returns the primary keyid that verified (the
+    /// audit journal's signer identity).
     fn verify_declared(
         &self,
         bytes: &[u8],
@@ -1339,31 +1419,52 @@ impl Resolver {
                 71,
             )
         })?;
-        let keyring = self.keyring()?;
-        let issuer = match tebako_signer::verify_detached_full(&keyring, bytes, &asc) {
-            Ok(tebako_signer::VerifyOutcome::Trusted(issuer)) => issuer.to_ascii_lowercase(),
-            Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) => {
-                return Err(TebakoError::new(
-                    format!(
-                        "{asset} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
-                    ),
-                    72,
-                ));
-            }
-            Ok(tebako_signer::VerifyOutcome::Invalid(keyid)) => {
-                return Err(TebakoError::new(
-                    format!(
-                        "{asset} carries a signature that does not verify (signer {}) — the download or its signature is corrupt; nothing was cached",
-                        keyid.unwrap_or_else(|| "unknown".to_string())
-                    ),
-                    71,
-                ));
-            }
-            Err(e) => {
-                return Err(TebakoError::new(
-                    format!("cannot verify the declared signature of {asset}: {e}"),
-                    71,
-                ));
+        let mut keyring = self.keyring()?;
+        let mut retrieved = false;
+        let issuer = loop {
+            match tebako_signer::verify_detached_full(&keyring, bytes, &asc) {
+                Ok(tebako_signer::VerifyOutcome::Trusted(issuer)) => {
+                    break issuer.to_ascii_lowercase();
+                }
+                Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) if !retrieved => {
+                    retrieved = true;
+                    match self.retrieve_signer(sig)? {
+                        Some(retrieval) => {
+                            crate::install::journal(
+                                &self.cache_root,
+                                &format!(
+                                    "event=key-retrieval keyid={} fingerprint={} source={} basis={}",
+                                    retrieval.keyid,
+                                    retrieval.fingerprint,
+                                    retrieval.source_url,
+                                    retrieval.basis.journal_label()
+                                ),
+                            );
+                            keyring = self.keyring()?;
+                        }
+                        None => {
+                            return Err(untrusted_signer_error(asset, &keyid));
+                        }
+                    }
+                }
+                Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) => {
+                    return Err(untrusted_signer_error(asset, &keyid));
+                }
+                Ok(tebako_signer::VerifyOutcome::Invalid(keyid)) => {
+                    return Err(TebakoError::new(
+                        format!(
+                            "{asset} carries a signature that does not verify (signer {}) — the download or its signature is corrupt; nothing was cached",
+                            keyid.unwrap_or_else(|| "unknown".to_string())
+                        ),
+                        71,
+                    ));
+                }
+                Err(e) => {
+                    return Err(TebakoError::new(
+                        format!("cannot verify the declared signature of {asset}: {e}"),
+                        71,
+                    ));
+                }
             }
         };
         // The signature may issue from a signing subkey — the identity
@@ -1380,6 +1481,38 @@ impl Resolver {
             ));
         }
         Ok(primary.unwrap_or(issuer))
+    }
+
+    /// The spec 09 §10 ceremony: fetch the pinned signer key from the
+    /// trust-anchor channel, admit it ONLY through the tamatebako root
+    /// chain (never TOFU), and register it into the trusted keyring.
+    /// `Ok(None)` = offline (the pre-ceremony untrusted outcome stands);
+    /// the named `KeyRetrieval` failure journals
+    /// `event=key-retrieval-failed` and exits 72 (the trust class).
+    fn retrieve_signer(
+        &self,
+        sig: &EntrySignature,
+    ) -> Result<Option<tebako_signer::KeyRetrieval>, TebakoError> {
+        self.retrieve_signer_keyid(&sig.keyid)
+    }
+
+    /// [`retrieve_signer`] by a bare keyid — the release index forms
+    /// carry no declared pin, so the signature's ISSUER names the key.
+    fn retrieve_signer_keyid(
+        &self,
+        keyid: &str,
+    ) -> Result<Option<tebako_signer::KeyRetrieval>, TebakoError> {
+        let fetch = |url: &str| fetch_bytes(url).map_err(|e| e.to_string());
+        match tebako_signer::retrieve_signer_key(&self.cache_root, keyid, self.offline(), &fetch) {
+            Ok(retrieval) => Ok(retrieval),
+            Err(e) => {
+                crate::install::journal(
+                    &self.cache_root,
+                    &format!("event=key-retrieval-failed keyid={keyid} reason={e}"),
+                );
+                Err(TebakoError::new(e.to_string(), 72))
+            }
+        }
     }
 
     /// The spec 09 §5 unsigned rule, applied when the release index
@@ -2011,6 +2144,146 @@ fn offline_env() -> bool {
         .unwrap_or(false)
 }
 
+/// The plan's worker count (spec 05 §6): `TEBAKO_FETCH_JOBS` over
+/// `fetch_jobs:` in config.yaml over the default 3 — an unparseable or
+/// zero value is a named error, never a silent clamp. pub(crate): the
+/// payload install path (install.rs) resolves the same knob.
+pub(crate) fn fetch_jobs(home: &Path) -> Result<usize, TebakoError> {
+    let config = tebako_shim::config::load_config(home)
+        .map_err(|e| TebakoError::new(format!("config.yaml: {}", e.message), 65))?
+        .fetch_jobs;
+    resolve_fetch_jobs(std::env::var(FETCH_JOBS_ENV).ok(), config)
+        .map_err(|e| TebakoError::new(e.to_string(), 65))
+}
+
+/// The plan commit closures' report channel (the closures run on the
+/// pipeline's worker threads): the verified signers (the audit
+/// journal's rows) and the FIRST precise named error — the pipeline's
+/// own [`ResolveError`] is only the cancel marker; this error's exit
+/// code rides back verbatim.
+#[derive(Default)]
+struct CommitSink {
+    signers: Mutex<Vec<String>>,
+    error: Mutex<Option<TebakoError>>,
+}
+
+impl CommitSink {
+    fn add_signer(&self, signer: String) {
+        self.signers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(signer);
+    }
+
+    /// Record the precise named error (first wins) and answer the
+    /// pipeline's cancel marker.
+    fn fail(&self, e: TebakoError) -> ResolveError {
+        let mut slot = self.error.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_none() {
+            *slot = Some(e);
+        }
+        drop(slot);
+        ResolveError::Commit {
+            reason: "the artifact's install commit failed".to_string(),
+        }
+    }
+
+    fn signers(&self) -> Vec<String> {
+        self.signers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    fn take_error(&self) -> Option<TebakoError> {
+        self.error.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+}
+
+/// The named untrusted-signer error (exit 72) — spec 09 §4's shape.
+fn untrusted_signer_error(asset: &str, keyid: &str) -> TebakoError {
+    TebakoError::new(
+        format!(
+            "{asset} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
+        ),
+        72,
+    )
+}
+
+/// The named untrusted-signer refusal for a release index form (exit
+/// 72) — spec 09 §4's shape.
+fn untrusted_index_signer(name: &str, tebako_version: &str, keyid: &str) -> TebakoError {
+    TebakoError::new(
+        format!(
+            "the {RELEASE_NAME} release index {name} (v{tebako_version}) is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
+        ),
+        72,
+    )
+}
+
+/// The 121-shaped pin comparison for a SIGNED artifact (spec 09 §4's
+/// order: the signature verified first — such items carry no inline
+/// pin, so the streamed hash compares here, inside the commit).
+fn check_staged_sha(
+    staged: &StagedArtifact,
+    expected: &str,
+    display: &str,
+) -> Result<(), TebakoError> {
+    let expected = expected.to_ascii_lowercase();
+    if staged.sha256 == expected {
+        return Ok(());
+    }
+    Err(packaging_error(
+        121,
+        Some(&format!(
+            "{display}: expected {expected}, got {}; download deleted",
+            staged.sha256
+        )),
+    ))
+}
+
+/// Land the verified interpreter exe: executable + rename + the
+/// entry-level `sha256` / `origin` markers.
+fn place_exe(dir: &Path, tmp: &Path, entry: &IndexEntry, origin: &str) -> Result<(), TebakoError> {
+    let executable = dir.join(&entry.filename);
+    let err = |e: std::io::Error| {
+        crate::error::plain_error(format!("{e} installing {}", executable.display()))
+    };
+    make_executable(tmp).map_err(err)?;
+    fs::rename(tmp, &executable).map_err(err)?;
+    fs::write(dir.join(SHA256_FILE), format!("{}\n", entry.sha256)).map_err(err)?;
+    fs::write(dir.join(ORIGIN_FILE), format!("{origin}\n")).map_err(err)?;
+    Ok(())
+}
+
+/// Land a verified facet (the env image / the windows dll): read-only +
+/// rename + the trusted markers (`<name>.sha256` two-column,
+/// `<name>.origin`).
+fn place_facet(
+    dir: &Path,
+    tmp: &Path,
+    install_as: &str,
+    expected: &str,
+    origin: &str,
+) -> Result<(), TebakoError> {
+    let path = dir.join(install_as);
+    let err =
+        |e: std::io::Error| crate::error::plain_error(format!("{e} installing {}", path.display()));
+    make_readonly(tmp).map_err(err)?;
+    fs::rename(tmp, &path).map_err(err)?;
+    fs::write(
+        dir.join(format!("{install_as}.sha256")),
+        format!("{expected}  {install_as}\n"),
+    )
+    .map_err(err)?;
+    fs::write(
+        dir.join(format!("{install_as}.origin")),
+        format!("{origin}\n"),
+    )
+    .map_err(err)?;
+    Ok(())
+}
+
 /// The store's per-entry install lock (the `.install.lock` file inside
 /// the entry directory): exclusive flock with a bounded wait, then `f`.
 /// A contended lock past `timeout` is the named error `code` naming the
@@ -2433,7 +2706,7 @@ mod tests {
     fn dll_resolver(cache: &Path, mirror: &Path) -> Resolver {
         Resolver {
             cache_root: cache.to_path_buf(),
-            mirror: format!("file://{}", mirror.display()),
+            mirror: tebako_http::file_url(mirror),
             lock_timeout: LOCK_TIMEOUT,
         }
     }
@@ -2474,8 +2747,8 @@ mod tests {
         assert_eq!(
             origin,
             format!(
-                "file://{}/v0.16.3/tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll\n",
-                mirror.display()
+                "{}/v0.16.3/tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll\n",
+                tebako_http::file_url(&mirror)
             )
         );
         #[cfg(unix)]
@@ -2518,7 +2791,7 @@ mod tests {
         .unwrap();
         let r = Resolver {
             cache_root: cache.clone(),
-            mirror: format!("file://{}", mirror.display()),
+            mirror: tebako_http::file_url(&mirror),
             lock_timeout: LOCK_TIMEOUT,
         };
 
@@ -2855,7 +3128,7 @@ mod tests {
     fn boot_resolver(cache: &Path, mirror: &Path, offline: bool) -> BootstrapResolver {
         BootstrapResolver {
             cache_root: cache.to_path_buf(),
-            mirror: format!("file://{}", mirror.display()),
+            mirror: tebako_http::file_url(mirror),
             version: "0.1.8".to_string(),
             offline,
             lock_timeout: LOCK_TIMEOUT,
@@ -2910,8 +3183,8 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dir.join("origin")).unwrap(),
             format!(
-                "file://{}/v0.1.8/tebako-bootstrap-0.1.8-macos-arm64\n",
-                mirror.display()
+                "{}/v0.1.8/tebako-bootstrap-0.1.8-macos-arm64\n",
+                tebako_http::file_url(&mirror)
             )
         );
         #[cfg(unix)]
@@ -3113,6 +3386,30 @@ mod tests {
 
     // ---- roadmap 80 G1: the signed runtime fetch (spec 09 §4/§5) -------
 
+    /// Retrieval-triggering tests point the trust-anchor channel at an
+    /// empty LOCAL directory (never the network) for the guard's
+    /// lifetime; the process-global env is serialized on the lock and
+    /// restored on drop.
+    static ANCHOR_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct AnchorEnv(Option<String>);
+
+    fn anchor_guard(dir: &Path) -> (std::sync::MutexGuard<'static, ()>, AnchorEnv) {
+        let guard = ANCHOR_ENV_LOCK.lock().unwrap();
+        let old = std::env::var("TEBAKO_ANCHOR_BASE").ok();
+        std::env::set_var("TEBAKO_ANCHOR_BASE", tebako_http::file_url(dir));
+        (guard, AnchorEnv(old))
+    }
+
+    impl Drop for AnchorEnv {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(v) => std::env::set_var("TEBAKO_ANCHOR_BASE", v),
+                None => std::env::remove_var("TEBAKO_ANCHOR_BASE"),
+            }
+        }
+    }
+
     const G1_TAG: &str = "0.16.30";
     const G1_RUBY: &str = "3.3.12";
     const G1_PLATFORM: &str = "macos-arm64";
@@ -3234,19 +3531,35 @@ mod tests {
         let release = mirror.join(format!("v{G1_TAG}"));
         g1_write_manifest(&release, &key, true);
         g1_sign_file(&release, &key, "manifest.json");
-        // the signing key is NOT registered — nothing trusts it
+        // the signing key is NOT registered — nothing trusts it. The
+        // spec 09 §10 ceremony looks it up on the trust-anchor channel
+        // first — here an empty LOCAL anchor (never the network), so the
+        // refusal is the named key-retrieval failure (72).
+        let anchor = cache.parent().unwrap().join("anchor");
+        fs::create_dir_all(&anchor).unwrap();
+        let _guard = anchor_guard(&anchor);
         let r = dll_resolver(&cache, &mirror);
         let err = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap_err();
         assert_eq!(err.code, 72);
         assert!(
-            err.message.contains("not in the trusted keyring"),
-            "{}",
+            err.message.contains("trust-anchor channel"),
+            "the retrieval failure names the channel: {}",
             err.message
         );
         assert!(
             err.message.contains(&hex_lower(&key.keyid)),
             "the untrusted signer is named: {}",
             err.message
+        );
+        assert!(
+            err.message.contains("tebako keys import"),
+            "the manual path is named: {}",
+            err.message
+        );
+        let journal = g1_journal(&cache);
+        assert!(
+            journal.contains("event=key-retrieval-failed"),
+            "the failed retrieval is journaled: {journal}"
         );
         assert!(!g1_entry_dir(&cache).join(g1_exe()).exists());
         let _ = fs::remove_dir_all(cache.parent().unwrap());

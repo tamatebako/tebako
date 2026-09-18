@@ -1258,7 +1258,7 @@ fn verify_install_at(
 /// against the registered set); a registry that fails to load here is a
 /// note in the verify line, never a publish failure of its own.
 #[allow(clippy::too_many_arguments)]
-fn verify_with<T: Transport>(
+fn verify_with<T: Transport + Sync>(
     opts: &PublishOptions,
     home: &Path,
     publisher_home: &Path,

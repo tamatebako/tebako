@@ -47,6 +47,10 @@ pub struct UserConfig {
     /// over this user-config value (same precedence as versions).
     #[serde(default)]
     pub auto_slices: Option<bool>,
+    /// Fetch-pipeline worker count (spec 05 §6): `TEBAKO_FETCH_JOBS` wins
+    /// over this value; absent = the default 3.
+    #[serde(default)]
+    pub fetch_jobs: Option<u32>,
     /// Enterprise networking (TODO.v2-1/33, spec 04 amendment): proxy +
     /// trust anchors. Env wins per key; see [`install_network_config`].
     #[serde(default)]

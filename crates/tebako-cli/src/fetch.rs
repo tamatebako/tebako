@@ -44,7 +44,8 @@ where
             Err(
                 e @ (FetchError::ProxyAuthRequired(_)
                 | FetchError::NetworkingCompiledOut(_)
-                | FetchError::NetConfig(_)),
+                | FetchError::NetConfig(_)
+                | FetchError::Cancelled(_)),
             ) => return Err(e),
             Err(FetchError::Throttled {
                 retry_after,

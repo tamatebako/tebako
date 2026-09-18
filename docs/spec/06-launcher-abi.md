@@ -118,6 +118,55 @@ the benefit. Rules:
   `on_progress(bytes_so_far, content_length)` callback hooking the
   stream — the bar is transport-accurate, not estimated.
 
+### 5a. The fetch-plan rendering (tebako-term v2, locked 2026-09-18)
+
+The spec 05 §6 fetch pipeline downloads a plan's artifacts
+CONCURRENTLY, and the user sees that concurrency — the docker-pull
+look. tebako-term v2 adds the plan surface (`ProgressSet`); the
+single-artifact contract above is its one-slot case.
+
+- **The plan header** (both modes, one line, printed before the first
+  artifact starts): `fetching <what>: <N> artifacts, <total> total`
+  where `<what>` names the resolution subject (e.g.
+  `runtime ruby 3.3.12`) and `<total>` sums the known size hints
+  (`unknown` when none are known). A cache hit for the whole plan
+  prints no header — the hit lines stand alone as before.
+- **One live line per concurrent worker** (TTY mode): the set renders
+  as a fixed block of N slot lines at the bottom of the scrollback,
+  repainted in place (`\x1b[<N>A` up + erase-line per slot), throttled
+  to ≤ 10 redraws/s for the WHOLE block (not per slot). Each slot runs
+  the phase sequence **download bar → verifying (spinner) → done**;
+  the done state keeps its line in the block until the plan completes
+  (`✓ <asset> (<size>)`), a failed slot renders `✗ <asset>` and the
+  plan's named error follows on a fresh line.
+- **The bar grows up:** fractional unicode blocks (`▏▎▍▌▋▊▉█` —
+  eighth-cell resolution), an EMA-smoothed rate (`3.1 MB/s`, α = 0.3
+  per redraw) plus an ETA (`eta 12s`, shown only once the EMA has
+  converged past its warmup), the byte pair in the total's unit.
+  Unknown content-length → a braille spinner (`⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏`)
+  + byte count. Colors: cyan for an active slot, green for done, red
+  for failed — decorative only, and absent whenever the mode rule
+  above selects plain (NO_COLOR included).
+- **Plain mode grammar (pipe/CI/opt-out — byte-stable, testable):**
+  exactly the plan header, then per artifact the pair
+  `downloading <asset> (<size>)` / `installed <asset> (<size>)`
+  (or `downloading <asset>` when the length is unknown), then the
+  summary line `fetched <what>: <N> artifacts, <total> in <secs>s`.
+  No control sequences, ever. `TEBAKO_NO_PROGRESS` quiets the whole
+  grammar (the header included) — progress is informational, never
+  results; failures are named errors on stderr regardless of the
+  gate.
+- **The wiring rule (locked):** every network artifact transfer —
+  runtime pair downloads, payload slice fetches, registry index
+  refreshes, trust-anchor key retrievals — renders through
+  tebako-term; **no caller prints its own download progress**. A
+  registry YAML fetch (small, unknown length) renders as a one-line
+  spinner phase in TTY mode and a single `fetching registry <ref>`
+  start line in plain mode (its done line is the resolution's own
+  output). Callers that today emit nothing (the shim's dispatch-time
+  fetch, the CLI's press resolver) gain the same surface — the
+  download moment is one UX everywhere.
+
 ## 6. Bootstrap↔runtime contract negotiation (roadmap 45)
 
 The launcher ABI (§1–§2) is the wire format; the **contract version** is

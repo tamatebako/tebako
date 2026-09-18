@@ -392,3 +392,61 @@ table and never re-derive it in code comments.
 - **Wrong line = the named compatibility error** on either axis,
   unchanged (never a segfault): the python instance names the selector
   and lists the available cached variants per spec 28 §4/§10.
+
+## 6. The fetch pipeline (parallel pulls, streaming integrity — locked 2026-09-18)
+
+Every dynamic pull of ARTIFACT bytes (runtime exe + env image + dll,
+payload slices, detached `.asc` signature assets, trust-anchor keys —
+spec 09 §10) runs through the one fetch pipeline
+(`tebako_resolve::plan`), never through ad-hoc per-caller download
+loops. Release INDEX reads (shards, manifest monoliths, SHA256SUMS,
+registry YAML) stay small buffered GETs; the pipeline is for artifacts.
+
+- **The plan.** Resolution produces the whole closure up front; the
+  pipeline takes it as an explicit `FetchPlan`: a subject line (the
+  progress header's `<what>`) plus one item per artifact carrying
+  `{reference, sha256 pin, size hint, tmp dir, commit closure}`. The
+  commit closure owns the artifact's install semantics (signature
+  verification, the store's lock + rename + markers) — the pipeline
+  owns transport, integrity, and scheduling; neither crosses over.
+- **Parallelism.** A std::thread worker pool — `jobs` from
+  `TEBAKO_FETCH_JOBS` (env) over `fetch_jobs` (`~/.tebako/config.yaml`)
+  over the default **3** (docker's number); `1` is sequential (the
+  debug shape). An unparseable or zero value is a NAMED error, never a
+  silent clamp. No async runtime, no new dependencies (spec 14).
+- **Streaming integrity (one pass, constant memory).** Each worker
+  streams its response body into the item's tmp file WHILE updating a
+  streaming sha256 hasher; the pin compares at end-of-stream. The
+  pre-pipeline shape (buffer the whole body into a `Vec<u8>`, hash as
+  a second pass — a 200 MB image pinning 200 MB of RAM) is RETIRED:
+  artifact bytes never materialize whole in memory on the download
+  path. A signature verification that needs the bytes reads the
+  staged tmp file once, after ITS download completes — overlapped
+  with the plan's remaining streams — and never after the rename.
+- **Retry discipline, per worker per connection.** The existing
+  throttle/backoff law is unchanged (the tebako-http SSOT:
+  Retry-After honored exactly, the 60 s × 2ⁿ hintless exponential,
+  THROTTLE_ROUNDS rounds; DOWNLOAD_ATTEMPTS for transient failures) —
+  it now runs per worker. A mid-stream failure retries the artifact
+  FROM ZERO (tmp truncated, hasher reset): a resumed partial body
+  would fail the pin anyway.
+- **Failure law.** Any artifact's transport/hash/signature/commit
+  failure CANCELS THE PLAN: in-flight streams abort at the next chunk,
+  queued items never start, the pool joins, every tmp file of the plan
+  is dropped, and the FIRST named error surfaces (its exit code
+  unchanged — the taxonomy of spec 06 §4 / the caller's table is
+  untouched). A partial install never appears in the store: tmp+rename
+  (§4) already makes the bytes invisible, and the cancel path removes
+  the tmp files — proven by test, not asserted.
+- **The store is concurrency-safe by design** (§4's per-entry flock +
+  content-addressed byte-identical artifacts): two workers never share
+  an entry — one plan holds disjoint store slots, and a foreign
+  process installing the same entry serializes on the same flock with
+  the same 120 s stale-lock-hint timeout. Parallel fetch changes
+  nothing there (test-proven).
+- **`TEBAKO_OFFLINE=1`** keeps its cache-or-named-error semantics,
+  evaluated per item before its stream starts; `TEBAKO_REQUIRE_SIGNED=1`
+  gates exactly where it gates today (the commit closure's signature
+  policy is the caller's, unchanged in meaning).
+- **Rendering:** spec 06 §5a — the pipeline renders through tebako-term
+  v2 and nothing else prints download progress.

@@ -29,6 +29,11 @@ fn ready(res: RuntimeResolution) -> runtime::CachedRuntime {
     }
 }
 
+/// The retrieval tests mutate the process-global TEBAKO_TRUSTED_ROOT
+/// (the ceremony's root set reads it); every retrieval-triggering test
+/// in this binary serializes on this lock.
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// A file:// release mirror in the factory's locked shape (spec 13 §2a),
 /// signed per spec 09 §5's finalize pass when `key` is Some: the index
 /// entry declares `signature` blocks for the exe and the image, and
@@ -148,6 +153,7 @@ fn a_signed_release_verifies_and_journals_the_strength() {
 
 #[test]
 fn an_untrusted_signer_is_exit_72() {
+    let _guard = ENV_LOCK.lock().unwrap();
     let tmp = TempDir::new("g1-untrusted");
     let home = tmp.path().join("home");
     let factory = tmp.path().join("factory");
@@ -172,11 +178,185 @@ fn an_untrusted_signer_is_exit_72() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
+    // spec 09 §10: the unknown signer is looked up on the trust-anchor
+    // channel first — here an empty LOCAL anchor (never the network);
+    // a key it does not serve is the named KeyRetrieval failure (72).
+    let anchor = tmp.path().join("anchor");
+    std::fs::create_dir_all(&anchor).unwrap();
+    ctx.env.insert(
+        tebako_signer::ANCHOR_BASE_ENV.into(),
+        tebako_http::file_url(&anchor),
+    );
     let err =
         runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_TRUST, "{}", err.message);
     assert!(
-        err.message.contains("not in the trusted keyring"),
+        err.message.contains("trust-anchor channel"),
+        "the retrieval failure names the channel: {}",
+        err.message
+    );
+    assert!(
+        err.message.contains(&tebako_signer::hex_lower(&key.keyid)),
+        "the untrusted signer is named: {}",
+        err.message
+    );
+    assert!(
+        err.message.contains("tebako keys import"),
+        "the manual path is named: {}",
+        err.message
+    );
+    let journal = journal_text(&home);
+    assert!(
+        journal.contains("event=key-retrieval-failed"),
+        "the failed retrieval is journaled: {journal}"
+    );
+    assert!(
+        !home
+            .join("runtimes")
+            .join(format!("ruby-4.0.6-0.16.0-{}", platform()))
+            .exists(),
+        "a refused runtime entered the cache"
+    );
+}
+
+#[test]
+fn an_unknown_root_chain_signer_is_retrieved_admitted_and_installed() {
+    // spec 09 §10's happy path through the shim: the signer's key is
+    // absent from the keyring, the (local, file://) trust-anchor channel
+    // serves it, and it chains to a trusted root — retrieval + admission
+    // + re-verify, journaled, and the install sails. TEBAKO_TRUSTED_ROOT
+    // is process-global (the ceremony's root set reads it); the retrieval
+    // tests serialize on a file-local lock.
+    let _guard = ENV_LOCK.lock().unwrap();
+    let tmp = TempDir::new("g1-retrieval");
+    let home = tmp.path().join("home");
+    let factory = tmp.path().join("factory");
+    let root_key = tebako_signer::press_local_key(&factory.join("root")).expect("root key");
+    let signer = tebako_signer::press_local_key(&factory.join("signer")).expect("signer key");
+    // The consumer trusts the ROOT (the dev-override shape), never the
+    // signer directly.
+    tebako_signer::register_trusted(&home, &root_key.public_key).expect("trust root");
+    let root_fp = root_key.fingerprint.to_uppercase();
+    let signer_fp = signer.fingerprint.to_uppercase();
+    let signer_keyid = tebako_signer::hex_lower(&signer.keyid);
+    // The anchor channel: the signer's key + the root's successor
+    // statement rotating to it.
+    let anchor = tmp.path().join("anchor");
+    let keys_dir = anchor.join("tebako-keys");
+    let succ_dir = anchor.join("tebako-successors");
+    std::fs::create_dir_all(&keys_dir).unwrap();
+    std::fs::create_dir_all(&succ_dir).unwrap();
+    std::fs::write(
+        keys_dir.join(format!("{signer_keyid}.asc")),
+        &signer.public_key,
+    )
+    .unwrap();
+    let statement =
+        tebako_signer::sign_successor_statement(&root_key.secret_key, &root_fp, &signer_fp)
+            .expect("successor statement");
+    std::fs::write(succ_dir.join(format!("{root_fp}.asc")), statement).unwrap();
+    let mirror = tmp.path().join("mirror");
+    write_signed_release(
+        &mirror,
+        "ruby",
+        "4.0.6",
+        "0.16.0",
+        "v0.16.0",
+        Some(&signer),
+        None,
+    );
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 4.0.6\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    ctx.env.insert(
+        tebako_signer::ANCHOR_BASE_ENV.into(),
+        tebako_http::file_url(&anchor),
+    );
+    let old_root = std::env::var("TEBAKO_TRUSTED_ROOT").ok();
+    std::env::set_var("TEBAKO_TRUSTED_ROOT", &root_fp);
+    let result = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx);
+    match &old_root {
+        Some(v) => std::env::set_var("TEBAKO_TRUSTED_ROOT", v),
+        None => std::env::remove_var("TEBAKO_TRUSTED_ROOT"),
+    }
+    let rt = ready(result.expect("the retrieved signer verifies"));
+    assert_eq!(rt.lang_version, "4.0.6");
+    assert!(rt.exe.is_file());
+    // The admitted key is now local — a second resolution needs no
+    // anchor at all.
+    let journal = journal_text(&home);
+    assert!(
+        journal.contains(&format!(
+            "event=key-retrieval keyid={signer_keyid} fingerprint={signer_fp}"
+        )),
+        "{journal}"
+    );
+    assert!(journal.contains("basis=successor:"), "{journal}");
+    assert!(
+        journal.contains("event=runtime-fetch-verified"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn a_served_key_off_the_root_chain_is_the_loud_refusal() {
+    // spec 09 §10: the anchor SERVES a key for the pinned keyid but it
+    // chains to nothing — the named KeyRetrieval failure prints the
+    // fingerprint loudly and registers nothing.
+    let _guard = ENV_LOCK.lock().unwrap();
+    let tmp = TempDir::new("g1-rogue");
+    let home = tmp.path().join("home");
+    let factory = tmp.path().join("factory");
+    let rogue = tebako_signer::press_local_key(&factory).expect("rogue key");
+    let rogue_keyid = tebako_signer::hex_lower(&rogue.keyid);
+    let rogue_fp = rogue.fingerprint.to_uppercase();
+    let anchor = tmp.path().join("anchor");
+    let keys_dir = anchor.join("tebako-keys");
+    std::fs::create_dir_all(&keys_dir).unwrap();
+    std::fs::write(
+        keys_dir.join(format!("{rogue_keyid}.asc")),
+        &rogue.public_key,
+    )
+    .unwrap();
+    let mirror = tmp.path().join("mirror");
+    write_signed_release(
+        &mirror,
+        "ruby",
+        "4.0.6",
+        "0.16.0",
+        "v0.16.0",
+        Some(&rogue),
+        None,
+    );
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 4.0.6\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    ctx.env.insert(
+        tebako_signer::ANCHOR_BASE_ENV.into(),
+        tebako_http::file_url(&anchor),
+    );
+    let err =
+        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_TRUST, "{}", err.message);
+    assert!(
+        err.message.contains(&rogue_fp),
+        "the fingerprint is loud: {}",
+        err.message
+    );
+    assert!(
+        err.message.contains("tebako keys import"),
         "{}",
         err.message
     );
@@ -186,6 +366,15 @@ fn an_untrusted_signer_is_exit_72() {
             .join(format!("ruby-4.0.6-0.16.0-{}", platform()))
             .exists(),
         "a refused runtime entered the cache"
+    );
+    // and the rogue key never entered the trusted keyring
+    let keyring = tebako_signer::trusted_keyring_bytes(&home).unwrap();
+    assert!(
+        keyring.is_empty()
+            || tebako_signer::primary_keyid_of(&keyring, &rogue_keyid)
+                .unwrap()
+                .is_none(),
+        "the rogue key was registered"
     );
 }
 
