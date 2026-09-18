@@ -108,13 +108,22 @@ pub fn run(request: &RunRequest) -> Result<u8, BenchError> {
     }
 
     let layout = BenchLayout::new(&request.out)?;
+    // Children spawn with the bench home / a scratch cell as their cwd,
+    // so a relative --repo-root would break every vendored-source and
+    // javac path from inside them — canonicalize once, up front.
+    let repo_root = request.repo_root.canonicalize().map_err(|e| {
+        BenchError::operational(format!(
+            "run: cannot resolve --repo-root {}: {e}",
+            request.repo_root.display()
+        ))
+    })?;
     let (prepared, versions, tools, leg) = prepare_targets(
         &layout,
         &request.suite,
         &request.platforms,
         &request.triplet,
         request.tebako_release.as_deref(),
-        &request.repo_root,
+        &repo_root,
     )?;
 
     // The §5 cold flow's unmeasured half: the engine calls this only for
@@ -136,7 +145,7 @@ pub fn run(request: &RunRequest) -> Result<u8, BenchError> {
         &request.opt_in,
         &prepared,
         &leg,
-        &request.repo_root,
+        &repo_root,
         &mut cold_reprime,
     )?;
 
@@ -590,8 +599,10 @@ fn prepare_v2(
 /// gaps first (explicit rows), warmups per ready target, the warm
 /// repetitions (targets interleaved per iteration when the policy says
 /// so — drift decorrelation), then the cold repetitions (wipe → the
-/// v2-managed-only unmeasured reprime → measured run). Returns every run
-/// record in execution order.
+/// v2-managed-only unmeasured reprime → measured run). Each workload
+/// runs on the arms its id routes it to (spec 27 §10.2: the language
+/// pair for prefixed runtime-suite workloads, every target otherwise).
+/// Returns every run record in execution order.
 pub fn execute_matrix(
     layout: &BenchLayout,
     suite: &SuiteFile,
@@ -630,8 +641,31 @@ pub fn execute_matrix(
     for w in workloads {
         let source = acquire::materialize_source(w, layout, repo_root)?;
 
+        // The workload→arm routing law (spec 27 §10.2): a workload whose
+        // id prefix names a declared language pair runs on EXACTLY that
+        // pair; every other workload runs on every target.
+        let lang = crate::suite::workload_lang(&w.id);
+        let routed: Vec<usize> = {
+            let pair: Vec<usize> = prepared
+                .iter()
+                .enumerate()
+                .filter(|(_, pt)| {
+                    crate::suite::pair_suffix(&pt.target.id)
+                        .map(|(_, l)| l == lang)
+                        .unwrap_or(false)
+                })
+                .map(|(i, _)| i)
+                .collect();
+            if pair.is_empty() {
+                (0..prepared.len()).collect()
+            } else {
+                pair
+            }
+        };
+
         // Named gaps are explicit rows, one per workload (§6).
-        for pt in prepared {
+        for &t_idx in &routed {
+            let pt = &prepared[t_idx];
             if let Prepared::Unavailable { reason } = &pt.state {
                 runs.push(RunRecord {
                     workload: w.id.clone(),
@@ -654,7 +688,8 @@ pub fn execute_matrix(
         // kills the cell (the failed/timeout row at iteration 0 tells the
         // story); a spawn failure makes the arm a named gap.
         let mut dead: BTreeSet<usize> = BTreeSet::new();
-        for (t_idx, pt) in prepared.iter().enumerate() {
+        for &t_idx in &routed {
+            let pt = &prepared[t_idx];
             if !matches!(pt.state, Prepared::Ready { .. }) {
                 continue;
             }
@@ -702,11 +737,12 @@ pub fn execute_matrix(
         }
 
         // The warm repetitions.
-        for (t_idx, iteration) in warm_schedule(
-            prepared.len(),
+        for (local_idx, iteration) in warm_schedule(
+            routed.len(),
             suite.run_policy.repetitions,
             suite.run_policy.interleave,
         ) {
+            let t_idx = routed[local_idx];
             let pt = &prepared[t_idx];
             if !matches!(pt.state, Prepared::Ready { .. }) {
                 continue;
@@ -736,7 +772,8 @@ pub fn execute_matrix(
         }
 
         // The cold repetitions: wipe → unmeasured reprime → measured run.
-        for (t_idx, pt) in prepared.iter().enumerate() {
+        for &t_idx in &routed {
+            let pt = &prepared[t_idx];
             if !matches!(pt.state, Prepared::Ready { .. }) {
                 continue;
             }
@@ -941,6 +978,15 @@ fn run_once(
         });
     }
     let mut env = layout.child_env(&target.id);
+    if target.kind == TargetKind::V2Managed {
+        // The suite pins the dispatch version (spec 27 §1): a Ready
+        // v2-managed arm's payload reference already survived the
+        // name@version grammar check at install, so split_once cannot
+        // fail here.
+        if let Some((name, version)) = target.payload.as_deref().and_then(|p| p.split_once('@')) {
+            env.push(acquire::version_pin_env(name, version));
+        }
+    }
     if target.kind == TargetKind::RuntimeExe {
         let image = image.as_ref().ok_or_else(|| {
             BenchError::operational(format!(
