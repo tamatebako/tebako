@@ -377,7 +377,10 @@ fn extract_tree(vfs_root: &str, staging: &Path) -> Result<String, DriverError> {
 /// One directory level of the VFS walk: entries sorted by name (the
 /// digest's determinism), directories recorded `D <rel>/` and recursed,
 /// files streamed out hashing in flight and recorded
-/// `F <rel> <merkle>`, anything else the named refusal.
+/// `F <rel> <merkle>`, anything else the named refusal. The listing is
+/// the image's OWN (`image_read_dir`): a sibling mount below the point
+/// (the env at `A:/t` beside the drive root `A:/`) extracts into its
+/// own tree — its boundary name never joins this walk.
 fn walk_vfs(
     vfs: &str,
     rel: &str,
@@ -388,35 +391,12 @@ fn walk_vfs(
         .map_err(|e| io(format!("cannot create '{}': {e}", host.display())))?;
     let mut entries = {
         let mut ctx = context().write().unwrap();
-        let dir = ctx.opendir(vfs).map_err(|e| {
+        ctx.image_read_dir(vfs).map_err(|e| {
             io(format!(
                 "cannot read the directory '{vfs}' from the mounted image: {}",
                 errno_text(e)
             ))
-        })?;
-        let mut entries = Vec::new();
-        loop {
-            match ctx.readdir_abi(dir) {
-                Ok(true) => {
-                    if let Some(cur) = ctx.dir_current(dir) {
-                        let name = dirent_name(&cur);
-                        if !name.is_empty() {
-                            entries.push(name);
-                        }
-                    }
-                }
-                Ok(false) => break,
-                Err(e) => {
-                    let _ = ctx.closedir(dir);
-                    return Err(io(format!(
-                        "cannot read the directory '{vfs}' from the mounted image: {}",
-                        errno_text(e)
-                    )));
-                }
-            }
-        }
-        let _ = ctx.closedir(dir);
-        entries
+        })?
     };
     entries.sort();
     for name in entries {
@@ -454,18 +434,6 @@ fn walk_vfs(
         }
     }
     Ok(())
-}
-
-/// The dirent's name as a Rust string (NUL-terminated, 255-byte cap —
-/// the C ABI's own truncation).
-fn dirent_name(cur: &tfs::context::TebakoCDirent) -> String {
-    let raw: Vec<u8> = cur
-        .d_name
-        .iter()
-        .take_while(|&&c| c != 0)
-        .map(|&c| c as u8)
-        .collect();
-    String::from_utf8_lossy(&raw).into_owned()
 }
 
 /// The host walk's digest of an extracted tree — the byte-identical
@@ -984,6 +952,56 @@ mod tests {
         // Outside every extracted mount: the interpreter's own startup
         // path, handed over verbatim.
         assert_eq!(boot.to_host("/elsewhere/x", "/rt"), None);
+    }
+
+    #[test]
+    fn the_drive_qualified_root_mount_extracts_the_payloads_own_tree() {
+        // The windows boot's mount shape (spec 17 §7 as fired by
+        // xml2rfc#18): the env image sits at the qualified runtime root
+        // `A:/t` while the payload sits at the drive ROOT `A:/` — a
+        // descendant-prefix sibling. Normalizing `A:/` once collapsed to
+        // the relative-looking `A:`, no mount's prefix, and the walk
+        // served the synthesized `t` boundary instead of the payload's
+        // own listing: the extracted "payload" tree was a copy of the
+        // ENV image (no `bin/`), the entry ENOENT'd at spawn, and the
+        // recorded digest described the same wrong bytes — so the reuse
+        // verification approved the corruption on every later boot.
+        let g = MountGuard::new("drive-root");
+        let env = write_env_image(&g, true);
+        let payload = g.tmp.join("payload.tfs");
+        build_zip(
+            &payload,
+            &["bin/", "lib/", "__tpkg__/"],
+            &[
+                ("bin/xml2rfc", b"#!/usr/bin/env python3\n".as_slice()),
+                ("lib/site.txt", b"site\n".as_slice()),
+            ],
+        );
+        mount(&env, "A:/t");
+        mount(&payload, "A:/");
+        let trees = trees_dir(&g);
+        let key = tree_key(&payload, None).unwrap();
+        let target = ensure_tree(&trees, &key, "A:/").unwrap();
+        // The payload's own bytes landed — the entrypoint included.
+        assert_eq!(
+            std::fs::read(target.join("bin/xml2rfc")).unwrap(),
+            b"#!/usr/bin/env python3\n"
+        );
+        assert_eq!(
+            std::fs::read(target.join("lib/site.txt")).unwrap(),
+            b"site\n"
+        );
+        // The env image extracts into ITS OWN tree: a sibling mount
+        // below the point never joins the payload's extraction.
+        assert!(
+            !target.join("t").exists(),
+            "env bytes leaked into the payload's tree"
+        );
+        // And the env tree at the runtime root is the env's own.
+        let env_key = tree_key(&env, None).unwrap();
+        let env_target = ensure_tree(&trees, &env_key, "A:/t").unwrap();
+        assert!(env_target.join("lib/tebako/layout.yaml").is_file());
+        assert!(!env_target.join("bin").exists());
     }
 
     #[test]

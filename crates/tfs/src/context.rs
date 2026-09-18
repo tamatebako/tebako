@@ -551,9 +551,14 @@ impl FsContext {
     /// GEM_PATH expansion realpaths each mounted home component-wise).
     /// Sorted, deduped; never `.`/`..`.
     fn synthesized_children(&self, path: &str) -> Vec<String> {
-        let prefix = match path {
-            "/" => "/".to_string(),
-            p => format!("{p}/"),
+        // The point-join keeps a trailing slash the path already has:
+        // the drive root `A:/` prefixes as `A:/` — never `A://`, which
+        // no point starts with and the boundary names would vanish
+        // behind.
+        let prefix = if path.ends_with('/') {
+            path.to_string()
+        } else {
+            format!("{path}/")
         };
         let mut names: Vec<String> = self
             .mounts
@@ -597,10 +602,21 @@ impl FsContext {
     /// its entries by clean path), `..` at the root clamped. The host
     /// resolves `..` at the syscall layer; the mounts must see the same
     /// answer (ruby passes literal `lib/../x.yaml` paths through).
+    ///
+    /// A drive-qualified root (`A:/…` — the windows spelling of the
+    /// mount namespace, spec 17 §1) is ABSOLUTE: the drive prefix is the
+    /// root itself, so `A:/` normalizes to `A:/` — never to the
+    /// relative-looking `A:`, which no mount holds and whose dispatch
+    /// would fall off the table (a sibling mount at `A:/t` then answered
+    /// in the drive root's place: the xml2rfc#18 materialize walk
+    /// extracted the env image under the payload's tree and the
+    /// payload's `bin/` never landed).
     fn normalize(path: &str) -> String {
-        let absolute = path.starts_with('/');
+        let drive = drive_prefix(path);
+        let rest = &path[drive.len()..];
+        let absolute = !drive.is_empty() || rest.starts_with('/');
         let mut out: Vec<&str> = Vec::new();
-        for component in path.split('/') {
+        for component in rest.split('/') {
             match component {
                 "" | "." => {}
                 ".." => {
@@ -611,7 +627,7 @@ impl FsContext {
         }
         let joined = out.join("/");
         if absolute {
-            format!("/{joined}")
+            format!("{drive}/{joined}")
         } else {
             joined
         }
@@ -1198,6 +1214,27 @@ impl FsContext {
             },
         );
         Ok(id)
+    }
+
+    /// The image's OWN directory listing at `path`: the owning mount's
+    /// backend entries, unmerged — no mount-boundary names, no host
+    /// fallthrough. The materialize tier's tree walk extracts one
+    /// image's own bytes into its own tree; a sibling mount BELOW the
+    /// point (`A:/t` beside the drive root `A:/`) owns a DIFFERENT
+    /// image with its own extraction, so its boundary name must never
+    /// join this listing (the interpreter-facing [`opendir`] keeps the
+    /// spec 17 §1 merge). Unsorted — callers own their determinism.
+    pub fn image_read_dir(&mut self, path: &str) -> Result<Vec<String>, i32> {
+        let path = &Self::normalize(path);
+        if self.mounts.is_empty() {
+            return Err(libc::ENODEV);
+        }
+        let mount = self.find_mount(path).ok_or(libc::ENODEV)?;
+        let rel = Self::relative_path(mount, path);
+        mount
+            .backend
+            .read_dir(rel)
+            .map(|entries| entries.into_iter().map(|e| e.name).collect())
     }
 
     /// tebako_fs_readdir: fill the handle's current-entry buffer; Ok(false)
@@ -2692,6 +2729,22 @@ impl FsContext {
     }
 }
 
+/// The drive qualifier of a VFS path (`"A:"` for `A:/t` and for `A:/`
+/// itself; `""` when none): an ASCII letter and a colon, ending the path
+/// or followed by `/` — anywhere else a colon is an ordinary name
+/// character. The windows-qualified mount namespace (spec 17 §1) spells
+/// every point on the runtime root's drive, so a drive prefix makes a
+/// path absolute even though no `/` leads it.
+fn drive_prefix(path: &str) -> &str {
+    let b = path.as_bytes();
+    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b.len() == 2 || b[2] == b'/')
+    {
+        &path[..2]
+    } else {
+        ""
+    }
+}
+
 /// Mount-point membership with path-component boundaries
 /// (mirrors the C++ `path_is_in_mount`).
 fn path_is_in_mount(path: &str, mount: &str) -> bool {
@@ -3070,6 +3123,81 @@ mod tests {
         }
         ctx.closedir(d).unwrap();
         names
+    }
+
+    #[test]
+    fn normalize_keeps_a_drive_qualified_root_absolute() {
+        // The windows-qualified mount namespace (spec 17 §1): the drive
+        // prefix IS the root — `A:/` normalizes to itself, never to the
+        // relative-looking `A:` no mount holds. (The xml2rfc#18
+        // materialize walk once fell off the mount table that way and
+        // served a sibling mount's boundary listing in the drive root's
+        // place — the payload's `bin/` never extracted.)
+        assert_eq!(FsContext::normalize("A:/"), "A:/");
+        assert_eq!(FsContext::normalize("A:/t"), "A:/t");
+        assert_eq!(FsContext::normalize("A:/lib//x/../y"), "A:/lib/y");
+        assert_eq!(FsContext::normalize("A:/.."), "A:/");
+        assert_eq!(FsContext::normalize("Z:/a/./b"), "Z:/a/b");
+        // A colon that does not open a drive root is an ordinary name
+        // character of a relative path.
+        assert_eq!(FsContext::normalize("A:name"), "A:name");
+        // POSIX shapes are untouched.
+        assert_eq!(FsContext::normalize("/"), "/");
+        assert_eq!(FsContext::normalize("/a/../b"), "/b");
+        assert_eq!(FsContext::normalize("a/b/./../c"), "a/c");
+    }
+
+    #[test]
+    fn the_drive_root_serves_its_own_image_beside_a_descendant_mount() {
+        // The windows boot's table (spec 17 §7 as fired by xml2rfc#18):
+        // the env image at the qualified runtime root `A:/t`, the
+        // payload at the drive ROOT `A:/` — a descendant-prefix sibling.
+        // The drive root must stat and list as the PAYLOAD mount's, and
+        // the tier's extraction walk must read the image's OWN entries:
+        // the sibling's boundary name merges into the interpreter-facing
+        // listing (spec 17 §1) but never into the extraction's.
+        let dir = std::env::temp_dir().join(format!("tfs-drive-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = dir.join("payload.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.add_directory("bin/", options).unwrap();
+        writer.start_file("bin/xml2rfc", options).unwrap();
+        writer.write_all(b"#!/usr/bin/env python3\n").unwrap();
+        std::fs::write(&payload, writer.finish().unwrap().into_inner()).unwrap();
+        let env = dir.join("env.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        writer.add_directory("lib/", options).unwrap();
+        writer.start_file("lib/core.txt", options).unwrap();
+        writer.write_all(b"core\n").unwrap();
+        std::fs::write(&env, writer.finish().unwrap().into_inner()).unwrap();
+
+        let mut ctx = FsContext::new();
+        ctx.mount_checked(crate::mount::build_from_file(payload.to_str().unwrap(), "A:/").unwrap())
+            .unwrap();
+        ctx.mount_checked(crate::mount::build_from_file(env.to_str().unwrap(), "A:/t").unwrap())
+            .unwrap();
+
+        // The drive root stats and lists as the payload's own (the `t`
+        // boundary joins the interpreter-facing listing, spec 17 §1).
+        assert_eq!(ctx.stat("A:/").unwrap().entry_type, EntryType::Directory);
+        assert_eq!(dir_names(&mut ctx, "A:/"), ["bin", "t"]);
+        // The extraction walk's native listing carries no sibling
+        // boundary — each image extracts into its own tree.
+        assert_eq!(ctx.image_read_dir("A:/").unwrap(), ["bin"]);
+        assert_eq!(ctx.image_read_dir("A:/t").unwrap(), ["lib"]);
+        // Drive-root children resolve into the payload image…
+        assert_eq!(
+            ctx.stat("A:/bin/xml2rfc").unwrap().entry_type,
+            EntryType::File
+        );
+        // …and the runtime root still resolves into the env image.
+        assert_eq!(
+            ctx.stat("A:/t/lib/core.txt").unwrap().entry_type,
+            EntryType::File
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
