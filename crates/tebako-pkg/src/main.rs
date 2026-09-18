@@ -496,7 +496,10 @@ fn print_help() {
     println!("                --full container report, --slot N payload, --json document,");
     println!("                --verify strict checks, --depth 0|1|2");
     println!("  validate      Strict package verification (exit 0/65/70/71/72/77)");
-    println!("  bundle        Assemble a three-part package (bootstrap + images + trailer)");
+    println!("  bundle        Assemble a three-part package (bootstrap + images + trailer);");
+    println!("                a Mach-O bootstrap's stale code signature is excised —");
+    println!("                macOS output is unsigned by construction: codesign before");
+    println!("                distribution (arm64 refuses unsigned executables)");
     println!("  unbundle      Decompose a three-part package into a directory");
     println!("  reassemble    Rebuild a binary from an unbundled directory");
     println!("  insert-image  Append an image slot to a package (in place)");

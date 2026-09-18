@@ -1905,11 +1905,20 @@ pub fn verify_chain_with_home(
             ),
         })?;
         let tlen = tpkg::trailer_len(m);
-        f.seek(SeekFrom::End(-(tlen as i64)))
-            .map_err(|e| BootError {
-                code: EX_TEBAKO_IO,
-                message: format!("cannot seek trailer of {}: {e}", self_path.display()),
-            })?;
+        // The trailer ends before a trailing Mach-O code signature when
+        // the package was codesigned post-press.
+        let file_end = f.seek(SeekFrom::End(0)).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot seek trailer of {}: {e}", self_path.display()),
+        })?;
+        let end = tpkg::trailer_end(&mut f, file_end).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot read trailer of {}: {e}", self_path.display()),
+        })?;
+        f.seek(SeekFrom::Start(end - tlen)).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot seek trailer of {}: {e}", self_path.display()),
+        })?;
         let mut buf = vec![0u8; tlen as usize];
         f.read_exact(&mut buf).map_err(|e| BootError {
             code: EX_TEBAKO_IO,

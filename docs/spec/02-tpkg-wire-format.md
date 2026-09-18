@@ -3,7 +3,8 @@
 Normative byte-level specification of the tebako package container.
 Source of truth: `crates/tpkg` (byte-exact with the reference C99
 `include/tebako/tpkg.h`; golden vectors pin the layout). All v1 integers
-little-endian; the trailer header sits at EOF at fixed size. The container
+little-endian; the trailer header sits at the logical EOF (§1) at fixed
+size. The container
 knows **nothing** about runtimes, entrypoints, or languages — it carries
 bytes, slots, mounts, and a resolution hint. **Authenticated, signed, and
 encrypted packages:** authentication/signing is the v2 extension (§4);
@@ -16,7 +17,21 @@ container itself stays byte-identical either way.
 [payload bytes][slot table: n × 280][v2 extension?][trailer header: 166 @ EOF]
 ```
 
-## 2. Trailer header — 166 bytes, always at EOF
+"EOF" is the LOGICAL end of the package: the physical EOF, except on a
+Mach-O package codesigned post-press (spec 31 §1.2), where codesign
+appends the code-signature superblob after the trailer, 16-byte aligned
+with a zero pad. Readers locate the trailer end via the tail slice's
+LC_CODE_SIGNATURE: when the superblob reaches the physical EOF exactly,
+the trailer header is the self-validating (magic + crc + bounds) window
+ending at the superblob's dataoff or at most 15 zero pad bytes earlier;
+every other shape reads at the physical EOF. Writers never produce the
+suffixed shape — only codesign does, and the container bytes it hashes
+are unchanged by it.
+
+## 2. Trailer header — 166 bytes, always at the package end
+
+(The package end is the physical EOF, or — on a codesigned Mach-O —
+just before the trailing superblob's alignment pad; §1.)
 
 | offset | size | field |
 |-------:|-----:|-------|
