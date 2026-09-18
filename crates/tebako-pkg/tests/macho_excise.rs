@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use tebako_contract_tests::TempDir;
-use tebako_pkg::{bundle, macho, parse_image_spec, PackageOptions};
+use tebako_pkg::{bundle, parse_image_spec, PackageOptions};
 
 /// A 64-bit little-endian Mach-O carrying LC_CODE_SIGNATURE: header +
 /// LC_SEGMENT_64("__LINKEDIT", fileoff=0x100, covering to the superblob
@@ -133,6 +133,8 @@ fn press_of_unsigned_macho_is_byte_identical() {
 #[test]
 fn excised_macho_is_signable_and_verifiable() {
     use std::process::Command;
+
+    use tebako_pkg::macho;
 
     let exe = std::env::current_exe().expect("current exe");
     let input = std::fs::read(&exe).expect("read current exe");
