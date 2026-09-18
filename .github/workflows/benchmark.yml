@@ -254,7 +254,7 @@ jobs:
           if git show-ref --verify --quiet refs/remotes/origin/bench-history; then
             git worktree add .bench-history -B bench-history origin/bench-history
           else
-            git worktree add --orphan bench-history .bench-history
+            git worktree add --orphan -b bench-history .bench-history
           fi
           dest=".bench-history/$name"
           mkdir -p "$dest" .bench-history/latest
