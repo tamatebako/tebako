@@ -45,6 +45,56 @@ pub trait Transport {
     fn authenticated(&self) -> bool {
         false
     }
+
+    /// One STREAM attempt (spec 05 §6): flow the body into `writer`,
+    /// firing `on_progress(bytes_so_far, content_length)` per chunk; a
+    /// `false` from the callback aborts with [`FetchError::Cancelled`]
+    /// (the plan-cancel path — never retried). ONE attempt only: the
+    /// retry/throttle discipline lives in the plan executor, per worker
+    /// per connection. The default buffers through [`Transport::get`]
+    /// (test mocks key on the URL); the production transport overrides
+    /// with the true stream. Returns the bytes written.
+    fn stream(
+        &self,
+        url: &str,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        let bytes = self.get(url)?;
+        writer
+            .write_all(&bytes)
+            .map_err(|e| FetchError::DownloadFailed(format!("{e} writing {url}")))?;
+        if let Some(cb) = on_progress {
+            if !cb(bytes.len() as u64, Some(bytes.len() as u64)) {
+                return Err(FetchError::Cancelled(url.to_string()));
+            }
+        }
+        Ok(bytes.len() as u64)
+    }
+
+    /// [`Transport::stream`] honoring the fetch requirements the adapter
+    /// declared on the asset descriptor (spec 04 §3) — the
+    /// [`Transport::get_asset`] requirements, streaming. The default
+    /// buffers through `get_asset`.
+    fn stream_asset(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        authenticate: bool,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        let bytes = self.get_asset(url, accept, authenticate)?;
+        writer
+            .write_all(&bytes)
+            .map_err(|e| FetchError::DownloadFailed(format!("{e} writing {url}")))?;
+        if let Some(cb) = on_progress {
+            if !cb(bytes.len() as u64, Some(bytes.len() as u64)) {
+                return Err(FetchError::Cancelled(url.to_string()));
+            }
+        }
+        Ok(bytes.len() as u64)
+    }
 }
 
 /// The real transport: tebako-http with the gem's retry discipline.
@@ -75,6 +125,34 @@ impl Transport for HttpTransport {
 
     fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
         self.get_with_retry(url, || tebako_http::get(url))
+    }
+
+    fn stream(
+        &self,
+        url: &str,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        tebako_http::stream_to_writer(url, &tebako_http::GetOptions::default(), writer, on_progress)
+    }
+
+    fn stream_asset(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        authenticate: bool,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        tebako_http::stream_to_writer(
+            url,
+            &tebako_http::GetOptions {
+                accept,
+                authenticate,
+            },
+            writer,
+            on_progress,
+        )
     }
 }
 
@@ -123,7 +201,9 @@ impl HttpTransport {
                 // deterministic configuration answers — retried never,
                 // surfaced verbatim.
                 Err(
-                    e @ (FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_)),
+                    e @ (FetchError::ProxyAuthRequired(_)
+                    | FetchError::NetworkingCompiledOut(_)
+                    | FetchError::Cancelled(_)),
                 ) => {
                     return Err(e);
                 }

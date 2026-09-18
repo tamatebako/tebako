@@ -38,6 +38,8 @@ const SPINNER: [char; 4] = ['|', '/', '-', '\\'];
 /// redraws in place without leaking stale characters.
 const REDRAW: &str = "\r\x1b[K";
 
+pub mod set;
+
 /// The rendering mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -92,7 +94,7 @@ pub fn human_bytes(n: u64) -> String {
 }
 
 /// The `14.2/23.0 MB` pair: both sides in the total's unit.
-fn human_pair(done: u64, total: u64) -> String {
+pub(crate) fn human_pair(done: u64, total: u64) -> String {
     if total < 1024 {
         return format!("{done}/{total} B");
     }

@@ -33,6 +33,9 @@ tebako-http = { version = "2.0.0", path = "../tebako-http", default-features = f
 # (tebako-pkg proper pulls the imaging stack; the parser alone lives in
 # tebako-json).
 tebako-json = { version = "2.0.0", path = "../tebako-json" }
+# The fetch plan renders through tebako-term v2 (spec 06 §5a) — zero-dep,
+# the size the bootstrap pays either way (it already links tebako-term).
+tebako-term = { version = "2.0.0", path = "../tebako-term" }
 # The registry model (spec 04 §2) is authored YAML (owner rule): serde +
 # serde_yml, the tpkg manifest convention. The Platform/PayloadKind
 # vocabulary comes from tpkg itself — the single owner of the triplet ↔

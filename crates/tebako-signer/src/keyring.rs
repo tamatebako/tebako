@@ -69,7 +69,7 @@ pub fn register_trusted(home: &Path, public_key: &[u8]) -> Result<RegisterOutcom
 }
 
 /// The fingerprint of the first key in a public key export.
-fn fingerprint_of(public_key: &[u8]) -> Result<String, SignerError> {
+pub(crate) fn fingerprint_of(public_key: &[u8]) -> Result<String, SignerError> {
     let ctx = Context::new().map_err(|e| SignerError::Trust(e.to_string()))?;
     ctx.load_keys(KeyringFormat::Gpg, public_key, LoadSaveFlags::PUBLIC)
         .map_err(|e| SignerError::Trust(format!("not a usable public key: {e}")))?;

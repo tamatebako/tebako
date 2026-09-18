@@ -150,6 +150,9 @@ pub enum ResolveError {
     LockTimeout { lockfile: PathBuf, waited_secs: u64 },
     /// A cache key (name or version) is not path-safe.
     InvalidCacheKey { key: String, reason: String },
+    /// `TEBAKO_FETCH_JOBS` / the config's `fetch_jobs` is not a positive
+    /// integer (spec 05 §6: a named error, never a silent clamp).
+    InvalidFetchJobs { value: String },
     /// `PayloadCache::prune` without `all` or `older_than_days` (the same
     /// rule tebako-cli's runtime `Resolver::prune` enforces).
     PruneNeedsSelector,
@@ -236,6 +239,12 @@ impl fmt::Display for ResolveError {
             ),
             ResolveError::InvalidCacheKey { key, reason } => {
                 write!(f, "invalid cache key '{key}': {reason}")
+            }
+            ResolveError::InvalidFetchJobs { value } => {
+                write!(
+                    f,
+                    "invalid fetch job count '{value}' (TEBAKO_FETCH_JOBS / fetch_jobs in config.yaml): expected a positive integer"
+                )
             }
             ResolveError::PruneNeedsSelector => {
                 write!(f, "prune requires --all or --older-than Nd")

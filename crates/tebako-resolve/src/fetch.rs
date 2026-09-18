@@ -61,6 +61,12 @@ fn map_fetch_error(url: &str, e: FetchError) -> ResolveError {
             origin: url.to_string(),
             reason,
         },
+        // The plan-cancel abort never reaches the buffered fetcher; map
+        // it like a transport failure if a caller ever sees one.
+        FetchError::Cancelled(reason) => ResolveError::DownloadFailed {
+            origin: url.to_string(),
+            reason,
+        },
         // TODO.v2-1/33's named networking failures ride their own
         // messages; never NotFound (no next-index walk).
         FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_) => {
