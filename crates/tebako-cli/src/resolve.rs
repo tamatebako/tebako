@@ -2706,7 +2706,7 @@ mod tests {
     fn dll_resolver(cache: &Path, mirror: &Path) -> Resolver {
         Resolver {
             cache_root: cache.to_path_buf(),
-            mirror: format!("file://{}", mirror.display()),
+            mirror: tebako_http::file_url(mirror),
             lock_timeout: LOCK_TIMEOUT,
         }
     }
@@ -2747,8 +2747,8 @@ mod tests {
         assert_eq!(
             origin,
             format!(
-                "file://{}/v0.16.3/tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll\n",
-                mirror.display()
+                "{}/v0.16.3/tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll\n",
+                tebako_http::file_url(mirror)
             )
         );
         #[cfg(unix)]
@@ -2791,7 +2791,7 @@ mod tests {
         .unwrap();
         let r = Resolver {
             cache_root: cache.clone(),
-            mirror: format!("file://{}", mirror.display()),
+            mirror: tebako_http::file_url(mirror),
             lock_timeout: LOCK_TIMEOUT,
         };
 
@@ -3128,7 +3128,7 @@ mod tests {
     fn boot_resolver(cache: &Path, mirror: &Path, offline: bool) -> BootstrapResolver {
         BootstrapResolver {
             cache_root: cache.to_path_buf(),
-            mirror: format!("file://{}", mirror.display()),
+            mirror: tebako_http::file_url(mirror),
             version: "0.1.8".to_string(),
             offline,
             lock_timeout: LOCK_TIMEOUT,
@@ -3183,8 +3183,8 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dir.join("origin")).unwrap(),
             format!(
-                "file://{}/v0.1.8/tebako-bootstrap-0.1.8-macos-arm64\n",
-                mirror.display()
+                "{}/v0.1.8/tebako-bootstrap-0.1.8-macos-arm64\n",
+                tebako_http::file_url(mirror)
             )
         );
         #[cfg(unix)]
