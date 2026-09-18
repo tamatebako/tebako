@@ -444,7 +444,11 @@ line, never a bare exit (invariant 9).
 paths and the java fixture directory resolve against it. The harness
 canonicalizes it once at startup (an unresolvable root is a named
 error) — children spawned with a different cwd never see a relative
-root.
+root. Every path handed to a spawned child (argv, cwd, env) is
+canonicalized in a child-safe spelling (amended 2026-09-18): on Windows
+the canonical `\\?\` verbatim prefix is simplified away — child
+toolchains reject it (java's `-cp` parser fails the classpath with
+ClassNotFoundException, on BOTH arms alike).
 
 `validate` checks the input against BOTH gates: the versioned JSON
 Schema (structure) and the crate's serde model (the same shape the run
@@ -517,7 +521,8 @@ The factories disagree on the windows interpreter asset spelling
 factories ship the bare `<stem>` beside their `.dll`. The harness
 probes the suffixed sidecar first; a 404 (asset absent) selects the
 bare spelling — the sidecar that exists names the asset, never a
-guessed rename.
+guessed rename. The store's cached exe keeps the factory spelling, so
+the runtime-cache read-back probes both spellings likewise.
 
 **The fair-comparison invariant** — the harness asserts version parity
 at run time: it probes the on-system binary AND the tebako runtime exe

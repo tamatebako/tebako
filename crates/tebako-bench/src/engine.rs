@@ -110,11 +110,13 @@ pub fn run(request: &RunRequest) -> Result<u8, BenchError> {
     let layout = BenchLayout::new(&request.out)?;
     // Children spawn with the bench home / a scratch cell as their cwd,
     // so a relative --repo-root would break every vendored-source and
-    // javac path from inside them — canonicalize once, up front.
-    let repo_root = request.repo_root.canonicalize().map_err(|e| {
+    // javac path from inside them — canonicalize once, up front, in the
+    // child-safe spelling (no windows verbatim prefix).
+    let repo_root = acquire::canonicalize_for_children(&request.repo_root).map_err(|e| {
         BenchError::operational(format!(
-            "run: cannot resolve --repo-root {}: {e}",
-            request.repo_root.display()
+            "run: cannot resolve --repo-root {}: {}",
+            request.repo_root.display(),
+            e.message
         ))
     })?;
     let (prepared, versions, tools, leg) = prepare_targets(
@@ -884,16 +886,17 @@ fn run_once(
     let (cwd, doc_name) = match source {
         Some(src) => {
             copy_tree(&src.root, &cell)?;
-            let cwd = cell
-                .join(src.doc_rel.parent().unwrap_or_else(|| Path::new("")))
-                .canonicalize()
-                .map_err(|e| {
-                    BenchError::operational(format!(
-                        "engine: the document directory for workload '{}' is missing under {}: {e}",
-                        workload.id,
-                        cell.display()
-                    ))
-                })?;
+            let cwd = acquire::canonicalize_for_children(
+                &cell.join(src.doc_rel.parent().unwrap_or_else(|| Path::new(""))),
+            )
+            .map_err(|e| {
+                BenchError::operational(format!(
+                    "engine: the document directory for workload '{}' is missing under {}: {}",
+                    workload.id,
+                    cell.display(),
+                    e.message
+                ))
+            })?;
             let doc_name = src
                 .doc_rel
                 .file_name()
@@ -910,10 +913,11 @@ fn run_once(
             std::fs::create_dir_all(&cell).map_err(|e| {
                 BenchError::operational(format!("engine: cannot create {}: {e}", cell.display()))
             })?;
-            let cwd = cell.canonicalize().map_err(|e| {
+            let cwd = acquire::canonicalize_for_children(&cell).map_err(|e| {
                 BenchError::operational(format!(
-                    "engine: cannot canonicalize {}: {e}",
-                    cell.display()
+                    "engine: cannot canonicalize {}: {}",
+                    cell.display(),
+                    e.message
                 ))
             })?;
             (cwd, None)

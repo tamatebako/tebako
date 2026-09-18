@@ -363,3 +363,25 @@ fn the_version_pin_spells_the_dispatch_env_tier() {
         "dashes become underscores, the name is uppercased"
     );
 }
+
+#[test]
+fn canonicalize_for_children_is_absolute_and_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = tebako_bench::acquire::canonicalize_for_children(dir.path()).unwrap();
+    assert!(p.is_absolute());
+    // Already-canonical input returns the same spelling.
+    let again = tebako_bench::acquire::canonicalize_for_children(&p).unwrap();
+    assert_eq!(p, again);
+    #[cfg(windows)]
+    assert!(
+        !p.to_string_lossy().starts_with(r"\\?\"),
+        "children never see the verbatim prefix: {}",
+        p.display()
+    );
+    #[cfg(not(windows))]
+    assert_eq!(
+        p,
+        dir.path().canonicalize().unwrap(),
+        "posix: plain canonicalize, nothing to simplify"
+    );
+}

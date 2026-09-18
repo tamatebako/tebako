@@ -44,6 +44,40 @@ pub fn exe_suffix(triplet: &str) -> &'static str {
     }
 }
 
+/// Canonicalize a path that will be handed to a spawned child. On
+/// Windows `canonicalize` yields verbatim `\\?\C:\…` paths, and several
+/// child toolchains reject the prefix (java's `-cp` parser produced
+/// ClassNotFoundException for every classpath workload on the windows
+/// leg) — so the prefix is simplified away when the path is a plain
+/// drive-letter (or UNC) form. Every path the harness puts into a
+/// child's argv/cwd/env flows through here, never a raw canonicalize.
+pub fn canonicalize_for_children(path: &Path) -> Result<PathBuf, BenchError> {
+    let c = path.canonicalize().map_err(|e| {
+        BenchError::operational(format!("acquire: cannot resolve {}: {e}", path.display()))
+    })?;
+    Ok(simplify_verbatim(c))
+}
+
+/// `\\?\C:\…` → `C:\…`, `\\?\UNC\server\share\…` → `\\server\share\…`.
+/// Identity elsewhere (and for the exotic verbatim forms there is no
+/// plain spelling for — the volume-guid form stays verbatim).
+fn simplify_verbatim(p: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = p.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{rest}"));
+        }
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            let b = rest.as_bytes();
+            if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+                return PathBuf::from(rest);
+            }
+        }
+    }
+    p
+}
+
 /// The `--out` directory's internal layout (spec 27 §5's hermetic bench
 /// home lives here — a cold run never touches the host's real caches).
 #[derive(Debug, Clone)]
@@ -80,13 +114,12 @@ impl BenchLayout {
         // scratch cell and admin spawns run in the bench home, so a
         // relative --out would spawn ENOENT every staged program (the
         // 2026-08-31 run's 0-measured-cells bug — "cannot spawn
-        // out/bin/tebako" from inside the scratch/home cwd).
+        // out/bin/tebako" from inside the scratch/home cwd). The path
+        // spelling is child-safe (no windows verbatim prefix).
         std::fs::create_dir_all(out).map_err(|e| {
             BenchError::operational(format!("acquire: cannot create {}: {e}", out.display()))
         })?;
-        let out = out.canonicalize().map_err(|e| {
-            BenchError::operational(format!("acquire: cannot resolve {}: {e}", out.display()))
-        })?;
+        let out = canonicalize_for_children(out)?;
         let layout = BenchLayout {
             root: out.to_path_buf(),
             bin: out.join("bin"),
@@ -882,17 +915,23 @@ fn read_runtime_entry(
             "acquire: runtime cache entry '{dir_name}' does not carry <lang-ver>-<tebako-ver>"
         ))
     })?;
-    let asset = format!(
-        "tebako-runtime-{tebako_version}-{lang_version}-{triplet}{}",
-        exe_suffix(triplet)
-    );
-    let exe = entry_dir.join(&asset);
-    if !exe.is_file() {
-        return Err(BenchError::operational(format!(
-            "acquire: the runtime cache entry {} has no {asset}",
+    // The store's exe spelling follows the factory's asset spelling
+    // (spec 27 §10.1): openjdk's windows exe is `.exe`-suffixed, the
+    // ruby/python factories' is bare — probe both, never assume.
+    let stem = format!("tebako-runtime-{tebako_version}-{lang_version}-{triplet}");
+    let exe = [
+        format!("{stem}{}", exe_suffix(triplet)),
+        stem,
+    ]
+    .into_iter()
+    .map(|name| entry_dir.join(name))
+    .find(|p| p.is_file())
+    .ok_or_else(|| {
+        BenchError::operational(format!(
+            "acquire: the runtime cache entry {} has no interpreter exe (neither the suffixed nor the bare spelling)",
             entry_dir.display()
-        )));
-    }
+        ))
+    })?;
     let marker = std::fs::read_to_string(entry_dir.join("sha256")).map_err(|e| {
         BenchError::operational(format!(
             "acquire: the runtime cache entry {} has no readable sha256 marker: {e}",
