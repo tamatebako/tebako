@@ -386,13 +386,12 @@ impl<W: Write> ProgressSet<W> {
         self.lock().out.clone()
     }
 
-    /// Unwrap the writer when this handle is the last one (`Err(())`
+    /// Unwrap the writer when this handle is the last one (`None`
     /// when other handles still share the sink).
-    pub fn into_inner(self) -> Result<W, ()> {
-        match Arc::try_unwrap(self.inner) {
-            Ok(m) => Ok(m.into_inner().unwrap_or_else(|e| e.into_inner()).out),
-            Err(_) => Err(()),
-        }
+    pub fn into_inner(self) -> Option<W> {
+        Arc::try_unwrap(self.inner)
+            .ok()
+            .map(|m| m.into_inner().unwrap_or_else(|e| e.into_inner()).out)
     }
 
     /// The plan header — `fetching <title>: <N> artifacts, <total>
@@ -706,7 +705,7 @@ mod tests {
         set.download_tick_at(0, 99_999, Some(100_000), t0 + Duration::from_millis(200));
         let text = sink_text(set);
         // two paints: the first tick's and the post-interval one
-        assert_eq!(text.matches('\u{2588}').count() > 0, true);
+        assert!(text.matches('\u{2588}').count() > 0);
         assert_eq!(text.matches("\r\x1b[K").count(), 2, "{text:?}");
     }
 
