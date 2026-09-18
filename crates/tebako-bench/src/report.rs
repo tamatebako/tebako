@@ -8,11 +8,13 @@
 //! - statistics are RE-DERIVED from the merged run records via the
 //!   engine's own `compute_stats`; a file's carried stats are ignored, so
 //!   a hand-edited record cannot smuggle a stale stat past the report;
-//! - speedups are always "vs the v1 arm on the same triplet × workload ×
-//!   mode". The report receives no suite file, so the v1 baseline is the
-//!   cell whose target id starts with `v1` (the authored suite's v1-exe
-//!   target is `v1-packed-mn`); a cell with no v1 arm renders "—", never
-//!   an invented ratio;
+//! - speedups are always "vs the baseline arm on the same triplet ×
+//!   workload × mode" (spec 27 §2/§7, amended 2026-09-17): the suite's
+//!   declared baseline flows through the result documents
+//!   (`baseline: {target, label}` — every merged file must agree, a
+//!   disagreement is an operational error); with no declared baseline
+//!   the law stays "the cell whose target id starts with `v1`". A cell
+//!   with no baseline arm renders "—", never an invented ratio;
 //! - a merge whose every arm failed or was unavailable still writes both
 //!   artifacts and exits 1 — a red matrix is a deliverable, not a crash
 //!   (§8).
@@ -20,12 +22,12 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::engine::compute_stats;
 use crate::error::BenchError;
 use crate::exit;
-use crate::result::{ResultFile, RunMode, RunRecord, RunStatus, StatRecord};
+use crate::result::{Baseline, ResultFile, RunMode, RunRecord, RunStatus, StatRecord};
 
 pub struct ReportRequest {
     pub results: Vec<PathBuf>,
@@ -40,56 +42,83 @@ struct TripletReport {
 }
 
 /// The dashboard document (§7: "site-ingestible"; no schema gate — the
-/// shape is pinned by tests/report.rs snapshots instead).
-#[derive(Serialize)]
-struct Dashboard {
-    suite: String,
-    generated_by: &'static str,
-    triplets: Vec<DashboardTriplet>,
+/// shape is pinned by tests/report.rs snapshots instead). Deserializable:
+/// `tebako-bench trend` reads the dashboards back in.
+#[derive(Serialize, Deserialize)]
+pub struct Dashboard {
+    pub suite: String,
+    pub generated_by: String,
+    /// The declared baseline mirror (additive; absent when the suite
+    /// declares none — the `speedup_vs_v1` cell field name never
+    /// changes either way).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub baseline: Option<Baseline>,
+    /// The method notes (§7, amended): the cold semantics of both arm
+    /// kinds, the teardown construction, the on-system cold gap —
+    /// present when the suite declares a non-v1 baseline.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub notes: Vec<String>,
+    pub triplets: Vec<DashboardTriplet>,
 }
 
-#[derive(Serialize)]
-struct DashboardTriplet {
-    triplet: String,
-    runner: crate::result::RunnerMeta,
-    versions: crate::result::Versions,
-    cells: Vec<DashboardCell>,
-    unavailable: Vec<DashboardRow>,
-    failed: Vec<DashboardRow>,
+#[derive(Serialize, Deserialize)]
+pub struct DashboardTriplet {
+    pub triplet: String,
+    pub runner: crate::result::RunnerMeta,
+    pub versions: crate::result::Versions,
+    pub cells: Vec<DashboardCell>,
+    pub unavailable: Vec<DashboardRow>,
+    pub failed: Vec<DashboardRow>,
 }
 
-#[derive(Serialize)]
-struct DashboardCell {
-    workload: String,
-    target: String,
-    mode: RunMode,
-    n: u32,
-    median_wall_s: f64,
-    min_wall_s: f64,
-    max_wall_s: f64,
-    stdev_wall_s: Option<f64>,
-    mean_wall_s: f64,
-    median_cpu_s: f64,
-    median_peak_rss_bytes: u64,
-    /// v1 median / this median on the same triplet × workload × mode;
-    /// null when the cell has no v1 arm (the named-gap shape).
-    speedup_vs_v1: Option<f64>,
+#[derive(Serialize, Deserialize)]
+pub struct DashboardCell {
+    pub workload: String,
+    pub target: String,
+    pub mode: RunMode,
+    pub n: u32,
+    pub median_wall_s: f64,
+    pub min_wall_s: f64,
+    pub max_wall_s: f64,
+    pub stdev_wall_s: Option<f64>,
+    pub mean_wall_s: f64,
+    pub median_cpu_s: f64,
+    pub median_peak_rss_bytes: u64,
+    /// baseline median / this median on the same triplet × workload ×
+    /// mode; null when the cell has no baseline arm (the named-gap
+    /// shape). The field NAME is frozen (additive-only law); the
+    /// baseline it divides by comes from the dashboard's `baseline`.
+    pub speedup_vs_v1: Option<f64>,
 }
 
-#[derive(Serialize)]
-struct DashboardRow {
-    workload: String,
-    target: String,
-    mode: Option<RunMode>,
-    iteration: Option<u32>,
-    status: RunStatus,
-    error: Option<String>,
-    reason: Option<String>,
+#[derive(Serialize, Deserialize)]
+pub struct DashboardRow {
+    pub workload: String,
+    pub target: String,
+    pub mode: Option<RunMode>,
+    pub iteration: Option<u32>,
+    pub status: RunStatus,
+    pub error: Option<String>,
+    pub reason: Option<String>,
+}
+
+/// The §10 method notes, stated on every artifact of a suite with a
+/// declared non-v1 baseline (§7, amended 2026-09-17).
+fn method_notes() -> Vec<String> {
+    vec![
+        "Cold method: each cold iteration wipes the arm's caches before the measured run. For the tebako runtime arms the wipe covers the bench store and the per-target tempdir, so the measured run pays the driver's first mount and cache rebuild — the one-time, user-visible first-boot cost. The runtime pair's own download and verification happen at acquisition, outside the measured span."
+            .to_string(),
+        "Teardown is not a separate workload: a no-op run's wall clock is boot+teardown by construction, and teardown is ≈free by design — the in-process VFS dies with the process; a measured exit that ever shows a tail is a regression signal."
+            .to_string(),
+        "On-system arms report no cold numbers: the toolchain's provisioning time is not tebako's comparison."
+            .to_string(),
+    ]
 }
 
 pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
     let mut triplets: Vec<TripletReport> = Vec::new();
     let mut suite: Option<String> = None;
+    let mut baseline: Option<Option<Baseline>> = None;
     for path in &req.results {
         let text = std::fs::read_to_string(path)
             .map_err(|e| BenchError::operational(format!("cannot read {}: {e}", path.display())))?;
@@ -115,6 +144,19 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
                 )))
             }
         }
+        // The declared baseline flows through every result file; the
+        // merge refuses mixed baselines (never a silent pick).
+        let file_baseline = file.baseline.clone();
+        match &baseline {
+            None => baseline = Some(file_baseline),
+            Some(b) if *b == file_baseline => {}
+            Some(_) => {
+                return Err(BenchError::operational(format!(
+                    "report merges one baseline only: {} disagrees with an earlier file",
+                    path.display()
+                )))
+            }
+        }
         if triplets
             .iter()
             .any(|t: &TripletReport| t.file.triplet == file.triplet)
@@ -130,11 +172,21 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
     }
     triplets.sort_by(|a, b| a.file.triplet.cmp(&b.file.triplet));
     let suite = suite.unwrap_or_default();
+    let baseline = baseline.unwrap_or_default();
+    // The method notes ride the declared non-v1 baseline (§7, amended).
+    let notes = match &baseline {
+        Some(b) if !b.target.starts_with("v1") => method_notes(),
+        _ => Vec::new(),
+    };
+    let label = baseline
+        .as_ref()
+        .map(|b| b.label.clone())
+        .unwrap_or_else(|| "v1".to_string());
 
-    let md = render_markdown(&suite, &triplets);
+    let md = render_markdown(&suite, &triplets, &label, &notes);
     std::fs::write(&req.md, md)
         .map_err(|e| BenchError::operational(format!("cannot write {}: {e}", req.md.display())))?;
-    let dash = dashboard(&suite, &triplets);
+    let dash = dashboard(&suite, &triplets, baseline, notes);
     let json = serde_json::to_string_pretty(&dash)
         .map_err(|e| BenchError::operational(format!("dashboard serialize: {e}")))?;
     std::fs::write(&req.json, json).map_err(|e| {
@@ -152,24 +204,46 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
     }
 }
 
-/// The v1 baseline of a (workload × mode) cell: the row whose target id
-/// starts with "v1" (see the module doc for the convention).
-fn baseline<'a>(stats: &'a [StatRecord], s: &StatRecord) -> Option<&'a StatRecord> {
+/// The baseline arm of a (workload × mode) cell: the declared baseline
+/// names its target exactly or by prefix (the runtime suite's
+/// `on-system` prefix-matches `on-system-ruby` within the ruby
+/// workloads); with no declared baseline the law stays "starts with
+/// `v1`" (spec 27 §2/§7).
+fn baseline<'a>(
+    stats: &'a [StatRecord],
+    s: &StatRecord,
+    declared: Option<&str>,
+) -> Option<&'a StatRecord> {
+    let name = declared.unwrap_or("v1");
     stats
         .iter()
-        .find(|b| b.workload == s.workload && b.mode == s.mode && b.target.starts_with("v1"))
+        .find(|b| b.workload == s.workload && b.mode == s.mode && b.target == name)
+        .or_else(|| {
+            stats.iter().find(|b| {
+                b.workload == s.workload && b.mode == s.mode && b.target.starts_with(name)
+            })
+        })
 }
 
-fn speedup(stats: &[StatRecord], s: &StatRecord) -> Option<f64> {
-    baseline(stats, s).map(|b| b.median_wall_s / s.median_wall_s)
+fn speedup(stats: &[StatRecord], s: &StatRecord, declared: Option<&str>) -> Option<f64> {
+    baseline(stats, s, declared).map(|b| b.median_wall_s / s.median_wall_s)
 }
 
 fn mib(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
 }
 
-fn render_markdown(suite: &str, triplets: &[TripletReport]) -> String {
+fn render_markdown(
+    suite: &str,
+    triplets: &[TripletReport],
+    label: &str,
+    notes: &[String],
+) -> String {
     let mut out = format!("# tebako benchmark report — {suite}\n");
+    let baseline_name = triplets
+        .first()
+        .and_then(|t| t.file.baseline.as_ref())
+        .map(|b| b.target.clone());
     for t in triplets {
         let f = &t.file;
         out.push_str(&format!("\n## {}\n", f.triplet));
@@ -215,14 +289,14 @@ fn render_markdown(suite: &str, triplets: &[TripletReport]) -> String {
                 RunMode::Cold => "cold (install/first-boot)".to_string(),
             };
             out.push_str(&format!("\n### {workload} — {mode_label}\n\n"));
-            out.push_str("| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |\n");
+            out.push_str(&format!("| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs {label} |\n"));
             out.push_str("|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
             for s in cells {
                 let stdev = s
                     .stdev_wall_s
                     .map(|v| format!("{v:.3}"))
                     .unwrap_or_else(|| "—".to_string());
-                let ratio = speedup(&t.stats, s)
+                let ratio = speedup(&t.stats, s, baseline_name.as_deref())
                     .map(|v| format!("{v:.2}×"))
                     .unwrap_or_else(|| "—".to_string());
                 out.push_str(&format!(
@@ -307,8 +381,16 @@ fn render_markdown(suite: &str, triplets: &[TripletReport]) -> String {
          (noise inflates, never deflates).\n\n\
          Version skew: the old world is frozen at the packed-mn tag's metanorma-cli while the v2 \
          payload is current — compare ratios, not absolutes. Numbers across image formats are \
-         never mixed.\n",
+         never mixed.\n\n\
+         Peak RSS is file-backed-inclusive: mmap'd image pages are reclaimable under memory \
+         pressure, so a tebako arm's RSS delta overstates its real memory cost.\n",
     );
+    if !notes.is_empty() {
+        out.push_str("\nMethod notes:\n\n");
+        for note in notes {
+            out.push_str(&format!("- {note}\n"));
+        }
+    }
     out
 }
 
@@ -322,10 +404,18 @@ fn mode_suffix(r: &RunRecord) -> String {
         .to_string()
 }
 
-fn dashboard(suite: &str, triplets: &[TripletReport]) -> Dashboard {
+fn dashboard(
+    suite: &str,
+    triplets: &[TripletReport],
+    baseline: Option<Baseline>,
+    notes: Vec<String>,
+) -> Dashboard {
+    let baseline_name = baseline.as_ref().map(|b| b.target.clone());
     Dashboard {
         suite: suite.to_string(),
-        generated_by: "tebako-bench report",
+        generated_by: "tebako-bench report".to_string(),
+        baseline,
+        notes,
         triplets: triplets
             .iter()
             .map(|t| {
@@ -344,7 +434,7 @@ fn dashboard(suite: &str, triplets: &[TripletReport]) -> Dashboard {
                         mean_wall_s: s.mean_wall_s,
                         median_cpu_s: s.median_cpu_s,
                         median_peak_rss_bytes: s.median_peak_rss_bytes,
-                        speedup_vs_v1: speedup(&t.stats, s),
+                        speedup_vs_v1: speedup(&t.stats, s, baseline_name.as_deref()),
                     })
                     .collect();
                 let row = |r: &RunRecord| DashboardRow {

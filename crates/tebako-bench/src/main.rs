@@ -5,6 +5,8 @@
 //! tebako-bench run --suite <suite.yaml> --platforms <platforms.yaml>
 //!                  --triplet <t> --out <dir> [--opt-in <workload-id>]...
 //! tebako-bench report <results.json>... --md <report.md> --json <dashboard.json>
+//! tebako-bench trend --release <name> --date <YYYY-MM-DD> --dashboard <d>...
+//!                    [--previous <trend.json>] --out <trend.json>
 //! tebako-bench validate --kind suite|result <file>
 //! ```
 //!
@@ -70,6 +72,25 @@ enum Command {
         /// The site-ingestible dashboard JSON destination.
         #[arg(long)]
         json: PathBuf,
+    },
+    /// Append a run's dashboards to the release-over-release trend feed
+    /// (spec 27 §11: dedupe per full key, capped at the last 20 releases).
+    Trend {
+        /// The release name this run publishes under (v2.8.8 or run-<id>).
+        #[arg(long)]
+        release: String,
+        /// The run date, YYYY-MM-DD.
+        #[arg(long)]
+        date: String,
+        /// The run's dashboard JSON files (both suites).
+        #[arg(long, required = true)]
+        dashboard: Vec<PathBuf>,
+        /// The previous latest/trend.json, when it exists.
+        #[arg(long)]
+        previous: Option<PathBuf>,
+        /// The trend.json destination.
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Schema-check a suite or result document (both gates: the versioned
     /// JSON Schema + the serde model, then the semantic rules).
@@ -147,5 +168,18 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
         Command::Report { results, md, json } => {
             tebako_bench::report::report(&tebako_bench::report::ReportRequest { results, md, json })
         }
+        Command::Trend {
+            release,
+            date,
+            dashboard,
+            previous,
+            out,
+        } => tebako_bench::trend::trend(&tebako_bench::trend::TrendRequest {
+            release,
+            date,
+            dashboards: dashboard,
+            previous,
+            out,
+        }),
     }
 }

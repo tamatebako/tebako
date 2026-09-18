@@ -2,9 +2,15 @@ name: benchmark
 
 # Spec 27: benchmarks run on manual dispatch and on release publishes ONLY —
 # never per-PR (shared-runner noise + cost, and the harness never sits on
-# the merge critical path). The matrix is GENERATED from
-# benchmarks/platforms.yaml by lib/bench-matrix.rb — no triplet, runner, or
-# container is named in this file (the YAML documents are the SSOT).
+# the merge critical path). Two suites run per leg: the metanorma v1-vs-v2
+# suite (musl legs inside the pinned alpine container) and the
+# on-system-vs-tebako runtime comparison suite (on the HOST of every leg —
+# the static musl runtime exes execute on the gnu host unchanged). The
+# fan-in publishes both suites to the bench-history branch (per-run entry +
+# latest/ mirrors + the trend feed) and wakes tebako.org. The matrix is
+# GENERATED from benchmarks/platforms.yaml by lib/bench-matrix.rb — no
+# triplet, runner, or container is named in this file (the YAML documents
+# are the SSOT).
 
 on:
   workflow_dispatch:
@@ -101,6 +107,54 @@ jobs:
           # the leg still succeeds) · 2 operational (harness fault — red leg).
           if [ "$rc" -eq 2 ]; then exit 2; fi
           echo "tebako-bench run exit $rc (0 ok / 1 red-matrix deliverable)"
+      # The runtime comparison suite's on-system arms: the workflow
+      # provisions the toolchains, version-pinned to EXACTLY the interpreter
+      # versions inside the tebako runtimes under test (the harness asserts
+      # the parity at run time; a mismatch gaps both arms of the pair).
+      - name: Provision ruby (the on-system arm)
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3.12"
+      - name: Provision python (the on-system arm)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.7"
+      - name: Provision java (the on-system arm)
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21.0.12"
+      - name: Run the runtime comparison leg (on-system vs tebako)
+        shell: bash
+        working-directory: tebako-rs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          args=(--suite benchmarks/suite-runtime.yaml
+                --platforms benchmarks/platforms.yaml
+                --triplet "${{ matrix.triplet }}"
+                --out out-runtime
+                --repo-root .)
+          if [ "${{ github.event_name }}" = "release" ]; then
+            args+=(--tebako-release "${{ github.event.release.tag_name }}")
+          fi
+          # Always on the host: the musl legs reuse the static musl harness
+          # binary built above (it executes on the gnu host unchanged).
+          if [ -n "${{ matrix.container }}" ]; then
+            target="$(rustc -vV | sed -n 's/^host: //p' | sed 's/-gnu/-musl/')"
+            bin="./target/$target/debug/tebako-bench"
+          else
+            bin="./target/debug/tebako-bench"
+            [ -f "$bin.exe" ] && bin="$bin.exe"
+          fi
+          set +e
+          "$bin" run "${args[@]}"
+          rc=$?
+          set -e
+          # Same exit contract as the metanorma leg (0 ok / 1 red-matrix
+          # deliverable / 2 harness fault).
+          if [ "$rc" -eq 2 ]; then exit 2; fi
+          echo "tebako-bench runtime-suite exit $rc (0 ok / 1 red-matrix deliverable)"
       - name: Upload the leg's results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -108,13 +162,20 @@ jobs:
           name: bench-${{ matrix.triplet }}
           path: tebako-rs/out/
           if-no-files-found: error
+      - name: Upload the runtime leg's results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-runtime-${{ matrix.triplet }}
+          path: tebako-rs/out-runtime/
+          if-no-files-found: warn
 
   report:
     needs: run
     if: always()
     runs-on: ubuntu-24.04
     permissions:
-      contents: write # the bench-history append (release runs)
+      contents: write # the bench-history append
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -138,31 +199,55 @@ jobs:
         with:
           pattern: bench-*
           path: legs/
-      - name: Merge into the report
+      - name: Merge into the reports
         run: |
           set +e
           # upload-artifact places the uploaded directory's CONTENTS at the
           # artifact root, so each leg lands as legs/bench-<triplet>/results.json
-          # (no out/ level — first-run bug, run 33351849756).
-          tebako-rs/target/debug/tebako-bench report legs/bench-*/results.json \
+          # (no out/ level — first-run bug, run 33351849756). The runtime
+          # suite's legs are bench-runtime-<triplet>; keep the two suites'
+          # merges separate.
+          legs=()
+          for d in legs/bench-*/; do
+            case "$d" in legs/bench-runtime-*) continue;; esac
+            legs+=("${d}results.json")
+          done
+          tebako-rs/target/debug/tebako-bench report "${legs[@]}" \
             --md report.md --json dashboard.json
           rc=$?
+          rt_legs=(legs/bench-runtime-*/results.json)
+          if [ -e "${rt_legs[0]}" ]; then
+            tebako-rs/target/debug/tebako-bench report "${rt_legs[@]}" \
+              --md report-runtime.md --json dashboard-runtime.json
+            rc_rt=$?
+          else
+            rc_rt=0
+            echo "no runtime-suite legs uploaded — skipping the runtime report"
+          fi
           set -e
-          if [ "$rc" -eq 2 ]; then exit 2; fi
-          echo "tebako-bench report exit $rc"
+          if [ "$rc" -eq 2 ] || [ "$rc_rt" -eq 2 ]; then exit 2; fi
+          echo "tebako-bench report exit $rc, runtime report exit $rc_rt"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bench-report
           path: |
             report.md
             dashboard.json
+            report-runtime.md
+            dashboard-runtime.json
           if-no-files-found: error
-      - name: Append to the bench-history branch (release runs only)
-        if: github.event_name == 'release'
+      - name: Append to the bench-history branch
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         working-directory: tebako-rs
         run: |
           set -e
-          tag="${{ github.event.release.tag_name }}"
+          # Release runs publish under the tag; dispatch runs under
+          # run-<run-id> (the first real numbers never wait for a release).
+          if [ "${{ github.event_name }}" = "release" ]; then
+            name="${{ github.event.release.tag_name }}"
+          else
+            name="run-${{ github.run_id }}"
+          fi
           git config user.name tebako-ci
           git config user.email tebako@ribose.com
           git fetch origin bench-history || true
@@ -171,9 +256,31 @@ jobs:
           else
             git worktree add --orphan bench-history .bench-history
           fi
-          dest=".bench-history/$tag"
-          mkdir -p "$dest"
+          dest=".bench-history/$name"
+          mkdir -p "$dest" .bench-history/latest
           cp ../report.md ../dashboard.json "$dest/"
-          git -C .bench-history add "$tag"
-          git -C .bench-history commit -m "bench: $tag (run ${{ github.run_id }})"
+          cp ../report.md ../dashboard.json .bench-history/latest/
+          dashboards=(--dashboard ../dashboard.json)
+          if [ -f ../dashboard-runtime.json ]; then
+            cp ../report-runtime.md ../dashboard-runtime.json "$dest/"
+            cp ../report-runtime.md ../dashboard-runtime.json .bench-history/latest/
+            dashboards+=(--dashboard ../dashboard-runtime.json)
+          fi
+          # The release-over-release trend feed: the harness appends this
+          # run's cells over the previous latest/trend.json (dedupe per full
+          # key, capped at the last 20 releases).
+          trend_args=(--release "$name" --date "$(date -u +%F)"
+                      "${dashboards[@]}" --out .bench-history/latest/trend.json)
+          [ -f .bench-history/latest/trend.json ] && \
+            trend_args+=(--previous .bench-history/latest/trend.json)
+          ./target/debug/tebako-bench trend "${trend_args[@]}"
+          git -C .bench-history add "$name" latest
+          git -C .bench-history commit -m "bench: $name (run ${{ github.run_id }})"
           git -C .bench-history push origin bench-history
+      - name: Wake the website (bench-update)
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.TEBAKO_CI_PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/tamatebako/tebako.org/dispatches -f event_type=bench-update \
+            || echo "::warning::the bench-update dispatch failed (token absent or under-scoped) — the site's nightly rebuild picks up the feed"

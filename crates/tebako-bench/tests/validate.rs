@@ -40,6 +40,7 @@ fn embedded_schemas_compile() {
 fn valid_fixtures_pass_both_gates() {
     for (kind, name) in [
         (DocKind::Suite, "suite-valid.yaml"),
+        (DocKind::Suite, "suite-runtime-valid.yaml"),
         (DocKind::Result, "result-valid.json"),
     ] {
         let violations = validate::validate_text(kind, &read(&fixture_path(name)))
@@ -59,6 +60,16 @@ fn invalid_fixtures_are_named() {
             DocKind::Suite,
             "suite-invalid-v2-missing-payload.yaml",
             "payload",
+        ),
+        (
+            DocKind::Suite,
+            "suite-invalid-runtime-unpaired.yaml",
+            "tebako-ruby",
+        ),
+        (
+            DocKind::Suite,
+            "suite-invalid-doc-without-source.yaml",
+            "doc",
         ),
         (
             DocKind::Result,
@@ -111,6 +122,15 @@ fn repo_authored_documents_validate() {
         violations.is_empty(),
         "benchmarks/suite.yaml must be VALID, violations: {violations:?}"
     );
+    let violations = validate::validate_text(
+        DocKind::Suite,
+        &read(&repo_path("benchmarks/suite-runtime.yaml")),
+    )
+    .expect("suite-runtime.yaml: operational");
+    assert!(
+        violations.is_empty(),
+        "benchmarks/suite-runtime.yaml must be VALID, violations: {violations:?}"
+    );
 
     // platforms.yaml has no JSON Schema artifact in this revision (spec 27
     // §3): the serde model + its semantic rules are the gate.
@@ -134,6 +154,7 @@ fn repo_authored_documents_validate() {
 fn schema_and_model_gates_agree() {
     for (kind, name) in [
         (DocKind::Suite, "suite-valid.yaml"),
+        (DocKind::Suite, "suite-runtime-valid.yaml"),
         (DocKind::Suite, "suite-invalid-floating-ref.yaml"),
         (DocKind::Suite, "suite-invalid-v2-missing-payload.yaml"),
         (DocKind::Result, "result-valid.json"),

@@ -18,10 +18,24 @@ pub struct ResultFile {
     /// What actually ran (resolved versions, never requested ones). Fields
     /// may be absent when no arm of that world ran on the triplet.
     pub versions: Versions,
+    /// The suite's declared speedup baseline (spec 27 §2, amended
+    /// 2026-09-17): flows from the authored suite into every result so the
+    /// report merge — which never sees the suite file — keeps the rule.
+    /// Absent = the v1-prefix law.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<Baseline>,
     /// One record per attempted run AND one per named gap.
     pub runs: Vec<RunRecord>,
     /// Per (workload × target × mode) statistics over `Ok` runs only.
     pub stats: Vec<StatRecord>,
+}
+
+/// The declared speedup baseline: `target` is the authored target id or
+/// prefix (spec 27 §2); `label` is the human display form ("on-system").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Baseline {
+    pub target: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +63,11 @@ pub struct Versions {
     /// The v2 arms' image backend; numbers across formats never mix.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_format: Option<ImageFormat>,
+    /// Per-arm resolved-version records beyond the named fields — the
+    /// runtime suite's probed on-system/tebako lines per language
+    /// (spec 27 §10.1: parity is asserted AND recorded).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub extra: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,0 +1,116 @@
+# Runtime comparison suite — on-system vs tebako (spec 27 §10): what does
+# running an interpreter through the tebako runtime pair cost, against the
+# SAME interpreter version installed on the system? Five workloads per
+# runtime (boot / fib / stdlib / ioread / statloop), source-less
+# interpreter invocations. Validate with:
+#   tebako-bench validate --kind suite benchmarks/suite-runtime.yaml
+schema_version: 1
+name: runtime-on-system-vs-tebako
+baseline: on-system
+
+workloads:
+  # ruby — startup, steady-state compute, stdlib load path, sequential
+  # read bandwidth (the fixture: host bytes on-system, in-image for the
+  # tebako arm), metadata latency over the runtime's own gem tree.
+  - id: ruby-boot
+    argv: ["-e", "puts 1"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: ruby-fib
+    argv: ["-e", "def fib(n) n < 2 ? n : fib(n-1) + fib(n-2) end; puts fib(32)"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: ruby-stdlib
+    argv: ["-e", "require 'json'; require 'openssl'; require 'digest'; require 'socket'; puts 1"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: ruby-ioread
+    argv: ["-e", "File.open(ARGV[0], 'rb') { |f| while f.read(1048576); end }", "{fixture}"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: ruby-statloop
+    argv: ["-e", "Dir.glob(File.join(Gem.default_dir, '**', '*')).each { |f| File.stat(f) }"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+
+  # python — the same five questions.
+  - id: python-boot
+    argv: ["-c", "print(1)"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: python-fib
+    argv: ["-c", "f=lambda n: n if n<2 else f(n-1)+f(n-2); print(f(32))"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: python-stdlib
+    argv: ["-c", "import json, ssl, sqlite3, hashlib; print(1)"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: python-ioread
+    argv: ["-c", "import sys; f=open(sys.argv[1],'rb'); [None for _ in iter(lambda: f.read(1048576), b'')]", "{fixture}"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: python-statloop
+    argv: ["-c", "import os, sysconfig; [os.stat(os.path.join(d, f)) for d, _, fs in os.walk(sysconfig.get_paths()['stdlib']) for f in fs]"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+
+  # java — the same five questions (the classes are compiled once in-leg
+  # with the on-system javac; both JVMs run the same .class files).
+  - id: java-boot
+    argv: ["-version"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: java-fib
+    argv: ["-cp", "{classes}", "Fib"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+  - id: java-stdlib
+    argv: ["-cp", "{classes}", "Collections"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: java-ioread
+    argv: ["-cp", "{classes}", "IoRead", "{fixture}"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+  - id: java-statloop
+    argv: ["-cp", "{classes}", "TreeWalk"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+
+targets:
+  # The on-system arms: the host toolchain binaries, provisioned by the
+  # workflow's setup actions and pinned to EXACTLY the interpreter
+  # version inside the tebako runtime under test. The parity probe runs
+  # BOTH arms with the same version_probe argv and requires
+  # version_expect in both outputs (spec 27 §10.1).
+  - id: on-system-ruby
+    kind: on-system
+    program: ruby
+    version_probe: ["-v"]
+    version_expect: "3.3.12"
+  - id: on-system-python
+    kind: on-system
+    program: python3
+    version_probe: ["--version"]
+    version_expect: "3.14.7"
+  - id: on-system-java
+    kind: on-system
+    program: java
+    version_probe: ["-version"]
+    version_expect: "21.0.12"
+    compile_classes: benchmarks/fixtures/java
+
+  # The tebako arms: the runtime pairs (interpreter exe + env image),
+  # fetched sha256-verified from the factory releases and booted bare.
+  - id: tebako-ruby
+    kind: runtime-exe
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.25, lang_version: "3.3.12" }
+  - id: tebako-python
+    kind: runtime-exe
+    runtime: { repo: tamatebako/tebako-runtime-python, tag: v0.2.0, lang_version: "3.14.7" }
+  - id: tebako-java
+    kind: runtime-exe
+    runtime: { repo: tamatebako/tebako-runtime-openjdk, tag: v2.7.0, lang_version: "21.0.12" }
+
+run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

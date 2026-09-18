@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tebako_bench::engine::{self, Prepared, PreparedTarget};
+use tebako_bench::engine::{self, LegContext, Prepared, PreparedTarget};
 use tebako_bench::platforms::{PackedMn, PlatformFile, Triplet};
 use tebako_bench::result::{ResultFile, RunMode, RunRecord, RunStatus, RunnerMeta, Versions};
 use tebako_bench::suite::{
@@ -39,15 +39,16 @@ fn test_suite(argv: &[&str], files: &[&str], policy: RunPolicy) -> SuiteFile {
     SuiteFile {
         schema_version: 1,
         name: "engine-test".to_string(),
+        baseline: None,
         workloads: vec![Workload {
             id: "w-small".to_string(),
             opt_in: false,
-            source: Source {
+            source: Some(Source {
                 kind: SourceKind::Vendored,
                 path: "fixtures/doc.adoc".to_string(),
                 url: None,
                 git_ref: None,
-            },
+            }),
             argv: argv.iter().map(|s| s.to_string()).collect(),
             expect: Expect {
                 exit: 0,
@@ -75,9 +76,15 @@ fn ready(id: &str, kind: TargetKind) -> PreparedTarget {
             payload: None,
             registries: None,
             fat: None,
+            program: None,
+            version_probe: None,
+            version_expect: None,
+            runtime: None,
+            compile_classes: None,
         },
         state: Prepared::Ready {
             program: child_path(),
+            image: None,
         },
     }
 }
@@ -90,6 +97,11 @@ fn unavailable(id: &str, kind: TargetKind, reason: &str) -> PreparedTarget {
             payload: None,
             registries: None,
             fat: None,
+            program: None,
+            version_probe: None,
+            version_expect: None,
+            runtime: None,
+            compile_classes: None,
         },
         state: Prepared::Unavailable {
             reason: reason.to_string(),
@@ -116,6 +128,7 @@ fn test_platforms(triplet: &str) -> PlatformFile {
                 v1_asset: None,
                 v2_payload: false,
                 v1_note: None,
+                runtime_gaps: None,
             },
         )]
         .into_iter()
@@ -278,8 +291,16 @@ fn engine_runs_the_matrix_end_to_end() {
         reprimed.push(t.id.clone());
         Ok(())
     };
-    let runs =
-        engine::execute_matrix(&layout, &suite, &[], &prepared, &repo_root, &mut reprime).unwrap();
+    let runs = engine::execute_matrix(
+        &layout,
+        &suite,
+        &[],
+        &prepared,
+        &LegContext::default(),
+        &repo_root,
+        &mut reprime,
+    )
+    .unwrap();
 
     // 2 targets × (2 warm + 1 cold) ok runs; warmup rows are not recorded.
     assert_eq!(runs.len(), 6);
@@ -360,6 +381,7 @@ fn unavailable_arms_emit_named_gap_rows() {
         &suite,
         &[],
         &prepared,
+        &LegContext::default(),
         &repo_root,
         &mut noop_reprime,
     )
@@ -418,6 +440,7 @@ fn failed_warmup_is_recorded_once_and_the_cell_is_skipped() {
         &suite,
         &[],
         &prepared,
+        &LegContext::default(),
         &repo_root,
         &mut noop_reprime,
     )
@@ -476,6 +499,7 @@ fn warmup_timeout_is_recorded_and_the_cell_is_skipped() {
         &suite,
         &[],
         &prepared,
+        &LegContext::default(),
         &repo_root,
         &mut noop_reprime,
     )
@@ -517,6 +541,7 @@ fn doc_substitution_and_the_scratch_layout() {
         &suite,
         &[],
         &prepared,
+        &LegContext::default(),
         &repo_root,
         &mut noop_reprime,
     )
@@ -560,6 +585,7 @@ fn opt_in_gating_is_explicit() {
         &suite,
         &[],
         &prepared,
+        &LegContext::default(),
         &repo_root,
         &mut noop_reprime,
     )
@@ -573,6 +599,7 @@ fn opt_in_gating_is_explicit() {
         &suite,
         &["nope".to_string()],
         &prepared,
+        &LegContext::default(),
         &repo_root,
         &mut noop_reprime,
     )
@@ -589,10 +616,63 @@ fn opt_in_gating_is_explicit() {
         &suite,
         &["w-small".to_string()],
         &prepared,
+        &LegContext::default(),
         &repo_root,
         &mut noop_reprime,
     )
     .unwrap();
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].status, RunStatus::Ok);
+}
+
+#[test]
+fn on_system_arms_have_no_cold_story_and_source_less_workloads_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let layout = BenchLayout::new(&dir.path().join("out")).unwrap();
+    let repo_root = dir.path().to_path_buf();
+    let mut suite = test_suite(
+        &["--touch", "out.txt"],
+        &["out.txt"],
+        RunPolicy {
+            warmup: 1,
+            repetitions: 1,
+            cold_repetitions: 2,
+            interleave: true,
+        },
+    );
+    // The runtime suite's shape: no source (the scratch cell stays empty,
+    // the cwd is the cell root).
+    suite.workloads[0].source = None;
+    let prepared = vec![ready("on-system-ruby", TargetKind::OnSystem)];
+    let runs = engine::execute_matrix(
+        &layout,
+        &suite,
+        &[],
+        &prepared,
+        &LegContext::default(),
+        &repo_root,
+        &mut noop_reprime,
+    )
+    .unwrap();
+    // One warm measurement; the cold side is ONE named row, mode-scoped to
+    // cold, never fabricated numbers.
+    let ok: Vec<&RunRecord> = runs.iter().filter(|r| r.status == RunStatus::Ok).collect();
+    assert_eq!(ok.len(), 1, "{runs:?}");
+    assert_eq!(ok[0].mode, Some(RunMode::Warm));
+    let gaps: Vec<&RunRecord> = runs
+        .iter()
+        .filter(|r| r.status == RunStatus::Unavailable)
+        .collect();
+    assert_eq!(gaps.len(), 1, "{runs:?}");
+    assert_eq!(gaps[0].mode, Some(RunMode::Cold));
+    assert!(
+        gaps[0].reason.as_deref().unwrap().contains("no cold story"),
+        "{:?}",
+        gaps[0].reason
+    );
+    // The source-less cell ran in the empty scratch root.
+    assert!(layout
+        .scratch
+        .join("w-small/on-system-ruby/warm-1/out.txt")
+        .is_file());
 }

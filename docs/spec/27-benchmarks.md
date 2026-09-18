@@ -4,7 +4,10 @@ Status: IMPLEMENTED (spec-first per spec 14; slice 0 spikes executed
 2026-08-25 — §9 records the evidence; the suite/platforms documents,
 schemas, the `tebako-bench validate` surface, the sampler, the
 acquisition slice, the run engine, the report renderer, and
-`.github/workflows/benchmark.yml` have landed)
+`.github/workflows/benchmark.yml` have landed; amended 2026-09-17 —
+the speedup baseline generalization (§2/§7), the on-system-vs-tebako
+runtime comparison suite (§10), and the bench-history publication
+plumbing with the release-over-release trend feed (§11))
 Depends on: 00 (locked invariants), 02 (tpkg wire format), 05
 (resolution and cache), 14 (engineering process), 16 (distribution —
 slim/fat), 17 (runtime driver contract), 19 (bootstrap distribution),
@@ -147,7 +150,33 @@ Contract rules:
   workload emits NO rows at all (it is not a gap — nothing was asked).
 - **targets** — see §1. `v2-managed`/`v2-press` carry `payload`
   (`name@version`) and `registries` (spec 04 references). `v1-exe`
-  takes its asset from the platforms document (§3).
+  takes its asset from the platforms document (§3). The runtime
+  comparison suite (§10) adds two more kinds: `on-system` (the host
+  toolchain binary, CI-provisioned) and `runtime-exe` (a tebako
+  runtime pair fetched sha256-verified from its factory release).
+- **baseline** (amended 2026-09-17) — optional; names the arm the
+  report's speedup column is computed against. The value is either an
+  exact target id or a PREFIX matching exactly one target per
+  workload (the runtime suite's `baseline: on-system` pairs
+  `on-system-<lang>` against `tebako-<lang>` per workload; each
+  workload belongs to one runtime, so the prefix resolves
+  unambiguously). When absent, today's law holds: the baseline is the
+  cell whose target id starts with `v1`. The declared baseline flows
+  into the result document (`baseline: {target, label}`) so the
+  report merge — which never sees the suite file — keeps the rule;
+  the dashboard mirrors it as a top-level `baseline` block (additive;
+  older dashboards without it stay valid).
+- **workloads without a document** (amended 2026-09-17) — `source`
+  is optional. A source-less workload runs with an empty scratch
+  cell as its cwd; `{doc}` in such a workload's argv is a validation
+  error. `expect.files` may be empty (interpreter workloads assert
+  on the exit status alone). Two more argv substitutions join
+  `{doc}`, resolved per target at run time:
+  - `{fixture}` — the ioread data file (§10): for `runtime-exe`
+    targets its path INSIDE the mounted fixture image; for every
+    other kind the host path of the harness-generated fixture.
+  - `{classes}` — the directory of the in-leg compiled Java classes
+    (§10's compile-once rule); the host path for every kind.
 - **run_policy** — `warmup` full runs per (workload × target) before
   any measurement (primes the fontist/relaton/OS caches);
   `repetitions` measured warm runs per (workload × target);
@@ -352,13 +381,25 @@ Contract rules:
   median peak RSS. **min is the cross-noise-comparable figure** on
   shared runners (noise inflates, it does not deflate); the report
   labels it so.
-- Speedup columns are always "vs v1-exe on the same triplet ×
-  workload × mode"; a missing v1 arm (named gap) renders as "—", never
-  as an invented ratio.
+- Speedup columns are computed against the suite's declared
+  **baseline** (§2) on the same triplet × workload × mode; with no
+  declared baseline the law stays "vs the v1-exe arm". A missing
+  baseline arm (named gap) renders as "—", never as an invented
+  ratio. The dashboard carries the baseline as a top-level
+  `"baseline": {"target": ..., "label": ...}` block when the suite
+  declares one (additive only; the `speedup_vs_v1` cell field name
+  never changes — downstream consumers label the column from
+  `baseline.label`).
 - The report footer carries: the runner metadata block per triplet, the
   shared-runner noise caveat ("GitHub-hosted runners are shared,
   multi-tenant machines; treat differences under ~10% as noise and read
-  min alongside median"), and the version-skew note (§1).
+  min alongside median"), and the version-skew note (§1). Everywhere
+  peak RSS renders (amended 2026-09-17) the footer annotates it as
+  **file-backed-inclusive**: mmap'd image pages are reclaimable under
+  memory pressure, so a tebako arm's RSS delta overstates its real
+  memory cost. Suites with a declared non-v1 baseline additionally
+  state the §10 method notes (the cold semantics of both arm kinds,
+  the teardown construction, the on-system cold gap).
 - One result file per triplet; the report merges N triplet files into
   one markdown document + one site-ingestible dashboard JSON. Merging
   never recomputes run-level data — stats are re-derived from the
@@ -438,3 +479,146 @@ landed:
   an empirical question the leg answers; if it does, the v1 macOS arm
   becomes a named gap with this reason. The harness records the
   outcome; it does not work around it.
+
+## 10. The runtime comparison suite — on-system vs tebako (added 2026-09-17)
+
+The metanorma suite answers "v2 vs v1 at the user contract". The
+**runtime suite** (`benchmarks/suite-runtime.yaml`, suite name
+`runtime-on-system-vs-tebako`) answers the question underneath it:
+**what does running an interpreter through the tebako runtime pair
+cost, against the SAME interpreter version installed on the system?**
+The public vocabulary is locked: the arms are **on-system** vs
+**tebako** — never "raw"/"host" in any emitted artifact (target ids,
+suite names, dashboard labels, reports).
+
+### 10.1 The two arm kinds
+
+| kind | What it is |
+|------|-----------|
+| `on-system` | The host toolchain binary (`program`, PATH-resolved), provisioned by the workflow's setup actions, version-pinned to EXACTLY the interpreter version inside the tebako runtime under test. Carries `version_probe` (argv, e.g. `["-v"]`) and `version_expect` (the version token both arms must report). |
+| `runtime-exe` | The tebako runtime pair (interpreter exe + env `.tfs` image), fetched sha256-verified from the factory release named by `runtime: {repo, tag, lang_version}`, booted bare with `TEBAKO_RUNTIME_IMAGE` set and the workload argv handed to the interpreter (the spec 17 driver contract's no-image-spec form; ioread runs add one `--tebako-image` triple for the fixture image). |
+
+**The fair-comparison invariant** — the harness asserts version parity
+at run time: it probes the on-system binary AND the tebako runtime exe
+with the same `version_probe` argv, and both outputs must contain
+`version_expect`. A mismatch makes BOTH arms of the pair a named skip
+(`unavailable` with the reason naming both reported versions) — never
+a silent comparison of skewed versions. Both probed lines are recorded
+in the result's `versions.extra` map (additive; per-arm entries).
+
+**The pairing law** — the two kinds pair by language suffix
+(`on-system-<lang>` ↔ `tebako-<lang>`). A declared gap
+(`runtime_gaps` in the platforms document) or an acquisition/probe
+failure on one arm gaps the other with the reason named: a single-arm
+measurement is not the comparison this suite exists for.
+
+### 10.2 The workloads, per runtime
+
+Five questions per runtime, all interpreter-invocation workloads
+(source-less, `expect` on the exit status):
+
+- `<lang>-boot` — startup cost: the interpreter prints a constant and
+  exits (`ruby -e`, `python3 -c`, `java -version`).
+- `<lang>-fib` — steady-state penalty: a recursive fib(32) compute
+  loop. Expect ≈1.00×; anything else is a bug signal.
+- `<lang>-stdlib` — library-load path cost: a stdlib sweep
+  (`require json/openssl/digest/socket`, `import
+  json/ssl/sqlite3/hashlib`, the collections class) — the VFS-read
+  question.
+- `<lang>-ioread` — sequential read bandwidth: read the ~64 MiB
+  fixture. The tebako arm reads it from INSIDE an image (the harness
+  generates the fixture bytes in-process — a fixed-seed PRNG stream,
+  so the dwarfs zstd blocks do real work — and builds the fixture
+  image in-leg through the downloaded `tfs` tool, the dogfood rule;
+  mounted at `/bench-fixture` via one `--tebako-image` triple; the
+  `{fixture}` substitution resolves to the in-image path). The
+  on-system arm reads the same bytes from the host path.
+- `<lang>-statloop` — metadata latency: walk + stat the runtime's own
+  tree (ruby: the gem tree; python: the stdlib dir; java: the
+  runtime's `java.home` tree). The script introspects its own tree
+  root, so the SAME argv serves both arms — per-op VFS/FlatBuffers
+  dispatch vs kernel path resolution, in-process, no FUSE round-trip
+  is the claim this number proves.
+
+Java's classes (`Fib`, `Collections`, `IoRead`, `TreeWalk`) are
+vendored sources compiled ONCE in-leg with the on-system `javac`
+(the `compile_classes` field on the on-system target); the same
+`.class` files run on both JVMs from the host path (`{classes}`).
+Compilation failure gaps both java arms with the reason named.
+
+### 10.3 Cold, warm, teardown
+
+- **Warm** arms interleave A/B across all targets per iteration (the
+  §2 `interleave: true` law); drift cancels.
+- **Cold** per the §5 wipe discipline, adapted to the arm kinds: the
+  tebako arm wipes the hermetic bench home's store + its per-target
+  TMPDIR, so the measured run pays the driver's first mount and cache
+  rebuild — the one-time, user-visible first-boot cost. (The runtime
+  pair's own download + sha256 verify happens at acquisition in this
+  suite — the measured program is the runtime exe itself, and a
+  downloader cannot be inside its own measured span. The metanorma
+  suite's `v2-managed` arm carries the download-in-span cold story.)
+  The on-system arm has NO cold story: package-manager/provisioning
+  install time is not tebako's comparison. Its cold cell is a declared
+  named gap (`unavailable` with the mode scoped to `cold`), rendered
+  "—", never a fabricated number.
+- **Teardown is NOT a separate workload.** A no-op run's wall clock is
+  boot+teardown by construction, and teardown is ≈free by design (the
+  in-process VFS dies with the process; no unmount ceremony, no FUSE
+  thread join). The method note states this; if a measured exit ever
+  shows a tail, THAT is a regression signal.
+
+### 10.4 The declared gaps
+
+- python on windows-ucrt64: the tebako arm is a declared named gap
+  (`runtime_gaps` in the platforms document) until the runtime's
+  windows tier ships.
+- java measures only where the openjdk factory ships a runtime
+  (acquisition failure on the other triplets is the named gap, with
+  the missing asset named in the reason).
+- The musl legs provision the on-system toolchains on the HOST (the
+  setup actions cannot run inside the alpine container) and run the
+  runtime suite on the host; the static musl runtime exes execute
+  there unchanged. The metanorma suite keeps its containerized shape.
+
+## 11. Publication: bench-history, the latest mirrors, and the trend feed (added 2026-09-17)
+
+The `benchmark.yml` fan-in publishes on release runs AND on
+`workflow_dispatch` runs (dispatch included so the first real numbers
+publish without waiting for a release):
+
+- **Per-run entry** — `<tag>/` (release) or `run-<run-id>/` (dispatch)
+  on the `bench-history` branch carries both dashboards
+  (`dashboard.json`, `dashboard-runtime.json`) and both markdown
+  reports.
+- **`latest/` mirrors** — the same four files under `latest/`,
+  overwritten every run: the website's stable feed URLs.
+- **`latest/trend.json`** — the release-over-release series the
+  website's trend section renders, maintained by
+  `tebako-bench trend` (a fan-in subcommand, never a workflow-side
+  script): flat cell records, one per measured cell of the run's
+  dashboards, appended over the previous `latest/trend.json`,
+  deduplicated per (release × suite × triplet × workload × target ×
+  mode) with the new row winning, capped at the last 20 releases:
+
+  ```json
+  {"generated_by": "tebako-bench trend", "cells": [
+    {"release": "v2.8.8", "date": "2026-09-17", "suite": "runtime-on-system-vs-tebako",
+     "triplet": "macos-arm64", "workload": "ruby-boot", "target": "tebako-ruby",
+     "mode": "warm", "median_wall_s": 0.42, "ratio_vs_baseline": 2.10}
+  ]}
+  ```
+
+  `ratio_vs_baseline` is THIS median ÷ the baseline median on the same
+  triplet × workload × mode — the OVERHEAD shape: 1.00 = parity, >1 =
+  tebako overhead, <1 = tebako faster. (The dashboard cell's
+  `speedup_vs_v1` is its reciprocal; both conventions are pinned here
+  and the website derives from the medians, so the two never
+  disagree.) A cell with no baseline arm carries
+  `ratio_vs_baseline: null`.
+- **The website wake-up** — after pushing bench-history the fan-in
+  fires `repository_dispatch` with `event_type=bench-update` to
+  tebako.org, authenticated by the org's CI PAT secret. The PAT being
+  absent or under-scoped falls back to the run's GITHUB_TOKEN and the
+  dispatch fails SOFT (a warning, never a red fan-in) — the site also
+  rebuilds nightly, so a missed wake-up costs hours, not data.

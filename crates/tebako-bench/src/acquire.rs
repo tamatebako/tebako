@@ -76,6 +76,17 @@ pub struct BenchLayout {
 
 impl BenchLayout {
     pub fn new(out: &Path) -> Result<Self, BenchError> {
+        // The layout is ALWAYS absolute: the measured child's cwd is its
+        // scratch cell and admin spawns run in the bench home, so a
+        // relative --out would spawn ENOENT every staged program (the
+        // 2026-08-31 run's 0-measured-cells bug — "cannot spawn
+        // out/bin/tebako" from inside the scratch/home cwd).
+        std::fs::create_dir_all(out).map_err(|e| {
+            BenchError::operational(format!("acquire: cannot create {}: {e}", out.display()))
+        })?;
+        let out = out.canonicalize().map_err(|e| {
+            BenchError::operational(format!("acquire: cannot resolve {}: {e}", out.display()))
+        })?;
         let layout = BenchLayout {
             root: out.to_path_buf(),
             bin: out.join("bin"),
@@ -149,12 +160,22 @@ impl BenchLayout {
     ///   download lands inside the measured span. The package never
     ///   touches the store's payload side, so the payload record survives
     ///   (and the next v2-managed cold rep re-installs anyway).
+    /// - runtime-exe (spec 27 §10.3): the whole store + the per-target
+    ///   TMPDIR — the driver's/exec-cache's first-boot state. The runtime
+    ///   pair itself stays staged (its download+verify is acquisition in
+    ///   this suite; the measured span is the first mount).
+    /// - on-system never reaches here: its cold cell is a declared gap.
     pub fn wipe_cold_caches(&self, target: &str, kind: TargetKind) -> Result<(), BenchError> {
         let mut wipes = vec![self.home.join(".metanorma"), self.home.join(".relaton")];
         match kind {
             TargetKind::V1Exe => wipes.push(self.tmp.join(target)),
             TargetKind::V2Managed => wipes.push(self.store()),
             TargetKind::V2Press => wipes.push(self.store().join("runtimes")),
+            TargetKind::RuntimeExe => {
+                wipes.push(self.store());
+                wipes.push(self.tmp.join(target));
+            }
+            TargetKind::OnSystem => {}
         }
         for dir in &wipes {
             remove_tree(dir)?;
@@ -1093,9 +1114,329 @@ fn app_entrypoints(mirror: &tpkg::PayloadManifest) -> &[tpkg::Entrypoint] {
 }
 
 // ---------------------------------------------------------------------
-// workload sources
+// the runtime suite (spec 27 §10): runtime pairs, parity probes,
+// the ioread fixture, the in-leg java compile
 // ---------------------------------------------------------------------
 
+/// Fetch one more product tool beyond the trio: the `tfs` image tool.
+/// The runtime suite builds its fixture image through it (the dogfood
+/// rule — the harness never re-implements imaging). Returns the staged
+/// binary and the resolved tebako version.
+pub fn fetch_tfs_tool(
+    layout: &BenchLayout,
+    release: Option<&str>,
+    triplet: &str,
+) -> Result<(PathBuf, String), BenchError> {
+    let base = match release {
+        Some(tag) => format!("https://github.com/tamatebako/tebako/releases/download/{tag}"),
+        None => "https://github.com/tamatebako/tebako/releases/latest/download".to_string(),
+    };
+    let sums_url = format!("{base}/SHA256SUMS");
+    let sums_bytes = get(&sums_url)?;
+    let sums = String::from_utf8(sums_bytes)
+        .map_err(|e| BenchError::operational(format!("acquire: {sums_url} is not UTF-8: {e}")))?;
+    let suffix = exe_suffix(triplet);
+    let version = match release {
+        Some(tag) => tag.strip_prefix('v').unwrap_or(tag).to_string(),
+        None => version_from_sums(&sums, triplet).ok_or_else(|| {
+            BenchError::operational(format!(
+                "acquire: {sums_url} lists no tebako-<ver>-{triplet}{suffix} asset — cannot learn the release version"
+            ))
+        })?,
+    };
+    let asset = format!("tfs-{version}-{triplet}{suffix}");
+    let expected = parse_sha256sums(&sums, &asset).ok_or_else(|| {
+        BenchError::operational(format!(
+            "acquire: {asset} is not in {sums_url} (the release is incomplete)"
+        ))
+    })?;
+    let dest = layout.assets.join(&asset);
+    download_verified(&format!("{base}/{asset}"), &dest, &expected)?;
+    let bare = layout.bin.join(format!("tfs{suffix}"));
+    std::fs::copy(&dest, &bare).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot stage {} as {}: {e}",
+            dest.display(),
+            bare.display()
+        ))
+    })?;
+    chmod_0755(&bare)?;
+    Ok((bare, version))
+}
+
+/// A staged tebako runtime pair (runtime-exe targets, spec 27 §10.1):
+/// the interpreter exe + the env image, both sha256-verified against the
+/// factory release's per-asset `.sha256` sidecars.
+pub struct RuntimePair {
+    pub exe: PathBuf,
+    pub image: PathBuf,
+    /// The factory's tebako version (the tag sans `v`).
+    pub tebako_version: String,
+    /// The interpreter version (the authored pin — the parity PROBE, not
+    /// this field, is the fair-comparison assertion).
+    pub lang_version: String,
+}
+
+/// Download + verify + stage the runtime pair named by the target's
+/// `runtime` ref. The asset grammar is the factories':
+/// `tebako-runtime-<tebako-ver>-<lang-ver>-<triplet>[.exe]` plus the
+/// `.tfs` env image. On Windows a sibling `.dll` rides along WHEN the
+/// factory ships one (ruby/python do, openjdk does not — its sidecar
+/// 404 is the absence proof, never a guess).
+pub fn acquire_runtime_pair(
+    layout: &BenchLayout,
+    triplet: &str,
+    target: &Target,
+) -> Result<RuntimePair, BenchError> {
+    let rr = target.runtime.as_ref().ok_or_else(|| {
+        BenchError::operational(format!(
+            "acquire: runtime-exe target '{}' carries no runtime ref",
+            target.id
+        ))
+    })?;
+    let tebako_version = rr
+        .tag
+        .strip_prefix('v')
+        .ok_or_else(|| {
+            BenchError::operational(format!(
+                "acquire: runtime tag '{}' is not v-prefixed",
+                rr.tag
+            ))
+        })?
+        .to_string();
+    let base = format!(
+        "https://github.com/{}/releases/download/{}",
+        rr.repo, rr.tag
+    );
+    let stem = format!(
+        "tebako-runtime-{tebako_version}-{}-{triplet}",
+        rr.lang_version
+    );
+    let suffix = exe_suffix(triplet);
+    let target_dir = layout.targets.join(&target.id);
+    std::fs::create_dir_all(&target_dir).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot create {}: {e}",
+            target_dir.display()
+        ))
+    })?;
+
+    // One helper: download <name> + its bare-hash <name>.sha256 sidecar,
+    // verify, stage under the target dir.
+    let stage = |name: &str, executable: bool| -> Result<PathBuf, BenchError> {
+        let sidecar = get(&format!("{base}/{name}.sha256"))?;
+        let expected = parse_bare_hash(&String::from_utf8_lossy(&sidecar)).ok_or_else(|| {
+            BenchError::operational(format!(
+                "acquire: {base}/{name}.sha256 is not a bare 64-hex sha256"
+            ))
+        })?;
+        let asset = layout.assets.join(name);
+        download_verified(&format!("{base}/{name}"), &asset, &expected)?;
+        let staged = target_dir.join(name);
+        std::fs::copy(&asset, &staged).map_err(|e| {
+            BenchError::operational(format!(
+                "acquire: cannot stage {} as {}: {e}",
+                asset.display(),
+                staged.display()
+            ))
+        })?;
+        if executable {
+            chmod_0755(&staged)?;
+        }
+        Ok(staged)
+    };
+
+    let exe = stage(&format!("{stem}{suffix}"), true)?;
+    let image = stage(&format!("{stem}.tfs"), false)?;
+    // The windows runtimes that need a sibling dylib ship one; probe its
+    // sidecar — 404 (IndexUnavailable) is the factory saying "no dll".
+    if cfg!(windows) {
+        let dll = format!("{stem}.dll");
+        match tebako_http::get(&format!("{base}/{dll}.sha256")) {
+            Ok(sidecar) => {
+                let expected =
+                    parse_bare_hash(&String::from_utf8_lossy(&sidecar)).ok_or_else(|| {
+                        BenchError::operational(format!(
+                            "acquire: {base}/{dll}.sha256 is not a bare 64-hex sha256"
+                        ))
+                    })?;
+                let asset = layout.assets.join(&dll);
+                download_verified(&format!("{base}/{dll}"), &asset, &expected)?;
+                let staged = target_dir.join(&dll);
+                std::fs::copy(&asset, &staged).map_err(|e| {
+                    BenchError::operational(format!(
+                        "acquire: cannot stage {} as {}: {e}",
+                        asset.display(),
+                        staged.display()
+                    ))
+                })?;
+            }
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => {}
+            Err(e) => {
+                return Err(BenchError::operational(format!(
+                    "acquire: cannot probe {base}/{dll}.sha256: {e}"
+                )))
+            }
+        }
+    }
+    Ok(RuntimePair {
+        exe,
+        image,
+        tebako_version,
+        lang_version: rr.lang_version.clone(),
+    })
+}
+
+/// Spawn `program args` and capture stdout+stderr (the version probes —
+/// the parity assertion reads both streams; java's `-version` writes
+/// stderr). The combined output is appended to `logs/<log_name>` and
+/// returned. A nonzero exit is a named error carrying the output tail.
+pub fn run_capture(
+    layout: &BenchLayout,
+    program: &Path,
+    args: &[String],
+    extra_env: &[(String, String)],
+    log_name: &str,
+) -> Result<String, BenchError> {
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args)
+        .current_dir(&layout.home)
+        .envs(layout.child_env("admin"))
+        .envs(extra_env.iter().cloned())
+        .stdin(std::process::Stdio::null());
+    let out = cmd.output().map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot spawn {} for the version probe: {e}",
+            program.display()
+        ))
+    })?;
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    let log_path = layout.logs.join(log_name);
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| {
+            BenchError::operational(format!("acquire: cannot open {}: {e}", log_path.display()))
+        })?;
+    use std::io::Write as _;
+    writeln!(log, "$ {} {}", program.display(), args.join(" "))
+        .and_then(|()| log.write_all(text.as_bytes()))
+        .map_err(|e| {
+            BenchError::operational(format!("acquire: cannot write {}: {e}", log_path.display()))
+        })?;
+    if !out.status.success() {
+        return Err(BenchError::operational(format!(
+            "acquire: the version probe `{} {}` failed ({}) — see {}",
+            program.display(),
+            args.join(" "),
+            out.status
+                .code()
+                .map(|c| format!("exit {c}"))
+                .unwrap_or_else(|| "signal".to_string()),
+            log_path.display()
+        )));
+    }
+    Ok(text)
+}
+
+/// The ioread fixture (spec 27 §10.2): 64 MiB of fixed-seed xorshift64*
+/// bytes — high-entropy so the dwarfs zstd blocks do real work,
+/// deterministic so every leg reads the same bytes.
+pub const FIXTURE_LEN: u64 = 64 * 1024 * 1024;
+
+/// The fixture's in-image path under the harness's fixed mount point.
+pub const FIXTURE_VFS_PATH: &str = "/bench-fixture/fixture.bin";
+
+pub fn generate_fixture(dest: &Path) -> Result<(), BenchError> {
+    let mut f = std::fs::File::create(dest).map_err(|e| {
+        BenchError::operational(format!("acquire: cannot create {}: {e}", dest.display()))
+    })?;
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut written: u64 = 0;
+    let mut buf = Vec::with_capacity(1 << 20);
+    while written < FIXTURE_LEN {
+        buf.clear();
+        for _ in 0..((1 << 20) / 8) {
+            // xorshift64* (Marsaglia/Vigna) — fixed seed, platform-neutral.
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            buf.extend_from_slice(&state.wrapping_mul(0x2545_F491_4F6C_DD1D).to_le_bytes());
+        }
+        f.write_all(&buf).map_err(|e| {
+            BenchError::operational(format!("acquire: cannot write {}: {e}", dest.display()))
+        })?;
+        written += buf.len() as u64;
+    }
+    Ok(())
+}
+
+/// Build the fixture image through the downloaded `tfs` tool (the dogfood
+/// rule): `tfs mkimage --format dwarfs <dir> --output <img>`, unmeasured.
+pub fn build_fixture_image(
+    layout: &BenchLayout,
+    tfs: &Path,
+    fixture_dir: &Path,
+    out: &Path,
+) -> Result<(), BenchError> {
+    let dir = fixture_dir.to_string_lossy().into_owned();
+    let img = out.to_string_lossy().into_owned();
+    run_admin(
+        layout,
+        tfs,
+        &["mkimage", "--format", "dwarfs", &dir, "--output", &img],
+        "acquire-fixture-image.log",
+    )
+}
+
+/// Compile the vendored java classes ONCE in-leg with the on-system
+/// javac (spec 27 §10.2's compile-once rule — both JVMs run the same
+/// .class files). Returns the classes directory (`{classes}` resolves
+/// to it). javac is the workflow-provisioned toolchain binary — the
+/// harness is CI tooling and never ships.
+pub fn compile_java_classes(
+    layout: &BenchLayout,
+    repo_root: &Path,
+    src_rel: &str,
+) -> Result<PathBuf, BenchError> {
+    let src_dir = repo_root.join(src_rel);
+    let mut sources: Vec<PathBuf> = Vec::new();
+    let entries = std::fs::read_dir(&src_dir).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot list the java fixture dir {}: {e}",
+            src_dir.display()
+        ))
+    })?;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|s| s.to_str()) == Some("java") {
+            sources.push(p);
+        }
+    }
+    sources.sort();
+    if sources.is_empty() {
+        return Err(BenchError::operational(format!(
+            "acquire: the java fixture dir {} holds no .java sources",
+            src_dir.display()
+        )));
+    }
+    let out_dir = layout.sources.join("_classes");
+    remove_tree(&out_dir)?;
+    std::fs::create_dir_all(&out_dir).map_err(|e| {
+        BenchError::operational(format!("acquire: cannot create {}: {e}", out_dir.display()))
+    })?;
+    let mut args: Vec<String> = vec!["-d".to_string(), out_dir.to_string_lossy().into_owned()];
+    args.extend(sources.iter().map(|p| p.to_string_lossy().into_owned()));
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_admin(layout, Path::new("javac"), &arg_refs, "acquire-javac.log")?;
+    Ok(out_dir)
+}
+
+// ---------------------------------------------------------------------
+// workload sources
+// ---------------------------------------------------------------------
 /// A materialized workload source: `root` is copied into each run's
 /// scratch (the whole tree — the document's relative includes must
 /// resolve), `doc_rel` selects the document inside it.
@@ -1104,7 +1445,9 @@ pub struct MaterializedSource {
     pub doc_rel: PathBuf,
 }
 
-/// Materialize a workload's source document (spec 27 §2). Vendored: copy
+/// Materialize a workload's source document (spec 27 §2), when it has one
+/// — interpreter workloads (the runtime suite) are source-less and get
+/// None (their scratch cell stays empty). Vendored: copy
 /// the repo file. Git: fetch the host's archive-of-commit over HTTPS
 /// in-process (never a `git` shell-out — invariant 1) and extract the
 /// whole tree in-process.
@@ -1112,22 +1455,25 @@ pub fn materialize_source(
     workload: &Workload,
     layout: &BenchLayout,
     repo_root: &Path,
-) -> Result<MaterializedSource, BenchError> {
+) -> Result<Option<MaterializedSource>, BenchError> {
+    let Some(source) = &workload.source else {
+        return Ok(None);
+    };
     let dest = layout.sources.join(&workload.id);
     remove_tree(&dest)?;
     std::fs::create_dir_all(&dest).map_err(|e| {
         BenchError::operational(format!("acquire: cannot create {}: {e}", dest.display()))
     })?;
-    match workload.source.kind {
+    match source.kind {
         SourceKind::Vendored => {
-            let src = repo_root.join(&workload.source.path);
-            let name = Path::new(&workload.source.path)
+            let src = repo_root.join(&source.path);
+            let name = Path::new(&source.path)
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
                 .ok_or_else(|| {
                     BenchError::operational(format!(
                         "acquire: vendored source '{}' has no file name",
-                        workload.source.path
+                        source.path
                     ))
                 })?;
             std::fs::copy(&src, dest.join(&name)).map_err(|e| {
@@ -1136,12 +1482,12 @@ pub fn materialize_source(
                     src.display()
                 ))
             })?;
-            Ok(MaterializedSource {
+            Ok(Some(MaterializedSource {
                 root: dest,
                 doc_rel: PathBuf::from(name),
-            })
+            }))
         }
-        SourceKind::Git => fetch_git_source(workload, dest),
+        SourceKind::Git => fetch_git_source(workload, source, dest).map(Some),
     }
 }
 
@@ -1149,14 +1495,18 @@ pub fn materialize_source(
 /// in-process. The suite's semantic gate already pinned a 40-hex ref; a
 /// non-github host is a named error here (MECE reference syntax — never
 /// a guessed host grammar).
-fn fetch_git_source(workload: &Workload, dest: PathBuf) -> Result<MaterializedSource, BenchError> {
-    let url = workload.source.url.as_deref().ok_or_else(|| {
+fn fetch_git_source(
+    workload: &Workload,
+    source: &crate::suite::Source,
+    dest: PathBuf,
+) -> Result<MaterializedSource, BenchError> {
+    let url = source.url.as_deref().ok_or_else(|| {
         BenchError::operational(format!(
             "acquire: git workload '{}' carries no url",
             workload.id
         ))
     })?;
-    let git_ref = workload.source.git_ref.as_deref().ok_or_else(|| {
+    let git_ref = source.git_ref.as_deref().ok_or_else(|| {
         BenchError::operational(format!(
             "acquire: git workload '{}' carries no pinned ref",
             workload.id
@@ -1197,17 +1547,17 @@ fn fetch_git_source(workload: &Workload, dest: PathBuf) -> Result<MaterializedSo
         )));
     }
     let root = tops.remove(0);
-    let doc_rel = PathBuf::from(&workload.source.path);
+    let doc_rel = PathBuf::from(&source.path);
     if doc_rel.is_absolute() || doc_rel.to_string_lossy().contains("..") {
         return Err(BenchError::operational(format!(
             "acquire: workload '{}' path '{}' must be tree-relative without '..'",
-            workload.id, workload.source.path
+            workload.id, source.path
         )));
     }
     if !root.join(&doc_rel).is_file() {
         return Err(BenchError::operational(format!(
             "acquire: the pinned tree holds no '{}' for workload '{}'",
-            workload.source.path, workload.id
+            source.path, workload.id
         )));
     }
     Ok(MaterializedSource { root, doc_rel })

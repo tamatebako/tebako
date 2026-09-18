@@ -28,6 +28,7 @@ pub mod result;
 pub mod sampler;
 pub mod suite;
 mod sys;
+pub mod trend;
 pub mod validate;
 
 pub use error::BenchError;

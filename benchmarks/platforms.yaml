@@ -10,8 +10,13 @@ schema_version: 1
 packed_mn: { repo: metanorma/packed-metanorma, tag: v1.14.4 }
 
 # v2_payload: whether the metanorma payload (suite targets' metanorma@1.16.9)
-# is published for the triplet. Payload 1.16.9-3 ships 3 of 7 triplets
-# (2026-08-24 release); the runtime catalog covers all 7.
+# is published for the triplet. Payload 1.16.9 (release 1.16.9-16) ships 3 of
+# 7 triplets: macos-arm64, linux-gnu-x86_64, windows-ucrt64. The runtime
+# catalog covers all 7.
+#
+# runtime_gaps (spec 27 §10.4): the runtime comparison suite's DECLARED gaps
+# (language → reason); a declared gap gaps BOTH arms of the language pair —
+# a single-arm measurement is not the comparison.
 triplets:
   linux-gnu-x86_64:
     runner: ubuntu-24.04
@@ -45,3 +50,5 @@ triplets:
     v1_asset: metanorma-windows-x86_64.exe
     v2_payload: true
     v1_note: aibika-packed # old world on Windows is aibika, not tebako-v1
+    runtime_gaps:
+      python: the python runtime's windows tier has not shipped

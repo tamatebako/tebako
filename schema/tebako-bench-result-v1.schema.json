@@ -34,9 +34,23 @@
         "runtime": { "type": "string", "minLength": 1, "description": "The RESOLVED runtime (e.g. 0.16.9-3.3.12), never the requested line." },
         "payload": { "type": "string", "minLength": 1, "description": "The resolved payload release (e.g. 1.16.9-3)." },
         "packed_mn": { "type": "string", "minLength": 1, "description": "e.g. \"v1.14.4 (metanorma-cli 1.14.4)\" — the version-skew record." },
-        "image_format": { "enum": ["dwarfs", "limnifs"], "description": "The v2 arms' image backend; numbers across formats never mix in one statistic." }
+        "image_format": { "enum": ["dwarfs", "limnifs"], "description": "The v2 arms' image backend; numbers across formats never mix in one statistic." },
+        "extra": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Per-arm resolved-version records beyond the named fields (the runtime suite's probed on-system/tebako version lines per language — parity is asserted AND recorded)."
+        }
       },
       "description": "What actually ran. Fields may be absent when no arm of that world ran on the triplet (all-gap results stay honest)."
+    },
+    "baseline": {
+      "type": "object",
+      "required": ["target", "label"],
+      "properties": {
+        "target": { "type": "string", "minLength": 1, "description": "The authored baseline target id or prefix." },
+        "label": { "type": "string", "minLength": 1, "description": "The human display form (e.g. \"on-system\")." }
+      },
+      "description": "The suite's declared speedup baseline, flowed in from the authored suite (the report merge never sees the suite file). Absent = the v1-prefix law."
     },
     "runs": {
       "type": "array",
