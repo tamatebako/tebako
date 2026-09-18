@@ -17,9 +17,11 @@
 # INSTALL_ROOT (/opt/tebako), MIN_MACOS (12.0). Web-bootstrapper (spec 16
 # §7): BOOTSTRAP_REGISTRY (the client's registry ref) + BOOTSTRAP_PAYLOADS
 # (space-separated names) — stages <root>/bootstrap-seed.sh (self-locating,
-# user-re-runnable) + the home/shims grammar marker (spec 05 §3.1) and the
-# postinstall runs the seed best-effort. Optional third knob
-# BOOTSTRAP_WARM (a subset of BOOTSTRAP_PAYLOADS): the seed also dispatches
+# user-re-runnable) + the home/shims grammar marker (spec 05 §3.1); the
+# postinstall launches the seed DETACHED (PackageKit's script budget must
+# never kill a network prefetch), logged to home/seed.log. Optional third
+# knob BOOTSTRAP_WARM (a subset of BOOTSTRAP_PAYLOADS): the seed also
+# dispatches
 # each named shim once, pulling its RUNTIME into the shared home at
 # install time (as the install user). After a warm, every user's dispatch
 # is read-only against the root-owned home — the runtime download is the
@@ -81,7 +83,7 @@ sed -e "s/@PRODUCT_NAME@/$PRODUCT_NAME/g" -e "s|@INSTALL_ROOT@|$INSTALL_ROOT|g" 
 # Optional web-bootstrapper seed (spec 16 §7; the MSI leg's contract,
 # mirrored): a self-locating, user-re-runnable seed script at the install
 # root + the home/shims store-grammar marker (spec 05 §3.1); the
-# postinstall splices the best-effort hook at @BOOTSTRAP_HOOK@ (the
+# postinstall splices the detached-seed hook at @BOOTSTRAP_HOOK@ (the
 # placeholder is deleted outright when unbound).
 if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
   : "${BOOTSTRAP_PAYLOADS:?BOOTSTRAP_PAYLOADS is required when BOOTSTRAP_REGISTRY is set (space-separated payload names)}"
@@ -89,6 +91,9 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
     echo '#!/bin/bash'
     echo "# $PRODUCT_NAME bootstrap seed (spec 16 §7) — composed at build time; safe to re-run (tebako install is idempotent)."
     echo 'set -u'
+    echo '# The seed may run detached from a PackageKit sandbox whose cwd is torn down at'
+    echo '# install completion — never inherit a cwd (the shim dies on getcwd() otherwise).'
+    echo 'cd /'
     echo 'ROOT="$(cd "$(dirname "$0")" && pwd)"'
     echo 'export TEBAKO_HOME="$ROOT/home"'
     echo 'mkdir -p "$TEBAKO_HOME/shims"'
@@ -112,10 +117,12 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
   mkdir -p "pkg-root$INSTALL_ROOT/home/shims"
   cat > build/bootstrap-hook <<EOF
 
-# --- web-bootstrapper seed (spec 16 §7): best-effort — a failed seed (an
-# offline machine) never fails the install; the user re-runs it later.
+# --- install-time seed, detached: PackageKit kills postinstall scripts that
+# overrun its budget, so the network prefetch runs in the background (log:
+# $INSTALL_ROOT/home/seed.log). A failed seed never fails the install —
+# the first dispatch self-heals; the user may re-run the seed manually.
 printf '%s\n' "$INSTALL_ROOT/home/shims" >> "/etc/paths.d/$PRODUCT_NAME"
-"$INSTALL_ROOT/bootstrap-seed.sh" || echo "warning: the $PRODUCT_NAME payload seed failed (offline?) — re-run later: $INSTALL_ROOT/bootstrap-seed.sh" >&2
+nohup "$INSTALL_ROOT/bootstrap-seed.sh" > "$INSTALL_ROOT/home/seed.log" 2>&1 & disown
 EOF
   echo "bootstrap seed staged: registry $BOOTSTRAP_REGISTRY — payloads: $BOOTSTRAP_PAYLOADS"
 else
@@ -199,25 +206,38 @@ sudo installer -pkg "out/$ASSET" -target /
 [ -f "/etc/paths.d/$PRODUCT_NAME" ] || { echo "::error::/etc/paths.d/$PRODUCT_NAME missing — postinstall did not run"; exit 1; }
 grep -q "$INSTALL_ROOT/bin" "/etc/paths.d/$PRODUCT_NAME" || { echo "::error::/etc/paths.d/$PRODUCT_NAME content wrong"; exit 1; }
 if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
-  # The seed ran during the install (the runner is networked): its effects
-  # are the rehearsal — registry registered, every payload cached into the
-  # machine home, the shims dir on PATH.
   [ -x "$INSTALL_ROOT/bootstrap-seed.sh" ] || { echo "::error::bootstrap-seed.sh missing after install"; exit 1; }
   grep -q "$INSTALL_ROOT/home/shims" "/etc/paths.d/$PRODUCT_NAME" || { echo "::error::/etc/paths.d/$PRODUCT_NAME lacks the shims line"; exit 1; }
-  [ -f "$INSTALL_ROOT/home/config.yaml" ] || { echo "::error::the seed did not register the registry ($INSTALL_ROOT/home/config.yaml missing)"; exit 1; }
-  for p in $BOOTSTRAP_PAYLOADS; do
-    [ -d "$INSTALL_ROOT/home/payloads/$p" ] || { echo "::error::seed payload $p missing under $INSTALL_ROOT/home/payloads"; exit 1; }
+  # The seed runs DETACHED at install time (PackageKit's script budget), so
+  # its effects land asynchronously — poll for them with a generous budget,
+  # and on timeout dump the seed log + the installer log (the runner is
+  # networked; a healthy seed lands in well under a minute).
+  deadline=$(( $(date +%s) + 900 ))
+  while :; do
+    seeded=1
+    [ -f "$INSTALL_ROOT/home/config.yaml" ] || seeded=0
+    for p in $BOOTSTRAP_PAYLOADS; do
+      [ -d "$INSTALL_ROOT/home/payloads/$p" ] || seeded=0
+    done
+    for w in ${BOOTSTRAP_WARM:-}; do
+      [ -x "$INSTALL_ROOT/home/shims/$w" ] || seeded=0
+      { [ -d "$INSTALL_ROOT/home/runtimes" ] && [ -n "$(ls -A "$INSTALL_ROOT/home/runtimes" 2>/dev/null)" ]; } || seeded=0
+    done
+    [ "$seeded" = 1 ] && break
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "== the detached seed did not land within 900s — seed.log tail:"; sudo tail -30 "$INSTALL_ROOT/home/seed.log" 2>/dev/null || true
+      echo "== install.log tail:"; sudo grep -a "$PRODUCT_NAME" /var/log/install.log 2>/dev/null | tail -20 || true
+      echo "::error::the detached seed's effects did not land within 900s (forensics above)"; exit 1
+    fi
+    sleep 5
   done
   if [ -n "${BOOTSTRAP_WARM:-}" ]; then
     # The warm dispatch cached each warmed payload's RUNTIME at install
     # time: the shared home is complete and a user's dispatch is read-only.
-    [ -d "$INSTALL_ROOT/home/runtimes" ] && [ -n "$(ls -A "$INSTALL_ROOT/home/runtimes")" ] \
-      || { echo "::error::BOOTSTRAP_WARM bound but $INSTALL_ROOT/home/runtimes is empty — the warm dispatch did not land"; exit 1; }
     # The warmed shim is the client product's user-facing command: it must
-    # be registered and dispatch read-only against the warmed home (the
-    # seed already proved the cold path; this proves the installed state).
+    # dispatch read-only against the warmed home (the poll above proved the
+    # cold path; this proves the installed state).
     for w in $BOOTSTRAP_WARM; do
-      [ -x "$INSTALL_ROOT/home/shims/$w" ] || { echo "::error::$INSTALL_ROOT/home/shims/$w missing — the seed did not register the warmed shim"; exit 1; }
       TEBAKO_HOME="$INSTALL_ROOT/home" "$INSTALL_ROOT/home/shims/$w" ${BOOTSTRAP_WARM_CMD:---version} >/dev/null \
         || { echo "::error::the warmed shim $w did not dispatch (${BOOTSTRAP_WARM_CMD:---version})"; exit 1; }
     done

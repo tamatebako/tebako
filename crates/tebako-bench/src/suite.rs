@@ -299,3 +299,12 @@ pub fn pair_suffix(target_id: &str) -> Option<(&'static str, &str)> {
     }
     None
 }
+
+/// The workload→arm routing key (spec 27 §10.2): the id's prefix before
+/// the first '-' names the language pair the workload measures.
+pub fn workload_lang(workload_id: &str) -> &str {
+    match workload_id.split_once('-') {
+        Some((prefix, _)) => prefix,
+        None => workload_id,
+    }
+}

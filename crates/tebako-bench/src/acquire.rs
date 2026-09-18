@@ -740,6 +740,17 @@ pub struct RuntimeEntry {
     pub exe_sha256: String,
 }
 
+/// The dispatch version pin (spec 27 §1): `TEBAKO_<TOOL>_VERSION` from
+/// the suite's `name@version` — the suite's declared version wins over a
+/// variant-suffixed registry default through the version chain's env
+/// tier, so the dispatch resolves the payload the suite asked for.
+pub fn version_pin_env(name: &str, version: &str) -> (String, String) {
+    (
+        format!("TEBAKO_{}_VERSION", name.to_uppercase().replace('-', "_")),
+        version.to_string(),
+    )
+}
+
 /// Force the runtime resolution once (UNMEASURED — acquisition, not a
 /// benchmark run): dispatch the installed payload's shim with `--version`
 /// and read the resolved runtime back from the store. The child's exit
@@ -766,7 +777,14 @@ pub fn prime_runtime(
         .join(format!("{entrypoint}{}", exe_suffix(triplet)));
     // Best-effort: a dispatch failure is fine as long as the runtime
     // landed in the store (the read-back below is the real check).
-    let _ = run_admin(layout, &shim, &["--version"], "acquire-prime-runtime.log");
+    let pin = [version_pin_env(&payload.name, &payload.version)];
+    let _ = run_admin_with_env(
+        layout,
+        &shim,
+        &["--version"],
+        &pin,
+        "acquire-prime-runtime.log",
+    );
     read_runtime_entry(layout, triplet, &payload.mirror)
 }
 
@@ -801,8 +819,11 @@ pub fn shim_path(
 }
 
 /// Scan `runtimes/<engine>-<lv>-<ver>-<triplet>/` for THE cached runtime.
-/// Zero entries (the priming failed) or several (ambiguity) are named
-/// errors — never a guess (invariant 9).
+/// The scan is scoped to entries matching THIS payload's engine and THIS
+/// leg's triplet (a sibling suite's runtime — say a java pair from an
+/// earlier run of the same bench home — is not ambiguity, it is noise).
+/// Zero matching entries (the priming failed) or several (ambiguity) are
+/// named errors — never a guess (invariant 9).
 fn read_runtime_entry(
     layout: &BenchLayout,
     triplet: &str,
@@ -818,7 +839,11 @@ fn read_runtime_entry(
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let p = entry.path();
-            if p.is_dir() {
+            if !p.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with(&format!("{engine}-")) && name.ends_with(&format!("-{triplet}")) {
                 found.push(p);
             }
         }
@@ -827,14 +852,13 @@ fn read_runtime_entry(
         1 => found.remove(0),
         0 => {
             return Err(BenchError::operational(format!(
-                "acquire: the priming dispatch left no runtime in {} — see logs/acquire-prime-runtime.log",
+                "acquire: the priming dispatch left no {engine} runtime for {triplet} in {} — see logs/acquire-prime-runtime.log",
                 dir.display()
             )))
         }
         n => {
             return Err(BenchError::operational(format!(
-                "acquire: {} runtime entries in {} — the bench home is shared or stale; refusing to guess",
-                n,
+                "acquire: {n} {engine} runtime entries for {triplet} in {} — the bench home is shared or stale; refusing to guess",
                 dir.display()
             )))
         }
@@ -1246,7 +1270,26 @@ pub fn acquire_runtime_pair(
         Ok(staged)
     };
 
-    let exe = stage(&format!("{stem}{suffix}"), true)?;
+    // The factories disagree on the windows interpreter's spelling
+    // (spec 27 §10.1): openjdk ships `<stem>.exe`, the ruby/python
+    // factories ship the bare `<stem>` beside their `.dll`. The sidecar
+    // that EXISTS names the asset — probe the suffixed sidecar, and its
+    // 404 (IndexUnavailable) selects the bare spelling. Never a rename
+    // guess.
+    let exe_name = if suffix.is_empty() {
+        stem.clone()
+    } else {
+        match tebako_http::get(&format!("{base}/{stem}{suffix}.sha256")) {
+            Ok(_) => format!("{stem}{suffix}"),
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => stem.clone(),
+            Err(e) => {
+                return Err(BenchError::operational(format!(
+                    "acquire: cannot probe {base}/{stem}{suffix}.sha256: {e}"
+                )))
+            }
+        }
+    };
+    let exe = stage(&exe_name, true)?;
     let image = stage(&format!("{stem}.tfs"), false)?;
     // The windows runtimes that need a sibling dylib ship one; probe its
     // sidecar — 404 (IndexUnavailable) is the factory saying "no dll".
@@ -1577,6 +1620,19 @@ pub fn run_admin(
     args: &[&str],
     log_name: &str,
 ) -> Result<(), BenchError> {
+    run_admin_with_env(layout, program, args, &[], log_name)
+}
+
+/// `run_admin` plus extra environment (the dispatch version pin, spec
+/// 27 §1 — the suite's declared payload version wins over the registry
+/// default through the version chain's env tier).
+pub fn run_admin_with_env(
+    layout: &BenchLayout,
+    program: &Path,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    log_name: &str,
+) -> Result<(), BenchError> {
     let log_path = layout.logs.join(log_name);
     let log = std::fs::OpenOptions::new()
         .create(true)
@@ -1595,6 +1651,7 @@ pub fn run_admin(
         // the tmp override uses a fixed "admin" slot so v1's TMPDIR rules
         // never leak into v2 store population.
         .envs(layout.child_env("admin"))
+        .envs(extra_env.iter().cloned())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::from(log))
         .stderr(std::process::Stdio::from(log_err));

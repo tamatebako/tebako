@@ -150,6 +150,7 @@ mod error;
 mod ext;
 mod io;
 pub mod jail;
+pub mod macho;
 mod manifest;
 pub mod merkle;
 pub mod merkle_host;
@@ -179,6 +180,7 @@ pub use error::{strerror, TpkgError};
 pub use ext::{ExtBlock, ExtError};
 pub use io::{read_from, write_to};
 pub use jail::{ArgumentFiles, HostJail, JailAccess, JailError, JailMount};
+pub use macho::trailer_end;
 pub use manifest::{
     check_check_name, checks_map, AppProvides, AugmentsEdge, BuiltAgainst, BuiltFrom, Capabilities,
     Check, CheckEntry, CheckExpect, CheckNeed, CheckPlatform, CheckRequires, Constraint,

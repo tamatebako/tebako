@@ -923,40 +923,26 @@ fn chmod_755(path: &Path) {
     }
 }
 
-/// Codesigning: appending bytes invalidates any embedded code signature.
-/// On macOS a signed binary (ad-hoc included) is re-signed ad-hoc,
-/// best-effort — codesign(1) refuses to re-sign thin Mach-O binaries
-/// carrying trailing payload, so on failure a warning is printed and the
-/// package is kept (it still executes on macOS).
+/// Codesigning: a pressed package must carry a VALID signature to exec
+/// on macOS arm64. The press excises the input bootstrap's stale
+/// signature (spec 31 §1.2 — tebako-pkg emits unsigned-by-construction
+/// Mach-O output, the only shape codesign accepts post-press), so the
+/// CLI ad-hoc re-signs the output, best-effort: on failure a warning is
+/// printed and the package is kept.
 fn resign_if_needed(output: &Path) {
     if !cfg!(target_os = "macos") {
         return;
     }
-    let signed = std::process::Command::new("codesign")
-        .args(["-dv"])
+    let ok = std::process::Command::new("codesign")
+        .args(["--sign", "-", "--force"])
         .arg(output)
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
-    if !signed {
-        return;
-    }
-    let ok = std::process::Command::new("codesign")
-        .arg("--remove-signature")
-        .arg(output)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-        && std::process::Command::new("codesign")
-            .args(["--sign", "-", "--force"])
-            .arg(output)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
     if !ok {
         // the gem warns on stderr (Kernel#warn)
         eprintln!(
-            "Warning: ad-hoc re-sign failed for {}; the package still executes on macOS, but its code signature is invalidated by the appended images. Re-sign it with your own identity if you need a valid signature.",
+            "Warning: ad-hoc re-sign failed for {}; the package will not execute on macOS arm64 (an unsigned or invalidly-signed Mach-O is killed at exec). Re-sign it with your own identity.",
             output.display()
         );
     }
