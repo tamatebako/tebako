@@ -53,7 +53,11 @@ learns which pattern a runtime uses.
   expansion, so qualifying is what keeps payload paths inside the VFS.
   The wire grammar therefore never carries a drive letter: `<mount>` is
   always the declared form, and a declared mount naming a drive is
-  malformed.
+  malformed. Lexical normalization inside the VFS treats a drive prefix
+  as absoluteness itself: `A:/` is the drive ROOT — it normalizes to
+  `A:/`, never to the relative-looking `A:` no mount holds (a collapse
+  would drop the query off the dispatch table, and a sibling mount at
+  `A:/t` would answer in the drive root's place).
 - **Run-time root override (`TEBAKO_MOUNT_ROOT`, locked 2026-08-08):**
   the baked root is the default, never the only spelling. When
   `TEBAKO_MOUNT_ROOT` is set in the runtime's environment, the driver
@@ -364,7 +368,12 @@ of this one) into the exec cache:
   foreign by construction, and a partial tree is never visible at the
   final path. Installed files are read-only (Rule R3). Concurrent boots
   serialize on the per-entry flock (120 s timeout, then a named error
-  with the stale-lock hint — the store's spec 05 §4 discipline).
+  with the stale-lock hint — the store's spec 05 §4 discipline). The
+  walk lists each image's OWN entries (the image-native listing, not
+  the interpreter-facing mount-merged one): a sibling mount BELOW the
+  walked point — the env image at `A:/t` beside a payload at the drive
+  root `A:/` — extracts into its own tree by its own key, and its
+  boundary name never joins this walk (or the walked image's tree).
 - **Digest-pinned reuse.** A cached tree is served only after it
   re-verifies against its record (the host tree re-walked and re-hashed
   to the recorded digest). A match is served with zero extraction — the
