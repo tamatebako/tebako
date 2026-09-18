@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use tpkg::{Crc32, Manifest, Slot, TpkgError};
 
+pub mod macho;
 pub mod release_index;
 
 pub use tebako_json::{
@@ -306,6 +307,73 @@ fn sign_and_write_trailer(
 // assemble (shared core)
 // ---------------------------------------------------------------------
 
+/// Stream the bootstrap part into `out`. When the bootstrap is a Mach-O
+/// carrying LC_CODE_SIGNATURE the stale signature is excised first
+/// (spec 31 §1.2: the press output is unsigned by construction — the
+/// appended slots invalidate any embedded signature, and a stale
+/// mid-file superblob leaves the result unfixable for codesign).
+/// Non-Mach-O bootstraps keep the exact streaming passthrough. The
+/// returned fixups extend the Mach-O's __LINKEDIT over the final package
+/// length once the trailer is written (codesign strict-validates that
+/// the file ends inside a segment).
+fn stream_bootstrap(
+    source: &PartSource,
+    out: &mut fs::File,
+) -> Result<(u64, Vec<macho::LinkeditFixup>), String> {
+    let is_mach_o = {
+        let mut input = fs::File::open(&source.path)
+            .map_err(|_| format!("cannot open part file: {}", source.path.display()))?;
+        let file_size = input
+            .metadata()
+            .map_err(|_| format!("cannot open part file: {}", source.path.display()))?
+            .len();
+        if source.offset > file_size {
+            return Err(format!(
+                "part offset {} is beyond the end of file: {}",
+                source.offset,
+                source.path.display()
+            ));
+        }
+        if source.offset + 4 > file_size {
+            false
+        } else {
+            let mut magic = [0u8; 4];
+            input
+                .seek(SeekFrom::Start(source.offset))
+                .and_then(|_| input.read_exact(&mut magic))
+                .map_err(|_| format!("read failed: {}", source.path.display()))?;
+            macho::is_mach_o(&magic)
+        }
+    };
+    if !is_mach_o {
+        return stream_part(source, out, false).map(|(n, _)| (n, Vec::new()));
+    }
+    // A Mach-O bootstrap is the size-gated loader (< 3 MiB): read the
+    // whole region, excise, write.
+    let mut input = fs::File::open(&source.path)
+        .map_err(|_| format!("cannot open part file: {}", source.path.display()))?;
+    let file_size = input
+        .metadata()
+        .map_err(|_| format!("cannot open part file: {}", source.path.display()))?
+        .len();
+    let available = file_size - source.offset;
+    let n = source.length.map_or(available, |l| l.min(available));
+    input
+        .seek(SeekFrom::Start(source.offset))
+        .map_err(|_| format!("read failed: {}", source.path.display()))?;
+    let mut buf = vec![0u8; n as usize];
+    input
+        .read_exact(&mut buf)
+        .map_err(|_| format!("read failed: {}", source.path.display()))?;
+    let (bytes, fixups) = match macho::excise_code_signature(&buf)? {
+        macho::Excision::Unchanged => (buf, Vec::new()),
+        macho::Excision::Excised(excised) => (excised.bytes, excised.fixups),
+    };
+    out.write_all(&bytes)
+        .map_err(|_| "write failed while streaming part".to_string())?;
+    Ok((bytes.len() as u64, fixups))
+}
+
 fn assemble(
     bootstrap: &PartSource,
     slots: &[SlotSource],
@@ -399,14 +467,17 @@ fn assemble(
             Err(_) => return Err(format!("cannot create output file: {}", output.display())),
         };
         let mut total = 0u64;
-        match stream_part(bootstrap, &mut out, false) {
-            Ok((written, _)) => total += written,
+        let bootstrap_fixups = match stream_bootstrap(bootstrap, &mut out) {
+            Ok((written, fixups)) => {
+                total += written;
+                fixups
+            }
             Err(e) => {
                 drop(out);
                 cleanup(output);
                 return Err(e);
             }
-        }
+        };
         let mut digests: Vec<[u8; 32]> = Vec::with_capacity(slots.len());
         for s in slots {
             let (written, digest) = match stream_part_sha(&s.source, &mut out) {
@@ -450,6 +521,28 @@ fn assemble(
                     drop(out);
                     cleanup(output);
                     return Err(e);
+                }
+            }
+        }
+
+        // With the trailer written the package length is final: extend
+        // the excised Mach-O's __LINKEDIT (and a universal's tail-slice
+        // size) over the whole file so the package stays codesign-able
+        // (spec 31 §1.2).
+        if !bootstrap_fixups.is_empty() {
+            let end = match out.stream_position() {
+                Ok(e) => e,
+                Err(_) => {
+                    drop(out);
+                    cleanup(output);
+                    return Err(format!("cannot finalize: {}", output.display()));
+                }
+            };
+            for fixup in &bootstrap_fixups {
+                if let Err(e) = fixup.apply(&mut out, end) {
+                    drop(out);
+                    cleanup(output);
+                    return Err(format!("{}: {e}", output.display()));
                 }
             }
         }

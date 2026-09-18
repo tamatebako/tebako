@@ -61,6 +61,26 @@ bytes the user runs are the tebako org's already-signed release bytes.
 Press never signs; no `--codesign` flag exists. (The `--sign` flag, when
 implemented, means spec 09's OpenPGP package signing — the other plane.)
 
+"Unsigned" is a property of the press output **by construction**, not a
+request to the publisher: when the input bootstrap is a Mach-O carrying
+`LC_CODE_SIGNATURE`, the press excises the stale signature before
+appending slots, in the same shape `codesign --remove-signature`
+produces — the command is removed from the load-command table
+(ncmds/sizeofcmds decremented, the vacated bytes zeroed), the byte
+stream is truncated at the superblob's `dataoff` when the superblob is
+the file tail (it always is in linker output), and the `__LINKEDIT`
+segment's filesize/vmsize are extended to cover the FINAL package
+length (codesign strict-validates that the file ends inside a segment;
+trailing bytes outside it fail validation). Universal binaries are
+excised per slice without moving slice boundaries; the tail slice's
+fat_arch size grows to keep the appended regions inside the slice. A
+signed input would otherwise leave a stale superblob mid-file: strict
+validation fails and even `codesign --remove-signature` errors out, so
+the exe is un-signable downstream and un-runnable on arm64 (which
+requires a VALID signature). Mach-O press output must be **codesigned
+before distribution** — arm64 refuses unsigned executables; installers
+do this post-press. Non-Mach-O inputs (PE/ELF) pass through untouched.
+
 ### 1.3 The store download plane is unquarantined by construction
 
 The bootstrap's in-process downloader (ureq) sets no quarantine xattr,
