@@ -350,3 +350,16 @@ fn child_env_is_the_hermetic_bench_home() {
         assert!(env.contains_key("TMP"));
     }
 }
+
+#[test]
+fn the_version_pin_spells_the_dispatch_env_tier() {
+    assert_eq!(
+        tebako_bench::acquire::version_pin_env("metanorma", "1.16.9"),
+        ("TEBAKO_METANORMA_VERSION".to_string(), "1.16.9".to_string())
+    );
+    assert_eq!(
+        tebako_bench::acquire::version_pin_env("my-tool", "2.0"),
+        ("TEBAKO_MY_TOOL_VERSION".to_string(), "2.0".to_string()),
+        "dashes become underscores, the name is uppercased"
+    );
+}

@@ -676,3 +676,132 @@ fn on_system_arms_have_no_cold_story_and_source_less_workloads_run() {
         .join("w-small/on-system-ruby/warm-1/out.txt")
         .is_file());
 }
+
+#[test]
+fn the_language_prefix_routes_each_workload_to_its_pair() {
+    let dir = tempfile::tempdir().unwrap();
+    let layout = BenchLayout::new(&dir.path().join("out")).unwrap();
+    let repo_root = dir.path().to_path_buf();
+    let mk = |id: &str| Workload {
+        id: id.to_string(),
+        opt_in: false,
+        source: None,
+        argv: vec!["--touch".to_string(), "out.txt".to_string()],
+        expect: Expect {
+            exit: 0,
+            files: vec!["out.txt".to_string()],
+        },
+        timeout_s: 30,
+    };
+    let suite = SuiteFile {
+        schema_version: 1,
+        name: "runtime-test".to_string(),
+        baseline: Some("on-system".to_string()),
+        workloads: vec![
+            mk("ruby-boot"),
+            mk("python-boot"),
+            // A prefix naming no declared pair runs on every target.
+            mk("compile-small-iso"),
+        ],
+        targets: Vec::new(),
+        run_policy: RunPolicy {
+            warmup: 1,
+            repetitions: 1,
+            cold_repetitions: 1,
+            interleave: true,
+        },
+    };
+    let prepared = vec![
+        ready("on-system-ruby", TargetKind::OnSystem),
+        ready("tebako-ruby", TargetKind::V1Exe),
+        ready("on-system-python", TargetKind::OnSystem),
+        ready("tebako-python", TargetKind::V1Exe),
+    ];
+    let runs = engine::execute_matrix(
+        &layout,
+        &suite,
+        &[],
+        &prepared,
+        &LegContext::default(),
+        &repo_root,
+        &mut noop_reprime,
+    )
+    .unwrap();
+
+    let targets_of = |workload: &str| -> Vec<&str> {
+        let mut v: Vec<&str> = runs
+            .iter()
+            .filter(|r| r.workload == workload)
+            .map(|r| r.target.as_str())
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    assert_eq!(
+        targets_of("ruby-boot"),
+        vec!["on-system-ruby", "tebako-ruby"],
+        "a ruby workload never runs on the python arms"
+    );
+    assert_eq!(
+        targets_of("python-boot"),
+        vec!["on-system-python", "tebako-python"],
+        "a python workload never runs on the ruby arms"
+    );
+    assert_eq!(
+        targets_of("compile-small-iso"),
+        vec![
+            "on-system-python",
+            "on-system-ruby",
+            "tebako-python",
+            "tebako-ruby"
+        ],
+        "an unpaired prefix runs on every target"
+    );
+
+    // Per routed workload: 1 warm ok per arm, 1 cold ok for the tebako
+    // arm, the on-system cold gap row — nothing else.
+    for lang in ["ruby", "python"] {
+        let rows: Vec<&RunRecord> = runs
+            .iter()
+            .filter(|r| r.workload == format!("{lang}-boot"))
+            .collect();
+        assert_eq!(rows.len(), 4, "{lang}: {rows:?}");
+        let warm_ok = rows
+            .iter()
+            .filter(|r| r.status == RunStatus::Ok && r.mode == Some(RunMode::Warm))
+            .count();
+        assert_eq!(warm_ok, 2, "{lang}: both arms measured warm");
+    }
+}
+
+#[test]
+fn an_unresolvable_repo_root_is_a_named_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let triplet = "macos-arm64";
+    let suite = test_suite(
+        &["--touch", "out.txt"],
+        &["out.txt"],
+        RunPolicy {
+            warmup: 1,
+            repetitions: 1,
+            cold_repetitions: 1,
+            interleave: true,
+        },
+    );
+    let err = engine::run(&engine::RunRequest {
+        suite,
+        platforms: test_platforms(triplet),
+        triplet: triplet.to_string(),
+        out: dir.path().join("out"),
+        opt_in: Vec::new(),
+        tebako_release: None,
+        repo_root: dir.path().join("does-not-exist"),
+    })
+    .unwrap_err();
+    assert!(
+        err.message.contains("--repo-root"),
+        "the named error names the flag: {}",
+        err.message
+    );
+}
