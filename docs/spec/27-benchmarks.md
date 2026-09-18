@@ -86,6 +86,14 @@ kind unless an arm is genuinely meaningless for the suite.
   carry the tree — §9 spike b) is recorded per result
   (`versions.image_format`); numbers across formats are never mixed in
   one statistic.
+- **The suite pins the dispatch version** (amended 2026-09-18): every
+  v2-arm shim dispatch — priming, measured, and the cold reprime's
+  measured run — carries `TEBAKO_<TOOL>_VERSION=<version>` derived from
+  the target's `payload: name@version` (`<TOOL>` is the payload name,
+  uppercased, `-`→`_`). The version chain's env tier makes the suite's
+  declared version win over the registry default, so a variant-suffixed
+  default line (e.g. `1.16.9-ruby4.0`) can never misdispatch a suite
+  that asked for the bare `1.16.9`.
 
 ## 2. The suite document (`benchmarks/suite.yaml`)
 
@@ -432,6 +440,12 @@ shape, never the spec 06/17 contract codes):
 Errors are named on stderr (`tebako-bench: <what> [<detail>]`), one
 line, never a bare exit (invariant 9).
 
+`run` also takes `--repo-root <dir>` (default `.`): vendored source
+paths and the java fixture directory resolve against it. The harness
+canonicalizes it once at startup (an unresolvable root is a named
+error) — children spawned with a different cwd never see a relative
+root.
+
 `validate` checks the input against BOTH gates: the versioned JSON
 Schema (structure) and the crate's serde model (the same shape the run
 engine consumes) — a file passing one and failing the other is a bug
@@ -498,6 +512,13 @@ suite names, dashboard labels, reports).
 | `on-system` | The host toolchain binary (`program`, PATH-resolved), provisioned by the workflow's setup actions, version-pinned to EXACTLY the interpreter version inside the tebako runtime under test. Carries `version_probe` (argv, e.g. `["-v"]`) and `version_expect` (the version token both arms must report). |
 | `runtime-exe` | The tebako runtime pair (interpreter exe + env `.tfs` image), fetched sha256-verified from the factory release named by `runtime: {repo, tag, lang_version}`, booted bare with `TEBAKO_RUNTIME_IMAGE` set and the workload argv handed to the interpreter (the spec 17 driver contract's no-image-spec form; ioread runs add one `--tebako-image` triple for the fixture image). |
 
+The factories disagree on the windows interpreter asset spelling
+(amended 2026-09-18): openjdk ships `<stem>.exe`, the ruby/python
+factories ship the bare `<stem>` beside their `.dll`. The harness
+probes the suffixed sidecar first; a 404 (asset absent) selects the
+bare spelling — the sidecar that exists names the asset, never a
+guessed rename.
+
 **The fair-comparison invariant** — the harness asserts version parity
 at run time: it probes the on-system binary AND the tebako runtime exe
 with the same `version_probe` argv, and both outputs must contain
@@ -515,7 +536,13 @@ measurement is not the comparison this suite exists for.
 ### 10.2 The workloads, per runtime
 
 Five questions per runtime, all interpreter-invocation workloads
-(source-less, `expect` on the exit status):
+(source-less, `expect` on the exit status). **The workload→arm routing
+law (amended 2026-09-18):** a workload id's prefix before the first `-`
+names its language, and the workload runs on EXACTLY the
+`on-system-<lang>`/`tebako-<lang>` pair — never on another language's
+arms (a `ruby-boot` run against the python interpreter is noise, not
+data). A workload whose prefix matches no declared pair (the metanorma
+suite's `compile-*` ids) runs on every target:
 
 - `<lang>-boot` — startup cost: the interpreter prints a constant and
   exits (`ruby -e`, `python3 -c`, `java -version`).
