@@ -222,6 +222,14 @@ pub fn boot_tier(
     let boot = TreeBoot { env_root, payloads };
     env.set_var(ROOT_ENV, &boot.env_root_string());
     env.set_var(MARKER_ENV, "1");
+    // The extracted tree is the payload's byte-stable twin: the reuse
+    // verification re-digests it at every boot, so anything a running
+    // payload writes into it (python's __pycache__ bytecode on import)
+    // fails the NEXT boot's check, wipes the tree, and churns the cache
+    // until a spawn opens the entrypoint mid-wipe (the windows ENOENT).
+    // Interpreter-managed caches are off for the tier; other runtimes
+    // cache nothing in the tree.
+    env.set_var("PYTHONDONTWRITEBYTECODE", "1");
     tebako_log::log!(
         tebako_log::Level::Debug,
         "driver",
@@ -1087,6 +1095,13 @@ mod tests {
         assert_eq!(root, boot.env_root_string());
         assert!(root.contains(TREES), "{root}");
         assert_eq!(env_var(&env, MARKER_ENV).as_deref(), Some("1"));
+        // The tree stays byte-stable under the running payload:
+        // interpreter-managed caches are off (a __pycache__ write would
+        // fail the next boot's reuse verification and wipe the tree).
+        assert_eq!(
+            env_var(&env, "PYTHONDONTWRITEBYTECODE").as_deref(),
+            Some("1")
+        );
         // The extracted trees read as plain host files.
         let core = PathBuf::from(root.replace('/', std::path::MAIN_SEPARATOR_STR));
         assert_eq!(
