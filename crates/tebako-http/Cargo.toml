@@ -10,7 +10,7 @@ homepage.workspace = true
 keywords = ["tebako", "https", "download"]
 categories = ["web-programming::http-client"]
 
-# `network` (TODO.v2-1/33, spec 04 amendment): proxy honoring +
+# `network` (spec 04 amendment): proxy honoring +
 # additive trust anchors. Default ON for the toolchain; the size-gated
 # bootstrap builds with default-features = false and answers a set
 # proxy/CA env with the named NetworkingCompiledOut error.
