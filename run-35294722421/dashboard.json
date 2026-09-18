@@ -1,0 +1,611 @@
+{
+  "suite": "metanorma-v1-vs-v2",
+  "generated_by": "tebako-bench report",
+  "triplets": [
+    {
+      "triplet": "linux-gnu-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16722046976
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 100.691314642,
+          "min_wall_s": 100.295731765,
+          "max_wall_s": 101.558347667,
+          "stdev_wall_s": 0.5551601926515967,
+          "mean_wall_s": 100.92409723720002,
+          "median_cpu_s": 118.431713,
+          "median_peak_rss_bytes": 1215180800,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 110.624623152,
+          "min_wall_s": 108.198193747,
+          "max_wall_s": 113.051052557,
+          "stdev_wall_s": 3.43148937269188,
+          "mean_wall_s": 110.624623152,
+          "median_cpu_s": 126.1993735,
+          "median_peak_rss_bytes": 1305376768,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 49.091795846,
+          "min_wall_s": 48.60103311,
+          "max_wall_s": 49.663249712,
+          "stdev_wall_s": 0.4664414198434329,
+          "mean_wall_s": 49.088382323400005,
+          "median_cpu_s": 59.993346,
+          "median_peak_rss_bytes": 880361472,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 54.8627908315,
+          "min_wall_s": 53.849735203,
+          "max_wall_s": 55.87584646,
+          "stdev_wall_s": 1.4326770092630974,
+          "mean_wall_s": 54.8627908315,
+          "median_cpu_s": 65.81529950000001,
+          "median_peak_rss_bytes": 877588480,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-gnu-arm64 — no published payload"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-gnu-arm64 — no published payload"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-gnu-arm64 — no published payload"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-gnu-arm64 — no published payload"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-gnu-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16766414848
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 111.207456525,
+          "min_wall_s": 109.994751417,
+          "max_wall_s": 112.010068802,
+          "stdev_wall_s": 0.7250584052153268,
+          "mean_wall_s": 111.09950561240001,
+          "median_cpu_s": 137.12397099999998,
+          "median_peak_rss_bytes": 1257381888,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 121.540578646,
+          "min_wall_s": 121.293748331,
+          "max_wall_s": 121.787408961,
+          "stdev_wall_s": 0.34907077907781875,
+          "mean_wall_s": 121.540578646,
+          "median_cpu_s": 147.02380599999998,
+          "median_peak_rss_bytes": 1371230208,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 56.007908691,
+          "min_wall_s": 55.929433332,
+          "max_wall_s": 56.501953228,
+          "stdev_wall_s": 0.25085576026795003,
+          "mean_wall_s": 56.13546359019999,
+          "median_cpu_s": 72.923933,
+          "median_peak_rss_bytes": 937426944,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 65.191297399,
+          "min_wall_s": 63.77504427,
+          "max_wall_s": 66.607550528,
+          "stdev_wall_s": 2.002884382785134,
+          "mean_wall_s": 65.191297399,
+          "median_cpu_s": 80.209115,
+          "median_peak_rss_bytes": 936148992,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: 2 runtime entries in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — the bench home is shared or stale; refusing to guess"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: 2 runtime entries in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — the bench home is shared or stale; refusing to guess"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: 2 runtime entries in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — the bench home is shared or stale; refusing to guess"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: 2 runtime entries in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — the bench home is shared or stale; refusing to guess"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-musl-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16722046976
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-musl-arm64 — no published payload"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-musl-arm64 — no published payload"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-musl-arm64 — no published payload"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-musl-arm64 — no published payload"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-musl-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16766414848
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-musl-x86_64 — no published payload"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-musl-x86_64 — no published payload"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-musl-x86_64 — no published payload"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for linux-musl-x86_64 — no published payload"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "macos-arm64",
+      "runner": {
+        "runs_on": "macos-14",
+        "arch": "aarch64",
+        "cpus": 3,
+        "ram_bytes": 7516192768
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 120.983382792,
+          "min_wall_s": 116.202344875,
+          "max_wall_s": 131.240138792,
+          "stdev_wall_s": 6.008015384663834,
+          "mean_wall_s": 123.4185598,
+          "median_cpu_s": 127.18874,
+          "median_peak_rss_bytes": 2139013120,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 150.700891125,
+          "min_wall_s": 144.132463,
+          "max_wall_s": 157.26931925,
+          "stdev_wall_s": 9.289160137847876,
+          "mean_wall_s": 150.700891125,
+          "median_cpu_s": 156.19909,
+          "median_peak_rss_bytes": 2132574208,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 81.887098375,
+          "min_wall_s": 75.124424958,
+          "max_wall_s": 91.568678625,
+          "stdev_wall_s": 6.6726588039920145,
+          "mean_wall_s": 81.4286247918,
+          "median_cpu_s": 86.641967,
+          "median_peak_rss_bytes": 1825030144,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 93.544533917,
+          "min_wall_s": 92.513868292,
+          "max_wall_s": 94.57519954200001,
+          "stdev_wall_s": 1.457581305146749,
+          "mean_wall_s": 93.544533917,
+          "median_cpu_s": 97.16696350000001,
+          "median_peak_rss_bytes": 1749983232,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: 2 runtime entries in /Users/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — the bench home is shared or stale; refusing to guess"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: 2 runtime entries in /Users/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — the bench home is shared or stale; refusing to guess"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: 2 runtime entries in /Users/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — the bench home is shared or stale; refusing to guess"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: 2 runtime entries in /Users/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — the bench home is shared or stale; refusing to guess"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "macos-x86_64",
+      "runner": {
+        "runs_on": "macos-15-intel",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 15032385536
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for macos-x86_64 — no published payload"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for macos-x86_64 — no published payload"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for macos-x86_64 — no published payload"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v2_payload is false for macos-x86_64 — no published payload"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "windows-ucrt64",
+      "runner": {
+        "runs_on": "windows-latest",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 17174360064
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: runtime cache entry 'java-21.0.12-2.7.0-windows-ucrt64' is not ruby-<lang-ver>-<tebako-ver>-windows-ucrt64"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: runtime cache entry 'java-21.0.12-2.7.0-windows-ucrt64' is not ruby-<lang-ver>-<tebako-ver>-windows-ucrt64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: runtime cache entry 'java-21.0.12-2.7.0-windows-ucrt64' is not ruby-<lang-ver>-<tebako-ver>-windows-ucrt64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: runtime cache entry 'java-21.0.12-2.7.0-windows-ucrt64' is not ruby-<lang-ver>-<tebako-ver>-windows-ucrt64"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    }
+  ]
+}
