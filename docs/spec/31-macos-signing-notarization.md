@@ -80,6 +80,17 @@ the exe is un-signable downstream and un-runnable on arm64 (which
 requires a VALID signature). Mach-O press output must be **codesigned
 before distribution** — arm64 refuses unsigned executables; installers
 do this post-press. Non-Mach-O inputs (PE/ELF) pass through untouched.
+Post-press codesigning appends the superblob AFTER the trailer; readers
+still find the trailer via the logical-EOF rule of spec 02 §1, so a
+signed package stays fully loadable. For immediate local runs, the
+`tebako press` CLI ad-hoc signs its own output (`codesign --sign -
+--force` — no identity, no notarization); the publisher's real
+signature replaces it downstream. Because the locator lives in the
+runtime exe's embedded driver, RUNNING a signed package requires a
+runtime line built from a tebako carrying it (ruby ≥ 0.16.26); a
+pre-locator driver reads only the physical EOF and refuses the payload
+mount (`EINVAL`). Pressing is unaffected — the press never involves a
+runtime.
 
 ### 1.3 The store download plane is unquarantined by construction
 

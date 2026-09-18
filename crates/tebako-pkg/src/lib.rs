@@ -1239,7 +1239,15 @@ fn signature_status(archive: &Path, m: &Manifest) -> String {
 
         let mut f = fs::File::open(archive).map_err(|_| "cannot re-read package".to_string())?;
         let tlen = tpkg::trailer_len(m);
-        f.seek(std::io::SeekFrom::End(-(tlen as i64)))
+        // The trailer ends before a trailing Mach-O code signature when
+        // the package was codesigned post-press.
+        let file_size = f
+            .metadata()
+            .map_err(|_| "cannot re-read package".to_string())?
+            .len();
+        let end = tpkg::trailer_end(&mut f, file_size)
+            .map_err(|_| "cannot re-read trailer".to_string())?;
+        f.seek(std::io::SeekFrom::Start(end - tlen))
             .map_err(|_| "cannot re-read trailer".to_string())?;
         let mut trailer = vec![0u8; tlen as usize];
         use std::io::Read;

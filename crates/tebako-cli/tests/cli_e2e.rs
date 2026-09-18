@@ -376,9 +376,11 @@ fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
 
     // The packaged binary runs: fontist and its native deps load from
     // the image.
-    let (code, out) = run(&mut Command::new(&package));
-    assert_eq!(code, 0, "packaged binary failed:\n{out}");
-    assert_eq!(out, "fontist 3.0.10\n");
+    if published_runtime_runs_press_output() {
+        let (code, out) = run(&mut Command::new(&package));
+        assert_eq!(code, 0, "packaged binary failed:\n{out}");
+        assert_eq!(out, "fontist 3.0.10\n");
+    }
 }
 
 /// Item 5's green path: with --prefer-local the resolution prefers the
@@ -877,8 +879,17 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
         .arg("--format")
         .arg("dwarfs"));
     assert!(code == 0, "tebako-rs press failed:\n{rs_log}");
-    let (code, rs_out) = run(&mut Command::new(&package));
-    assert_eq!(code, 0, "tebako-rs-pressed binary failed:\n{rs_out}");
+    // The run half gates on the published runtime line: on macOS the rs
+    // press output is ad-hoc-signed by construction (spec 31 §1.2), which
+    // a driver predating the logical-EOF trailer locator cannot read
+    // (spec 02 §1). The press-log parity below asserts regardless.
+    let rs_out = if published_runtime_runs_press_output() {
+        let (code, rs_out) = run(&mut Command::new(&package));
+        assert_eq!(code, 0, "tebako-rs-pressed binary failed:\n{rs_out}");
+        Some(rs_out)
+    } else {
+        None
+    };
 
     let gem_log = normalize_press_log(&gem_log);
     let rs_log = normalize_press_log(&rs_log);
@@ -887,11 +898,13 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
         rs_log.trim_end(),
         "press outputs diverge (gem left, tebako-rs right)"
     );
-    assert_eq!(gem_out, rs_out, "packaged binary outputs diverge");
-    assert!(
-        rs_out.contains(expect),
-        "unexpected binary output: {rs_out}"
-    );
+    if let Some(rs_out) = rs_out {
+        assert_eq!(gem_out, rs_out, "packaged binary outputs diverge");
+        assert!(
+            rs_out.contains(expect),
+            "unexpected binary output: {rs_out}"
+        );
+    }
 }
 
 #[test]
@@ -1180,19 +1193,21 @@ fn image_era_press_and_cold_run() {
 
     // Cold run: wipe the cache — the bootstrap downloads interpreter +
     // image from the mirror and the app runs.
-    fs::remove_dir_all(&home).unwrap();
-    let mut cold = Command::new(&package);
-    cold.env(
-        "TEBAKO_RUNTIME_MIRROR",
-        tebako_http::file_url(Path::new(&mirror_root)),
-    )
-    .env("TEBAKO_HOME", &home);
-    let (code, out) = run(&mut cold);
-    assert_eq!(code, 0, "cold run failed:\n{out}");
-    assert!(
-        out.contains("Hello!  This is test-00 talking from inside DwarFS"),
-        "{out}"
-    );
+    if published_runtime_runs_press_output() {
+        fs::remove_dir_all(&home).unwrap();
+        let mut cold = Command::new(&package);
+        cold.env(
+            "TEBAKO_RUNTIME_MIRROR",
+            tebako_http::file_url(Path::new(&mirror_root)),
+        )
+        .env("TEBAKO_HOME", &home);
+        let (code, out) = run(&mut cold);
+        assert_eq!(code, 0, "cold run failed:\n{out}");
+        assert!(
+            out.contains("Hello!  This is test-00 talking from inside DwarFS"),
+            "{out}"
+        );
+    }
 
     // The cache holds interpreter + immutable image + markers — nothing else.
     assert!(entry_dir.join(&asset).is_file());
@@ -1256,14 +1271,48 @@ fn image_era_press_and_cold_run() {
 /// version check — spec 20 §8 negotiation.)
 const POST_FLIP_RUNTIME_FLOOR: (u64, u64, u64) = (0, 16, 11);
 
-fn runtime_line_is_post_flip(ver: &str) -> bool {
+fn runtime_line_at_least(ver: &str, floor: (u64, u64, u64)) -> bool {
     let mut parts = ver.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
     let v = (
         parts.next().unwrap_or(0),
         parts.next().unwrap_or(0),
         parts.next().unwrap_or(0),
     );
-    v >= POST_FLIP_RUNTIME_FLOOR
+    v >= floor
+}
+
+fn runtime_line_is_post_flip(ver: &str) -> bool {
+    runtime_line_at_least(ver, POST_FLIP_RUNTIME_FLOOR)
+}
+
+/// The first runtime line whose embedded driver locates the trailer by
+/// spec 02 §1's LOGICAL EOF — required to RUN macOS press output: the
+/// CLI ad-hoc signs it (spec 31 §1.2 — an unsigned arm64 Mach-O is
+/// killed at exec), and codesign appends the code-signature superblob
+/// AFTER the trailer, so the driver must find the trailer before the
+/// superblob. A pre-locator driver reads the physical EOF, finds
+/// superblob bytes, and EINVALs the payload mount. The macOS run halves
+/// re-activate by themselves once DEFAULT_TEBAKO_VERSION names this
+/// line; pressing is unaffected (it never involves a runtime).
+const SIGNED_PKG_RUNTIME_FLOOR: (u64, u64, u64) = (0, 16, 26);
+
+/// True when the published runtime line can RUN this CLI's press output.
+/// Off macOS the output is unsigned and any post-flip driver reads it;
+/// on macOS the ad-hoc-signed output needs the logical-EOF trailer
+/// locator in the runtime's embedded driver.
+fn published_runtime_runs_press_output() -> bool {
+    if !cfg!(target_os = "macos") {
+        return true;
+    }
+    let ver = tebako_cli::DEFAULT_TEBAKO_VERSION;
+    if runtime_line_at_least(ver, SIGNED_PKG_RUNTIME_FLOOR) {
+        return true;
+    }
+    eprintln!(
+        "skipping the packaged run: runtime line {ver} predates the signed-package floor {}.{}.{} — the published runtime's embedded driver cannot locate the trailer of a codesigned package (spec 02 §1's logical EOF) yet",
+        SIGNED_PKG_RUNTIME_FLOOR.0, SIGNED_PKG_RUNTIME_FLOOR.1, SIGNED_PKG_RUNTIME_FLOOR.2
+    );
+    false
 }
 
 /// True when the published runtime line can execute this CLI's DEFAULT
@@ -1273,17 +1322,19 @@ fn runtime_line_is_post_flip(ver: &str) -> bool {
 /// only as new as that release. Pre-flip that driver EINVALs the
 /// limnifs slots (fail-closed by design, spec 20 §8), so execution
 /// skips until DEFAULT_TEBAKO_VERSION names a post-flip line. The press
-/// half — format hint included — asserts regardless.
+/// half — format hint included — asserts regardless. On macOS the run
+/// additionally needs the signed-package locator floor (the CLI ad-hoc
+/// signs its press output; spec 31 §1.2).
 fn published_runtime_reads_default_payloads() -> bool {
     let ver = tebako_cli::DEFAULT_TEBAKO_VERSION;
-    if runtime_line_is_post_flip(ver) {
-        return true;
+    if !runtime_line_is_post_flip(ver) {
+        eprintln!(
+            "skipping the packaged run: runtime line {ver} predates the post-flip floor {}.{}.{} — the published runtime's embedded driver cannot read this CLI's limnifs payloads yet",
+            POST_FLIP_RUNTIME_FLOOR.0, POST_FLIP_RUNTIME_FLOOR.1, POST_FLIP_RUNTIME_FLOOR.2
+        );
+        return false;
     }
-    eprintln!(
-        "skipping the packaged run: runtime line {ver} predates the post-flip floor {}.{}.{} — the published runtime's embedded driver cannot read this CLI's limnifs payloads yet",
-        POST_FLIP_RUNTIME_FLOOR.0, POST_FLIP_RUNTIME_FLOOR.1, POST_FLIP_RUNTIME_FLOOR.2
-    );
-    false
+    published_runtime_runs_press_output()
 }
 
 /// Build an image-era mirror from the OFFICIAL released runtime pair:
@@ -1368,6 +1419,7 @@ fn image_era_full_flow_official_pair() {
         tebako_cli::options::host_platform().unwrap()
     ));
 
+    let runnable = published_runtime_runs_press_output();
     for (fixture, entry, expect) in [
         (
             "test-00",
@@ -1383,6 +1435,9 @@ fn image_era_full_flow_official_pair() {
         let package = work.join(format!("pkg-{fixture}"));
         let (code, log) = press_against_mirror(&work, fixture, entry, &package, &mirror_root, &[]);
         assert!(code == 0, "{fixture} press failed:\n{log}");
+        if !runnable {
+            continue;
+        }
 
         // Cold run: wipe the cache; the bootstrap resolves interpreter +
         // image from the mirror and the app runs.
@@ -1619,19 +1674,21 @@ fn native_ext_press_builds_and_packages() {
     );
 
     // Cold run: the packaged app loads the extension from the memfs.
-    let home = work.join("home-cold");
-    let mut cold = Command::new(&package);
-    cold.env(
-        "TEBAKO_RUNTIME_MIRROR",
-        tebako_http::file_url(Path::new(&mirror_root)),
-    )
-    .env("TEBAKO_HOME", &home);
-    let (code, out) = run(&mut cold);
-    assert_eq!(code, 0, "cold run failed:\n{out}");
-    assert!(
-        out.contains("native-ext app: toyext.answer = 42"),
-        "unexpected output: {out}"
-    );
+    if published_runtime_runs_press_output() {
+        let home = work.join("home-cold");
+        let mut cold = Command::new(&package);
+        cold.env(
+            "TEBAKO_RUNTIME_MIRROR",
+            tebako_http::file_url(Path::new(&mirror_root)),
+        )
+        .env("TEBAKO_HOME", &home);
+        let (code, out) = run(&mut cold);
+        assert_eq!(code, 0, "cold run failed:\n{out}");
+        assert!(
+            out.contains("native-ext app: toyext.answer = 42"),
+            "unexpected output: {out}"
+        );
+    }
 
     // A failing extension build fails the press loudly: the deploy driver
     // exits non-zero and the ext build output tail rides the error. The

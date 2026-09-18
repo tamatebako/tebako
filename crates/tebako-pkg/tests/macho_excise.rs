@@ -182,3 +182,57 @@ fn excised_macho_is_signable_and_verifiable() {
     let (code, _, stderr) = run(&["--verify", "--strict"]);
     assert_eq!(code, 0, "codesign verify failed: {stderr}");
 }
+
+/// The full installer flow: press a real package from a signed Mach-O
+/// bootstrap, codesign it post-press, and prove the trailer still reads
+/// (codesign appends the superblob AFTER the trailer; the reader locates
+/// the trailer before it) — the two ends of spec 31 §1.2's pipeline.
+#[cfg(target_os = "macos")]
+#[test]
+fn pressed_signed_package_keeps_a_readable_trailer() {
+    use std::process::Command;
+
+    let w = TempDir::new("macho-pkg-sign");
+    let exe = std::env::current_exe().expect("current exe");
+    let boot = w.0.join("boot.bin");
+    std::fs::copy(&exe, &boot).unwrap();
+    let img = w.0.join("a.dwarfs");
+    std::fs::copy(fixture("simple.dwarfs"), &img).unwrap();
+    let pkg = w.0.join("pkg");
+
+    let images = vec![parse_image_spec(img.to_str().unwrap())];
+    bundle(&boot, &images, &pkg, &PackageOptions::default()).expect("bundle");
+
+    let out = Command::new("codesign")
+        .args(["--force", "--sign", "-"])
+        .arg(&pkg)
+        .output()
+        .expect("spawn codesign");
+    assert!(
+        out.status.success(),
+        "codesign sign failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = Command::new("codesign")
+        .args(["--verify", "--strict"])
+        .arg(&pkg)
+        .output()
+        .expect("spawn codesign");
+    assert!(
+        out.status.success(),
+        "codesign verify failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The superblob now trails the trailer; the trailer still parses.
+    let mut f = std::fs::File::open(&pkg).unwrap();
+    let m = tpkg::read_from(&mut f).expect("trailer parses past the superblob");
+    assert_eq!(m.slots.len(), 1);
+    let slot_len = m.slots[0].size as usize;
+    let off = m.slots[0].offset as usize;
+    let bytes = std::fs::read(&pkg).unwrap();
+    assert_eq!(
+        &bytes[off..off + slot_len],
+        &std::fs::read(&img).unwrap()[..]
+    );
+}
