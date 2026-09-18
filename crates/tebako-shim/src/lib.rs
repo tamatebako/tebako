@@ -120,8 +120,12 @@ impl Ctx {
     pub fn from_env() -> Result<Ctx, ShimError> {
         let env: BTreeMap<String, String> = std::env::vars().collect();
         let home = tebako_home(&env)?;
-        let cwd = std::env::current_dir()
-            .map_err(|e| ShimError::new(EX_TEBAKO_IO, format!("cannot determine cwd: {e}")))?;
+        // A detached invocation (the installer seed's post-install
+        // sweep) can outlive its working directory: getcwd then fails,
+        // and the dispatch dies before it reads a single path. The cwd
+        // anchors relative-path resolution only — `/` is the neutral
+        // answer, never an error.
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
         Ok(Ctx { home, cwd, env })
     }
 
