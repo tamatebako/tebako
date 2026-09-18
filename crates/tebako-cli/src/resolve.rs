@@ -2706,7 +2706,7 @@ mod tests {
     fn dll_resolver(cache: &Path, mirror: &Path) -> Resolver {
         Resolver {
             cache_root: cache.to_path_buf(),
-            mirror: tebako_http::file_url(&mirror),
+            mirror: tebako_http::file_url(mirror),
             lock_timeout: LOCK_TIMEOUT,
         }
     }
@@ -3128,7 +3128,7 @@ mod tests {
     fn boot_resolver(cache: &Path, mirror: &Path, offline: bool) -> BootstrapResolver {
         BootstrapResolver {
             cache_root: cache.to_path_buf(),
-            mirror: tebako_http::file_url(&mirror),
+            mirror: tebako_http::file_url(mirror),
             version: "0.1.8".to_string(),
             offline,
             lock_timeout: LOCK_TIMEOUT,
