@@ -43,8 +43,9 @@ pub use keys::{
     press_local_key, secret_key_by_keyid, PressKey,
 };
 pub use retrieve::{
-    anchor_key_url, anchor_successor_url, retrieve_signer_key, verify_with_retrieval, Fetch,
-    KeyRetrieval, RetrievalBasis, VerifyReport, ANCHOR_BASE, MAX_CHAIN_HOPS,
+    anchor_base, anchor_key_url, anchor_successor_url, retrieve_signer_key,
+    retrieve_signer_key_with_base, verify_with_retrieval, Fetch, KeyRetrieval, RetrievalBasis,
+    VerifyReport, ANCHOR_BASE, ANCHOR_BASE_ENV, MAX_CHAIN_HOPS,
 };
 pub use root::{
     apply_successor_chain, parse_successor_statement, short_fingerprint, sign_successor_statement,

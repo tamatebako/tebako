@@ -38,10 +38,7 @@ pub const FETCH_JOBS_ENV: &str = "TEBAKO_FETCH_JOBS";
 /// Resolve the worker count: `TEBAKO_FETCH_JOBS` over the config's
 /// `fetch_jobs` over [`DEFAULT_FETCH_JOBS`]. An unparseable or zero
 /// value is a NAMED error (spec 05 §6), never a silent clamp.
-pub fn resolve_fetch_jobs(
-    env: Option<String>,
-    config: Option<u32>,
-) -> Result<usize, ResolveError> {
+pub fn resolve_fetch_jobs(env: Option<String>, config: Option<u32>) -> Result<usize, ResolveError> {
     let value = match (env, config) {
         (Some(v), _) => v,
         (None, Some(c)) => c.to_string(),
@@ -59,7 +56,11 @@ pub fn resolve_fetch_jobs(
 /// One artifact of a plan: what to fetch, the trust pin, where the tmp
 /// lands, and the commit closure owning the install semantics
 /// (signature verification + the store's lock/rename/markers).
-pub struct FetchItem {
+///
+/// The `'plan` lifetime lets commit closures borrow the caller's state
+/// (the resolver, the journal sink) — sound because [`execute_plan`]
+/// joins its scoped worker threads before returning.
+pub struct FetchItem<'plan> {
     /// The asset name, for progress lines and errors.
     pub display: String,
     /// What to fetch (https / file / service release / git blob).
@@ -79,7 +80,8 @@ pub struct FetchItem {
     /// origin; owns signature verification and the atomic place, and
     /// CONSUMES the tmp file on success (rename into place — on its
     /// error the pipeline removes the tmp).
-    pub commit: Box<dyn FnOnce(&StagedArtifact) -> Result<CommitReport, ResolveError> + Send>,
+    pub commit:
+        Box<dyn FnOnce(&StagedArtifact) -> Result<CommitReport, ResolveError> + Send + 'plan>,
 }
 
 /// The commit closure's view of a staged artifact.
@@ -107,14 +109,14 @@ pub struct CommitReport {
 
 /// A fetch plan: the subject line (the progress header) plus the
 /// artifacts, in plan order (slot indexes are this order).
-pub struct FetchPlan {
+pub struct FetchPlan<'plan> {
     /// The header's subject — e.g. `runtime ruby 3.3.12`.
     pub title: String,
-    pub items: Vec<FetchItem>,
+    pub items: Vec<FetchItem<'plan>>,
 }
 
-impl FetchPlan {
-    pub fn new(title: impl Into<String>, items: Vec<FetchItem>) -> FetchPlan {
+impl<'plan> FetchPlan<'plan> {
+    pub fn new(title: impl Into<String>, items: Vec<FetchItem<'plan>>) -> FetchPlan<'plan> {
         FetchPlan {
             title: title.into(),
             items,
@@ -165,7 +167,7 @@ enum ItemFail {
 /// The tmp path of item `idx` (unique per plan execution — a retry
 /// truncates the same path; concurrent plans of one process ride the
 /// sequence, foreign processes the pid).
-fn tmp_path(item: &FetchItem, idx: usize, plan_seq: usize) -> PathBuf {
+fn tmp_path(item: &FetchItem<'_>, idx: usize, plan_seq: usize) -> PathBuf {
     let safe: String = item
         .display
         .chars()
@@ -221,7 +223,7 @@ fn select_service_asset<T: Transport>(
 /// origin.
 fn stream_once<T: Transport, W: std::io::Write + Send>(
     transport: &T,
-    item: &FetchItem,
+    item: &FetchItem<'_>,
     tmp: &Path,
     idx: usize,
     progress: Option<&ProgressSet<W>>,
@@ -283,15 +285,14 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
             (r, asset.url)
         }
         Reference::Git {
-            url,
-            git_ref,
-            path,
-            ..
+            url, git_ref, path, ..
         } => {
             // The git adapter yields blobs in memory (small payloads);
             // honor the pipeline's shape by writing them as one chunk.
             let Some(path) = path else {
-                return Err(ItemFail::Named(ResolveError::GitPathRequired { url: url.clone() }));
+                return Err(ItemFail::Named(ResolveError::GitPathRequired {
+                    url: url.clone(),
+                }));
             };
             #[cfg(feature = "git")]
             {
@@ -309,7 +310,9 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
             #[cfg(not(feature = "git"))]
             {
                 let _ = (git_ref, path);
-                return Err(ItemFail::Named(ResolveError::GitAdapterDisabled { url: url.clone() }));
+                return Err(ItemFail::Named(ResolveError::GitAdapterDisabled {
+                    url: url.clone(),
+                }));
             }
         }
     };
@@ -324,7 +327,7 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
 #[allow(clippy::too_many_arguments)]
 fn run_item<T: Transport, W: std::io::Write + Send>(
     transport: &T,
-    item: FetchItem,
+    item: FetchItem<'_>,
     idx: usize,
     progress: Option<&ProgressSet<W>>,
     cancel: &AtomicBool,
@@ -399,11 +402,9 @@ fn run_item<T: Transport, W: std::io::Write + Send>(
                 }
                 std::thread::sleep(RETRY_DELAY);
             }
-            Err(
-                ItemFail::Transport(
-                    e @ (FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_)),
-                ),
-            ) => {
+            Err(ItemFail::Transport(
+                e @ (FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_)),
+            )) => {
                 let _ = std::fs::remove_file(&tmp);
                 return Err(ResolveError::DownloadFailed {
                     origin: item.reference.to_string(),
@@ -471,7 +472,7 @@ fn run_item<T: Transport, W: std::io::Write + Send>(
 /// refused at [`resolve_fetch_jobs`].
 pub fn execute_plan<T, W>(
     transport: &T,
-    plan: FetchPlan,
+    plan: FetchPlan<'_>,
     jobs: usize,
     progress: Option<&ProgressSet<W>>,
 ) -> Result<(), ResolveError>
@@ -487,7 +488,7 @@ where
         p.begin(&plan.title, n, plan.total_hint());
     }
     let offline = crate::cache::offline();
-    let queue: Mutex<VecDeque<(usize, FetchItem)>> =
+    let queue: Mutex<VecDeque<(usize, FetchItem<'_>)>> =
         Mutex::new(plan.items.into_iter().enumerate().collect());
     let cancel = AtomicBool::new(false);
     let failure: Mutex<Option<ResolveError>> = Mutex::new(None);
@@ -566,7 +567,12 @@ mod tests {
         dir
     }
 
-    fn file_item(dir: &Path, name: &str, bytes: &[u8], pinned: bool) -> (FetchItem, PathBuf) {
+    fn file_item(
+        dir: &Path,
+        name: &str,
+        bytes: &[u8],
+        pinned: bool,
+    ) -> (FetchItem<'static>, PathBuf) {
         let src = dir.join(format!("src-{name}"));
         std::fs::write(&src, bytes).unwrap();
         let dest = dir.join(format!("out-{name}"));
@@ -593,8 +599,8 @@ mod tests {
     }
 
     fn run_plan(
-        dir: &Path,
-        items: Vec<FetchItem>,
+        _dir: &Path,
+        items: Vec<FetchItem<'static>>,
         jobs: usize,
     ) -> Result<(), ResolveError> {
         let t = crate::transport::HttpTransport;
@@ -606,7 +612,9 @@ mod tests {
     /// test serializes on the crate-wide env mutex so the offline test
     /// never races a sibling's fetch.
     fn env_guard() -> std::sync::MutexGuard<'static, ()> {
-        crate::TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+        crate::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     #[test]
@@ -627,9 +635,7 @@ mod tests {
     fn parallel_matches_sequential_and_overlaps() {
         let _guard = env_guard();
         let dir = scratch("par");
-        let bytes: Vec<Vec<u8>> = (0..4)
-            .map(|i| vec![i as u8; 200_000 + i * 13])
-            .collect();
+        let bytes: Vec<Vec<u8>> = (0..4).map(|i| vec![i as u8; 200_000 + i * 13]).collect();
         let mk = |dir: &Path, tag: &str| {
             bytes
                 .iter()
@@ -682,8 +688,7 @@ mod tests {
             self.high_water.fetch_max(now, Ordering::SeqCst);
             // rendezvous: wait (bounded) for a second stream to arrive
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            while self.in_flight.load(Ordering::SeqCst) < 2
-                && std::time::Instant::now() < deadline
+            while self.in_flight.load(Ordering::SeqCst) < 2 && std::time::Instant::now() < deadline
             {
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
@@ -701,7 +706,7 @@ mod tests {
         }
     }
 
-    fn https_item(dir: &Path, name: &str, url: &str, pin: Option<String>) -> FetchItem {
+    fn https_item(dir: &Path, name: &str, url: &str, pin: Option<String>) -> FetchItem<'static> {
         let dest = dir.join(format!("out-{name}"));
         FetchItem {
             display: name.to_string(),
@@ -734,8 +739,18 @@ mod tests {
             high_water: std::sync::atomic::AtomicUsize::new(0),
         };
         let items = vec![
-            https_item(&dir, "a", "https://cdn/a", Some(crate::fetch::sha256_hex(&vec![b'a'; 1000]))),
-            https_item(&dir, "b", "https://cdn/b", Some(crate::fetch::sha256_hex(&vec![b'b'; 2000]))),
+            https_item(
+                &dir,
+                "a",
+                "https://cdn/a",
+                Some(crate::fetch::sha256_hex(&vec![b'a'; 1000])),
+            ),
+            https_item(
+                &dir,
+                "b",
+                "https://cdn/b",
+                Some(crate::fetch::sha256_hex(&vec![b'b'; 2000])),
+            ),
         ];
         let sink = ProgressSet::new(Vec::new(), false);
         execute_plan(&t, FetchPlan::new("rendezvous", items), 2, Some(&sink)).unwrap();
@@ -760,13 +775,21 @@ mod tests {
             high_water: std::sync::atomic::AtomicUsize::new(0),
         };
         let items = vec![
-            https_item(&dir, "good", "https://cdn/good", Some(crate::fetch::sha256_hex(&vec![b'g'; 500]))),
+            https_item(
+                &dir,
+                "good",
+                "https://cdn/good",
+                Some(crate::fetch::sha256_hex(&vec![b'g'; 500])),
+            ),
             // the pin lies — the streamed hash mismatches
             https_item(&dir, "bad", "https://cdn/bad", Some("0".repeat(64))),
         ];
         let sink = ProgressSet::new(Vec::new(), false);
         let err = execute_plan(&t, FetchPlan::new("cancel", items), 2, Some(&sink)).unwrap_err();
-        assert!(matches!(err, ResolveError::Sha256Mismatch { .. }), "{err:?}");
+        assert!(
+            matches!(err, ResolveError::Sha256Mismatch { .. }),
+            "{err:?}"
+        );
         // every tmp of the plan is gone
         let tmp_dir = dir.join("tmp");
         let leftovers = std::fs::read_dir(&tmp_dir).map(|d| d.count()).unwrap_or(0);
@@ -804,7 +827,9 @@ mod tests {
         });
         let err = run_plan(&dir, vec![item], 1).unwrap_err();
         assert!(err.to_string().contains("commit boom"), "{err}");
-        let leftovers = std::fs::read_dir(dir.join("tmp")).map(|d| d.count()).unwrap_or(0);
+        let leftovers = std::fs::read_dir(dir.join("tmp"))
+            .map(|d| d.count())
+            .unwrap_or(0);
         assert_eq!(leftovers, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }

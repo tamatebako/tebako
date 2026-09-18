@@ -133,7 +133,7 @@ pub struct BundleRequest<'a> {
 
 /// `tebako bundle <ref | name[@ver]> --output <dir> [--also <name[@ver]>]...
 /// [--config org.yaml] [--archive tar.gz|zip]`.
-pub fn bundle_with<T: Transport>(
+pub fn bundle_with<T: Transport + Sync>(
     req: &BundleRequest,
     fetcher: &Fetcher<T>,
 ) -> Result<BundleOutcome, TebakoError> {
@@ -199,7 +199,7 @@ pub fn bundle(req: &BundleRequest) -> Result<BundleOutcome, TebakoError> {
 /// runtime warm → pin-from-reality → relocatable shims → the descriptor.
 /// Everything happens inside `tmp` (renamed to the output by the caller
 /// on success — a failed bundle never leaves a half-tree behind).
-fn stage<T: Transport>(
+fn stage<T: Transport + Sync>(
     req: &BundleRequest,
     tmp: &Path,
     fetcher: &Fetcher<T>,

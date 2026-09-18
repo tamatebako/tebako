@@ -27,6 +27,9 @@ tebako-shim = { version = "2.0.0", path = "../tebako-shim" }
 # OpenPGP verification of signed registry entries (spec 09; strict when the
 # entry carries a signature, the v1-legacy warn when it does not).
 tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
+# The fetch pipeline's progress surface (spec 06 §5a): the plan header +
+# per-worker bars when on a tty, the plain grammar when piped.
+tebako-term = { version = "2.0.0", path = "../tebako-term" }
 # The bootstrap's embedded artifact-info block (spec 18 §2.2/S38): the
 # `tebako inspect --contract` card reads it through the owner crate — the
 # marker grammar has exactly one home.

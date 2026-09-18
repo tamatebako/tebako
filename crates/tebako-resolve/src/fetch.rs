@@ -108,6 +108,13 @@ impl<T: Transport> Fetcher<T> {
         Fetcher { transport }
     }
 
+    /// The injected transport — the fetch pipeline (spec 05 §6) streams
+    /// through the SAME seam the one-shot [`Fetcher::fetch`] reads, so a
+    /// test mock answers plan GETs too.
+    pub fn transport(&self) -> &T {
+        &self.transport
+    }
+
     /// Fetch and (when the reference carries a pin) sha256-verify.
     pub fn fetch(&self, reference: &Reference) -> Result<FetchedPayload, ResolveError> {
         let (bytes, origin) = match reference {

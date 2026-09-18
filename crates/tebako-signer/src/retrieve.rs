@@ -32,6 +32,21 @@ use crate::sign::{verify_detached_full, VerifyOutcome};
 /// The trust-anchor publication base (tebako.org's `.well-known`).
 pub const ANCHOR_BASE: &str = "https://www.tebako.org/.well-known";
 
+/// The `TEBAKO_ANCHOR_BASE` override (air-gapped mirrors, tests — e.g. a
+/// `file://` mirror of the directory). This is an AVAILABILITY knob,
+/// never a trust knob: a retrieved key is admitted only by chaining to
+/// the embedded root, so a malicious mirror cannot inject trust.
+pub const ANCHOR_BASE_ENV: &str = "TEBAKO_ANCHOR_BASE";
+
+/// The effective anchor base ([`ANCHOR_BASE_ENV`] over [`ANCHOR_BASE`]).
+pub fn anchor_base() -> String {
+    std::env::var(ANCHOR_BASE_ENV)
+        .ok()
+        .map(|v| v.trim().trim_end_matches('/').to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| ANCHOR_BASE.to_string())
+}
+
 /// The successor-chain walk's hop bound — a cycle is a dead end, not a
 /// hang.
 pub const MAX_CHAIN_HOPS: usize = 8;
@@ -39,14 +54,23 @@ pub const MAX_CHAIN_HOPS: usize = 8;
 /// The URL serving the armored public key whose PRIMARY keyid is
 /// `keyid` (16 hex, case-insensitive — the grammar spells lowercase).
 pub fn anchor_key_url(keyid: &str) -> String {
-    format!("{ANCHOR_BASE}/tebako-keys/{}.asc", keyid.to_lowercase())
+    key_url(&anchor_base(), keyid)
 }
 
 /// The URL serving the successor statement rotating FROM
 /// `predecessor_fingerprint` (40 hex — the grammar spells uppercase).
 pub fn anchor_successor_url(predecessor_fingerprint: &str) -> String {
+    successor_url(&anchor_base(), predecessor_fingerprint)
+}
+
+fn key_url(base: &str, keyid: &str) -> String {
+    format!("{}/tebako-keys/{}.asc", base, keyid.to_lowercase())
+}
+
+fn successor_url(base: &str, predecessor_fingerprint: &str) -> String {
     format!(
-        "{ANCHOR_BASE}/tebako-successors/{}.asc",
+        "{}/tebako-successors/{}.asc",
+        base,
         predecessor_fingerprint.to_uppercase()
     )
 }
@@ -153,6 +177,7 @@ fn keyring_has_fingerprint(keyring: &[u8], fp: &str) -> Result<bool, SignerError
 /// when the walk reaches `target_fp` within [`MAX_CHAIN_HOPS`]; `None`
 /// on any dead end (no statement, bad signature, misbehaving server).
 fn walk_chain(
+    base: &str,
     root: &str,
     target_fp: &str,
     pool: &[u8],
@@ -165,7 +190,7 @@ fn walk_chain(
         if current == target_fp {
             return Some(path);
         }
-        let statement = fetch(&anchor_successor_url(&current)).ok()?;
+        let statement = fetch(&successor_url(base, &current)).ok()?;
         let (stmt, outcome) = crate::root::verify_successor_statement(&pool, &statement).ok()?;
         if stmt.predecessor_fingerprint != current || !matches!(outcome, VerifyOutcome::Trusted(_))
         {
@@ -181,7 +206,7 @@ fn walk_chain(
         // fingerprint matches is admitted to the pool for this walk.
         if !keyring_has_fingerprint(&pool, &next).ok()? {
             let keyid = hex_lower(&keyid_bytes_from_fingerprint(&next).ok()?);
-            let key_bytes = fetch(&anchor_key_url(&keyid)).ok()?;
+            let key_bytes = fetch(&key_url(base, &keyid)).ok()?;
             if fingerprint_of(&key_bytes).ok()?.to_uppercase() != next {
                 return None;
             }
@@ -204,13 +229,34 @@ pub fn retrieve_signer_key(
     offline: bool,
     fetch: &Fetch<'_>,
 ) -> Result<Option<KeyRetrieval>, SignerError> {
-    retrieve_with_roots(home, pinned_keyid, offline, fetch, &root_fingerprints())
+    retrieve_signer_key_with_base(home, &anchor_base(), pinned_keyid, offline, fetch)
+}
+
+/// [`retrieve_signer_key`] against an explicit publication base — the
+/// caller resolved the base itself (a Ctx-snapshotted env, a test
+/// fixture) instead of flowing [`anchor_base`]'s process env.
+pub fn retrieve_signer_key_with_base(
+    home: &Path,
+    base: &str,
+    pinned_keyid: &str,
+    offline: bool,
+    fetch: &Fetch<'_>,
+) -> Result<Option<KeyRetrieval>, SignerError> {
+    retrieve_with_roots(
+        home,
+        base,
+        pinned_keyid,
+        offline,
+        fetch,
+        &root_fingerprints(),
+    )
 }
 
 /// The walk with an explicit root set — the seam tests drive (the dev
 /// override env is process-global; parallel tests never race it).
 fn retrieve_with_roots(
     home: &Path,
+    base: &str,
     pinned_keyid: &str,
     offline: bool,
     fetch: &Fetch<'_>,
@@ -241,9 +287,14 @@ fn retrieve_with_roots(
         return Ok(None);
     }
 
-    let url = anchor_key_url(&keyid);
-    let key_bytes = fetch(&url)
-        .map_err(|e| SignerError::KeyRetrieval(format!("{url} does not resolve: {e}")))?;
+    let url = key_url(base, &keyid);
+    let key_bytes = fetch(&url).map_err(|e| {
+        SignerError::KeyRetrieval(format!(
+            "the signer's key is not published on the trust-anchor channel ({url} does not resolve: {e})\n\
+             if you trust this signer, import its public key manually:\n\
+             \n    tebako keys import <file>"
+        ))
+    })?;
     let fingerprint = fingerprint_of(&key_bytes)
         .map_err(|e| SignerError::KeyRetrieval(format!("{url}: {e}")))?
         .to_uppercase();
@@ -260,7 +311,7 @@ fn retrieve_with_roots(
     } else {
         let mut found = None;
         for root in &roots {
-            if let Some(path) = walk_chain(root, &fingerprint, &pool, fetch) {
+            if let Some(path) = walk_chain(base, root, &fingerprint, &pool, fetch) {
                 found = Some(RetrievalBasis::SuccessorChain(path));
                 break;
             }
@@ -386,10 +437,14 @@ mod tests {
             .build(&ctx)
             .unwrap();
         let secret = key
-            .export(rnp::ExportFlags::ARMORED | rnp::ExportFlags::SECRET | rnp::ExportFlags::SUBKEYS)
+            .export(
+                rnp::ExportFlags::ARMORED | rnp::ExportFlags::SECRET | rnp::ExportFlags::SUBKEYS,
+            )
             .unwrap();
         let public = key
-            .export(rnp::ExportFlags::ARMORED | rnp::ExportFlags::PUBLIC | rnp::ExportFlags::SUBKEYS)
+            .export(
+                rnp::ExportFlags::ARMORED | rnp::ExportFlags::PUBLIC | rnp::ExportFlags::SUBKEYS,
+            )
             .unwrap();
         let fp = key.fingerprint().unwrap().to_uppercase();
         (secret, public, fp)
@@ -420,10 +475,8 @@ mod tests {
         }
 
         fn serve_statement(&mut self, predecessor_fp: &str, statement: &[u8]) {
-            self.pages.insert(
-                anchor_successor_url(predecessor_fp),
-                statement.to_vec(),
-            );
+            self.pages
+                .insert(anchor_successor_url(predecessor_fp), statement.to_vec());
         }
 
         fn fetcher(&self) -> impl Fn(&str) -> Result<Vec<u8>, String> + '_ {
@@ -457,9 +510,16 @@ mod tests {
         fixture.serve_key(&public, &fp);
         let roots = vec![fp.clone()];
 
-        let got = retrieve_with_roots(&home, &keyid_of(&fp), false, &fixture.fetcher(), &roots)
-            .unwrap()
-            .expect("a retrieval happened");
+        let got = retrieve_with_roots(
+            &home,
+            ANCHOR_BASE,
+            &keyid_of(&fp),
+            false,
+            &fixture.fetcher(),
+            &roots,
+        )
+        .unwrap()
+        .expect("a retrieval happened");
         assert_eq!(got.fingerprint, fp);
         assert_eq!(got.basis, RetrievalBasis::EmbeddedRoot);
         assert!(got.registered);
@@ -492,10 +552,16 @@ mod tests {
         fixture.serve_statement(&s1_fp, &hop2);
 
         let roots = vec![root_fp.clone()];
-        let got =
-            retrieve_with_roots(&home, &keyid_of(&s2_fp), false, &fixture.fetcher(), &roots)
-                .unwrap()
-                .expect("a retrieval happened");
+        let got = retrieve_with_roots(
+            &home,
+            ANCHOR_BASE,
+            &keyid_of(&s2_fp),
+            false,
+            &fixture.fetcher(),
+            &roots,
+        )
+        .unwrap()
+        .expect("a retrieval happened");
         assert_eq!(got.fingerprint, s2_fp);
         assert_eq!(
             got.basis,
@@ -516,26 +582,37 @@ mod tests {
         // No successor statements at all: the walk dies at the root.
 
         let roots = vec![root_fp];
-        let err =
-            retrieve_with_roots(&home, &keyid_of(&rogue_fp), false, &fixture.fetcher(), &roots)
-                .unwrap_err();
+        let err = retrieve_with_roots(
+            &home,
+            ANCHOR_BASE,
+            &keyid_of(&rogue_fp),
+            false,
+            &fixture.fetcher(),
+            &roots,
+        )
+        .unwrap_err();
         let text = err.to_string();
         assert!(
             matches!(err, SignerError::KeyRetrieval(_)),
             "named KeyRetrieval: {text}"
         );
         assert!(text.contains(&rogue_fp), "the fingerprint is loud: {text}");
-        assert!(text.contains("tebako keys import"), "the manual path: {text}");
+        assert!(
+            text.contains("tebako keys import"),
+            "the manual path: {text}"
+        );
         // The key was NOT registered.
-        assert!(crate::keyring::trusted_keyring_bytes(&home)
-            .unwrap()
-            .is_empty()
-            || primary_keyid_of(
-                &crate::keyring::trusted_keyring_bytes(&home).unwrap(),
-                &keyid_of(&rogue_fp)
-            )
-            .unwrap()
-            .is_none());
+        assert!(
+            crate::keyring::trusted_keyring_bytes(&home)
+                .unwrap()
+                .is_empty()
+                || primary_keyid_of(
+                    &crate::keyring::trusted_keyring_bytes(&home).unwrap(),
+                    &keyid_of(&rogue_fp)
+                )
+                .unwrap()
+                .is_none()
+        );
         std::fs::remove_dir_all(&home).ok();
     }
 
@@ -547,6 +624,7 @@ mod tests {
         let roots = vec![fp.clone()];
         let got = retrieve_with_roots(
             &home,
+            ANCHOR_BASE,
             &keyid_of(&fp),
             true,
             &fixture.fetcher(),
@@ -568,6 +646,7 @@ mod tests {
         let roots = vec![fp.clone()];
         let got = retrieve_with_roots(
             &home,
+            ANCHOR_BASE,
             &keyid_of(&fp),
             false,
             &fixture.fetcher(),
@@ -590,6 +669,7 @@ mod tests {
         let roots = vec![fp];
         let err = retrieve_with_roots(
             &home,
+            ANCHOR_BASE,
             "0000000000000000",
             false,
             &fixture.fetcher(),
@@ -624,10 +704,16 @@ mod tests {
         // walk starts from the embedded root, which this chain is not
         // under — so this test drives retrieve + re-verify directly.
         let roots = vec![root_fp];
-        let retrieval =
-            retrieve_with_roots(&home, &keyid_of(&s1_fp), false, &fixture.fetcher(), &roots)
-                .unwrap()
-                .expect("retrieved");
+        let retrieval = retrieve_with_roots(
+            &home,
+            ANCHOR_BASE,
+            &keyid_of(&s1_fp),
+            false,
+            &fixture.fetcher(),
+            &roots,
+        )
+        .unwrap()
+        .expect("retrieved");
         assert_eq!(retrieval.fingerprint, s1_fp);
         let ring = crate::root::verification_keyring(&home).unwrap();
         let outcome = verify_detached_full(&ring, data, &sig).unwrap();

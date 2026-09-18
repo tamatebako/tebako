@@ -50,6 +50,7 @@ const USAGE: &str = "Usage:
   tebako add-registry <ref>            register a tpkg-registry.yaml
   tebako list-registries               list the registered registries
   tebako update-registries             refresh the dispatch-time registry cache
+  tebako keys import <file>            register a public key into the trusted keyring
   tebako install <ref | name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
   tebako bundle <name[@ver]> --output <dir> [--also <name[@ver]>]...
@@ -199,6 +200,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "add-registry" => run_add_registry(rest),
         "list-registries" => run_list_registries(rest),
         "update-registries" => run_update_registries(rest),
+        "keys" => run_keys(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
         "bundle" => run_bundle(rest),
@@ -381,6 +383,51 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
         }
     }
     Ok(())
+}
+
+/// `tebako keys import <file>` — register a public key (armored or
+/// binary export) into the trusted keyring (`~/.tebako/keyring/
+/// trusted.pgp`), TOFU-deduplicated by fingerprint. This is the manual
+/// path the trust-anchor key-retrieval refusal names (a key NOT on the
+/// tamatebako root chain enters the trust store only by the operator's
+/// hand, here).
+fn run_keys(args: &[String]) -> Result<(), CliExit> {
+    let Some(verb) = args.first() else {
+        return Err(CliExit::Usage(
+            "keys subcommand expected: import <file>".to_string(),
+        ));
+    };
+    match verb.as_str() {
+        "import" => {
+            let [file] = &args[1..] else {
+                return Err(CliExit::Usage(
+                    "usage: tebako keys import <file>".to_string(),
+                ));
+            };
+            let bytes = std::fs::read(file).map_err(|e| {
+                CliExit::Error(TebakoError::new(format!("cannot read {file}: {e}"), 74))
+            })?;
+            let home = tebako_home()?;
+            match tebako_signer::register_trusted(&home, &bytes) {
+                Ok(tebako_signer::RegisterOutcome::Added(fingerprint)) => {
+                    println!("registered {fingerprint} in the trusted keyring");
+                }
+                Ok(tebako_signer::RegisterOutcome::AlreadyTrusted(fingerprint)) => {
+                    println!("{fingerprint} is already trusted");
+                }
+                Err(e) => {
+                    return Err(CliExit::Error(TebakoError::new(
+                        format!("cannot import {file}: {e}"),
+                        72,
+                    )));
+                }
+            }
+            Ok(())
+        }
+        other => Err(CliExit::Usage(format!(
+            "unknown keys subcommand '{other}' (usage: tebako keys import <file>)"
+        ))),
+    }
 }
 
 fn run_list_registries(args: &[String]) -> Result<(), CliExit> {

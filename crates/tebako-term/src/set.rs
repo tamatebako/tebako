@@ -217,7 +217,11 @@ impl<W: Write> Inner<W> {
         }
         self.slots[idx].start_printed = true;
         let text = match self.slots[idx].total {
-            Some(total) => format!("downloading {} ({})", self.slots[idx].asset, human_bytes(total)),
+            Some(total) => format!(
+                "downloading {} ({})",
+                self.slots[idx].asset,
+                human_bytes(total)
+            ),
             None => format!("downloading {}", self.slots[idx].asset),
         };
         if self.mode == Mode::Tty {
@@ -382,11 +386,12 @@ impl<W: Write> ProgressSet<W> {
         self.lock().out.clone()
     }
 
-    /// Unwrap the writer when this handle is the last one.
-    pub fn into_inner(self) -> Result<W, Arc<Mutex<Inner<W>>>> {
+    /// Unwrap the writer when this handle is the last one (`Err(())`
+    /// when other handles still share the sink).
+    pub fn into_inner(self) -> Result<W, ()> {
         match Arc::try_unwrap(self.inner) {
             Ok(m) => Ok(m.into_inner().unwrap_or_else(|e| e.into_inner()).out),
-            Err(arc) => Err(arc),
+            Err(_) => Err(()),
         }
     }
 
@@ -405,7 +410,9 @@ impl<W: Write> ProgressSet<W> {
         let total = total_hint
             .map(human_bytes)
             .unwrap_or_else(|| "unknown".to_string());
-        inner.write_str(&format!("fetching {title}: {artifacts} artifacts, {total} total\n"));
+        inner.write_str(&format!(
+            "fetching {title}: {artifacts} artifacts, {total} total\n"
+        ));
     }
 
     /// A transient phase line (`resolving <ref>`): TTY mode only —
@@ -621,7 +628,10 @@ mod tests {
         set.finish();
         let text = sink_text(set);
         let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines[0], "fetching runtime ruby 3.3.12: 2 artifacts, 2.9 KB total");
+        assert_eq!(
+            lines[0],
+            "fetching runtime ruby 3.3.12: 2 artifacts, 2.9 KB total"
+        );
         assert_eq!(lines[1], "downloading exe (1000 B)");
         assert_eq!(lines[2], "installed exe (1000 B)");
         assert_eq!(lines[3], "downloading image.tfs (2.0 KB)");

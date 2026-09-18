@@ -133,7 +133,12 @@ impl Transport for HttpTransport {
         writer: &mut dyn std::io::Write,
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<u64, FetchError> {
-        tebako_http::stream_to_writer(url, &tebako_http::GetOptions::default(), writer, on_progress)
+        tebako_http::stream_to_writer(
+            url,
+            &tebako_http::GetOptions::default(),
+            writer,
+            on_progress,
+        )
     }
 
     fn stream_asset(

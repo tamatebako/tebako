@@ -386,6 +386,9 @@ chain — **trust never extends silently, and never extends by TOFU.**
     rotating FROM `<predecessor-fingerprint>` (40 uppercase hex).
   The directory is a DIRECTORY (§9.3's keyserver rule): a fetched key
   authenticates by chaining, never by the channel that served it.
+  `TEBAKO_ANCHOR_BASE` overrides the publication base (air-gapped
+  mirrors, tests) — an AVAILABILITY knob, never a trust knob: admission
+  still requires chaining to the embedded root.
 - **The admission rule.** A retrieved key is usable — for this
   verification and for registration into the trusted keyring — iff:
   1. its primary fingerprint IS the embedded root

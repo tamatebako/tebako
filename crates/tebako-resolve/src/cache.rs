@@ -1126,7 +1126,10 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(fs::metadata(&entry.path).unwrap().permissions().mode() & 0o777, 0o444);
+            assert_eq!(
+                fs::metadata(&entry.path).unwrap().permissions().mode() & 0o777,
+                0o444
+            );
         }
         assert!(root.join("payloads/tool/1.0.tfs.sha256").is_file());
         assert!(root.join("payloads/tool/1.0.tfs.origin").is_file());
@@ -1159,7 +1162,6 @@ mod tests {
     fn parallel_installs_of_disjoint_entries_are_safe() {
         let _guard = ENV_LOCK.lock().unwrap();
         let root = scratch();
-        let cache = PayloadCache::with_root(&root);
         let mut joins = Vec::new();
         for i in 0..4 {
             let cache_root = root.clone();
@@ -1175,11 +1177,16 @@ mod tests {
         for (i, j) in joins.into_iter().enumerate() {
             let (entry, status) = j.join().unwrap();
             assert_eq!(status, InstallStatus::Installed);
-            assert_eq!(entry.sha256, crate::fetch::sha256_hex(format!("bytes-{i}").as_bytes()));
+            assert_eq!(
+                entry.sha256,
+                crate::fetch::sha256_hex(format!("bytes-{i}").as_bytes())
+            );
         }
         // every entry landed with its trust anchor
         for i in 0..4 {
-            assert!(root.join(format!("payloads/tool{i}/1.0.tfs.sha256")).is_file());
+            assert!(root
+                .join(format!("payloads/tool{i}/1.0.tfs.sha256"))
+                .is_file());
         }
         let _ = fs::remove_dir_all(&root);
     }

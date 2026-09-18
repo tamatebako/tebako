@@ -36,9 +36,15 @@
 //!   first-class (loud + journaled) except under
 //!   `TEBAKO_REQUIRE_SIGNED=1` (71).
 
-use std::io::Read;
 use std::path::Path;
+use std::sync::Mutex;
 
+use tebako_resolve::plan::{
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
+    FETCH_JOBS_ENV,
+};
+use tebako_resolve::{HttpTransport, Reference, ResolveError};
+use tebako_term::set::ProgressSet;
 use tpkg::{RuntimeRequirement, RuntimeRequirements};
 
 use crate::config::{self, RuntimePref};
@@ -255,7 +261,7 @@ pub fn resolve_runtime(
             );
         }
     };
-    let rt = download_runtime(reqs.engine(), &target, &source, ctx)?;
+    let rt = download_runtime(reqs.engine(), &target, &source, &cfg, ctx)?;
     // The downloaded runtime's abi line must satisfy the payload too —
     // the release index carries it (abi: None is the compat window).
     // The single-entry native shape keeps its exact named error.
@@ -1197,28 +1203,6 @@ fn make_readonly(path: &Path) {
     let _ = path;
 }
 
-fn sha256_file_hex(path: &Path) -> std::io::Result<String> {
-    use sha2::Digest as _;
-    let mut f = std::fs::File::open(path)?;
-    let mut h = sha2::Sha256::new();
-    let mut buf = [0u8; 65536];
-    loop {
-        let n = f.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        h.update(&buf[..n]);
-    }
-    let digest = h.finalize();
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut s = String::with_capacity(64);
-    for b in digest {
-        s.push(DIGITS[(b >> 4) as usize] as char);
-        s.push(DIGITS[(b & 15) as usize] as char);
-    }
-    Ok(s)
-}
-
 // -- per-entry install lock (mirrors the bootstrap's flock discipline) --
 
 struct EntryLock(std::fs::File);
@@ -1580,92 +1564,190 @@ fn expected_checksum(q: &ChecksumQuery) -> Result<ChecksumAnswer, ShimError> {
     })
 }
 
+/// The G1 fetch-time verification keyring (spec 09 §4): the user's
+/// trusted keyring + the embedded first-party root + the
+/// `TEBAKO_TRUSTED_ROOT` dev override (the CLI's payload-install
+/// keyring, mirrored key-for-key).
+fn fetch_keyring(ctx: &Ctx) -> Result<Vec<u8>, ShimError> {
+    let mut keyring = tebako_signer::trusted_keyring_bytes(&ctx.home).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot read the trusted keyring: {e}"),
+        )
+    })?;
+    let root =
+        tebako_signer::dearmor_bytes(tebako_signer::ROOT_PUBLIC_KEY.as_bytes()).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_IO,
+                format!("the embedded root key does not dearmor: {e}"),
+            )
+        })?;
+    keyring.extend_from_slice(&root);
+    if let Some(extra) = tebako_signer::trusted_root_override_key(
+        ctx.env_get("TEBAKO_TRUSTED_ROOT").map(str::to_string),
+    ) {
+        keyring.extend_from_slice(&extra);
+    }
+    Ok(keyring)
+}
+
+/// The named untrusted-signer refusal (exit 72) — spec 09 §4's shape.
+fn untrusted_signer(what: &str, keyid: &str) -> ShimError {
+    ShimError::new(
+        EX_TEBAKO_TRUST,
+        format!(
+            "{what} is signed by {keyid}, which is not in the trusted keyring — refusing to install or execute\n  if you trust this signer, register its public key with `tebako keys import`"
+        ),
+    )
+}
+
+/// The keyid the retrieval ceremony asks the anchor for (spec 09 §10):
+/// the entry's declared keyid, else the registry pin, else the
+/// signature's issuer — the first matching the keyid grammar (16 hex).
+fn pinned_keyid(issuer: &str, declared: Option<&str>, pin: Option<&str>) -> String {
+    let grammar = |k: &str| k.len() == 16 && k.bytes().all(|b| b.is_ascii_hexdigit());
+    [declared, pin, Some(issuer)]
+        .into_iter()
+        .flatten()
+        .find(|k| grammar(k))
+        .unwrap_or(issuer)
+        .to_string()
+}
+
+/// The spec 09 §10 ceremony for a runtime fetch: fetch the pinned
+/// signer's key from the trust-anchor channel, admit it ONLY through
+/// the tamatebako root chain (never TOFU), and register it into the
+/// trusted keyring. `Ok(None)` = offline (the pre-ceremony untrusted
+/// outcome stands); the named `KeyRetrieval` failure journals
+/// `event=key-retrieval-failed` and exits 72 (the trust class).
+fn retrieve_runtime_signer(
+    ctx: &Ctx,
+    pinned_keyid: &str,
+) -> Result<Option<tebako_signer::KeyRetrieval>, ShimError> {
+    let base = ctx
+        .env_get(tebako_signer::ANCHOR_BASE_ENV)
+        .map(|v| v.trim().trim_end_matches('/').to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| tebako_signer::ANCHOR_BASE.to_string());
+    let offline = offline_mode(ctx);
+    let fetch = |url: &str| tebako_http::get(url).map_err(|e| e.to_string());
+    match tebako_signer::retrieve_signer_key_with_base(
+        &ctx.home,
+        &base,
+        pinned_keyid,
+        offline,
+        &fetch,
+    ) {
+        Ok(retrieval) => Ok(retrieval),
+        Err(e) => {
+            journal(
+                &ctx.home,
+                &format!("event=key-retrieval-failed keyid={pinned_keyid} reason={e}"),
+            );
+            fail(EX_TEBAKO_TRUST, e.to_string())
+        }
+    }
+}
+
 /// The G1 fetch-time verification context (spec 09 §4): the keyring this
-/// fetch verifies against — the user's trusted keyring + the embedded
-/// first-party root + the `TEBAKO_TRUSTED_ROOT` dev override (the CLI's
-/// payload-install keyring, mirrored key-for-key) — plus the channel-3
+/// fetch verifies against ([`fetch_keyring`]) plus the channel-3
 /// registry signature pin (spec 09 §9) when the source came from a
-/// registry.
+/// registry. The keyring is interior-mutable: a spec 09 §10 retrieval
+/// (possibly a fetch-plan worker thread, mid-plan) widens it in place
+/// for the plan's remaining verifications.
 struct FetchTrust {
-    keyring: Vec<u8>,
+    keyring: Mutex<Vec<u8>>,
     signer_pin: Option<String>,
 }
 
 impl FetchTrust {
     fn build(source: &RuntimeSource, ctx: &Ctx) -> Result<FetchTrust, ShimError> {
-        let mut keyring = tebako_signer::trusted_keyring_bytes(&ctx.home).map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_IO,
-                format!("cannot read the trusted keyring: {e}"),
-            )
-        })?;
-        let root = tebako_signer::dearmor_bytes(tebako_signer::ROOT_PUBLIC_KEY.as_bytes())
-            .map_err(|e| {
-                ShimError::new(
-                    EX_TEBAKO_IO,
-                    format!("the embedded root key does not dearmor: {e}"),
-                )
-            })?;
-        keyring.extend_from_slice(&root);
-        if let Some(extra) = tebako_signer::trusted_root_override_key(
-            ctx.env_get("TEBAKO_TRUSTED_ROOT").map(str::to_string),
-        ) {
-            keyring.extend_from_slice(&extra);
-        }
         Ok(FetchTrust {
-            keyring,
+            keyring: Mutex::new(fetch_keyring(ctx)?),
             signer_pin: source.signer_pin.clone(),
         })
     }
 
-    /// Verify one detached-signature pair (spec 09 §4's strict rule):
-    /// Invalid → 71; Untrusted (the signer is not in the trusted
-    /// keyring) → 72; Trusted → the declared keyid (the entry's
-    /// `signature.keyid`, the PRIMARY per spec 13 §2a) and the channel-3
-    /// registry pin re-assert — a mismatch is SignerKeyChanged, 72.
-    /// Returns the resolved PRIMARY keyid of the verified signer.
+    /// Verify one detached-signature pair (spec 09 §4's strict rule +
+    /// spec 09 §10's retrieval ceremony): Invalid → 71; an UNTRUSTED
+    /// signer first tries the trust-anchor channel (the pinned identity
+    /// leads — the entry's declared `signature.keyid`, else the registry
+    /// pin, else the signature's issuer — admitted ONLY through the root
+    /// chain, never TOFU) and re-verifies against the widened keyring; a
+    /// still-untrusted signer → 72. Trusted → the declared keyid (the
+    /// PRIMARY per spec 13 §2a) and the channel-3 registry pin re-assert
+    /// — a mismatch is SignerKeyChanged, 72. Returns the resolved
+    /// PRIMARY keyid of the verified signer.
     fn verify_detached(
         &self,
+        ctx: &Ctx,
         what: &str,
         bytes: &[u8],
         asc: &[u8],
         declared_keyid: Option<&str>,
     ) -> Result<String, ShimError> {
-        let outcome =
-            tebako_signer::verify_detached_full(&self.keyring, bytes, asc).map_err(|e| {
-                ShimError::new(
-                    EX_TEBAKO_SIGNATURE,
-                    format!("cannot verify the signature on {what}: {e}"),
-                )
-            })?;
-        let issuer = match outcome {
-            tebako_signer::VerifyOutcome::Trusted(keyid) => keyid,
-            tebako_signer::VerifyOutcome::Untrusted(keyid) => {
-                return fail(
-                    EX_TEBAKO_TRUST,
-                    format!(
-                        "{what} is signed by {keyid}, which is not in the trusted keyring — refusing to install or execute\n  if you trust this signer, register its public key with `tebako key import`"
-                    ),
-                );
-            }
-            tebako_signer::VerifyOutcome::Invalid(keyid) => {
-                return fail(
-                    EX_TEBAKO_SIGNATURE,
-                    format!(
-                        "invalid signature on {what}{} — refusing to install or execute\n  the download was deleted; the cache was not touched",
-                        keyid.map(|k| format!(" (issuer {k})")).unwrap_or_default()
-                    ),
-                );
+        let mut retrieved = false;
+        let issuer = loop {
+            let outcome = {
+                let keyring = self.keyring.lock().unwrap_or_else(|e| e.into_inner());
+                tebako_signer::verify_detached_full(&keyring, bytes, asc).map_err(|e| {
+                    ShimError::new(
+                        EX_TEBAKO_SIGNATURE,
+                        format!("cannot verify the signature on {what}: {e}"),
+                    )
+                })?
+            };
+            match outcome {
+                tebako_signer::VerifyOutcome::Trusted(keyid) => break keyid,
+                tebako_signer::VerifyOutcome::Untrusted(keyid) if !retrieved => {
+                    retrieved = true;
+                    match retrieve_runtime_signer(
+                        ctx,
+                        &pinned_keyid(&keyid, declared_keyid, self.signer_pin.as_deref()),
+                    )? {
+                        Some(retrieval) => {
+                            journal(
+                                &ctx.home,
+                                &format!(
+                                    "event=key-retrieval keyid={} fingerprint={} source={} basis={}",
+                                    retrieval.keyid,
+                                    retrieval.fingerprint,
+                                    retrieval.source_url,
+                                    retrieval.basis.journal_label()
+                                ),
+                            );
+                            let mut slot = self.keyring.lock().unwrap_or_else(|e| e.into_inner());
+                            *slot = fetch_keyring(ctx)?;
+                        }
+                        // Offline: the pre-ceremony outcome stands.
+                        None => return Err(untrusted_signer(what, &keyid)),
+                    }
+                }
+                tebako_signer::VerifyOutcome::Untrusted(keyid) => {
+                    return Err(untrusted_signer(what, &keyid));
+                }
+                tebako_signer::VerifyOutcome::Invalid(keyid) => {
+                    return fail(
+                        EX_TEBAKO_SIGNATURE,
+                        format!(
+                            "invalid signature on {what}{} — refusing to install or execute\n  the download was deleted; the cache was not touched",
+                            keyid.map(|k| format!(" (issuer {k})")).unwrap_or_default()
+                        ),
+                    );
+                }
             }
         };
-        let primary = tebako_signer::primary_keyid_of(&self.keyring, &issuer)
-            .map_err(|e| {
-                ShimError::new(
-                    EX_TEBAKO_SIGNATURE,
-                    format!("cannot resolve the signer of {what}: {e}"),
-                )
-            })?
-            .unwrap_or_else(|| issuer.clone());
+        let primary = {
+            let keyring = self.keyring.lock().unwrap_or_else(|e| e.into_inner());
+            tebako_signer::primary_keyid_of(&keyring, &issuer)
+                .map_err(|e| {
+                    ShimError::new(
+                        EX_TEBAKO_SIGNATURE,
+                        format!("cannot resolve the signer of {what}: {e}"),
+                    )
+                })?
+                .unwrap_or_else(|| issuer.clone())
+        };
         // The entry pin (spec 13 §2a) and the channel-3 registry pin
         // (spec 09 §9) both name PRIMARY keyids; a signature issuing
         // from a signing SUBKEY resolves to its primary before the
@@ -1695,6 +1777,7 @@ impl FetchTrust {
     /// resolved PRIMARY keyid.
     fn verify_asset(
         &self,
+        ctx: &Ctx,
         dir_url: &str,
         local: bool,
         tmp_dir: &Path,
@@ -1739,7 +1822,7 @@ impl FetchTrust {
                 format!("cannot read the downloaded {}: {e}", asset_path.display()),
             )
         })?;
-        self.verify_detached(asset, &bytes, &asc, Some(&declared.keyid))
+        self.verify_detached(ctx, asset, &bytes, &asc, Some(&declared.keyid))
     }
 }
 
@@ -1769,6 +1852,7 @@ struct AcquiredIndex {
 #[allow(clippy::too_many_arguments)]
 fn acquire_index(
     trust: &FetchTrust,
+    ctx: &Ctx,
     base: &str,
     local: bool,
     tag: &str,
@@ -1806,7 +1890,7 @@ fn acquire_index(
     if let Some(asc) = fetch_opt(&format!("{shard_name}.asc")) {
         match fetch_opt(&shard_name) {
             Some(body) => {
-                let signer = trust.verify_detached(&shard_name, &body, &asc, None)?;
+                let signer = trust.verify_detached(ctx, &shard_name, &body, &asc, None)?;
                 match shard_card(&body) {
                     Some(card) => {
                         return Ok(AcquiredIndex {
@@ -1833,7 +1917,7 @@ fn acquire_index(
         // A dangling asc over an unfetchable body is not a verified form
         // — the next form is probed.
         if let Some(body) = fetch_opt("manifest.json") {
-            let signer = trust.verify_detached("manifest.json", &body, &asc, None)?;
+            let signer = trust.verify_detached(ctx, "manifest.json", &body, &asc, None)?;
             let text = String::from_utf8(body).map_err(|e| {
                 ShimError::new(
                     EX_TEBAKO_MANIFEST,
@@ -1849,7 +1933,8 @@ fn acquire_index(
     }
     if let Some(asc) = fetch_opt("SHA256SUMS.txt.asc") {
         if let Some(sums) = fetch_opt("SHA256SUMS.txt").and_then(|b| String::from_utf8(b).ok()) {
-            let signer = trust.verify_detached("SHA256SUMS.txt", sums.as_bytes(), &asc, None)?;
+            let signer =
+                trust.verify_detached(ctx, "SHA256SUMS.txt", sums.as_bytes(), &asc, None)?;
             return Ok(AcquiredIndex {
                 text: String::new(),
                 trust: IndexTrust::VerifiedSums { text: sums, signer },
@@ -1897,57 +1982,197 @@ fn acquire_index(
     fail(EX_TEBAKO_CONTRACT, msg)
 }
 
-/// Download + verify + atomically install one asset into an entry staging
-/// dir. The spec 09 §4 order: the DECLARED signature verifies first
-/// (invalid → 71, untrusted signer / pin mismatch → 72), then the sha256
-/// (70). `fetch_name` is the release-asset spelling (the URL's last
-/// segment); `install_name` the name it stages under (the windows dll
-/// facet's PE name — everywhere else the two are one). Returns the
-/// verified sha256 plus the verified signer's PRIMARY keyid when a
-/// signature was declared and verified.
+/// The runtime plan commit closures' report channel (the closures run
+/// on the pipeline's worker threads): the verified signers (the audit
+/// journal's `signer=` list) and the FIRST precise named error — the
+/// pipeline's own [`ResolveError`] is only the cancel marker; this
+/// error's exit code rides back verbatim.
+#[derive(Default)]
+struct RuntimePlanSink {
+    signers: Mutex<Vec<String>>,
+    error: Mutex<Option<ShimError>>,
+}
+
+impl RuntimePlanSink {
+    fn add_signer(&self, keyid: String) {
+        self.signers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(keyid);
+    }
+
+    fn fail(&self, e: ShimError) -> ResolveError {
+        let mut slot = self.error.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_none() {
+            *slot = Some(e);
+        }
+        drop(slot);
+        ResolveError::Commit {
+            reason: "the runtime's install commit failed".to_string(),
+        }
+    }
+
+    fn take_error(&self) -> Option<ShimError> {
+        self.error.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    fn signers(&self) -> Vec<String> {
+        self.signers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+}
+
+/// The fetch plan's transport/integrity failures as the shim's named
+/// codes — the sequential download path's exact refusal shapes.
+fn map_runtime_plan(e: ResolveError) -> ShimError {
+    match e {
+        ResolveError::Sha256Mismatch {
+            origin,
+            expected,
+            actual,
+        } => ShimError::new(
+            EX_TEBAKO_SHA,
+            format!(
+                "SHA256 mismatch for downloaded runtime {origin} — refusing to install or execute\n  expected: {expected} (from the release index)\n  actual:   {actual}\n  the download was deleted; the cache was not touched"
+            ),
+        ),
+        ResolveError::NotFound { origin } | ResolveError::DownloadFailed { origin, .. } => {
+            download_failed(&origin)
+        }
+        ResolveError::Offline { what } => ShimError::new(
+            EX_TEBAKO_UNAVAILABLE,
+            format!("cannot download {what}: TEBAKO_OFFLINE is set"),
+        ),
+        ResolveError::Commit { reason } => ShimError::new(EX_TEBAKO_IO, reason),
+        other => ShimError::new(EX_TEBAKO_UNAVAILABLE, other.to_string()),
+    }
+}
+
+/// The download failure refusal (exit 74) — the sequential path's text.
+fn download_failed(url: &str) -> ShimError {
+    ShimError::new(
+        EX_TEBAKO_UNAVAILABLE,
+        format!(
+            "runtime download failed\n  url: {url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
+        ),
+    )
+}
+
+/// One runtime facet (exe / env image / windows dll) as a fetch-plan
+/// item (spec 05 §6): the artifact streams into the entry's staging
+/// dir with its sha256 computed inline; the commit — on the worker,
+/// overlapped with the plan's remaining streams — verifies the DECLARED
+/// signature FIRST (spec 09 §4's order: invalid → 71, untrusted / pin
+/// mismatch → 72), then the sha256 against the release index's
+/// expectation (70, the sequential path's exact refusal text), then
+/// publishes under `install_name` with the facet's permissions and
+/// trust markers. The exe additionally writes the entry-level `sha256`
+/// / `origin` markers.
 #[allow(clippy::too_many_arguments)]
-fn install_asset(
-    dir_url: &str,
+fn runtime_facet_item<'p>(
+    dir_url: &'p str,
     local: bool,
     fetch_name: &str,
     install_name: &str,
-    tmp_dir: &Path,
     expected: &str,
-    sig: Option<(&EntrySignature, &FetchTrust)>,
-) -> Result<(String, Option<String>), ShimError> {
+    signature: Option<&'p EntrySignature>,
+    trust: &'p FetchTrust,
+    sink: &'p RuntimePlanSink,
+    ctx: &'p Ctx,
+    tmp_dir: &Path,
+    executable: bool,
+    entry_markers: bool,
+    runtime_ref: &str,
+) -> Result<FetchItem<'p>, ShimError> {
     let url = format!("{dir_url}/{fetch_name}");
-    let tmp_asset = tmp_dir.join(install_name);
-    if fetch_url(&url, local, &tmp_asset).is_err() {
-        return fail(
-            EX_TEBAKO_UNAVAILABLE,
-            format!(
-                "runtime download failed\n  url: {url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
-            ),
-        );
-    }
-    let signer = match sig {
-        Some((declared, trust)) => {
-            Some(trust.verify_asset(dir_url, local, tmp_dir, &tmp_asset, fetch_name, declared)?)
+    let reference = if local {
+        Reference::File {
+            path: url.clone(),
+            sha256: None,
         }
-        None => None,
+    } else {
+        Reference::parse(&url).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!("runtime asset url {url}: {e}"),
+            )
+        })?
     };
-    let actual = sha256_file_hex(&tmp_asset).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!("cannot hash downloaded file {}: {e}", tmp_asset.display()),
-        )
-    })?;
-    if expected.to_lowercase() != actual {
-        let _ = std::fs::remove_file(&tmp_asset);
-        return fail(
-            EX_TEBAKO_SHA,
+    let expected = expected.to_lowercase();
+    let fetch_name = fetch_name.to_string();
+    let display = fetch_name.clone();
+    let install_name = install_name.to_string();
+    let staging = tmp_dir.to_path_buf();
+    let runtime_ref = runtime_ref.to_string();
+    let commit = move |staged: &StagedArtifact| {
+        if let Some(declared) = signature {
+            match trust.verify_asset(
+                ctx,
+                dir_url,
+                local,
+                &staging,
+                staged.tmp,
+                &fetch_name,
+                declared,
+            ) {
+                Ok(signer) => sink.add_signer(signer),
+                Err(e) => return Err(sink.fail(e)),
+            }
+        }
+        if expected != staged.sha256 {
+            return Err(sink.fail(ShimError::new(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for downloaded runtime {fetch_name} — refusing to install or execute\n  expected: {expected} (from the release index)\n  actual:   {}\n  the download was deleted; the cache was not touched",
+                    staged.sha256
+                ),
+            )));
+        }
+        let dest = staging.join(&install_name);
+        if let Err(e) = std::fs::rename(staged.tmp, &dest) {
+            return Err(sink.fail(ShimError::new(
+                EX_TEBAKO_IO,
+                format!("cannot stage {}: {e}", dest.display()),
+            )));
+        }
+        if executable {
+            make_executable(&dest);
+        } else {
+            make_readonly(&dest);
+        }
+        // Trust markers (spec 05 §2's store grammar): the exe's are the
+        // entry-level `sha256` / `origin`; a facet's name its own.
+        let (sha_marker, origin_marker) = if entry_markers {
+            (staging.join("sha256"), staging.join("origin"))
+        } else {
+            (
+                staging.join(format!("{install_name}.sha256")),
+                staging.join(format!("{install_name}.origin")),
+            )
+        };
+        let _ = std::fs::write(sha_marker, format!("{}  {install_name}\n", staged.sha256));
+        let _ = std::fs::write(
+            origin_marker,
             format!(
-                "SHA256 mismatch for downloaded runtime {fetch_name} — refusing to install or execute\n  expected: {} (from the release index)\n  actual:   {actual}\n  the download was deleted; the cache was not touched",
-                expected.to_lowercase()
+                "runtime_ref={runtime_ref}\nurl={url}\nsha256={}\n",
+                staged.sha256
             ),
         );
-    }
-    Ok((actual, signer))
+        Ok(CommitReport { line: None })
+    };
+    Ok(FetchItem {
+        display,
+        reference,
+        // The sha compare rides the commit (AFTER the signature, spec
+        // 09 §4's order) on the inline-computed digest — no item carries
+        // the pipeline's pin.
+        sha256_pin: None,
+        size_hint: None,
+        tmp_dir: tmp_dir.to_path_buf(),
+        commit: Box::new(commit),
+    })
 }
 
 /// What the staging step produced: a fresh install (the staged names)
@@ -1974,6 +2199,7 @@ fn download_runtime(
     engine: &str,
     pref: &RuntimePref,
     source: &RuntimeSource,
+    cfg: &config::UserConfig,
     ctx: &Ctx,
 ) -> Result<CachedRuntime, ShimError> {
     let platform = platform_string();
@@ -2100,6 +2326,7 @@ fn download_runtime(
         let trust = FetchTrust::build(source, ctx)?;
         let acquired = acquire_index(
             &trust,
+            ctx,
             &base,
             local,
             &tag,
@@ -2242,33 +2469,13 @@ fn download_runtime(
             .map(str::to_string)
             .into_iter()
             .collect();
-        let (actual, exe_signer) = install_asset(
-            &dir_url,
-            local,
-            &asset,
-            &asset,
-            &tmp_dir,
-            &expected,
-            exe_sig.as_ref().map(|s| (s, &trust)),
-        )?;
-        signers.extend(exe_signer);
-        make_executable(&tmp_dir.join(&asset));
         // image-era runtime image: same mirror/offline/verify rules —
         // when the release index carries it. The image is optional only
         // in an otherwise contract-complete release (an entry with the
         // contract set but no `image` key: the exe's embedded image
         // serves and it installs alone — the s14 sums-fallback shape).
         // The contract gate is the same one (the exe entry governs its
-        // additive image too).
-        contract_gate(
-            &runtime_ref,
-            &manifest_text,
-            &asset,
-            engine,
-            &pref.version,
-            &pref.tebako,
-            platform,
-        )?;
+        // additive image too) — it ran above, before any download.
         let image = expected_checksum(&ChecksumQuery {
             base: &base,
             local,
@@ -2279,30 +2486,6 @@ fn download_runtime(
             from_shard,
             trust: &index_trust,
         })?;
-        let has_image = if let Some(image_expected) = image.sha {
-            let (image_actual, image_signer) = install_asset(
-                &dir_url,
-                local,
-                &image_asset,
-                &image_asset,
-                &tmp_dir,
-                &image_expected,
-                image_sig.as_ref().map(|s| (s, &trust)),
-            )?;
-            signers.extend(image_signer);
-            make_readonly(&tmp_dir.join(&image_asset));
-            let _ = std::fs::write(
-                tmp_dir.join(format!("{image_asset}.sha256")),
-                format!("{image_actual}  {image_asset}\n"),
-            );
-            let _ = std::fs::write(
-                tmp_dir.join(format!("{image_asset}.origin")),
-                format!("runtime_ref={runtime_ref}\nurl={dir_url}/{image_asset}\nsha256={image_actual}\n"),
-            );
-            true
-        } else {
-            false
-        };
         // windows dll-era runtimes (tebako-runtime-ruby#40): the exe
         // imports the ruby core DLL — the release manifest's additive
         // `dll` key names the asset and the PE name (`install_as`) it
@@ -2311,46 +2494,101 @@ fn download_runtime(
         // mirror/offline/verify rules as the image, the same contract
         // gate (the exe entry governs its additive facets); a
         // contract-complete entry with no `dll` key installs the exe
-        // alone (every POSIX release).
-        if let Some(dll_facet) = entry_dll_from_index(&manifest_text, &asset) {
-            let tpkg::runtime_store::EntryDll {
-                filename: dll_asset,
-                install_as,
-                sha256: dll_expected,
-            } = dll_facet;
-            if install_as.contains('/') || install_as.contains('\\') {
+        // alone (every POSIX release). The traversal check gates BEFORE
+        // any download.
+        let dll = entry_dll_from_index(&manifest_text, &asset);
+        if let Some(facet) = &dll {
+            if facet.install_as.contains('/') || facet.install_as.contains('\\') {
                 return fail(
                     EX_TEBAKO_UNAVAILABLE,
                     format!(
-                        "release manifest dll facet for {asset} carries an unusable install_as (\"{install_as}\") — the PE name must be a bare file name — refusing to install or execute"
+                        "release manifest dll facet for {asset} carries an unusable install_as (\"{}\") — the PE name must be a bare file name — refusing to install or execute",
+                        facet.install_as
                     ),
                 );
             }
-            let (dll_actual, dll_signer) = install_asset(
+        }
+
+        // The fetch pipeline (spec 05 §6): the runtime's artifacts stream
+        // CONCURRENTLY into the entry's staging dir, each sha256 computed
+        // inline; each artifact's commit (its worker, overlapped with the
+        // remaining streams) verifies the DECLARED signature FIRST (spec
+        // 09 §4's order), then the sha256 against the index's
+        // expectation, then stages the bytes under the install name with
+        // the facet's permissions and trust markers. Any failure cancels
+        // the plan; the caller drops the staging dir — a partial install
+        // never publishes.
+        let sink = RuntimePlanSink::default();
+        let mut items = vec![runtime_facet_item(
+            &dir_url,
+            local,
+            &asset,
+            &asset,
+            &expected,
+            exe_sig.as_ref(),
+            &trust,
+            &sink,
+            ctx,
+            &tmp_dir,
+            true,
+            true,
+            &runtime_ref,
+        )?];
+        let has_image = image.sha.is_some();
+        if let Some(image_expected) = &image.sha {
+            items.push(runtime_facet_item(
                 &dir_url,
                 local,
-                &dll_asset,
-                &install_as,
+                &image_asset,
+                &image_asset,
+                image_expected,
+                image_sig.as_ref(),
+                &trust,
+                &sink,
+                ctx,
                 &tmp_dir,
-                &dll_expected,
-                dll_sig.as_ref().map(|s| (s, &trust)),
-            )?;
-            signers.extend(dll_signer);
-            make_readonly(&tmp_dir.join(&install_as));
-            let _ = std::fs::write(
-                tmp_dir.join(format!("{install_as}.sha256")),
-                format!("{dll_actual}  {install_as}\n"),
-            );
-            let _ = std::fs::write(
-                tmp_dir.join(format!("{install_as}.origin")),
-                format!("runtime_ref={runtime_ref}\nurl={dir_url}/{dll_asset}\nsha256={dll_actual}\n"),
-            );
+                false,
+                false,
+                &runtime_ref,
+            )?);
         }
-        let _ = std::fs::write(tmp_dir.join("sha256"), format!("{actual}  {asset}\n"));
-        let _ = std::fs::write(
-            tmp_dir.join("origin"),
-            format!("runtime_ref={runtime_ref}\nurl={dir_url}/{asset}\nsha256={actual}\n"),
+        if let Some(facet) = &dll {
+            items.push(runtime_facet_item(
+                &dir_url,
+                local,
+                &facet.filename,
+                &facet.install_as,
+                &facet.sha256,
+                dll_sig.as_ref(),
+                &trust,
+                &sink,
+                ctx,
+                &tmp_dir,
+                false,
+                false,
+                &runtime_ref,
+            )?);
+        }
+        let jobs = resolve_fetch_jobs(
+            ctx.env_get(FETCH_JOBS_ENV).map(str::to_string),
+            cfg.fetch_jobs,
+        )
+        .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
+        let transport = HttpTransport;
+        let progress = ProgressSet::stderr();
+        let plan = execute_plan(
+            &transport,
+            FetchPlan::new(format!("runtime {runtime_ref}"), items),
+            jobs,
+            Some(&progress),
         );
+        // The commit's precise named error beats the plan's cancel
+        // marker (its exit code is the refusal's own).
+        if let Some(e) = sink.take_error() {
+            return Err(e);
+        }
+        plan.map_err(map_runtime_plan)?;
+        signers.extend(sink.signers());
         // spec 05 §2's journal rule: every download records the base, the
         // channel that supplied it, and the verification strength.
         if !signers.is_empty() {
