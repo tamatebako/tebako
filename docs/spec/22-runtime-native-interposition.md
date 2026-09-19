@@ -521,7 +521,11 @@ with no payload code learning tebako: **the driver prepends every
 co-mounted dependency image's declared bin dirs to `PATH` in the
 handoff env** — the dirname of each entrypoint path in the image's own
 manifest (the image declares, the driver flows; no second copy of the
-knowledge anywhere). On ELF the interposed exec loop then resolves the
+knowledge anywhere). Under the windows materialize tier (spec 17 §7)
+those dirs name the extracted host trees, through the same mount→host
+map the `TEBAKO_MOUNT_<SLUG>` export consumes — the host loader's
+`PATH` search cannot resolve the VFS spelling. On ELF the interposed
+exec loop then resolves the
 bare name through the VFS (§3.1). The explicit-reference surface for
 everything else — windows-safe and shell-free — is
 `TEBAKO_MOUNT_<SLUG>` per dependency mount (§6; v2-1/20), for payload

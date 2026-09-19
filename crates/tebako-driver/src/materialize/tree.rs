@@ -1004,6 +1004,77 @@ mod tests {
         assert!(!env_target.join("bin").exists());
     }
 
+    /// The dependency payload's manifest (kind app; one entrypoint —
+    /// its bin dir is what §3.2 flows onto `PATH`).
+    fn app_manifest() -> String {
+        format!(
+            "identity:\n  schema_version: 1\n  kind: app\n  name: dep\n  version: \"1\"\n  \
+             producer: {{tool: t, tool_version: \"1\"}}\n  created: now\n  \
+             digest: {{tree_hash: \"sha256:{}\", blob_sha256: {}}}\n  \
+             signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+             provides:\n  entrypoints:\n    - {{name: tool, path: /bin/tool}}\n  \
+             platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+            "12".repeat(32),
+            "34".repeat(32),
+        )
+    }
+
+    #[test]
+    fn the_path_export_names_the_extracted_host_bin_dirs() {
+        // spec 17 §7's PATH rewiring: the §3.2 dependency bin dirs
+        // compose from the VFS mount points, which the host loader
+        // cannot resolve under the tier (the xml2rfc windows leg staged
+        // its mingw DLLs beside the pyds to dodge exactly this) — the
+        // boot's mount→host map must translate them onto the extracted
+        // trees, through the same map the mount-vars export consumes.
+        let g = MountGuard::new("pathenv");
+        // A fresh boot must not inherit a previous boot's spawn surface
+        // (the boot fixtures' reset discipline; the guard holds the
+        // crate-wide lock the STATE writes serialize on).
+        crate::spawn::reset();
+        let image = write_env_image(&g, true);
+        mount(&image, "/rt");
+        // The first triple (the app payload) is a plain image — its own
+        // bins are the entrypoint's business and never ride PATH; the
+        // DEPENDENCY declares its entrypoint so its bin dir does.
+        let app = write_image(&g, "app.tfs");
+        let dep = g.tmp.join("dep.tfs");
+        build_zip(
+            &dep,
+            &["bin/", "__tpkg__/"],
+            &[
+                ("bin/tool", b"#!/usr/bin/env python3\n".as_slice()),
+                ("__tpkg__/manifest.yaml", app_manifest().as_bytes()),
+            ],
+        );
+        mount(&app, "/app");
+        mount(&dep, "/dep");
+        let cache = g.tmp.join("cache");
+        let env = env_with(&[
+            ("TEBAKO_RUNTIME_IMAGE", &image.display().to_string()),
+            (crate::exec_cache::VAR, &cache.display().to_string()),
+        ]);
+        let specs = vec![
+            ImageSpec {
+                source: ImageSource::File(app, SlotRef::Whole),
+                mount: "/app".to_string(),
+            },
+            ImageSpec {
+                source: ImageSource::File(dep, SlotRef::Whole),
+                mount: "/dep".to_string(),
+            },
+        ];
+        let boot = boot_tier(&specs, &env, "/rt").unwrap().unwrap();
+        let overrides = boot.mount_overrides();
+        crate::path_env::export(&specs, &env, None, &overrides).unwrap();
+        let path = env_var(&env, "PATH").unwrap_or_default();
+        let dep_tree = &overrides.iter().find(|(m, _)| m == "/dep").unwrap().1;
+        // The dependency's bin dir names the EXTRACTED tree; the VFS
+        // spelling is gone from the lead.
+        assert!(path.contains(&format!("{dep_tree}/bin")), "{path}");
+        assert!(!path.contains("/dep/bin"), "{path}");
+    }
+
     #[test]
     fn scrub_inherited_blanks_only_the_tiers_own_state() {
         // The marker present: both vars blank (the env_var filter reads
