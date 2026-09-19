@@ -163,7 +163,10 @@ EOF
 # (the crate's build script declares no rerun-if-env-changed for them) —
 # scrub its build dir so a cache restored from a pre-fix run cannot leak
 # a winstore-carrying botan into this link.
-rm -rf "target/$TARGET/release/build/rnp-src-"* || true
+rm -rf "target/$TARGET/release/build/rnp-src-"* \
+       "target/$TARGET/release/build/dwarfs_t_sys-"* || true
+rm -f "target/$TARGET/release/deps/libdwarfs_t_sys-"*.rlib \
+      "target/$TARGET/release/deps/libdwarfs_t_sys-"*.d || true
 # tebako (tebako-cli), tebako-pkg, tebako-shim link tebako-signer →
 # rnp-rs → rnp-src, whose 0.3.0 release stomped a caller-provided
 # BOTAN_CONFIGURE_CC on every windows host. The fork branch pinned via
