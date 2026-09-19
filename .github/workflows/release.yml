@@ -1272,14 +1272,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tamatebako/dwarfs-rs
-          ref: c0b9fc94e720a19f43a8c39a0ebb204822a202e2
+          ref: fix/msvc-arm64-link-set
           path: dwarfs-rs
           submodules: recursive
-          # CI-only leg pin: carries the abi_check.c C11 fix (dwarfs-t-rs#8,
-          # merged) plus the dwarfs-t submodule bump to the probe-safe
-          # arm64-windows-static triplet (dwarfs-t-rs#9 → dwarfs-t#100 —
-          # without it vcpkg's detect_compiler probe dies at EnableLanguage
-          # under the /MT overlay). Drop the ref when both land on main.
+          # CI-only leg pin: main (c0b9fc9, the #9 triplet bump) plus
+          # dwarfs-t-sys's MSVC link-set fix (dwarfs-t-rs#10) — without it
+          # the tfs.dll link dies on 30 unresolved boost::*/shell32/psapi/
+          # crypt32 externals (lib_stem never matched vcpkg's suffixed
+          # boost .lib archives, and the SDK tail was gnu-only). Drop the
+          # ref when #10 lands on main.
 
       # The VS cross environment (x64 host → arm64 target): cl, link,
       # nmake (botan-src's windows build tool) and the arm64 SDK/VC lib
