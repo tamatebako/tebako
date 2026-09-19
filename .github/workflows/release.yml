@@ -66,6 +66,16 @@
 # platform id windows-ucrt64 per the spec 03 §3 axis) and the
 # `windows-link-unit` job (the factory's staticlib input).
 #
+# Windows arm64 (roadmap 02 Gap 1, phase 1) builds + smokes the
+# signer-free tool set on `windows-arm64` — cross-compiled on the x64
+# runner under the VS x64_arm64 environment (no arm64 windows hosted
+# runners), vcpkg triplet arm64-windows-static-md (core), PE machine
+# gate instead of a --version run. The job carries no upload steps and
+# is not in finalize's needs: it ships nothing by construction. The
+# signer-linked tools (tebako, tfs, tebako-pkg, tebako-shim) are a named
+# red on that leg until rnp-src grows an MSVC path — see
+# ci/windows-arm64-msvc-build.sh and roadmap 02 Gap 1.
+#
 # Rehearsal mode (roadmap 89): PRs touching this workflow, ci/, or
 # templates/installers/ run the macos + windows + installer legs with
 # every signing plane force-disarmed and every upload gated off — the
@@ -1220,6 +1230,105 @@ jobs:
         run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================================================
+  # Windows arm64 (roadmap 02 Gap 1, phase 1 — build + smoke, ships
+  # nothing). Cross-built on this x64 runner under the VS x64_arm64
+  # environment (GitHub has no arm64 windows hosted runners): Rust target
+  # aarch64-pc-windows-msvc, vcpkg triplet arm64-windows-static-md (core,
+  # /MD — matches Rust's default dynamic CRT). All leg logic lives in
+  # ci/windows-arm64-msvc-build.sh: the signer-free set (bootstrap, tfs
+  # + driver + wrapper) builds; a PE-machine (0xAA64) gate stands in for
+  # the --version smoke (no arm64 emulation on the runner); the
+  # bootstrap's < 3 MiB gate holds. The signer-linked tools are a named
+  # red there (rnp-src's windows-gcc hardcode — see the script + roadmap
+  # 02 Gap 1). Deliberately ABSENT: the vcpkg baseline-restore step (no
+  # arm64-windows-static-md baseline is published — the in-leg port
+  # build IS the phase-1 prove-out) and every upload step (no finalize
+  # need, no fragment, no release asset — the leg cannot ship by
+  # construction).
+  # ==========================================================================
+  windows-arm64:
+    name: Windows arm64 (msvc cross — build + smoke, ships nothing)
+    permissions:
+      contents: read
+      # packages:write populates the org's GitHub Packages vcpkg binary
+      # cache (ci/vcpkg-nuget-cache.sh) with the arm64-windows-static-md
+      # packages — the first green run pays the cold port build once.
+      packages: write
+    runs-on: windows-latest
+    env:
+      # The short-root MAX_PATH dodge (boost headers), same root the
+      # x64-mingw-static leg pins — no baseline restore runs here, so the
+      # job owns the value instead of inheriting it from the restore.
+      DWARFS_RS_VCPKG_INSTALLED_DIR: C:/vcpkg-inst
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tebako-rs
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      # The VS cross environment (x64 host → arm64 target): cl, link,
+      # nmake (botan-src's windows build tool) and the arm64 SDK/VC lib
+      # paths for every later step.
+      - name: Set up the VS x64_arm64 cross environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1 (2024-01-01)
+
+      - uses: dtolnay/rust-toolchain@e43eeffd51aefeea929f4ea14e09fd077153e788 # 1.94.1
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      # dwarfs-t-sys's build.rs requires ninja on windows (its generator
+      # pick); cmake drives both the outer project and vcpkg's ports.
+      - name: Install CMake and Ninja
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb # v4.4.2
+        with:
+          cmakeVersion: latest
+          ninjaVersion: latest
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      # run-vcpkg@v11's injected x-gha spec is zero binary cache since
+      # vcpkg 2025.06 (see ci/vcpkg-nuget-cache.sh); the org's GitHub
+      # Packages NuGet feed replaces it. arm64-windows-static-md package
+      # ids join the same feed — the first run pushes, later runs restore.
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          # First-push of a new package id CANNOT be done by GITHUB_TOKEN
+          # (GitHub quirk: 403 on creation; community#159893) — the org
+          # secret (classic PAT, write:packages) owns creation when present;
+          # GITHUB_TOKEN remains the read path and the whole fallback.
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
+
+      - name: Build + smoke the signer-free set (named blocker for the rest)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: bash ci/windows-arm64-msvc-build.sh
+
+      - name: Dump vcpkg build logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          for f in .vcpkg-root/buildtrees/*/build-arm64-windows-static-md-*-err.log .vcpkg-root/buildtrees/*/install-arm64-windows-static-md-*-err.log; do
+            [ -f "$f" ] || continue
+            echo "=== $f ==="
+            tail -200 "$f"
+          done
 
   # ==========================================================================
   # Installer containers (roadmap 83, spec 16 §7): the system MSI + pkg,
