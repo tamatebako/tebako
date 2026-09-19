@@ -80,6 +80,7 @@ export DWARFS_RS_VCPKG_TRIPLET=arm64-windows-static
 # fix iterations — a restored cache could otherwise leak pre-fix botan
 # and boost objects into ANY link, including this script's first one.
 rm -rf "target/$TARGET/release/build/rnp-src-"* \
+       "target/$TARGET/release/build/rnp-sys-"* \
        "target/$TARGET/release/build/dwarfs_t_sys-"* \
        "target/$TARGET/release/build/dwarfs-t-sys-"* || true
 rm -f "target/$TARGET/release/deps/libdwarfs_t_sys-"*.rlib \
@@ -88,9 +89,12 @@ rm -f "target/$TARGET/release/deps/libdwarfs_t_sys-"*.rlib \
       "target/$TARGET/release/deps/tfs.dll.lib" || true
 # Botan's configure takes the toolchain from these (rnp-src's caller-
 # respect guard — rnpgp/rnp-rs#103, pinned via [patch.crates-io] —
-# leaves a caller-provided value in place; the x64_arm64 env's cl is
-# what botan must use, and no gcc exists here).
-export BOTAN_CONFIGURE_CC=cl
+# leaves a caller-provided value in place). --cc wants the compiler
+# FAMILY (msvc — "cl" is rejected: configure's known set is clang /
+# clangcl / emcc / gcc / icc / msvc / xcode / xlc); --cc-bin carries the
+# binary. The x64_arm64 env's cl is what botan must compile with, and
+# no gcc exists here.
+export BOTAN_CONFIGURE_CC=msvc
 export BOTAN_CONFIGURE_CC_BIN=cl
 
 # tebako-bootstrap keeps its OWN invocation: cargo feature unification
