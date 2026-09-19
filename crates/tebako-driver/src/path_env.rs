@@ -5,7 +5,8 @@
 //! declares its own executables (the in-image manifest:
 //! `provides.entrypoints[].path` for an app, `provides.executables[].path`
 //! for a toolkit); the driver flows the dirnames, joined under the mount
-//! point, in triple order — the image declares, the driver flows, no
+//! point (the extracted HOST tree under the spec-17 §7 materialize
+//! tier), in triple order — the image declares, the driver flows, no
 //! second copy of the knowledge anywhere.
 //!
 //! The FIRST triple is the app payload the entry resolves against
@@ -55,12 +56,17 @@ use tpkg::{PayloadManifest, Provides};
 
 /// Prepend the dependency mounts' declared bin dirs to `PATH` — led by
 /// the launcher dir when the shim was delivered (`shim_host`, unix).
-/// Called per boot after the mounts are established, next to the
-/// mount-vars export (spec 22 §6).
+/// `host_overrides` carries the spec-17 §7 materialize tier's (mount →
+/// extracted host dir) pairs — the SAME map `export_mount_vars`
+/// consumes: a mount in the map has its §3.2 bin dirs joined under the
+/// extracted HOST tree, never the VFS point (the host loader's `PATH`
+/// search cannot resolve the VFS spelling). Called per boot after the
+/// mounts are established, next to the mount-vars export (spec 22 §6).
 pub fn export(
     images: &[ImageSpec],
     env: &dyn Env,
     shim_host: Option<&str>,
+    host_overrides: &[(String, String)],
 ) -> Result<(), DriverError> {
     // Each dependency image's manifest is read once: the bin dirs ride
     // PATH on every platform; the declared executables feed the launcher
@@ -95,7 +101,11 @@ pub fn export(
     }
     for (mount, manifest) in &deps {
         for declared in bin_dirs(&manifest.provides) {
-            let dir = join_mount(mount, &declared);
+            let dir = host_overrides
+                .iter()
+                .find(|(m, _)| m == mount)
+                .map(|(_, host)| join_mount(host, &declared))
+                .unwrap_or_else(|| join_mount(mount, &declared));
             if !dirs.contains(&dir) {
                 dirs.push(dir);
             }
@@ -528,7 +538,7 @@ mod tests {
             "PATH".to_string(),
             "/usr/bin".to_string(),
         )])));
-        export(&[], &env, None).unwrap();
+        export(&[], &env, None, &[]).unwrap();
         assert_eq!(
             env.0.borrow().get("PATH").map(String::as_str),
             Some("/usr/bin")
@@ -543,7 +553,7 @@ mod tests {
             "PATH".to_string(),
             "/usr/bin".to_string(),
         )])));
-        export(&[], &env, Some("/x/libtfs_preload.so")).unwrap();
+        export(&[], &env, Some("/x/libtfs_preload.so"), &[]).unwrap();
         assert_eq!(
             env.0.borrow().get("PATH").map(String::as_str),
             Some("/usr/bin")
