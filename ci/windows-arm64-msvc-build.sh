@@ -88,14 +88,21 @@ rm -f "target/$TARGET/release/deps/libdwarfs_t_sys-"*.rlib \
       "target/$TARGET/release/deps/tfs.dll" \
       "target/$TARGET/release/deps/tfs.dll.lib" || true
 # Botan's configure takes the toolchain from these (rnp-src's caller-
-# respect guard — rnpgp/rnp-rs#103, pinned via [patch.crates-io] —
-# leaves a caller-provided value in place). --cc wants the compiler
-# FAMILY (msvc — "cl" is rejected: configure's known set is clang /
-# clangcl / emcc / gcc / icc / msvc / xcode / xlc); --cc-bin carries the
-# binary. The x64_arm64 env's cl is what botan must compile with, and
-# no gcc exists here.
+# respect guard — rnpgp/rnp-rs#103, shipped in rnp-src 0.3.1 — leaves a
+# caller-provided value in place). --cc wants the compiler FAMILY (msvc —
+# "cl" is rejected: configure's known set is clang / clangcl / emcc /
+# gcc / icc / msvc / xcode / xlc); --cc-bin carries the binary. The
+# x64_arm64 env's cl is what botan must compile with, and no gcc exists
+# here.
 export BOTAN_CONFIGURE_CC=msvc
 export BOTAN_CONFIGURE_CC_BIN=cl
+# rnp-src's cmake deps (json-c, zlib, librnp) take cmake's default
+# generator — on a windows runner that is Visual Studio: multi-config
+# (build lands in Debug/, install looks in Release/ — run 35438795757's
+# json-c.lib miss) and x64 by default, the wrong arch for this leg.
+# Ninja is single-config (CMAKE_BUILD_TYPE=Release governs end to end)
+# and the x64_arm64 vcvars env's cl targets arm64 without a -A flag.
+export CMAKE_GENERATOR=Ninja
 
 # tebako-bootstrap keeps its OWN invocation: cargo feature unification
 # with the other tools would re-enable tebako-resolve's `git` stack
