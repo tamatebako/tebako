@@ -105,8 +105,15 @@ cargo build --release --target "$TARGET" -p tebako-bootstrap
 # + vcpkg arm64-windows-static closure compiles AND links under MSVC
 # ARM64, which is the leg's core prove-out. tebako-driver (the runtime
 # exe's mount engine) and the spec-29 wrapper exe ride along.
+# Phase 1 (roadmap 02, rescoped): tfs builds LIMNIFS-ONLY here — the
+# house format is pure Rust and is what every shipped artifact uses;
+# the dwarfs backend is an optional compatibility surface and its
+# arm64-static link closure (boost_program_options + crypt32 on the
+# cdylib link line) is the dwarfs-t project's own milestone (dwarfs-t
+# #100 / dwarfs-t-rs), tracked there. An arm64 dwarfs mount answers
+# ENOTSUP exactly as any feature-disabled backend does.
 cargo build --release --target "$TARGET" \
-  -p tfs --no-default-features --features vendored-dwarfs,backend-limnifs \
+  -p tfs --no-default-features --features backend-limnifs \
   -p tebako-driver -p tebako-runtime-launcher
 
 # --- 2. size gates ----------------------------------------------------------
