@@ -1272,7 +1272,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tamatebako/dwarfs-rs
-          ref: main
+          ref: c0b9fc94e720a19f43a8c39a0ebb204822a202e2
           path: dwarfs-rs
           submodules: recursive
           # CI-only leg pin: carries the abi_check.c C11 fix (dwarfs-t-rs#8,
