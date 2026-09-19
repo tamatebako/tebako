@@ -74,6 +74,18 @@ esac
 # /MT pairing — hence DWARFS_RS_VCPKG_TRIPLET here, not the default.
 export RUSTFLAGS="-C target-feature=+crt-static"
 export DWARFS_RS_VCPKG_TRIPLET=arm64-windows-static
+# SCRUB FIRST, before any build: neither rnp-src (BOTAN_* env, no
+# rerun-if-env-changed) nor dwarfs_t_sys (vendored content not in the
+# fingerprint) keys its cargo unit on the inputs that changed across the
+# fix iterations — a restored cache could otherwise leak pre-fix botan
+# and boost objects into ANY link, including this script's first one.
+rm -rf "target/$TARGET/release/build/rnp-src-"* \
+       "target/$TARGET/release/build/dwarfs_t_sys-"* \
+       "target/$TARGET/release/build/dwarfs-t-sys-"* || true
+rm -f "target/$TARGET/release/deps/libdwarfs_t_sys-"*.rlib \
+      "target/$TARGET/release/deps/libdwarfs_t_sys-"*.d \
+      "target/$TARGET/release/deps/tfs.dll" \
+      "target/$TARGET/release/deps/tfs.dll.lib" || true
 # Botan's configure takes the toolchain from these (rnp-src's caller-
 # respect guard — rnpgp/rnp-rs#103, pinned via [patch.crates-io] —
 # leaves a caller-provided value in place; the x64_arm64 env's cl is
@@ -159,14 +171,6 @@ sys.exit(1 if failed else 0)
 EOF
 
 # --- 4. the signer-linked tools (the rnp-src fix lands) ---------------------
-# Cargo may reuse a cached rnp-src build unit across BOTAN_* env changes
-# (the crate's build script declares no rerun-if-env-changed for them) —
-# scrub its build dir so a cache restored from a pre-fix run cannot leak
-# a winstore-carrying botan into this link.
-rm -rf "target/$TARGET/release/build/rnp-src-"* \
-       "target/$TARGET/release/build/dwarfs_t_sys-"* || true
-rm -f "target/$TARGET/release/deps/libdwarfs_t_sys-"*.rlib \
-      "target/$TARGET/release/deps/libdwarfs_t_sys-"*.d || true
 # tebako (tebako-cli), tebako-pkg, tebako-shim link tebako-signer →
 # rnp-rs → rnp-src, whose 0.3.0 release stomped a caller-provided
 # BOTAN_CONFIGURE_CC on every windows host. The fork branch pinned via
