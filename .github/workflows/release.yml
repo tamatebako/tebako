@@ -69,7 +69,8 @@
 # Windows arm64 (roadmap 02 Gap 1, phase 1) builds + smokes the
 # signer-free tool set on `windows-arm64` — cross-compiled on the x64
 # runner under the VS x64_arm64 environment (no arm64 windows hosted
-# runners), vcpkg triplet arm64-windows-static-md (core), PE machine
+# runners), vcpkg triplet arm64-windows-static (the org's /MT overlay),
+# fully static CRT, PE machine
 # gate instead of a --version run. The job carries no upload steps and
 # is not in finalize's needs: it ships nothing by construction. The
 # signer-linked tools (tebako, tfs, tebako-pkg, tebako-shim) are a named
@@ -1235,15 +1236,16 @@ jobs:
   # Windows arm64 (roadmap 02 Gap 1, phase 1 — build + smoke, ships
   # nothing). Cross-built on this x64 runner under the VS x64_arm64
   # environment (GitHub has no arm64 windows hosted runners): Rust target
-  # aarch64-pc-windows-msvc, vcpkg triplet arm64-windows-static-md (core,
-  # /MD — matches Rust's default dynamic CRT). All leg logic lives in
+  # aarch64-pc-windows-msvc, vcpkg triplet arm64-windows-static (the
+  # org's /MT overlay — the whole link is fully static CRT). All leg
+  # logic lives in
   # ci/windows-arm64-msvc-build.sh: the signer-free set (bootstrap, tfs
   # + driver + wrapper) builds; a PE-machine (0xAA64) gate stands in for
   # the --version smoke (no arm64 emulation on the runner); the
   # bootstrap's < 3 MiB gate holds. The signer-linked tools are a named
   # red there (rnp-src's windows-gcc hardcode — see the script + roadmap
   # 02 Gap 1). Deliberately ABSENT: the vcpkg baseline-restore step (no
-  # arm64-windows-static-md baseline is published — the in-leg port
+  # arm64-windows-static baseline is published — the in-leg port
   # build IS the phase-1 prove-out) and every upload step (no finalize
   # need, no fragment, no release asset — the leg cannot ship by
   # construction).
@@ -1253,7 +1255,7 @@ jobs:
     permissions:
       contents: read
       # packages:write populates the org's GitHub Packages vcpkg binary
-      # cache (ci/vcpkg-nuget-cache.sh) with the arm64-windows-static-md
+      # cache (ci/vcpkg-nuget-cache.sh) with the arm64-windows-static
       # packages — the first green run pays the cold port build once.
       packages: write
     runs-on: windows-latest
@@ -1308,8 +1310,8 @@ jobs:
 
       # run-vcpkg@v11's injected x-gha spec is zero binary cache since
       # vcpkg 2025.06 (see ci/vcpkg-nuget-cache.sh); the org's GitHub
-      # Packages NuGet feed replaces it. arm64-windows-static-md package
-      # ids join the same feed — the first run pushes, later runs restore.
+      # Packages NuGet feed replaces it. arm64-windows-static package ids
+      # join the same feed — the first run pushes, later runs restore.
       - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
         working-directory: tebako-rs
         shell: bash
@@ -1333,7 +1335,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          for f in .vcpkg-root/buildtrees/*/build-arm64-windows-static-md-*-err.log .vcpkg-root/buildtrees/*/install-arm64-windows-static-md-*-err.log; do
+          for f in .vcpkg-root/buildtrees/*/build-arm64-windows-static-*-err.log .vcpkg-root/buildtrees/*/install-arm64-windows-static-*-err.log; do
             [ -f "$f" ] || continue
             echo "=== $f ==="
             tail -200 "$f"

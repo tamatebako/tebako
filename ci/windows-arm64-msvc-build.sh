@@ -18,7 +18,7 @@
 #   CMake/vcpkg build);
 # - DWARFS_RS_VCPKG_INSTALLED_DIR=C:/vcpkg-inst — the short-root MAX_PATH
 #   dodge (same root the x64-mingw-static leg pins). The baseline-restore
-#   step is deliberately absent: no arm64-windows-static-md baseline is
+#   step is deliberately absent: no arm64-windows-static baseline is
 #   published, so the ports build in-leg — that build IS the phase-1
 #   prove-out (roadmap 02: "dwarfs-t needs a leg + CI proof");
 # - BOOTSTRAP_SIZE_BUDGET — the workflow env (the gate's single owner);
@@ -64,6 +64,17 @@ case "$CL_BANNER" in
 esac
 
 # --- 1. the signer-free build ----------------------------------------------
+# The CRT story is FULLY STATIC (/MT): dwarfs-t's CMake pins
+# CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded for MSVC unconditionally, and
+# the org's arm64-windows-static overlay triplet (/MT — vcpkg_triplets/)
+# matches it, so the Rust side opts into the static CRT too and every
+# object in the final link agrees. (The -md triplet's /MD ports mismatch
+# dwarfs_c's /MT at the tfs.dll link — LNK2038, run 35425206392.)
+# dwarfs-t-sys's CRT probe demands the explicit triplet spelling for the
+# /MT pairing — hence DWARFS_RS_VCPKG_TRIPLET here, not the default.
+export RUSTFLAGS="-C target-feature=+crt-static"
+export DWARFS_RS_VCPKG_TRIPLET=arm64-windows-static
+
 # tebako-bootstrap keeps its OWN invocation: cargo feature unification
 # with the other tools would re-enable tebako-resolve's `git` stack
 # inside the size-gated loader (the v0.3.0 run 32975547796 lesson).
@@ -73,7 +84,7 @@ cargo build --release --target "$TARGET" -p tebako-bootstrap
 # enc needs rnp — see the blocker below): the same feature set every
 # windows consumer passes (crates/*/Cargo.toml, cfg(windows) tfs deps).
 # Building tfs as a package also links the cdylib — the full libdwarfs_c
-# + vcpkg arm64-windows-static-md closure compiles AND links under MSVC
+# + vcpkg arm64-windows-static closure compiles AND links under MSVC
 # ARM64, which is the leg's core prove-out. tebako-driver (the runtime
 # exe's mount engine) and the spec-29 wrapper exe ride along.
 cargo build --release --target "$TARGET" \
