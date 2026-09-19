@@ -159,6 +159,11 @@ sys.exit(1 if failed else 0)
 EOF
 
 # --- 4. the signer-linked tools (the rnp-src fix lands) ---------------------
+# Cargo may reuse a cached rnp-src build unit across BOTAN_* env changes
+# (the crate's build script declares no rerun-if-env-changed for them) —
+# scrub its build dir so a cache restored from a pre-fix run cannot leak
+# a winstore-carrying botan into this link.
+rm -rf "target/$TARGET/release/build/rnp-src-"* || true
 # tebako (tebako-cli), tebako-pkg, tebako-shim link tebako-signer →
 # rnp-rs → rnp-src, whose 0.3.0 release stomped a caller-provided
 # BOTAN_CONFIGURE_CC on every windows host. The fork branch pinned via
