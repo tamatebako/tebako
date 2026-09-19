@@ -64,13 +64,6 @@ case "$CL_BANNER" in
 esac
 
 # --- 1. the signer-free build ----------------------------------------------
-# abi_check.c (dwarfs-t-sys) asserts with C11 _Static_assert; cc-rs
-# drives cl with no /std flag and MSVC's default C mode rejects it
-# (run 35424024604: C2059 on every assert). The cc-rs TARGET-scoped
-# variable reaches only cc-rs's C compiles for this target — cmake and
-# vcpkg never read this spelling, so the ports stay untouched.
-export CFLAGS_aarch64_pc_windows_msvc="/std:c11"
-
 # tebako-bootstrap keeps its OWN invocation: cargo feature unification
 # with the other tools would re-enable tebako-resolve's `git` stack
 # inside the size-gated loader (the v0.3.0 run 32975547796 lesson).
