@@ -103,6 +103,12 @@ export BOTAN_CONFIGURE_CC_BIN=cl
 # Ninja is single-config (CMAKE_BUILD_TYPE=Release governs end to end)
 # and the x64_arm64 vcvars env's cl targets arm64 without a -A flag.
 export CMAKE_GENERATOR=Ninja
+# The toolchain file owns compiler selection inside rnp-src's cmake dep
+# builds (json-c, zlib, librnp) — without it build_librnp injects
+# gcc/g++, which do not exist on this host. Passed to every dep
+# configure via rnp-src's append_cross_passthrough.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export RNP_CMAKE_TOOLCHAIN="$SCRIPT_DIR/toolchains/windows-arm64-msvc.cmake"
 
 # tebako-bootstrap keeps its OWN invocation: cargo feature unification
 # with the other tools would re-enable tebako-resolve's `git` stack
