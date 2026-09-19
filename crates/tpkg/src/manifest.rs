@@ -184,6 +184,12 @@ impl Platform {
         return Platform::Aarch64LinuxMusl;
         #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
         return Platform::X86_64WindowsUcrt;
+        // windows arm64 (roadmap 02 Gap 1): the host self-identifies as
+        // the RESERVED id — `is_reserved()` keeps it unpublishable and
+        // outside every coverage list until the platform ships, while
+        // CI legs (release.yml's windows-arm64) can build against it.
+        #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+        return Platform::Aarch64WindowsUcrt;
         #[cfg(not(any(
             all(target_os = "macos", target_arch = "aarch64"),
             all(target_os = "macos", target_arch = "x86_64"),
@@ -191,7 +197,8 @@ impl Platform {
             all(target_os = "linux", target_env = "gnu", target_arch = "aarch64"),
             all(target_os = "linux", target_env = "musl", target_arch = "x86_64"),
             all(target_os = "linux", target_env = "musl", target_arch = "aarch64"),
-            all(target_os = "windows", target_arch = "x86_64")
+            all(target_os = "windows", target_arch = "x86_64"),
+            all(target_os = "windows", target_arch = "aarch64")
         )))]
         compile_error!("unsupported platform (outside the supported platform-triplet axis)");
     }
