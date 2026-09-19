@@ -1272,13 +1272,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tamatebako/dwarfs-rs
-          ref: ci/abi-check-c11
+          ref: ci/arm64-static-triplet-bump
           path: dwarfs-rs
           submodules: recursive
-          # CI-only leg pin: this branch carries dwarfs-t-sys's
-          # abi_check.c C11 fix (dwarfs-t-rs#8) — without it MSVC's
-          # default C mode rejects every _Static_assert. Drop the ref
-          # when the dwarfs-t-rs PR lands on main.
+          # CI-only leg pin: carries the abi_check.c C11 fix (dwarfs-t-rs#8,
+          # merged) plus the dwarfs-t submodule bump to the probe-safe
+          # arm64-windows-static triplet (dwarfs-t-rs#9 → dwarfs-t#100 —
+          # without it vcpkg's detect_compiler probe dies at EnableLanguage
+          # under the /MT overlay). Drop the ref when both land on main.
 
       # The VS cross environment (x64 host → arm64 target): cl, link,
       # nmake (botan-src's windows build tool) and the arm64 SDK/VC lib
