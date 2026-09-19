@@ -1272,7 +1272,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tamatebako/dwarfs-rs
-          ref: ci/arm64-static-triplet-bump
+          ref: main
           path: dwarfs-rs
           submodules: recursive
           # CI-only leg pin: carries the abi_check.c C11 fix (dwarfs-t-rs#8,
