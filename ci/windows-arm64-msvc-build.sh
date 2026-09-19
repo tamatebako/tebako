@@ -34,7 +34,34 @@ if [ -z "${VCToolsInstallDir:-}" ]; then
   echo "::error::windows-arm64: the VS x64_arm64 cross environment is not active (VCToolsInstallDir unset) — the msvc-dev-cmd step must run before this script"
   exit 1
 fi
-cl 2>&1 | head -2 || true
+
+# The bash shell wrapper prepends Git's /usr/bin to PATH, and coreutils'
+# `link` shadows MSVC's link.exe (rustc dies on `/usr/bin/link: extra
+# operand` — first run 35422912784). Re-prepend the VS tool bin dir —
+# the x64-hosted ARM64-targeting tools (HostX64/arm64 under the
+# x64_arm64 vcvars env) — ahead of it; every cargo/cmake/vcpkg child
+# inherits the fixed order.
+# one trailing separator — vcvars emits a trailing backslash; strip a
+# forward slash first, then a backslash (both forms are tolerated).
+VSTOOLS="${VCToolsInstallDir%/}"
+VSTOOLS="${VSTOOLS%\\}"
+VSBIN="$(cygpath -u "$VSTOOLS")/bin/HostX64/arm64"
+if [ ! -d "$VSBIN" ]; then
+  echo "::error::windows-arm64: VS ARM64 cross tools not found at $VSBIN (VCToolsInstallDir=$VCToolsInstallDir) — toolchain layout changed"
+  exit 1
+fi
+export PATH="$VSBIN:$PATH"
+
+# The environment must genuinely target ARM64: the msvc-dev-cmd arch
+# input is easy to lose, and a plain x64 env compiles the whole leg into
+# the wrong machine (named failure here, never a confusing link error).
+CL_BANNER="$(cl 2>&1 | head -1 || true)"
+echo "$CL_BANNER"
+case "$CL_BANNER" in
+  *"for ARM64"*) ;;
+  *) echo "::error::windows-arm64: cl does not target ARM64 (\"$CL_BANNER\") — the msvc-dev-cmd arch must be x64_arm64"
+     exit 1 ;;
+esac
 
 # --- 1. the signer-free build ----------------------------------------------
 # tebako-bootstrap keeps its OWN invocation: cargo feature unification
