@@ -20,3 +20,12 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# windows-arm64 phase 1 (roadmap 02 Gap 1): rnp-src 0.3.0 stomps a
+# caller-provided BOTAN_CONFIGURE_CC on every windows host, which makes
+# the MSVC x64_arm64 cross build of the signer-linked tools impossible.
+# The fork branch carries the caller-respect guard (rnpgp/rnp-rs#103);
+# behavior is identical on every target that sets nothing. Drop this pin
+# when the upstream release carries the fix.
+[patch.crates-io]
+rnp-src = { git = "https://github.com/tamatebako/rnp-rs", branch = "fix/windows-cc-override" }

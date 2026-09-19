@@ -74,6 +74,12 @@ esac
 # /MT pairing — hence DWARFS_RS_VCPKG_TRIPLET here, not the default.
 export RUSTFLAGS="-C target-feature=+crt-static"
 export DWARFS_RS_VCPKG_TRIPLET=arm64-windows-static
+# Botan's configure takes the toolchain from these (rnp-src's caller-
+# respect guard — rnpgp/rnp-rs#103, pinned via [patch.crates-io] —
+# leaves a caller-provided value in place; the x64_arm64 env's cl is
+# what botan must use, and no gcc exists here).
+export BOTAN_CONFIGURE_CC=cl
+export BOTAN_CONFIGURE_CC_BIN=cl
 
 # tebako-bootstrap keeps its OWN invocation: cargo feature unification
 # with the other tools would re-enable tebako-resolve's `git` stack
@@ -125,7 +131,10 @@ import glob, struct, sys
 rel = sys.argv[1]
 images = sorted(glob.glob(rel + "/tebako-bootstrap.exe")
                 + glob.glob(rel + "/tebako-runtime-launcher.exe")
-                + glob.glob(rel + "/tfs.dll"))
+                + glob.glob(rel + "/tfs.dll")
+                + glob.glob(rel + "/tebako.exe")
+                + glob.glob(rel + "/tebako-pkg.exe")
+                + glob.glob(rel + "/tebako-shim.exe"))
 if not images:
     print("::error::windows-arm64: no PE images found under " + rel)
     sys.exit(1)
@@ -149,17 +158,12 @@ for path in images:
 sys.exit(1 if failed else 0)
 EOF
 
-# --- 4. the named blocker (this leg's expected red) -------------------------
-# The remaining tools — tebako (tebako-cli), tfs (tfs-cli), tebako-pkg,
-# tebako-shim — all link tebako-signer → rnp-rs 0.1.15 (vendored) →
-# rnp-sys 0.1.2 → rnp-src, and rnp-src 0.3.0 hardcodes Botan's toolchain
-# to gcc on EVERY windows host (src/lib.rs, the
-# `if cfg!(target_os = "windows")` block: BOTAN_CONFIGURE_CC=gcc,
-# BOTAN_CONFIGURE_CC_BIN=g++) — set before botan-src reads the env, so no
-# override can win. A VS x64_arm64 environment has no gcc, and no
-# mingw-w64 gcc emits ARM64 COFF an MSVC link accepts, so botan's
-# configure dies before compiling a single object. Until rnp-src grows an
-# MSVC path (rnpgp upstream), phase 1 proves the signer-free set and
-# these four tools stay a NAMED red — an honest red beats a fake green.
-echo "::error::windows-arm64: tebako / tfs (tfs-cli) / tebako-pkg / tebako-shim cannot build on aarch64-pc-windows-msvc — blocker: rnp-src 0.3.0 hardcodes BOTAN_CONFIGURE_CC=gcc on every windows host (no MSVC path; a VS x64_arm64 env has no gcc, and mingw gcc cannot emit ARM64 COFF for an MSVC link). Findings recorded in roadmap 02 Gap 1; phase 1 ships nothing."
-exit 1
+# --- 4. the signer-linked tools (the rnp-src fix lands) ---------------------
+# tebako (tebako-cli), tebako-pkg, tebako-shim link tebako-signer →
+# rnp-rs → rnp-src, whose 0.3.0 release stomped a caller-provided
+# BOTAN_CONFIGURE_CC on every windows host. The fork branch pinned via
+# [patch.crates-io] (rnpgp/rnp-rs#103 — the caller-respect guard) makes
+# the MSVC x64_arm64 build of Botan possible; these three complete the
+# five-tool set. Phase 1 still ships nothing (roadmap 02 Gap 1).
+cargo build --release --target "$TARGET" \
+  -p tebako-cli -p tebako-pkg -p tebako-shim
