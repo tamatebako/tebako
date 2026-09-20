@@ -120,12 +120,7 @@ export TEBAKO_LINK_WRAP_STDCXX_A=libc++.a
 # Driver-level belt for clang's OWN expansions (compiler-rt builtins,
 # the -stdlib expansion on any future -lc++ path); the early-position
 # build-script emissions are the wrapper's job above.
-# -l:libwinpthread.a: clangarm64's libc++ thread API is pthread
-# (_LIBCPP_HAS_THREAD_API_PTHREAD — std::thread lowers to pthread_create)
-# and the botan TU below gains a pthread_setname_np reference; the -l:
-# spelling pins the STATIC archive so no libwinpthread-1.dll import ever
-# enters the staged PEs (the import gate audits this).
-export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-libstdc++ -C link-arg=-static-libgcc -C link-arg=-l:libwinpthread.a"
+export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-libstdc++ -C link-arg=-static-libgcc"
 
 # botan-src's configure.py defaults to MSVC on os=windows and there is no
 # cl on the closed PATH — steer it to clangarm64's clang (the ucrt64
@@ -137,15 +132,42 @@ export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-li
 # caller override (config.rs:87-89): use the prefixed clang++ driver.
 export BOTAN_CONFIGURE_CC=clang
 export BOTAN_CONFIGURE_CC_BIN=aarch64-w64-mingw32-clang++
-# os_utils.cpp's windows+libc++ branch (_LIBCPP_HAS_THREAD_API_PTHREAD,
-# true on clangarm64) calls pthread_setname_np, but pthread.h is included
-# only under BOTAN_TARGET_OS_HAS_POSIX1 — an upstream botan bug for this
-# exact toolchain combination; ucrt64's g++/libstdc++ never takes the
-# branch (run 35502936455: "use of undeclared identifier
-# 'pthread_setname_np'"). botan-src forwards BOTAN_CONFIGURE_EXTRA_CXXFLAGS
-# to configure.py (botan-src src/lib.rs:57): force-include pthread.h so
-# the declaration reaches the amalgamation TU.
-export BOTAN_CONFIGURE_EXTRA_CXXFLAGS="-include pthread.h"
+
+# botan 3.13's os_utils.cpp:686 gates its windows thread-naming call on
+#   defined(BOTAN_TARGET_OS_HAS_WIN32) && defined(_LIBCPP_HAS_THREAD_API_PTHREAD)
+# — but libc++ >= 19 defines _LIBCPP_HAS_THREAD_API_PTHREAD as 0/1
+# (#cmakedefine01, llvm libcxx __config_site.in:20), so defined() is true
+# EITHER WAY. MSYS2's libc++ is built LIBCXX_HAS_WIN32_THREAD_API=ON
+# (mingw-w64-libc++ PKGBUILD:97 — std::thread native_handle is void*),
+# the pthread branch goes live, and the call dies: "cannot convert
+# 'native_handle_type' (aka 'void *') to 'pthread_t'" (run 35503816333
+# job 106060195357; ucrt64's libstdc++ never defines the macro, which is
+# why only arm64 hits it). Upstream master still carries the bug.
+# Patch the extracted source through botan-src's BOTAN_SRC_DIR escape
+# hatch (botan-src src/lib.rs:186 — no sha256 gate on custom dirs): the
+# value test kills the branch and set_thread_name falls through to the
+# final no-op — exactly the ucrt64 leg's shipping behavior (thread naming
+# is cosmetic). Extracts the crate's OWN vendored tarball, so the source
+# stays version-locked to the cargo resolution; the grep gate drops the
+# patch automatically the day a fixed botan-src ships.
+cargo fetch --quiet
+CARGO_HOME_MSYS=$(cygpath "${CARGO_HOME:-$USERPROFILE/.cargo}")
+BOTAN_TARBALL=$(find "$CARGO_HOME_MSYS"/registry/src -maxdepth 3 -path '*botan-src-*/vendor/Botan-*.tar.xz' | sort -V | tail -1)
+[ -f "$BOTAN_TARBALL" ] || { echo "vendored botan tarball not found under $CARGO_HOME_MSYS"; exit 1; }
+BOTAN_PATCHED="$RUNNER_TEMP/botan-src-patched"
+rm -rf "$BOTAN_PATCHED" && mkdir -p "$BOTAN_PATCHED"
+tar -xJf "$BOTAN_TARBALL" -C "$BOTAN_PATCHED"
+BOTAN_ROOT=$(find "$BOTAN_PATCHED" -mindepth 1 -maxdepth 1 -type d | head -1)
+OS_UTILS="$BOTAN_ROOT/src/lib/utils/os_utils/os_utils.cpp"
+if grep -q 'defined(_LIBCPP_HAS_THREAD_API_PTHREAD)' "$OS_UTILS"; then
+  sed -i 's/defined(_LIBCPP_HAS_THREAD_API_PTHREAD)/_LIBCPP_HAS_THREAD_API_PTHREAD/' "$OS_UTILS"
+  ! grep -q 'defined(_LIBCPP_HAS_THREAD_API_PTHREAD)' "$OS_UTILS" || { echo "botan patch failed to apply"; exit 1; }
+  BOTAN_SRC_DIR=$(cygpath -m "$BOTAN_ROOT")
+  export BOTAN_SRC_DIR
+  echo "patched botan (libc++ thread-api value test): $BOTAN_SRC_DIR"
+else
+  echo "NOTE: botan source lacks the defined() bug — building the vendored source unpatched"
+fi
 
 # bindgen (rnp-sys's rnp bindings) drives libclang: with no mingw header
 # dirs on its search path, rnp.h dies on <stdbool.h> (tebako-rs CI run
