@@ -1384,22 +1384,20 @@ jobs:
           # builds dwarfs-t-sys — the checkout exists because cargo
           # resolves path deps at manifest level even when cfg-gated off.
 
-      - name: Set up MSys2 (clangarm64 toolchain + cmake/ninja)
+      # The stage script is ruby — clangarm64's own ruby (in the install
+      # list) lands at $CLANGARM64/bin/ruby, on the script's closed PATH.
+      # ruby/setup-ruby is NOT an option on this runner: it ships no
+      # windows-arm64 builds (this leg's first run died in that step).
+      - name: Set up MSys2 (clangarm64 toolchain + cmake/ninja + ruby)
         uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
         with:
           msystem: clangarm64
           path-type: minimal
-          install: mingw-w64-clang-aarch64-toolchain mingw-w64-clang-aarch64-cmake mingw-w64-clang-aarch64-ninja mingw-w64-clang-aarch64-make
+          install: mingw-w64-clang-aarch64-toolchain mingw-w64-clang-aarch64-cmake mingw-w64-clang-aarch64-ninja mingw-w64-clang-aarch64-make mingw-w64-clang-aarch64-ruby
 
       - uses: dtolnay/rust-toolchain@e43eeffd51aefeea929f4ea14e09fd077153e788 # 1.94.1
         with:
           targets: aarch64-pc-windows-gnullvm
-
-      # the stage script is ruby
-      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
-        with:
-          ruby-version: "3.3"
-          bundler-cache: false
 
       - name: Build + stage + ship-gate (release)
         working-directory: tebako-rs
