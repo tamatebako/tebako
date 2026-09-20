@@ -64,6 +64,24 @@ image through the interposition shim — no extraction):
 $ tfs exec inkscape.tfs -- /bin/inkscape --version
 ```
 
+## Platforms and audiences
+
+Everything tebako ships is built per platform triplet. The axis is eight
+triplets: `aarch64-macos`, `x86_64-macos`, `x86_64-linux-gnu`,
+`aarch64-linux-gnu`, `x86_64-linux-musl`, `aarch64-linux-musl`,
+`x86_64-windows-ucrt`, and `aarch64-windows-ucrt` (the eighth joined in
+v2.8.13). What each audience gets, per OS:
+
+| audience | macOS / Linux | Windows |
+|----------|---------------|---------|
+| run packages | every triplet, x64 and arm64 alike | the full stack on x64 today; a windows-arm64 machine runs the same x64 artifacts under Windows 11 emulation until the arm64 bootstrap, shim, and factory runtimes land |
+| author data images | `tfs` on every triplet | x64, and arm64 from v2.8.13 — a `universal` image needs no triplet at all |
+| author applications | `tebako press` per target triplet; the prebuilt runtimes resolve for every target | full authoring on x64 today; arm64 gains `tebako-pkg` (trailer surgery, signing) natively in v2.8.13, with `tebako press` following in the bootstrap/shim phase — pressing *for* an arm64 target also awaits the arm64 runtimes from the factories |
+| hack on tebako itself | the workspace and the contract suites build on every CI triplet | ucrt64 GCC on x64; clangarm64 clang/libc++ on arm64 (MSYS2 publishes no aarch64 GCC), and the aarch64 link unit ships from v2.8.13 as the factories' input |
+
+No MSVC build ships on either Windows architecture; MSVC appears in the
+pipeline only as the host compiler for build-time helpers.
+
 ## Architecture
 
 A tebako package is **three parts** stitched into one executable:
@@ -165,14 +183,16 @@ jails, trust, encryption, TFS, comparisons, factories, distribution).
 
 ## Status
 
-- **Shipped**: the full Rust stack — packager, loader (macOS/Linux),
-  runtime-as-image, opt-in signing + rotation, multi-mount TFS with
-  limnifs (the default image format)/dwarfs-t/zip/tar/squashfs backends +
-  COW overlay, host-access jails,
+- **Shipped**: the full Rust stack — packager, loader (macOS, Linux, and
+  Windows x64), runtime-as-image, opt-in signing + rotation, multi-mount
+  TFS with limnifs (the default image format)/dwarfs-t/zip/tar/squashfs
+  backends + COW overlay, host-access jails,
   the preload exec shim, payload manifests + registries + shims, suite
-  packages, encryption (opt-in), and the ruby runtime factory line
-  (ruby 3.1–4.0, 7 platforms).
-- **In flight**: Windows release leg, remote-registry niceties, and the
+  packages, encryption (opt-in), the macOS pkg and Windows MSI installers,
+  and the ruby runtime factory line (ruby 3.1–4.0, 7 platforms).
+- **In flight**: Windows arm64 — v2.8.13 ships `tfs`, `tebako-pkg`, and the
+  aarch64 link unit natively; the bootstrap, shim, and the arm64 factory
+  runtimes land in the next phase. Also remote-registry niceties and the
   TFS-FUSE driver.
 
 License: BSD-2-Clause. Note the DwarFS backend links dwarfs-t (GPL-3.0)
