@@ -160,6 +160,12 @@ fn map_fetch(url: &str, e: FetchError) -> ResolveError {
             origin: url.to_string(),
             reason: msg,
         },
+        // The plan-cancel abort never reaches the buffered adapter reads;
+        // map it like a transport failure if a caller ever sees one.
+        FetchError::Cancelled(msg) => ResolveError::DownloadFailed {
+            origin: url.to_string(),
+            reason: msg,
+        },
         // The enterprise-networking failures (TODO.v2-1/33) are download
         // failures carrying their own named messages — never NotFound
         // (they must not walk the next-index chain).

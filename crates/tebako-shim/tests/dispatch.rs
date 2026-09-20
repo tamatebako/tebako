@@ -240,7 +240,7 @@ fn missing_dependency_is_a_named_error() {
 fn non_host_triplet() -> String {
     tpkg::Platform::ALL
         .iter()
-        .find(|p| **p != tpkg::Platform::host() && !p.is_reserved())
+        .find(|p| **p != tpkg::Platform::host())
         .unwrap()
         .as_triplet()
         .to_string()

@@ -115,6 +115,7 @@ fn walk(backend: &dyn Backend, dir: &str, out: &mut Vec<(String, RawStat)>) -> R
 
 /// Build the image from a staged tree (the mkimage writer path; the
 /// staged manifest is already final — no stamping here).
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 fn write_image(staging: &Path, out: &Path) -> Result<(), (String, i32)> {
     if out.exists() {
         std::fs::remove_file(out)
@@ -131,6 +132,19 @@ fn write_image(staging: &Path, out: &Path) -> Result<(), (String, i32)> {
     writer
         .write(out)
         .map_err(|e| et(format!("dwarfs writer: {}: {e}", out.display())))
+}
+
+/// windows-arm64 carries no dwarfs writer (the closure is dwarfs-t
+/// #100's milestone): the enc verbs' output stage is a named error
+/// there, never a silent fallback.
+#[cfg(all(windows, target_arch = "aarch64"))]
+fn write_image(_staging: &Path, _out: &Path) -> Result<(), (String, i32)> {
+    Err((
+        "tfs enc is not available on windows-arm64 (its image writer is dwarfs-t, whose arm64 \
+         windows closure is pending); encrypt on any other platform — the result mounts everywhere"
+            .to_string(),
+        1,
+    ))
 }
 
 /// Read a public/secret key file.

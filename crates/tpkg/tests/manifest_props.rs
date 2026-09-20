@@ -6,7 +6,6 @@ use proptest::prelude::*;
 use tpkg::*;
 
 fn arb_platform() -> impl Strategy<Value = Platform> {
-    // the reserved triplet is excluded: validate() rejects it
     prop::sample::select(vec![
         Platform::Aarch64Macos,
         Platform::X86_64Macos,
@@ -15,6 +14,7 @@ fn arb_platform() -> impl Strategy<Value = Platform> {
         Platform::X86_64LinuxMusl,
         Platform::Aarch64LinuxMusl,
         Platform::X86_64WindowsUcrt,
+        Platform::Aarch64WindowsUcrt,
     ])
 }
 

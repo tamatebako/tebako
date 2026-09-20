@@ -284,7 +284,7 @@ fn platform_conditioned_edges_skip_or_compose_per_the_target_host() {
     let fx = Fixture::new("edge-skip");
     let skipped = Platform::ALL
         .iter()
-        .find(|p| **p != Platform::host() && !p.is_reserved())
+        .find(|p| **p != Platform::host())
         .unwrap()
         .as_triplet();
     let app = app_image(

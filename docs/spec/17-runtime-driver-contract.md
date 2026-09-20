@@ -53,7 +53,11 @@ learns which pattern a runtime uses.
   expansion, so qualifying is what keeps payload paths inside the VFS.
   The wire grammar therefore never carries a drive letter: `<mount>` is
   always the declared form, and a declared mount naming a drive is
-  malformed.
+  malformed. Lexical normalization inside the VFS treats a drive prefix
+  as absoluteness itself: `A:/` is the drive ROOT — it normalizes to
+  `A:/`, never to the relative-looking `A:` no mount holds (a collapse
+  would drop the query off the dispatch table, and a sibling mount at
+  `A:/t` would answer in the drive root's place).
 - **Run-time root override (`TEBAKO_MOUNT_ROOT`, locked 2026-08-08):**
   the baked root is the default, never the only spelling. When
   `TEBAKO_MOUNT_ROOT` is set in the runtime's environment, the driver
@@ -157,7 +161,7 @@ learns which pattern a runtime uses.
 | `TEBAKO_PRELOAD_SHIM` | spec 22 §3: the preload shim's in-VFS path, flowed from the env image's `preload_shim` layout grant — the interpreter's spawn hook reads it (never a hand-written copy); the driver additionally arms `LD_PRELOAD` (ELF) / `DYLD_INSERT_LIBRARIES` (macOS) with the materialized host copy |
 | `TEBAKO_MOUNT_<SLUG>` | spec 22 §6 + v2-1/20: per co-mounted payload image, its physical mount point (drive-qualified on windows). SLUG is the mount's mechanical uppercase form: `/tools/inkscape` → `TEBAKO_MOUNT_TOOLS_INKSCAPE`; two mounts slugging alike is a named boot error (65). The root mount `/` exports nothing — `TEBAKO_MOUNT_ROOT` stays the mount-root override (§1). Under the §7 materialize tier the value is the extracted HOST dir, never the VFS point |
 | `TEBAKO_MATERIALIZE_BOOT` | spec 17 §7 (windows only): the materialize tier's respawn marker, exported together with the rewired `TEBAKO_MOUNT_ROOT`; a boot finding it scrubs both before §1's override is read and re-derives the tier from the env image's grant |
-| `PATH` | spec 22 §3.2: led by the launcher dir (`<exec-cache-leaf>/wrap-bin/`) when the env image delivers the preload shim — every declared dependency executable materialized as a self-injecting wrapper (unix; the SIP-strip answer) — then every co-mounted DEPENDENCY image's declared bin dirs (the dirname of each `provides.entrypoints[].path` / `provides.executables[].path` in the image's own `/__tpkg__/manifest.yaml`, joined under its mount, in triple order). The first triple (the app payload) never contributes; an image without a readable manifest declares no bins; a corrupt manifest or an unmaterializable declared executable is a named 65. On windows the boot-materialized library-alias directories complete the same lead (spec 22 §2.1's bare-name rule) — every co-mounted image contributing, the env image and the app payload included; the lead order is locked: launcher dir → dependency bin dirs → alias dirs → the inherited `PATH` |
+| `PATH` | spec 22 §3.2: led by the launcher dir (`<exec-cache-leaf>/wrap-bin/`) when the env image delivers the preload shim — every declared dependency executable materialized as a self-injecting wrapper (unix; the SIP-strip answer) — then every co-mounted DEPENDENCY image's declared bin dirs (the dirname of each `provides.entrypoints[].path` / `provides.executables[].path` in the image's own `/__tpkg__/manifest.yaml`, joined under its mount, in triple order). The first triple (the app payload) never contributes; an image without a readable manifest declares no bins; a corrupt manifest or an unmaterializable declared executable is a named 65. On windows the boot-materialized library-alias directories complete the same lead (spec 22 §2.1's bare-name rule) — every co-mounted image contributing, the env image and the app payload included; the lead order is locked: launcher dir → dependency bin dirs → alias dirs → the inherited `PATH`. Under the §7 materialize tier the dependency bin dirs name the extracted HOST trees (`<trees>/<key>/<bin>` — the same mount→host map the `TEBAKO_MOUNT_<SLUG>` export consumes), never the VFS points: the host loader's `PATH` search cannot resolve the VFS spelling |
 | `SSL_CERT_FILE` | spec 22 §4 (the cert convention's env surface — driver-owned, the driver being the single owner of the materialized host path): when a mounted image declares a `materialize:` entry ending `ssl/cert.pem`, the driver exports the cert's materialized HOST path at boot, in both boot shapes. An unset/empty value is set; a value lexically under the effective runtime mount root (a stale in-VFS spelling — `A:/t/ssl/cert.pem` — resolved by the patched IO but unreadable by libcrypto's native CRT IO) is rewritten; a real host path is the user's own configuration and always wins. No declared cert → nothing is set (the POSIX no-op). When the trust bridge (§2.3) is in force the exported path names the MERGED bundle, content-keyed by the merge inputs |
 
 ### 2.1 The `TEBAKO_TFS_MOUNTS` grammar (the preload re-mount wire form)
@@ -364,7 +368,12 @@ of this one) into the exec cache:
   foreign by construction, and a partial tree is never visible at the
   final path. Installed files are read-only (Rule R3). Concurrent boots
   serialize on the per-entry flock (120 s timeout, then a named error
-  with the stale-lock hint — the store's spec 05 §4 discipline).
+  with the stale-lock hint — the store's spec 05 §4 discipline). The
+  walk lists each image's OWN entries (the image-native listing, not
+  the interpreter-facing mount-merged one): a sibling mount BELOW the
+  walked point — the env image at `A:/t` beside a payload at the drive
+  root `A:/` — extracts into its own tree by its own key, and its
+  boundary name never joins this walk (or the walked image's tree).
 - **Digest-pinned reuse.** A cached tree is served only after it
   re-verifies against its record (the host tree re-walked and re-hashed
   to the recorded digest). A match is served with zero extraction — the
@@ -396,6 +405,13 @@ the interpreter's plain host IO:
 - The mount-discovery surface (§2's `TEBAKO_MOUNT_<SLUG>` table) points
   at the extracted HOST dirs, not the VFS points — a consumer reading a
   co-mounted payload's files reads host files, as the interpreter must.
+- The §3.2 dependency bin dirs on `PATH` (spec 22 §3.2) name the
+  extracted HOST dirs too (`<trees>/<key>/<bin>` per dependency mount,
+  through the same mount→host map the discovery export consumes) — the
+  host loader's `PATH` search cannot resolve the VFS spelling, so a
+  VFS-spelled lead silently resolved nothing (the xml2rfc windows
+  leg's mingw DLLs, which only a beside-the-pyd staging could reach
+  before this).
 - The rewritten argv's entry (§1) resolves to its host path inside the
   extracted tree of the image that mounted it.
 - **Respawn.** The driver also exports `TEBAKO_MATERIALIZE_BOOT=1` with

@@ -29,17 +29,20 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
+use tebako_resolve::plan::{execute_plan, CommitReport, FetchItem, FetchPlan, StagedArtifact};
 use tebako_resolve::registry::{
     PlatformSelection, RegistryPayload, RegistryRef, RegistryVersion, SignaturePin,
 };
 use tebako_resolve::{
-    FetchedPayload, Fetcher, InstallStatus, PayloadCache, Reference, RegistryError, ResolveError,
-    Transport,
+    CacheEntry, FetchedPayload, Fetcher, InstallStatus, PayloadCache, Reference, RegistryError,
+    ResolveError, Transport,
 };
 use tebako_shim::config::{self, AddRegistryOutcome};
 use tebako_shim::manifest::{self, Manifest, PayloadRecord};
 use tebako_shim::{manage, versions, ShimError};
+use tebako_term::set::ProgressSet;
 use tpkg::Platform;
 
 use crate::error::TebakoError;
@@ -76,6 +79,11 @@ pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
         // yanked version is not available), never a manifest malformation.
         ResolveError::Registry(RegistryError::Withdrawn { .. }) => EX_TEBAKO_UNAVAILABLE,
         ResolveError::Registry(_) | ResolveError::InvalidCacheKey { .. } => EX_TEBAKO_MANIFEST,
+        ResolveError::InvalidFetchJobs { .. } => EX_TEBAKO_MANIFEST,
+        // The commit closures' cancel marker — the caller's error slot
+        // carries the precise named error; a bare Commit surfacing here
+        // is the install path's own failure class.
+        ResolveError::Commit { .. } => EX_TEBAKO_INSTALL,
         ResolveError::LockTimeout { .. } | ResolveError::CacheIo { .. } => EX_TEBAKO_IO,
     };
     TebakoError::new(e.to_string(), code)
@@ -106,6 +114,11 @@ pub fn add_registry_with<T: Transport>(
     fetcher: &Fetcher<T>,
 ) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
     let r = RegistryRef::parse(registry_ref).map_err(|e| err(EX_USAGE, e.to_string()))?;
+    // spec 06 §5a's wiring rule: the network read renders through
+    // tebako-term — a one-shot quiet-gated line (an index read, not an
+    // artifact stream — no bar).
+    tebako_term::set::ProgressSet::stderr()
+        .line(&format!("fetching registry {}", r.as_canonical_string()));
     let bytes = fetcher.fetch_registry(&r).map_err(map_resolve)?;
     let text = String::from_utf8(bytes.clone()).map_err(|e| {
         err(
@@ -245,7 +258,7 @@ pub fn install(
 }
 
 /// The transport-injected half of [`install`] (tests).
-pub fn install_with<T: Transport>(
+pub fn install_with<T: Transport + Sync>(
     home: &Path,
     target: &str,
     host: Option<Platform>,
@@ -960,12 +973,59 @@ pub(crate) fn host_platform() -> Result<Platform, TebakoError> {
 
 // ---- the shared tail: fetch → verify → cache(stage) → closure → land ----
 
+/// The payload plan commit's report channel (the commit closure runs on
+/// the pipeline's worker thread): the installed entry, the verified
+/// signer, and the FIRST precise named error — the pipeline's own
+/// [`ResolveError`] is only the cancel marker; this error's exit code
+/// rides back verbatim.
+#[derive(Default)]
+struct InstallSink {
+    entry: Mutex<Option<(CacheEntry, InstallStatus)>>,
+    signer: Mutex<Option<String>>,
+    error: Mutex<Option<TebakoError>>,
+}
+
+impl InstallSink {
+    fn add_entry(&self, installed: (CacheEntry, InstallStatus)) {
+        *self.entry.lock().unwrap_or_else(|e| e.into_inner()) = Some(installed);
+    }
+
+    fn add_signer(&self, signer: String) {
+        *self.signer.lock().unwrap_or_else(|e| e.into_inner()) = Some(signer);
+    }
+
+    /// Record the precise named error (first wins) and answer the
+    /// pipeline's cancel marker.
+    fn fail(&self, e: TebakoError) -> ResolveError {
+        let mut slot = self.error.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_none() {
+            *slot = Some(e);
+        }
+        drop(slot);
+        ResolveError::Commit {
+            reason: "the payload's install commit failed".to_string(),
+        }
+    }
+
+    fn take_error(&self) -> Option<TebakoError> {
+        self.error.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    fn take_entry(&self) -> Option<(CacheEntry, InstallStatus)> {
+        self.entry.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    fn take_signer(&self) -> Option<String> {
+        self.signer.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+}
+
 /// `chain` is the dependency path from the top-level install down to
 /// this plan (spec 18 §5.6 S32): the closure walk pushes each payload's
 /// name before walking its edges and pops after — a `requires:` edge
 /// naming a payload already on the path is a dependency CYCLE, a named
 /// error instead of the cache check's silent short-circuit.
-fn finish_install<T: Transport>(
+fn finish_install<T: Transport + Sync>(
     home: &Path,
     fetcher: &Fetcher<T>,
     plan: InstallPlan,
@@ -976,8 +1036,9 @@ fn finish_install<T: Transport>(
     let mut notes = Vec::new();
 
     // Cache hit ⇒ the trust anchor stands (spec 05 §4 — verified at
-    // install, never re-verified per run); a miss fetches, verifies the
-    // signature BEFORE anything enters the cache, then installs.
+    // install, never re-verified per run); a miss streams through the
+    // fetch pipeline (spec 05 §6), verifies the signature BEFORE
+    // anything enters the cache, then installs.
     let (entry, status, signer) = match cache.get(&plan.name, &plan.version).map_err(map_resolve)? {
         Some(entry) => (entry, InstallStatus::Hit, None),
         None => {
@@ -986,17 +1047,60 @@ fn finish_install<T: Transport>(
                     what: format!("payload {}@{}", plan.name, plan.version),
                 }));
             }
-            let fetched = fetcher.fetch(&plan.reference).map_err(map_resolve)?;
-            let signer = verify_signature(home, fetcher, &fetched, &plan)?;
-            let (entry, status) = cache
-                .install(
-                    &plan.name,
-                    &plan.version,
-                    plan.expected_sha256.as_deref(),
-                    || Ok(fetched),
-                )
-                .map_err(map_resolve)?;
-            (entry, status, signer)
+            let sink = InstallSink::default();
+            let item = FetchItem {
+                display: format!("{}@{}", plan.name, plan.version),
+                reference: plan.reference.clone(),
+                // The declared signature verifies BEFORE the sha pin
+                // (spec 09 §4's order); `install_staged` re-checks the
+                // pin against the caller's anchor inside the commit.
+                sha256_pin: None,
+                size_hint: None,
+                tmp_dir: cache.root().join("tmp"),
+                commit: Box::new(|staged: &StagedArtifact| {
+                    match verify_signature_staged(home, fetcher, staged, &plan) {
+                        Ok(Some(signer)) => sink.add_signer(signer),
+                        Ok(None) => {}
+                        Err(e) => return Err(sink.fail(e)),
+                    }
+                    match cache.install_staged(
+                        &plan.name,
+                        &plan.version,
+                        // The registry pin or — a verbatim `?sha256=`
+                        // reference — the content address itself (spec 16
+                        // §3.3); checked AFTER the signature (spec 09 §4).
+                        plan.expected_sha256
+                            .as_deref()
+                            .or_else(|| plan.reference.sha256()),
+                        staged.tmp,
+                        staged.sha256,
+                        staged.origin,
+                    ) {
+                        Ok(installed) => {
+                            sink.add_entry(installed);
+                            Ok(CommitReport { line: None })
+                        }
+                        Err(e) => Err(sink.fail(map_resolve(e))),
+                    }
+                }),
+            };
+            let jobs = crate::resolve::fetch_jobs(home)?;
+            let progress = ProgressSet::stderr();
+            let title = format!("payload {}@{}", plan.name, plan.version);
+            let result = execute_plan(
+                fetcher.transport(),
+                FetchPlan::new(title, vec![item]),
+                jobs,
+                Some(&progress),
+            );
+            if let Some(e) = sink.take_error() {
+                return Err(e);
+            }
+            result.map_err(map_resolve)?;
+            let (entry, status) = sink
+                .take_entry()
+                .ok_or_else(|| err(EX_TEBAKO_INSTALL, "the fetch plan ended without a commit"))?;
+            (entry, status, sink.take_signer())
         }
     };
 
@@ -1103,7 +1207,7 @@ fn landed_versions(home: &Path, name: &str) -> Result<Vec<String>, TebakoError> 
 /// ([`install_executable_edge`]). An edge naming a payload
 /// already on `chain` is a requires CYCLE (spec 18 §5.6 S32) — a named
 /// error, never the cache check's silent short-circuit.
-fn install_dependency_closure<T: Transport>(
+fn install_dependency_closure<T: Transport + Sync>(
     home: &Path,
     fetcher: &Fetcher<T>,
     mirror: &Manifest,
@@ -1229,7 +1333,9 @@ fn install_runtime_edge(
 ) -> Result<(), TebakoError> {
     let ctx = tebako_shim::Ctx {
         home: home.to_path_buf(),
-        cwd: std::env::current_dir().map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?,
+        // A deleted cwd (the detached-seed sweep) must not kill the
+        // dispatch: `/` anchors relative resolution instead of an error.
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
         env: std::env::vars().collect(),
     };
     // Pre-staging the runtime IS install's job (the dispatch would
@@ -1327,7 +1433,7 @@ fn install_runtime_edge(
 /// pin the CAPABILITY scan answers ([`capability_provider`]); the edge
 /// joins the cycle chain like any toolkit/data edge (spec 18 §5.6 S32).
 #[allow(clippy::too_many_arguments)]
-fn install_executable_edge<T: Transport>(
+fn install_executable_edge<T: Transport + Sync>(
     home: &Path,
     fetcher: &Fetcher<T>,
     consumer: &Manifest,
@@ -1399,7 +1505,9 @@ fn install_executable_edge<T: Transport>(
     let provider_mirror = Manifest::load(&record.manifest_mirror).map_err(map_shim)?;
     let ctx = tebako_shim::Ctx {
         home: home.to_path_buf(),
-        cwd: std::env::current_dir().map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?,
+        // A deleted cwd (the detached-seed sweep) must not kill the
+        // dispatch: `/` anchors relative resolution instead of an error.
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
         env: std::env::vars().collect(),
     };
     let mut names = Vec::new();
@@ -1904,57 +2012,152 @@ pub(crate) fn verify_signature<T: Transport>(
     // user's trusted keyring PLUS the embedded tamatebako root public key
     // (and the TEBAKO_TRUSTED_ROOT dev override's bundled key) — a
     // first-party signature verifies Trusted on a fresh machine.
-    let keyring =
+    let mut keyring =
         tebako_signer::verification_keyring(home).map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?;
-    let outcome = tebako_signer::verify_detached_full(&keyring, &fetched.bytes, &asc.bytes)
-        .map_err(|e| err(EX_TEBAKO_SIGNATURE, e.to_string()))?;
-    match outcome {
-        tebako_signer::VerifyOutcome::Trusted(keyid) => {
-            // The pin names the signing key's PRIMARY keyid (the identity,
-            // spec 09 §9); the signature may issue from a signing subkey —
-            // resolve the issuer to its primary through the keyring before
-            // comparing, so a subkey rotation never invalidates the pin.
-            let issuer = keyid.to_ascii_lowercase();
-            let pin = sig.keyid.to_ascii_lowercase();
-            let primary = tebako_signer::primary_keyid_of(&keyring, &issuer)
-                .map_err(|e| err(EX_TEBAKO_SIGNATURE, e.to_string()))?;
-            if issuer != pin && primary.as_deref() != Some(pin.as_str()) {
-                let primary_note = primary
-                    .as_deref()
-                    .map_or_else(String::new, |p| format!(" (primary {p})"));
-                return Err(err(
-                    EX_TEBAKO_TRUST,
-                    format!(
-                        "{} is signed by {issuer}{primary_note} but the registry pins {pin} — the signer key changed (SignerKeyChanged); refusing to install; nothing was cached",
+    let mut retrieved = false;
+    loop {
+        let outcome = tebako_signer::verify_detached_full(&keyring, &fetched.bytes, &asc.bytes)
+            .map_err(|e| err(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+        match outcome {
+            tebako_signer::VerifyOutcome::Trusted(keyid) => {
+                // The pin names the signing key's PRIMARY keyid (the identity,
+                // spec 09 §9); the signature may issue from a signing subkey —
+                // resolve the issuer to its primary through the keyring before
+                // comparing, so a subkey rotation never invalidates the pin.
+                let issuer = keyid.to_ascii_lowercase();
+                let pin = sig.keyid.to_ascii_lowercase();
+                let primary = tebako_signer::primary_keyid_of(&keyring, &issuer)
+                    .map_err(|e| err(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+                if issuer != pin && primary.as_deref() != Some(pin.as_str()) {
+                    let primary_note = primary
+                        .as_deref()
+                        .map_or_else(String::new, |p| format!(" (primary {p})"));
+                    return Err(err(
+                        EX_TEBAKO_TRUST,
+                        format!(
+                            "{} is signed by {issuer}{primary_note} but the registry pins {pin} — the signer key changed (SignerKeyChanged); refusing to install; nothing was cached",
+                            fetched.origin
+                        ),
+                    ));
+                }
+                journal(
+                    home,
+                    &format!(
+                        "event=payload-signature-trusted origin={} signer={issuer}",
                         fetched.origin
+                    ),
+                );
+                return Ok(Some(issuer));
+            }
+            tebako_signer::VerifyOutcome::Untrusted(keyid) if !retrieved => {
+                retrieved = true;
+                // spec 09 §10: a signer ON THE TAMATEBAKO ROOT CHAIN is
+                // retrieved from the trust-anchor channel and admitted
+                // through the chain (never TOFU) — then the verification
+                // re-runs against the widened keyring.
+                match retrieve_payload_signer(home, sig)? {
+                    Some(retrieval) => {
+                        journal(
+                            home,
+                            &format!(
+                                "event=key-retrieval keyid={} fingerprint={} source={} basis={}",
+                                retrieval.keyid,
+                                retrieval.fingerprint,
+                                retrieval.source_url,
+                                retrieval.basis.journal_label()
+                            ),
+                        );
+                        keyring = tebako_signer::verification_keyring(home)
+                            .map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?;
+                    }
+                    None => return Err(untrusted_signer(&fetched.origin, &keyid)),
+                }
+            }
+            tebako_signer::VerifyOutcome::Untrusted(keyid) => {
+                return Err(untrusted_signer(&fetched.origin, &keyid));
+            }
+            tebako_signer::VerifyOutcome::Invalid(keyid) => {
+                return Err(err(
+                    EX_TEBAKO_SIGNATURE,
+                    format!(
+                        "signature verification failed for {} (signer {}) — the payload or its signature is corrupt; nothing was cached",
+                        fetched.origin,
+                        keyid.unwrap_or_else(|| "unknown".to_string())
                     ),
                 ));
             }
+        }
+    }
+}
+
+/// The named untrusted-signer error (exit 72) — spec 09 §4's shape.
+fn untrusted_signer(origin: &str, keyid: &str) -> TebakoError {
+    err(
+        EX_TEBAKO_TRUST,
+        format!(
+            "{origin} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
+        ),
+    )
+}
+
+/// The spec 09 §10 ceremony for a registry payload's pinned signer:
+/// fetch the key from the trust-anchor channel, admit it ONLY through
+/// the tamatebako root chain (never TOFU), and register it into the
+/// trusted keyring. `Ok(None)` = offline (the pre-ceremony untrusted
+/// outcome stands); the named `KeyRetrieval` failure journals
+/// `event=key-retrieval-failed` and exits 72 (the trust class).
+fn retrieve_payload_signer(
+    home: &Path,
+    sig: &SignaturePin,
+) -> Result<Option<tebako_signer::KeyRetrieval>, TebakoError> {
+    let fetch = |url: &str| crate::fetch::fetch_bytes(url).map_err(|e| e.to_string());
+    match tebako_signer::retrieve_signer_key(
+        home,
+        &sig.keyid,
+        tebako_resolve::cache::offline(),
+        &fetch,
+    ) {
+        Ok(retrieval) => Ok(retrieval),
+        Err(e) => {
             journal(
                 home,
-                &format!(
-                    "event=payload-signature-trusted origin={} signer={issuer}",
-                    fetched.origin
-                ),
+                &format!("event=key-retrieval-failed keyid={} reason={e}", sig.keyid),
             );
-            Ok(Some(issuer))
+            Err(err(EX_TEBAKO_TRUST, e.to_string()))
         }
-        tebako_signer::VerifyOutcome::Untrusted(keyid) => Err(err(
-            EX_TEBAKO_TRUST,
-            format!(
-                "{} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached",
-                fetched.origin
-            ),
-        )),
-        tebako_signer::VerifyOutcome::Invalid(keyid) => Err(err(
-            EX_TEBAKO_SIGNATURE,
-            format!(
-                "signature verification failed for {} (signer {}) — the payload or its signature is corrupt; nothing was cached",
-                fetched.origin,
-                keyid.unwrap_or_else(|| "unknown".to_string())
-            ),
-        )),
     }
+}
+
+/// [`verify_signature`] over the pipeline's staged tmp file (spec 05
+/// §6): the bytes streamed to disk with the sha256 computed inline; the
+/// signature pass reads the staged file once — never after the rename.
+/// An unsigned plan reads nothing (the v1-legacy warn path needs no
+/// bytes).
+fn verify_signature_staged<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+    staged: &StagedArtifact,
+    plan: &InstallPlan,
+) -> Result<Option<String>, TebakoError> {
+    let bytes = if plan.signature.is_some() {
+        std::fs::read(staged.tmp).map_err(|e| {
+            err(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot read the staged {} for the signature check: {e}",
+                    staged.tmp.display()
+                ),
+            )
+        })?
+    } else {
+        Vec::new()
+    };
+    let fetched = FetchedPayload {
+        bytes,
+        origin: staged.origin.to_string(),
+        sha256: staged.sha256.to_string(),
+    };
+    verify_signature(home, fetcher, &fetched, plan)
 }
 
 /// The `.asc` of a signature pin: a full reference, or an asset name

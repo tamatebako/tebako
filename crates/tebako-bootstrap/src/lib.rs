@@ -812,7 +812,9 @@ impl BootUx {
 /// Fetch the runtime executable or image with the spec 06 §5 progress:
 /// `downloading <asset> (<size>)` plus the live bar (transport-fed via
 /// tebako-http's on_progress; one truthful tick for instant local-mirror
-/// copies). Same curl --retry 3 parity as fetch_url.
+/// copies). The body STREAMS into the tmp file chunk by chunk (spec 05
+/// §6 — artifact bytes never materialize whole in memory). Same curl
+/// --retry 3 parity as fetch_url.
 #[allow(clippy::result_unit_err)] // C-style -1 error by design
 fn fetch_asset(
     url: &str,
@@ -840,32 +842,73 @@ fn fetch_asset(
     let mut throttles = 0;
     loop {
         prog.download_begin(asset);
-        let result = {
-            let mut tick = |so_far: u64, total: Option<u64>| prog.download_tick(so_far, total);
-            tebako_http::get_with_progress(url, Some(&mut tick))
+        // A mid-stream failure retries FROM ZERO: the tmp truncates on
+        // the next attempt's create.
+        enum StreamFail {
+            Transport(tebako_http::FetchError),
+            Io(std::io::Error),
+        }
+        let result = match std::fs::File::create(out) {
+            Ok(mut file) => {
+                let mut tick = |so_far: u64, total: Option<u64>| {
+                    prog.download_tick(so_far, total);
+                    true
+                };
+                tebako_http::stream_to_writer(
+                    url,
+                    &tebako_http::GetOptions::default(),
+                    &mut file,
+                    Some(&mut tick),
+                )
+                .map_err(StreamFail::Transport)
+            }
+            Err(e) => Err(StreamFail::Io(e)),
         };
         match result {
-            Ok(bytes) => {
+            Ok(_) => {
                 prog.download_end();
-                return std::fs::write(out, bytes).map_err(|_| ());
+                return Ok(());
             }
-            Err(tebako_http::FetchError::IndexUnavailable(_)) => {
+            Err(StreamFail::Transport(tebako_http::FetchError::IndexUnavailable(_))) => {
                 prog.download_abort();
+                let _ = std::fs::remove_file(out);
                 return Err(());
             }
-            Err(tebako_http::FetchError::Throttled { retry_after, .. }) => {
+            Err(StreamFail::Transport(tebako_http::FetchError::Throttled {
+                retry_after, ..
+            })) => {
                 prog.download_abort();
                 throttles += 1;
                 if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    let _ = std::fs::remove_file(out);
                     return Err(());
                 }
                 std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
             }
-            Err(e) => {
+            // Nobody cancels a bootstrap fetch — terminal, never retried.
+            Err(StreamFail::Transport(tebako_http::FetchError::Cancelled(_))) => {
+                prog.download_abort();
+                let _ = std::fs::remove_file(out);
+                return Err(());
+            }
+            Err(StreamFail::Transport(e)) => {
                 prog.download_abort();
                 attempts += 1;
                 if attempts >= 3 {
                     eprintln!("tebako-bootstrap: download failed: {e}");
+                    let _ = std::fs::remove_file(out);
+                    return Err(());
+                }
+            }
+            Err(StreamFail::Io(e)) => {
+                prog.download_abort();
+                attempts += 1;
+                if attempts >= 3 {
+                    eprintln!(
+                        "tebako-bootstrap: download failed: {e} writing {}",
+                        out.display()
+                    );
+                    let _ = std::fs::remove_file(out);
                     return Err(());
                 }
             }
@@ -1905,11 +1948,20 @@ pub fn verify_chain_with_home(
             ),
         })?;
         let tlen = tpkg::trailer_len(m);
-        f.seek(SeekFrom::End(-(tlen as i64)))
-            .map_err(|e| BootError {
-                code: EX_TEBAKO_IO,
-                message: format!("cannot seek trailer of {}: {e}", self_path.display()),
-            })?;
+        // The trailer ends before a trailing Mach-O code signature when
+        // the package was codesigned post-press.
+        let file_end = f.seek(SeekFrom::End(0)).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot seek trailer of {}: {e}", self_path.display()),
+        })?;
+        let end = tpkg::trailer_end(&mut f, file_end).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot read trailer of {}: {e}", self_path.display()),
+        })?;
+        f.seek(SeekFrom::Start(end - tlen)).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot seek trailer of {}: {e}", self_path.display()),
+        })?;
         let mut buf = vec![0u8; tlen as usize];
         f.read_exact(&mut buf).map_err(|e| BootError {
             code: EX_TEBAKO_IO,

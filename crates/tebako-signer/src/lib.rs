@@ -26,6 +26,7 @@ pub mod envelope;
 mod error;
 pub mod keyring;
 mod keys;
+pub mod retrieve;
 mod root;
 mod sign;
 
@@ -40,6 +41,11 @@ pub use keyring::{
 pub use keys::{
     default_home, hex_lower, keyid_bytes_from_fingerprint, press_key_from_secret_bytes,
     press_local_key, secret_key_by_keyid, PressKey,
+};
+pub use retrieve::{
+    anchor_base, anchor_key_url, anchor_successor_url, retrieve_signer_key,
+    retrieve_signer_key_with_base, verify_with_retrieval, Fetch, KeyRetrieval, RetrievalBasis,
+    VerifyReport, ANCHOR_BASE, ANCHOR_BASE_ENV, MAX_CHAIN_HOPS,
 };
 pub use root::{
     apply_successor_chain, parse_successor_statement, short_fingerprint, sign_successor_statement,

@@ -631,11 +631,32 @@ fn untrusted_signer_is_the_named_trust_error_and_caches_nothing() {
     );
     install::add_registry(&fx.home, &reg_ref).unwrap();
 
-    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    // spec 09 §10: the unknown signer is looked up on the trust-anchor
+    // channel first — point it at an empty LOCAL directory (never the
+    // network); a key it does not serve is the named KeyRetrieval
+    // failure (72).
+    let anchor = fx.home.join("anchor-empty");
+    fs::create_dir_all(&anchor).unwrap();
+    let old_anchor = std::env::var("TEBAKO_ANCHOR_BASE").ok();
+    std::env::set_var("TEBAKO_ANCHOR_BASE", tebako_http::file_url(&anchor));
+    let result = install::install(&fx.home, "app", None, Some(&fx.shim_binary));
+    match &old_anchor {
+        Some(v) => std::env::set_var("TEBAKO_ANCHOR_BASE", v),
+        None => std::env::remove_var("TEBAKO_ANCHOR_BASE"),
+    }
+    let err = result.unwrap_err();
     assert_eq!(err.code, 72, "{err:?}");
     assert!(
-        err.message.contains("not in the trusted keyring"),
-        "{err:?}"
+        err.message.contains("trust-anchor channel"),
+        "the retrieval failure names the channel: {err:?}"
+    );
+    assert!(
+        err.message.contains(&keyid),
+        "the untrusted signer is named: {err:?}"
+    );
+    assert!(
+        err.message.contains("tebako keys import"),
+        "the manual path is named: {err:?}"
     );
     assert!(!fx.payloads_dir().join("app/1.0.tfs").exists());
 }
@@ -1154,7 +1175,7 @@ fn install_skips_an_edge_not_covering_this_host() {
     let fx = Fixture::new("depwalk-skip");
     let skipped = Platform::ALL
         .iter()
-        .find(|p| **p != Platform::host() && !p.is_reserved())
+        .find(|p| **p != Platform::host())
         .unwrap()
         .as_triplet();
     let app_image = app_image_with_requires(

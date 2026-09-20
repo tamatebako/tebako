@@ -18,6 +18,9 @@ use crate::{
 /// Any i/o failure maps to [`TpkgError::Io`].
 pub fn read_from<R: Read + Seek>(r: &mut R) -> Result<Manifest, TpkgError> {
     let size = r.seek(SeekFrom::End(0)).map_err(|_| TpkgError::Io)?;
+    // A package codesigned post-press carries the Mach-O superblob after
+    // the trailer; the trailer then ends just before the superblob.
+    let size = crate::macho::trailer_end(r, size)?;
     if size < TPKG_HEADER_SIZE as u64 {
         return Err(TpkgError::NoTrailer);
     }

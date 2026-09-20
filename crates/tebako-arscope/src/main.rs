@@ -32,11 +32,17 @@
 //! STATUS_ENTRYPOINT_NOT_FOUND 0xC0000139, the shell reported exit 127).
 //! The rewrite therefore restores the canonical member name (strips the
 //! numeric prefix) and drops byte-identical duplicates; a same-name
-//! member with different bytes is a hard error. Symbol scoping itself
-//! applies to import members exactly as to code members — the prefix is
-//! consistent within the archive and the factory link proven against it
-//! (prefixed symbols + canonical names produce a clean import table in
-//! every member/pull order).
+//! member with different bytes is a second import set for the DLL and
+//! is kept (ld pulls members by symbol through the index, never by
+//! name). Symbol scoping itself applies to import members exactly as to
+//! code members — the prefix is consistent within the archive and the
+//! factory link proven against it (prefixed symbols + canonical names
+//! produce a clean import table in every member/pull order). rustc's
+//! gnullvm raw-dylib sets add two shapes of their own: the descriptor
+//! references the thunk chunks through UNDEFINED section symbols
+//! (carried — see coff_mark_undefined_section_symbols), and one
+//! short-form IMPORT_OBJECT_HEADER member per function rides along
+//! byte-identical with its in-band names indexed.
 //!
 //! Two ELF-only repairs ride the same pass (tebako#413): defined
 //! STB_GNU_UNIQUE symbols demote to STB_WEAK — the rewrite drops the
@@ -544,7 +550,8 @@ fn logical_name(name: &str, format: object::BinaryFormat) -> &str {
 /// Stripping exactly one leading numeric prefix restores the canonical
 /// order; members already canonical pass through unchanged. Short-format
 /// import objects carry their DLL name in-band and never reach here (the
-/// object-crate parse fails on them, so they keep today's loud error).
+/// object-crate parse fails on them — scope_object passes them through
+/// byte-identical with their in-band names indexed).
 fn canonical_import_member_name(name: &str, data: &[u8]) -> Option<String> {
     let obj = File::parse(data).ok()?;
     if obj.format() != object::BinaryFormat::Coff {
@@ -576,7 +583,26 @@ fn scope_object(
     defined: &std::collections::HashSet<String>,
     report: &mut Report,
 ) -> Result<(Vec<u8>, Vec<String>), String> {
-    let obj = File::parse(data).map_err(|e| format!("not an object file: {e}"))?;
+    let obj = match File::parse(data) {
+        Ok(obj) => obj,
+        Err(e) => {
+            // rustc's gnullvm raw-dylib import sets carry one SHORT-FORM
+            // import object per imported function next to the long-form
+            // descriptor/thunk members (the 53-byte ProcessPrng member of
+            // run 35512778802's libtfs.a). The form is self-contained —
+            // no sections, no relocations — and its symbols name a SYSTEM
+            // DLL's exports, never archive-internal definitions (pass A
+            // skips unparseable members, so references to them stay
+            // unprefixed to match). It passes through byte-identical; the
+            // archive index still needs the names it defines, or ld can
+            // never reach the member.
+            if let Some(exports) = short_form_import_exports(data) {
+                report.imports += 1;
+                return Ok((data.to_vec(), exports));
+            }
+            return Err(format!("not an object file: {e}"));
+        }
+    };
     // Mach-O: raw LC_SYMTAB surgery (sections and relocations stay
     // byte-identical — the general rewrite breaks ld64's atomizers).
     if obj.format() == object::BinaryFormat::MachO {
@@ -661,11 +687,21 @@ fn scope_object(
     }
 
     let mut symbol_ids = std::collections::HashMap::new();
+    // Undefined section symbols carried through the writer as plain
+    // undefined data symbols, re-marked as IMAGE_SYM_CLASS_SECTION after
+    // the write (see coff_mark_undefined_section_symbols).
+    let mut carried_section_symbols: Vec<&str> = Vec::new();
+    // COFF COMDAT groups captured from the section symbols' aux records
+    // (head section → selection byte; associative member → head section)
+    // — re-registered through add_comdat after the symbol pass.
+    let mut comdat_heads: Vec<(object::SectionIndex, u8)> = Vec::new();
+    let mut comdat_members: Vec<(object::SectionIndex, object::SectionIndex)> = Vec::new();
     for symbol in obj.symbols() {
         // COFF section symbols are per-section bookkeeping the writer
-        // regenerates (the object crate's COFF emit rejects re-adding
-        // them). Relocations reference them by index — remap those to
-        // the writer's own section symbol for the same section.
+        // regenerates (its add_symbol routes every Section-kind symbol at
+        // its own per-section record). Relocations reference them by
+        // index — remap those to the writer's own section symbol for the
+        // same section.
         if symbol.kind() == object::SymbolKind::Section {
             if let object::SymbolSection::Section(index) = symbol.section() {
                 // A skipped bookkeeping section (.rela & co) can carry a
@@ -674,7 +710,75 @@ fn scope_object(
                 if let Some(out_index) = section_ids.get(&index) {
                     let id = out.section_symbol(*out_index);
                     symbol_ids.insert(symbol.index(), id);
+                    // The regenerated section symbol's aux record starts
+                    // life with Selection 0 — while the section header
+                    // keeps IMAGE_SCN_LNK_COMDAT from the passed-through
+                    // characteristics. ld.bfd never reads the byte (the
+                    // ucrt64 x64 legs shipped like this unnoticed); lld
+                    // rejects selection 0 outright ("unknown comdat type
+                    // 0", python factory run 35532416136 — 3338 COMDAT
+                    // sections in the shipped v2.8.13 aarch64 link unit).
+                    // Capture the group here; add_comdat re-emits it.
+                    if let object::SymbolFlags::CoffSection {
+                        selection,
+                        associative_section,
+                    } = symbol.flags()
+                    {
+                        match selection {
+                            0 => {}
+                            object::pe::IMAGE_COMDAT_SELECT_ASSOCIATIVE => {
+                                let Some(head) = associative_section else {
+                                    return Err(format!(
+                                        "associative COMDAT section '{}' names no head section — refusing to guess",
+                                        symbol.name().unwrap_or("<unnamed>")
+                                    ));
+                                };
+                                comdat_members.push((index, head));
+                            }
+                            object::pe::IMAGE_COMDAT_SELECT_NODUPLICATES
+                                ..=object::pe::IMAGE_COMDAT_SELECT_EXACT_MATCH
+                            | object::pe::IMAGE_COMDAT_SELECT_LARGEST
+                            | object::pe::IMAGE_COMDAT_SELECT_NEWEST => {
+                                comdat_heads.push((index, selection));
+                            }
+                            other => {
+                                return Err(format!(
+                                    "section '{}' carries an unknown COMDAT selection ({other}) — extend the mapping instead of dropping it",
+                                    symbol.name().unwrap_or("<unnamed>")
+                                ));
+                            }
+                        }
+                    }
                 }
+            } else if matches!(symbol.section(), object::SymbolSection::Undefined)
+                && obj.format() == object::BinaryFormat::Coff
+            {
+                // gnullvm raw-dylib descriptor members reference the
+                // thunk member's .idata$4/.idata$5 chunks through
+                // UNDEFINED section symbols (IMAGE_SYM_CLASS_SECTION with
+                // section number 0 — a cross-member section reference;
+                // run 35512778802's bcryptprimitives.dll descriptor; the
+                // reader reports it as Section-kind + SymbolSection::
+                // Undefined, and NOT is_undefined — that predicate is
+                // EXTERNAL-class-only). The writer's public API cannot
+                // emit that shape (its Section-kind path needs an output
+                // section), so the symbol rides through as an undefined
+                // data symbol and is re-marked after the write.
+                // Compilation scope, never renamed — the thunk member's
+                // chunk keeps its name.
+                let name = symbol.name().map_err(|e| format!("symbol name: {e}"))?;
+                let id = out.add_symbol(object::write::Symbol {
+                    name: name.as_bytes().to_vec(),
+                    value: 0,
+                    size: 0,
+                    kind: object::SymbolKind::Data,
+                    scope: SymbolScope::Compilation,
+                    weak: false,
+                    section: object::write::SymbolSection::Undefined,
+                    flags: object::SymbolFlags::None,
+                });
+                symbol_ids.insert(symbol.index(), id);
+                carried_section_symbols.push(name);
             }
             continue;
         }
@@ -804,6 +908,41 @@ fn scope_object(
         symbol_ids.insert(symbol.index(), id);
     }
 
+    // Re-register the captured COFF COMDAT groups: the writer derives the
+    // section-symbol aux record (selection byte, associative number) and
+    // the IMAGE_SCN_LNK_COMDAT characteristic from these. The capture
+    // above already rejected every selection outside 1..=7, so the
+    // fall-through arm is Newest by construction.
+    for (head_index, selection) in &comdat_heads {
+        let kind = match *selection {
+            object::pe::IMAGE_COMDAT_SELECT_NODUPLICATES => object::ComdatKind::NoDuplicates,
+            object::pe::IMAGE_COMDAT_SELECT_ANY => object::ComdatKind::Any,
+            object::pe::IMAGE_COMDAT_SELECT_SAME_SIZE => object::ComdatKind::SameSize,
+            object::pe::IMAGE_COMDAT_SELECT_EXACT_MATCH => object::ComdatKind::ExactMatch,
+            object::pe::IMAGE_COMDAT_SELECT_LARGEST => object::ComdatKind::Largest,
+            _ => object::ComdatKind::Newest,
+        };
+        let head_id = section_ids[head_index];
+        let mut sections = vec![head_id];
+        for (member, head) in &comdat_members {
+            if head == head_index {
+                // Members are captured only when their section mapped, so
+                // the output id exists; section_symbol() memoizes — this
+                // call only guarantees the writer's "missing symbol for
+                // COMDAT section" invariant.
+                let member_id = section_ids[member];
+                out.section_symbol(member_id);
+                sections.push(member_id);
+            }
+        }
+        let symbol = out.section_symbol(head_id);
+        out.add_comdat(object::write::Comdat {
+            kind,
+            sections,
+            symbol,
+        });
+    }
+
     for section in obj.sections() {
         // Skipped bookkeeping sections carry no relocations that matter
         // (their own data is never emitted); a real section always has
@@ -846,10 +985,73 @@ fn scope_object(
         }
     }
 
-    let bytes = out
+    let mut bytes = out
         .write()
         .map_err(|e| format!("cannot emit the rewritten object: {e}"))?;
+    if obj.format() == object::BinaryFormat::Coff {
+        verify_coff_comdat(&bytes)?;
+    }
+    if !carried_section_symbols.is_empty() {
+        coff_mark_undefined_section_symbols(&mut bytes, &carried_section_symbols)?;
+    }
     Ok((bytes, exported))
+}
+
+/// The rewrite's load-bearing COFF invariant, asserted on the emitted
+/// bytes: every COMDAT-flagged section must have a section symbol whose
+/// aux record carries a non-zero Selection. v2.8.13 shipped aarch64 link
+/// units with 3338 COMDAT sections whose regenerated section symbols all
+/// read Selection 0 — ld.bfd ignored it, ld.lld refuses the link
+/// ("unknown comdat type 0", python factory run 35532416136). The
+/// regression must never ship silently again.
+fn verify_coff_comdat(bytes: &[u8]) -> Result<(), String> {
+    let obj = File::parse(bytes)
+        .map_err(|e| format!("internal: cannot re-parse the rewritten COFF object: {e}"))?;
+    let mut comdat_sections = std::collections::HashSet::new();
+    for section in obj.sections() {
+        if let object::SectionFlags::Coff { characteristics } = section.flags() {
+            if characteristics & object::pe::IMAGE_SCN_LNK_COMDAT != 0 {
+                comdat_sections.insert(section.index());
+            }
+        }
+    }
+    if comdat_sections.is_empty() {
+        return Ok(());
+    }
+    let mut validated = std::collections::HashSet::new();
+    for symbol in obj.symbols() {
+        if symbol.kind() != object::SymbolKind::Section {
+            continue;
+        }
+        let object::SymbolSection::Section(index) = symbol.section() else {
+            continue;
+        };
+        if !comdat_sections.contains(&index) {
+            continue;
+        }
+        let valid = matches!(
+            symbol.flags(),
+            object::SymbolFlags::CoffSection { selection, .. } if selection != 0
+        );
+        if !valid {
+            return Err(format!(
+                "internal: the rewritten COFF object lost the COMDAT selection of section '{}' — refusing to emit an ld.bfd-only object",
+                symbol.name().unwrap_or("<unnamed>")
+            ));
+        }
+        validated.insert(index);
+    }
+    if let Some(missing) = comdat_sections.difference(&validated).next() {
+        let name = obj
+            .sections()
+            .find(|s| s.index() == *missing)
+            .and_then(|s| s.name().ok().map(str::to_owned))
+            .unwrap_or_else(|| format!("#{missing:?}"));
+        return Err(format!(
+            "internal: COMDAT-flagged section '{name}' has no section symbol in the rewritten COFF object"
+        ));
+    }
+    Ok(())
 }
 
 /// Symbol flags carry ids in the COFF/XCOFF group forms; remap the
@@ -887,6 +1089,99 @@ fn map_symbol_flags(
         // symbols — the rewrite is about names, not flag trivia.
         _ => object::SymbolFlags::None,
     })
+}
+
+/// The defined names of a short-form import object (the PE/COFF
+/// IMPORT_OBJECT_HEADER form — sig1 0, sig2 0xFFFF, then a 20-byte
+/// header and two NUL-terminated strings: the symbol name and the DLL
+/// name), or None when the bytes are not the form. rustc's gnullvm
+/// raw-dylib bundler emits one per imported function. A code import
+/// defines both the thunk and the IAT entry; a data/const import is
+/// reached through the IAT entry alone. (The `__imp_` spelling is the
+/// x64/arm64 decoration — no 32-bit platform ships.)
+fn short_form_import_exports(data: &[u8]) -> Option<Vec<String>> {
+    if data.len() < 21 || data[0..4] != [0, 0, 0xff, 0xff] {
+        return None;
+    }
+    let import_type = u16::from_le_bytes([data[18], data[19]]) & 3; // 0 code, 1 data, 2 const
+    let tail = &data[20..];
+    let end = tail.iter().position(|&b| b == 0)?;
+    let name = std::str::from_utf8(&tail[..end]).ok()?;
+    if name.is_empty() {
+        return None;
+    }
+    let iat = format!("__imp_{name}");
+    Some(match import_type {
+        0 => vec![name.to_string(), iat],
+        _ => vec![iat],
+    })
+}
+
+/// Mark the named UNDEFINED symbols of a freshly written COFF object as
+/// section symbols (storage class IMAGE_SYM_CLASS_SECTION, section
+/// number 0 — the dlltool long-form descriptor's cross-member references
+/// to the thunk member's `.idata$4`/`.idata$5` chunks, the gnullvm
+/// raw-dylib shape of run 35512778802's libtfs.a). The object crate's
+/// writer cannot express the shape publicly: add_symbol routes EVERY
+/// Section-kind symbol at section_symbol(), which unwraps an output
+/// section id (write/mod.rs:438) — and an undefined section symbol has
+/// none by construction. The symbols therefore ride through the writer
+/// as plain undefined data symbols (class EXTERNAL, section number 0)
+/// and the storage-class byte is set here, on OUR OWN just-written
+/// deterministic layout. Every named record must be found and flipped
+/// exactly once, or the rewrite fails loudly.
+fn coff_mark_undefined_section_symbols(bytes: &mut [u8], names: &[&str]) -> Result<(), String> {
+    if bytes.len() < 20 {
+        return Err("internal: a written COFF object shorter than its header".to_string());
+    }
+    let symptr = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    let nsyms = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let strtab = symptr + nsyms * 18;
+    if symptr == 0 || strtab + 4 > bytes.len() {
+        return Err("internal: the written COFF object has no symbol table".to_string());
+    }
+    fn record_name(bytes: &[u8], strtab: usize, rec: &[u8]) -> Option<String> {
+        if rec[0..4] == [0, 0, 0, 0] {
+            let off = u32::from_le_bytes(rec[4..8].try_into().unwrap()) as usize;
+            let at = strtab.checked_add(off)?;
+            let end = bytes[at..].iter().position(|&b| b == 0)?;
+            Some(String::from_utf8_lossy(&bytes[at..at + end]).into_owned())
+        } else {
+            let end = rec[0..8].iter().position(|&b| b == 0).unwrap_or(8);
+            Some(String::from_utf8_lossy(&rec[0..end]).into_owned())
+        }
+    }
+    let mut flipped: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut i = 0usize;
+    while i < nsyms {
+        let at = symptr + i * 18;
+        if at + 18 > bytes.len() {
+            return Err("internal: the written COFF symbol table overruns the file".to_string());
+        }
+        let class = bytes[at + 16];
+        let secnum = i16::from_le_bytes([bytes[at + 12], bytes[at + 13]]);
+        let aux = bytes[at + 17] as usize;
+        if class == 2 && secnum == 0 && aux == 0 {
+            if let Some(name) = record_name(bytes, strtab, &bytes[at..at + 18]) {
+                if names.iter().any(|n| *n == name) {
+                    bytes[at + 16] = 104; // IMAGE_SYM_CLASS_SECTION
+                    *flipped.entry(name).or_insert(0) += 1;
+                }
+            }
+        }
+        i += 1 + aux;
+    }
+    for name in names {
+        match flipped.get(*name) {
+            Some(1) => {}
+            other => {
+                return Err(format!(
+                    "internal: carried section symbol {name} flipped {other:?} times, expected exactly 1"
+                ))
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1502,6 +1797,109 @@ mod tests {
         out.write().expect("code fixture object")
     }
 
+    /// A COMDAT COFF member in the aarch64 rustc shape: a head section
+    /// (.text$mn, Selection ANY) with an associative unwind section
+    /// (.xdata$mn) and one exported function symbol in the head.
+    fn coff_comdat_fixture() -> Vec<u8> {
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::Aarch64,
+            object::Endianness::Little,
+        );
+        let text = out.add_section(Vec::new(), b".text$mn".to_vec(), object::SectionKind::Text);
+        out.section_mut(text).set_data(b"\xc0\x03\x5f\xd6", 4);
+        let xdata = out.add_section(
+            Vec::new(),
+            b".xdata$mn".to_vec(),
+            object::SectionKind::ReadOnlyData,
+        );
+        out.section_mut(xdata).set_data(&[0u8; 8], 4);
+        let head = out.section_symbol(text);
+        out.section_symbol(xdata);
+        out.add_symbol(object::write::Symbol {
+            name: b"fold".to_vec(),
+            value: 0,
+            size: 4,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        out.add_comdat(object::write::Comdat {
+            kind: object::ComdatKind::Any,
+            sections: vec![text, xdata],
+            symbol: head,
+        });
+        out.write().expect("comdat fixture object")
+    }
+
+    /// The section-symbol aux record must keep its Selection byte across
+    /// the rewrite: the writer regenerates section symbols with Selection
+    /// 0 while the section header keeps IMAGE_SCN_LNK_COMDAT — ld.bfd
+    /// ignores the byte, ld.lld refuses the link ("unknown comdat type
+    /// 0", python factory run 35532416136; 3338 COMDAT sections in the
+    /// shipped v2.8.13 aarch64 link unit).
+    #[test]
+    fn coff_comdat_selection_survives_the_rewrite() {
+        let bytes = coff_comdat_fixture();
+        verify_coff_comdat(&bytes).expect("the fixture is a valid COMDAT object");
+        let mut report = Report::default();
+        let (scoped, _exported) = scope_object(
+            &bytes,
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            &std::collections::HashSet::new(),
+            &mut report,
+        )
+        .expect("scope the comdat fixture");
+        verify_coff_comdat(&scoped).expect("the rewrite keeps the COMDAT selections");
+        let obj = File::parse(&scoped[..]).expect("parse the rewritten object");
+        let head_selection = obj
+            .symbols()
+            .find(|s| {
+                s.kind() == object::SymbolKind::Section
+                    && s.name().map(|n| n == ".text$mn").unwrap_or(false)
+            })
+            .and_then(|s| match s.flags() {
+                object::SymbolFlags::CoffSection { selection, .. } => Some(selection),
+                _ => None,
+            })
+            .expect("the head section symbol carries an aux record");
+        assert_eq!(head_selection, object::pe::IMAGE_COMDAT_SELECT_ANY);
+        let (member_selection, member_head) = obj
+            .symbols()
+            .find(|s| {
+                s.kind() == object::SymbolKind::Section
+                    && s.name().map(|n| n == ".xdata$mn").unwrap_or(false)
+            })
+            .and_then(|s| match s.flags() {
+                object::SymbolFlags::CoffSection {
+                    selection,
+                    associative_section,
+                } => Some((selection, associative_section)),
+                _ => None,
+            })
+            .expect("the member section symbol carries an aux record");
+        assert_eq!(
+            member_selection,
+            object::pe::IMAGE_COMDAT_SELECT_ASSOCIATIVE
+        );
+        let head_index = obj
+            .section_by_name_bytes(b".text$mn")
+            .expect("the head section")
+            .index();
+        assert_eq!(member_head, Some(head_index));
+        let names: Vec<String> = obj
+            .symbols()
+            .filter_map(|s: object::Symbol<'_, '_>| s.name().ok().map(str::to_string))
+            .collect();
+        assert!(
+            names.iter().any(|n| n == "__tebako_internal_fold"),
+            "the function symbol is renamed: {names:?}"
+        );
+    }
+
     fn archive_member_names(bytes: &[u8]) -> Vec<String> {
         let archive = object::read::archive::ArchiveFile::parse(bytes).expect("parse output");
         archive
@@ -1746,6 +2144,209 @@ mod tests {
                 .iter()
                 .any(|n| n == "__tebako_internal___imp_NCryptOpenKey"),
             "the second set's thunk survives scoped: {names:?}"
+        );
+    }
+
+    /// The gnullvm raw-dylib descriptor shape (the libtfs.a
+    /// bcryptprimitives.dll member of run 35512778802): `.idata$2`'s
+    /// OriginalFirstThunk/FirstThunk fields relocate against UNDEFINED
+    /// section symbols naming the thunk member's `.idata$4`/`.idata$5`
+    /// chunks (IMAGE_SYM_CLASS_SECTION with section number 0 — a
+    /// cross-member section reference). The rewrite must carry them;
+    /// dropping them stranded the relocations ("references a dropped
+    /// bookkeeping symbol").
+    #[test]
+    fn coff_import_descriptor_undefined_section_symbols_roundtrip() {
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::X86_64,
+            object::Endianness::Little,
+        );
+        let descriptor =
+            out.add_section(Vec::new(), b".idata$2".to_vec(), object::SectionKind::Data);
+        out.section_mut(descriptor).set_data(vec![0; 20], 4);
+        let dll_name_section =
+            out.add_section(Vec::new(), b".idata$6".to_vec(), object::SectionKind::Data);
+        out.section_mut(dll_name_section)
+            .set_data(b"bcryptprimitives.dll\0".to_vec(), 1);
+        out.add_symbol(object::write::Symbol {
+            name: b"__IMPORT_DESCRIPTOR_bcryptprimitives".to_vec(),
+            value: 0,
+            size: 20,
+            kind: object::SymbolKind::Data,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(descriptor),
+            flags: object::SymbolFlags::None,
+        });
+        // The undefined section symbols: the writer's public API cannot
+        // emit class SECTION without a section id, so the fixture builds
+        // them as undefined data symbols and marks them — exactly the
+        // bytes rustc's gnullvm bundler emits (class 104, section 0).
+        let undefined_section_symbol = |name: &[u8]| object::write::Symbol {
+            name: name.to_vec(),
+            value: 0,
+            size: 0,
+            kind: object::SymbolKind::Data,
+            scope: object::SymbolScope::Compilation,
+            weak: false,
+            section: object::write::SymbolSection::Undefined,
+            flags: object::SymbolFlags::None,
+        };
+        let idata4 = out.add_symbol(undefined_section_symbol(b".idata$4"));
+        let idata5 = out.add_symbol(undefined_section_symbol(b".idata$5"));
+        let dll_name = out.add_symbol(object::write::Symbol {
+            name: b".idata$6".to_vec(),
+            value: 0,
+            size: 0,
+            kind: object::SymbolKind::Data,
+            scope: object::SymbolScope::Compilation,
+            weak: false,
+            section: object::write::SymbolSection::Section(dll_name_section),
+            flags: object::SymbolFlags::None,
+        });
+        // IMAGE_REL_AMD64_ADDR32NB: the descriptor's three pointer fields.
+        for (offset, symbol) in [(0u64, idata4), (0xc, dll_name), (0x10, idata5)] {
+            out.add_relocation(
+                descriptor,
+                object::write::Relocation {
+                    offset,
+                    symbol,
+                    addend: 0,
+                    flags: object::RelocationFlags::Coff { typ: 3 },
+                },
+            )
+            .expect("descriptor relocation");
+        }
+        let mut bytes = out.write().expect("descriptor fixture object");
+        coff_mark_undefined_section_symbols(&mut bytes, &[".idata$4", ".idata$5"])
+            .expect("the fixture carries the rustc/gnullvm descriptor shape");
+
+        let mut report = Report::default();
+        let defined = std::collections::HashSet::new();
+        let (rewritten, _exported) =
+            scope_object(&bytes, KEEP_PREFIX, SCOPE_PREFIX, &defined, &mut report)
+                .expect("a descriptor member's undefined section symbols survive the rewrite");
+
+        let obj = File::parse(&rewritten[..]).expect("parse the rewritten descriptor");
+        let section = obj
+            .sections()
+            .find(|s| s.name_bytes().map(|n| n == b".idata$2").unwrap_or(false))
+            .expect(".idata$2 survives");
+        let targets: Vec<(u64, String)> = section
+            .relocations()
+            .map(|(offset, r)| match r.target() {
+                RelocationTarget::Symbol(i) => {
+                    let sym = obj.symbol_by_index(i).expect("reloc target symbol");
+                    (offset, sym.name().expect("reloc target name").to_string())
+                }
+                other => panic!("expected a symbol reloc target, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            targets,
+            vec![
+                (0, ".idata$4".to_string()),
+                (0xc, ".idata$6".to_string()),
+                (0x10, ".idata$5".to_string()),
+            ],
+            "every descriptor relocation still points at its named chunk"
+        );
+        // The carried symbols keep the input's shape: undefined section
+        // symbols, which the reader reports as Section-kind +
+        // SymbolSection::Undefined (its is_undefined predicate is
+        // EXTERNAL-class-only and deliberately stays false here).
+        for wanted in [".idata$4", ".idata$5"] {
+            let sym = obj
+                .symbols()
+                .find(|s| s.name() == Ok(wanted))
+                .unwrap_or_else(|| panic!("{wanted} carried"));
+            assert_eq!(sym.kind(), object::SymbolKind::Section, "{wanted} kind");
+            assert!(
+                matches!(sym.section(), object::SymbolSection::Undefined),
+                "{wanted} stays a cross-member (undefined) section reference"
+            );
+        }
+    }
+
+    /// A short-form import object (the PE/COFF IMPORT_OBJECT_HEADER form
+    /// — sig1 0, sig2 0xFFFF, the names in-band) is NOT a COFF object:
+    /// rustc's gnullvm raw-dylib bundler ships one per imported function
+    /// next to the long-form descriptor/thunk members (the 53-byte
+    /// ProcessPrng member of run 35512778802's libtfs.a). It has no
+    /// sections or relocations and its symbols name a system DLL's
+    /// exports, so the rewrite passes it through byte-identical — but
+    /// the archive index must still carry the names it defines, or ld
+    /// can never reach the member.
+    #[test]
+    fn short_form_import_member_passes_through_byte_identical() {
+        let mut short = Vec::new();
+        short.extend_from_slice(&[0x00, 0x00, 0xff, 0xff]); // sig1, sig2
+        short.extend_from_slice(&0u16.to_le_bytes()); // version
+        short.extend_from_slice(&0x8664u16.to_le_bytes()); // machine AMD64
+        short.extend_from_slice(&0u32.to_le_bytes()); // timestamp
+        short.extend_from_slice(&33u32.to_le_bytes()); // string tail size
+        short.extend_from_slice(&0u16.to_le_bytes()); // ordinal/hint
+        short.extend_from_slice(&4u16.to_le_bytes()); // import type CODE, name type NAME
+        short.extend_from_slice(b"ProcessPrng\0");
+        short.extend_from_slice(b"bcryptprimitives.dll\0");
+        assert_eq!(short.len(), 53);
+
+        let mut input = b"!<arch>\n".to_vec();
+        write_member(&mut input, "bcryptprimitives.dll", &short, false).expect("short member");
+        let pid = std::process::id();
+        let tmp = std::env::temp_dir().join(format!("arscope-shortform-{pid}.a"));
+        let tmp_out = std::env::temp_dir().join(format!("arscope-shortform-out-{pid}.a"));
+        std::fs::write(&tmp, &input).expect("write the input archive");
+        let report = run(
+            tmp.to_str().unwrap(),
+            tmp_out.to_str().unwrap(),
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            None,
+        )
+        .expect("a short-form import member passes through");
+        let out = std::fs::read(&tmp_out).expect("read the scoped archive");
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp_out);
+
+        assert_eq!(archive_member_names(&out), vec!["bcryptprimitives.dll"]);
+        assert_eq!(report.imports, 1, "counted as an import member");
+
+        // The member bytes are verbatim modulo the archive's 4-byte
+        // member-alignment slack.
+        let archive = object::read::archive::ArchiveFile::parse(&out[..]).expect("reparse");
+        let data = archive
+            .members()
+            .find_map(|m| {
+                let m = m.expect("member");
+                (String::from_utf8_lossy(m.name()) == "bcryptprimitives.dll")
+                    .then(|| m.data(&out[..]).expect("member data"))
+            })
+            .expect("the short-form member");
+        assert_eq!(&data[..short.len()], &short[..], "verbatim bytes");
+        assert!(
+            data[short.len()..].iter().all(|&b| b == 0),
+            "alignment slack only"
+        );
+
+        // Its defined names ride the archive index — ld reaches the
+        // member by symbol, never by name. (The reader consumes the "/"
+        // member as the index, so members() never yields it; the symbol
+        // iterator reads the parsed index directly.)
+        let indexed: Vec<Vec<u8>> = archive
+            .symbols()
+            .expect("read the archive index")
+            .expect("the archive has an index")
+            .map(|s| s.expect("index entry").name().to_vec())
+            .collect();
+        assert!(
+            indexed.iter().any(|n| n == b"ProcessPrng"),
+            "the thunk name is indexed: {indexed:?}"
+        );
+        assert!(
+            indexed.iter().any(|n| n == b"__imp_ProcessPrng"),
+            "the IAT entry name is indexed: {indexed:?}"
         );
     }
 }

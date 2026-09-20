@@ -84,9 +84,6 @@ impl From<serde_yml::Error> for ManifestError {
 ///
 /// The SINGLE owner of the triplet ↔ release-asset-name mapping (spec 03
 /// §3): dispatcher, release tooling and registry all consume this mapping.
-/// `Aarch64WindowsUcrt` is part of the vocabulary but **reserved** — it
-/// parses (so documents naming it are diagnosed, not mis-read) while
-/// [`PayloadManifest::validate`] rejects its use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Platform {
     Aarch64Macos,
@@ -96,12 +93,11 @@ pub enum Platform {
     X86_64LinuxMusl,
     Aarch64LinuxMusl,
     X86_64WindowsUcrt,
-    /// Reserved (spec 03 §3): not usable in v1 manifests.
     Aarch64WindowsUcrt,
 }
 
 impl Platform {
-    /// Every variant, reserved included.
+    /// Every variant.
     pub const ALL: [Platform; 8] = [
         Platform::Aarch64Macos,
         Platform::X86_64Macos,
@@ -147,8 +143,6 @@ impl Platform {
             Platform::X86_64LinuxMusl => "linux-musl-x86_64",
             Platform::Aarch64LinuxMusl => "linux-musl-arm64",
             Platform::X86_64WindowsUcrt => "windows-ucrt64",
-            // Reserved; the name follows the same pattern so the mapping
-            // stays total in both directions.
             Platform::Aarch64WindowsUcrt => "windows-ucrt-arm64",
         }
     }
@@ -159,11 +153,6 @@ impl Platform {
             .iter()
             .copied()
             .find(|p| p.release_asset_name() == name)
-    }
-
-    /// True for the reserved triplet (`aarch64-windows-ucrt`, spec 03 §3).
-    pub fn is_reserved(self) -> bool {
-        self == Platform::Aarch64WindowsUcrt
     }
 
     /// The Platform of the compile target — the single owner of host
@@ -184,6 +173,8 @@ impl Platform {
         return Platform::Aarch64LinuxMusl;
         #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
         return Platform::X86_64WindowsUcrt;
+        #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+        return Platform::Aarch64WindowsUcrt;
         #[cfg(not(any(
             all(target_os = "macos", target_arch = "aarch64"),
             all(target_os = "macos", target_arch = "x86_64"),
@@ -191,7 +182,8 @@ impl Platform {
             all(target_os = "linux", target_env = "gnu", target_arch = "aarch64"),
             all(target_os = "linux", target_env = "musl", target_arch = "x86_64"),
             all(target_os = "linux", target_env = "musl", target_arch = "aarch64"),
-            all(target_os = "windows", target_arch = "x86_64")
+            all(target_os = "windows", target_arch = "x86_64"),
+            all(target_os = "windows", target_arch = "aarch64")
         )))]
         compile_error!("unsupported platform (outside the supported platform-triplet axis)");
     }
@@ -261,11 +253,6 @@ impl Platforms {
 
 /// Shared triplet-list checks (app `platforms`, toolkit-dep `triplets`).
 fn check_platforms(ts: &[Platform]) -> Result<(), ManifestError> {
-    if ts.iter().any(|p| p.is_reserved()) {
-        return Err(ManifestError::Invalid(
-            "reserved platform triplet (aarch64-windows-ucrt) is not usable in v1",
-        ));
-    }
     let mut seen = ts.to_vec();
     seen.sort();
     if seen.windows(2).any(|w| w[0] == w[1]) {
@@ -1382,11 +1369,6 @@ impl RuntimeProvides {
                     "provides.provides[].language_version must not be empty when present",
                 )?;
             }
-            if ep.platform.is_reserved() {
-                return Err(ManifestError::Invalid(
-                    "provides.provides[].platform must not be the reserved triplet",
-                ));
-            }
         }
         for ep in &self.entrypoints {
             check_non_empty(&ep.name, "provides.entrypoints[].name must not be empty")?;
@@ -1603,8 +1585,7 @@ fn check_expose_names(expose: &[String]) -> Result<(), ManifestError> {
 }
 
 /// Shared per-edge `triplets` checks (spec 03 §2.3, schema_minor 9):
-/// non-empty when present, then the §3 list grammar (no reserved
-/// triplet, no duplicates).
+/// non-empty when present, then the §3 list grammar (no duplicates).
 fn check_edge_triplets(triplets: &Option<Vec<Platform>>) -> Result<(), ManifestError> {
     if let Some(ts) = triplets {
         if ts.is_empty() {
@@ -2446,7 +2427,7 @@ impl PayloadManifest {
     /// Semantic checks beyond the serde structure: schema version,
     /// kind ↔ provides binding, the locked capability truth tables,
     /// digest/keyid shapes, signing/encryption state consistency, the
-    /// reserved-triplet rule, the absolute-path rules, the
+    /// absolute-path rules, the
     /// materialize grammar (spec 22 §4), the library_aliases
     /// grammar (spec 03 §2.5 / spec 22 §2.1), the checks grammar
     /// (spec 26 §1: name grammar, exec/structural split, `entry: self`
@@ -2682,16 +2663,9 @@ mod tests {
     }
 
     #[test]
-    fn platform_reserved() {
-        assert!(Platform::Aarch64WindowsUcrt.is_reserved());
-        assert!(!Platform::X86_64WindowsUcrt.is_reserved());
-    }
-
-    #[test]
     fn platform_host_is_on_the_axis() {
         let h = Platform::host();
         assert!(Platform::ALL.contains(&h));
-        assert!(!h.is_reserved());
     }
 
     #[test]

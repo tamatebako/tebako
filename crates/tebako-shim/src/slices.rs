@@ -32,8 +32,13 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use tebako_resolve::plan::{
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
+    FETCH_JOBS_ENV,
+};
 use tebako_resolve::registry::{PlatformSelection, SignaturePin};
-use tebako_resolve::{FetchedPayload, Fetcher, Reference, ResolveError, Transport};
+use tebako_resolve::{FetchedPayload, Fetcher, HttpTransport, Reference, ResolveError, Transport};
+use tebako_term::set::ProgressSet;
 
 use crate::config;
 use crate::dispatch::MountSpec;
@@ -595,20 +600,65 @@ fn fetch_slice(
     };
 
     let fetcher = Fetcher::new();
-    let fetched = fetcher.fetch(&reference).map_err(map_fetch)?;
-    verify_slice_signature(
-        ctx,
-        &fetcher,
-        &fetched,
-        &reference,
-        entry.signature.as_ref(),
-    )?;
+    // The fetch pipeline (spec 05 §6): the slice streams to the store's
+    // tmp with its sha256 computed inline; the commit verifies the
+    // declared signature against the staged bytes FIRST (spec 09 §4's
+    // order) and lands through the cache's staged install (the pin
+    // re-checks there).
     let cache = tebako_resolve::PayloadCache::with_root(home);
-    let (entry, _) = cache
-        .install(&pin.name, &pin.version, expected_sha256.as_deref(), || {
-            Ok(fetched)
-        })
-        .map_err(map_fetch)?;
+    let sink = SliceSink::default();
+    let item = FetchItem {
+        display: format!("{}@{}", pin.name, pin.version),
+        reference: reference.clone(),
+        sha256_pin: None,
+        size_hint: None,
+        tmp_dir: home.join("tmp"),
+        commit: Box::new(|staged: &StagedArtifact| {
+            if let Err(e) = verify_slice_signature_staged(
+                ctx,
+                &fetcher,
+                staged,
+                &reference,
+                entry.signature.as_ref(),
+            ) {
+                return Err(sink.fail(e));
+            }
+            match cache.install_staged(
+                &pin.name,
+                &pin.version,
+                expected_sha256.as_deref(),
+                staged.tmp,
+                staged.sha256,
+                staged.origin,
+            ) {
+                Ok((entry, _)) => {
+                    sink.add_entry(entry);
+                    Ok(CommitReport { line: None })
+                }
+                Err(e) => Err(sink.fail(map_fetch(e))),
+            }
+        }),
+    };
+    let jobs = resolve_fetch_jobs(
+        ctx.env_get(FETCH_JOBS_ENV).map(str::to_string),
+        cfg.fetch_jobs,
+    )
+    .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
+    let transport = HttpTransport;
+    let progress = ProgressSet::stderr();
+    let result = execute_plan(
+        &transport,
+        FetchPlan::new(format!("slice {}@{}", pin.name, pin.version), vec![item]),
+        jobs,
+        Some(&progress),
+    );
+    if let Some(e) = sink.take_error() {
+        return Err(e);
+    }
+    result.map_err(map_fetch)?;
+    let entry = sink.take_entry().ok_or_else(|| {
+        ShimError::new(EX_TEBAKO_IO, "the slice fetch plan ended without a commit")
+    })?;
     crate::runtime::journal(
         home,
         &format!(
@@ -620,6 +670,73 @@ fn fetch_slice(
         ),
     );
     Ok(())
+}
+
+/// The slice plan commit's report channel (the closure runs on the
+/// pipeline's worker thread): the installed entry and the FIRST precise
+/// named error — the pipeline's own [`ResolveError`] is only the cancel
+/// marker; this error's exit code rides back verbatim.
+#[derive(Default)]
+struct SliceSink {
+    entry: std::sync::Mutex<Option<tebako_resolve::CacheEntry>>,
+    error: std::sync::Mutex<Option<ShimError>>,
+}
+
+impl SliceSink {
+    fn add_entry(&self, entry: tebako_resolve::CacheEntry) {
+        *self.entry.lock().unwrap_or_else(|e| e.into_inner()) = Some(entry);
+    }
+
+    fn fail(&self, e: ShimError) -> ResolveError {
+        let mut slot = self.error.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.is_none() {
+            *slot = Some(e);
+        }
+        drop(slot);
+        ResolveError::Commit {
+            reason: "the slice's install commit failed".to_string(),
+        }
+    }
+
+    fn take_error(&self) -> Option<ShimError> {
+        self.error.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    fn take_entry(&self) -> Option<tebako_resolve::CacheEntry> {
+        self.entry.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+}
+
+/// [`verify_slice_signature`] over the pipeline's staged tmp file
+/// (spec 05 §6): the bytes streamed to disk with the sha256 computed
+/// inline; the signature pass reads the staged file once — never after
+/// the rename. An unsigned entry reads nothing.
+fn verify_slice_signature_staged<T: Transport>(
+    ctx: &Ctx,
+    fetcher: &Fetcher<T>,
+    staged: &StagedArtifact,
+    reference: &Reference,
+    signature: Option<&SignaturePin>,
+) -> Result<(), ShimError> {
+    let bytes = if signature.is_some() {
+        std::fs::read(staged.tmp).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot read the staged {} for the signature check: {e}",
+                    staged.tmp.display()
+                ),
+            )
+        })?
+    } else {
+        Vec::new()
+    };
+    let fetched = FetchedPayload {
+        bytes,
+        origin: staged.origin.to_string(),
+        sha256: staged.sha256.to_string(),
+    };
+    verify_slice_signature(ctx, fetcher, &fetched, reference, signature)
 }
 
 /// The fetch-time signature rule for a pinned slice — the install path's
@@ -657,55 +774,68 @@ fn verify_slice_signature<T: Transport>(
 
     let asc_ref = signature_reference(sig, reference)?;
     let asc = fetcher.fetch(&asc_ref).map_err(map_fetch)?;
-    // The zero-interaction keyring (spec 09 §9): the user's trusted
-    // keyring + the embedded tamatebako root + the TEBAKO_TRUSTED_ROOT
-    // dev override's bundled key.
-    let mut keyring = tebako_signer::trusted_keyring_bytes(&ctx.home).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!("cannot read the trusted keyring: {e}"),
-        )
-    })?;
-    let root =
-        tebako_signer::dearmor_bytes(tebako_signer::ROOT_PUBLIC_KEY.as_bytes()).map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_IO,
-                format!("the embedded root key does not dearmor: {e}"),
-            )
-        })?;
-    keyring.extend_from_slice(&root);
-    if let Some(extra) = tebako_signer::trusted_root_override_key(
-        ctx.env_get("TEBAKO_TRUSTED_ROOT").map(str::to_string),
-    ) {
-        keyring.extend_from_slice(&extra);
-    }
-    let outcome = tebako_signer::verify_detached_full(&keyring, &fetched.bytes, &asc.bytes)
-        .map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_SIGNATURE,
-                format!("cannot verify the signature on {}: {e}", fetched.origin),
-            )
-        })?;
-    let issuer = match outcome {
-        tebako_signer::VerifyOutcome::Trusted(keyid) => keyid,
-        tebako_signer::VerifyOutcome::Untrusted(keyid) => {
-            return fail(
-                EX_TEBAKO_TRUST,
-                format!(
-                    "{} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached",
-                    fetched.origin
-                ),
-            )
-        }
-        tebako_signer::VerifyOutcome::Invalid(keyid) => {
-            return fail(
-                EX_TEBAKO_SIGNATURE,
-                format!(
-                    "signature verification failed for {} (signer {}) — the payload or its signature is corrupt; nothing was cached",
-                    fetched.origin,
-                    keyid.unwrap_or_else(|| "unknown".to_string())
-                ),
-            )
+    let mut keyring = shim_verification_keyring(ctx)?;
+    let mut retrieved = false;
+    let issuer = loop {
+        let outcome = tebako_signer::verify_detached_full(&keyring, &fetched.bytes, &asc.bytes)
+            .map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_SIGNATURE,
+                    format!("cannot verify the signature on {}: {e}", fetched.origin),
+                )
+            })?;
+        match outcome {
+            tebako_signer::VerifyOutcome::Trusted(keyid) => break keyid,
+            tebako_signer::VerifyOutcome::Untrusted(keyid) if !retrieved => {
+                retrieved = true;
+                // spec 09 §10: a signer ON THE TAMATEBAKO ROOT CHAIN is
+                // retrieved from the trust-anchor channel and admitted
+                // through the chain (never TOFU) — then the verification
+                // re-runs against the widened keyring.
+                match retrieve_slice_signer(ctx, sig)? {
+                    Some(retrieval) => {
+                        crate::runtime::journal(
+                            &ctx.home,
+                            &format!(
+                                "event=key-retrieval keyid={} fingerprint={} source={} basis={}",
+                                retrieval.keyid,
+                                retrieval.fingerprint,
+                                retrieval.source_url,
+                                retrieval.basis.journal_label()
+                            ),
+                        );
+                        keyring = shim_verification_keyring(ctx)?;
+                    }
+                    None => {
+                        return fail(
+                            EX_TEBAKO_TRUST,
+                            format!(
+                                "{} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached",
+                                fetched.origin
+                            ),
+                        );
+                    }
+                }
+            }
+            tebako_signer::VerifyOutcome::Untrusted(keyid) => {
+                return fail(
+                    EX_TEBAKO_TRUST,
+                    format!(
+                        "{} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached",
+                        fetched.origin
+                    ),
+                );
+            }
+            tebako_signer::VerifyOutcome::Invalid(keyid) => {
+                return fail(
+                    EX_TEBAKO_SIGNATURE,
+                    format!(
+                        "signature verification failed for {} (signer {}) — the payload or its signature is corrupt; nothing was cached",
+                        fetched.origin,
+                        keyid.unwrap_or_else(|| "unknown".to_string())
+                    ),
+                );
+            }
         }
     };
     // The registry pin names the signing key's PRIMARY keyid (spec 09
@@ -735,6 +865,56 @@ fn verify_slice_signature<T: Transport>(
         ),
     );
     Ok(())
+}
+
+/// The zero-interaction keyring (spec 09 §9): the user's trusted
+/// keyring + the embedded tamatebako root + the TEBAKO_TRUSTED_ROOT
+/// dev override's bundled key.
+fn shim_verification_keyring(ctx: &Ctx) -> Result<Vec<u8>, ShimError> {
+    let mut keyring = tebako_signer::trusted_keyring_bytes(&ctx.home).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot read the trusted keyring: {e}"),
+        )
+    })?;
+    let root =
+        tebako_signer::dearmor_bytes(tebako_signer::ROOT_PUBLIC_KEY.as_bytes()).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_IO,
+                format!("the embedded root key does not dearmor: {e}"),
+            )
+        })?;
+    keyring.extend_from_slice(&root);
+    if let Some(extra) = tebako_signer::trusted_root_override_key(
+        ctx.env_get("TEBAKO_TRUSTED_ROOT").map(str::to_string),
+    ) {
+        keyring.extend_from_slice(&extra);
+    }
+    Ok(keyring)
+}
+
+/// The spec 09 §10 ceremony for a slice's pinned signer: fetch the key
+/// from the trust-anchor channel, admit it ONLY through the tamatebako
+/// root chain (never TOFU), and register it into the trusted keyring.
+/// `Ok(None)` = offline (the pre-ceremony untrusted outcome stands);
+/// the named `KeyRetrieval` failure journals
+/// `event=key-retrieval-failed` and exits 72 (the trust class).
+fn retrieve_slice_signer(
+    ctx: &Ctx,
+    sig: &SignaturePin,
+) -> Result<Option<tebako_signer::KeyRetrieval>, ShimError> {
+    let offline = crate::runtime::offline_mode(ctx);
+    let fetch = |url: &str| tebako_http::get(url).map_err(|e| e.to_string());
+    match tebako_signer::retrieve_signer_key(&ctx.home, &sig.keyid, offline, &fetch) {
+        Ok(retrieval) => Ok(retrieval),
+        Err(e) => {
+            crate::runtime::journal(
+                &ctx.home,
+                &format!("event=key-retrieval-failed keyid={} reason={e}", sig.keyid),
+            );
+            Err(ShimError::new(EX_TEBAKO_TRUST, e.to_string()))
+        }
+    }
 }
 
 /// The `.asc` of a signature pin: a full reference, or an asset name

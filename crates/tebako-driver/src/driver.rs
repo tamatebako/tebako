@@ -1260,17 +1260,14 @@ pub fn boot_with_mount_modes(
         // the dependency bins onto PATH (spec 22 §3.2 — the launcher
         // tier embeds the shim's materialized copy when one is
         // delivered, so injection runs first).
-        let mount_keys = export_mount_vars(
-            &h.images,
-            env,
-            &tree_boot
-                .as_ref()
-                .map(|t| t.mount_overrides())
-                .unwrap_or_default(),
-        )?;
+        let host_overrides = tree_boot
+            .as_ref()
+            .map(|t| t.mount_overrides())
+            .unwrap_or_default();
+        let mount_keys = export_mount_vars(&h.images, env, &host_overrides)?;
         crate::spawn::capture(app_images, env, runtime_root, mount_keys)?;
         let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
-        crate::path_env::export(&h.images, env, shim_host.as_deref())?;
+        crate::path_env::export(&h.images, env, shim_host.as_deref(), &host_overrides)?;
         let template: &[String] = on_runtime
             .as_ref()
             .map(|on| on.template.as_slice())

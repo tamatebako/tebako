@@ -414,7 +414,7 @@ fn resolve_closure_skips_an_edge_not_covering_the_target_host() {
     let fx = Fixture::new("edge-skip");
     let skipped = Platform::ALL
         .iter()
-        .find(|p| **p != Platform::host() && !p.is_reserved())
+        .find(|p| **p != Platform::host())
         .unwrap()
         .as_triplet();
     let host = Platform::host().as_triplet();
@@ -1021,16 +1021,34 @@ fn sha_pinned_slice_with_swapped_bytes_fails_at_the_fetch_boundary() {
 fn signed_slice_from_an_untrusted_key_fails_closed() {
     let fx = Fixture::new("signuntrusted");
     let img = image("app", "appa", "1.0", "");
-    // the key is never registered — not in the trusted keyring
+    // the key is never registered — not in the trusted keyring. The
+    // spec 09 §10 ceremony looks it up on the trust-anchor channel
+    // first — here an empty LOCAL anchor (never the network), so the
+    // refusal is the named key-retrieval failure (72).
     let (payload_ref, asc_ref, keyid, _public) = signed_payload(&fx, "appa-1.0.tfs", &img, &img);
     fx.register(&fx.registry(
         "appa-registry.yaml",
         &signed_registry_yaml("appa", "1.0", &payload_ref, &keyid, &asc_ref),
     ));
-
-    let err = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n").unwrap_err();
+    let anchor = fx.home.join("anchor-empty");
+    std::fs::create_dir_all(&anchor).unwrap();
+    let old_anchor = std::env::var("TEBAKO_ANCHOR_BASE").ok();
+    std::env::set_var("TEBAKO_ANCHOR_BASE", tebako_http::file_url(&anchor));
+    let result = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n");
+    match &old_anchor {
+        Some(v) => std::env::set_var("TEBAKO_ANCHOR_BASE", v),
+        None => std::env::remove_var("TEBAKO_ANCHOR_BASE"),
+    }
+    let err = result.unwrap_err();
     assert_eq!(err.code, 72, "{err:?}");
-    assert!(err.message.contains("not in the trusted keyring"), "{err}");
+    assert!(
+        err.message.contains("trust-anchor channel"),
+        "the retrieval failure names the channel: {err}"
+    );
+    assert!(
+        err.message.contains("tebako keys import"),
+        "the manual path is named: {err}"
+    );
     assert!(
         !fx.home.join("payloads/appa/1.0.tfs").exists(),
         "nothing was cached"

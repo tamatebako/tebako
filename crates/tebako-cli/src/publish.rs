@@ -670,12 +670,6 @@ pub fn publish_full(
         if triplets.windows(2).any(|w| w[0] == w[1]) {
             return Err(err(EX_USAGE, "duplicate payload triplet"));
         }
-        if let Some(p) = triplets.iter().find(|p| p.is_reserved()) {
-            return Err(err(
-                EX_USAGE,
-                format!("the reserved triplet {p} is not publishable in v1"),
-            ));
-        }
     }
 
     let version = match &opts.version {
@@ -831,12 +825,6 @@ pub fn publish_full(
     // ---- 3. standalones ---------------------------------------------
     let mut standalone_uploads: Vec<(String, String, Vec<u8>)> = Vec::new();
     for (triplet, path) in &opts.standalones {
-        if triplet.is_reserved() {
-            return Err(err(
-                EX_USAGE,
-                format!("the reserved triplet {triplet} is not publishable in v1"),
-            ));
-        }
         let bytes = std::fs::read(path)
             .map_err(|e| err(EX_TEBAKO_IO, format!("cannot read {}: {e}", path.display())))?;
         let name = standalone_artifact_name(&opts.name, &version, *triplet);
@@ -1258,7 +1246,7 @@ fn verify_install_at(
 /// against the registered set); a registry that fails to load here is a
 /// note in the verify line, never a publish failure of its own.
 #[allow(clippy::too_many_arguments)]
-fn verify_with<T: Transport>(
+fn verify_with<T: Transport + Sync>(
     opts: &PublishOptions,
     home: &Path,
     publisher_home: &Path,

@@ -1079,7 +1079,21 @@ fn read_trailer_bytes(binary: &Path, trailer: &tpkg::Manifest) -> Result<Vec<u8>
             binary.display()
         ))
     })?;
-    f.seek(SeekFrom::End(-(tlen as i64)))
+    // The trailer ends before a trailing Mach-O code signature when the
+    // package was codesigned post-press.
+    let file_size = f.metadata().map_err(|e| {
+        err(format!(
+            "{}: cannot re-read the trailer ({e})",
+            binary.display()
+        ))
+    })?;
+    let end = tpkg::trailer_end(&mut f, file_size.len()).map_err(|e| {
+        err(format!(
+            "{}: cannot re-read the trailer ({e})",
+            binary.display()
+        ))
+    })?;
+    f.seek(SeekFrom::Start(end - tlen))
         .and_then(|_| {
             let mut buf = vec![0u8; tlen as usize];
             f.read_exact(&mut buf).map(|_| buf)

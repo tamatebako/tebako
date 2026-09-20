@@ -1,4 +1,4 @@
-//! Enterprise networking configuration (TODO.v2-1/33, spec 04 amendment):
+//! Enterprise networking configuration (spec 04 amendment):
 //! proxies and custom trust anchors for the loader's downloads.
 //!
 //! One client, one rule still holds — every fetch in the stack rides the

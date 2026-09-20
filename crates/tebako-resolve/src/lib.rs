@@ -30,6 +30,7 @@ pub mod error;
 pub mod fetch;
 #[cfg(feature = "git")]
 pub mod git;
+pub mod plan;
 pub mod reference;
 pub mod registry;
 pub mod store;
@@ -41,6 +42,10 @@ pub use cache::{
 pub use contract::{ContractError, ContractSet};
 pub use error::{ReferenceError, RegistryError, ResolveError};
 pub use fetch::{sha256_hex, FetchedPayload, Fetcher};
+pub use plan::{
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
+    DEFAULT_FETCH_JOBS, FETCH_JOBS_ENV,
+};
 pub use reference::{Reference, Service};
 pub use registry::{
     PlatformSelection, Registry, RegistryPayload, RegistryPlatforms, RegistryRef,

@@ -168,7 +168,9 @@ where
     let home = home()?;
     let ctx = tebako_shim::Ctx {
         home: home.clone(),
-        cwd: std::env::current_dir().map_err(|e| TebakoError::new(e.to_string(), EX_TEBAKO_IO))?,
+        // A deleted cwd (the detached-seed sweep) must not kill the
+        // dispatch: `/` anchors relative resolution instead of an error.
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
         env: std::env::vars().collect(),
     };
 
