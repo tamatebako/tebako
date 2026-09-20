@@ -114,6 +114,21 @@ export BOTAN_CONFIGURE_CC=clang
 CLANGARM64_INCLUDE=$(cygpath -m "$CLANGARM64/include")
 export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-w64-mingw32 -isystem $CLANGARM64_INCLUDE"
 
+# cc-crate steering, both triples — cc otherwise grabs the bare clang
+# off the closed PATH for every C compile: for the HOST triple
+# (aarch64-pc-windows-msvc — ring & co. as build-deps) that emits
+# --target=msvc with no MSVC headers on the search path (run
+# 35501035272: ring's check.h found no assert.h); for the TARGET triple
+# the bare driver spells it gnullvm, whose per-triple sysroot dirs
+# clangarm64 does not carry. The job's msvc-dev-cmd step arms
+# HostARM64/arm64's cl for host compiles; the prefixed clang driver
+# pins the msys2 triple spelling for the target (the same spelling
+# TEBAKO_LINK_WRAP_EXEC links with).
+export CC_aarch64_pc_windows_msvc=cl
+export CXX_aarch64_pc_windows_msvc=cl
+export CC_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-clang
+export CXX_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-clang++
+
 # --- 1. release build -------------------------------------------------------
 # The feature flags on `-p tfs` are MANDATORY: cargo unifies features
 # within one invocation, and a bare `-p tfs` would pull tfs's default

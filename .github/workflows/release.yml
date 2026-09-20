@@ -1398,6 +1398,16 @@ jobs:
           path-type: minimal
           install: mingw-w64-clang-aarch64-toolchain mingw-w64-clang-aarch64-cmake mingw-w64-clang-aarch64-ninja mingw-w64-clang-aarch64-make mingw-w64-clang-aarch64-ruby
 
+      # HOST build-deps compile C for aarch64-pc-windows-msvc (the rustup
+      # host triple): cc otherwise picks the bare clang off the closed
+      # PATH and emits --target=msvc with no MSVC headers (run
+      # 35501035272: ring's check.h found no assert.h). Arm the native
+      # ARM64 VS tools; the ship script names cl via CC_<host>.
+      - name: Set up the VS arm64 environment (host build-deps only)
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1 (2024-01-01)
+        with:
+          arch: arm64
+
       - uses: dtolnay/rust-toolchain@e43eeffd51aefeea929f4ea14e09fd077153e788 # 1.94.1
         with:
           targets: aarch64-pc-windows-gnullvm
