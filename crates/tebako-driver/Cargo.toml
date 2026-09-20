@@ -49,8 +49,16 @@ base64ct = { version = "1", features = ["alloc"] }
 [target.'cfg(not(windows))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs" }
 
-[target.'cfg(windows)'.dependencies]
+# windows-arm64 is limnifs-only until dwarfs-t's arm64 closure lands
+# (dwarfs-t #100): a dwarfs mount there answers the named ENOTSUP of a
+# compiled-out backend, and the arm64 link unit carries no closure.
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+
+[target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
+tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["backend-limnifs"] }
+
+[target.'cfg(windows)'.dependencies]
 # The spec-17 §7 tree cache's per-entry flock (materialize/tree.rs —
 # LockFileEx on one byte at offset 0, the tebako-resolve cache.rs
 # shape). Unix uses libc's flock(2); all Win32 FFI is confined to that

@@ -177,7 +177,7 @@ grammar:
                 constraint: {type: string, required: true, notes: "range for pure-language (\">= 3.3, < 5.0\"); abi-line for native-extension (\"~> 3.3.0\")"}
                 implementation: {type: string, required: false, notes: "since schema_minor 7 (spec 28 §8) — narrows to one implementation, matched against the runtime's OWN version line; an entry WITHOUT it matches at the language level (the runtime's language_version, falling back to version on pre-field shards)"}
                 abi: {type: string, required: false, notes: "the runtime's platform string the native extensions were built against (ruby: Gem::Platform.local.to_s)"}
-        platforms: {type: "\"universal\" | list of vcpkg triplets", required: true, notes: "spec 03 §3 axis; aarch64-windows-ucrt reserved"}
+        platforms: {type: "\"universal\" | list of vcpkg triplets", required: true, notes: "spec 03 §3 axis; aarch64-windows-ucrt since schema_minor 13"}
         capabilities:
           type: map
           required: true
@@ -460,7 +460,7 @@ refusals:
     behavior: named validation error at parse, resp. a named boot error (exit 65) — the template is data, never guessed (spec 33 §2)
   - case: "a kind: language edge carrying triplets: (schema_minor 9)"
     behavior: named validation error at parse (exit 65) — a skipped language edge would boot a payload with no runtime; platform reach is the payload-level platforms: axis's statement (spec 03 §2.3)
-  - case: "a requires edge's triplets: list empty, carrying a duplicate, or naming the reserved triplet (all kinds; schema_minor 9)"
+  - case: "a requires edge's triplets: list empty or carrying a duplicate (all kinds; schema_minor 9)"
     behavior: named validation error at parse (exit 65) — the toolkit edge's existing list grammar, generalized (spec 03 §2.3)
   - case: "dispatching a command whose expose edge was platform-skipped on this host (schema_minor 9)"
     behavior: named error, exit 69 — \"not available on this platform\", never a silent fallback to another provider (spec 03 §2.3)

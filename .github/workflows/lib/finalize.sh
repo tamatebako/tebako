@@ -25,6 +25,9 @@ for platform_dir in "$FRAG"/frag-*; do
   platform="${platform_dir##*/frag-}"
   exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
   for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
+    # A partial platform leg (windows-ucrt-arm64 ships tfs only, roadmap
+    # 02 phase 2) carries only its own fragments.
+    [ -f "$platform_dir/${tool}-${platform}.sha256" ] || continue
     sha=$(cat "$platform_dir/${tool}-${platform}.sha256")
     name="${tool}-${VERSION}-${platform}${exe}"
     echo "$sha  $name" >> out/SHA256SUMS
@@ -150,6 +153,7 @@ cat out/manifest.json
   for platform_dir in $(ls -d "$FRAG"/frag-* | grep -v '/frag-installers-' | sort); do
     platform="${platform_dir##*/frag-}"
     for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
+      [ -f "$platform_dir/${tool}-${platform}.size" ] || continue
       size=$(cat "$platform_dir/${tool}-${platform}.size")
       echo "| $platform | $tool | $size |"
     done

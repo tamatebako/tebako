@@ -156,9 +156,10 @@
         "aarch64-linux-gnu",
         "x86_64-linux-musl",
         "aarch64-linux-musl",
-        "x86_64-windows-ucrt"
+        "x86_64-windows-ucrt",
+        "aarch64-windows-ucrt"
       ],
-      "description": "The locked vcpkg-triplet axis (spec 03 §3). aarch64-windows-ucrt is RESERVED and excluded on purpose."
+      "description": "The locked vcpkg-triplet axis (spec 03 §3). aarch64-windows-ucrt joined the axis at schema_minor 13; pre-13 readers reject it by name (exit 65)."
     },
     "platformList": {
       "type": "array",

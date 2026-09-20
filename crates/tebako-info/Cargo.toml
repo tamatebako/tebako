@@ -23,12 +23,16 @@ serde_yml = "0.0.12"
 
 # tfs per-target: the SquashFS backend (squashfs-tools-ng) is
 # POSIX/autotools-only — Windows gets a dwarfs-only tfs, the backend
-# degrading to a named ENOTSUP (TODO.v2-1/02).
+# degrading to a named ENOTSUP (TODO.v2-1/02). windows-arm64 is
+# limnifs-only until dwarfs-t's arm64 closure lands (dwarfs-t #100).
 [target.'cfg(not(windows))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs" }
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+
+[target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
+tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["backend-limnifs"] }
 
 [dev-dependencies]
 # In-process dwarfs-t writer for manifest-carrying image fixtures.

@@ -64,7 +64,9 @@
 #
 # Windows (ucrt64) ships from the `windows` job (the five binaries,
 # platform id windows-ucrt64 per the spec 03 §3 axis) and the
-# `windows-link-unit` job (the factory's staticlib input).
+# `windows-link-unit` job (the factory's staticlib input). Windows arm64
+# (ucrt) ships from the `windows-arm64-ship` job (tfs.exe + the arm64
+# link unit, limnifs-only, unsigned — roadmap 02 Gap 1 phase 2).
 #
 # Windows arm64 (roadmap 02 Gap 1, phase 1) builds + smokes the full
 # tool set on `windows-arm64` — cross-compiled on the x64 runner under
@@ -72,9 +74,10 @@
 # smoke is a PE machine gate instead of a --version run), vcpkg triplet
 # arm64-windows-static (the org's /MT overlay), fully static CRT. The
 # job carries no upload steps and is not in finalize's needs: it ships
-# nothing by construction. The signer-linked tools build green via
-# rnp-src >= 0.3.6's MSVC path — see ci/windows-arm64-msvc-build.sh and
-# roadmap 02 Gap 1.
+# nothing by construction — the SHIPPING arm64 leg is
+# `windows-arm64-ship` (native clangarm64/gnullvm). The signer-linked
+# tools build green via rnp-src >= 0.3.6's MSVC path — see
+# ci/windows-arm64-msvc-build.sh and roadmap 02 Gap 1.
 #
 # Rehearsal mode (roadmap 89): PRs touching this workflow, ci/, or
 # templates/installers/ run the macos + windows + installer legs with
@@ -701,7 +704,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
-    needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit, windows, installer-msi, installer-pkg]
+    needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit, windows, windows-arm64-ship, installer-msi, installer-pkg]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -1341,6 +1344,87 @@ jobs:
             echo "=== $f ==="
             tail -200 "$f"
           done
+
+  # ==========================================================================
+  # Windows arm64 (ucrt) — the phase-2 SHIP leg (roadmap 02 Gap 1):
+  # tfs.exe + the link-unit tarball, the two artifacts the runtime
+  # factories' windows-arm64 spikes consume (tebako-runtime-python#41,
+  # tebako-runtime-ruby#176). Native on `windows-11-arm` under msys2
+  # clangarm64 targeting aarch64-pc-windows-gnullvm — no cross proxies:
+  # the ship gate's smoke is a real launch on the target arch.
+  #   * limnifs-only — the dwarfs arm64 closure is dwarfs-t #100's
+  #     milestone; the link unit's closure/ is empty by design.
+  #   * unsigned Authenticode (spec 00 invariant 7 — unsigned is
+  #     first-class); the Azure-signing arm64 story lands with phase 3's
+  #     full six-tool set, which is also why this leg carries NO
+  #     environment/id-token boundary.
+  #   * runs on PRs as its own proof (unlike windows-link-unit, which
+  #     sits rehearsals out — roadmap 89).
+  # Platform id windows-ucrt-arm64 per the spec 03 §3 axis
+  # (tpkg::Platform::Aarch64WindowsUcrt). All build/stage/gate logic
+  # lives in ci/windows-arm64-gnullvm-ship.sh.
+  # ==========================================================================
+  windows-arm64-ship:
+    name: Windows arm64 (ucrt) — tfs + link-unit
+    permissions:
+      contents: write
+    runs-on: windows-11-arm
+    needs: prepare
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tebako-rs
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+          # No ref pin (unlike the msvc leg): nothing in this leg's graph
+          # builds dwarfs-t-sys — the checkout exists because cargo
+          # resolves path deps at manifest level even when cfg-gated off.
+
+      - name: Set up MSys2 (clangarm64 toolchain + cmake/ninja)
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: clangarm64
+          path-type: minimal
+          install: mingw-w64-clang-aarch64-toolchain mingw-w64-clang-aarch64-cmake mingw-w64-clang-aarch64-ninja mingw-w64-clang-aarch64-make
+
+      - uses: dtolnay/rust-toolchain@e43eeffd51aefeea929f4ea14e09fd077153e788 # 1.94.1
+        with:
+          targets: aarch64-pc-windows-gnullvm
+
+      # the stage script is ruby
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+
+      - name: Build + stage + ship-gate (release)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: bash ci/windows-arm64-gnullvm-ship.sh
+
+      - name: Upload fragment artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frag-windows-ucrt-arm64
+          path: tebako-rs/fragments/frag-windows-ucrt-arm64
+
+      - name: Upload tfs
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tfs-${{ needs.prepare.outputs.version }}-windows-ucrt-arm64.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload link-unit
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-aarch64-windows-gnu.tar.gz" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==========================================================================
   # Installer containers (roadmap 83, spec 16 §7): the system MSI + pkg,

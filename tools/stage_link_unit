@@ -17,10 +17,16 @@
 #   sqfs-sys-*/out/                                      the squashfs pair
 #   rnp-sys-*/out/install/                               the rnp family
 #
+# --limnifs-only (the windows-arm64 leg): the staticlibs are limnifs-only
+# by target (the windows-aarch64 tfs deps carry no dwarfs backend — the
+# arm64 closure is dwarfs-t #100's milestone), so there is NO native
+# closure to harvest: the dwarfs/sqfs/rnp/vcpkg steps and the boost
+# required-set check skip, and <out>/closure stays empty by design.
+#
 # No shell-outs to anything but cargo (dev-side tooling, never a shipped
 # artifact).
 #
-# usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--skip-build]
+# usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--target TRIPLE] [--skip-build] [--limnifs-only]
 
 require "fileutils"
 
@@ -41,14 +47,18 @@ def vcpkg_installed_dir(dwarfs, triplet_glob)
   Dir.glob(File.join(dwarfs, "dwarfs-build", "vcpkg_installed", triplet_glob, "lib")).min
 end
 
-out = ARGV[0] or die "usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--target TRIPLE] [--skip-build]"
+out = ARGV[0] or die "usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--target TRIPLE] [--skip-build] [--limnifs-only]"
 # absolute: the arscope step runs chdir'd into the tebako-rs root, and a
 # relative OUT would silently resolve THERE instead of next to the caller
 out = File.expand_path(out)
 root = File.expand_path(ARGV.include?("--tebako-rs-root") ? ARGV[ARGV.index("--tebako-rs-root") + 1] : File.join(__dir__, ".."))
 skip_build = ARGV.include?("--skip-build")
+limnifs_only = ARGV.include?("--limnifs-only")
 target = ARGV.include?("--target") ? ARGV[ARGV.index("--target") + 1] : nil
 windows_gnu = target == "x86_64-pc-windows-gnu"
+windows_gnullvm = target == "aarch64-pc-windows-gnullvm"
+windows_any = windows_gnu || windows_gnullvm
+die "--limnifs-only pairs with --target aarch64-pc-windows-gnullvm (the only closure-less leg)" if limnifs_only && !windows_gnullvm
 build_dir = target ? File.join(root, "target", target, "release") : File.join(root, "target", "release")
 script_out = File.join(build_dir, "build")
 FileUtils.mkdir_p(File.join(out, "closure"))
@@ -61,14 +71,19 @@ unless skip_build
     "CARGO_NET_GIT_FETCH_WITH_CLI" => "true",
   }
   env["VCPKG_ROOT"] = ENV["VCPKG_ROOT"].to_s
-  pkgs = windows_gnu ? %w[tfs tebako-driver] : %w[tfs tebako-driver libtfs-preload]
+  pkgs = windows_any ? %w[tfs tebako-driver] : %w[tfs tebako-driver libtfs-preload]
   args = ["build", "--release", *(target ? ["--target", target] : [])]
   # windows ships dwarfs-only (squashfs is POSIX-only; ENC needs rnp's
-  # mingw build, TODO.v2-1/08).
-  args += ["-p", "tfs", *(windows_gnu ? ["--no-default-features", "--features", "vendored-dwarfs"] : [])]
+  # mingw build, TODO.v2-1/08) — except windows-arm64, whose tfs deps are
+  # limnifs-only by target cfg (dwarfs-t #100): no feature flags there,
+  # the dependency graph already carries the selection.
+  args += ["-p", "tfs", *(windows_gnu ? ["--no-default-features", "--features", "vendored-dwarfs"] : []),
+           *(limnifs_only ? ["--no-default-features", "--features", "backend-limnifs"] : [])]
   (pkgs - ["tfs"]).each { |p| args += ["-p", p] }
-  # MinGW cross-link (windows-gnu): the msys ruby legs link with mingw-gcc.
+  # MinGW cross-link (windows-gnu): the msys ruby legs link with mingw-gcc;
+  # the gnullvm leg links with clangarm64's clang.
   env["CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER"] = "x86_64-w64-mingw32-gcc" if windows_gnu
+  env["CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER"] = "aarch64-w64-mingw32-clang" if windows_gnullvm
   system(env, "cargo", *args, chdir: root, exception: true)
 end
 
@@ -81,7 +96,7 @@ end
 # runtime's env image carries it at /lib/tebako/. POSIX-only — windows has
 # no DYLD_INSERT_LIBRARIES/LD_PRELOAD mechanism (the msys memfs-exec story
 # is the later windows campaign).
-unless windows_gnu
+unless windows_any
   preload = %w[libtfs_preload.dylib libtfs_preload.so].map { |n| File.join(build_dir, n) }.find { |p| File.file?(p) }
   die "missing the preload cdylib under #{build_dir}" unless preload
   FileUtils.cp(preload, File.join(out, File.basename(preload)))
@@ -143,82 +158,91 @@ def rnp_prefix_of(out_dir)
      .max_by { |d| File.mtime(d) }
 end
 
-dwarfs = newest_out(File.join(script_out, "dwarfs-t-sys-*", "out"))
-die "no dwarfs-t-sys build under #{script_out}" unless dwarfs
-
-# the dwarfs-t libraries (its own build)
-%w[libdwarfs_c.a libdwarfs_common.a libdwarfs_compressor.a libdwarfs_decompressor.a
-   libdwarfs_metadata_legacy.a libdwarfs_reader.a libdwarfs_writer.a].each do |name|
-  harvest(out, File.join(dwarfs, "dwarfs-build", name), "dwarfs-t")
-end
-
-if windows_gnu
-  # The MinGW vcpkg closure: every archive the dwarfs-t link emits (boost
-  # carries the -gccN-mt-x64-VER suffix; test/manual-link archives never
-  # ship).
-  vlib = vcpkg_installed_dir(dwarfs, "*-static")
-  die "no vcpkg static lib dir under #{dwarfs} (or DWARFS_RS_VCPKG_INSTALLED_DIR)" unless vlib
-  Dir.glob(File.join(vlib, "*.a")).sort.each do |a|
-    base = File.basename(a)
-    next if base.start_with?("libgtest", "libgmock")
-
-    FileUtils.cp(a, File.join(out, "closure", base))
-  end
-  puts "  closure (mingw glob)      <= #{vlib.sub(%r{^.*/build/}, "build/")}"
+if limnifs_only
+  # limnifs-only by target cfg (the windows-aarch64 tfs deps carry no
+  # dwarfs backend — the arm64 closure is dwarfs-t #100's milestone): no
+  # native archives exist in this graph, and the boost required-set check
+  # below skips by design. closure/ stays empty; the tarball shape is
+  # unchanged.
+  puts "  closure (none)            — limnifs-only: pure Rust over the system libraries"
 else
-  sqfs = newest_out(File.join(script_out, "sqfs-sys-*", "out"))
-  die "no sqfs-sys build under #{script_out}" unless sqfs
+  dwarfs = newest_out(File.join(script_out, "dwarfs-t-sys-*", "out"))
+  die "no dwarfs-t-sys build under #{script_out}" unless dwarfs
 
-  # rnp-sys variants multiply in a reused target dir (a non-vendored
-  # graph leaves an out dir WITHOUT the install tree): newest-by-mtime
-  # alone picks the stub. Only an out dir with the vendored install tree
-  # qualifies — via rnp_prefix_of, so the keyed librnp prefix counts.
-  # (rnp-rs >= 0.1.12 has no build script: its build.rs moved to rnp-sys,
-  # which calls rnp_src::build() — the install tree lands in rnp-sys's
-  # OUT_DIR, per the botan-src caller-owns-OUT_DIR pattern. rnp-src
-  # itself is build=false since 0.2.1, so no rnp-src-*/out ever exists in
-  # this graph.)
-  rnp = Dir.glob(File.join(script_out, "rnp-sys-*", "out"))
-           .select { |d| rnp_prefix_of(d) }
-           .max_by { |d| File.mtime(d) }
-  die "no rnp-sys build with an install tree under #{script_out} (rnp with the vendored feature)" unless rnp
-  rnp_prefix = rnp_prefix_of(rnp)
-
-  # their vcpkg closure (codecs, boost, crypto — the static triplet):
-  # every archive the dwarfs-t link emits, the same rule as the mingw
-  # branch — the cherry-pick list drifted stale (libz rode the removed
-  # extractor chain; the boost iostreams/random/thread, date-tz,
-  # flatbuffers, jemalloc and ssl archives were never copied — the
-  # required-set check below then failed on its own contract). Test and
-  # manual-link archives never ship. The glob also matches the musl
-  # overlay triplets (x64-linux-musl / arm64-linux-musl carry no
-  # -static suffix; musl linkage is static by construction there).
-  vlib = vcpkg_installed_dir(dwarfs, "{*-static,*-linux-musl}")
-  die "no vcpkg static lib dir under #{dwarfs} (or DWARFS_RS_VCPKG_INSTALLED_DIR)" unless vlib
-  Dir.glob(File.join(vlib, "*.a")).sort.each do |a|
-    base = File.basename(a)
-    next if base.start_with?("libgtest", "libgmock")
-
-    FileUtils.cp(a, File.join(out, "closure", base))
+  # the dwarfs-t libraries (its own build)
+  %w[libdwarfs_c.a libdwarfs_common.a libdwarfs_compressor.a libdwarfs_decompressor.a
+     libdwarfs_metadata_legacy.a libdwarfs_reader.a libdwarfs_writer.a].each do |name|
+    harvest(out, File.join(dwarfs, "dwarfs-build", name), "dwarfs-t")
   end
-  puts "  closure (vcpkg glob)      <= #{vlib.sub(%r{^.*/build/}, "build/")}"
 
-  # the squashfs pair
-  harvest(out, File.join(sqfs, "libsqfs_abi_check.a"), "sqfs-sys shim")
-  sqfs_vlib = Dir.glob(File.join(sqfs, "vcpkg_installed", "{*-static,*-linux-musl}", "lib")).min
-  die "no vcpkg static lib dir under #{sqfs}" unless sqfs_vlib
-  harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
+  if windows_gnu
+    # The MinGW vcpkg closure: every archive the dwarfs-t link emits (boost
+    # carries the -gccN-mt-x64-VER suffix; test/manual-link archives never
+    # ship).
+    vlib = vcpkg_installed_dir(dwarfs, "*-static")
+    die "no vcpkg static lib dir under #{dwarfs} (or DWARFS_RS_VCPKG_INSTALLED_DIR)" unless vlib
+    Dir.glob(File.join(vlib, "*.a")).sort.each do |a|
+      base = File.basename(a)
+      next if base.start_with?("libgtest", "libgmock")
 
-  # the rnp family (rnp-sys's install tree, built from rnp-src sources —
-  # never a prebuilt download; librnp+sexpp ride the keyed rnp prefix,
-  # json-c and botan keep their plain ones)
-  {
-    File.join(rnp_prefix, "lib", "librnp.a") => "librnp (rnp-sys)",
-    File.join(rnp_prefix, "lib", "libsexpp.a") => "libsexpp (rnp-sys)",
-    File.join(rnp, "install", "json-c", "lib", "libjson-c.a") => "json-c (rnp-sys)",
-    File.join(rnp, "install", "botan", "lib", "libbotan-3.a") => "botan (rnp-src via rnp-sys)",
-  }.each do |src, note|
-    harvest(out, src, note)
+      FileUtils.cp(a, File.join(out, "closure", base))
+    end
+    puts "  closure (mingw glob)      <= #{vlib.sub(%r{^.*/build/}, "build/")}"
+  else
+    sqfs = newest_out(File.join(script_out, "sqfs-sys-*", "out"))
+    die "no sqfs-sys build under #{script_out}" unless sqfs
+
+    # rnp-sys variants multiply in a reused target dir (a non-vendored
+    # graph leaves an out dir WITHOUT the install tree): newest-by-mtime
+    # alone picks the stub. Only an out dir with the vendored install tree
+    # qualifies — via rnp_prefix_of, so the keyed librnp prefix counts.
+    # (rnp-rs >= 0.1.12 has no build script: its build.rs moved to rnp-sys,
+    # which calls rnp_src::build() — the install tree lands in rnp-sys's
+    # OUT_DIR, per the botan-src caller-owns-OUT_DIR pattern. rnp-src
+    # itself is build=false since 0.2.1, so no rnp-src-*/out ever exists in
+    # this graph.)
+    rnp = Dir.glob(File.join(script_out, "rnp-sys-*", "out"))
+             .select { |d| rnp_prefix_of(d) }
+             .max_by { |d| File.mtime(d) }
+    die "no rnp-sys build with an install tree under #{script_out} (rnp with the vendored feature)" unless rnp
+    rnp_prefix = rnp_prefix_of(rnp)
+
+    # their vcpkg closure (codecs, boost, crypto — the static triplet):
+    # every archive the dwarfs-t link emits, the same rule as the mingw
+    # branch — the cherry-pick list drifted stale (libz rode the removed
+    # extractor chain; the boost iostreams/random/thread, date-tz,
+    # flatbuffers, jemalloc and ssl archives were never copied — the
+    # required-set check below then failed on its own contract). Test and
+    # manual-link archives never ship. The glob also matches the musl
+    # overlay triplets (x64-linux-musl / arm64-linux-musl carry no
+    # -static suffix; musl linkage is static by construction there).
+    vlib = vcpkg_installed_dir(dwarfs, "{*-static,*-linux-musl}")
+    die "no vcpkg static lib dir under #{dwarfs} (or DWARFS_RS_VCPKG_INSTALLED_DIR)" unless vlib
+    Dir.glob(File.join(vlib, "*.a")).sort.each do |a|
+      base = File.basename(a)
+      next if base.start_with?("libgtest", "libgmock")
+
+      FileUtils.cp(a, File.join(out, "closure", base))
+    end
+    puts "  closure (vcpkg glob)      <= #{vlib.sub(%r{^.*/build/}, "build/")}"
+
+    # the squashfs pair
+    harvest(out, File.join(sqfs, "libsqfs_abi_check.a"), "sqfs-sys shim")
+    sqfs_vlib = Dir.glob(File.join(sqfs, "vcpkg_installed", "{*-static,*-linux-musl}", "lib")).min
+    die "no vcpkg static lib dir under #{sqfs}" unless sqfs_vlib
+    harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
+
+    # the rnp family (rnp-sys's install tree, built from rnp-src sources —
+    # never a prebuilt download; librnp+sexpp ride the keyed rnp prefix,
+    # json-c and botan keep their plain ones)
+    {
+      File.join(rnp_prefix, "lib", "librnp.a") => "librnp (rnp-sys)",
+      File.join(rnp_prefix, "lib", "libsexpp.a") => "libsexpp (rnp-sys)",
+      File.join(rnp, "install", "json-c", "lib", "libjson-c.a") => "json-c (rnp-sys)",
+      File.join(rnp, "install", "botan", "lib", "libbotan-3.a") => "botan (rnp-src via rnp-sys)",
+    }.each do |src, note|
+      harvest(out, src, note)
+    end
   end
 end
 
@@ -233,16 +257,19 @@ count = Dir.glob(File.join(out, "closure", "*.a")).size
 # The load-bearing set, not a raw count: the libarchive/libsodium feature
 # gates (dwarfs-t vcpkg.json) shrink the closure by design, so an exact
 # archive count only re-breaks on the next gate. These are the libraries
-# the dwarfs_c reader/writer + its codecs actually reference.
-required = %w[libboost_atomic libboost_chrono libboost_container libboost_context
-              libboost_date_time libboost_filesystem libboost_iostreams libboost_process
-              libboost_program_options libboost_random libboost_thread
-              libbrotlicommon libbrotlidec libbrotlienc libbz2 libcrypto libdate-tz
-              libflatbuffers libFLAC libfmt libjemalloc liblz4 liblzma libogg
-              libssl libxxhash libzstd]
-missing = required.reject do |base|
-  Dir.glob(File.join(out, "closure", "#{base}-*.a")).any? || File.file?(File.join(out, "closure", "#{base}.a"))
+# the dwarfs_c reader/writer + its codecs actually reference. Skipped on
+# the limnifs-only leg — there is no dwarfs closure to check.
+unless limnifs_only
+  required = %w[libboost_atomic libboost_chrono libboost_container libboost_context
+                libboost_date_time libboost_filesystem libboost_iostreams libboost_process
+                libboost_program_options libboost_random libboost_thread
+                libbrotlicommon libbrotlidec libbrotlienc libbz2 libcrypto libdate-tz
+                libflatbuffers libFLAC libfmt libjemalloc liblz4 liblzma libogg
+                libssl libxxhash libzstd]
+  missing = required.reject do |base|
+    Dir.glob(File.join(out, "closure", "#{base}-*.a")).any? || File.file?(File.join(out, "closure", "#{base}.a"))
+  end
+  die "closure missing required archives: #{missing.join(', ')}" unless missing.empty?
 end
-die "closure missing required archives: #{missing.join(', ')}" unless missing.empty?
 
-puts "staged the v2 link unit at #{out} (2 scoped staticlibs + #{count} closure archives#{windows_gnu ? ", windows-gnu (mingw)" : ""})"
+puts "staged the v2 link unit at #{out} (2 scoped staticlibs + #{count} closure archives#{windows_gnu ? ", windows-gnu (mingw)" : ""}#{limnifs_only ? ", limnifs-only (windows-arm64)" : ""})"

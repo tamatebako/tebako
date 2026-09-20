@@ -800,15 +800,13 @@ fn language_edge_forbids_triplets() {
 
 #[test]
 fn edge_triplets_list_grammar_holds_on_the_new_arms() {
-    // The toolkit edge's list grammar (non-empty, no duplicates, no
-    // reserved triplet) applies verbatim to the generalized arms.
+    // The toolkit edge's list grammar (non-empty, no duplicates)
+    // applies verbatim to the generalized arms.
     for edge in [
         "{kind: data, name: d, constraint: \">= 1\", mount: /d, triplets: []}",
         "{kind: data, name: d, constraint: \">= 1\", mount: /d, triplets: [aarch64-macos, aarch64-macos]}",
-        "{kind: data, name: d, constraint: \">= 1\", mount: /d, triplets: [aarch64-windows-ucrt]}",
         "{kind: runtime, engine: java, constraint: \">= 21\", triplets: []}",
         "{kind: executable, name: x, constraint: \">= 1\", mount: /x, triplets: [x86_64-linux-gnu, x86_64-linux-gnu]}",
-        "{kind: toolkit, name: t, constraint: \">= 1\", triplets: [aarch64-windows-ucrt]}",
     ] {
         let text = format!(
             "identity:\n  schema_version: 1\n  kind: app\n  name: m\n  version: \"1\"\n\
@@ -826,6 +824,27 @@ fn edge_triplets_list_grammar_holds_on_the_new_arms() {
             msg.contains("triplets") || msg.contains("platform triplet"),
             "{edge}: a named list-grammar error, got {msg}"
         );
+    }
+    // schema_minor 13: aarch64-windows-ucrt is a full axis citizen —
+    // accepted on every triplets:-carrying edge kind.
+    for edge in [
+        "{kind: data, name: d, constraint: \">= 1\", mount: /d, triplets: [aarch64-windows-ucrt]}",
+        "{kind: toolkit, name: t, constraint: \">= 1\", triplets: [aarch64-windows-ucrt]}",
+        "{kind: runtime, engine: java, constraint: \">= 21\", triplets: [aarch64-windows-ucrt]}",
+        "{kind: executable, name: x, constraint: \">= 1\", mount: /x, triplets: [aarch64-windows-ucrt]}",
+    ] {
+        let text = format!(
+            "identity:\n  schema_version: 1\n  kind: app\n  name: m\n  version: \"1\"\n\
+            \x20 producer: {{tool: tebako-cli, tool_version: 2.1.10}}\n  created: \"2026-09-12T00:00:00Z\"\n\
+            \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+            \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+            \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+            provides:\n  entrypoints:\n    - {{name: m, path: /bin/m}}\n\
+            \x20 platforms: universal\n  capabilities: {{exec: true, read: true}}\n\
+            requires: [{edge}]\n",
+        );
+        PayloadManifest::from_yaml(&text)
+            .unwrap_or_else(|e| panic!("{edge}: aarch64-windows-ucrt is on the axis: {e}"));
     }
 }
 
@@ -1252,7 +1271,7 @@ fn unknown_keys_are_tolerated_annotations_preserved() {
 #[test]
 fn model_and_schema_agree_on_rejections() {
     let validator = schema_validator();
-    let cases: [(&str, &str); 13] = [
+    let cases: [(&str, &str); 12] = [
         // kind app with a data-shaped provides
         (
             "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
@@ -1282,18 +1301,6 @@ fn model_and_schema_agree_on_rejections() {
              signing: {state: unsigned}, encryption: {state: none}}\n\
              provides: {mount_semantics: {suggested: /x}, capabilities: {exec: true, read: true}}\n",
             "data with exec: true",
-        ),
-        // the reserved triplet
-        (
-            "identity: {schema_version: 1, kind: data, name: x, version: \"1\", \
-             producer: {tool: t, tool_version: \"1\"}, created: now, \
-             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
-             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
-             signing: {state: unsigned}, encryption: {state: none}}\n\
-             provides: {mount_semantics: {suggested: /x}, capabilities: {exec: false, read: true}}\n\
-             requires: [{kind: toolkit, name: gtk, constraint: \">= 3\", \
-             triplets: [aarch64-windows-ucrt]}]\n",
-            "reserved triplet",
         ),
         // a check name outside the [A-Za-z0-9][A-Za-z0-9._-]* grammar (spec 26 §1)
         (

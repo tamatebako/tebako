@@ -24,7 +24,7 @@
 # bits, and the signing tool's provenance is exactly as pinned as the
 # artifacts it signs.
 #
-# The 42 per-asset .sha256 sidecars are NOT separately signed: each is a
+# The 43 per-asset .sha256 sidecars are NOT separately signed: each is a
 # derived line of the signed SHA256SUMS (tebako#493); signing the parts
 # and the sums covers them.
 set -euo pipefail

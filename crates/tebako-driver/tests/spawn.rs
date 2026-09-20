@@ -375,7 +375,7 @@ fn a_platform_skipped_edge_registers_no_expose() {
     store_entry(&g.tmp.path().join("home"), "21.0.12", "0.3.0");
     let skipped = tpkg::Platform::ALL
         .iter()
-        .find(|p| **p != tpkg::Platform::host() && !p.is_reserved())
+        .find(|p| **p != tpkg::Platform::host())
         .unwrap()
         .as_triplet();
     let env_image = write_env_image(g.tmp.path(), "[{name: java, path: /bin/java}]");
