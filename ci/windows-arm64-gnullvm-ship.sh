@@ -70,20 +70,22 @@ case "$CL_BANNER" in
 esac
 
 # Plain-name shims for the tools upstream hardcodes (botan-src spawns
-# bare `make`; rnp-src passes bare `gcc`/`g++` to librnp's cmake as
-# -DCMAKE_C_COMPILER=gcc — a NAME resolved from PATH, overriding the
-# CC/CXX env, and clangarm64 ships no gcc at all), the gates call
-# (objdump, strip), or cmake's bin-utils probe needs for the vendored
-# static-lib archives (ar, ranlib).
+# bare `make`), the gates call (objdump, strip), or cmake's bin-utils
+# probe needs for the vendored static-lib archives (ar, ranlib).
 # clangarm64 is pure LLVM: no binutils, so objdump/strip/ar/ranlib come
 # from llvm-objdump/llvm-strip/llvm-ar/llvm-ranlib when the unprefixed
-# names are absent, and the gcc/g++ names fall through to clang/clang++
-# (argv[0] stem "g++" ends in "++", so the copy drives clang in C++
-# mode — the same trick the NDK used for gcc). Always resolved FROM the
+# names are absent. Always resolved FROM the
 # clangarm64 bin dir (never PATH roulette), always COPIES — Git-bash
 # "symlinks" are text files to CreateProcess. Fails loudly here if the
 # toolchain layout moves, instead of upstream's cryptic "program not
 # found".
+#
+# gcc/g++ are deliberately NOT shimmed: clang resolves its sysroot and
+# library search paths relative to the executable's own directory, so a
+# copy at $TOOLSHIM/gcc.exe compiles but cannot link (-lkernel32 out of
+# scope — cmake's try-compile died exactly so, run 35508412309 job
+# 106072083361). librnp's cmake learns the compilers from the CC/CXX
+# exports below instead (rnp-src >= 0.3.7, rnpgp/rnp-rs#120).
 TOOLSHIM="$RT_UNIX/tebako-toolshim-arm64"
 mkdir -p "$TOOLSHIM"
 shim() {
@@ -102,8 +104,6 @@ shim objdump objdump.exe aarch64-w64-mingw32-objdump.exe llvm-objdump.exe
 shim strip strip.exe aarch64-w64-mingw32-strip.exe llvm-strip.exe
 shim ar ar.exe aarch64-w64-mingw32-ar.exe llvm-ar.exe
 shim ranlib ranlib.exe aarch64-w64-mingw32-ranlib.exe llvm-ranlib.exe
-shim gcc gcc.exe aarch64-w64-mingw32-gcc.exe clang.exe aarch64-w64-mingw32-clang.exe
-shim g++ g++.exe aarch64-w64-mingw32-g++.exe clang++.exe aarch64-w64-mingw32-clang++.exe
 export PATH="$TOOLSHIM:$PATH"
 
 # One linker, target-scoped — NOT a global RUSTFLAGS/LINKER: this leg's
@@ -220,9 +220,12 @@ export CXX_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-clang++
 # closed PATH and configures an MSVC toolchain — the try-compile dies on
 # the missing Windows SDK rc (run 35506218111), and even a passing cl
 # build would produce MSVC-ABI objects the gnullvm link cannot accept.
-# The cc-crate exports above are target-scoped and never reach cmake;
-# pin the plain pair to the prefixed clang. The x64 leg needs no such
-# pin only because its closed PATH carries no cl.
+# librnp is the same pair's charge since rnp-src 0.3.7 (rnpgp/rnp-rs#120)
+# — before it, rnp-src passed bare gcc/g++ as -D overrides, unsatisfiable
+# on clangarm64 (run 35507076981). The cc-crate exports above are
+# target-scoped and never reach cmake; pin the plain pair to the prefixed
+# clang. The x64 leg needs no such pin only because its closed PATH
+# carries no cl.
 export CC=aarch64-w64-mingw32-clang
 export CXX=aarch64-w64-mingw32-clang++
 
