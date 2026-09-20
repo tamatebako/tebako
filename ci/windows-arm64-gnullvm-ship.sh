@@ -66,13 +66,26 @@ export PATH="$TOOLSHIM:$PATH"
 # and stage_link_unit's `cargo run -p tebako-arscope` is a HOST build; a
 # global -static-libstdc++ would reach link.exe and choke. rustc
 # auto-finds the MSVC link.exe for the host build.
-export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER=aarch64-w64-mingw32-clang
-# clangarm64's C++ runtime is libc++ and its compiler runtime is
-# compiler-rt; under the clang driver -static-libstdc++/-static-libgcc
-# mean "the selected C++ stdlib / compiler runtime, STATICALLY". A
-# libc++.dll import would be exit 127 before main on a stock Windows —
-# the import gate (ship-gate.sh below) proves the absence on the staged
-# exe.
+#
+# The linker is the release-link WRAPPER (ci/windows-gnu-link-wrap.c,
+# compiled by clangarm64's clang): rnp-sys emits an explicit
+# `dylib=stdc++` for every windows && !msvc target — rustc places that
+# -lstdc++ BEFORE the trailing -C link-args, so no driver flag can
+# govern it (the 0.1.1 lesson, the x64 leg's comment), and clangarm64
+# carries no libstdc++ AT ALL (pure LLVM). The wrapper rewrites the
+# reference to -l:libc++.a — clangarm64's one C++ runtime, statically;
+# the import gate (ship-gate.sh below) proves no libc++.dll on the
+# staged exe. TEBAKO_LINK_WRAP_EXEC names the prefixed clang (the triple
+# prefix of argv[0] drives clang's --target).
+WRAP="$RUNNER_TEMP/tebako-link-wrap-arm64.exe"
+clang -O2 -o "$WRAP" ci/windows-gnu-link-wrap.c
+WRAP_WIN=$(cygpath -w "$WRAP")
+export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER="$WRAP_WIN"
+export TEBAKO_LINK_WRAP_EXEC=aarch64-w64-mingw32-clang
+export TEBAKO_LINK_WRAP_STDCXX_A=libc++.a
+# Driver-level belt for clang's OWN expansions (compiler-rt builtins,
+# the -stdlib expansion on any future -lc++ path); the early-position
+# build-script emissions are the wrapper's job above.
 export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-libstdc++ -C link-arg=-static-libgcc"
 
 # botan-src's configure.py defaults to MSVC on os=windows and there is no
