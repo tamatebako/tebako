@@ -21,15 +21,18 @@
  * to the `-l:<file>` exact-archive form, which is IMMUNE to the
  * surrounding -Bstatic / -Bdynamic mode:
  *
- *   -lstdc++      -> -l:libstdc++.a
+ *   -lstdc++      -> -l:libstdc++.a   (or TEBAKO_LINK_WRAP_STDCXX_A)
+ *   -lc++         -> -l:<same>        (nothing emits it on gcc graphs;
+ *                                      rnp-sys's gnullvm branch does)
  *   -lpthread     -> -l:libwinpthread.a
  *   -lwinpthread  -> -l:libwinpthread.a
  *
  * in three shapes: standalone argv entries, members of -Wl,<a>,<b>,...
  * comma lists, and tokens inside @response files (rustc moves long link
  * lines into one — the rewritten file rides next to the original as
- * <name>.wrapped). The gcc driver's own library search dirs resolve the
- * archives; system import libraries (kernel32 & co.) are untouched.
+ * <name>.wrapped). The compiler driver's own library search dirs
+ * resolve the archives; system import libraries (kernel32 & co.) are
+ * untouched.
  *
  * The enforcement half lives in ci/windows-gnu-import-gate.sh: every
  * shipped exe's import table is audited against the inbox-DLL allowlist
@@ -42,10 +45,20 @@
  *   CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=<that exe>
  * (cargo spawns the linker with CreateProcess — the wrapper must be a
  * real exe, not a shell script).
+ *
+ * The clangarm64 leg (windows-arm64-gnullvm-ship.sh) compiles the same
+ * source with clang and parametrizes by ENV:
+ *   TEBAKO_LINK_WRAP_EXEC      the compiler to exec (default "gcc") —
+ *                              arm64: aarch64-w64-mingw32-clang (the
+ *                              triple prefix drives clang's --target);
+ *   TEBAKO_LINK_WRAP_STDCXX_A  the archive -lstdc++/-lc++ rewrite to
+ *                              (default "libstdc++.a") — clangarm64 is
+ *                              libc++-only: "libc++.a".
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <unistd.h>
 #if defined(_WIN32)
 #include <process.h> /* execvp lives here on MinGW; unistd.h elsewhere */
@@ -53,8 +66,13 @@
 
 static const char *rewrite_lib(const char *name)
 {
-  if (strcmp(name, "stdc++") == 0)
-    return "-l:libstdc++.a";
+  static char stdcxx[256];
+  if (strcmp(name, "stdc++") == 0 || strcmp(name, "c++") == 0) {
+    const char *archive = getenv("TEBAKO_LINK_WRAP_STDCXX_A");
+    snprintf(stdcxx, sizeof(stdcxx), "-l:%s",
+             archive && *archive ? archive : "libstdc++.a");
+    return stdcxx;
+  }
   if (strcmp(name, "pthread") == 0 || strcmp(name, "winpthread") == 0)
     return "-l:libwinpthread.a";
   return NULL;
@@ -271,7 +289,10 @@ int main(int argc, char **argv)
 {
   static char *out[8192];
   int n = 0;
-  out[n++] = (char *)"gcc";
+  const char *cc = getenv("TEBAKO_LINK_WRAP_EXEC");
+  if (!cc || !*cc)
+    cc = "gcc";
+  out[n++] = (char *)cc;
 
   for (int i = 1; i < argc; i++) {
     const char *a = argv[i];
@@ -291,8 +312,8 @@ int main(int argc, char **argv)
   }
   out[n] = NULL;
 
-  execvp("gcc", out);
+  execvp(cc, out);
   /* execvp only returns on failure; make the failure diagnosable. */
-  perror("tebako-link-wrap: cannot exec gcc");
+  fprintf(stderr, "tebako-link-wrap: cannot exec %s: %s\n", cc, strerror(errno));
   return 127;
 }

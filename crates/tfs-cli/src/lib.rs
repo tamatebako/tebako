@@ -1034,23 +1034,41 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
             .map_err(|e| (format!("cannot replace {}: {e}", output.display()), 1))?;
     }
     match fmt.as_str() {
-        "dwarfs" => {
-            let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default())
-                .map_err(|e| (format!("dwarfs writer: {e}"), 1))?;
-            writer.add_tree(source, "/").map_err(|e| {
-                (
-                    format!("dwarfs writer: scanning {}: {e}", source.display()),
-                    1,
-                )
-            })?;
-            writer
-                .write(output)
-                .map_err(|e| (format!("dwarfs writer: {}: {e}", output.display()), 1))?;
-        }
+        "dwarfs" => write_dwarfs_image(source, output)?,
         "limnifs" => write_limnifs_image(source, output)?,
         _ => unreachable!("the format gate above admits only dwarfs/limnifs"),
     }
     Ok(())
+}
+
+/// `mkimage --format dwarfs` — the dwarfs-t Writer (the same C ABI the
+/// reader uses; in-process, no mkdwarfs binary).
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+fn write_dwarfs_image(source: &Path, output: &Path) -> Result<(), (String, i32)> {
+    let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default())
+        .map_err(|e| (format!("dwarfs writer: {e}"), 1))?;
+    writer.add_tree(source, "/").map_err(|e| {
+        (
+            format!("dwarfs writer: scanning {}: {e}", source.display()),
+            1,
+        )
+    })?;
+    writer
+        .write(output)
+        .map_err(|e| (format!("dwarfs writer: {}: {e}", output.display()), 1))?;
+    Ok(())
+}
+
+/// windows-arm64 carries no dwarfs writer (the closure is dwarfs-t
+/// #100's milestone) — a named error, never a silent format swap.
+#[cfg(all(windows, target_arch = "aarch64"))]
+fn write_dwarfs_image(_source: &Path, _output: &Path) -> Result<(), (String, i32)> {
+    Err((
+        "mkimage --format dwarfs is not available on windows-arm64 (the dwarfs-t writer has no \
+         arm64 windows closure yet); use --format limnifs"
+            .to_string(),
+        1,
+    ))
 }
 
 /// `mkimage --format limnifs`: the tebako single-file layout (spec 20

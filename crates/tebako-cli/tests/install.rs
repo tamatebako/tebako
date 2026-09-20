@@ -1175,7 +1175,7 @@ fn install_skips_an_edge_not_covering_this_host() {
     let fx = Fixture::new("depwalk-skip");
     let skipped = Platform::ALL
         .iter()
-        .find(|p| **p != Platform::host() && !p.is_reserved())
+        .find(|p| **p != Platform::host())
         .unwrap()
         .as_triplet();
     let app_image = app_image_with_requires(

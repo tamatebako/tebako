@@ -414,7 +414,7 @@ fn resolve_closure_skips_an_edge_not_covering_the_target_host() {
     let fx = Fixture::new("edge-skip");
     let skipped = Platform::ALL
         .iter()
-        .find(|p| **p != Platform::host() && !p.is_reserved())
+        .find(|p| **p != Platform::host())
         .unwrap()
         .as_triplet();
     let host = Platform::host().as_triplet();

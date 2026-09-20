@@ -205,7 +205,7 @@ requires:
 - **PER-EDGE PLATFORM CONDITIONING (`triplets:`, additive — schema_minor
   9, locked 2026-09-12, roadmap 86):** every edge kind EXCEPT
   `kind: language` accepts the OPTIONAL `triplets:` list — the §3 axis's
-  vcpkg-form triplets, non-empty, no duplicates, no reserved triplet
+  vcpkg-form triplets, non-empty, no duplicates
   (validated at parse). This generalizes the toolkit edge's existing
   spelling to `data`, `runtime`, and `executable` edges — one spelling
   per axis (spec 00 invariant 10): payload-level coverage is
@@ -449,7 +449,11 @@ the BASE's gem home at run time). Dispatch semantics live in spec 07
 - `aarch64-macos`, `x86_64-macos`
 - `x86_64-linux-gnu`, `aarch64-linux-gnu`
 - `x86_64-linux-musl`, `aarch64-linux-musl`
-- `x86_64-windows-ucrt` (`aarch64-windows-ucrt` reserved)
+- `x86_64-windows-ucrt`, `aarch64-windows-ucrt`
+
+(`aarch64-windows-ucrt` joined the axis at payload-manifest schema_minor
+13; pre-13 readers reject it by name — exit 65 — which is the designed
+fail-closed behavior for a triplet outside an old reader's axis.)
 
 ONE `Platform` type (tpkg crate) owns the triplet ↔ release-asset-name
 mapping (`aarch64-macos` ↔ `macos-arm64`, `x86_64-linux-gnu` ↔

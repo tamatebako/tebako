@@ -430,12 +430,6 @@ impl RegistryVersion {
                     )));
                 }
                 for (platform, entry) in map {
-                    if platform.is_reserved() {
-                        return Err(invalid_entry(format!(
-                            "payload '{}' {} names the reserved triplet {platform}",
-                            payload.name, self.version
-                        )));
-                    }
                     if entry.artifact.is_empty() {
                         return Err(invalid_entry(format!(
                             "payload '{}' {} platforms[{platform}].artifact must not be empty",
