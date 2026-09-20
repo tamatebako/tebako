@@ -36,13 +36,38 @@ TARGET=aarch64-pc-windows-gnullvm
 PLATFORM=windows-ucrt-arm64
 [ -n "${VERSION:-}" ] || { echo "VERSION is required (the release tag minus v)"; exit 64; }
 
-# The proven closed PATH (ci/windows-gnu-release.sh): clangarm64's
-# clang/lld first; Git's /usr/bin for coreutils (safe — the ABI clash is
-# specifically setup-msys2's /usr/bin, which stays OFF); git.exe from
-# Git's /cmd; cargo; System32. No choco mingw, no stray runner toolchains
-# (first-DLL-wins resolution is STATUS_ENTRYPOINT_NOT_FOUND at process
-# start).
-export PATH="$CLANGARM64/bin:/c/Program Files/Git/usr/bin:/c/Program Files/Git/cmd:/c/Users/runneradmin/.cargo/bin:/c/Windows/System32"
+# HOST build-deps compile AND LINK for aarch64-pc-windows-msvc (the
+# rustup host triple): rustc drives link.exe for them, and Git-bash's
+# coreutils `link` must never win (run 35501759953: getrandom's build
+# script died "linking with link.exe" — /usr/bin/link took it). The
+# job's msvc-dev-cmd step (arch: arm64) armed the HostARM64/ARM64
+# tools; pull that bin dir into the closed PATH AHEAD of Git's
+# /usr/bin. INCLUDE/LIB ride the environment, untouched by the PATH
+# replacement. (The phase-1 idiom, ci/windows-arm64-msvc-build.sh.)
+[ -n "${VCToolsInstallDir:-}" ] || { echo "::error::windows-arm64-ship: VCToolsInstallDir unset — the msvc-dev-cmd step (arch: arm64) must run before this script"; exit 1; }
+VSTOOLS="${VCToolsInstallDir%/}"
+VSTOOLS="${VSTOOLS%\\}"
+VSBIN="$(cygpath -u "$VSTOOLS")/bin/HostARM64/ARM64"
+[ -d "$VSBIN" ] || { echo "::error::windows-arm64-ship: VS ARM64 native tools not found at $VSBIN (VCToolsInstallDir=$VCToolsInstallDir) — toolchain layout changed"; exit 1; }
+
+# The proven closed PATH (ci/windows-gnu-release.sh): the VS tools
+# first (link.exe), then clangarm64's clang/lld; Git's /usr/bin for
+# coreutils (safe — the ABI clash is specifically setup-msys2's
+# /usr/bin, which stays OFF); git.exe from Git's /cmd; cargo; System32.
+# No choco mingw, no stray runner toolchains (first-DLL-wins resolution
+# is STATUS_ENTRYPOINT_NOT_FOUND at process start).
+export PATH="$VSBIN:$CLANGARM64/bin:/c/Program Files/Git/usr/bin:/c/Program Files/Git/cmd:/c/Users/runneradmin/.cargo/bin:/c/Windows/System32"
+
+# The MSVC env must genuinely target ARM64 (the host machine): a
+# misconfigured arch compiles the build-deps into the wrong machine and
+# dies cryptically when the first build script runs. Named failure
+# here, never a wrong-arch object.
+CL_BANNER="$(cl 2>&1 | head -1 || true)"
+echo "$CL_BANNER"
+case "$CL_BANNER" in
+  *"for ARM64"*) ;;
+  *) echo "::error::windows-arm64-ship: cl does not target ARM64 (\"$CL_BANNER\") — the msvc-dev-cmd arch must be arm64"; exit 1 ;;
+esac
 
 # Plain-name shims for the tools upstream hardcodes (botan-src spawns
 # bare `make`) or the gates call (objdump, strip). clangarm64 is pure
