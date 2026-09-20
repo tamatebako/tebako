@@ -120,7 +120,12 @@ export TEBAKO_LINK_WRAP_STDCXX_A=libc++.a
 # Driver-level belt for clang's OWN expansions (compiler-rt builtins,
 # the -stdlib expansion on any future -lc++ path); the early-position
 # build-script emissions are the wrapper's job above.
-export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-libstdc++ -C link-arg=-static-libgcc"
+# -l:libwinpthread.a: clangarm64's libc++ thread API is pthread
+# (_LIBCPP_HAS_THREAD_API_PTHREAD — std::thread lowers to pthread_create)
+# and the botan TU below gains a pthread_setname_np reference; the -l:
+# spelling pins the STATIC archive so no libwinpthread-1.dll import ever
+# enters the staged PEs (the import gate audits this).
+export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-libstdc++ -C link-arg=-static-libgcc -C link-arg=-l:libwinpthread.a"
 
 # botan-src's configure.py defaults to MSVC on os=windows and there is no
 # cl on the closed PATH — steer it to clangarm64's clang (the ucrt64
@@ -132,6 +137,15 @@ export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-li
 # caller override (config.rs:87-89): use the prefixed clang++ driver.
 export BOTAN_CONFIGURE_CC=clang
 export BOTAN_CONFIGURE_CC_BIN=aarch64-w64-mingw32-clang++
+# os_utils.cpp's windows+libc++ branch (_LIBCPP_HAS_THREAD_API_PTHREAD,
+# true on clangarm64) calls pthread_setname_np, but pthread.h is included
+# only under BOTAN_TARGET_OS_HAS_POSIX1 — an upstream botan bug for this
+# exact toolchain combination; ucrt64's g++/libstdc++ never takes the
+# branch (run 35502936455: "use of undeclared identifier
+# 'pthread_setname_np'"). botan-src forwards BOTAN_CONFIGURE_EXTRA_CXXFLAGS
+# to configure.py (botan-src src/lib.rs:57): force-include pthread.h so
+# the declaration reaches the amalgamation TU.
+export BOTAN_CONFIGURE_EXTRA_CXXFLAGS="-include pthread.h"
 
 # bindgen (rnp-sys's rnp bindings) drives libclang: with no mingw header
 # dirs on its search path, rnp.h dies on <stdbool.h> (tebako-rs CI run
