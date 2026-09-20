@@ -125,7 +125,13 @@ export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-li
 # botan-src's configure.py defaults to MSVC on os=windows and there is no
 # cl on the closed PATH — steer it to clangarm64's clang (the ucrt64
 # leg's gcc probe: "Default compiler is msvc but could not find 'cl'").
+# BOTAN_CONFIGURE_CC is botan's compiler-FAMILY name; the actual binary is
+# --cc-bin, which rnp-src defaults to g++ on windows (rnp-src
+# src/config.rs:80) — clangarm64 has no g++, and make died
+# CreateProcess(NULL, g++ ...) e=2 (run 35502239547). rnp-src honors the
+# caller override (config.rs:87-89): use the prefixed clang++ driver.
 export BOTAN_CONFIGURE_CC=clang
+export BOTAN_CONFIGURE_CC_BIN=aarch64-w64-mingw32-clang++
 
 # bindgen (rnp-sys's rnp bindings) drives libclang: with no mingw header
 # dirs on its search path, rnp.h dies on <stdbool.h> (tebako-rs CI run
