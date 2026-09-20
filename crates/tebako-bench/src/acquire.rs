@@ -44,6 +44,40 @@ pub fn exe_suffix(triplet: &str) -> &'static str {
     }
 }
 
+/// Canonicalize a path that will be handed to a spawned child. On
+/// Windows `canonicalize` yields verbatim `\\?\C:\…` paths, and several
+/// child toolchains reject the prefix (java's `-cp` parser produced
+/// ClassNotFoundException for every classpath workload on the windows
+/// leg) — so the prefix is simplified away when the path is a plain
+/// drive-letter (or UNC) form. Every path the harness puts into a
+/// child's argv/cwd/env flows through here, never a raw canonicalize.
+pub fn canonicalize_for_children(path: &Path) -> Result<PathBuf, BenchError> {
+    let c = path.canonicalize().map_err(|e| {
+        BenchError::operational(format!("acquire: cannot resolve {}: {e}", path.display()))
+    })?;
+    Ok(simplify_verbatim(c))
+}
+
+/// `\\?\C:\…` → `C:\…`, `\\?\UNC\server\share\…` → `\\server\share\…`.
+/// Identity elsewhere (and for the exotic verbatim forms there is no
+/// plain spelling for — the volume-guid form stays verbatim).
+fn simplify_verbatim(p: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = p.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{rest}"));
+        }
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            let b = rest.as_bytes();
+            if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+                return PathBuf::from(rest);
+            }
+        }
+    }
+    p
+}
+
 /// The `--out` directory's internal layout (spec 27 §5's hermetic bench
 /// home lives here — a cold run never touches the host's real caches).
 #[derive(Debug, Clone)]
@@ -80,13 +114,12 @@ impl BenchLayout {
         // scratch cell and admin spawns run in the bench home, so a
         // relative --out would spawn ENOENT every staged program (the
         // 2026-08-31 run's 0-measured-cells bug — "cannot spawn
-        // out/bin/tebako" from inside the scratch/home cwd).
+        // out/bin/tebako" from inside the scratch/home cwd). The path
+        // spelling is child-safe (no windows verbatim prefix).
         std::fs::create_dir_all(out).map_err(|e| {
             BenchError::operational(format!("acquire: cannot create {}: {e}", out.display()))
         })?;
-        let out = out.canonicalize().map_err(|e| {
-            BenchError::operational(format!("acquire: cannot resolve {}: {e}", out.display()))
-        })?;
+        let out = canonicalize_for_children(out)?;
         let layout = BenchLayout {
             root: out.to_path_buf(),
             bin: out.join("bin"),
@@ -154,23 +187,40 @@ impl BenchLayout {
     ///   first-boot means re-extraction inside the measured span.
     /// - v2-managed: the whole store — the payload re-installs
     ///   (UNMEASURED, spec 27 §5's cold flow) and the runtime download
-    ///   lands inside the measured span.
-    /// - v2-press: the store's `runtimes/` — the fat package carries the
-    ///   runtime EXE but NOT the env image (§9 spike a), so the env-image
-    ///   download lands inside the measured span. The package never
-    ///   touches the store's payload side, so the payload record survives
-    ///   (and the next v2-managed cold rep re-installs anyway).
+    ///   lands inside the measured span. The unmeasured re-install also
+    ///   restores any spawned-dependency runtimes the payload declared.
+    /// - v2-press: the fat package's OWN runtime entry
+    ///   (`runtimes/<entry>`, named by `runtime_dir`) — the package
+    ///   carries the runtime EXE but NOT the env image (§9 spike a), so
+    ///   the env-image download lands inside the measured span.
+    ///   Spawned-dependency runtime entries (a payload spawning a second
+    ///   interpreter, e.g. metanorma's jing validation spawning java)
+    ///   stay: a spawn never downloads, so wiping them would make the
+    ///   cold run un-runnable by construction.
     /// - runtime-exe (spec 27 §10.3): the whole store + the per-target
     ///   TMPDIR — the driver's/exec-cache's first-boot state. The runtime
     ///   pair itself stays staged (its download+verify is acquisition in
     ///   this suite; the measured span is the first mount).
     /// - on-system never reaches here: its cold cell is a declared gap.
-    pub fn wipe_cold_caches(&self, target: &str, kind: TargetKind) -> Result<(), BenchError> {
+    pub fn wipe_cold_caches(
+        &self,
+        target: &str,
+        kind: TargetKind,
+        runtime_dir: Option<&Path>,
+    ) -> Result<(), BenchError> {
         let mut wipes = vec![self.home.join(".metanorma"), self.home.join(".relaton")];
         match kind {
             TargetKind::V1Exe => wipes.push(self.tmp.join(target)),
             TargetKind::V2Managed => wipes.push(self.store()),
-            TargetKind::V2Press => wipes.push(self.store().join("runtimes")),
+            TargetKind::V2Press => wipes.push(
+                runtime_dir
+                    .ok_or_else(|| {
+                        BenchError::operational(format!(
+                            "acquire: the v2-press cold wipe for '{target}' needs the package's runtime entry dir (harness bug)"
+                        ))
+                    })?
+                    .to_path_buf(),
+            ),
             TargetKind::RuntimeExe => {
                 wipes.push(self.store());
                 wipes.push(self.tmp.join(target));
@@ -733,6 +783,9 @@ pub struct RuntimeEntry {
     pub lang_version: String,
     /// The tebako runtime release (e.g. "0.16.9").
     pub tebako_version: String,
+    /// The cache entry directory (`runtimes/<engine>-<lv>-<ver>-<triplet>`)
+    /// — the v2-press cold wipe's scoped target.
+    pub dir: PathBuf,
     /// The cached interpreter exe (the fat package's runtime slot).
     pub exe: PathBuf,
     /// The exe's verified digest (the store's `sha256` marker) — pinned
@@ -882,17 +935,23 @@ fn read_runtime_entry(
             "acquire: runtime cache entry '{dir_name}' does not carry <lang-ver>-<tebako-ver>"
         ))
     })?;
-    let asset = format!(
-        "tebako-runtime-{tebako_version}-{lang_version}-{triplet}{}",
-        exe_suffix(triplet)
-    );
-    let exe = entry_dir.join(&asset);
-    if !exe.is_file() {
-        return Err(BenchError::operational(format!(
-            "acquire: the runtime cache entry {} has no {asset}",
+    // The store's exe spelling follows the factory's asset spelling
+    // (spec 27 §10.1): openjdk's windows exe is `.exe`-suffixed, the
+    // ruby/python factories' is bare — probe both, never assume.
+    let stem = format!("tebako-runtime-{tebako_version}-{lang_version}-{triplet}");
+    let exe = [
+        format!("{stem}{}", exe_suffix(triplet)),
+        stem,
+    ]
+    .into_iter()
+    .map(|name| entry_dir.join(name))
+    .find(|p| p.is_file())
+    .ok_or_else(|| {
+        BenchError::operational(format!(
+            "acquire: the runtime cache entry {} has no interpreter exe (neither the suffixed nor the bare spelling)",
             entry_dir.display()
-        )));
-    }
+        ))
+    })?;
     let marker = std::fs::read_to_string(entry_dir.join("sha256")).map_err(|e| {
         BenchError::operational(format!(
             "acquire: the runtime cache entry {} has no readable sha256 marker: {e}",
@@ -909,6 +968,7 @@ fn read_runtime_entry(
         engine,
         lang_version: lang_version.to_string(),
         tebako_version: tebako_version.to_string(),
+        dir: entry_dir,
         exe,
         exe_sha256,
     })

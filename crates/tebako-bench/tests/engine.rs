@@ -85,6 +85,7 @@ fn ready(id: &str, kind: TargetKind) -> PreparedTarget {
         state: Prepared::Ready {
             program: child_path(),
             image: None,
+            runtime_dir: None,
         },
     }
 }

@@ -320,6 +320,14 @@ rule (unsafe only inside FFI boundary modules).
   NOT the env image — §9 spike a — so the env-image download lands
   inside the measured span); v1-exe = wipe → measured exe run
   (re-extraction inside the span).
+- **The v2-press wipe is scoped to the package's OWN runtime entry**
+  (`runtimes/<entry>`, amended 2026-09-18 from the whole-`runtimes/`
+  wording): a payload that spawns a second interpreter (metanorma's
+  jing validation spawns java — the spawned-payload dependency) keeps
+  that runtime's entry, because a spawn NEVER downloads — wiping it
+  would make the cold run un-runnable by construction. The v2-managed
+  cold wipe stays whole-store: its unmeasured re-install restores the
+  spawned dependencies.
 - Cold results are reported SEPARATELY as install/first-boot metrics
   and are never mixed into warm medians. `mode` on every run record is
   `"warm"` or `"cold"` (§6), and statistics are computed per mode.
@@ -444,7 +452,11 @@ line, never a bare exit (invariant 9).
 paths and the java fixture directory resolve against it. The harness
 canonicalizes it once at startup (an unresolvable root is a named
 error) — children spawned with a different cwd never see a relative
-root.
+root. Every path handed to a spawned child (argv, cwd, env) is
+canonicalized in a child-safe spelling (amended 2026-09-18): on Windows
+the canonical `\\?\` verbatim prefix is simplified away — child
+toolchains reject it (java's `-cp` parser fails the classpath with
+ClassNotFoundException, on BOTH arms alike).
 
 `validate` checks the input against BOTH gates: the versioned JSON
 Schema (structure) and the crate's serde model (the same shape the run
@@ -517,7 +529,8 @@ The factories disagree on the windows interpreter asset spelling
 factories ship the bare `<stem>` beside their `.dll`. The harness
 probes the suffixed sidecar first; a 404 (asset absent) selects the
 bare spelling — the sidecar that exists names the asset, never a
-guessed rename.
+guessed rename. The store's cached exe keeps the factory spelling, so
+the runtime-cache read-back probes both spellings likewise.
 
 **The fair-comparison invariant** — the harness asserts version parity
 at run time: it probes the on-system binary AND the tebako runtime exe

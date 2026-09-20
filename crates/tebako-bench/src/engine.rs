@@ -62,6 +62,9 @@ pub enum Prepared {
         program: PathBuf,
         /// runtime-exe arms: the staged env image (TEBAKO_RUNTIME_IMAGE).
         image: Option<PathBuf>,
+        /// v2 arms: the resolved runtime's cache entry dir — the v2-press
+        /// cold wipe's scoped target (spec 27 §5).
+        runtime_dir: Option<PathBuf>,
     },
     Unavailable {
         reason: String,
@@ -110,11 +113,13 @@ pub fn run(request: &RunRequest) -> Result<u8, BenchError> {
     let layout = BenchLayout::new(&request.out)?;
     // Children spawn with the bench home / a scratch cell as their cwd,
     // so a relative --repo-root would break every vendored-source and
-    // javac path from inside them — canonicalize once, up front.
-    let repo_root = request.repo_root.canonicalize().map_err(|e| {
+    // javac path from inside them — canonicalize once, up front, in the
+    // child-safe spelling (no windows verbatim prefix).
+    let repo_root = acquire::canonicalize_for_children(&request.repo_root).map_err(|e| {
         BenchError::operational(format!(
-            "run: cannot resolve --repo-root {}: {e}",
-            request.repo_root.display()
+            "run: cannot resolve --repo-root {}: {}",
+            request.repo_root.display(),
+            e.message
         ))
     })?;
     let (prepared, versions, tools, leg) = prepare_targets(
@@ -230,6 +235,7 @@ fn prepare_targets(
                         Prepared::Ready {
                             program: exe,
                             image: None,
+                            runtime_dir: None,
                         }
                     }
                     Err(e) => Prepared::Unavailable {
@@ -257,6 +263,7 @@ fn prepare_targets(
                             Prepared::Ready {
                                 program: staged.program,
                                 image: None,
+                                runtime_dir: Some(staged.runtime_dir),
                             }
                         }
                         Err(e) => Prepared::Unavailable {
@@ -271,6 +278,7 @@ fn prepare_targets(
                 Prepared::Ready {
                     program: PathBuf::from(target.program.as_deref().unwrap_or_default()),
                     image: None,
+                    runtime_dir: None,
                 }
             }
             TargetKind::RuntimeExe => {
@@ -278,6 +286,7 @@ fn prepare_targets(
                     Ok(pair) => Prepared::Ready {
                         program: pair.exe,
                         image: Some(pair.image),
+                        runtime_dir: None,
                     },
                     Err(e) => Prepared::Unavailable {
                         reason: format!("runtime acquisition failed: {e}"),
@@ -358,7 +367,7 @@ fn prepare_targets(
                 &[],
                 &format!("acquire-probe-on-system-{lang}.log"),
             )?;
-            let Prepared::Ready { program, image } = &prepared[tb_idx].state else {
+            let Prepared::Ready { program, image, .. } = &prepared[tb_idx].state else {
                 unreachable!()
             };
             let image = image.as_ref().ok_or_else(|| {
@@ -544,6 +553,9 @@ struct StagedV2 {
     tools_version: String,
     runtime_tebako_version: String,
     runtime_lang_version: String,
+    /// The resolved runtime's store entry dir (the v2-press cold wipe's
+    /// scoped target).
+    runtime_dir: PathBuf,
     payload_release_tag: String,
     image_format: crate::result::ImageFormat,
 }
@@ -590,6 +602,7 @@ fn prepare_v2(
         tools_version: tools_ref.version.clone(),
         runtime_tebako_version: runtime.tebako_version,
         runtime_lang_version: runtime.lang_version,
+        runtime_dir: runtime.dir,
         payload_release_tag: payload.release_tag,
         image_format: payload.image_format,
     })
@@ -804,7 +817,10 @@ pub fn execute_matrix(
                 continue;
             }
             for iteration in 1..=suite.run_policy.cold_repetitions {
-                layout.wipe_cold_caches(&pt.target.id, pt.target.kind)?;
+                let Prepared::Ready { runtime_dir, .. } = &pt.state else {
+                    unreachable!("the cold loop skips non-ready arms")
+                };
+                layout.wipe_cold_caches(&pt.target.id, pt.target.kind, runtime_dir.as_deref())?;
                 // The §5 cold flow's unmeasured re-install is v2-managed's
                 // alone (v1 re-extracts in-span; the fat package needs no
                 // store; runtime-exe arms mount staged files, so their
@@ -860,7 +876,7 @@ fn run_once(
     warmup: bool,
 ) -> Result<(Sample, PathBuf), BenchError> {
     let target = &pt.target;
-    let Prepared::Ready { program, image } = &pt.state else {
+    let Prepared::Ready { program, image, .. } = &pt.state else {
         return Err(BenchError::operational(format!(
             "engine: run_once called for the unavailable target '{}' (harness bug)",
             target.id
@@ -884,16 +900,17 @@ fn run_once(
     let (cwd, doc_name) = match source {
         Some(src) => {
             copy_tree(&src.root, &cell)?;
-            let cwd = cell
-                .join(src.doc_rel.parent().unwrap_or_else(|| Path::new("")))
-                .canonicalize()
-                .map_err(|e| {
-                    BenchError::operational(format!(
-                        "engine: the document directory for workload '{}' is missing under {}: {e}",
-                        workload.id,
-                        cell.display()
-                    ))
-                })?;
+            let cwd = acquire::canonicalize_for_children(
+                &cell.join(src.doc_rel.parent().unwrap_or_else(|| Path::new(""))),
+            )
+            .map_err(|e| {
+                BenchError::operational(format!(
+                    "engine: the document directory for workload '{}' is missing under {}: {}",
+                    workload.id,
+                    cell.display(),
+                    e.message
+                ))
+            })?;
             let doc_name = src
                 .doc_rel
                 .file_name()
@@ -910,10 +927,11 @@ fn run_once(
             std::fs::create_dir_all(&cell).map_err(|e| {
                 BenchError::operational(format!("engine: cannot create {}: {e}", cell.display()))
             })?;
-            let cwd = cell.canonicalize().map_err(|e| {
+            let cwd = acquire::canonicalize_for_children(&cell).map_err(|e| {
                 BenchError::operational(format!(
-                    "engine: cannot canonicalize {}: {e}",
-                    cell.display()
+                    "engine: cannot canonicalize {}: {}",
+                    cell.display(),
+                    e.message
                 ))
             })?;
             (cwd, None)
