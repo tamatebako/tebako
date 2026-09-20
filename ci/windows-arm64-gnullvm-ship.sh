@@ -70,11 +70,16 @@ case "$CL_BANNER" in
 esac
 
 # Plain-name shims for the tools upstream hardcodes (botan-src spawns
-# bare `make`), the gates call (objdump, strip), or cmake's bin-utils
-# probe needs for the vendored static-lib archives (ar, ranlib).
+# bare `make`; rnp-src passes bare `gcc`/`g++` to librnp's cmake as
+# -DCMAKE_C_COMPILER=gcc — a NAME resolved from PATH, overriding the
+# CC/CXX env, and clangarm64 ships no gcc at all), the gates call
+# (objdump, strip), or cmake's bin-utils probe needs for the vendored
+# static-lib archives (ar, ranlib).
 # clangarm64 is pure LLVM: no binutils, so objdump/strip/ar/ranlib come
 # from llvm-objdump/llvm-strip/llvm-ar/llvm-ranlib when the unprefixed
-# names are absent. Always resolved FROM the
+# names are absent, and the gcc/g++ names fall through to clang/clang++
+# (argv[0] stem "g++" ends in "++", so the copy drives clang in C++
+# mode — the same trick the NDK used for gcc). Always resolved FROM the
 # clangarm64 bin dir (never PATH roulette), always COPIES — Git-bash
 # "symlinks" are text files to CreateProcess. Fails loudly here if the
 # toolchain layout moves, instead of upstream's cryptic "program not
@@ -97,6 +102,8 @@ shim objdump objdump.exe aarch64-w64-mingw32-objdump.exe llvm-objdump.exe
 shim strip strip.exe aarch64-w64-mingw32-strip.exe llvm-strip.exe
 shim ar ar.exe aarch64-w64-mingw32-ar.exe llvm-ar.exe
 shim ranlib ranlib.exe aarch64-w64-mingw32-ranlib.exe llvm-ranlib.exe
+shim gcc gcc.exe aarch64-w64-mingw32-gcc.exe clang.exe aarch64-w64-mingw32-clang.exe
+shim g++ g++.exe aarch64-w64-mingw32-g++.exe clang++.exe aarch64-w64-mingw32-clang++.exe
 export PATH="$TOOLSHIM:$PATH"
 
 # One linker, target-scoped — NOT a global RUSTFLAGS/LINKER: this leg's
