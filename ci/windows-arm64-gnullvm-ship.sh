@@ -70,9 +70,11 @@ case "$CL_BANNER" in
 esac
 
 # Plain-name shims for the tools upstream hardcodes (botan-src spawns
-# bare `make`) or the gates call (objdump, strip). clangarm64 is pure
-# LLVM: no binutils, so objdump/strip come from llvm-objdump/llvm-strip
-# when the unprefixed names are absent. Always resolved FROM the
+# bare `make`), the gates call (objdump, strip), or cmake's bin-utils
+# probe needs for the vendored static-lib archives (ar, ranlib).
+# clangarm64 is pure LLVM: no binutils, so objdump/strip/ar/ranlib come
+# from llvm-objdump/llvm-strip/llvm-ar/llvm-ranlib when the unprefixed
+# names are absent. Always resolved FROM the
 # clangarm64 bin dir (never PATH roulette), always COPIES — Git-bash
 # "symlinks" are text files to CreateProcess. Fails loudly here if the
 # toolchain layout moves, instead of upstream's cryptic "program not
@@ -93,6 +95,8 @@ shim() {
 shim make mingw32-make.exe
 shim objdump objdump.exe aarch64-w64-mingw32-objdump.exe llvm-objdump.exe
 shim strip strip.exe aarch64-w64-mingw32-strip.exe llvm-strip.exe
+shim ar ar.exe aarch64-w64-mingw32-ar.exe llvm-ar.exe
+shim ranlib ranlib.exe aarch64-w64-mingw32-ranlib.exe llvm-ranlib.exe
 export PATH="$TOOLSHIM:$PATH"
 
 # One linker, target-scoped — NOT a global RUSTFLAGS/LINKER: this leg's
@@ -202,6 +206,18 @@ export CC_aarch64_pc_windows_msvc=cl
 export CXX_aarch64_pc_windows_msvc=cl
 export CC_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-clang
 export CXX_aarch64_pc_windows_gnullvm=aarch64-w64-mingw32-clang++
+
+# rnp-sys's vendored cmake builds (json-c, zlib, librnp) invoke bare
+# cmake with no compiler arguments: cmake's compiler probe honors the
+# plain CC/CXX env, and without it the probe finds the VS cl on the
+# closed PATH and configures an MSVC toolchain — the try-compile dies on
+# the missing Windows SDK rc (run 35506218111), and even a passing cl
+# build would produce MSVC-ABI objects the gnullvm link cannot accept.
+# The cc-crate exports above are target-scoped and never reach cmake;
+# pin the plain pair to the prefixed clang. The x64 leg needs no such
+# pin only because its closed PATH carries no cl.
+export CC=aarch64-w64-mingw32-clang
+export CXX=aarch64-w64-mingw32-clang++
 
 # --- 1. release build -------------------------------------------------------
 # The feature flags on `-p tfs` are MANDATORY: cargo unifies features
