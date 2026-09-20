@@ -151,15 +151,19 @@ export BOTAN_CONFIGURE_CC_BIN=aarch64-w64-mingw32-clang++
 # stays version-locked to the cargo resolution; the grep gate drops the
 # patch automatically the day a fixed botan-src ships.
 cargo fetch --quiet
-CARGO_HOME_MSYS=$(cygpath "${CARGO_HOME:-$USERPROFILE/.cargo}")
+# cygpath -u — the glob and tar below are bash-native; handing them the
+# Windows form (plain cygpath, $RUNNER_TEMP) puts backslashes into a
+# glob pattern and a colon into tar's -C operand (run 35505421733:
+# tar: C\:\a\\_temp/botan-src-patched: Cannot open).
+CARGO_HOME_UNIX=$(cygpath -u "${CARGO_HOME:-$USERPROFILE/.cargo}")
 # registry/src/<index>/botan-src-<ver>/vendor/Botan-<ver>.tar.xz — the
 # glob keeps the LAST (newest) match if a warm cache carries several.
 BOTAN_TARBALL=
-for f in "$CARGO_HOME_MSYS"/registry/src/*/botan-src-*/vendor/Botan-*.tar.xz; do BOTAN_TARBALL=$f; done
-[ -n "$BOTAN_TARBALL" ] && [ -f "$BOTAN_TARBALL" ] || { echo "vendored botan tarball not found under $CARGO_HOME_MSYS"; exit 1; }
-BOTAN_PATCHED="$RUNNER_TEMP/botan-src-patched"
+for f in "$CARGO_HOME_UNIX"/registry/src/*/botan-src-*/vendor/Botan-*.tar.xz; do BOTAN_TARBALL=$f; done
+[ -n "$BOTAN_TARBALL" ] && [ -f "$BOTAN_TARBALL" ] || { echo "vendored botan tarball not found under $CARGO_HOME_UNIX"; exit 1; }
+BOTAN_PATCHED="$RT_UNIX/botan-src-patched"
 rm -rf "$BOTAN_PATCHED" && mkdir -p "$BOTAN_PATCHED"
-tar -xJf "$BOTAN_TARBALL" -C "$BOTAN_PATCHED"
+tar --force-local -xJf "$BOTAN_TARBALL" -C "$BOTAN_PATCHED"
 BOTAN_ROOT=$(find "$BOTAN_PATCHED" -mindepth 1 -maxdepth 1 -type d | head -1)
 OS_UTILS="$BOTAN_ROOT/src/lib/utils/os_utils/os_utils.cpp"
 if grep -q 'defined(_LIBCPP_HAS_THREAD_API_PTHREAD)' "$OS_UTILS"; then
