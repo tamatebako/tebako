@@ -25,7 +25,13 @@
 # only exports VERSION and calls this file.
 set -euo pipefail
 
-CLANGARM64=/d/a/_temp/msys64/clangarm64
+# The windows-11-arm image is single-disk: the workspace is C:\a, there
+# is no D: drive (the x64 leg's /d/a/... idiom died at this script's
+# first mkdir — run 35500262780). Anchor on RUNNER_TEMP, unix-form for
+# the bash-native uses below (cygpath is Git-bash's own /usr/bin,
+# present before the closed-PATH export).
+RT_UNIX=$(cygpath -u "$RUNNER_TEMP")
+CLANGARM64="$RT_UNIX/msys64/clangarm64"
 TARGET=aarch64-pc-windows-gnullvm
 PLATFORM=windows-ucrt-arm64
 [ -n "${VERSION:-}" ] || { echo "VERSION is required (the release tag minus v)"; exit 64; }
@@ -46,7 +52,7 @@ export PATH="$CLANGARM64/bin:/c/Program Files/Git/usr/bin:/c/Program Files/Git/c
 # "symlinks" are text files to CreateProcess. Fails loudly here if the
 # toolchain layout moves, instead of upstream's cryptic "program not
 # found".
-TOOLSHIM=/d/a/_temp/tebako-toolshim-arm64
+TOOLSHIM="$RT_UNIX/tebako-toolshim-arm64"
 mkdir -p "$TOOLSHIM"
 shim() {
   plain=$1; shift
@@ -99,8 +105,9 @@ export BOTAN_CONFIGURE_CC=clang
 # bindgen (rnp-sys's rnp bindings) drives libclang: with no mingw header
 # dirs on its search path, rnp.h dies on <stdbool.h> (tebako-rs CI run
 # 30714614829). Point clang at the clangarm64 headers and name the
-# target explicitly. The paths must be WINDOWS-FORM (D:/...): libclang
-# is a native Windows binary — the msys form (/d/a/...) does not resolve
+# target explicitly. The paths must be WINDOWS-FORM (C:/... on this
+# runner): libclang is a native Windows binary — the msys form
+# (/c/a/...) does not resolve
 # for it (openjdk feedstock run 30719756048 proved the msys form a
 # no-op). libclang.dll itself is found via the closed PATH
 # (clangarm64/bin carries it).
