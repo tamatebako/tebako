@@ -2,9 +2,12 @@
 # ci/windows-arm64-msvc-build.sh — the windows-arm64 tools leg (roadmap 02
 # Gap 1, phase 1): cross-build the product tools for
 # aarch64-pc-windows-msvc on a windows-x64 runner under the VS x64_arm64
-# cross environment (GitHub has no arm64 windows hosted runners), prove
-# the produced PE images are ARM64, gate the bootstrap size, and name the
-# tools the vendored-rnp chain still blocks.
+# cross environment (arm64 hosted runners exist — `windows-11-arm` — but
+# this leg cross-compiles by design), prove the produced PE images are
+# ARM64, and gate the bootstrap size. The full five-tool set builds green:
+# the vendored-rnp chain's windows-gcc hardcode was fixed upstream
+# (rnpgp/rnp-rs #109/#113/#116/#118 — rnp-src 0.3.3–0.3.6, MSVC path +
+# crt-static honoring).
 #
 # RELEASE-GATED OFF by construction: the calling job carries no upload
 # steps and is not in finalize's needs — a green phase 1 proves the leg,
@@ -63,7 +66,7 @@ case "$CL_BANNER" in
      exit 1 ;;
 esac
 
-# --- 1. the signer-free build ----------------------------------------------
+# --- 1. bootstrap + tfs + driver + wrapper ----------------------------------
 # The CRT story is FULLY STATIC (/MT): dwarfs-t's CMake pins
 # CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded for MSVC unconditionally, and
 # the org's arm64-windows-static overlay triplet (/MT — vcpkg_triplets/)
@@ -116,7 +119,8 @@ export RNP_CMAKE_TOOLCHAIN="$SCRIPT_DIR/toolchains/windows-arm64-msvc.cmake"
 cargo build --release --target "$TARGET" -p tebako-bootstrap
 
 # tfs on windows is dwarfs-only by target split (squashfs is POSIX-only;
-# enc needs rnp — see the blocker below): the same feature set every
+# enc needs rnp, which section 4's signer-linked tools pull in): the same
+# feature set every
 # windows consumer passes (crates/*/Cargo.toml, cfg(windows) tfs deps).
 # Building tfs as a package also links the cdylib — the full libdwarfs_c
 # + vcpkg arm64-windows-static closure compiles AND links under MSVC
@@ -194,12 +198,14 @@ for path in images:
 sys.exit(1 if failed else 0)
 EOF
 
-# --- 4. the signer-linked tools (the rnp-src fix lands) ---------------------
+# --- 4. the signer-linked tools ---------------------------------------------
 # tebako (tebako-cli), tebako-pkg, tebako-shim link tebako-signer →
-# rnp-rs → rnp-src, whose 0.3.0 release stomped a caller-provided
-# BOTAN_CONFIGURE_CC on every windows host. The fork branch pinned via
-# [patch.crates-io] (rnpgp/rnp-rs#103 — the caller-respect guard) makes
-# the MSVC x64_arm64 build of Botan possible; these three complete the
-# five-tool set. Phase 1 still ships nothing (roadmap 02 Gap 1).
+# rnp-rs → rnp-src. rnp-src 0.3.0 stomped a caller-provided
+# BOTAN_CONFIGURE_CC on every windows host and ignored crt-static on
+# MSVC; both are fixed upstream (rnpgp/rnp-rs #109/#113/#116/#118 —
+# released as rnp-src 0.3.3–0.3.6), so the MSVC x64_arm64 build of Botan
+# + the cmake dep stack works with the caller-provided toolchain above
+# and these three complete the five-tool set. Phase 1 still ships
+# nothing (roadmap 02 Gap 1).
 cargo build --release --target "$TARGET" \
   -p tebako-cli -p tebako-pkg -p tebako-shim

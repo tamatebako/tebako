@@ -66,16 +66,15 @@
 # platform id windows-ucrt64 per the spec 03 §3 axis) and the
 # `windows-link-unit` job (the factory's staticlib input).
 #
-# Windows arm64 (roadmap 02 Gap 1, phase 1) builds + smokes the
-# signer-free tool set on `windows-arm64` — cross-compiled on the x64
-# runner under the VS x64_arm64 environment (no arm64 windows hosted
-# runners), vcpkg triplet arm64-windows-static (the org's /MT overlay),
-# fully static CRT, PE machine
-# gate instead of a --version run. The job carries no upload steps and
-# is not in finalize's needs: it ships nothing by construction. The
-# signer-linked tools (tebako, tfs, tebako-pkg, tebako-shim) are a named
-# red on that leg until rnp-src grows an MSVC path — see
-# ci/windows-arm64-msvc-build.sh and roadmap 02 Gap 1.
+# Windows arm64 (roadmap 02 Gap 1, phase 1) builds + smokes the full
+# tool set on `windows-arm64` — cross-compiled on the x64 runner under
+# the VS x64_arm64 environment (the leg cross-compiles by design; the
+# smoke is a PE machine gate instead of a --version run), vcpkg triplet
+# arm64-windows-static (the org's /MT overlay), fully static CRT. The
+# job carries no upload steps and is not in finalize's needs: it ships
+# nothing by construction. The signer-linked tools build green via
+# rnp-src >= 0.3.6's MSVC path — see ci/windows-arm64-msvc-build.sh and
+# roadmap 02 Gap 1.
 #
 # Rehearsal mode (roadmap 89): PRs touching this workflow, ci/, or
 # templates/installers/ run the macos + windows + installer legs with
@@ -1235,20 +1234,20 @@ jobs:
   # ==========================================================================
   # Windows arm64 (roadmap 02 Gap 1, phase 1 — build + smoke, ships
   # nothing). Cross-built on this x64 runner under the VS x64_arm64
-  # environment (GitHub has no arm64 windows hosted runners): Rust target
-  # aarch64-pc-windows-msvc, vcpkg triplet arm64-windows-static (the
-  # org's /MT overlay — the whole link is fully static CRT). All leg
-  # logic lives in
-  # ci/windows-arm64-msvc-build.sh: the signer-free set (bootstrap, tfs
-  # + driver + wrapper) builds; a PE-machine (0xAA64) gate stands in for
-  # the --version smoke (no arm64 emulation on the runner); the
-  # bootstrap's < 3 MiB gate holds. The signer-linked tools are a named
-  # red there (rnp-src's windows-gcc hardcode — see the script + roadmap
-  # 02 Gap 1). Deliberately ABSENT: the vcpkg baseline-restore step (no
-  # arm64-windows-static baseline is published — the in-leg port
-  # build IS the phase-1 prove-out) and every upload step (no finalize
-  # need, no fragment, no release asset — the leg cannot ship by
-  # construction).
+  # environment (arm64 windows hosted runners exist — `windows-11-arm` —
+  # but this leg cross-compiles by design, so the smoke is a PE header
+  # gate rather than execution): Rust target aarch64-pc-windows-msvc,
+  # vcpkg triplet arm64-windows-static (the org's /MT overlay — the whole
+  # link is fully static CRT). All leg logic lives in
+  # ci/windows-arm64-msvc-build.sh: the bootstrap, tfs (limnifs-only) +
+  # driver + wrapper, and the signer-linked tools (tebako, tebako-pkg,
+  # tebako-shim — green via rnp-src >= 0.3.6's MSVC path) all build; a
+  # PE-machine (0xAA64) gate stands in for the --version smoke; the
+  # bootstrap's < 3 MiB gate holds. Deliberately ABSENT: the vcpkg
+  # baseline-restore step (no arm64-windows-static baseline is published
+  # — the in-leg port build IS the phase-1 prove-out) and every upload
+  # step (no finalize need, no fragment, no release asset — the leg
+  # cannot ship by construction).
   # ==========================================================================
   windows-arm64:
     name: Windows arm64 (msvc cross — build + smoke, ships nothing)
