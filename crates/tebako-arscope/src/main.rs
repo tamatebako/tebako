@@ -691,6 +691,11 @@ fn scope_object(
     // undefined data symbols, re-marked as IMAGE_SYM_CLASS_SECTION after
     // the write (see coff_mark_undefined_section_symbols).
     let mut carried_section_symbols: Vec<&str> = Vec::new();
+    // COFF COMDAT groups captured from the section symbols' aux records
+    // (head section → selection byte; associative member → head section)
+    // — re-registered through add_comdat after the symbol pass.
+    let mut comdat_heads: Vec<(object::SectionIndex, u8)> = Vec::new();
+    let mut comdat_members: Vec<(object::SectionIndex, object::SectionIndex)> = Vec::new();
     for symbol in obj.symbols() {
         // COFF section symbols are per-section bookkeeping the writer
         // regenerates (its add_symbol routes every Section-kind symbol at
@@ -705,6 +710,45 @@ fn scope_object(
                 if let Some(out_index) = section_ids.get(&index) {
                     let id = out.section_symbol(*out_index);
                     symbol_ids.insert(symbol.index(), id);
+                    // The regenerated section symbol's aux record starts
+                    // life with Selection 0 — while the section header
+                    // keeps IMAGE_SCN_LNK_COMDAT from the passed-through
+                    // characteristics. ld.bfd never reads the byte (the
+                    // ucrt64 x64 legs shipped like this unnoticed); lld
+                    // rejects selection 0 outright ("unknown comdat type
+                    // 0", python factory run 35532416136 — 3338 COMDAT
+                    // sections in the shipped v2.8.13 aarch64 link unit).
+                    // Capture the group here; add_comdat re-emits it.
+                    if let object::SymbolFlags::CoffSection {
+                        selection,
+                        associative_section,
+                    } = symbol.flags()
+                    {
+                        match selection {
+                            0 => {}
+                            object::pe::IMAGE_COMDAT_SELECT_ASSOCIATIVE => {
+                                let Some(head) = associative_section else {
+                                    return Err(format!(
+                                        "associative COMDAT section '{}' names no head section — refusing to guess",
+                                        symbol.name().unwrap_or("<unnamed>")
+                                    ));
+                                };
+                                comdat_members.push((index, head));
+                            }
+                            object::pe::IMAGE_COMDAT_SELECT_NODUPLICATES
+                                ..=object::pe::IMAGE_COMDAT_SELECT_EXACT_MATCH
+                            | object::pe::IMAGE_COMDAT_SELECT_LARGEST
+                            | object::pe::IMAGE_COMDAT_SELECT_NEWEST => {
+                                comdat_heads.push((index, selection));
+                            }
+                            other => {
+                                return Err(format!(
+                                    "section '{}' carries an unknown COMDAT selection ({other}) — extend the mapping instead of dropping it",
+                                    symbol.name().unwrap_or("<unnamed>")
+                                ));
+                            }
+                        }
+                    }
                 }
             } else if matches!(symbol.section(), object::SymbolSection::Undefined)
                 && obj.format() == object::BinaryFormat::Coff
@@ -864,6 +908,41 @@ fn scope_object(
         symbol_ids.insert(symbol.index(), id);
     }
 
+    // Re-register the captured COFF COMDAT groups: the writer derives the
+    // section-symbol aux record (selection byte, associative number) and
+    // the IMAGE_SCN_LNK_COMDAT characteristic from these. The capture
+    // above already rejected every selection outside 1..=7, so the
+    // fall-through arm is Newest by construction.
+    for (head_index, selection) in &comdat_heads {
+        let kind = match *selection {
+            object::pe::IMAGE_COMDAT_SELECT_NODUPLICATES => object::ComdatKind::NoDuplicates,
+            object::pe::IMAGE_COMDAT_SELECT_ANY => object::ComdatKind::Any,
+            object::pe::IMAGE_COMDAT_SELECT_SAME_SIZE => object::ComdatKind::SameSize,
+            object::pe::IMAGE_COMDAT_SELECT_EXACT_MATCH => object::ComdatKind::ExactMatch,
+            object::pe::IMAGE_COMDAT_SELECT_LARGEST => object::ComdatKind::Largest,
+            _ => object::ComdatKind::Newest,
+        };
+        let head_id = section_ids[head_index];
+        let mut sections = vec![head_id];
+        for (member, head) in &comdat_members {
+            if head == head_index {
+                // Members are captured only when their section mapped, so
+                // the output id exists; section_symbol() memoizes — this
+                // call only guarantees the writer's "missing symbol for
+                // COMDAT section" invariant.
+                let member_id = section_ids[member];
+                out.section_symbol(member_id);
+                sections.push(member_id);
+            }
+        }
+        let symbol = out.section_symbol(head_id);
+        out.add_comdat(object::write::Comdat {
+            kind,
+            sections,
+            symbol,
+        });
+    }
+
     for section in obj.sections() {
         // Skipped bookkeeping sections carry no relocations that matter
         // (their own data is never emitted); a real section always has
@@ -909,10 +988,70 @@ fn scope_object(
     let mut bytes = out
         .write()
         .map_err(|e| format!("cannot emit the rewritten object: {e}"))?;
+    if obj.format() == object::BinaryFormat::Coff {
+        verify_coff_comdat(&bytes)?;
+    }
     if !carried_section_symbols.is_empty() {
         coff_mark_undefined_section_symbols(&mut bytes, &carried_section_symbols)?;
     }
     Ok((bytes, exported))
+}
+
+/// The rewrite's load-bearing COFF invariant, asserted on the emitted
+/// bytes: every COMDAT-flagged section must have a section symbol whose
+/// aux record carries a non-zero Selection. v2.8.13 shipped aarch64 link
+/// units with 3338 COMDAT sections whose regenerated section symbols all
+/// read Selection 0 — ld.bfd ignored it, ld.lld refuses the link
+/// ("unknown comdat type 0", python factory run 35532416136). The
+/// regression must never ship silently again.
+fn verify_coff_comdat(bytes: &[u8]) -> Result<(), String> {
+    let obj = File::parse(bytes)
+        .map_err(|e| format!("internal: cannot re-parse the rewritten COFF object: {e}"))?;
+    let mut comdat_sections = std::collections::HashSet::new();
+    for section in obj.sections() {
+        if let object::SectionFlags::Coff { characteristics } = section.flags() {
+            if characteristics & object::pe::IMAGE_SCN_LNK_COMDAT != 0 {
+                comdat_sections.insert(section.index());
+            }
+        }
+    }
+    if comdat_sections.is_empty() {
+        return Ok(());
+    }
+    let mut validated = std::collections::HashSet::new();
+    for symbol in obj.symbols() {
+        if symbol.kind() != object::SymbolKind::Section {
+            continue;
+        }
+        let object::SymbolSection::Section(index) = symbol.section() else {
+            continue;
+        };
+        if !comdat_sections.contains(&index) {
+            continue;
+        }
+        let valid = matches!(
+            symbol.flags(),
+            object::SymbolFlags::CoffSection { selection, .. } if selection != 0
+        );
+        if !valid {
+            return Err(format!(
+                "internal: the rewritten COFF object lost the COMDAT selection of section '{}' — refusing to emit an ld.bfd-only object",
+                symbol.name().unwrap_or("<unnamed>")
+            ));
+        }
+        validated.insert(index);
+    }
+    if let Some(missing) = comdat_sections.difference(&validated).next() {
+        let name = obj
+            .sections()
+            .find(|s| s.index() == *missing)
+            .and_then(|s| s.name().ok().map(str::to_owned))
+            .unwrap_or_else(|| format!("#{missing:?}"));
+        return Err(format!(
+            "internal: COMDAT-flagged section '{name}' has no section symbol in the rewritten COFF object"
+        ));
+    }
+    Ok(())
 }
 
 /// Symbol flags carry ids in the COFF/XCOFF group forms; remap the
@@ -1656,6 +1795,109 @@ mod tests {
             flags: object::SymbolFlags::None,
         });
         out.write().expect("code fixture object")
+    }
+
+    /// A COMDAT COFF member in the aarch64 rustc shape: a head section
+    /// (.text$mn, Selection ANY) with an associative unwind section
+    /// (.xdata$mn) and one exported function symbol in the head.
+    fn coff_comdat_fixture() -> Vec<u8> {
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::Aarch64,
+            object::Endianness::Little,
+        );
+        let text = out.add_section(Vec::new(), b".text$mn".to_vec(), object::SectionKind::Text);
+        out.section_mut(text).set_data(b"\xc0\x03\x5f\xd6", 4);
+        let xdata = out.add_section(
+            Vec::new(),
+            b".xdata$mn".to_vec(),
+            object::SectionKind::ReadOnlyData,
+        );
+        out.section_mut(xdata).set_data(&[0u8; 8], 4);
+        let head = out.section_symbol(text);
+        out.section_symbol(xdata);
+        out.add_symbol(object::write::Symbol {
+            name: b"fold".to_vec(),
+            value: 0,
+            size: 4,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        out.add_comdat(object::write::Comdat {
+            kind: object::ComdatKind::Any,
+            sections: vec![text, xdata],
+            symbol: head,
+        });
+        out.write().expect("comdat fixture object")
+    }
+
+    /// The section-symbol aux record must keep its Selection byte across
+    /// the rewrite: the writer regenerates section symbols with Selection
+    /// 0 while the section header keeps IMAGE_SCN_LNK_COMDAT — ld.bfd
+    /// ignores the byte, ld.lld refuses the link ("unknown comdat type
+    /// 0", python factory run 35532416136; 3338 COMDAT sections in the
+    /// shipped v2.8.13 aarch64 link unit).
+    #[test]
+    fn coff_comdat_selection_survives_the_rewrite() {
+        let bytes = coff_comdat_fixture();
+        verify_coff_comdat(&bytes).expect("the fixture is a valid COMDAT object");
+        let mut report = Report::default();
+        let (scoped, _exported) = scope_object(
+            &bytes,
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            &std::collections::HashSet::new(),
+            &mut report,
+        )
+        .expect("scope the comdat fixture");
+        verify_coff_comdat(&scoped).expect("the rewrite keeps the COMDAT selections");
+        let obj = File::parse(&scoped[..]).expect("parse the rewritten object");
+        let head_selection = obj
+            .symbols()
+            .find(|s| {
+                s.kind() == object::SymbolKind::Section
+                    && s.name().map(|n| n == ".text$mn").unwrap_or(false)
+            })
+            .and_then(|s| match s.flags() {
+                object::SymbolFlags::CoffSection { selection, .. } => Some(selection),
+                _ => None,
+            })
+            .expect("the head section symbol carries an aux record");
+        assert_eq!(head_selection, object::pe::IMAGE_COMDAT_SELECT_ANY);
+        let (member_selection, member_head) = obj
+            .symbols()
+            .find(|s| {
+                s.kind() == object::SymbolKind::Section
+                    && s.name().map(|n| n == ".xdata$mn").unwrap_or(false)
+            })
+            .and_then(|s| match s.flags() {
+                object::SymbolFlags::CoffSection {
+                    selection,
+                    associative_section,
+                } => Some((selection, associative_section)),
+                _ => None,
+            })
+            .expect("the member section symbol carries an aux record");
+        assert_eq!(
+            member_selection,
+            object::pe::IMAGE_COMDAT_SELECT_ASSOCIATIVE
+        );
+        let head_index = obj
+            .section_by_name_bytes(b".text$mn")
+            .expect("the head section")
+            .index();
+        assert_eq!(member_head, Some(head_index));
+        let names: Vec<String> = obj
+            .symbols()
+            .filter_map(|s: object::Symbol<'_, '_>| s.name().ok().map(str::to_string))
+            .collect();
+        assert!(
+            names.iter().any(|n| n == "__tebako_internal_fold"),
+            "the function symbol is renamed: {names:?}"
+        );
     }
 
     fn archive_member_names(bytes: &[u8]) -> Vec<String> {
