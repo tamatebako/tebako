@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # ci/windows-arm64-gnullvm-ship.sh — the windows-arm64 release leg
 # (roadmap 02 Gap 1 phase 2), end to end: the release-profile build of
-# tfs.exe + the tebako-driver/tfs staticlibs for aarch64-pc-windows-
-# gnullvm on the native windows-11-arm runner under msys2 clangarm64,
-# manual staging with the sha/size fragments finalize merges into
-# SHA256SUMS + manifest.json, then the ship gate on the STAGED bytes.
+# tfs.exe + tebako-pkg.exe + the tebako-driver/tfs staticlibs for
+# aarch64-pc-windows-gnullvm on the native windows-11-arm runner under
+# msys2 clangarm64, manual staging with the sha/size fragments finalize
+# merges into SHA256SUMS + manifest.json, then the ship gate on the
+# STAGED bytes.
 #
 # Scope, by decision (phase 2):
-#   * tfs.exe only of the six tools — the runtime factories consume
-#     exactly tfs + the link unit (a grep of the factory workflows shows
-#     zero tebako-pkg usage); the full six-tool arm64 set is phase 3.
+#   * tfs + tebako-pkg of the six tools — the runtime factories consume
+#     tfs + the link unit, and tebako-pkg makes windows-arm64 a
+#     first-class AUTHORING platform (trailer surgery, sign/verify,
+#     release-index). The other four tools are phase 3.
 #   * limnifs-only — the dwarfs arm64 closure is dwarfs-t #100's
 #     milestone; the link unit carries NO mingw closure at all (the
-#     stage_link_unit --limnifs-only branch).
+#     stage_link_unit --limnifs-only branch). A dwarfs read/write on
+#     arm64 answers the compiled-out backend's named error.
 #   * unsigned Authenticode — unsigned stays first-class (spec 00
 #     invariant 7); Azure-signing the arm64 PEs lands with phase 3.
 #
@@ -113,30 +116,36 @@ export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-w64-mingw32 -isystem $CLANGARM
 # (backend-limnifs only), so the unified tfs is limnifs-only.
 cargo build --release --target "$TARGET" \
   -p tfs --no-default-features --features backend-limnifs \
-  -p tebako-driver -p tfs-cli
+  -p tebako-driver -p tfs-cli -p tebako-pkg
 
 # --- 2. stage (strip, fragments) --------------------------------------------
 # stage.sh demands all six tools — unusable for this leg. Same steps by
 # hand: strip, the frag-<platform> sha/size fragments finalize merges
-# into SHA256SUMS + manifest.json, the size-table row.
+# into SHA256SUMS + manifest.json, the size-table rows.
 SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
 [ -d "$(dirname "$SUMMARY")" ] || SUMMARY=/dev/null
 
+# tebako-pkg rides the same graph (tebako-signer/tebako-info/tebako-
+# resolve are already arm64-clean for tfs-cli) — windows-arm64 is a
+# first-class authoring platform, never x64-under-emulation.
+TOOLS="tfs tebako-pkg"
 mkdir -p out "fragments/frag-$PLATFORM"
-src="target/$TARGET/release/tfs.exe"
-test -x "$src" || { echo "missing build output: $src"; exit 1; }
-dest="out/tfs-${VERSION}-${PLATFORM}.exe"
-cp "$src" "$dest"
-strip "$dest" 2>/dev/null || true
-size=$(stat -c %s "$dest")
-sha256=$(sha256sum "$dest" | cut -d' ' -f1)
-echo "$sha256" > "fragments/frag-$PLATFORM/tfs-${PLATFORM}.sha256"
-echo "$size" > "fragments/frag-$PLATFORM/tfs-${PLATFORM}.size"
 {
   echo "| platform | binary | size (bytes) |"
   echo "|---|---|---|"
-  echo "| $PLATFORM | tfs | $size |"
 } >> "$SUMMARY"
+for tool in $TOOLS; do
+  src="target/$TARGET/release/${tool}.exe"
+  test -x "$src" || { echo "missing build output: $src"; exit 1; }
+  dest="out/${tool}-${VERSION}-${PLATFORM}.exe"
+  cp "$src" "$dest"
+  strip "$dest" 2>/dev/null || true
+  size=$(stat -c %s "$dest")
+  sha256=$(sha256sum "$dest" | cut -d' ' -f1)
+  echo "$sha256" > "fragments/frag-$PLATFORM/${tool}-${PLATFORM}.sha256"
+  echo "$size" > "fragments/frag-$PLATFORM/${tool}-${PLATFORM}.size"
+  echo "| $PLATFORM | $tool | $size |" >> "$SUMMARY"
+done
 
 # --- 3. the link unit (the factories' staticlib input) ----------------------
 # --limnifs-only: the arm64 graph carries no native closure by target
@@ -153,7 +162,7 @@ tar -czf "out/link-unit-${VERSION}-aarch64-windows-gnu.tar.gz" -C out link-unit-
 # like — then the PE import audit (inbox DLLs only; libc++.dll would be
 # the arm64 failure class). This runner IS the target arch: the smoke is
 # a real launch, no cross-compile proxy.
-bash .github/workflows/lib/ship-gate.sh "$PLATFORM" "$dest"
+bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*.exe
 
 echo "staged for $PLATFORM:"
 ls -la out/

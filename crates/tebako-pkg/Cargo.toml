@@ -29,8 +29,15 @@ sha2 = "0.10"
 [target.'cfg(not(windows))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs" }
 
-[target.'cfg(windows)'.dependencies]
+# windows-x64 keeps the dwarfs+limnifs pair; windows-arm64 is
+# limnifs-only until dwarfs-t's arm64 closure lands (dwarfs-t #100) —
+# a dwarfs read there answers the same named ENOTSUP any compiled-out
+# backend gives.
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+
+[target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
+tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["backend-limnifs"] }
 
 [dev-dependencies]
 tebako-contract-tests = { version = "2.0.0", path = "../../tests/contract" }

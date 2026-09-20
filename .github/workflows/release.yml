@@ -65,8 +65,9 @@
 # Windows (ucrt64) ships from the `windows` job (the five binaries,
 # platform id windows-ucrt64 per the spec 03 §3 axis) and the
 # `windows-link-unit` job (the factory's staticlib input). Windows arm64
-# (ucrt) ships from the `windows-arm64-ship` job (tfs.exe + the arm64
-# link unit, limnifs-only, unsigned — roadmap 02 Gap 1 phase 2).
+# (ucrt) ships from the `windows-arm64-ship` job (tfs.exe +
+# tebako-pkg.exe + the arm64 link unit, limnifs-only, unsigned —
+# roadmap 02 Gap 1 phase 2).
 #
 # Windows arm64 (roadmap 02 Gap 1, phase 1) builds + smokes the full
 # tool set on `windows-arm64` — cross-compiled on the x64 runner under
@@ -1347,11 +1348,13 @@ jobs:
 
   # ==========================================================================
   # Windows arm64 (ucrt) — the phase-2 SHIP leg (roadmap 02 Gap 1):
-  # tfs.exe + the link-unit tarball, the two artifacts the runtime
-  # factories' windows-arm64 spikes consume (tebako-runtime-python#41,
-  # tebako-runtime-ruby#176). Native on `windows-11-arm` under msys2
-  # clangarm64 targeting aarch64-pc-windows-gnullvm — no cross proxies:
-  # the ship gate's smoke is a real launch on the target arch.
+  # tfs.exe + tebako-pkg.exe + the link-unit tarball — the artifacts the
+  # runtime factories' windows-arm64 spikes consume
+  # (tebako-runtime-python#41, tebako-runtime-ruby#176), plus native
+  # authoring (tebako-pkg) so arm64 is never x64-under-emulation. Native
+  # on `windows-11-arm` under msys2 clangarm64 targeting
+  # aarch64-pc-windows-gnullvm — no cross proxies: the ship gate's smoke
+  # is a real launch on the target arch.
   #   * limnifs-only — the dwarfs arm64 closure is dwarfs-t #100's
   #     milestone; the link unit's closure/ is empty by design.
   #   * unsigned Authenticode (spec 00 invariant 7 — unsigned is
@@ -1365,7 +1368,7 @@ jobs:
   # lives in ci/windows-arm64-gnullvm-ship.sh.
   # ==========================================================================
   windows-arm64-ship:
-    name: Windows arm64 (ucrt) — tfs + link-unit
+    name: Windows arm64 (ucrt) — tfs + tebako-pkg + link-unit
     permissions:
       contents: write
     runs-on: windows-11-arm
@@ -1415,6 +1418,12 @@ jobs:
       - name: Upload tfs
         if: needs.prepare.outputs.upload_url != ''
         run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tfs-${{ needs.prepare.outputs.version }}-windows-ucrt-arm64.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tebako-pkg
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-pkg-${{ needs.prepare.outputs.version }}-windows-ucrt-arm64.exe" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
