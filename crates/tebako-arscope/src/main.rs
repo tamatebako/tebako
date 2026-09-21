@@ -197,13 +197,21 @@ fn run(
     // members use the raw nlist scan so this pass and the rewrite share
     // one rule; other formats use the object crate.
     let mut defined: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // The object format decides the archive's index form (BSD __.SYMDEF
+    // for Mach-O, GNU "/" elsewhere) and whether members get ld64's
+    // 4-byte content pad (Mach-O only — see Pass B). Detected here: one
+    // Mach-O member makes the archive Mach-O.
+    let mut is_macho = false;
     for member in archive.members() {
         let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
         let data = member
             .data(&bytes[..])
             .map_err(|e| format!("cannot read a member of {input}: {e}"))?;
         match macho::defined(data, keep) {
-            Ok(names) => defined.extend(names),
+            Ok(names) => {
+                is_macho = true;
+                defined.extend(names);
+            }
             Err(_) => {
                 if let Ok(obj) = File::parse(data) {
                     for symbol in obj.symbols() {
@@ -218,6 +226,13 @@ fn run(
             }
         }
     }
+
+    // The index FORM follows the object format inside: Mach-O archives
+    // get the BSD __.SYMDEF (the cargo/llvm-ranlib form), everything
+    // else the GNU "/" index. (The input's own index member, when it has
+    // one, is the same discriminator in practice; a hand-made Mach-O
+    // fixture without one still gets the BSD form.)
+    let bsd = is_macho;
 
     // Pass B: rewrite every member, collecting its exported names
     // (post-rename) for the archive symbol index.
@@ -260,11 +275,23 @@ fn run(
         // align4(header + size). A member whose size is not a multiple
         // of 4 desyncs the walk ("archive member invalid control bits")
         // or pushes the computed extent past EOF ("malformed archive,
-        // member exceeds file size"). Pad every member's content to a
-        // multiple of 4 — trailing zeros are harmless slack to a
+        // member exceeds file size"). Pad every MACH-O member's content
+        // to a multiple of 4 — trailing zeros are harmless slack to a
         // Mach-O object (all load-command offsets are unaffected).
-        let pad4 = (4 - rewritten.len() % 4) % 4;
-        rewritten.extend_from_slice(&[0; 4][..pad4]);
+        //
+        // The pad is Mach-O-only. A COFF short-form import member's
+        // size is exact — 20 header bytes + SizeOfData — and lld's
+        // ImportFile parse rejects a longer member outright ("broken
+        // import library"). v2.8.14/v2.8.15 shipped the pad on COFF:
+        // 1162 of the aarch64 libtebako_driver.a's 1536 short-form
+        // members each carried 1–3 slack bytes, killing every
+        // windows-arm64 exe link (python factory run 35560837935,
+        // ruby factory run 35560840341). COFF objects tolerate the
+        // zeros, but there is no COFF consumer that needs them.
+        if bsd {
+            let pad4 = (4 - rewritten.len() % 4) % 4;
+            rewritten.extend_from_slice(&[0; 4][..pad4]);
+        }
         let (name, is_import) = match canonical {
             Some(canon) => {
                 report.imports += 1;
@@ -301,26 +328,8 @@ fn run(
     }
 
     // The archive symbol index: ld consumes archives THROUGH it (a
-    // missing index is "no table of contents"). The index FORM follows
-    // the OBJECT format inside: Mach-O archives get the BSD __.SYMDEF
-    // (the cargo/llvm-ranlib form — see the note above), everything
-    // else the GNU "/" index. (The input's own index member, when it
-    // has one, is the same discriminator in practice; a hand-made
-    // Mach-O fixture without one still gets the BSD form.)
-    let bsd = {
-        let mut is_macho = false;
-        for member in archive.members() {
-            let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
-            let data = member
-                .data(&bytes[..])
-                .map_err(|e| format!("cannot read a member of {input}: {e}"))?;
-            if macho::defined(data, keep).is_ok() {
-                is_macho = true;
-                break;
-            }
-        }
-        is_macho
-    };
+    // missing index is "no table of contents"); its form was decided by
+    // the object format in pass A.
     let index = build_index(&members, bsd);
     let index_name = if bsd { "__.SYMDEF" } else { "/" };
 
@@ -597,6 +606,7 @@ fn scope_object(
             // archive index still needs the names it defines, or ld can
             // never reach the member.
             if let Some(exports) = short_form_import_exports(data) {
+                verify_coff_short_import(data)?;
                 report.imports += 1;
                 return Ok((data.to_vec(), exports));
             }
@@ -1086,6 +1096,29 @@ fn verify_coff_file_records(bytes: &[u8]) -> Result<(), String> {
                 symbol.name().unwrap_or("<unnamed>")
             ));
         }
+    }
+    Ok(())
+}
+
+/// The rewrite's third load-bearing COFF invariant, asserted on the
+/// member bytes: a short-form import member's size is EXACTLY the
+/// 20-byte header plus its SizeOfData string tail. lld's ImportFile
+/// parse rejects any other length ("broken import library"; the check
+/// fires before a name is even read). v2.8.14/v2.8.15 shipped 1162
+/// short-form members in the aarch64 libtebako_driver.a carrying the
+/// writer's 4-byte alignment slack (CloseHandle 48 bytes against 45
+/// exact) — ld.bfd ignored it, ld.lld refused every windows-arm64 exe
+/// link (python factory run 35560837935, ruby factory run 35560840341).
+/// Called on the passthrough path, so a pre-padded input is refused
+/// just as a writer-side regression would be.
+fn verify_coff_short_import(data: &[u8]) -> Result<(), String> {
+    let size_of_data = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
+    if data.len() != 20 + size_of_data {
+        return Err(format!(
+            "internal: short-form import member is {} bytes, not the exact 20 + SizeOfData ({}) — refusing to emit an ld.bfd-only member",
+            data.len(),
+            20 + size_of_data
+        ));
     }
     Ok(())
 }
@@ -2416,8 +2449,10 @@ mod tests {
         assert_eq!(archive_member_names(&out), vec!["bcryptprimitives.dll"]);
         assert_eq!(report.imports, 1, "counted as an import member");
 
-        // The member bytes are verbatim modulo the archive's 4-byte
-        // member-alignment slack.
+        // The member bytes are verbatim AND exact-length: lld's
+        // ImportFile parse rejects a member longer than
+        // 20 + SizeOfData ("broken import library"), so no alignment
+        // slack may ride along (the ld64 4-byte pad is Mach-O-only).
         let archive = object::read::archive::ArchiveFile::parse(&out[..]).expect("reparse");
         let data = archive
             .members()
@@ -2427,11 +2462,7 @@ mod tests {
                     .then(|| m.data(&out[..]).expect("member data"))
             })
             .expect("the short-form member");
-        assert_eq!(&data[..short.len()], &short[..], "verbatim bytes");
-        assert!(
-            data[short.len()..].iter().all(|&b| b == 0),
-            "alignment slack only"
-        );
+        assert_eq!(data, &short[..], "verbatim bytes, exact length");
 
         // Its defined names ride the archive index — ld reaches the
         // member by symbol, never by name. (The reader consumes the "/"
@@ -2451,5 +2482,136 @@ mod tests {
             indexed.iter().any(|n| n == b"__imp_ProcessPrng"),
             "the IAT entry name is indexed: {indexed:?}"
         );
+    }
+
+    /// The v2.8.14/v2.8.15 regression shape: a short-form import member
+    /// carrying alignment slack is refused by name — lld's ImportFile
+    /// parse is exact-size ("broken import library", python factory run
+    /// 35560837935, ruby factory run 35560840341).
+    #[test]
+    fn short_form_import_member_with_alignment_slack_is_refused() {
+        let mut short = Vec::new();
+        short.extend_from_slice(&[0x00, 0x00, 0xff, 0xff]); // sig1, sig2
+        short.extend_from_slice(&0u16.to_le_bytes()); // version
+        short.extend_from_slice(&0x8664u16.to_le_bytes()); // machine AMD64
+        short.extend_from_slice(&0u32.to_le_bytes()); // timestamp
+        short.extend_from_slice(&33u32.to_le_bytes()); // string tail size
+        short.extend_from_slice(&0u16.to_le_bytes()); // ordinal/hint
+        short.extend_from_slice(&4u16.to_le_bytes()); // import type CODE, name type NAME
+        short.extend_from_slice(b"ProcessPrng\0");
+        short.extend_from_slice(b"bcryptprimitives.dll\0");
+        assert_eq!(short.len(), 53);
+        short.extend_from_slice(&[0, 0, 0]); // the v2.8.14 alignment slack
+
+        let mut input = b"!<arch>\n".to_vec();
+        write_member(&mut input, "bcryptprimitives.dll", &short, false).expect("short member");
+        let pid = std::process::id();
+        let tmp = std::env::temp_dir().join(format!("arscope-shortslack-{pid}.a"));
+        let tmp_out = std::env::temp_dir().join(format!("arscope-shortslack-out-{pid}.a"));
+        std::fs::write(&tmp, &input).expect("write the input archive");
+        let err = run(
+            tmp.to_str().unwrap(),
+            tmp_out.to_str().unwrap(),
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            None,
+        )
+        .expect_err("a padded short-form import member is refused");
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp_out);
+        assert!(
+            err.contains("20 + SizeOfData"),
+            "the exact-size gate names itself: {err}"
+        );
+    }
+
+    /// ld64's 4-byte member alignment pad is MACH-O's, and it survives
+    /// the gate: the same pad that must never touch a COFF short-form
+    /// import member still applies to a Mach-O archive, or ld64's
+    /// archive walk desyncs ("archive member invalid control bits").
+    #[test]
+    fn macho_members_keep_the_ld64_alignment_pad() {
+        // Minimal MH_OBJECT: header + one LC_SYMTAB + symtab + strtab,
+        // with string lengths that push the scoped output off a 4-byte
+        // boundary so the pad is load-bearing.
+        let strtab: &[u8] = b"\0_tebako_api\0_tebako_k\0";
+        let strx = |name: &str| {
+            strtab
+                .windows(name.len())
+                .position(|w| w == name.as_bytes())
+                .unwrap() as u32
+        };
+        let nlist = |strx: u32, n_type: u8, value: u64| {
+            let mut e = Vec::with_capacity(16);
+            e.extend_from_slice(&strx.to_le_bytes());
+            e.push(n_type);
+            e.push(1); // n_sect
+            e.extend_from_slice(&[0, 0]); // n_desc
+            e.extend_from_slice(&value.to_le_bytes());
+            e
+        };
+        const N_SECT_EXT: u8 = 0x0e | 0x01; // N_SECT | N_EXT — a global definition
+        let mut syms = Vec::new();
+        syms.extend(nlist(strx("_tebako_api"), N_SECT_EXT, 0x100));
+        syms.extend(nlist(strx("_tebako_k"), N_SECT_EXT, 0x200));
+
+        let symoff = 32 + 24;
+        let stroff = symoff + syms.len();
+        let mut obj = Vec::new();
+        obj.extend_from_slice(&0xfeedfacfu32.to_le_bytes()); // MH_MAGIC_64
+        obj.extend_from_slice(&[0; 12]); // cputype/cpusubtype/filetype
+        obj.extend_from_slice(&1u32.to_le_bytes()); // ncmds
+        obj.extend_from_slice(&24u32.to_le_bytes()); // sizeofcmds
+        obj.extend_from_slice(&[0; 4]); // flags
+        obj.extend_from_slice(&[0; 4]); // reserved
+        obj.extend_from_slice(&2u32.to_le_bytes()); // LC_SYMTAB
+        obj.extend_from_slice(&24u32.to_le_bytes()); // cmdsize
+        obj.extend_from_slice(&(symoff as u32).to_le_bytes());
+        obj.extend_from_slice(&2u32.to_le_bytes()); // nsyms
+        obj.extend_from_slice(&(stroff as u32).to_le_bytes());
+        obj.extend_from_slice(&(strtab.len() as u32).to_le_bytes());
+        obj.extend_from_slice(&syms);
+        obj.extend_from_slice(strtab);
+
+        let defined = macho::defined(&obj, KEEP_PREFIX).expect("pass A");
+        let (scoped, _, _, _) =
+            macho::scope(&obj, KEEP_PREFIX, SCOPE_PREFIX, &defined).expect("scope the fixture");
+        let padded_len = scoped.len().div_ceil(4) * 4;
+        assert!(
+            padded_len > scoped.len(),
+            "the fixture must exercise the pad (scoped {} bytes) — tune the fixture",
+            scoped.len()
+        );
+
+        let mut input = b"!<arch>\n".to_vec();
+        write_member(&mut input, "macho.o", &obj, true).expect("macho member");
+        let pid = std::process::id();
+        let tmp = std::env::temp_dir().join(format!("arscope-machopad-{pid}.a"));
+        let tmp_out = std::env::temp_dir().join(format!("arscope-machopad-out-{pid}.a"));
+        std::fs::write(&tmp, &input).expect("write the input archive");
+        run(
+            tmp.to_str().unwrap(),
+            tmp_out.to_str().unwrap(),
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            None,
+        )
+        .expect("scope the Mach-O archive");
+        let out = std::fs::read(&tmp_out).expect("read the scoped archive");
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp_out);
+
+        let archive = object::read::archive::ArchiveFile::parse(&out[..]).expect("reparse");
+        let data = archive
+            .members()
+            .find_map(|m| {
+                let m = m.expect("member");
+                (String::from_utf8_lossy(m.name()) == "macho.o")
+                    .then(|| m.data(&out[..]).expect("member data"))
+            })
+            .expect("the Mach-O member");
+        assert_eq!(data.len(), padded_len, "the ld64 pad rides the member");
+        assert_eq!(&data[..scoped.len()], &scoped[..], "scoped bytes verbatim");
+        assert!(data[scoped.len()..].iter().all(|&b| b == 0), "zero slack");
     }
 }
