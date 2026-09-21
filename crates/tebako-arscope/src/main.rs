@@ -836,6 +836,18 @@ fn scope_object(
             object::SymbolSection::Undefined => object::write::SymbolSection::Undefined,
             object::SymbolSection::Absolute => object::write::SymbolSection::Absolute,
             object::SymbolSection::Common => object::write::SymbolSection::Common,
+            object::SymbolSection::None if symbol.kind() == object::SymbolKind::File => {
+                // COFF .file bookkeeping rides IMAGE_SYM_DEBUG (-2),
+                // which the reader reports as SymbolSection::None and
+                // the writer maps straight back to -2 (the enum's only
+                // "no section" slot — its doc names file symbols as the
+                // case). Letting it fall into the catch-all turns -2
+                // into 0 and ld.lld refuses the link (".file should not
+                // refer to special section 0", python factory run
+                // 35543897983 — 401 such symbols across the shipped
+                // v2.8.14 aarch64 link unit; ld.bfd never reads it).
+                object::write::SymbolSection::None
+            }
             _ => object::write::SymbolSection::Undefined,
         };
         let flags = map_symbol_flags(symbol.flags(), &section_ids, &symbol_ids)?;
@@ -990,6 +1002,7 @@ fn scope_object(
         .map_err(|e| format!("cannot emit the rewritten object: {e}"))?;
     if obj.format() == object::BinaryFormat::Coff {
         verify_coff_comdat(&bytes)?;
+        verify_coff_file_records(&bytes)?;
     }
     if !carried_section_symbols.is_empty() {
         coff_mark_undefined_section_symbols(&mut bytes, &carried_section_symbols)?;
@@ -1050,6 +1063,29 @@ fn verify_coff_comdat(bytes: &[u8]) -> Result<(), String> {
         return Err(format!(
             "internal: COMDAT-flagged section '{name}' has no section symbol in the rewritten COFF object"
         ));
+    }
+    Ok(())
+}
+
+/// The rewrite's second load-bearing COFF invariant, asserted on the
+/// emitted bytes: every .file symbol must sit at IMAGE_SYM_DEBUG (-2),
+/// which the reader reports as SymbolSection::None. v2.8.14 shipped
+/// aarch64 link units with 401 .file symbols rewritten to section 0 —
+/// ld.bfd ignored it, ld.lld refuses the link (".file should not refer
+/// to special section 0", python factory run 35543897983).
+fn verify_coff_file_records(bytes: &[u8]) -> Result<(), String> {
+    let obj = File::parse(bytes)
+        .map_err(|e| format!("internal: cannot re-parse the rewritten COFF object: {e}"))?;
+    for symbol in obj.symbols() {
+        if symbol.kind() != object::SymbolKind::File {
+            continue;
+        }
+        if !matches!(symbol.section(), object::SymbolSection::None) {
+            return Err(format!(
+                "internal: the rewritten COFF object carries .file symbol '{}' at a section other than IMAGE_SYM_DEBUG — refusing to emit an ld.bfd-only object",
+                symbol.name().unwrap_or("<unnamed>")
+            ));
+        }
     }
     Ok(())
 }
@@ -1897,6 +1933,73 @@ mod tests {
         assert!(
             names.iter().any(|n| n == "__tebako_internal_fold"),
             "the function symbol is renamed: {names:?}"
+        );
+    }
+
+    fn coff_file_fixture(section: object::write::SymbolSection) -> Vec<u8> {
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::Aarch64,
+            object::Endianness::Little,
+        );
+        let text = out.add_section(Vec::new(), b".text".to_vec(), object::SectionKind::Text);
+        out.section_mut(text).set_data(b"\xc0\x03\x5f\xd6", 4);
+        out.add_symbol(object::write::Symbol {
+            name: b".file".to_vec(),
+            value: 0,
+            size: 0,
+            kind: object::SymbolKind::File,
+            scope: object::SymbolScope::Compilation,
+            weak: false,
+            section,
+            flags: object::SymbolFlags::None,
+        });
+        out.add_symbol(object::write::Symbol {
+            name: b"fold".to_vec(),
+            value: 0,
+            size: 4,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        out.write().expect("file fixture object")
+    }
+
+    /// rustc's COFF objects carry one .file symbol per TU at
+    /// IMAGE_SYM_DEBUG (-2). The rewrite must keep it there: mapping it
+    /// to section 0 makes ld.lld refuse the link (".file should not
+    /// refer to special section 0", python factory run 35543897983 —
+    /// 401 such symbols across the shipped v2.8.14 aarch64 link unit).
+    #[test]
+    fn coff_file_symbol_keeps_the_debug_section() {
+        let bytes = coff_file_fixture(object::write::SymbolSection::None);
+        verify_coff_file_records(&bytes).expect("the fixture is a valid .file object");
+        let mut report = Report::default();
+        let (scoped, _exported) = scope_object(
+            &bytes,
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            &std::collections::HashSet::new(),
+            &mut report,
+        )
+        .expect("scope the file fixture");
+        verify_coff_file_records(&scoped).expect("the rewrite keeps the .file section");
+        let obj = File::parse(&scoped[..]).expect("parse the rewritten object");
+        let file_section = obj
+            .symbols()
+            .find(|s| s.kind() == object::SymbolKind::File)
+            .map(|s| s.section())
+            .expect("the .file symbol survives the rewrite");
+        assert!(
+            matches!(file_section, object::SymbolSection::None),
+            "the .file symbol stays at IMAGE_SYM_DEBUG, got {file_section:?}"
+        );
+        let corrupt = coff_file_fixture(object::write::SymbolSection::Undefined);
+        assert!(
+            verify_coff_file_records(&corrupt).is_err(),
+            "the gate rejects a .file symbol rewritten to section 0"
         );
     }
 
