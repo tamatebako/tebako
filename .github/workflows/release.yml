@@ -1055,6 +1055,27 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # The action caches the TrustedSigning module at the CurrentUser
+      # path (Documents\PowerShell\Modules\TrustedSigning\0.5.8) while its
+      # own Install-Module lands AllUsers on the elevated runner — a cache
+      # hit then restores a 23 KiB stub and the action SKIPS the install,
+      # leaving Invoke-TrustedSigning unrecognized (tebako-runtime-ruby
+      # run 35643632289, both x64 legs; the factory mirror of this fix is
+      # tebako-runtime-ruby@cfb3e77). Install to CurrentUser HERE, before
+      # the action's cache step: the post-job save captures a real module,
+      # and even a poisoned restore can only overlay — never delete — it.
+      - name: Preflight the TrustedSigning module (spec 34 §5)
+        if: steps.signgate.outputs.armed == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Module -ListAvailable TrustedSigning)) {
+            Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Repository PSGallery -Scope CurrentUser -Force -AllowClobber
+          }
+          Import-Module TrustedSigning -Force
+          Get-Command Invoke-TrustedSigning | Out-Null
+          Write-Host "TrustedSigning module ready: $((Get-Module TrustedSigning).Version)"
+
       # Signs the staged PE artifacts IN PLACE; the re-hash step below
       # re-anchors the fragments to the signed bytes (sign-then-hash,
       # spec 34 §1.3). The account input is `signing-account-name` — spec
@@ -1550,6 +1571,22 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Same TrustedSigning preflight as the PE sign job above: the
+      # action's cache restores a 23 KiB stub when its CurrentUser cache
+      # path misses its AllUsers install (tebako-runtime-ruby run
+      # 35643632289; factory mirror tebako-runtime-ruby@cfb3e77).
+      - name: Preflight the TrustedSigning module (spec 34 §5)
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Module -ListAvailable TrustedSigning)) {
+            Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Repository PSGallery -Scope CurrentUser -Force -AllowClobber
+          }
+          Import-Module TrustedSigning -Force
+          Get-Command Invoke-TrustedSigning | Out-Null
+          Write-Host "TrustedSigning module ready: $((Get-Module TrustedSigning).Version)"
 
       - name: Sign the MSI (spec 34 §5 — Azure Artifact Signing signs MSI natively)
         if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
