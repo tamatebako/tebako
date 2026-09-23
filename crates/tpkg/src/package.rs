@@ -622,7 +622,7 @@ impl PackageLock {
                     ));
                 }
                 (false, None) => {
-                    if slice.source.as_deref().map_or(true, |s| s.is_empty()) {
+                    if slice.source.as_deref().is_none_or(|s| s.is_empty()) {
                         return Err(PackageManifestError::Invalid(
                             "lock.slices[] with carry: false requires its fetch coordinates (source:)",
                         ));
@@ -688,7 +688,7 @@ impl PackageLock {
                         }
                         (false, None) => {}
                     }
-                    if !row.carry && row.source.as_deref().map_or(true, |s| s.is_empty()) {
+                    if !row.carry && row.source.as_deref().is_none_or(|s| s.is_empty()) {
                         return Err(PackageManifestError::Invalid(
                             "lock.spawned[] payload row with carry: false requires its fetch coordinates (source:)",
                         ));
@@ -792,7 +792,7 @@ fn validate_spawned_runtime_row(
             }
         }
     }
-    if !spawned.carry && spawned.source.as_deref().map_or(true, |s| s.is_empty()) {
+    if !spawned.carry && spawned.source.as_deref().is_none_or(|s| s.is_empty()) {
         return Err(PackageManifestError::Invalid(
             "lock.spawned[] with carry: false requires its fetch coordinates (source:)",
         ));

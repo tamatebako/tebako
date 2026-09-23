@@ -1618,7 +1618,7 @@ impl Requirement {
     /// non-covering edge is SKIPPED — loud and journaled, never an
     /// error (spec 03 §2.3).
     pub fn covers_host(&self, host: Platform) -> bool {
-        self.triplets().map_or(true, |ts| ts.contains(&host))
+        self.triplets().is_none_or(|ts| ts.contains(&host))
     }
 
     /// The edge's display identity (`data:iso-codes`, `runtime:java`, …)

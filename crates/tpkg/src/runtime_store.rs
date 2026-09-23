@@ -531,7 +531,7 @@ pub fn implementation_matches(cached: &CachedRuntime, want: Option<&str>) -> boo
         Some(w) => cached
             .implementation
             .as_deref()
-            .map_or(true, |have| have == w),
+            .is_none_or(|have| have == w),
     }
 }
 
