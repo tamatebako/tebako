@@ -147,7 +147,7 @@ pub fn inspect_package(
         // they are launchers, not image payloads (spec 02 §6, spec 15 §3).
         let payload = if depth >= Depth::Manifests
             && s.format_id != tpkg::TPKG_FORMAT_RUNTIME
-            && only_slot.map_or(true, |n| n == i)
+            && only_slot.is_none_or(|n| n == i)
         {
             let display = format!("{}[slot {i}]", binary.display());
             Some(payload::inspect_region(binary, s.offset, s.size, display)?)

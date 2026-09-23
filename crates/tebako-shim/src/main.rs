@@ -15,7 +15,7 @@ fn main() -> ExitCode {
     // downstream tier (Ctx, the exec'd runtime, spawned payloads) agrees
     // on the store the run resolves from; an explicit TEBAKO_HOME is
     // never overridden.
-    if std::env::var_os("TEBAKO_HOME").map_or(true, |v| v.is_empty()) {
+    if std::env::var_os("TEBAKO_HOME").is_none_or(|v| v.is_empty()) {
         if let Ok(exe) = std::env::current_exe() {
             if let Some(home) = tpkg::runtime_store::bundle_sibling_home(&exe) {
                 std::env::set_var("TEBAKO_HOME", &home);

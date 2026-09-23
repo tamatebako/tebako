@@ -111,8 +111,8 @@ fn build_tar(path: &Path, name: &str, content: &[u8]) {
     out.extend_from_slice(&hdr);
     out.extend_from_slice(content);
     let pad = (512 - content.len() % 512) % 512;
-    out.extend(std::iter::repeat(0).take(pad));
-    out.extend(std::iter::repeat(0).take(1024));
+    out.extend(std::iter::repeat_n(0, pad));
+    out.extend(std::iter::repeat_n(0, 1024));
     std::fs::write(path, out).unwrap();
 }
 

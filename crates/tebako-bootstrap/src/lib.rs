@@ -4276,7 +4276,7 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
     // whole process tree (this process's own resolution, the driver,
     // spawned payloads) agrees on the store; an explicit TEBAKO_HOME is
     // never overridden (the env tier already won).
-    if std::env::var_os("TEBAKO_HOME").map_or(true, |v| v.is_empty()) {
+    if std::env::var_os("TEBAKO_HOME").is_none_or(|v| v.is_empty()) {
         if let Some(home) = tpkg::runtime_store::bundle_sibling_home(&self_path) {
             std::env::set_var("TEBAKO_HOME", &home);
         }

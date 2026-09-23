@@ -587,7 +587,7 @@ fn index_selected_target(
                 Some(want) => e
                     .implementation
                     .as_deref()
-                    .map_or(true, |have| have == want),
+                    .is_none_or(|have| have == want),
             };
             if !impl_ok {
                 return false;
