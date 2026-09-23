@@ -32,8 +32,9 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 # The in-process LimniFS writer for `mkimage --format limnifs` (spec 20
 # §6) — pure Rust, no `limni` binary anywhere. Floor: post-flip line
-# rides 0.2.65's format (see crates/tfs).
-limnifs-write = "0.3.33"
+# rides 0.2.65's format (see crates/tfs); 0.3.54 carries the 0.3.43
+# trust-boundary/slice-map enforcement (see crates/tfs).
+limnifs-write = "0.3.54"
 libc = "0.2"
 
 # tfs per-target: the SquashFS backend (squashfs-tools-ng) is
@@ -76,5 +77,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # The floor-recipe structural test parses the emitted metadata through
 # the reader (spec 20 §5 constraint 1: no SharedInline handle anywhere)
 # — test-only, never linked into the shipped binary. Floor: see the
-# limnifs-write pin above (post-flip line is >= 0.3.0).
-limnifs-core = "0.3.33"
+# limnifs-write pin above (post-flip line is >= 0.3.0; the 0.3.43/0.3.53
+# enforcement set rides 0.3.54).
+limnifs-core = "0.3.54"
