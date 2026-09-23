@@ -43,10 +43,10 @@ jobs:
         if: vars.TEBAKO_RELEASE_SIGNING_ENABLED == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # --clobber: an earlier partial pass may already have uploaded some
-        # .asc files — overwriting them with byte-identical re-signatures is
-        # the intended repair.
-        run: gh release upload "${{ inputs.tag }}" out/signatures/*.asc --clobber
+        # Metadata mode: byte-identical re-signatures skip; a drifted
+        # .asc is replaced with bounded convergence (never a blanket
+        # --clobber delete — tebako#189).
+        run: bash .github/workflows/lib/release-upload.sh --metadata "${{ inputs.tag }}" out/signatures/*.asc
 
       - name: Completeness gate
         env:
