@@ -25,5 +25,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 # The limnifs backend-pair golden class builds its fixture image
-# in-process (spec 20 §8) — never a `limni` binary.
-limnifs-write = "0.3.33"
+# in-process (spec 20 §8) — never a `limni` binary. Floor tracks
+# crates/tfs (0.3.54: the 0.3.43 enforcement set + omnizip 0.21.113).
+limnifs-write = "0.3.54"

@@ -584,10 +584,7 @@ fn index_selected_target(
         reqs.entries().iter().any(|r| {
             let impl_ok = match &r.implementation {
                 None => true,
-                Some(want) => e
-                    .implementation
-                    .as_deref()
-                    .map_or(true, |have| have == want),
+                Some(want) => e.implementation.as_deref().is_none_or(|have| have == want),
             };
             if !impl_ok {
                 return false;

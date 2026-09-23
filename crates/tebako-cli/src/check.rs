@@ -463,7 +463,7 @@ pub fn run(parsed: &CheckArgs) -> Result<i32, TebakoError> {
     let mut selected: Vec<(usize, usize)> = Vec::new();
     for (oi, owner) in target.owners.iter().enumerate() {
         for (ci, (name, _)) in owner.checks.iter().enumerate() {
-            if parsed.check.as_ref().map_or(true, |want| want == name) {
+            if parsed.check.as_ref().is_none_or(|want| want == name) {
                 selected.push((oi, ci));
             }
         }

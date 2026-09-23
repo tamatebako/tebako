@@ -6,7 +6,10 @@ members = ["crates/tpkg", "crates/tfs", "crates/sqfs-sys", "crates/tebako-pkg", 
 [workspace.package]
 version = "2.8.16"
 edition = "2021"
-rust-version = "1.79"
+# MSRV floor: limnifs-core/limnifs-write 0.3.54 (the mandatory tfs
+# backend pair) declare rust-version 1.85 — the workspace floor follows
+# the dependency, and CI builds on 1.94.x.
+rust-version = "1.85"
 license = "BSD-2-Clause"
 repository = "https://github.com/tamatebako/tebako"
 homepage = "https://github.com/tamatebako/tebako"
