@@ -333,6 +333,91 @@ fn install_nickname_ambiguous_is_a_named_error_listing_the_registries() {
     );
 }
 
+// ---------------------------------------------------------------------
+// spec 37 §3 — the qualified `alias/name` form
+// ---------------------------------------------------------------------
+
+#[test]
+fn install_qualified_name_scopes_to_the_named_registry() {
+    let fx = Fixture::new("nickq");
+    let p_a = fx.payload("app-1.0.tfs", b"from-one");
+    let p_b = fx.payload("app-2.0.tfs", b"from-two");
+    let reg_a = fx.registry("one.yaml", &registry_yaml("app", "1.0", &p_a, Some("1.0")));
+    let reg_b = fx.registry("two.yaml", &registry_yaml("app", "2.0", &p_b, Some("2.0")));
+    // file:// refs derive no alias — the authored name is the alias.
+    let name = |n: &str| tebako_shim::config::AddRegistryOptions {
+        name: Some(n.to_string()),
+        require_signed: false,
+        default: false,
+    };
+    install::add_registry_opts(&fx.home, &reg_a, &name("one")).unwrap();
+    install::add_registry_opts(&fx.home, &reg_b, &name("two")).unwrap();
+
+    // Unscoped, the same name is the ambiguity; scoped, it installs.
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("AmbiguousRegistries"), "{err:?}");
+
+    let out = install::install(&fx.home, "two/app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.version, "2.0");
+    assert_eq!(fs::read(&out.path).unwrap(), b"from-two");
+
+    let out = install::install(&fx.home, "one/app@1.0", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.version, "1.0");
+    assert_eq!(fs::read(&out.path).unwrap(), b"from-one");
+}
+
+#[test]
+fn install_qualified_name_unknown_alias_is_the_named_error() {
+    let fx = Fixture::new("nickqunknown");
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
+    );
+    let opts = tebako_shim::config::AddRegistryOptions {
+        name: Some("mine".to_string()),
+        require_signed: false,
+        default: false,
+    };
+    install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+
+    let err = install::install(&fx.home, "nosuch/app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("UnknownRegistryAlias"), "{err:?}");
+    assert!(err.message.contains("mine"), "{err:?}");
+}
+
+#[test]
+fn install_qualified_name_scoped_not_found_names_the_registry() {
+    let fx = Fixture::new("nickqnotfound");
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
+    );
+    let opts = tebako_shim::config::AddRegistryOptions {
+        name: Some("mine".to_string()),
+        require_signed: false,
+        default: false,
+    };
+    install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+
+    let err = install::install(&fx.home, "mine/ghost", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(
+        err.message
+            .contains("registry 'mine' carries no payload named 'ghost'"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn install_qualified_name_malformed_is_a_usage_error() {
+    let fx = Fixture::new("nickqbad");
+    let err = install::install(&fx.home, "BAD/app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("[a-z][a-z0-9-]*"), "{err:?}");
+    let err = install::install(&fx.home, "a/b/c", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("qualified name"), "{err:?}");
+}
+
 #[test]
 fn install_nickname_resolves_default_and_explicit_versions() {
     let fx = Fixture::new("nick3");

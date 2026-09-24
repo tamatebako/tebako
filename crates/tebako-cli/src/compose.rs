@@ -254,7 +254,7 @@ pub fn resolve_closure<T: Transport>(
             continue;
         }
 
-        let mut found = install::find_in_registries(home, fetcher, &pending.name)?;
+        let mut found = install::find_in_registries(home, fetcher, &pending.name, None)?;
         let (reg_ref, payload) = match found.len() {
             0 => {
                 return Err(err(format!(

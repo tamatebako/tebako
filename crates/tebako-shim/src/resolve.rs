@@ -396,12 +396,14 @@ fn no_provider(home: &Path, tool: &str) -> ShimError {
     )
 }
 
-/// One tool entry of a `.tebako-tools.yaml` document (spec 07 §4): the
-/// pre-slices bare-string form carries only a version; the map form
-/// carries `version:` and/or `slices:` (either key may be absent).
+/// One tool entry of a `.tebako-tools.yaml` document (spec 07 §4;
+/// `registry:` added by spec 37 §3): the pre-slices bare-string form
+/// carries only a version; the map form carries `version:`, `slices:`,
+/// and/or `registry:` (any key may be absent).
 struct ToolEntry {
     version: Option<String>,
     slices: Vec<String>,
+    registry: Option<String>,
 }
 
 /// The entry for `tool` in one parsed project document — strict shape
@@ -427,10 +429,12 @@ fn tool_entry(
         serde_yaml::Value::String(v) => Ok(Some(ToolEntry {
             version: Some(v.clone()),
             slices: Vec::new(),
+            registry: None,
         })),
         serde_yaml::Value::Mapping(m) => {
             let mut version = None;
             let mut slices = Vec::new();
+            let mut registry = None;
             for (k, v) in m {
                 match k.as_str() {
                     Some("version") => {
@@ -453,17 +457,27 @@ fn tool_entry(
                             );
                         }
                     }
+                    Some("registry") => {
+                        let s = v
+                            .as_str()
+                            .ok_or_else(|| bad("`registry` must be a registry alias string"))?;
+                        registry = Some(s.to_string());
+                    }
                     _ => {
                         return Err(bad(
-                            "unknown key — the map form is `{version: \"…\", slices: […]}`",
+                            "unknown key — the map form is `{version: \"…\", slices: […], registry: \"…\"}`",
                         ))
                     }
                 }
             }
-            Ok(Some(ToolEntry { version, slices }))
+            Ok(Some(ToolEntry {
+                version,
+                slices,
+                registry,
+            }))
         }
         _ => Err(bad(
-            "expected a version string or a `{version, slices}` mapping",
+            "expected a version string or a `{version, slices, registry}` mapping",
         )),
     }
 }
@@ -501,6 +515,43 @@ fn project_pin(start: &Path, tool: &str) -> Result<Option<(String, PathBuf)>, Sh
             }
             // A nearer file that does not pin this tool's version does
             // NOT shadow a farther one that does — keep walking.
+        }
+        dir = d.parent();
+    }
+    Ok(None)
+}
+
+/// The registry scope for `tool` from the nearest `.tebako-tools.yaml`
+/// whose entry carries `registry:` (spec 37 §3). The same shadow rule
+/// as the version chain: a nearer entry without `registry:` keeps
+/// walking. The alias itself is validated against the book at
+/// pin-resolution time (`UnknownRegistryAlias`), not here.
+fn project_registry_scope(start: &Path, tool: &str) -> Result<Option<String>, ShimError> {
+    let mut dir: Option<&Path> = Some(start);
+    while let Some(d) = dir {
+        let candidate = d.join(".tebako-tools.yaml");
+        if candidate.is_file() {
+            let text = std::fs::read_to_string(&candidate).map_err(|e| {
+                ShimError::new(
+                    crate::EX_TEBAKO_IO,
+                    format!("cannot read {}: {e}", candidate.display()),
+                )
+            })?;
+            let value: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!("cannot parse {} ({e})", candidate.display()),
+                )
+            })?;
+            if let Some(root) = value.as_mapping() {
+                if let Some(ToolEntry {
+                    registry: Some(registry),
+                    ..
+                }) = tool_entry(root, &candidate, tool)?
+                {
+                    return Ok(Some(registry));
+                }
+            }
         }
         dir = d.parent();
     }
@@ -924,10 +975,20 @@ fn resolve_named(
                 picked = Some((version.to_string(), VersionSource::UserDefault));
             }
         }
-        // 4. registry default
+        // 4. registry default — scoped when a pin names the registry it
+        // resolves through (spec 37 §3): the project file's `registry:`
+        // wins over the user default pin's; an alias not in the book is
+        // the named UnknownRegistryAlias, fail-closed.
         if picked.is_none() {
+            let scope = match project_registry_scope(&ctx.cwd, tool)? {
+                Some(alias) => Some(alias),
+                None => cfg
+                    .defaults
+                    .get(tool)
+                    .and_then(|pin| pin.registry().map(str::to_string)),
+            };
             if let Some((version, reg)) =
-                config::registry_default(&ctx.home, &cfg, payload_name, ctx)?
+                config::registry_default(&ctx.home, &cfg, payload_name, scope.as_deref(), ctx)?
             {
                 picked = Some((version, VersionSource::RegistryDefault(reg)));
             }

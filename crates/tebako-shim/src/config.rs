@@ -61,11 +61,13 @@ pub struct UserConfig {
     pub network: NetworkSection,
 }
 
-/// One `defaults:` entry (spec 07 §4). The pre-slices shape is a bare
-/// version string; the widened shape is a map carrying an optional
-/// `version:` plus a `slices:` list of `name@version` pins. Both
-/// spellings deserialize here; accessors keep every consumer off the
-/// shape detail.
+/// One `defaults:` entry (spec 07 §4; `registry:` added by spec 37 §3).
+/// The pre-slices shape is a bare version string; the widened shape is
+/// a map carrying an optional `version:` plus a `slices:` list of
+/// `name@version` pins, plus spec 37's optional `registry:` — the alias
+/// of the registry the pin resolves through. Both spellings
+/// deserialize here; accessors keep every consumer off the shape
+/// detail.
 ///
 /// The hand-rolled Deserialize goes through `serde_yaml::Value` because
 /// serde_yaml hands a bare-`String` target the RAW scalar text — the
@@ -76,12 +78,14 @@ pub struct UserConfig {
 pub enum DefaultPin {
     /// `tool: "1.16.2"` — the pre-slices spelling.
     Version(String),
-    /// `tool: {version: "1.16.2", slices: [metanorma-bsi@1.2.0]}` —
-    /// either key may be absent (a slices-only entry does not pin the
-    /// base version).
+    /// `tool: {version: "1.16.2", slices: [metanorma-bsi@1.2.0],
+    /// registry: nist}` — any key may be absent (a slices-only entry
+    /// does not pin the base version; a registry-only entry only
+    /// scopes where resolution looks).
     Full {
         version: Option<String>,
         slices: Vec<String>,
+        registry: Option<String>,
     },
 }
 
@@ -98,6 +102,7 @@ impl<'de> Deserialize<'de> for DefaultPin {
             serde_yaml::Value::Mapping(m) => {
                 let mut version = None;
                 let mut slices = Vec::new();
+                let mut registry = None;
                 for (k, v) in m {
                     let key = k.as_str().ok_or_else(|| {
                         D::Error::custom("a `defaults` map entry's keys must be strings")
@@ -117,10 +122,25 @@ impl<'de> Deserialize<'de> for DefaultPin {
                         "slices" => {
                             slices = serde_yaml::from_value(v).map_err(D::Error::custom)?;
                         }
+                        "registry" => {
+                            registry = match v {
+                                serde_yaml::Value::Null => None,
+                                serde_yaml::Value::String(s) => Some(s),
+                                _ => {
+                                    return Err(D::Error::custom(
+                                        "a `defaults` map entry's `registry:` is a registry alias string",
+                                    ))
+                                }
+                            };
+                        }
                         _ => {}
                     }
                 }
-                Ok(DefaultPin::Full { version, slices })
+                Ok(DefaultPin::Full {
+                    version,
+                    slices,
+                    registry,
+                })
             }
             _ => Err(D::Error::custom(
                 "a `defaults` entry is a version string or a {version, slices} map",
@@ -144,6 +164,15 @@ impl DefaultPin {
         match self {
             DefaultPin::Version(_) => &[],
             DefaultPin::Full { slices, .. } => slices,
+        }
+    }
+
+    /// The registry alias the pin resolves through (spec 37 §3), if
+    /// authored.
+    pub fn registry(&self) -> Option<&str> {
+        match self {
+            DefaultPin::Version(_) => None,
+            DefaultPin::Full { registry, .. } => registry.as_deref(),
         }
     }
 }
@@ -390,6 +419,37 @@ impl UserConfig {
             rows.push(BookRow { entry, alias });
         }
         Ok(rows)
+    }
+
+    /// The registry refs a resolution runs against (spec 37 §3):
+    /// `None` → every registered entry (the bare-name rule); `Some(alias)`
+    /// → the ONE entry whose computed alias matches. An unknown alias is
+    /// the named `UnknownRegistryAlias` listing the book's aliases —
+    /// fail-closed, never a silent fall back to the whole book.
+    pub fn registry_refs_scoped(&self, scope: Option<&str>) -> Result<Vec<&str>, ShimError> {
+        match scope {
+            None => Ok(self.registries.iter().map(|e| e.reference()).collect()),
+            Some(alias) => {
+                let book = self.registry_book()?;
+                for row in &book {
+                    if row.alias.as_deref() == Some(alias) {
+                        return Ok(vec![row.entry.reference()]);
+                    }
+                }
+                let aliases: Vec<&str> = book.iter().filter_map(|r| r.alias.as_deref()).collect();
+                let listing = if aliases.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    aliases.join(", ")
+                };
+                fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "no registered registry carries the alias '{alias}' (UnknownRegistryAlias)\n  registered aliases: {listing}"
+                    ),
+                )
+            }
+        }
     }
 }
 
@@ -925,21 +985,25 @@ pub fn set_runtime_pref(
 // the registry-default chain link (spec 07 §2.1, last resort)
 // ---------------------------------------------------------------------
 
-/// The registry default version for `payload_name`, scanning the user's
-/// registered registries in order (first match wins). Every registry form
-/// of spec 04 §2 resolves through the dispatch-time cache
-/// ([`crate::regcache`]); the registry model is tebako-resolve's.
+/// The registry default version for `payload_name`. Unscoped (`None`)
+/// scans the user's registered registries in order (first match wins);
+/// scoped (`Some(alias)`, spec 37 §3) consults the ONE registry the
+/// alias names — an unknown alias is `UnknownRegistryAlias` at
+/// pin-resolution time, fail-closed. Every registry form of spec 04 §2
+/// resolves through the dispatch-time cache ([`crate::regcache`]); the
+/// registry model is tebako-resolve's.
 pub fn registry_default(
     home: &Path,
     config: &UserConfig,
     payload_name: &str,
+    scope: Option<&str>,
     ctx: &Ctx,
 ) -> Result<Option<(String, String)>, ShimError> {
-    for entry in &config.registries {
-        let registry = crate::regcache::registry_for(home, entry.reference(), ctx)?;
+    for reg_ref in config.registry_refs_scoped(scope)? {
+        let registry = crate::regcache::registry_for(home, reg_ref, ctx)?;
         if let Some(p) = registry.payload(payload_name) {
             if let Some(default) = &p.default {
-                return Ok(Some((default.clone(), entry.reference().to_string())));
+                return Ok(Some((default.clone(), reg_ref.to_string())));
             }
         }
     }
@@ -1405,5 +1469,42 @@ mod tests {
         assert!(err.message.contains("[a-z][a-z0-9-]*"), "{err:?}");
         assert!(!config_path(&home).exists());
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn scoped_refs_unscoped_returns_every_entry() {
+        let cfg: UserConfig =
+            serde_yaml::from_str("registries:\n  - tfs:github:acme/one\n  - tfs:github:acme/two\n")
+                .unwrap();
+        let refs = cfg.registry_refs_scoped(None).unwrap();
+        assert_eq!(refs, vec!["tfs:github:acme/one", "tfs:github:acme/two"]);
+    }
+
+    #[test]
+    fn scoped_refs_by_derived_and_authored_alias() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "registries:\n  - tfs:github:acme/derived\n  - ref: file:///opt/reg.yaml\n    name: local\n",
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.registry_refs_scoped(Some("derived")).unwrap(),
+            vec!["tfs:github:acme/derived"]
+        );
+        assert_eq!(
+            cfg.registry_refs_scoped(Some("local")).unwrap(),
+            vec!["file:///opt/reg.yaml"]
+        );
+    }
+
+    #[test]
+    fn scoped_refs_unknown_alias_lists_the_book() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "registries:\n  - tfs:github:acme/derived\n  - ref: file:///opt/reg.yaml\n    name: local\n",
+        )
+        .unwrap();
+        let err = cfg.registry_refs_scoped(Some("nosuch")).unwrap_err();
+        assert!(err.message.contains("UnknownRegistryAlias"), "{err:?}");
+        assert!(err.message.contains("derived"), "{err:?}");
+        assert!(err.message.contains("local"), "{err:?}");
     }
 }

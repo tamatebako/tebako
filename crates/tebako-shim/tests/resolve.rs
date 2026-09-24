@@ -110,6 +110,143 @@ fn registry_default_is_the_last_resort() {
     assert!(matches!(res.source, VersionSource::RegistryDefault(_)));
 }
 
+// ---------------------------------------------------------------------
+// spec 37 §3 — the registry: pin scope
+// ---------------------------------------------------------------------
+
+/// Two file registries carrying `metanorma` with different defaults.
+fn seed_two_registries(root: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let one = root.join("one.yaml");
+    let two = root.join("two.yaml");
+    for (path, default) in [(&one, "1.0.0"), (&two, "1.2.2")] {
+        std::fs::write(
+            path,
+            format!(
+                "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: {default}\n    versions:\n      - version: {default}\n        platforms: universal\n        release: {{ref: file:///metanorma-{default}.tfs}}\n        entrypoints: [metanorma]\n"
+            ),
+        )
+        .unwrap();
+    }
+    (one, two)
+}
+
+/// The config book spelling for the two file registries (file:// refs
+/// carry no derived alias — the authored `name:` is the alias).
+fn two_registry_config(home: &std::path::Path, one: &std::path::Path, two: &std::path::Path) {
+    write_config(
+        home,
+        &format!(
+            "registries:\n  - ref: {}\n    name: one\n  - ref: {}\n    name: two\n",
+            tebako_http::file_url(one),
+            tebako_http::file_url(two)
+        ),
+    );
+}
+
+#[test]
+fn project_registry_pin_scopes_the_registry_default() {
+    let tmp = TempDir::new("scope-project");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_metanorma(&home);
+    let (one, two) = seed_two_registries(tmp.path());
+    two_registry_config(&home, &one, &two);
+    std::fs::write(
+        proj.join(".tebako-tools.yaml"),
+        "metanorma: {registry: two}\n",
+    )
+    .unwrap();
+    let res = resolve::resolve("metanorma", &ctx(&home, &proj)).unwrap();
+    assert_eq!(res.version, "1.2.2");
+    assert!(matches!(res.source, VersionSource::RegistryDefault(_)));
+}
+
+#[test]
+fn user_default_registry_key_scopes_the_registry_default() {
+    let tmp = TempDir::new("scope-user");
+    let home = tmp.path().join("home");
+    seed_metanorma(&home);
+    let (one, two) = seed_two_registries(tmp.path());
+    write_config(
+        &home,
+        &format!(
+            "registries:\n  - ref: {}\n    name: one\n  - ref: {}\n    name: two\ndefaults:\n  metanorma: {{registry: one}}\n",
+            tebako_http::file_url(&one),
+            tebako_http::file_url(&two)
+        ),
+    );
+    let res = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap();
+    assert_eq!(res.version, "1.0.0");
+    assert!(matches!(res.source, VersionSource::RegistryDefault(_)));
+}
+
+#[test]
+fn project_registry_scope_wins_over_the_user_default_scope() {
+    let tmp = TempDir::new("scope-precedence");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_metanorma(&home);
+    let (one, two) = seed_two_registries(tmp.path());
+    write_config(
+        &home,
+        &format!(
+            "registries:\n  - ref: {}\n    name: one\n  - ref: {}\n    name: two\ndefaults:\n  metanorma: {{registry: two}}\n",
+            tebako_http::file_url(&one),
+            tebako_http::file_url(&two)
+        ),
+    );
+    std::fs::write(
+        proj.join(".tebako-tools.yaml"),
+        "metanorma: {registry: one}\n",
+    )
+    .unwrap();
+    let res = resolve::resolve("metanorma", &ctx(&home, &proj)).unwrap();
+    assert_eq!(res.version, "1.0.0");
+}
+
+#[test]
+fn an_unknown_registry_alias_is_the_named_error_listing_the_book() {
+    let tmp = TempDir::new("scope-unknown");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_metanorma(&home);
+    let (one, two) = seed_two_registries(tmp.path());
+    two_registry_config(&home, &one, &two);
+    std::fs::write(
+        proj.join(".tebako-tools.yaml"),
+        "metanorma: {registry: nosuch}\n",
+    )
+    .unwrap();
+    let err = resolve::resolve("metanorma", &ctx(&home, &proj)).unwrap_err();
+    assert!(err.message.contains("UnknownRegistryAlias"), "{err:?}");
+    assert!(err.message.contains("one"), "{err:?}");
+    assert!(err.message.contains("two"), "{err:?}");
+}
+
+#[test]
+fn a_registry_key_on_a_version_pin_does_not_break_the_version_chain() {
+    // version + registry in one map: the version wins the chain at the
+    // project link exactly as before; the scope rides along unused.
+    let tmp = TempDir::new("scope-with-version");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_metanorma(&home);
+    let (one, two) = seed_two_registries(tmp.path());
+    two_registry_config(&home, &one, &two);
+    std::fs::write(
+        proj.join(".tebako-tools.yaml"),
+        "metanorma: {version: 1.2.3, registry: two}\n",
+    )
+    .unwrap();
+    let res = resolve::resolve("metanorma", &ctx(&home, &proj)).unwrap();
+    assert_eq!(res.version, "1.2.3");
+    assert!(matches!(res.source, VersionSource::ProjectFile(_)));
+}
+
 #[test]
 fn env_pin_of_an_uninstalled_version_is_a_named_error() {
     let tmp = TempDir::new("env-uninstalled");

@@ -731,10 +731,36 @@ fn pinned_version(origin: &str, sha256: Option<&str>) -> Result<String, TebakoEr
 
 // ---- the nickname form --------------------------------------------------
 
-fn parse_nickname(target: &str) -> Result<(String, Option<String>), TebakoError> {
-    let (name, version) = match target.split_once('@') {
+fn parse_nickname(target: &str) -> Result<(Option<String>, String, Option<String>), TebakoError> {
+    // The qualified form (spec 37 §3): `alias/name[@version]` scopes
+    // resolution to the one registry whose alias is `alias`. Payload
+    // names never contain '/', so a single leading segment is
+    // unambiguously the scope.
+    let (scope, rest) = match target.split_once('/') {
+        Some((alias, name)) if !alias.is_empty() && !name.is_empty() && !name.contains('/') => {
+            if !tebako_shim::config::valid_registry_alias(alias) {
+                return Err(err(
+                    EX_USAGE,
+                    format!(
+                        "invalid registry alias in '{target}' — the alias grammar is [a-z][a-z0-9-]* (spec 37 §2)"
+                    ),
+                ));
+            }
+            (Some(alias.to_string()), name)
+        }
+        Some(_) => {
+            return Err(err(
+                EX_USAGE,
+                format!(
+                    "invalid qualified name '{target}' — the form is <alias>/<name>[@<version>] with one '/'"
+                ),
+            ));
+        }
+        None => (None, target),
+    };
+    let (name, version) = match rest.split_once('@') {
         Some((n, v)) => (n.to_string(), Some(v.to_string())),
-        None => (target.to_string(), None),
+        None => (rest.to_string(), None),
     };
     manifest::check_path_component("payload name", &name).map_err(map_shim)?;
     if name.contains(':') {
@@ -752,7 +778,7 @@ fn parse_nickname(target: &str) -> Result<(String, Option<String>), TebakoError>
             ));
         }
     }
-    Ok((name, version))
+    Ok((scope, name, version))
 }
 
 /// Search the REGISTERED registries for the payload, select version +
@@ -764,16 +790,21 @@ fn plan_from_nickname<T: Transport>(
     target: &str,
     host: Option<Platform>,
 ) -> Result<InstallPlan, TebakoError> {
-    let (name, version_req) = parse_nickname(target)?;
-    let mut found = find_in_registries(home, fetcher, &name)?;
+    let (scope, name, version_req) = parse_nickname(target)?;
+    let mut found = find_in_registries(home, fetcher, &name, scope.as_deref())?;
     match found.len() {
         0 => {
             let registries = registered_registries_listing(home)?;
             Err(err(
                 EX_TEBAKO_MANIFEST,
-                format!(
-                    "no registered registry carries a payload named '{name}'\n  registered registries:\n{registries}\n  register one with: tebako add-registry <ref>"
-                ),
+                match &scope {
+                    Some(alias) => format!(
+                        "registry '{alias}' carries no payload named '{name}'\n  registered registries:\n{registries}"
+                    ),
+                    None => format!(
+                        "no registered registry carries a payload named '{name}'\n  registered registries:\n{registries}\n  register one with: tebako add-registry <ref>"
+                    ),
+                },
             ))
         }
         1 => {
@@ -797,15 +828,17 @@ fn plan_from_nickname<T: Transport>(
 /// Every registered registry carrying `name`, as (registry ref, payload)
 /// pairs — the one search both the nickname form and dependency edges
 /// run (spec 04 §2: the registered set is the whole namespace).
+/// `scope` (spec 37 §3's qualified form) narrows the set to the one
+/// registry the alias names; an unknown alias is `UnknownRegistryAlias`.
 pub(crate) fn find_in_registries<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     name: &str,
+    scope: Option<&str>,
 ) -> Result<Vec<(String, RegistryPayload)>, TebakoError> {
     let cfg = config::load_config(home).map_err(map_shim)?;
     let mut found: Vec<(String, RegistryPayload)> = Vec::new();
-    for entry in &cfg.registries {
-        let reg_ref = entry.reference();
+    for reg_ref in cfg.registry_refs_scoped(scope).map_err(map_shim)? {
         let r = RegistryRef::parse(reg_ref).map_err(|e| {
             err(
                 EX_TEBAKO_MANIFEST,
@@ -852,7 +885,7 @@ fn plan_from_dependency_edge<T: Transport>(
     name: &str,
     constraint: &tpkg::Constraint,
 ) -> Result<InstallPlan, TebakoError> {
-    let mut found = find_in_registries(home, fetcher, name)?;
+    let mut found = find_in_registries(home, fetcher, name, None)?;
     let declares = || {
         format!(
             "{} {} requires {kind} {name} ({constraint})",

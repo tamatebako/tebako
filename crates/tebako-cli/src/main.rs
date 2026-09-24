@@ -51,7 +51,7 @@ const USAGE: &str = "Usage:
   tebako list-registries               list the registered registries
   tebako update-registries             refresh the dispatch-time registry cache
   tebako keys import <file>            register a public key into the trusted keyring
-  tebako install <ref | name[@ver]>    install a payload + register its shims
+  tebako install <ref | [alias/]name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
   tebako bundle <name[@ver]> --output <dir> [--also <name[@ver]>]...
                [--config <org.yaml>] [--archive tar.gz]
@@ -553,7 +553,7 @@ fn run_install(args: &[String]) -> Result<(), CliExit> {
             _ if target.is_none() => target = Some(arg),
             _ => {
                 return Err(CliExit::Usage(
-                    "usage: tebako install <ref | name[@version] | ./package> [--shims]"
+                    "usage: tebako install <ref | [alias/]name[@version] | ./package> [--shims]"
                         .to_string(),
                 ))
             }
@@ -561,7 +561,8 @@ fn run_install(args: &[String]) -> Result<(), CliExit> {
     }
     let Some(target) = target else {
         return Err(CliExit::Usage(
-            "usage: tebako install <ref | name[@version] | ./package> [--shims]".to_string(),
+            "usage: tebako install <ref | [alias/]name[@version] | ./package> [--shims]"
+                .to_string(),
         ));
     };
     // A local pressed package (fat or lean): slot-wise install from its

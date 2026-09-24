@@ -471,7 +471,7 @@ fn spawned_payload_row<T: Transport>(
     // Registry resolution (the compose closure's tail): one registry
     // carrying the provider, the newest satisfying version, fetched +
     // verified + cached. Press is not install — no mirrors, no shims.
-    let mut found = install::find_in_registries(home, fetcher, provider)?;
+    let mut found = install::find_in_registries(home, fetcher, provider, None)?;
     let (reg_ref, registry_payload) = match found.len() {
         0 => {
             return Err(err(format!(

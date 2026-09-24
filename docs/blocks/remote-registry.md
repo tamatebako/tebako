@@ -59,6 +59,21 @@ tebako add-registry tfs:github:metanorma/metanorma-flavor-nist --name nist --req
 `tebako list-registries` shows the book — each registry's alias,
 reference, policy flags, and cache freshness.
 
+When more than one registered registry carries the same payload name,
+an unqualified install is the named `AmbiguousRegistries` error by
+design (never a priority pick). The qualified form scopes resolution
+to exactly one registry by its alias:
+
+```
+tebako install nist/metanorma-bsi        # only the nist registry is consulted
+```
+
+Pins can carry the same scope: a project's `.tebako-tools.yaml` or the
+`defaults:` map form accepts `registry: <alias>` naming the registry
+the pin resolves through — an alias that matches no registered
+registry is the named `UnknownRegistryAlias`, listing the book's
+aliases.
+
 The index is fetched, its signing key is shown for confirmation, and
 the key is pinned to that registry. After that:
 
