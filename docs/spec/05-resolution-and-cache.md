@@ -68,6 +68,15 @@ monolith.
   (coreutils `<sha>  <file>` — the store marker's exact shape). The
   sidecar is the per-asset pin; the shard's sha fields are re-anchored
   to the served bytes at publish time.
+- **Bundle-era lines (additive, 2026-09-24, spec 36):** a shard
+  carrying the additive `bundle` block is consumed as ONE fetch — the
+  `<stem>.tar.gz` bundle + its sidecar (+ `.asc` when declared) —
+  verified, then unpacked in-process into the §3 store layout with
+  every member checked against the shard's per-member pins
+  (`InvalidBundle`, spec 36 §7). A shard without `bundle` takes the
+  per-file path, forever. A pre-bundle resolver on a bundle-era release
+  fails LOUD at the exe fetch (the asset does not exist — exit-69
+  class, naming the identity triple), never an exec of wrong bytes.
 - **The download base is PER-ENGINE** (the chain below is SHIPPED in
   tebako-shim's dispatch-time fetch — tebako#567; the CLI's press-time
   resolver and the bootstrap consult `TEBAKO_RUNTIME_MIRROR` + the

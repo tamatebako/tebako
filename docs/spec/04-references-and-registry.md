@@ -123,6 +123,12 @@ payloads:
   (spec 05 §2's per-engine chain, the zero-config path for third-party
   runtimes). Runtime entries predating MINOR 1 carry no `engine:` and
   stay invisible to edges.
+- **Bundle-era runtime rows name the bundle** (additive, 2026-09-24,
+  spec 36): `platforms[<triplet>].artifact` is `<stem>.tar.gz` and the
+  row's `sha256` pins the bundle, whose members unpack into the runtime
+  store (spec 36 §4). Per-file-era rows keep naming the exe — the
+  mirror is faithful to what the pinned release serves, era by era, and
+  `status: withdrawn` means the same on both.
 - `tebako add-registry <ref>` registers one; shipped config has ZERO
   registries (explicit only — spec 16).
 - Install = resolve the registry → select the host entry → download →

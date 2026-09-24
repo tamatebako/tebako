@@ -163,7 +163,12 @@ ships `<asset>.sha256.asc`, and every payload asset
 `<asset>.asc`. **No artifact is ever "covered by" another artifact's
 signature** (2026-09-12, roadmap 85): every served name carries its own
 `.asc` on signing-enabled lines, signed by the invocation holding the
-fresh bytes. The monoliths are never release assets (spec 13 §2a's
+fresh bytes. **Bundle-era lines (additive, 2026-09-24, spec 36) keep the
+rule exactly**: the served names are the bundle, its sidecar, and the
+shard — three `.asc`s per leg — and the bundle's MEMBERS are not served
+names; their authenticity flows from the signed shard's per-member pins
+verified post-unpack (spec 36 §4), never from an assumption about the
+container. The monoliths are never release assets (spec 13 §2a's
 de-rendezvous), so no `manifest.json.asc` / `SHA256SUMS.txt.asc` exist
 on a release; a consumer-side derived index verifies by re-derivation
 from the signed shards. The entry's `signature: {keyid, asc}` fields name the

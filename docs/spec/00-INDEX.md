@@ -15,6 +15,8 @@ partial coverage **PARTIAL**; shipped and tested **SHIPPED**.
 - **bootstrap** — the Rust loader (`tebako-bootstrap`), process entry point.
 - **TFS** — the userland virtual filesystem layer (spec 11).
 - **shim** — a registered command on PATH that dispatches into a payload.
+- **bundle** — the runtime publish unit (spec 36): one `<stem>.tar.gz`
+  per (version × triplet) carrying the exe + env image + member pins.
 
 ## Layer model (every concept lives at exactly one layer)
 
@@ -66,6 +68,7 @@ spec 02 §6).
 33. [33 — Runtime-on-runtime composition](33-runtime-on-runtime.md) — a `kind: runtime` payload's OWNER edge: the depended runtime owns the process (its spec-29 wrapper + env image), the depending runtime contributes a second env image + the manifest-declared argv template (jruby on java, truffleruby-jvm on graalvm); no new wire token, no third artifact class (PARTIAL — the managed-mode dispatch SHIPPED, incl. §4's owner-line fail-closed; the press/lock row and the standalone composition ride spec 23 §13.6, PLANNED)
 34. [34 — Windows Authenticode signing](34-windows-authenticode-signing.md) — the Windows trust plane: SmartScreen/MOTW vs AppLocker/WDAC vs AV (no server-blessed gate), the artifact plane table, stitch-then-sign and sign-then-hash, mandatory RFC 3161 timestamping, the Azure Artifact Signing decision record, the OIDC trust inventory + `WINDOWS_SIGNING_ENABLED` gate, the org/publisher pipelines (PLANNED — Azure procurement in flight)
 35. [35 — Diagnostics](35-diagnostics.md) — `tebako doctor`: the five-section read-only diagnostic surface (store / dispatch / network-TLS / trust / registries), the TLS-interception naming verdict, the structured shim-report composition rule, the `doctor_schema` JSON contract (PROPOSED)
+36. [36 — Release bundles](36-release-bundles.md) — the runtime publish unit: one `<stem>.tar.gz` per leg (exe + env image + member pins), the shard's additive `bundle` block, the resolver's bundle fetch/unpack/verify path, the release-topology policy (tips by default, catalog = migrations with auto line-shards, withdrawal bounds growth) — the 1,000-asset-ceiling answer (PLANNED)
 
 ## Locked invariants (all specs subordinate to these)
 
