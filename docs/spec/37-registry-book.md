@@ -1,10 +1,14 @@
 # Spec 37 — The registry book: federation, aliases, credentials, the official seed
 
-Status: **PLANNED** (locked direction 2026-09-24; design reviewed with
-the owner across the 2026-09-24 session — the alias grammar, the
-credential confinement model, and the federation forms below are the
-agreed shape). Nothing here changes what shipped resolvers do with a
-config that carries none of the new keys.
+Status: **PARTIAL** — §2's registry book (the config model, alias
+grammar + derivation, `DuplicateRegistryAlias` /
+`DuplicateDefaultRegistry`, `add-registry --name/--require-signed/
+--default`, the `list-registries` book rendering) SHIPPED. §3–§9
+PLANNED (locked direction 2026-09-24; design reviewed with the owner
+across the 2026-09-24 session — the alias grammar, the credential
+confinement model, and the federation forms below are the agreed
+shape). Nothing here changes what shipped resolvers do with a config
+that carries none of the new keys.
 
 Normative specification of the **registry book**: the named,
 policy-bearing list of registries in `~/.tebako/config.yaml` that turns

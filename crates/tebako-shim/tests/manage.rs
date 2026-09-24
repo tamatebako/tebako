@@ -442,7 +442,9 @@ fn use_writes_clears_and_preserves_the_authored_config() {
     );
     assert_eq!(
         cfg.registries,
-        vec!["file:///opt/lib/tpkg-registry.yaml".to_string()]
+        vec![tebako_shim::config::RegistryBookEntry::bare(
+            "file:///opt/lib/tpkg-registry.yaml".to_string()
+        )]
     );
 
     // a second use edits in place

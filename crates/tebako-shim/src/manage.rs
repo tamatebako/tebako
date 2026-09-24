@@ -778,7 +778,8 @@ pub fn doctor_report(ctx: &Ctx) -> DoctorReport {
     // dispatch-cache freshness of remote refs (spec 04 §2 + roadmap 33).
     match config::load_config(&ctx.home) {
         Ok(cfg) => {
-            for reg in &cfg.registries {
+            for entry in &cfg.registries {
+                let reg = entry.reference();
                 match regcache::freshness(&ctx.home, reg) {
                     regcache::RegistryFreshness::Local => {
                         let path = reg.strip_prefix("file://").unwrap_or(reg);

@@ -107,10 +107,35 @@ pub fn add_registry(
     add_registry_with(home, registry_ref, &Fetcher::new())
 }
 
+/// `tebako add-registry <ref> [--name <alias>] [--require-signed]
+/// [--default]` (spec 37 §2): the book-keys form of [`add_registry`].
+pub fn add_registry_opts(
+    home: &Path,
+    registry_ref: &str,
+    opts: &tebako_shim::config::AddRegistryOptions,
+) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
+    add_registry_full(home, registry_ref, opts, &Fetcher::new())
+}
+
 /// The transport-injected half of [`add_registry`] (tests).
 pub fn add_registry_with<T: Transport>(
     home: &Path,
     registry_ref: &str,
+    fetcher: &Fetcher<T>,
+) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
+    add_registry_full(
+        home,
+        registry_ref,
+        &tebako_shim::config::AddRegistryOptions::default(),
+        fetcher,
+    )
+}
+
+/// The transport-injected half of [`add_registry_opts`] (tests).
+pub fn add_registry_full<T: Transport>(
+    home: &Path,
+    registry_ref: &str,
+    opts: &tebako_shim::config::AddRegistryOptions,
     fetcher: &Fetcher<T>,
 ) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
     let r = RegistryRef::parse(registry_ref).map_err(|e| err(EX_USAGE, e.to_string()))?;
@@ -132,7 +157,7 @@ pub fn add_registry_with<T: Transport>(
             format!("cannot parse the registry: {e}"),
         )
     })?;
-    let outcome = config::add_registry(home, &r.as_canonical_string()).map_err(map_shim)?;
+    let outcome = config::add_registry(home, &r.as_canonical_string(), opts).map_err(map_shim)?;
     // Prime the dispatch-time registry cache with the bytes just fetched
     // (roadmap 33): the shim's registry-default link then resolves this
     // remote registry without a second fetch. A prime failure never fails
@@ -148,9 +173,33 @@ pub fn add_registry_with<T: Transport>(
     Ok((outcome, registry))
 }
 
-/// `tebako list-registries`: the registered refs, in config order.
-pub fn list_registries(home: &Path) -> Result<Vec<String>, TebakoError> {
-    Ok(config::load_config(home).map_err(map_shim)?.registries)
+/// One `tebako list-registries` row (spec 37 §2): the resolved alias
+/// (None when the ref carries no `owner/repo` and no `name:` was
+/// authored), the reference, the policy flags, and the dispatch cache's
+/// freshness.
+#[derive(Debug, Clone)]
+pub struct RegistryRow {
+    pub alias: Option<String>,
+    pub reference: String,
+    pub default: bool,
+    pub require_signed: bool,
+    pub freshness: tebako_shim::regcache::RegistryFreshness,
+}
+
+/// `tebako list-registries`: the registered book, in config order.
+pub fn list_registries(home: &Path) -> Result<Vec<RegistryRow>, TebakoError> {
+    let cfg = config::load_config(home).map_err(map_shim)?;
+    let book = cfg.registry_book().map_err(map_shim)?;
+    Ok(book
+        .into_iter()
+        .map(|row| RegistryRow {
+            alias: row.alias,
+            reference: row.entry.reference().to_string(),
+            default: row.entry.default,
+            require_signed: row.entry.require_signed,
+            freshness: tebako_shim::regcache::freshness(home, row.entry.reference()),
+        })
+        .collect())
 }
 
 /// What `tebako update-registries` did (roadmap 33): per-registry outcome
@@ -180,15 +229,16 @@ pub fn update_registries_with<T: Transport>(
 ) -> Result<UpdateRegistriesOutcome, TebakoError> {
     let cfg = config::load_config(home).map_err(map_shim)?;
     let mut out = UpdateRegistriesOutcome::default();
-    for reg_ref in &cfg.registries {
+    for entry in &cfg.registries {
+        let reg_ref = entry.reference();
         match tebako_shim::regcache::refresh_with(home, reg_ref, fetcher) {
             Ok(tebako_shim::regcache::RefreshOutcome::Refreshed) => {
-                out.refreshed.push(reg_ref.clone())
+                out.refreshed.push(reg_ref.to_string())
             }
             Ok(tebako_shim::regcache::RefreshOutcome::LocalSkipped) => {
-                out.local.push(reg_ref.clone())
+                out.local.push(reg_ref.to_string())
             }
-            Err(e) => out.failed.push((reg_ref.clone(), e.message)),
+            Err(e) => out.failed.push((reg_ref.to_string(), e.message)),
         }
     }
     Ok(out)
@@ -754,7 +804,8 @@ pub(crate) fn find_in_registries<T: Transport>(
 ) -> Result<Vec<(String, RegistryPayload)>, TebakoError> {
     let cfg = config::load_config(home).map_err(map_shim)?;
     let mut found: Vec<(String, RegistryPayload)> = Vec::new();
-    for reg_ref in &cfg.registries {
+    for entry in &cfg.registries {
+        let reg_ref = entry.reference();
         let r = RegistryRef::parse(reg_ref).map_err(|e| {
             err(
                 EX_TEBAKO_MANIFEST,
@@ -763,20 +814,26 @@ pub(crate) fn find_in_registries<T: Transport>(
         })?;
         let registry = fetcher.resolve_registry(&r).map_err(map_resolve)?;
         if let Some(payload) = registry.payload(name) {
-            found.push((reg_ref.clone(), payload.clone()));
+            found.push((reg_ref.to_string(), payload.clone()));
         }
     }
     Ok(found)
 }
 
-/// The registered-registries listing for the not-found errors.
+/// The registered-registries listing for the not-found errors (spec 37
+/// §2.1: the `default:` entry renders first, config order otherwise).
 fn registered_registries_listing(home: &Path) -> Result<String, TebakoError> {
     let cfg = config::load_config(home).map_err(map_shim)?;
     Ok(if cfg.registries.is_empty() {
         "    (none)".to_string()
     } else {
-        cfg.registries
-            .iter()
+        let mut refs: Vec<&str> = cfg.registries.iter().map(|e| e.reference()).collect();
+        refs.sort_by_key(|r| {
+            !cfg.registries
+                .iter()
+                .any(|e| e.default && e.reference() == *r)
+        });
+        refs.iter()
             .map(|r| format!("    - {r}"))
             .collect::<Vec<_>>()
             .join("\n")
@@ -1624,7 +1681,8 @@ fn capability_provider<T: Transport>(
     }
     let eval = versions::from_validated(constraint);
     let mut found: Vec<String> = Vec::new();
-    for reg_ref in &config::load_config(home).map_err(map_shim)?.registries {
+    for entry in &config::load_config(home).map_err(map_shim)?.registries {
+        let reg_ref = entry.reference();
         let r = RegistryRef::parse(reg_ref).map_err(|e| {
             err(
                 EX_TEBAKO_MANIFEST,

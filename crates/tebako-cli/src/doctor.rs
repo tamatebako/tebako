@@ -307,9 +307,10 @@ fn dispatch_section(ctx: &tebako_shim::Ctx) -> Section {
 
 /// The hosts the doctor probes (spec 35 §3): the release-resolution API
 /// host, the asset host, and every configured remote registry's host.
-fn probe_hosts(registries: &[String]) -> Vec<String> {
+fn probe_hosts(registries: &[tebako_shim::config::RegistryBookEntry]) -> Vec<String> {
     let mut hosts = vec!["api.github.com".to_string(), "github.com".to_string()];
-    for reg in registries {
+    for entry in registries {
+        let reg = entry.reference();
         if let Some(rest) = reg.strip_prefix("tfs:github:") {
             let _ = rest; // the contents API — api.github.com, already listed
         } else if let Some(rest) = reg
@@ -458,7 +459,8 @@ fn registries_section(home: &Path, offline: bool) -> Section {
             s.note("no registries configured — tebako add-registry <ref> registers one")
         }
         Ok(cfg) => {
-            for reg in &cfg.registries {
+            for entry in &cfg.registries {
+                let reg = entry.reference();
                 if reg.starts_with("file://") || Path::new(reg).is_absolute() {
                     s.ok(format!("{reg}: local"));
                 } else if offline {

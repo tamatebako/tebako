@@ -1078,7 +1078,8 @@ fn registry_derived_source(
         .entries()
         .iter()
         .find_map(|r| r.implementation.as_deref());
-    for reg_ref in &cfg.registries {
+    for entry in &cfg.registries {
+        let reg_ref = entry.reference();
         let registry = match crate::regcache::registry_for(&ctx.home, reg_ref, ctx) {
             Ok(r) => r,
             Err(e) => {
@@ -3040,7 +3041,7 @@ payloads:
         let ctx = test_ctx(&home);
         let reg = registry_ref(&home, "tpkg-registry.yaml", OPENJDK_REGISTRY);
         let cfg = UserConfig {
-            registries: vec![reg],
+            registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
         let source = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap();
@@ -3064,7 +3065,7 @@ payloads:
         let ctx = test_ctx(&home);
         let reg = registry_ref(&home, "tpkg-registry.yaml", OPENJDK_REGISTRY);
         let cfg = UserConfig {
-            registries: vec![reg],
+            registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
         // A constraint no registry version satisfies: the channel does
@@ -3106,7 +3107,7 @@ payloads:
 "#,
         );
         let cfg = UserConfig {
-            registries: vec![reg],
+            registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
         let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap_err();
@@ -3135,7 +3136,7 @@ payloads:
 "#,
         );
         let cfg = UserConfig {
-            registries: vec![reg],
+            registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
         let err = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx).unwrap_err();
@@ -3525,7 +3526,7 @@ payloads:
         let ctx = test_ctx(&home);
         let reg = registry_ref(&home, "tpkg-registry.yaml", &shard_era_registry(true));
         let cfg = UserConfig {
-            registries: vec![reg],
+            registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
         let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap_err();

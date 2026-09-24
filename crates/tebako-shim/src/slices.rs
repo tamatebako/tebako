@@ -523,11 +523,12 @@ fn fetch_slice(
     ctx: &Ctx,
 ) -> Result<(), ShimError> {
     let mut hits = Vec::new();
-    for reg_ref in &cfg.registries {
+    for entry in &cfg.registries {
+        let reg_ref = entry.reference();
         let registry = crate::regcache::registry_for(home, reg_ref, ctx)?;
         if let Some(payload) = registry.payload(&pin.name) {
             if let Some(entry) = payload.versions.iter().find(|v| v.version == pin.version) {
-                hits.push((reg_ref.clone(), entry.clone()));
+                hits.push((reg_ref.to_string(), entry.clone()));
             }
         }
     }

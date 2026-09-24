@@ -212,7 +212,12 @@ fn bundle_stages_a_self_consistent_offline_tree() {
     // home/config.yaml: the registries survive, and runtimes: is pinned
     // FROM REALITY (the staged store, not the builder's hope).
     let cfg = tebako_shim::config::load_config(&out.join("home")).unwrap();
-    assert_eq!(cfg.registries, vec![fx.registry_url.clone()]);
+    assert_eq!(
+        cfg.registries,
+        vec![tebako_shim::config::RegistryBookEntry::bare(
+            fx.registry_url.clone()
+        )]
+    );
     let ruby = cfg.runtimes.get("ruby").expect("ruby pin");
     assert_eq!(ruby.version, "3.3.5");
     assert_eq!(ruby.tebako, "0.0.1");
