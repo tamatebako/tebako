@@ -26,7 +26,7 @@ bundle unpacks into it).
   stays as the migration-time escape hatch (§6).
 - **The API budget.** Every asset is REST calls (upload, list, sign,
   re-list). The same recovery exhausted the tebako-ci identity's
-  5,000 req/h sliding window mid-fleet (tebako-release-tooling#3). The
+  5,000 req/h sliding window mid-fleet (tebako-release#3). The
   per-leg asset count is the multiplier of BOTH budgets; consumption is
   always paired (the loader fetches exe and env image together), so the
   per-leg bundle is the natural unit.
