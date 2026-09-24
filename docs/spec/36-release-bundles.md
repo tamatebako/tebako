@@ -54,7 +54,8 @@ write-once digest-match skip stays cheap):
 ```
 <stem>[.exe]        # the interpreter exe (mode 0755)
 <stem>.tfs          # the env image (mode 0444 at install)
-<stem>-<dll>.dll …  # windows support DLLs, zero or more, sorted
+<stem>.dll …        # windows support DLLs under their staged basenames,
+                    # zero or more, sorted (today: the one runtime DLL)
 SHA256SUMS          # coreutils "<sha>  <file>\n", one line per member
 ```
 
