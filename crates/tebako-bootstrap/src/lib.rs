@@ -1413,20 +1413,19 @@ fn manifest_entry_bundle(entry: &ManifestEntry) -> Option<BundleDecl> {
     let get = |key: &str| fields.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
     let filename = get("filename")?;
     let sha256 = get("sha256")?;
-    if filename.is_empty() || sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit())
-    {
+    if filename.is_empty() || sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     let signature = depth1_object_body(body, "signature").and_then(|sig| {
         let fields = depth1_string_fields(sig);
         let get = |key: &str| fields.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
         match (get("keyid"), get("asc")) {
-            (Some(keyid), Some(asc)) if !keyid.is_empty() && !asc.is_empty() => Some(
-                BundleSignature {
+            (Some(keyid), Some(asc)) if !keyid.is_empty() && !asc.is_empty() => {
+                Some(BundleSignature {
                     keyid: keyid.to_string(),
                     asc: asc.to_string(),
-                },
-            ),
+                })
+            }
             _ => None,
         }
     });
@@ -3013,18 +3012,20 @@ fn unpack_runtime_bundle_inner(
     let file = std::fs::File::open(bundle_path).map_err(|e| {
         BootError::new(
             EX_TEBAKO_IO,
-            format!("cannot open downloaded bundle {}: {e}", bundle_path.display()),
+            format!(
+                "cannot open downloaded bundle {}: {e}",
+                bundle_path.display()
+            ),
         )
     })?;
     let gz = flate2::read::GzDecoder::new(file);
     let mut archive = tar::Archive::new(gz);
-    let undecodable =
-        |member: &str| invalid_bundle_err(bundle_name, member, "the tar/gzip stream is undecodable");
+    let undecodable = |member: &str| {
+        invalid_bundle_err(bundle_name, member, "the tar/gzip stream is undecodable")
+    };
     let mut unpacked: Vec<(String, String)> = Vec::new(); // (member name, sha256)
     let mut sums_seen = false;
-    let entries = archive
-        .entries()
-        .map_err(|_| undecodable(bundle_name))?;
+    let entries = archive.entries().map_err(|_| undecodable(bundle_name))?;
     for entry in entries {
         let mut entry = entry.map_err(|_| undecodable(bundle_name))?;
         let path = entry
@@ -3075,11 +3076,7 @@ fn unpack_runtime_bundle_inner(
             continue;
         }
         let Some(pin) = expected.iter().find(|m| m.name == name) else {
-            return invalid_bundle(
-                bundle_name,
-                &name,
-                "the shard does not declare this member",
-            );
+            return invalid_bundle(bundle_name, &name, "the shard does not declare this member");
         };
         let stage = tmp_dir.join(&name);
         let mut out = std::fs::File::create(&stage).map_err(|e| {
@@ -3193,11 +3190,7 @@ fn check_bundle_sums(
     }
     for (name, _) in unpacked {
         if !seen.iter().any(|(_, f)| f == name) {
-            return invalid_bundle(
-                bundle_name,
-                name,
-                "SHA256SUMS does not pin this member",
-            );
+            return invalid_bundle(bundle_name, name, "SHA256SUMS does not pin this member");
         }
     }
     Ok(())
@@ -3312,7 +3305,15 @@ fn download_bundle(
     }
 
     let tmp_bundle = ins.tmp_dir.join(&bundle.filename);
-    if fetch_asset(&bundle_url, local, &tmp_bundle, &bundle.filename, &mut ux.prog).is_err() {
+    if fetch_asset(
+        &bundle_url,
+        local,
+        &tmp_bundle,
+        &bundle.filename,
+        &mut ux.prog,
+    )
+    .is_err()
+    {
         return Err(abort_bundle_install(
             ins,
             BootError::new(
@@ -3475,11 +3476,11 @@ fn download_bundle(
     // Unpack in-process: the §2 grammar, the exact member set, the
     // per-member pins, the closing SHA256SUMS cross-check. Any
     // disagreement is InvalidBundle and nothing was installed.
-    let unpacked = match unpack_runtime_bundle(&tmp_bundle, &bundle.filename, &members, &ins.tmp_dir)
-    {
-        Ok(u) => u,
-        Err(e) => return Err(abort_bundle_install(ins, e)),
-    };
+    let unpacked =
+        match unpack_runtime_bundle(&tmp_bundle, &bundle.filename, &members, &ins.tmp_dir) {
+            Ok(u) => u,
+            Err(e) => return Err(abort_bundle_install(ins, e)),
+        };
     let _ = remove_file(&tmp_bundle);
 
     // Stage the store layout inside the tmp dir — the same bytes and
@@ -3505,7 +3506,10 @@ fn download_bundle(
                     "cannot stage the runtime dll as {install_name} in {}: {e}",
                     ins.tmp_dir.display()
                 );
-                return Err(abort_bundle_install(ins, BootError::new(EX_TEBAKO_IO, detail)));
+                return Err(abort_bundle_install(
+                    ins,
+                    BootError::new(EX_TEBAKO_IO, detail),
+                ));
             }
         }
         make_readonly(&install_path);
@@ -3528,7 +3532,8 @@ fn download_bundle(
     ux.prog.phase("installing (locked)");
     let installed = publish_entry(ins, entry_dir, exe_path, asset, &exe_actual, &origin)?;
     let size = std::fs::metadata(&installed).map(|m| m.len()).unwrap_or(0);
-    ux.prog.line(&installed_line(&layout.entry, size, entry_dir));
+    ux.prog
+        .line(&installed_line(&layout.entry, size, entry_dir));
     Ok(installed)
 }
 
@@ -3581,7 +3586,10 @@ fn verify_bundle_signature(
         Err(e) => {
             return Err(BootError::new(
                 EX_TEBAKO_IO,
-                format!("cannot read the fetched signature {}: {e}", asc_tmp.display()),
+                format!(
+                    "cannot read the fetched signature {}: {e}",
+                    asc_tmp.display()
+                ),
             ))
         }
     };
@@ -3620,8 +3628,7 @@ fn verify_bundle_signature(
         tebako_signer::VerifyOutcome::Untrusted(keyid) => {
             // The trailer path's fallbacks: the embedded/dev trusted
             // root, then the successor-statement rotation chain.
-            let signer_fp =
-                tebako_signer::signature_issuer_fingerprint(&asc).unwrap_or_default();
+            let signer_fp = tebako_signer::signature_issuer_fingerprint(&asc).unwrap_or_default();
             let roots = trusted_roots();
             let mut verified = None;
             for root in &roots {
@@ -3655,11 +3662,9 @@ fn verify_bundle_signature(
                 let kid = keyid.trim_start_matches("0x");
                 if kid.len() == 16 && kid.bytes().all(|b| b.is_ascii_hexdigit()) {
                     for (i, pair) in kid.as_bytes().chunks(2).enumerate() {
-                        keyid_bytes[i] = u8::from_str_radix(
-                            std::str::from_utf8(pair).unwrap_or("00"),
-                            16,
-                        )
-                        .unwrap_or(0);
+                        keyid_bytes[i] =
+                            u8::from_str_radix(std::str::from_utf8(pair).unwrap_or("00"), 16)
+                                .unwrap_or(0);
                     }
                     match forward_trust_from_successors(
                         home,
@@ -3679,9 +3684,7 @@ fn verify_bundle_signature(
                             );
                             let ring = match tebako_signer::trusted_keyring_bytes(home) {
                                 Ok(ring) => ring,
-                                Err(e) => {
-                                    return Err(BootError::new(EX_TEBAKO_IO, e.to_string()))
-                                }
+                                Err(e) => return Err(BootError::new(EX_TEBAKO_IO, e.to_string())),
                             };
                             match tebako_signer::verify_detached_full(&ring, &bytes, &asc) {
                                 Ok(tebako_signer::VerifyOutcome::Trusted(issuer)) => {
@@ -5676,9 +5679,7 @@ mod bundle_tests {
                 h.set_entry_type(tar::EntryType::Symlink);
                 h.set_size(0);
                 h.set_mode(0o777);
-                builder
-                    .append_data(&mut h, link, std::io::empty())
-                    .unwrap();
+                builder.append_data(&mut h, link, std::io::empty()).unwrap();
                 continue;
             }
             let mut h = tar::Header::new_gnu();
@@ -5801,12 +5802,8 @@ mod bundle_tests {
 
     #[test]
     fn the_bundle_block_parses_from_the_shard_entry() {
-        let text = format!(
-            "[{}]",
-            shard(&"b".repeat(64), &"c".repeat(64), "")
-        );
-        let entry =
-            manifest_entry_for_runtime(&text, "ruby", RV, TV, platform_string()).unwrap();
+        let text = format!("[{}]", shard(&"b".repeat(64), &"c".repeat(64), ""));
+        let entry = manifest_entry_for_runtime(&text, "ruby", RV, TV, platform_string()).unwrap();
         let bundle = manifest_entry_bundle(&entry).expect("the bundle block parses");
         assert_eq!(bundle.filename, bundle_name());
         assert_eq!(bundle.sha256, "b".repeat(64));
@@ -5820,8 +5817,7 @@ mod bundle_tests {
                 ",\"signature\":{\"keyid\":\"efc3c250f7862a48\",\"asc\":\"bundle.tar.gz.asc\"}"
             )
         );
-        let entry =
-            manifest_entry_for_runtime(&signed, "ruby", RV, TV, platform_string()).unwrap();
+        let entry = manifest_entry_for_runtime(&signed, "ruby", RV, TV, platform_string()).unwrap();
         let sig = manifest_entry_bundle(&entry)
             .and_then(|b| b.signature)
             .expect("the declared signature");
@@ -5868,19 +5864,14 @@ mod bundle_tests {
                 .unwrap(),
             format!("{image_sha}  {}\n", image_name())
         );
-        assert!(
-            layout
-                .entry_dir
-                .join(format!("{}.origin", image_name()))
-                .is_file()
-        );
+        assert!(layout
+            .entry_dir
+            .join(format!("{}.origin", image_name()))
+            .is_file());
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
-            assert_eq!(
-                exe.metadata().unwrap().permissions().mode() & 0o777,
-                0o755
-            );
+            assert_eq!(exe.metadata().unwrap().permissions().mode() & 0o777, 0o755);
             assert_eq!(
                 image_path.metadata().unwrap().permissions().mode() & 0o777,
                 0o444
@@ -5889,7 +5880,11 @@ mod bundle_tests {
         // the gated shard rode into the entry; no per-file assets exist
         assert!(layout.entry_dir.join("manifest.json").is_file());
         assert!(
-            !home.join("mirror").join(format!("v{TV}")).join(&layout.asset).exists(),
+            !home
+                .join("mirror")
+                .join(format!("v{TV}"))
+                .join(&layout.asset)
+                .exists(),
             "the per-file exe asset was never fetched"
         );
         // the follow-up facet resolutions are cache hits — no mirror at all
@@ -5909,7 +5904,14 @@ mod bundle_tests {
     #[test]
     fn bundle_violations_are_named() {
         let exe_asset = format!("{}{}", stem(), exe_suffix());
-        let cases: Vec<(&str, Vec<(String, &[u8])>, Option<String>, Option<String>, bool, &str)> = vec![
+        let cases: Vec<(
+            &str,
+            Vec<(String, &[u8])>,
+            Option<String>,
+            Option<String>,
+            bool,
+            &str,
+        )> = vec![
             // a symlink member
             (
                 "symlink",
@@ -6011,8 +6013,8 @@ mod bundle_tests {
                 "",
             );
             let mut ux = BootUx::new();
-            let err = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base)
-                .unwrap_err();
+            let err =
+                download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap_err();
             assert_eq!(err.code, EX_TEBAKO_SHA, "{tag}: {}", err.message);
             assert!(
                 err.message.contains("invalid release bundle"),
@@ -6020,10 +6022,7 @@ mod bundle_tests {
                 err.message
             );
             assert!(err.message.contains(detail), "{tag}: {}", err.message);
-            assert!(
-                !layout.exe_path.exists(),
-                "{tag}: nothing was installed"
-            );
+            assert!(!layout.exe_path.exists(), "{tag}: nothing was installed");
             assert!(
                 !layout.entry_dir.join(image_name()).exists(),
                 "{tag}: nothing was installed"
@@ -6094,8 +6093,7 @@ mod bundle_tests {
             bundle_mirror("requiresigned", &members, None, false, None, false, sig);
         std::env::set_var("TEBAKO_REQUIRE_SIGNED", "1");
         let mut ux = BootUx::new();
-        let err =
-            download_executable(&runtime_ref(), &rr2, &layout2, &mut ux, &base2).unwrap_err();
+        let err = download_executable(&runtime_ref(), &rr2, &layout2, &mut ux, &base2).unwrap_err();
         std::env::remove_var("TEBAKO_REQUIRE_SIGNED");
         assert_eq!(err.code, EX_TEBAKO_SIGNATURE, "{}", err.message);
         assert!(
@@ -6119,7 +6117,11 @@ mod bundle_tests {
         std::fs::write(mirror.join(&asset), EXE_BYTES).unwrap();
         std::fs::write(mirror.join(image_name()), IMAGE_BYTES).unwrap();
         // the pre-bundle shard shape: no `bundle` key
-        let text = shard(&"b".repeat(64), &sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES)), "");
+        let text = shard(
+            &"b".repeat(64),
+            &sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES)),
+            "",
+        );
         let shard = text.replace(
             &format!(
                 ",\"bundle\":{{\"filename\":\"{}\",\"sha256\":\"{}\",\"size_bytes\":100}}",

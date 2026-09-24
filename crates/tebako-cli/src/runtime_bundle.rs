@@ -106,22 +106,21 @@ fn unpack_bundle_inner(
     members: &[ExpectedMember],
     scratch: &Path,
 ) -> Result<Vec<UnpackedMember>, TebakoError> {
-    let file = fs::File::open(bundle_path).map_err(|e| {
-        crate::error::plain_error(format!("{e} reading {}", bundle_path.display()))
-    })?;
+    let file = fs::File::open(bundle_path)
+        .map_err(|e| crate::error::plain_error(format!("{e} reading {}", bundle_path.display())))?;
     let gz = flate2::read::GzDecoder::new(file);
     let mut archive = tar::Archive::new(gz);
-    let undecodable = |member: &str| {
-        invalid_bundle(bundle_name, member, "the tar/gzip stream is undecodable")
-    };
+    let undecodable =
+        |member: &str| invalid_bundle(bundle_name, member, "the tar/gzip stream is undecodable");
     let mut unpacked: Vec<UnpackedMember> = Vec::new();
     let mut sums_seen = false;
-    let entries = archive
-        .entries()
-        .map_err(|_| undecodable(bundle_name))?;
+    let entries = archive.entries().map_err(|_| undecodable(bundle_name))?;
     for entry in entries {
         let mut entry = entry.map_err(|_| undecodable(bundle_name))?;
-        let path = entry.path().map_err(|_| undecodable(bundle_name))?.into_owned();
+        let path = entry
+            .path()
+            .map_err(|_| undecodable(bundle_name))?
+            .into_owned();
         // The §2 grammar: a bare relative basename — nothing else.
         let mut comps = path.components();
         let name = match (comps.next(), comps.next()) {
@@ -172,13 +171,9 @@ fn unpack_bundle_inner(
                 "the shard does not declare this member",
             ));
         };
-        let stage = scratch.join(format!(
-            "{bundle_name}.{}.{name}",
-            std::process::id()
-        ));
-        let mut out = fs::File::create(&stage).map_err(|e| {
-            crate::error::plain_error(format!("{e} staging {}", stage.display()))
-        })?;
+        let stage = scratch.join(format!("{bundle_name}.{}.{name}", std::process::id()));
+        let mut out = fs::File::create(&stage)
+            .map_err(|e| crate::error::plain_error(format!("{e} staging {}", stage.display())))?;
         let mut hasher = sha2::Sha256::new();
         let mut buf = [0u8; 65536];
         loop {
