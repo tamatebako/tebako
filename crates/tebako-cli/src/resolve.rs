@@ -329,7 +329,7 @@ impl Resolver {
                 // assets — the ONE bundle fetch restores the whole
                 // entry (the exe re-lands pin-identical).
                 let items = if let Some(bundle) = &entry.bundle {
-                    vec![self.bundle_item(&dir, &entry, bundle, tebako_version, &sink)?]
+                    vec![self.bundle_item(&dir, entry, bundle, tebako_version, &sink)?]
                 } else {
                     let mut items = Vec::new();
                     if let Some(image) = &entry.image {
