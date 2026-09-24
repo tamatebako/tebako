@@ -365,12 +365,47 @@ fn run_inspect(args: &[String]) -> Result<(), CliExit> {
 }
 
 fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
-    let [registry_ref] = args else {
+    let mut registry_ref: Option<&str> = None;
+    let mut opts = tebako_shim::config::AddRegistryOptions::default();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--name" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(CliExit::Usage(
+                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]".to_string(),
+                    ));
+                };
+                opts.name = Some(value.clone());
+                i += 2;
+            }
+            "--require-signed" => {
+                opts.require_signed = true;
+                i += 1;
+            }
+            "--default" => {
+                opts.default = true;
+                i += 1;
+            }
+            other if registry_ref.is_none() && !other.starts_with("--") => {
+                registry_ref = Some(other);
+                i += 1;
+            }
+            _ => {
+                return Err(CliExit::Usage(
+                    "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]".to_string(),
+                ));
+            }
+        }
+    }
+    let Some(registry_ref) = registry_ref else {
         return Err(CliExit::Usage(
-            "usage: tebako add-registry <ref>".to_string(),
+            "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]"
+                .to_string(),
         ));
     };
-    let (outcome, registry) = tebako_cli::install::add_registry(&tebako_home()?, registry_ref)?;
+    let (outcome, registry) =
+        tebako_cli::install::add_registry_opts(&tebako_home()?, registry_ref, &opts)?;
     let names: Vec<&str> = registry.payloads.iter().map(|p| p.name.as_str()).collect();
     match outcome {
         tebako_shim::config::AddRegistryOutcome::Added => println!(
@@ -380,6 +415,13 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
         ),
         tebako_shim::config::AddRegistryOutcome::AlreadyPresent => {
             println!("registry {registry_ref} was already registered")
+        }
+        tebako_shim::config::AddRegistryOutcome::Updated => {
+            println!(
+                "updated registry {registry_ref} ({} payload(s): {})",
+                names.len(),
+                names.join(", ")
+            )
         }
     }
     Ok(())
@@ -438,8 +480,29 @@ fn run_list_registries(args: &[String]) -> Result<(), CliExit> {
     if registries.is_empty() {
         println!("no registries registered — tebako add-registry <ref> registers one");
     } else {
-        for r in &registries {
-            println!("{r}");
+        for row in &registries {
+            let alias = row.alias.as_deref().unwrap_or("-");
+            let mut flags = String::new();
+            if row.default {
+                flags.push_str(" [default]");
+            }
+            if row.require_signed {
+                flags.push_str(" [require-signed]");
+            }
+            let freshness = match &row.freshness {
+                tebako_shim::regcache::RegistryFreshness::Local => "local".to_string(),
+                tebako_shim::regcache::RegistryFreshness::Fresh(age) => {
+                    format!("cached {age}s ago")
+                }
+                tebako_shim::regcache::RegistryFreshness::Stale(age) => {
+                    format!("stale ({age}s old — next dispatch refreshes)")
+                }
+                tebako_shim::regcache::RegistryFreshness::Missing => {
+                    "not cached (fetched on demand)".to_string()
+                }
+                tebako_shim::regcache::RegistryFreshness::BadRef(e) => format!("invalid ref: {e}"),
+            };
+            println!("{}\t{}{}\t{}", alias, row.reference, flags, freshness);
         }
     }
     Ok(())

@@ -518,10 +518,11 @@ pub(crate) fn compose_capability_provider<T: Transport>(
 ) -> Result<String, TebakoError> {
     let eval = versions::from_validated(constraint);
     let mut found: Vec<String> = Vec::new();
-    for reg_ref in &tebako_shim::config::load_config(home)
+    for entry in &tebako_shim::config::load_config(home)
         .map_err(install::map_shim)?
         .registries
     {
+        let reg_ref = entry.reference();
         let r = RegistryRef::parse(reg_ref)
             .map_err(|e| err(format!("registered registry '{reg_ref}' is invalid: {e}")))?;
         let registry = fetcher.resolve_registry(&r).map_err(install::map_resolve)?;

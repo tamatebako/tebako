@@ -11,7 +11,7 @@
 //!                spec 03 §6)
 //!   tebako cache list
 //!   tebako cache prune [--runtimes] [--payloads] [--all] [--older-than Nd]
-//!   tebako add-registry <ref>
+//!   tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]
 //!   tebako list-registries
 //!   tebako update-registries
 //!   tebako install <ref | name[@version]>

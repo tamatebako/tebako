@@ -433,7 +433,8 @@ fn remote_payloads(home: &Path) -> Result<Vec<(String, String)>, TebakoError> {
     let cfg = config::load_config(home).map_err(|e| err(EX_TEBAKO_IO, e.message))?;
     let fetcher = tebako_resolve::Fetcher::new();
     let mut out = Vec::new();
-    for reg_ref in &cfg.registries {
+    for entry in &cfg.registries {
+        let reg_ref = entry.reference();
         let r = tebako_resolve::registry::RegistryRef::parse(reg_ref)
             .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
         let registry = fetcher
@@ -467,7 +468,7 @@ fn remote_payloads(home: &Path) -> Result<Vec<(String, String)>, TebakoError> {
                 }
             ));
         }
-        out.push((reg_ref.clone(), lines));
+        out.push((reg_ref.to_string(), lines));
     }
     Ok(out)
 }
@@ -545,7 +546,8 @@ fn shims(home: &Path, json: bool) -> Result<String, TebakoError> {
 fn registries(home: &Path, json: bool) -> Result<String, TebakoError> {
     let cfg = config::load_config(home).map_err(|e| err(EX_TEBAKO_IO, e.message))?;
     let mut rows: Vec<(String, String)> = Vec::new();
-    for reg_ref in &cfg.registries {
+    for entry in &cfg.registries {
+        let reg_ref = entry.reference();
         let state = match regcache::freshness(home, reg_ref) {
             regcache::RegistryFreshness::Local => "local".to_string(),
             regcache::RegistryFreshness::Fresh(age) => format!("fresh ({}s old)", age),
@@ -555,7 +557,7 @@ fn registries(home: &Path, json: bool) -> Result<String, TebakoError> {
             regcache::RegistryFreshness::Missing => "not cached (fetched on demand)".to_string(),
             regcache::RegistryFreshness::BadRef(e) => format!("invalid ref: {e}"),
         };
-        rows.push((reg_ref.clone(), state));
+        rows.push((reg_ref.to_string(), state));
     }
     if json {
         return Ok(json_str(&obj(vec![

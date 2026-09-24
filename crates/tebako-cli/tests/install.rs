@@ -122,11 +122,15 @@ fn add_registry_registers_and_preserves_config_keys() {
         cfg.defaults.get("metanorma").and_then(|p| p.version()),
         Some("1.2.3")
     );
-    assert_eq!(cfg.registries, vec![reg_ref.clone()]);
     assert_eq!(
-        install::list_registries(&fx.home).unwrap(),
-        vec![reg_ref.clone()]
+        cfg.registries,
+        vec![tebako_shim::config::RegistryBookEntry::bare(
+            reg_ref.clone()
+        )]
     );
+    let rows = install::list_registries(&fx.home).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].reference, reg_ref);
 
     let (outcome, _) = install::add_registry(&fx.home, &reg_ref).unwrap();
     assert_eq!(
@@ -134,6 +138,50 @@ fn add_registry_registers_and_preserves_config_keys() {
         tebako_shim::config::AddRegistryOutcome::AlreadyPresent
     );
     assert_eq!(install::list_registries(&fx.home).unwrap().len(), 1);
+}
+
+#[test]
+fn add_registry_book_keys_round_trip_and_render() {
+    let fx = Fixture::new("addregbook");
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
+    );
+    let opts = tebako_shim::config::AddRegistryOptions {
+        name: Some("bookish".to_string()),
+        require_signed: true,
+        default: true,
+    };
+    let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
+    let rows = install::list_registries(&fx.home).unwrap();
+    assert_eq!(rows.len(), 1);
+    // A file:// ref has no derived alias — the authored name is it.
+    assert_eq!(rows[0].alias.as_deref(), Some("bookish"));
+    assert!(rows[0].default);
+    assert!(rows[0].require_signed);
+
+    // A bare re-add is AlreadyPresent and never strips the keys.
+    let (outcome, _) = install::add_registry(&fx.home, &reg_ref).unwrap();
+    assert_eq!(
+        outcome,
+        tebako_shim::config::AddRegistryOutcome::AlreadyPresent
+    );
+    let rows = install::list_registries(&fx.home).unwrap();
+    assert!(rows[0].default && rows[0].require_signed);
+
+    // Changing the policy via the CLI path is an in-place update.
+    let opts = tebako_shim::config::AddRegistryOptions {
+        name: Some("bookish".to_string()),
+        require_signed: false,
+        default: true,
+    };
+    let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Updated);
+    let rows = install::list_registries(&fx.home).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].default && !rows[0].require_signed);
 }
 
 #[test]

@@ -1261,13 +1261,14 @@ fn verify_with<T: Transport + Sync>(
     let mut inherited = 0usize;
     let mut unreachable: Vec<String> = Vec::new();
     if let Ok(cfg) = tebako_shim::config::load_config(publisher_home) {
-        for reg in &cfg.registries {
+        for entry in &cfg.registries {
+            let reg = entry.reference();
             if reg == registry_ref {
                 continue;
             }
             match crate::install::add_registry_with(home, reg, fetcher) {
                 Ok(_) => inherited += 1,
-                Err(_) => unreachable.push(reg.clone()),
+                Err(_) => unreachable.push(reg.to_string()),
             }
         }
     }

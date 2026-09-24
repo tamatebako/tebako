@@ -223,7 +223,7 @@ fn stage<T: Transport + Sync>(
     // bundle's offline day-1 resolution surface.
     let registries = config::load_config(&home).map_err(map_shim)?.registries;
     for reg in &registries {
-        install::add_registry_with(&home, reg, fetcher)?;
+        install::add_registry_with(&home, reg.reference(), fetcher)?;
     }
 
     let shim_binary = bin.join(shim_tool_name());
@@ -355,7 +355,7 @@ fn stage_config(
     let mut registries = builder.registries.clone();
     if let Some(ov) = &overlay {
         for r in &ov.registries {
-            if !registries.contains(r) {
+            if !registries.iter().any(|e| e.reference() == r.reference()) {
                 registries.push(r.clone());
             }
         }
@@ -398,7 +398,7 @@ fn stage_config(
 /// error, never a silently quoted guess).
 fn write_config(
     home: &Path,
-    registries: &[String],
+    registries: &[config::RegistryBookEntry],
     runtimes: &BTreeMap<String, config::RuntimePref>,
     defaults: &BTreeMap<String, config::DefaultPin>,
     auto_slices: Option<bool>,
@@ -438,7 +438,21 @@ fn write_config(
     if !registries.is_empty() {
         out.push_str("registries:\n");
         for r in registries {
-            out.push_str(&format!("  - {}\n", scalar(r)?));
+            if r.is_bare() {
+                out.push_str(&format!("  - {}\n", scalar(r.reference())?));
+            } else {
+                // The book map form (spec 37 §2) — only the set keys.
+                out.push_str(&format!("  - ref: {}\n", scalar(r.reference())?));
+                if let Some(name) = &r.name {
+                    out.push_str(&format!("    name: {}\n", scalar(name)?));
+                }
+                if r.default {
+                    out.push_str("    default: true\n");
+                }
+                if r.require_signed {
+                    out.push_str("    require_signed: true\n");
+                }
+            }
         }
     }
     if !runtimes.is_empty() {

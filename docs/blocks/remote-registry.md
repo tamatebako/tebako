@@ -45,6 +45,20 @@ The user registers a registry once:
 tebako add-registry tfs:github:metanorma/metanorma
 ```
 
+Registrations can carry local policy (spec 37 — the "registry book"):
+`--name <alias>` gives the registry a short local handle for the
+qualified `alias/name` install form, `--require-signed` makes every
+install through it fail closed without a verifying signature, and
+`--default` marks the publish target when more than one registry is
+registered:
+
+```
+tebako add-registry tfs:github:metanorma/metanorma-flavor-nist --name nist --require-signed
+```
+
+`tebako list-registries` shows the book — each registry's alias,
+reference, policy flags, and cache freshness.
+
 The index is fetched, its signing key is shown for confirmation, and
 the key is pinned to that registry. After that:
 

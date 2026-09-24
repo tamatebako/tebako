@@ -33,9 +33,13 @@ pub struct UserConfig {
     /// slices); [`DefaultPin`] covers both spellings.
     #[serde(default)]
     pub defaults: BTreeMap<String, DefaultPin>,
-    /// Spec 04 registry refs. v1: `file://` refs and plain local paths.
+    /// Spec 37 §2's registry book. Each entry is either a bare spec 04
+    /// ref string (the pre-book spelling) or a map carrying `ref:` plus
+    /// the optional `name:` / `default:` / `require_signed:` policy keys;
+    /// [`RegistryBookEntry`] covers both spellings. The validated,
+    /// alias-resolved view is [`UserConfig::registry_book`].
     #[serde(default)]
-    pub registries: Vec<String>,
+    pub registries: Vec<RegistryBookEntry>,
     /// Engine → runtime preference (the download fallback of spec 05 §5:
     /// "download the newest compatible" needs an exact ref; the
     /// preference names it until the runtime registry ships).
@@ -144,6 +148,251 @@ impl DefaultPin {
     }
 }
 
+/// One `registries:` entry (spec 37 §2 — the registry book). The
+/// pre-book shape is a bare spec 04 reference string; the book shape is
+/// a map carrying `ref:` plus optional `name:` (the LOCAL alias — never
+/// published, never embedded, never on any wire), `default:` (§2.1's
+/// publish/UX anchor, never a resolution tiebreaker), and
+/// `require_signed:` (§2.2's fail-closed trust policy). Both spellings
+/// deserialize here; a bare entry's flags are absent/false.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryBookEntry {
+    /// The spec 04 registry reference (the canonical string form —
+    /// `add-registry` registers the canonical spelling).
+    pub reference: String,
+    /// The authored local alias (`name:`), if any. Absent = the alias
+    /// derives from the ref's `owner/repo` at book resolution.
+    pub name: Option<String>,
+    /// §2.1's publish/UX anchor. At most one entry in the book.
+    pub default: bool,
+    /// §2.2's fail-closed signature policy for this registry's rows.
+    pub require_signed: bool,
+}
+
+impl RegistryBookEntry {
+    /// A bare entry (no alias, no policy) — the pre-book spelling.
+    pub fn bare(reference: String) -> Self {
+        RegistryBookEntry {
+            reference,
+            name: None,
+            default: false,
+            require_signed: false,
+        }
+    }
+
+    /// The registry reference.
+    pub fn reference(&self) -> &str {
+        &self.reference
+    }
+
+    /// True when no book keys are set — the entry serializes as the
+    /// bare ref string (round-trip cleanliness for pre-book configs).
+    pub fn is_bare(&self) -> bool {
+        self.name.is_none() && !self.default && !self.require_signed
+    }
+
+    /// The YAML form of this entry for authored-config writes: a bare
+    /// string when [`RegistryBookEntry::is_bare`], else the map shape.
+    pub fn to_yaml_value(&self) -> serde_yaml::Value {
+        if self.is_bare() {
+            return serde_yaml::Value::String(self.reference.clone());
+        }
+        let mut m = serde_yaml::Mapping::new();
+        m.insert(
+            serde_yaml::Value::String("ref".to_string()),
+            serde_yaml::Value::String(self.reference.clone()),
+        );
+        if let Some(name) = &self.name {
+            m.insert(
+                serde_yaml::Value::String("name".to_string()),
+                serde_yaml::Value::String(name.clone()),
+            );
+        }
+        if self.default {
+            m.insert(
+                serde_yaml::Value::String("default".to_string()),
+                serde_yaml::Value::Bool(true),
+            );
+        }
+        if self.require_signed {
+            m.insert(
+                serde_yaml::Value::String("require_signed".to_string()),
+                serde_yaml::Value::Bool(true),
+            );
+        }
+        serde_yaml::Value::Mapping(m)
+    }
+}
+
+impl<'de> Deserialize<'de> for RegistryBookEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error as _;
+        match serde_yaml::Value::deserialize(deserializer)? {
+            serde_yaml::Value::String(s) => Ok(RegistryBookEntry::bare(s)),
+            serde_yaml::Value::Mapping(m) => {
+                let mut entry = RegistryBookEntry::bare(String::new());
+                for (k, v) in m {
+                    let key = k.as_str().ok_or_else(|| {
+                        D::Error::custom("a `registries` map entry's keys must be strings")
+                    })?;
+                    match key {
+                        "ref" => {
+                            entry.reference = match v {
+                                serde_yaml::Value::String(s) => s,
+                                _ => {
+                                    return Err(D::Error::custom(
+                                        "a `registries` map entry's `ref:` is a reference string",
+                                    ))
+                                }
+                            };
+                        }
+                        "name" => {
+                            entry.name = match v {
+                                serde_yaml::Value::Null => None,
+                                serde_yaml::Value::String(s) => Some(s),
+                                _ => {
+                                    return Err(D::Error::custom(
+                                        "a `registries` map entry's `name:` is a string",
+                                    ))
+                                }
+                            };
+                        }
+                        "default" => {
+                            entry.default = match v {
+                                serde_yaml::Value::Bool(b) => b,
+                                _ => {
+                                    return Err(D::Error::custom(
+                                        "a `registries` map entry's `default:` is a boolean",
+                                    ))
+                                }
+                            };
+                        }
+                        "require_signed" => {
+                            entry.require_signed = match v {
+                                serde_yaml::Value::Bool(b) => b,
+                                _ => {
+                                    return Err(D::Error::custom(
+                                        "a `registries` map entry's `require_signed:` is a boolean",
+                                    ))
+                                }
+                            };
+                        }
+                        // Unknown keys are ignored (forward compat — the
+                        // same leniency as `defaults:` map entries).
+                        _ => {}
+                    }
+                }
+                if entry.reference.is_empty() {
+                    return Err(D::Error::custom(
+                        "a `registries` map entry needs a `ref:` key",
+                    ));
+                }
+                Ok(entry)
+            }
+            _ => Err(D::Error::custom(
+                "a `registries` entry is a reference string or a {ref, name?, default?, require_signed?} map",
+            )),
+        }
+    }
+}
+
+/// The registry-alias grammar (spec 37 §2): `[a-z][a-z0-9-]*`.
+pub fn valid_registry_alias(alias: &str) -> bool {
+    let mut chars = alias.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// One resolved book row: the entry plus its computed alias (the
+/// authored `name:` or the derivation from the ref's `owner/repo` —
+/// spec 37 §2). `alias` is None for refs with no `owner/repo` shape
+/// (`file:`, `tfs+https:`, plain paths) and no authored name; such a
+/// row is unaddressable by the qualified `alias/name` form but still
+/// participates in bare-name resolution.
+#[derive(Debug, Clone)]
+pub struct BookRow<'a> {
+    pub entry: &'a RegistryBookEntry,
+    pub alias: Option<String>,
+}
+
+/// Derive the alias from a registry reference: the `repo` segment of a
+/// service reference (`tfs:github:owner/repo[…]` → `repo`), None for
+/// every other form. Parsed through tebako-resolve's ONE registry-ref
+/// grammar — never string-sliced here.
+fn derive_alias(reference: &str) -> Option<String> {
+    use tebako_resolve::registry::RegistryRef;
+    match RegistryRef::parse(reference) {
+        Ok(RegistryRef::DefaultBranch { repo, .. }) => Some(repo),
+        Ok(RegistryRef::ReleaseArtifact(tebako_resolve::Reference::Service { repo, .. })) => {
+            Some(repo)
+        }
+        _ => None,
+    }
+}
+
+impl UserConfig {
+    /// The validated registry book (spec 37 §2): every entry paired
+    /// with its computed alias, fail-closed at config load —
+    /// `DuplicateRegistryAlias` on a collision (both entries named,
+    /// never a silent rename), `DuplicateDefaultRegistry` on two
+    /// `default: true` entries, and a malformed authored alias is a
+    /// plain config error naming the grammar.
+    pub fn registry_book(&self) -> Result<Vec<BookRow<'_>>, ShimError> {
+        let mut rows = Vec::with_capacity(self.registries.len());
+        let mut seen: Vec<(String, &RegistryBookEntry)> = Vec::new();
+        let mut default_entry: Option<&RegistryBookEntry> = None;
+        for entry in &self.registries {
+            if let Some(name) = &entry.name {
+                if !valid_registry_alias(name) {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "registry entry `{}` names the alias '{name}' — the alias grammar is [a-z][a-z0-9-]* (spec 37 §2)",
+                            entry.reference
+                        ),
+                    );
+                }
+            }
+            let alias = entry
+                .name
+                .clone()
+                .or_else(|| derive_alias(&entry.reference));
+            if let Some(alias) = &alias {
+                if let Some((_, prior)) = seen.iter().find(|(a, _)| a == alias) {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "registries `{}` and `{}` resolve to the same alias '{alias}' (DuplicateRegistryAlias) — name one of them explicitly",
+                            prior.reference, entry.reference
+                        ),
+                    );
+                }
+                seen.push((alias.clone(), entry));
+            }
+            if entry.default {
+                if let Some(prior) = default_entry {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "registries `{}` and `{}` both carry `default: true` (DuplicateDefaultRegistry) — exactly one entry may",
+                            prior.reference, entry.reference
+                        ),
+                    );
+                }
+                default_entry = Some(entry);
+            }
+            rows.push(BookRow { entry, alias });
+        }
+        Ok(rows)
+    }
+}
+
 /// The `network:` section of `~/.tebako/config.yaml` — all keys optional.
 /// These are the config MIRRORS of the env spellings; the environment
 /// always wins per key (merge in `tebako_http::netconfig`).
@@ -193,7 +442,7 @@ pub fn load_config(home: &Path) -> Result<UserConfig, ShimError> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(UserConfig::default()),
         Err(e) => return fail(EX_TEBAKO_IO, format!("cannot read {}: {e}", path.display())),
     };
-    serde_yaml::from_str(&text).map_err(|e| {
+    let cfg: UserConfig = serde_yaml::from_str(&text).map_err(|e| {
         ShimError::new(
             EX_TEBAKO_MANIFEST,
             format!(
@@ -201,7 +450,12 @@ pub fn load_config(home: &Path) -> Result<UserConfig, ShimError> {
                 path.display()
             ),
         )
-    })
+    })?;
+    // The registry book validates at load (spec 37 §2 — fail-closed):
+    // a malformed alias, a collision, or two defaults is the named
+    // error here, never a surprise mid-resolution.
+    cfg.registry_book()?;
+    Ok(cfg)
 }
 
 // ---------------------------------------------------------------------
@@ -282,6 +536,25 @@ pub fn install_network_config(home: &Path) -> Result<(), ShimError> {
 pub enum AddRegistryOutcome {
     Added,
     AlreadyPresent,
+    /// The ref was already registered; its book keys (`name:` /
+    /// `default:` / `require_signed:`) were rewritten to the requested
+    /// ones (spec 37 §2 — the CLI path to (re)policy an entry).
+    Updated,
+}
+
+/// The book keys of an `add-registry` call (spec 37 §2). All absent =
+/// the pre-book bare-ref behavior exactly.
+#[derive(Debug, Default, Clone)]
+pub struct AddRegistryOptions {
+    /// `--name <alias>` — the local alias; validated against the
+    /// `[a-z][a-z0-9-]*` grammar and against collision with every
+    /// existing entry's computed alias (`DuplicateRegistryAlias`).
+    pub name: Option<String>,
+    /// `--require-signed` — §2.2's fail-closed trust policy.
+    pub require_signed: bool,
+    /// `--default` — §2.1's publish/UX anchor; a second default in the
+    /// book is `DuplicateDefaultRegistry`.
+    pub default: bool,
 }
 
 /// Append `reg_ref` to `registries:` in `~/.tebako/config.yaml`,
@@ -291,66 +564,90 @@ pub enum AddRegistryOutcome {
 /// structural (serde_yaml Value surgery), so user comments/formatting are
 /// not preserved — keys and values are. The write is tmp + rename, the
 /// same discipline as the disabled-state file.
-pub fn add_registry(home: &Path, reg_ref: &str) -> Result<AddRegistryOutcome, ShimError> {
-    let path = config_path(home);
-    let mut root: serde_yaml::Value = match std::fs::read_to_string(&path) {
-        Ok(t) => serde_yaml::from_str(&t).map_err(|e| {
+///
+/// Book behavior (spec 37 §2): a bare `opts` appends the bare ref
+/// string (the pre-book spelling); any set key appends the map form.
+/// Re-adding an already-registered ref reports `AlreadyPresent` when
+/// the stored entry's book keys already match, else rewrites that entry
+/// in place and reports `Updated`. The book invariants are checked
+/// BEFORE the write — the file never holds an invalid book.
+pub fn add_registry(
+    home: &Path,
+    reg_ref: &str,
+    opts: &AddRegistryOptions,
+) -> Result<AddRegistryOutcome, ShimError> {
+    if let Some(name) = &opts.name {
+        if !valid_registry_alias(name) {
+            return fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "the registry alias '{name}' is malformed — the alias grammar is [a-z][a-z0-9-]* (spec 37 §2)"
+                ),
+            );
+        }
+    }
+    let mut outcome = AddRegistryOutcome::Added;
+    edit_config(home, |mapping| {
+        let key = serde_yaml::Value::String("registries".to_string());
+        let entry = mapping
+            .entry(key)
+            .or_insert_with(|| serde_yaml::Value::Sequence(Vec::new()));
+        let seq = entry.as_sequence_mut().ok_or_else(|| {
             ShimError::new(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "cannot parse {} ({e}) — fix or remove it; run `tebako-shim doctor`",
-                    path.display()
+                    "{}: `registries` must be a list",
+                    config_path(home).display()
                 ),
             )
-        })?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+        })?;
+        // Parse the existing entries through the ONE book model so a
+        // bare string and a map form of the same ref compare equal.
+        let mut entries: Vec<RegistryBookEntry> = Vec::with_capacity(seq.len());
+        for v in seq.iter() {
+            let e: RegistryBookEntry = serde_yaml::from_value(v.clone()).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "{}: a `registries` entry is malformed ({e})",
+                        config_path(home).display()
+                    ),
+                )
+            })?;
+            entries.push(e);
         }
-        Err(e) => return fail(EX_TEBAKO_IO, format!("cannot read {}: {e}", path.display())),
-    };
-    let mapping = root.as_mapping_mut().ok_or_else(|| {
-        ShimError::new(
-            EX_TEBAKO_MANIFEST,
-            format!("{} must be a YAML mapping", path.display()),
-        )
+        let requested = RegistryBookEntry {
+            reference: reg_ref.to_string(),
+            name: opts.name.clone(),
+            default: opts.default,
+            require_signed: opts.require_signed,
+        };
+        // A bare re-add never strips an existing entry's book keys —
+        // only an explicit policy flag rewrites (`tebako add-registry
+        // <ref>` on a `require_signed:` entry is AlreadyPresent, not a
+        // silent downgrade).
+        let has_opts = opts.name.is_some() || opts.default || opts.require_signed;
+        if let Some(pos) = entries.iter().position(|e| e.reference == reg_ref) {
+            if !has_opts || entries[pos] == requested {
+                outcome = AddRegistryOutcome::AlreadyPresent;
+                return Ok(());
+            }
+            entries[pos] = requested;
+            outcome = AddRegistryOutcome::Updated;
+        } else {
+            entries.push(requested);
+        }
+        // The book invariants against the WOULD-BE book — never write
+        // an invalid one (spec 37 §2's named errors, both entries named).
+        let book = UserConfig {
+            registries: entries.clone(),
+            ..UserConfig::default()
+        };
+        book.registry_book()?;
+        *seq = entries.into_iter().map(|e| e.to_yaml_value()).collect();
+        Ok(())
     })?;
-    let key = serde_yaml::Value::String("registries".to_string());
-    let entry = mapping
-        .entry(key)
-        .or_insert_with(|| serde_yaml::Value::Sequence(Vec::new()));
-    let seq = entry.as_sequence_mut().ok_or_else(|| {
-        ShimError::new(
-            EX_TEBAKO_MANIFEST,
-            format!("{}: `registries` must be a list", path.display()),
-        )
-    })?;
-    if seq.iter().any(|v| v.as_str() == Some(reg_ref)) {
-        return Ok(AddRegistryOutcome::AlreadyPresent);
-    }
-    seq.push(serde_yaml::Value::String(reg_ref.to_string()));
-    let text = serde_yaml::to_string(&root).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!("cannot serialize {}: {e}", path.display()),
-        )
-    })?;
-    std::fs::create_dir_all(home).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!("cannot create {}: {e}", home.display()),
-        )
-    })?;
-    let tmp = home.join(format!("config.yaml.{}.tmp", std::process::id()));
-    std::fs::write(&tmp, text).map_err(|e| {
-        ShimError::new(EX_TEBAKO_IO, format!("cannot write {}: {e}", tmp.display()))
-    })?;
-    std::fs::rename(&tmp, &path).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!("cannot install {}: {e}", path.display()),
-        )
-    })?;
-    Ok(AddRegistryOutcome::Added)
+    Ok(outcome)
 }
 
 /// Merge engine → runtime preferences into `~/.tebako/config.yaml`,
@@ -638,11 +935,11 @@ pub fn registry_default(
     payload_name: &str,
     ctx: &Ctx,
 ) -> Result<Option<(String, String)>, ShimError> {
-    for reg_ref in &config.registries {
-        let registry = crate::regcache::registry_for(home, reg_ref, ctx)?;
+    for entry in &config.registries {
+        let registry = crate::regcache::registry_for(home, entry.reference(), ctx)?;
         if let Some(p) = registry.payload(payload_name) {
             if let Some(default) = &p.default {
-                return Ok(Some((default.clone(), reg_ref.clone())));
+                return Ok(Some((default.clone(), entry.reference().to_string())));
             }
         }
     }
@@ -784,7 +1081,7 @@ mod tests {
     #[test]
     fn set_runtime_prefs_preserves_other_keys_and_replaces_the_engine() {
         let home = fresh_home("merge");
-        add_registry(&home, "tfs:github:acme/app").unwrap();
+        add_registry(&home, "tfs:github:acme/app", &AddRegistryOptions::default()).unwrap();
         let mut first = BTreeMap::new();
         first.insert("java".to_string(), pref("21.0.12", "2.1.0"));
         set_runtime_prefs(&home, &first).unwrap();
@@ -795,7 +1092,10 @@ mod tests {
         let cfg = load_config(&home).unwrap();
         assert_eq!(cfg.runtimes.get("java"), Some(&pref("21.0.13", "2.1.0")));
         assert_eq!(cfg.runtimes.get("ruby"), Some(&pref("3.3.12", "0.16.18")));
-        assert_eq!(cfg.registries, vec!["tfs:github:acme/app".to_string()]);
+        assert_eq!(
+            cfg.registries,
+            vec![RegistryBookEntry::bare("tfs:github:acme/app".to_string())]
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -887,6 +1187,223 @@ mod tests {
             g.proxy_url.as_deref(),
             Some("http://user:secret@proxy.corp:3128")
         );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    // -------------------------------------------------------------
+    // spec 37 §2 — the registry book
+    // -------------------------------------------------------------
+
+    #[test]
+    fn book_bare_ref_derives_the_repo_alias() {
+        let cfg: UserConfig =
+            serde_yaml::from_str("registries:\n  - tfs:github:tebako-packages/registry\n").unwrap();
+        let book = cfg.registry_book().unwrap();
+        assert_eq!(book.len(), 1);
+        assert_eq!(book[0].alias.as_deref(), Some("registry"));
+        assert_eq!(
+            book[0].entry.reference(),
+            "tfs:github:tebako-packages/registry"
+        );
+        assert!(book[0].entry.is_bare());
+    }
+
+    #[test]
+    fn book_map_form_parses_every_key_and_the_name_wins() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "registries:\n  - ref: tfs:github:metanorma/metanorma-flavor-nist\n    name: nist\n    default: true\n    require_signed: true\n",
+        )
+        .unwrap();
+        let book = cfg.registry_book().unwrap();
+        assert_eq!(book[0].alias.as_deref(), Some("nist"));
+        assert!(book[0].entry.default);
+        assert!(book[0].entry.require_signed);
+        assert!(!book[0].entry.is_bare());
+    }
+
+    #[test]
+    fn book_map_form_ignores_unknown_keys() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "registries:\n  - ref: tfs:github:acme/app\n    future_key: whatever\n",
+        )
+        .unwrap();
+        let book = cfg.registry_book().unwrap();
+        assert_eq!(book[0].entry.reference(), "tfs:github:acme/app");
+    }
+
+    #[test]
+    fn book_map_form_without_ref_is_a_config_error() {
+        let err =
+            serde_yaml::from_str::<UserConfig>("registries:\n  - name: orphan\n").unwrap_err();
+        assert!(err.to_string().contains("`ref:`"), "{err}");
+    }
+
+    #[test]
+    fn book_file_ref_has_no_derived_alias() {
+        let cfg: UserConfig =
+            serde_yaml::from_str("registries:\n  - file:///opt/tpkg-registry.yaml\n").unwrap();
+        let book = cfg.registry_book().unwrap();
+        assert_eq!(book[0].alias, None);
+    }
+
+    #[test]
+    fn book_rejects_a_malformed_authored_alias() {
+        let home = fresh_home("badalias");
+        std::fs::write(
+            config_path(&home),
+            "registries:\n  - ref: tfs:github:acme/app\n    name: 9bad\n",
+        )
+        .unwrap();
+        let err = load_config(&home).unwrap_err();
+        assert!(err.message.contains("[a-z][a-z0-9-]*"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn book_duplicate_alias_names_both_entries_at_load() {
+        let home = fresh_home("dupalias");
+        // The explicit `nist` collides with acme/nist's DERIVED alias.
+        std::fs::write(
+            config_path(&home),
+            "registries:\n  - ref: tfs:github:metanorma/flavor\n    name: nist\n  - tfs:github:acme/nist\n",
+        )
+        .unwrap();
+        let err = load_config(&home).unwrap_err();
+        assert!(err.message.contains("DuplicateRegistryAlias"), "{err:?}");
+        assert!(
+            err.message.contains("tfs:github:metanorma/flavor"),
+            "{err:?}"
+        );
+        assert!(err.message.contains("tfs:github:acme/nist"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn book_two_defaults_are_a_named_error_at_load() {
+        let home = fresh_home("dupdefault");
+        std::fs::write(
+            config_path(&home),
+            "registries:\n  - ref: tfs:github:acme/one\n    default: true\n  - ref: tfs:github:acme/two\n    default: true\n",
+        )
+        .unwrap();
+        let err = load_config(&home).unwrap_err();
+        assert!(err.message.contains("DuplicateDefaultRegistry"), "{err:?}");
+        assert!(err.message.contains("tfs:github:acme/one"), "{err:?}");
+        assert!(err.message.contains("tfs:github:acme/two"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn add_registry_bare_keeps_the_bare_spelling() {
+        let home = fresh_home("addbare");
+        add_registry(&home, "tfs:github:acme/app", &AddRegistryOptions::default()).unwrap();
+        let text = std::fs::read_to_string(config_path(&home)).unwrap();
+        assert!(text.contains("- tfs:github:acme/app"), "{text}");
+        assert!(!text.contains("ref:"), "{text}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn add_registry_with_flags_writes_the_map_form() {
+        let home = fresh_home("addflags");
+        let opts = AddRegistryOptions {
+            name: Some("nist".to_string()),
+            require_signed: true,
+            default: true,
+        };
+        add_registry(&home, "tfs:github:acme/flavor-nist", &opts).unwrap();
+        let cfg = load_config(&home).unwrap();
+        let book = cfg.registry_book().unwrap();
+        assert_eq!(book[0].alias.as_deref(), Some("nist"));
+        assert!(book[0].entry.default);
+        assert!(book[0].entry.require_signed);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn add_registry_bare_readd_never_strips_the_book_keys() {
+        let home = fresh_home("nostrip");
+        let opts = AddRegistryOptions {
+            name: None,
+            require_signed: true,
+            default: false,
+        };
+        add_registry(&home, "tfs:github:acme/app", &opts).unwrap();
+        let outcome =
+            add_registry(&home, "tfs:github:acme/app", &AddRegistryOptions::default()).unwrap();
+        assert_eq!(outcome, AddRegistryOutcome::AlreadyPresent);
+        let cfg = load_config(&home).unwrap();
+        assert!(cfg.registries[0].require_signed);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn add_registry_with_new_flags_updates_in_place() {
+        let home = fresh_home("update");
+        add_registry(&home, "tfs:github:acme/app", &AddRegistryOptions::default()).unwrap();
+        let opts = AddRegistryOptions {
+            name: Some("acme".to_string()),
+            require_signed: false,
+            default: false,
+        };
+        let outcome = add_registry(&home, "tfs:github:acme/app", &opts).unwrap();
+        assert_eq!(outcome, AddRegistryOutcome::Updated);
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(cfg.registries.len(), 1);
+        assert_eq!(cfg.registries[0].name.as_deref(), Some("acme"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn add_registry_refuses_a_second_default_before_writing() {
+        let home = fresh_home("seconddefault");
+        let opts = AddRegistryOptions {
+            name: None,
+            require_signed: false,
+            default: true,
+        };
+        add_registry(&home, "tfs:github:acme/one", &opts).unwrap();
+        let err = add_registry(&home, "tfs:github:acme/two", &opts).unwrap_err();
+        assert!(err.message.contains("DuplicateDefaultRegistry"), "{err:?}");
+        // The refused write never landed: the file still holds one entry.
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(cfg.registries.len(), 1);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn add_registry_refuses_an_alias_collision_before_writing() {
+        let home = fresh_home("aliascollision");
+        let opts = AddRegistryOptions {
+            name: Some("nist".to_string()),
+            require_signed: false,
+            default: false,
+        };
+        add_registry(&home, "tfs:github:metanorma/flavor", &opts).unwrap();
+        // acme/nist's DERIVED alias collides with the explicit one.
+        let err = add_registry(
+            &home,
+            "tfs:github:acme/nist",
+            &AddRegistryOptions::default(),
+        )
+        .unwrap_err();
+        assert!(err.message.contains("DuplicateRegistryAlias"), "{err:?}");
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(cfg.registries.len(), 1);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn add_registry_validates_the_alias_grammar() {
+        let home = fresh_home("badname");
+        let opts = AddRegistryOptions {
+            name: Some("BAD".to_string()),
+            require_signed: false,
+            default: false,
+        };
+        let err = add_registry(&home, "tfs:github:acme/app", &opts).unwrap_err();
+        assert!(err.message.contains("[a-z][a-z0-9-]*"), "{err:?}");
+        assert!(!config_path(&home).exists());
         let _ = std::fs::remove_dir_all(&home);
     }
 }
