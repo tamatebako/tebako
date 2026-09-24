@@ -1,14 +1,24 @@
 //! Service adapters (spec 04 §1): `tfs:github:` / `tfs:gitlab:` / `tfs:bb:`
 //! resolve through the host's release/download APIs — the git host's
-//! releases ARE the storage (spec 04 §2). All three sit behind the same
-//! [`ServiceAdapter`] trait; the transport is injected, so tests answer
-//! with canned API bodies (spec 04 §3: `file://` mirrors for tests).
+//! releases ARE the storage (spec 04 §2). The explicit-host forms (spec 37
+//! §4: `tfs+github://host/…` GHE/Gitea/Forgejo, `tfs+gitlab://host/…`
+//! self-hosted) are the SAME adapters with a base-URL parameter — one code
+//! path, the SaaS forms its canonical value, never a second implementation
+//! to drift. All three sit behind the same [`ServiceAdapter`] trait; the
+//! transport is injected, so tests answer with canned API bodies (spec 04
+//! §3: `file://` mirrors for tests).
 //!
-//! - GitHub: releases API first — `repos/{owner}/{repo}/releases/tags/{v}`.
-//! - GitLab: `projects/{owner%2Frepo}/releases/{v}`, `assets.links`.
+//! - GitHub: releases API first — `<base>/repos/{owner}/{repo}/releases/tags/{v}`;
+//!   base `https://api.github.com` on the SaaS form, `https://<host>/api/v3`
+//!   at an explicit host.
+//! - GitLab: `<base>/projects/{owner%2Frepo}/releases/{v}`, `assets.links`;
+//!   base `https://gitlab.com/api/v4` on the SaaS form, `https://<host>/api/v4`
+//!   at an explicit host.
 //! - Bitbucket: no releases concept — `repositories/{o}/{r}/downloads`,
 //!   files whose name carries the version string. First page of 100;
 //!   a `next` page is a named error, never a silent partial listing.
+//!   Bitbucket Cloud only: Data Center is the parse-time
+//!   `UnsupportedService` (spec 37 §4), never an adapter.
 //!
 //! Adapters list EVERY asset of the release; the multi-artifact selection
 //! rule (spec 04 §1, locked) is split between [`select_candidate`] (no
@@ -103,12 +113,35 @@ pub trait ServiceAdapter {
     ) -> Result<Vec<u8>, ResolveError>;
 }
 
-/// The dispatch table (spec 04 §1): one adapter per service.
+/// The dispatch table (spec 04 §1): one adapter per service, at its
+/// canonical SaaS host.
 pub fn adapter_for(service: Service) -> Box<dyn ServiceAdapter> {
     match service {
-        Service::Github => Box::new(GithubAdapter),
-        Service::Gitlab => Box::new(GitlabAdapter),
+        Service::Github => Box::new(GithubAdapter::at(None)),
+        Service::Gitlab => Box::new(GitlabAdapter::at(None)),
         Service::Bitbucket => Box::new(BitbucketAdapter),
+    }
+}
+
+/// The host-parameterized dispatch table (spec 37 §4): ONE code path with
+/// a base-URL parameter — `None` is the service's canonical SaaS host, the
+/// `tfs+<svc>://host/…` forms pass theirs. An explicit host on a service
+/// with no host-parameterized adapter (Bitbucket Data Center) is the named
+/// `UnsupportedService` — parse already refuses it, so this is the
+/// defensive gate for programmatically built references.
+pub fn adapter_for_host(
+    service: Service,
+    host: Option<&str>,
+) -> Result<Box<dyn ServiceAdapter>, ResolveError> {
+    match (service, host) {
+        (Service::Github, _) => Ok(Box::new(GithubAdapter::at(host))),
+        (Service::Gitlab, _) => Ok(Box::new(GitlabAdapter::at(host))),
+        (Service::Bitbucket, None) => Ok(Box::new(BitbucketAdapter)),
+        (Service::Bitbucket, Some(host)) => Err(ResolveError::Reference(
+            crate::error::ReferenceError::UnsupportedService {
+                input: format!("tfs+bb://{host}/owner/repo:version"),
+            },
+        )),
     }
 }
 
@@ -211,8 +244,32 @@ fn get_bytes(transport: &dyn Transport, url: &str) -> Result<Vec<u8>, ResolveErr
 
 // ---- GitHub ---------------------------------------------------------------
 
-/// `tfs:github:` — GitHub releases API first.
-pub struct GithubAdapter;
+/// `tfs:github:` (and `tfs+github://host/…`, spec 37 §4) — the GitHub
+/// releases/contents API shape at `api_base`: `https://api.github.com` on
+/// the SaaS form, `https://<host>/api/v3` at an explicit host (GHE; also
+/// Gitea/Forgejo, which implement the same API — one code path, the host
+/// is the only parameter).
+pub struct GithubAdapter {
+    api_base: String,
+}
+
+impl GithubAdapter {
+    /// The adapter at the SaaS host (`None`) or an explicit one (spec 37
+    /// §4: API base `https://<host>/api/v3`).
+    pub fn at(host: Option<&str>) -> Self {
+        let api_base = match host {
+            None => "https://api.github.com".to_string(),
+            Some(h) => format!("https://{h}/api/v3"),
+        };
+        GithubAdapter { api_base }
+    }
+}
+
+impl Default for GithubAdapter {
+    fn default() -> Self {
+        GithubAdapter::at(None)
+    }
+}
 
 /// The asset-INDEX read-after-write backoff (asset_named's retry
 /// schedule): the listing can answer stale for seconds after an upload.
@@ -235,7 +292,10 @@ impl ServiceAdapter for GithubAdapter {
         repo: &str,
         version: &str,
     ) -> Result<Vec<Asset>, ResolveError> {
-        let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/tags/{version}");
+        let url = format!(
+            "{}/repos/{owner}/{repo}/releases/tags/{version}",
+            self.api_base
+        );
         let doc = get_json(transport, Service::Github, &url)?;
         let Some(JsonValue::Array(assets)) = doc.find("assets") else {
             return Err(ResolveError::ServiceFailed {
@@ -314,7 +374,10 @@ impl ServiceAdapter for GithubAdapter {
         owner: &str,
         repo: &str,
     ) -> Result<Vec<u8>, ResolveError> {
-        let url = format!("https://api.github.com/repos/{owner}/{repo}/contents/{REGISTRY_FILE}");
+        let url = format!(
+            "{}/repos/{owner}/{repo}/contents/{REGISTRY_FILE}",
+            self.api_base
+        );
         let doc = get_json(transport, Service::Github, &url)?;
         if let Some(content) = strings(&doc, "content") {
             if let Some(bytes) = base64_decode(&content) {
@@ -364,9 +427,33 @@ fn base64_decode(text: &str) -> Option<Vec<u8>> {
 
 // ---- GitLab ---------------------------------------------------------------
 
-/// `tfs:gitlab:` — GitLab releases API (`assets.links` direct links only;
-/// the auto-generated source archives are never payload candidates).
-pub struct GitlabAdapter;
+/// `tfs:gitlab:` (and `tfs+gitlab://host/…`, spec 37 §4) — the GitLab
+/// releases/repository-files API v4 at `api_base`:
+/// `https://gitlab.com/api/v4` on the SaaS form, `https://<host>/api/v4`
+/// at an explicit (self-hosted) host — one code path, the host is the
+/// only parameter. (`assets.links` direct links only; the auto-generated
+/// source archives are never payload candidates.)
+pub struct GitlabAdapter {
+    api_base: String,
+}
+
+impl GitlabAdapter {
+    /// The adapter at the SaaS host (`None`) or an explicit one (spec 37
+    /// §4: API base `https://<host>/api/v4`).
+    pub fn at(host: Option<&str>) -> Self {
+        let api_base = match host {
+            None => "https://gitlab.com/api/v4".to_string(),
+            Some(h) => format!("https://{h}/api/v4"),
+        };
+        GitlabAdapter { api_base }
+    }
+}
+
+impl Default for GitlabAdapter {
+    fn default() -> Self {
+        GitlabAdapter::at(None)
+    }
+}
 
 impl ServiceAdapter for GitlabAdapter {
     fn service(&self) -> Service {
@@ -382,7 +469,7 @@ impl ServiceAdapter for GitlabAdapter {
     ) -> Result<Vec<Asset>, ResolveError> {
         // Nested groups ride in `owner`; '/' must be percent-encoded.
         let project = format!("{owner}/{repo}").replace('/', "%2F");
-        let url = format!("https://gitlab.com/api/v4/projects/{project}/releases/{version}");
+        let url = format!("{}/projects/{project}/releases/{version}", self.api_base);
         let doc = get_json(transport, Service::Gitlab, &url)?;
         let links = doc
             .find("assets")
@@ -413,7 +500,8 @@ impl ServiceAdapter for GitlabAdapter {
     ) -> Result<Vec<u8>, ResolveError> {
         let project = format!("{owner}/{repo}").replace('/', "%2F");
         let url = format!(
-            "https://gitlab.com/api/v4/projects/{project}/repository/files/{REGISTRY_FILE}/raw"
+            "{}/projects/{project}/repository/files/{REGISTRY_FILE}/raw",
+            self.api_base
         );
         get_bytes(transport, &url)
     }
@@ -555,7 +643,7 @@ mod tests {
             {"name":"notes.txt","url":"https://api.github.com/repos/o/r/releases/assets/12","browser_download_url":"https://dl/notes.txt"}]}"#;
         let t = MockTransport::with(&[(api, body)]);
         // the adapter lists everything; .tfs filtering is the selection rule's
-        let assets = GithubAdapter.assets(&t, "o", "r", "v1").unwrap();
+        let assets = GithubAdapter::default().assets(&t, "o", "r", "v1").unwrap();
         assert_eq!(
             assets,
             vec![
@@ -564,7 +652,7 @@ mod tests {
             ]
         );
         assert!(matches!(
-            GithubAdapter.assets(&t, "o", "missing", "v1"),
+            GithubAdapter::default().assets(&t, "o", "missing", "v1"),
             Err(ResolveError::NotFound { .. })
         ));
     }
@@ -600,13 +688,13 @@ mod tests {
         let t = AuthTransport {
             inner: MockTransport::with(&[(api, body)]),
         };
-        let assets = GithubAdapter.assets(&t, "o", "r", "v1").unwrap();
+        let assets = GithubAdapter::default().assets(&t, "o", "r", "v1").unwrap();
         assert_eq!(assets, vec![expected.clone()]);
         // …and the #artifact form inherits the choice (it rides assets())
         let t = AuthTransport {
             inner: MockTransport::with(&[(api, body)]),
         };
-        let got = GithubAdapter
+        let got = GithubAdapter::default()
             .asset_named(&t, "o", "r", "v1", "r-v1.tfs")
             .unwrap();
         assert_eq!(got, Some(expected));
@@ -619,7 +707,9 @@ mod tests {
             {"name":"r-v2.tfs","url":"https://gl/dl/r-v2.tfs"}],
             "sources":[{"url":"https://gl/src.tgz"}]}}"#;
         let t = MockTransport::with(&[(api, body)]);
-        let assets = GitlabAdapter.assets(&t, "g/sub", "r", "v2").unwrap();
+        let assets = GitlabAdapter::default()
+            .assets(&t, "g/sub", "r", "v2")
+            .unwrap();
         assert_eq!(
             assets,
             vec![Asset::plain(
@@ -727,7 +817,7 @@ mod tests {
             {"name":"r-v1.tfs","browser_download_url":"https://dl/r-v1.tfs"},
             {"name":"tpkg-registry.yaml","browser_download_url":"https://dl/tpkg-registry.yaml"}]}"#;
         let t = MockTransport::with(&[(api, body)]);
-        let got = GithubAdapter
+        let got = GithubAdapter::default()
             .asset_named(&t, "o", "r", "v1", "tpkg-registry.yaml")
             .unwrap();
         assert_eq!(
@@ -738,7 +828,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            GithubAdapter
+            GithubAdapter::default()
                 .asset_named(&t, "o", "r", "v1", "r-windows-v1.tfs")
                 .unwrap(),
             None
@@ -778,7 +868,7 @@ mod tests {
         let fresh = r#"{"assets":[
             {"name":"r-v1.tfs","browser_download_url":"https://dl/r-v1.tfs"}]}"#;
         let t = SeqTransport::with(&[stale, fresh]);
-        let got = GithubAdapter
+        let got = GithubAdapter::default()
             .asset_named(&t, "o", "r", "v1", "r-v1.tfs")
             .unwrap();
         assert_eq!(
@@ -797,7 +887,7 @@ mod tests {
         let empty = r#"{"assets":[]}"#;
         let t = SeqTransport::with(&[empty, empty, empty, empty, empty]);
         assert_eq!(
-            GithubAdapter
+            GithubAdapter::default()
                 .asset_named(&t, "o", "r", "v1", "nope.tfs")
                 .unwrap(),
             None
@@ -845,18 +935,20 @@ mod tests {
                 "schema_version: 1\npayloads: []\n",
             ),
         ]);
-        let got = GithubAdapter.registry_file(&t, "o", "r").unwrap();
+        let got = GithubAdapter::default()
+            .registry_file(&t, "o", "r")
+            .unwrap();
         assert_eq!(got, b"schema_version: 1\npayloads: []\n");
 
         // a contents answer without download_url is a named service error
         let t = MockTransport::with(&[(api, r#"[{"name":"tpkg-registry.yaml"}]"#)]);
         assert!(matches!(
-            GithubAdapter.registry_file(&t, "o", "r"),
+            GithubAdapter::default().registry_file(&t, "o", "r"),
             Err(ResolveError::ServiceFailed { .. })
         ));
         // 404 → NotFound
         assert!(matches!(
-            GithubAdapter.registry_file(&t, "o", "missing"),
+            GithubAdapter::default().registry_file(&t, "o", "missing"),
             Err(ResolveError::NotFound { .. })
         ));
     }
@@ -875,7 +967,9 @@ mod tests {
                 "stale registry\n",
             ),
         ]);
-        let got = GithubAdapter.registry_file(&t, "o", "r").unwrap();
+        let got = GithubAdapter::default()
+            .registry_file(&t, "o", "r")
+            .unwrap();
         assert_eq!(got, b"fresh registry\n");
     }
 
@@ -899,7 +993,9 @@ mod tests {
             "https://gitlab.com/api/v4/projects/g%2Fsub%2Fr/repository/files/tpkg-registry.yaml/raw";
         let t = MockTransport::with(&[(api, "schema_version: 1\n")]);
         assert_eq!(
-            GitlabAdapter.registry_file(&t, "g/sub", "r").unwrap(),
+            GitlabAdapter::default()
+                .registry_file(&t, "g/sub", "r")
+                .unwrap(),
             b"schema_version: 1\n"
         );
     }
@@ -922,5 +1018,125 @@ mod tests {
             BitbucketAdapter.registry_file(&t, "o", "r"),
             Err(ResolveError::ServiceFailed { .. })
         ));
+    }
+
+    // ---- the explicit-host forms (spec 37 §4): one code path, the host
+    // is the base-URL parameter ------------------------------------------
+
+    #[test]
+    fn github_adapter_renders_the_ghe_api_base_at_an_explicit_host() {
+        // GHE: the GitHub API shape at that host — https://<host>/api/v3.
+        let api = "https://ghe.corp.internal/api/v3/repos/o/r/releases/tags/v1";
+        let body = r#"{"assets":[
+            {"name":"r-v1.tfs","browser_download_url":"https://ghe.corp.internal/dl/r-v1.tfs"}]}"#;
+        let t = MockTransport::with(&[(api, body)]);
+        let assets = GithubAdapter::at(Some("ghe.corp.internal"))
+            .assets(&t, "o", "r", "v1")
+            .unwrap();
+        assert_eq!(
+            assets,
+            vec![Asset::plain(
+                "r-v1.tfs".to_string(),
+                "https://ghe.corp.internal/dl/r-v1.tfs".to_string()
+            )]
+        );
+
+        // the default-branch registry file rides the same contents API
+        let contents = "https://ghe.corp.internal/api/v3/repos/o/r/contents/tpkg-registry.yaml";
+        let t = MockTransport::with(&[
+            (
+                contents,
+                r#"{"name":"tpkg-registry.yaml","download_url":"https://ghe.corp.internal/raw/tpkg-registry.yaml"}"#,
+            ),
+            (
+                "https://ghe.corp.internal/raw/tpkg-registry.yaml",
+                "schema_version: 1\n",
+            ),
+        ]);
+        let got = GithubAdapter::at(Some("ghe.corp.internal"))
+            .registry_file(&t, "o", "r")
+            .unwrap();
+        assert_eq!(got, b"schema_version: 1\n");
+
+        // a host port flows into the base verbatim
+        let api = "https://ghe.corp.internal:8443/api/v3/repos/o/r/releases/tags/v1";
+        let t = MockTransport::with(&[(api, body)]);
+        assert_eq!(
+            GithubAdapter::at(Some("ghe.corp.internal:8443"))
+                .assets(&t, "o", "r", "v1")
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn gitea_forgejo_hosts_ride_the_same_github_code_path() {
+        // spec 37 §4's conformance claim at the URL level: a Gitea-shaped
+        // host answers the GitHub releases/contents API at /api/v3 — the
+        // grammar and the adapter never special-case it.
+        let api = "https://gitea.corp.internal/api/v3/repos/o/r/releases/tags/v1";
+        let body = r#"{"assets":[{"name":"r-v1.tfs","browser_download_url":"https://gitea.corp.internal/dl/r-v1.tfs"}]}"#;
+        let t = MockTransport::with(&[(api, body)]);
+        let assets = GithubAdapter::at(Some("gitea.corp.internal"))
+            .assets(&t, "o", "r", "v1")
+            .unwrap();
+        assert_eq!(assets.len(), 1);
+    }
+
+    #[test]
+    fn gitlab_adapter_renders_api_v4_at_an_explicit_host() {
+        // self-hosted GitLab: nested groups percent-encoded as on the SaaS.
+        let api = "https://gitlab.corp.internal/api/v4/projects/g%2Fsub%2Fr/releases/v2";
+        let body = r#"{"assets":{"links":[
+            {"name":"r-v2.tfs","url":"https://gitlab.corp.internal/dl/r-v2.tfs"}]}}"#;
+        let t = MockTransport::with(&[(api, body)]);
+        let assets = GitlabAdapter::at(Some("gitlab.corp.internal"))
+            .assets(&t, "g/sub", "r", "v2")
+            .unwrap();
+        assert_eq!(
+            assets,
+            vec![Asset::plain(
+                "r-v2.tfs".to_string(),
+                "https://gitlab.corp.internal/dl/r-v2.tfs".to_string()
+            )]
+        );
+
+        let raw = "https://gitlab.corp.internal/api/v4/projects/g%2Fsub%2Fr/repository/files/tpkg-registry.yaml/raw";
+        let t = MockTransport::with(&[(raw, "schema_version: 1\n")]);
+        assert_eq!(
+            GitlabAdapter::at(Some("gitlab.corp.internal"))
+                .registry_file(&t, "g/sub", "r")
+                .unwrap(),
+            b"schema_version: 1\n"
+        );
+    }
+
+    #[test]
+    fn the_saas_forms_are_the_host_parameters_canonical_value() {
+        // The one-code-path rule: ::at(None) renders exactly the URLs the
+        // pre-federation unit adapters rendered.
+        let api = "https://api.github.com/repos/o/r/releases/tags/v1";
+        let body = r#"{"assets":[]}"#;
+        let t = MockTransport::with(&[(api, body)]);
+        assert!(GithubAdapter::at(None).assets(&t, "o", "r", "v1").is_ok());
+        let raw =
+            "https://gitlab.com/api/v4/projects/o%2Fr/repository/files/tpkg-registry.yaml/raw";
+        let t = MockTransport::with(&[(raw, "schema_version: 1\n")]);
+        assert!(GitlabAdapter::at(None).registry_file(&t, "o", "r").is_ok());
+    }
+
+    #[test]
+    fn adapter_for_host_refuses_bitbucket_data_center_by_name() {
+        // Parse is the gate (tfs+bb:// is UnsupportedService there); this
+        // is the defensive gate for programmatically built references.
+        let err = adapter_for_host(Service::Bitbucket, Some("bbdc.corp.internal"))
+            .map(|_| ())
+            .unwrap_err();
+        assert!(err.to_string().contains("UnsupportedService"), "{err}");
+        assert!(adapter_for_host(Service::Bitbucket, None).is_ok());
+        assert!(adapter_for_host(Service::Github, None).is_ok());
+        assert!(adapter_for_host(Service::Github, Some("ghe.corp.internal")).is_ok());
+        assert!(adapter_for_host(Service::Gitlab, Some("gitlab.corp.internal")).is_ok());
     }
 }

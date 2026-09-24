@@ -104,6 +104,7 @@ pub fn open_release(reference: &str) -> Result<Box<dyn AssetSpace>, String> {
     match Reference::parse(reference).map_err(|e| e.to_string())? {
         Reference::Service {
             service,
+            host,
             owner,
             repo,
             version,
@@ -115,7 +116,8 @@ pub fn open_release(reference: &str) -> Result<Box<dyn AssetSpace>, String> {
                     "release-index reads a whole release — drop the #{a} artifact selector from {reference}"
                 ));
             }
-            let adapter = tebako_resolve::adapters::adapter_for(service);
+            let adapter = tebako_resolve::adapters::adapter_for_host(service, host.as_deref())
+                .map_err(|e| e.to_string())?;
             let assets = adapter
                 .assets(&HttpTransport, &owner, &repo, &version)
                 .map_err(|e| e.to_string())?;

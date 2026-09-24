@@ -197,15 +197,18 @@ static PLAN_SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize
 /// Resolve a service reference to its asset descriptor (the same
 /// selection rule as [`crate::fetch::Fetcher::fetch_service`], spec 04
 /// §1) so the artifact BYTES stream; the index reads stay buffered.
+/// `host` is the explicit host of the `tfs+<svc>://host/…` form (spec 37
+/// §4) — the adapter's base-URL parameter.
 fn select_service_asset<T: Transport>(
     transport: &T,
     service: Service,
+    host: Option<&str>,
     owner: &str,
     repo: &str,
     version: &str,
     artifact: Option<&str>,
 ) -> Result<crate::adapters::Asset, ResolveError> {
-    let adapter = crate::adapters::adapter_for(service);
+    let adapter = crate::adapters::adapter_for_host(service, host)?;
     match artifact {
         Some(name) => adapter
             .asset_named(transport, owner, repo, version, name)?
@@ -266,6 +269,7 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
         }
         Reference::Service {
             service,
+            host,
             owner,
             repo,
             version,
@@ -275,6 +279,7 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
             let asset = select_service_asset(
                 transport,
                 *service,
+                host.as_deref(),
                 owner,
                 repo,
                 version,

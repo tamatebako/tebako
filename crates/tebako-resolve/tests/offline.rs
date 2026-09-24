@@ -39,6 +39,18 @@ fn offline_resolves_file_mirrors_only() {
         Fetcher::new().resolve_registry(&git).unwrap_err(),
         ResolveError::Offline { .. }
     ));
+    // the spec 37 §4 forms are remote too — cache-or-named-error
+    let hosted = RegistryRef::parse("tfs+github://ghe.corp.internal/o/r").unwrap();
+    assert!(matches!(
+        Fetcher::new().resolve_registry(&hosted).unwrap_err(),
+        ResolveError::Offline { .. }
+    ));
+    let https = RegistryRef::parse("tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml")
+        .unwrap();
+    assert!(matches!(
+        Fetcher::new().resolve_registry(&https).unwrap_err(),
+        ResolveError::Offline { .. }
+    ));
     std::env::remove_var("TEBAKO_OFFLINE");
     let _ = fs::remove_dir_all(&dir);
 }

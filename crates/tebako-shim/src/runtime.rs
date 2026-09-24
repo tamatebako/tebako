@@ -782,11 +782,14 @@ fn registry_selected_target(
                 continue;
             }
             // The row's release.ref names where THIS version lives —
-            // github service refs only (the runtime fetch grammar); any
-            // other class is journaled and skipped, never guessed.
+            // SaaS github.com service refs only (the runtime fetch
+            // grammar; the explicit-host forms of spec 37 §4 spell a
+            // different download base); any other class is journaled and
+            // skipped, never guessed.
             let (base, tag) = match tebako_resolve::Reference::parse(&row.release.r#ref) {
                 Ok(tebako_resolve::Reference::Service {
                     service: tebako_resolve::Service::Github,
+                    host: None,
                     owner,
                     repo,
                     version: tag,
@@ -1117,6 +1120,7 @@ fn registry_derived_source(
             let derived = match tebako_resolve::Reference::parse(&version.release.r#ref) {
                 Ok(tebako_resolve::Reference::Service {
                     service: tebako_resolve::Service::Github,
+                    host: None,
                     owner,
                     repo,
                     version: tag,
@@ -1127,9 +1131,10 @@ fn registry_derived_source(
                     channel: "registry",
                     signer_pin: version.signature.as_ref().map(|s| s.keyid.clone()),
                 }),
-                // A non-GitHub release.ref cannot spell the `{base}/{tag}`
-                // download root the runtime fetch rides — journaled, never
-                // guessed.
+                // A non-github.com release.ref (another class, or the
+                // explicit-host forms of spec 37 §4) cannot spell the
+                // `{base}/{tag}` download root the runtime fetch rides —
+                // journaled, never guessed.
                 Ok(other) => {
                     journal(
                         &ctx.home,
