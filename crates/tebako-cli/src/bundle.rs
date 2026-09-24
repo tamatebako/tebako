@@ -412,21 +412,34 @@ fn write_config(
                 config::DefaultPin::Version(ver) => {
                     out.push_str(&format!("  {}: {}\n", scalar(tool)?, scalar(ver)?));
                 }
-                config::DefaultPin::Full { version, slices } if slices.is_empty() => {
-                    // No slices ride along — collapse to the bare form.
+                config::DefaultPin::Full {
+                    version,
+                    slices,
+                    registry: None,
+                } if slices.is_empty() => {
+                    // No slices or scope ride along — collapse to the bare form.
                     if let Some(ver) = version {
                         out.push_str(&format!("  {}: {}\n", scalar(tool)?, scalar(ver)?));
                     }
                 }
-                config::DefaultPin::Full { version, slices } => {
-                    // The spec 07 §4 map form.
+                config::DefaultPin::Full {
+                    version,
+                    slices,
+                    registry,
+                } => {
+                    // The spec 07 §4 map form (+ spec 37 §3's scope key).
                     out.push_str(&format!("  {}:\n", scalar(tool)?));
                     if let Some(ver) = version {
                         out.push_str(&format!("    version: {}\n", scalar(ver)?));
                     }
-                    out.push_str("    slices:\n");
-                    for s in slices {
-                        out.push_str(&format!("      - {}\n", scalar(s)?));
+                    if let Some(reg) = registry {
+                        out.push_str(&format!("    registry: {}\n", scalar(reg)?));
+                    }
+                    if !slices.is_empty() {
+                        out.push_str("    slices:\n");
+                        for s in slices {
+                            out.push_str(&format!("      - {}\n", scalar(s)?));
+                        }
                     }
                 }
             }
@@ -583,11 +596,18 @@ fn pin_also_slices(
     slices: &[(String, String)],
 ) -> Result<(), TebakoError> {
     let mut cfg = config::load_config(home).map_err(map_shim)?;
+    // A `registry:` scope authored on the pin (spec 37 §3) survives the
+    // re-pin — only version + slices are rewritten from staged reality.
+    let registry = cfg
+        .defaults
+        .get(name)
+        .and_then(|p| p.registry().map(str::to_string));
     cfg.defaults.insert(
         name.to_string(),
         config::DefaultPin::Full {
             version: Some(version.to_string()),
             slices: slices.iter().map(|(n, v)| format!("{n}@{v}")).collect(),
+            registry,
         },
     );
     write_config(
