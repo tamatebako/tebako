@@ -255,7 +255,7 @@ pub fn resolve_closure<T: Transport>(
         }
 
         let mut found = install::find_in_registries(home, fetcher, &pending.name, None)?;
-        let (reg_ref, payload) = match found.len() {
+        let hit = match found.len() {
             0 => {
                 return Err(err(format!(
                     "compose slice '{}'{} is not carried by any registered registry — register one with: tebako add-registry <ref>",
@@ -273,12 +273,13 @@ pub fn resolve_closure<T: Transport>(
                     pending.name,
                     found
                         .iter()
-                        .map(|(r, _)| format!("    - {r}"))
+                        .map(|hit| format!("    - {}", hit.reference))
                         .collect::<Vec<_>>()
                         .join("\n")
                 )));
             }
         };
+        let payload = &hit.payload;
         match payload.kind {
             tpkg::PayloadKind::Runtime | tpkg::PayloadKind::Language => {
                 return Err(err(format!(
@@ -318,7 +319,8 @@ pub fn resolve_closure<T: Transport>(
                 .map(|v| v.version.clone())
                 .ok_or_else(|| {
                     err(format!(
-                        "registry {reg_ref} pins no default for '{}' — name a requirement in the compose document",
+                        "registry {} pins no default for '{}' — name a requirement in the compose document",
+                        hit.reference,
                         pending.name
                     ))
                 })?,
@@ -336,8 +338,7 @@ pub fn resolve_closure<T: Transport>(
         tpkg::check_platforms_assertion(&pending.name, &declared, pending.platforms.as_ref(), host)
             .map_err(|e| err(e.to_string()))?;
 
-        let plan =
-            install::plan_from_registry_entry(&reg_ref, &payload, Some(&version), Some(host))?;
+        let plan = install::plan_from_registry_entry(&hit, Some(&version), Some(host))?;
 
         // Fetch → verify → cache: a hit stands on its trust anchor
         // (spec 05 §4); a miss fetches, verifies the entry's declared

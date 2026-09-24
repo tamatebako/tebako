@@ -472,7 +472,7 @@ fn spawned_payload_row<T: Transport>(
     // carrying the provider, the newest satisfying version, fetched +
     // verified + cached. Press is not install — no mirrors, no shims.
     let mut found = install::find_in_registries(home, fetcher, provider, None)?;
-    let (reg_ref, registry_payload) = match found.len() {
+    let hit = match found.len() {
         0 => {
             return Err(err(format!(
                 "{consumer} requires executable {edge_name} but its provider payload '{provider}' is not carried by any registered registry — register one with: tebako add-registry <ref>"
@@ -484,14 +484,15 @@ fn spawned_payload_row<T: Transport>(
                 "{consumer} requires executable {edge_name} and its provider payload '{provider}' is listed by {n} registered registries (AmbiguousRegistries):\n{}\n  narrow it with an explicit registry set",
                 found
                     .iter()
-                    .map(|(r, _)| format!("    - {r}"))
+                    .map(|hit| format!("    - {}", hit.reference))
                     .collect::<Vec<_>>()
                     .join("\n")
             )));
         }
     };
     let eval = tpkg::versions::from_validated(constraint);
-    let version = registry_payload
+    let version = hit
+        .payload
         .versions
         .iter()
         .map(|v| v.version.as_str())
@@ -502,7 +503,7 @@ fn spawned_payload_row<T: Transport>(
             err(format!(
                 "{consumer} requires executable {edge_name} but no published version of '{provider}' satisfies '{}' (available: {})",
                 constraint.as_str(),
-                registry_payload
+                hit.payload
                     .versions
                     .iter()
                     .map(|v| v.version.as_str())
@@ -510,9 +511,8 @@ fn spawned_payload_row<T: Transport>(
                     .join(", ")
             ))
         })?;
-    let entry = registry_payload.version(&version).expect("selected above");
-    let install_plan =
-        install::plan_from_registry_entry(&reg_ref, &registry_payload, Some(&version), Some(host))?;
+    let entry = hit.payload.version(&version).expect("selected above");
+    let install_plan = install::plan_from_registry_entry(&hit, Some(&version), Some(host))?;
     let cache = PayloadCache::with_root(home);
     let cached = match cache
         .get(&install_plan.name, &install_plan.version)

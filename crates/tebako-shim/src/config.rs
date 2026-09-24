@@ -427,14 +427,29 @@ impl UserConfig {
     /// the named `UnknownRegistryAlias` listing the book's aliases —
     /// fail-closed, never a silent fall back to the whole book.
     pub fn registry_refs_scoped(&self, scope: Option<&str>) -> Result<Vec<&str>, ShimError> {
+        Ok(self
+            .registry_book_scoped(scope)?
+            .iter()
+            .map(|row| row.entry.reference())
+            .collect())
+    }
+
+    /// The book ROWS a resolution runs against — the row-carrying form
+    /// of [`UserConfig::registry_refs_scoped`] (one scoping code path):
+    /// consumers that need an entry's policy flags (§2.2's
+    /// `require_signed`) or its computed alias take the rows. The book
+    /// validates at [`load_config`], so the `None` arm's revalidation
+    /// here never produces an error the load did not already name.
+    pub fn registry_book_scoped(&self, scope: Option<&str>) -> Result<Vec<BookRow<'_>>, ShimError> {
         match scope {
-            None => Ok(self.registries.iter().map(|e| e.reference()).collect()),
+            None => self.registry_book(),
             Some(alias) => {
                 let book = self.registry_book()?;
-                for row in &book {
-                    if row.alias.as_deref() == Some(alias) {
-                        return Ok(vec![row.entry.reference()]);
-                    }
+                if let Some(row) = book.iter().find(|row| row.alias.as_deref() == Some(alias)) {
+                    return Ok(vec![BookRow {
+                        entry: row.entry,
+                        alias: row.alias.clone(),
+                    }]);
                 }
                 let aliases: Vec<&str> = book.iter().filter_map(|r| r.alias.as_deref()).collect();
                 let listing = if aliases.is_empty() {
@@ -1506,5 +1521,24 @@ mod tests {
         assert!(err.message.contains("UnknownRegistryAlias"), "{err:?}");
         assert!(err.message.contains("derived"), "{err:?}");
         assert!(err.message.contains("local"), "{err:?}");
+    }
+
+    #[test]
+    fn scoped_book_rows_carry_the_policy_flags() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "registries:\n  - tfs:github:acme/plain\n  - ref: tfs:github:acme/signed\n    name: priv\n    require_signed: true\n",
+        )
+        .unwrap();
+        let rows = cfg.registry_book_scoped(None).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(!rows[0].entry.require_signed);
+        assert_eq!(rows[0].alias.as_deref(), Some("plain"));
+        assert!(rows[1].entry.require_signed);
+        assert_eq!(rows[1].alias.as_deref(), Some("priv"));
+
+        let rows = cfg.registry_book_scoped(Some("priv")).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].entry.require_signed);
+        assert_eq!(rows[0].entry.reference(), "tfs:github:acme/signed");
     }
 }

@@ -2104,3 +2104,111 @@ fn dep_walk_newest_satisfying_withdrawn_is_the_named_refusal() {
     // the older satisfying version was NOT silently installed instead
     assert!(!fx.payloads_dir().join("inkscape/1.3.0.tfs").exists());
 }
+
+// ---------------------------------------------------------------------
+// per-registry require_signed (spec 37 §2.2): the resolving registry's
+// book entry fails closed on rows without a verifying signature — the
+// registry-scoped form of TEBAKO_REQUIRE_SIGNED=1
+// ---------------------------------------------------------------------
+
+/// A book-entry registration carrying §2.2's policy flag under `name`.
+fn require_signed_opts(name: &str) -> tebako_shim::config::AddRegistryOptions {
+    tebako_shim::config::AddRegistryOptions {
+        name: Some(name.to_string()),
+        require_signed: true,
+        default: false,
+    }
+}
+
+#[test]
+fn require_signed_registry_refuses_unsigned_rows() {
+    let fx = Fixture::new("reqreg");
+    let payload_ref = fx.payload("app-1.0.tfs", b"plain-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
+    );
+    install::add_registry_opts(&fx.home, &reg_ref, &require_signed_opts("priv")).unwrap();
+
+    // the bare form resolves through the flagged registry → exit 70
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 70, "{err:?}");
+    assert!(err.message.contains("UnsignedRegistryPayload"), "{err:?}");
+    assert!(
+        err.message.contains("'priv'"),
+        "the refusing registry is named by its alias: {err:?}"
+    );
+    assert!(!fx.payloads_dir().join("app/1.0.tfs").exists());
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap_or_default();
+    assert!(
+        !journal.contains("event=legacy-unsigned-accepted"),
+        "the fail-closed path never rides the legacy acceptance: {journal}"
+    );
+
+    // the qualified form rides the same policy
+    let err = install::install(&fx.home, "priv/app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 70, "{err:?}");
+    assert!(err.message.contains("UnsignedRegistryPayload"), "{err:?}");
+
+    // dropping the flag (an in-place policy update) restores the legacy
+    // warn path — the policy is the book entry's, nothing global
+    let opts = tebako_shim::config::AddRegistryOptions {
+        name: Some("priv".to_string()),
+        require_signed: false,
+        default: false,
+    };
+    let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Updated);
+    install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert!(fx.payloads_dir().join("app/1.0.tfs").exists());
+}
+
+#[test]
+fn require_signed_registry_accepts_verifying_rows() {
+    let (fx, payload_ref, asc_ref, public_key, keyid) = signed_fixture("reqreg-signed");
+    tebako_signer::register_trusted(&fx.home, &public_key).unwrap();
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &signed_registry(&payload_ref, &asc_ref, &keyid),
+    );
+    install::add_registry_opts(&fx.home, &reg_ref, &require_signed_opts("priv")).unwrap();
+
+    // §2.2 refuses ABSENT signatures; a verifying row sails through
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.signer.as_deref(), Some(keyid.as_str()));
+    assert!(fx.payloads_dir().join("app/1.0.tfs").exists());
+}
+
+#[test]
+fn require_signed_registry_governs_dependency_edges() {
+    let fx = Fixture::new("reqreg-edge");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    // the CONSUMER's registry is unflagged — §2.2's policy is the
+    // PROVIDER's (every install whose plan resolves THROUGH the flagged
+    // registry, the closure walk included)
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    let inkscape_ref = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));
+    let inkscape_reg = fx.registry(
+        "inkscape-registry.yaml",
+        &versions_registry_yaml("inkscape", "toolkit", &[("1.4.3", &inkscape_ref)]),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    install::add_registry_opts(&fx.home, &inkscape_reg, &require_signed_opts("priv")).unwrap();
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 70, "{err:?}");
+    assert!(err.message.contains("UnsignedRegistryPayload"), "{err:?}");
+    assert!(
+        err.message.contains("'priv'"),
+        "the provider's registry is named: {err:?}"
+    );
+    assert!(!fx.payloads_dir().join("inkscape/1.4.3.tfs").exists());
+}
