@@ -128,7 +128,10 @@ fn unpack_bundle_inner(
     let entries = archive.entries().map_err(|_| undecodable(bundle_name))?;
     for entry in entries {
         let mut entry = entry.map_err(|_| undecodable(bundle_name))?;
-        let path = entry.path().map_err(|_| undecodable(bundle_name))?.into_owned();
+        let path = entry
+            .path()
+            .map_err(|_| undecodable(bundle_name))?
+            .into_owned();
         // The §2 grammar: a bare relative basename — nothing else.
         let mut comps = path.components();
         let name = match (comps.next(), comps.next()) {
@@ -181,10 +184,7 @@ fn unpack_bundle_inner(
         };
         let stage = scratch.join(format!("{bundle_name}.{}.{name}", std::process::id()));
         let mut out = fs::File::create(&stage).map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_IO,
-                format!("{e} staging {}", stage.display()),
-            )
+            ShimError::new(EX_TEBAKO_IO, format!("{e} staging {}", stage.display()))
         })?;
         let mut hasher = sha2::Sha256::new();
         let mut buf = [0u8; 65536];
@@ -194,10 +194,7 @@ fn unpack_bundle_inner(
                 break;
             }
             std::io::Write::write_all(&mut out, &buf[..n]).map_err(|e| {
-                ShimError::new(
-                    EX_TEBAKO_IO,
-                    format!("{e} staging {}", stage.display()),
-                )
+                ShimError::new(EX_TEBAKO_IO, format!("{e} staging {}", stage.display()))
             })?;
             hasher.update(&buf[..n]);
         }
@@ -254,11 +251,7 @@ fn unpack_bundle_inner(
 /// The in-bundle `SHA256SUMS` (coreutils `<sha>  <file>` lines, a `*`
 /// prefix tolerated) must cover exactly the already-verified members
 /// and agree with their bytes (spec 36 §4's cross-check).
-fn check_sums(
-    bundle_name: &str,
-    text: &str,
-    unpacked: &[UnpackedMember],
-) -> Result<(), ShimError> {
+fn check_sums(bundle_name: &str, text: &str, unpacked: &[UnpackedMember]) -> Result<(), ShimError> {
     let mut seen: Vec<(&str, &str)> = Vec::new();
     for line in text.lines() {
         let line = line.trim_end_matches(['\r', ' ', '\t']);
@@ -325,7 +318,11 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 /// paths; mode 0o777000 marks the symlink grammar violation), then the
 /// closing SHA256SUMS (or `sums_override`).
 #[cfg(test)]
-pub(crate) fn write_bundle(path: &Path, members: &[(&str, &[u8], u32)], sums_override: Option<&str>) {
+pub(crate) fn write_bundle(
+    path: &Path,
+    members: &[(&str, &[u8], u32)],
+    sums_override: Option<&str>,
+) {
     let file = fs::File::create(path).unwrap();
     let gz = flate2::write::GzEncoder::new(file, flate2::Compression::none());
     let mut builder = tar::Builder::new(gz);
@@ -336,9 +333,7 @@ pub(crate) fn write_bundle(path: &Path, members: &[(&str, &[u8], u32)], sums_ove
             h.set_entry_type(tar::EntryType::Symlink);
             h.set_size(0);
             h.set_mode(0o777);
-            builder
-                .append_data(&mut h, name, std::io::empty())
-                .unwrap();
+            builder.append_data(&mut h, name, std::io::empty()).unwrap();
             continue;
         }
         h.set_entry_type(tar::EntryType::Regular);
@@ -370,10 +365,8 @@ mod tests {
     use super::*;
 
     fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "tebako-shim-bundle-{tag}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("tebako-shim-bundle-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -392,10 +385,16 @@ mod tests {
         let bundle = dir.join("stem.tar.gz");
         write_bundle(
             &bundle,
-            &[("exe", b"the interpreter", 0o755), ("img.tfs", b"the env image", 0o444)],
+            &[
+                ("exe", b"the interpreter", 0o755),
+                ("img.tfs", b"the env image", 0o444),
+            ],
             None,
         );
-        let members = [expected("exe", b"the interpreter"), expected("img.tfs", b"the env image")];
+        let members = [
+            expected("exe", b"the interpreter"),
+            expected("img.tfs", b"the env image"),
+        ];
         let unpacked = unpack_bundle(&bundle, "stem.tar.gz", &members, &dir).unwrap();
         assert_eq!(unpacked.len(), 2);
         assert_eq!(unpacked[0].name, "exe");
@@ -407,10 +406,25 @@ mod tests {
 
     #[test]
     fn grammar_violations_are_the_named_invalid_bundle() {
-        type Case = (&'static str, Vec<(&'static str, &'static [u8], u32)>, Option<String>, &'static str);
+        type Case = (
+            &'static str,
+            Vec<(&'static str, &'static [u8], u32)>,
+            Option<String>,
+            &'static str,
+        );
         let cases: Vec<Case> = vec![
-            ("traverse", vec![("!../escape", b"x", 0o644)], None, "bare relative"),
-            ("symlink", vec![("link", b"", 0o777000)], None, "regular files only"),
+            (
+                "traverse",
+                vec![("!../escape", b"x", 0o644)],
+                None,
+                "bare relative",
+            ),
+            (
+                "symlink",
+                vec![("link", b"", 0o777000)],
+                None,
+                "regular files only",
+            ),
             (
                 "undeclared",
                 vec![("exe", b"real", 0o755), ("extra", b"x", 0o644)],

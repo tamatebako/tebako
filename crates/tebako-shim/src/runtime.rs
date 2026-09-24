@@ -2247,8 +2247,15 @@ fn runtime_bundle_item<'p>(
     let commit = move |staged: &StagedArtifact| {
         // 1. The declared signature verifies FIRST (spec 09 §4).
         if let Some(declared) = signature {
-            match trust.verify_asset(ctx, dir_url, local, &staging, staged.tmp, &bundle_name, declared)
-            {
+            match trust.verify_asset(
+                ctx,
+                dir_url,
+                local,
+                &staging,
+                staged.tmp,
+                &bundle_name,
+                declared,
+            ) {
                 Ok(signer) => sink.add_signer(signer),
                 Err(e) => return Err(sink.fail(e)),
             }
@@ -2300,11 +2307,11 @@ fn runtime_bundle_item<'p>(
         }
         // 4. Unpack in-process: the §2 grammar + the exact member set +
         //    the per-member pins + the closing SHA256SUMS cross-check.
-        let unpacked = match runtime_bundle::unpack_bundle(staged.tmp, &bundle_name, &members, &staging)
-        {
-            Ok(u) => u,
-            Err(e) => return Err(sink.fail(e)),
-        };
+        let unpacked =
+            match runtime_bundle::unpack_bundle(staged.tmp, &bundle_name, &members, &staging) {
+                Ok(u) => u,
+                Err(e) => return Err(sink.fail(e)),
+            };
         // 5. Stage the verified members exactly as the per-file path
         //    does (the same permissions, the same trust markers).
         for (member_name, install_name, executable, entry_markers) in &placements {
@@ -3555,7 +3562,11 @@ payloads:
         let dll = b"the ruby core dll";
         write_bundle(
             &release.join(&bundle_name),
-            &[(stem, exe, 0o755), ("tebako-runtime-9.9.9-3.4.2-windows-ucrt64.tfs", img, 0o444), ("tebako-runtime-9.9.9-3.4.2-windows-ucrt64.dll", dll, 0o644)],
+            &[
+                (stem, exe, 0o755),
+                ("tebako-runtime-9.9.9-3.4.2-windows-ucrt64.tfs", img, 0o444),
+                ("tebako-runtime-9.9.9-3.4.2-windows-ucrt64.dll", dll, 0o644),
+            ],
             None,
         );
         let bundle_sha = sha256_hex(&std::fs::read(release.join(&bundle_name)).unwrap());
@@ -3576,9 +3587,18 @@ payloads:
                 size_bytes: None,
             },
             members: vec![
-                ExpectedMember { name: stem.to_string(), sha256: sha256_hex(exe) },
-                ExpectedMember { name: image_name.clone(), sha256: sha256_hex(img) },
-                ExpectedMember { name: dll_name.clone(), sha256: sha256_hex(dll) },
+                ExpectedMember {
+                    name: stem.to_string(),
+                    sha256: sha256_hex(exe),
+                },
+                ExpectedMember {
+                    name: image_name.clone(),
+                    sha256: sha256_hex(img),
+                },
+                ExpectedMember {
+                    name: dll_name.clone(),
+                    sha256: sha256_hex(dll),
+                },
             ],
             placements: vec![
                 (stem.to_string(), stem.to_string(), true, true),
@@ -3652,18 +3672,30 @@ payloads:
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
-            assert_eq!(std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777, 0o755);
+            assert_eq!(
+                std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777,
+                0o755
+            );
             let img = tmp.join(format!("{stem}.tfs"));
-            assert_eq!(std::fs::metadata(&img).unwrap().permissions().mode() & 0o777, 0o444);
+            assert_eq!(
+                std::fs::metadata(&img).unwrap().permissions().mode() & 0o777,
+                0o444
+            );
             assert!(tmp.join("x64-ucrt-ruby342.dll").is_file());
         }
         let sha_marker = std::fs::read_to_string(tmp.join("sha256")).unwrap();
-        assert_eq!(sha_marker, format!("{}  {stem}\n", sha256_hex(b"the interpreter")));
+        assert_eq!(
+            sha_marker,
+            format!("{}  {stem}\n", sha256_hex(b"the interpreter"))
+        );
         let origin = std::fs::read_to_string(tmp.join("origin")).unwrap();
         assert!(origin.contains(&fixture.bundle.filename), "{origin}");
         assert!(origin.contains(&sha256_hex(b"the interpreter")), "{origin}");
         let facet_origin = std::fs::read_to_string(tmp.join(format!("{stem}.tfs.origin"))).unwrap();
-        assert!(facet_origin.contains(&fixture.bundle.filename), "{facet_origin}");
+        assert!(
+            facet_origin.contains(&fixture.bundle.filename),
+            "{facet_origin}"
+        );
         // The bundle's staged bytes + scratch are gone — only the
         // store-layout names remain.
         assert!(!tmp.join(&fixture.bundle.filename).exists());
@@ -3681,7 +3713,9 @@ payloads:
         assert!(refusal.message.contains("not found"), "{refusal:?}");
         // Nothing staged: the tmp dir holds no store-layout names.
         let tmp = home.join("tmp").join("entry.test");
-        assert!(!tmp.join("tebako-runtime-9.9.9-3.4.2-windows-ucrt64").exists());
+        assert!(!tmp
+            .join("tebako-runtime-9.9.9-3.4.2-windows-ucrt64")
+            .exists());
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -3691,7 +3725,9 @@ payloads:
         let ctx = test_ctx(&home);
         // Re-pin the sidecar to a stranger: the release is inconsistent.
         std::fs::write(
-            fixture.release.join(format!("{}.sha256", fixture.bundle.filename)),
+            fixture
+                .release
+                .join(format!("{}.sha256", fixture.bundle.filename)),
             format!("{}  {}\n", sha64('f'), fixture.bundle.filename),
         )
         .unwrap();
