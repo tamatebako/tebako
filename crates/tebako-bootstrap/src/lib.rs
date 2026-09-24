@@ -5904,14 +5904,15 @@ mod bundle_tests {
     #[test]
     fn bundle_violations_are_named() {
         let exe_asset = format!("{}{}", stem(), exe_suffix());
-        let cases: Vec<(
-            &str,
-            Vec<(String, &[u8])>,
+        type ViolationCase<'a> = (
+            &'a str,
+            Vec<(String, &'a [u8])>,
             Option<String>,
             Option<String>,
             bool,
-            &str,
-        )> = vec![
+            &'a str,
+        );
+        let cases: Vec<ViolationCase<'_>> = vec![
             // a symlink member
             (
                 "symlink",

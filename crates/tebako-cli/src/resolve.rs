@@ -3596,14 +3596,15 @@ mod tests {
         let image = b"fake env image\n";
         let stem = "tebako-runtime-0.17.0-3.4.2-macos-arm64";
         let image_name = format!("{stem}.tfs");
-        let cases: Vec<(
-            &str,
-            Vec<(&str, &[u8], u32)>,
+        type ViolationCase<'a> = (
+            &'a str,
+            Vec<(&'a str, &'a [u8], u32)>,
             Option<String>,
-            Option<&str>,
+            Option<&'a str>,
             bool,
-            &str,
-        )> = vec![
+            &'a str,
+        );
+        let cases: Vec<ViolationCase<'_>> = vec![
             // a symlink member
             (
                 "symlink",
