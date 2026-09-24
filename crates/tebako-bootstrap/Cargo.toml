@@ -24,6 +24,11 @@ tebako-http = { version = "2.0.0", path = "../tebako-http", default-features = f
 # bootstrap resolves `tfs:`/`https:`/`file://` lock sources only.
 tebako-resolve = { version = "2.0.0", path = "../tebako-resolve", default-features = false }
 tebako-term = { version = "2.0.0", path = "../tebako-term" }
+# spec 36 §4: a bundle-era runtime shard fetches ONE `<stem>.tar.gz` and
+# unpacks it in-process — the Rust tar crate + flate2's pure-Rust
+# miniz_oxide backend (no system zlib, no shell-outs; invariant 1).
+tar = { version = "0.4", default-features = false }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 # OpenPGP trailer verification is OPTIONAL (feature `openpgp-verify`,
 # default OFF): the shipped bootstrap runs unverified-first — every
 # package loads with a loud warning, and TEBAKO_REQUIRE_SIGNED=1 fails

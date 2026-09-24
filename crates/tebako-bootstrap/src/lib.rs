@@ -1384,6 +1384,59 @@ pub fn manifest_entry_facet_filename(entry: &ManifestEntry, facet: &str) -> Opti
         .map(|(_, v)| v.to_string())
 }
 
+/// A shard entry's additive `bundle` block (spec 36 §3): the one
+/// `<stem>.tar.gz` carrying the leg's bytes (exe + env image + windows
+/// DLLs + the closing SHA256SUMS), its sha256 pin, and the declared
+/// signature when the line is signing-enabled.
+pub struct BundleDecl {
+    pub filename: String,
+    pub sha256: String,
+    pub signature: Option<BundleSignature>,
+}
+
+/// The bundle's declared detached-signature block (spec 09 §5's
+/// every-served-name rule): the signer pin + the `.asc` asset name
+/// within the same release, flowed verbatim like `filename`.
+pub struct BundleSignature {
+    pub keyid: String,
+    pub asc: String,
+}
+
+/// The `bundle` block of the entry (spec 36 §3). An INCOMPLETE block is
+/// no bundle — the image/dll facet rule, never a guess: the per-file
+/// path then breaks LOUD on the missing exe asset (spec 36 §4's compat
+/// window — the failure an invalid publish earns), exactly like a
+/// pre-bundle reader.
+fn manifest_entry_bundle(entry: &ManifestEntry) -> Option<BundleDecl> {
+    let body = depth1_object_body(entry.body, "bundle")?;
+    let fields = depth1_string_fields(body);
+    let get = |key: &str| fields.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
+    let filename = get("filename")?;
+    let sha256 = get("sha256")?;
+    if filename.is_empty() || sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    let signature = depth1_object_body(body, "signature").and_then(|sig| {
+        let fields = depth1_string_fields(sig);
+        let get = |key: &str| fields.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
+        match (get("keyid"), get("asc")) {
+            (Some(keyid), Some(asc)) if !keyid.is_empty() && !asc.is_empty() => Some(
+                BundleSignature {
+                    keyid: keyid.to_string(),
+                    asc: asc.to_string(),
+                },
+            ),
+            _ => None,
+        }
+    });
+    Some(BundleDecl {
+        filename: filename.to_string(),
+        sha256: sha256.to_lowercase(),
+        signature,
+    })
+}
+
 // ---------------------------------------------------------------------
 // fat package: install the runtime payload slot
 // ---------------------------------------------------------------------
@@ -2271,6 +2324,31 @@ fn download_executable(
         return Err(e);
     }
 
+    // spec 36 §4 — the era branch INSIDE the shard case: a shard entry
+    // carrying the additive `bundle` block is ONE fetch (bundle +
+    // sidecar + `.asc` when declared) — verified, unpacked in-process,
+    // every member pinned — landing the whole entry in one tmp+rename.
+    // A shard without `bundle` takes the per-file path below, forever
+    // (keep-forever, spec 13 §8).
+    if let Some(bundle) = id
+        .entry(&manifest_text)
+        .and_then(|e| manifest_entry_bundle(&e))
+    {
+        return download_bundle(
+            runtime_ref,
+            rr,
+            layout,
+            ux,
+            base_raw,
+            &manifest_text,
+            ins,
+            &asset,
+            &exe_path,
+            &id,
+            bundle,
+        );
+    }
+
     if fetch_asset(&asset_url, local, &ins.tmp_asset, &asset, &mut ux.prog).is_err() {
         cleanup_tmp_entry(&ins.tmp_dir, &asset);
         lock_release(ins.lock);
@@ -2860,6 +2938,854 @@ fn resolve_dll(
     let size = std::fs::metadata(&dll_path).map(|m| m.len()).unwrap_or(0);
     ux.prog.line(&installed_line(&install_as, size, entry_dir));
     Ok(Some(dll_path))
+}
+
+// ---------------------------------------------------------------------
+// the release bundle fetch (spec 36 §4): one `<stem>.tar.gz` per leg
+// ---------------------------------------------------------------------
+
+/// The named spec 36 §7 error — a member-grammar violation, a member-set
+/// mismatch against the shard, a member checksum mismatch, or an
+/// undecodable tar/gzip stream. Exit 70's integrity class
+/// (EX_TEBAKO_SHA); the message names the member and the shard it
+/// disagrees with. Never a best-effort unpack, never a skipped member,
+/// never a partial store write (the caller drops the staging dir).
+fn invalid_bundle_err(bundle: &str, member: &str, detail: &str) -> BootError {
+    BootError::new(
+        EX_TEBAKO_SHA,
+        format!(
+            "invalid release bundle {bundle} (member {member}): {detail} — the bundle disagrees with the shard that declared it — refusing to install or execute\n  nothing was installed"
+        ),
+    )
+}
+
+fn invalid_bundle<T>(bundle: &str, member: &str, detail: &str) -> Result<T, BootError> {
+    Err(invalid_bundle_err(bundle, member, detail))
+}
+
+/// One member the shard declares the bundle carries: the served
+/// basename plus the per-member pin (the shard's sha fields pin the
+/// UNPACKED bytes, spec 36 §3).
+struct BundleMember {
+    name: String,
+    sha256: String,
+}
+
+/// The `SHA256SUMS` member is the one member no shard pin covers, so it
+/// is read into memory for the cross-check — bound it (one coreutils
+/// line per member is ~70 bytes; a megabyte is far past any real bundle).
+const SUMS_MEMBER_CAP: u64 = 1 << 20;
+
+/// Unpack + verify one fetched bundle (spec 36 §2's grammar and §4's
+/// checks; the same semantics tebako-cli's runtime_bundle module
+/// carries — the size-gated bootstrap cannot link that crate, so both
+/// pin spec 36): regular files only, bare relative basenames, the
+/// member SET exactly the shard's declarations plus the closing
+/// SHA256SUMS (LAST — a member after it violates the grammar), every
+/// member's streamed sha256 against its pin, and the in-bundle
+/// SHA256SUMS agreeing with the member bytes. Verified members are
+/// staged inside `tmp_dir` under their member names. On ANY failure the
+/// staged files are removed.
+fn unpack_runtime_bundle(
+    bundle_path: &Path,
+    bundle_name: &str,
+    expected: &[BundleMember],
+    tmp_dir: &Path,
+) -> Result<Vec<(String, String)>, BootError> {
+    let mut staged: Vec<PathBuf> = Vec::new();
+    let result =
+        unpack_runtime_bundle_inner(bundle_path, bundle_name, expected, tmp_dir, &mut staged);
+    if result.is_err() {
+        for path in &staged {
+            let _ = remove_file(path);
+        }
+    }
+    result
+}
+
+fn unpack_runtime_bundle_inner(
+    bundle_path: &Path,
+    bundle_name: &str,
+    expected: &[BundleMember],
+    tmp_dir: &Path,
+    staged: &mut Vec<PathBuf>,
+) -> Result<Vec<(String, String)>, BootError> {
+    let file = std::fs::File::open(bundle_path).map_err(|e| {
+        BootError::new(
+            EX_TEBAKO_IO,
+            format!("cannot open downloaded bundle {}: {e}", bundle_path.display()),
+        )
+    })?;
+    let gz = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(gz);
+    let undecodable =
+        |member: &str| invalid_bundle_err(bundle_name, member, "the tar/gzip stream is undecodable");
+    let mut unpacked: Vec<(String, String)> = Vec::new(); // (member name, sha256)
+    let mut sums_seen = false;
+    let entries = archive
+        .entries()
+        .map_err(|_| undecodable(bundle_name))?;
+    for entry in entries {
+        let mut entry = entry.map_err(|_| undecodable(bundle_name))?;
+        let path = entry
+            .path()
+            .map_err(|_| undecodable(bundle_name))?
+            .into_owned();
+        // The §2 grammar: a bare relative basename — nothing else (no
+        // directories, no absolute paths, no `..` segments).
+        let mut comps = path.components();
+        let name = match (comps.next(), comps.next()) {
+            (Some(std::path::Component::Normal(n)), None) => n.to_string_lossy().into_owned(),
+            _ => {
+                return invalid_bundle(
+                    bundle_name,
+                    &path.to_string_lossy(),
+                    "member names must be bare relative file names (no directories, no absolute paths, no `..` segments)",
+                );
+            }
+        };
+        if sums_seen {
+            return invalid_bundle(
+                bundle_name,
+                &name,
+                "SHA256SUMS is the closing member — no member may follow it",
+            );
+        }
+        if entry.header().entry_type() != tar::EntryType::Regular {
+            return invalid_bundle(
+                bundle_name,
+                &name,
+                "bundle members are regular files only (no directories, symlinks, or device nodes)",
+            );
+        }
+        if name == "SHA256SUMS" {
+            let mut text = String::new();
+            Read::take(entry, SUMS_MEMBER_CAP + 1)
+                .read_to_string(&mut text)
+                .map_err(|_| undecodable("SHA256SUMS"))?;
+            if text.len() as u64 > SUMS_MEMBER_CAP {
+                return invalid_bundle(
+                    bundle_name,
+                    "SHA256SUMS",
+                    "the checksum member exceeds its size bound",
+                );
+            }
+            sums_seen = true;
+            check_bundle_sums(bundle_name, &text, &unpacked)?;
+            continue;
+        }
+        let Some(pin) = expected.iter().find(|m| m.name == name) else {
+            return invalid_bundle(
+                bundle_name,
+                &name,
+                "the shard does not declare this member",
+            );
+        };
+        let stage = tmp_dir.join(&name);
+        let mut out = std::fs::File::create(&stage).map_err(|e| {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot stage {} in {}: {e}", name, tmp_dir.display()),
+            )
+        })?;
+        staged.push(stage);
+        let mut hasher = sha2::Sha256::new();
+        let mut buf = [0u8; 65536];
+        loop {
+            let n = entry.read(&mut buf).map_err(|_| undecodable(&name))?;
+            if n == 0 {
+                break;
+            }
+            out.write_all(&buf[..n]).map_err(|e| {
+                BootError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot stage {name} in {}: {e}", tmp_dir.display()),
+                )
+            })?;
+            hasher.update(&buf[..n]);
+        }
+        let actual = sha256_hex(&hasher.finalize());
+        if !actual.eq_ignore_ascii_case(&pin.sha256) {
+            return invalid_bundle(
+                bundle_name,
+                &name,
+                &format!(
+                    "member checksum mismatch — the shard pins {}, the bundle carries {actual}",
+                    pin.sha256
+                ),
+            );
+        }
+        unpacked.push((name, actual));
+    }
+    if !sums_seen {
+        return invalid_bundle(
+            bundle_name,
+            "SHA256SUMS",
+            "the closing SHA256SUMS member is absent",
+        );
+    }
+    // The exact member SET: every shard-declared member must have
+    // appeared (extras were refused inline above).
+    for pin in expected {
+        if !unpacked.iter().any(|(name, _)| name == &pin.name) {
+            return invalid_bundle(
+                bundle_name,
+                &pin.name,
+                "the shard declares this member but the bundle does not carry it",
+            );
+        }
+    }
+    Ok(unpacked)
+}
+
+/// The in-bundle `SHA256SUMS` (coreutils `<sha>  <file>` lines, a `*`
+/// prefix tolerated) must cover exactly the already-verified members
+/// and agree with their bytes (spec 36 §4's cross-check).
+fn check_bundle_sums(
+    bundle_name: &str,
+    text: &str,
+    unpacked: &[(String, String)],
+) -> Result<(), BootError> {
+    let mut seen: Vec<(&str, &str)> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_end_matches(['\r', ' ', '\t']);
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let (Some(sha), Some(file)) = (parts.next(), parts.next()) else {
+            return invalid_bundle(
+                bundle_name,
+                "SHA256SUMS",
+                "a SHA256SUMS line is not \"<sha256>  <file>\"",
+            );
+        };
+        let file = file.trim().trim_start_matches('*');
+        if !(sha.len() == 64 && sha.bytes().all(|b| b.is_ascii_hexdigit())) {
+            return invalid_bundle(
+                bundle_name,
+                "SHA256SUMS",
+                "a SHA256SUMS line carries no 64-hex digest",
+            );
+        }
+        seen.push((sha, file));
+    }
+    for (sha, file) in &seen {
+        match unpacked.iter().find(|(name, _)| name == file) {
+            Some((name, actual)) if actual.eq_ignore_ascii_case(sha) => {
+                let _ = name;
+            }
+            Some((name, _)) => {
+                return invalid_bundle(
+                    bundle_name,
+                    name,
+                    "SHA256SUMS disagrees with the member bytes",
+                );
+            }
+            None => {
+                return invalid_bundle(
+                    bundle_name,
+                    file,
+                    "SHA256SUMS names a member the bundle does not carry",
+                );
+            }
+        }
+    }
+    for (name, _) in unpacked {
+        if !seen.iter().any(|(_, f)| f == name) {
+            return invalid_bundle(
+                bundle_name,
+                name,
+                "SHA256SUMS does not pin this member",
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Drop a failed bundle install's staging dir (it holds the downloaded
+/// bundle and any unpacked members — more than cleanup_tmp_entry's
+/// fixed spelling list) and release the entry lock.
+fn abort_bundle_install(ins: EntryInstall, e: BootError) -> BootError {
+    let _ = std::fs::remove_dir_all(&ins.tmp_dir);
+    lock_release(ins.lock);
+    e
+}
+
+/// The spec 36 §4 bundle fetch (the era branch INSIDE the shard case —
+/// a shard carrying the additive `bundle` block): download the bundle
+/// (+ its `.sha256` sidecar, + the `.asc` when `bundle.signature`
+/// declares one), verify the detached signature FIRST when declared
+/// (spec 09 §4's runtime-fetch point — always strict when this
+/// bootstrap carries OpenPGP verification; unverified-first otherwise:
+/// loud warning + journal, sha256 integrity enforced, exit 71 under
+/// TEBAKO_REQUIRE_SIGNED=1 naming the missing capability), verify the
+/// bundle sha256 against the sidecar AND the shard pin, unpack
+/// in-process with the §2 member-grammar validation, verify EVERY
+/// member against the shard's per-member pins, then write the spec 05
+/// §3 store layout exactly as the per-file path (exe 0755 + entry
+/// markers; image 0444, the dll AS `install_as`, trusted markers from
+/// the member pins) — one tmp-dir rename, so a partial install stays
+/// invisible.
+#[allow(clippy::too_many_arguments)]
+fn download_bundle(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    layout: &CacheLayout,
+    ux: &mut BootUx,
+    base_raw: &str,
+    manifest_text: &str,
+    ins: EntryInstall,
+    asset: &str,
+    exe_path: &Path,
+    id: &ReleaseIdentity,
+    bundle: BundleDecl,
+) -> Result<PathBuf, BootError> {
+    let entry_dir = &layout.entry_dir;
+    let base = skip_file_scheme(base_raw).to_string();
+    let local = base_is_local(base_raw);
+    let bundle_url = format!("{base}/v{}/{}", rr.abi, bundle.filename);
+    let sidecar_url = format!("{bundle_url}.sha256");
+
+    // The per-asset sidecar pins the bundle (spec 36 §3): fetched with
+    // it; a missing one is the not-found class (a shard declaring a
+    // bundle without its assets is an invalid publish).
+    let sidecar = match fetch_text(&sidecar_url, local) {
+        Ok(body) => body,
+        Err(()) => {
+            return Err(abort_bundle_install(
+                ins,
+                BootError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "cannot resolve runtime \"{runtime_ref}\": the bundle's checksum sidecar did not fetch\n  url: {sidecar_url}\n  the shard declares a bundle but the release does not carry its sidecar — an invalid publish; nothing was installed"
+                    ),
+                ),
+            ));
+        }
+    };
+    let sidecar_pin = match sha_from_sums(&sidecar, &bundle.filename) {
+        Ok(pin) => pin,
+        Err(()) => {
+            return Err(abort_bundle_install(
+                ins,
+                BootError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "cannot resolve runtime \"{runtime_ref}\": no checksum for {} in {sidecar_url}\n  the release is incomplete; nothing was installed",
+                        bundle.filename
+                    ),
+                ),
+            ));
+        }
+    };
+    if !sidecar_pin.eq_ignore_ascii_case(&bundle.sha256) {
+        return Err(abort_bundle_install(
+            ins,
+            BootError::new(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for runtime bundle {} — the sidecar pins {sidecar_pin} but the shard declares {}\n  the release is inconsistent — refusing to install or execute; nothing was installed",
+                    bundle.filename, bundle.sha256
+                ),
+            ),
+        ));
+    }
+
+    // A declared bundle signature on an unverified-first bootstrap gates
+    // BEFORE the download under TEBAKO_REQUIRE_SIGNED=1 (a strict-mode
+    // request is never silently downgraded to unverified, spec 06 §3).
+    #[cfg(not(feature = "openpgp-verify"))]
+    if let Some(sig) = &bundle.signature {
+        if require_signed_mode() {
+            return Err(abort_bundle_install(
+                ins,
+                BootError::new(
+                    EX_TEBAKO_SIGNATURE,
+                    format!(
+                        "the runtime bundle {} declares a signature (keyid {}), but this tebako-bootstrap was built WITHOUT OpenPGP verification (unverified-first) and cannot honor TEBAKO_REQUIRE_SIGNED=1\n  run a verification-enabled bootstrap, or unset TEBAKO_REQUIRE_SIGNED to proceed unverified",
+                        bundle.filename, sig.keyid
+                    ),
+                ),
+            ));
+        }
+    }
+
+    let tmp_bundle = ins.tmp_dir.join(&bundle.filename);
+    if fetch_asset(&bundle_url, local, &tmp_bundle, &bundle.filename, &mut ux.prog).is_err() {
+        return Err(abort_bundle_install(
+            ins,
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime \"{runtime_ref}\": download failed\n  url: {bundle_url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
+                ),
+            ),
+        ));
+    }
+
+    // The declared signature verifies FIRST (spec 09 §4), before the
+    // sha256 check and before a byte is unpacked.
+    if let Some(sig) = &bundle.signature {
+        if let Err(e) = verify_bundle_signature(
+            &layout.root,
+            runtime_ref,
+            &tmp_bundle,
+            &bundle,
+            sig,
+            &base,
+            rr,
+            local,
+            &ins,
+        ) {
+            return Err(abort_bundle_install(ins, e));
+        }
+    }
+
+    ux.prog.phase("verifying sha256");
+    let actual = match sha256_file_hex(&tmp_bundle) {
+        Ok(a) => a,
+        Err(e) => {
+            return Err(abort_bundle_install(
+                ins,
+                BootError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot hash downloaded file {}: {e}", tmp_bundle.display()),
+                ),
+            ));
+        }
+    };
+    if actual != bundle.sha256 {
+        return Err(abort_bundle_install(
+            ins,
+            BootError::new(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for downloaded runtime bundle {} — refusing to install or execute\n  expected: {} (from {sidecar_url})\n  actual:   {actual}\n  the download was deleted; the cache was not touched",
+                    bundle.filename, bundle.sha256
+                ),
+            ),
+        ));
+    }
+
+    // The expected member set flows from the shard's declarations
+    // (spec 36 §4): the exe (the entry's filename + sha256), the env
+    // image, the dll when declared. A bundle-era shard declaring a dll
+    // must name its PE install spelling — the bundle carries the
+    // member, the shard must be able to install it.
+    let Some(entry) = id.entry(manifest_text) else {
+        return Err(abort_bundle_install(
+            ins,
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime \"{runtime_ref}\": the release index no longer carries the identity triple\n  the release moved under the fetch; nothing was installed"
+                ),
+            ),
+        ));
+    };
+    let exe_sha = match sha_from_manifest_json(manifest_text, asset) {
+        Ok(sha) => sha,
+        Err(()) => {
+            return Err(abort_bundle_install(
+                ins,
+                BootError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "cannot resolve runtime \"{runtime_ref}\": no checksum for {asset} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
+                    ),
+                ),
+            ));
+        }
+    };
+    let mut members = vec![BundleMember {
+        name: asset.to_string(),
+        sha256: exe_sha.to_lowercase(),
+    }];
+    let image_name = manifest_entry_facet_filename(&entry, "image");
+    if let Some(image) = &image_name {
+        let sha = match sha_from_manifest_image(manifest_text, image) {
+            Ok(sha) => sha,
+            Err(()) => {
+                return Err(abort_bundle_install(
+                    ins,
+                    BootError::new(
+                        EX_TEBAKO_UNAVAILABLE,
+                        format!(
+                            "cannot resolve runtime \"{runtime_ref}\": no checksum for {image} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
+                        ),
+                    ),
+                ));
+            }
+        };
+        members.push(BundleMember {
+            name: image.clone(),
+            sha256: sha.to_lowercase(),
+        });
+    }
+    let dll_name = manifest_entry_facet_filename(&entry, "dll");
+    let mut dll_install_as: Option<String> = None;
+    if let Some(dll) = &dll_name {
+        let install_as = match dll_install_as_from_manifest(manifest_text, dll) {
+            Ok(name) => name,
+            Err(()) => {
+                return Err(abort_bundle_install(
+                    ins,
+                    BootError::new(
+                        EX_TEBAKO_UNAVAILABLE,
+                        format!(
+                            "release manifest dll facet for {dll} carries no install_as — a bundle-era shard must declare the PE name — refusing to install or execute"
+                        ),
+                    ),
+                ));
+            }
+        };
+        if install_as.contains('/') || install_as.contains('\\') {
+            return Err(abort_bundle_install(
+                ins,
+                BootError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "release manifest dll facet for {dll} carries an unusable install_as (\"{install_as}\") — the PE name must be a bare file name — refusing to install or execute"
+                    ),
+                ),
+            ));
+        }
+        let sha = match sha_from_manifest_image(manifest_text, dll) {
+            Ok(sha) => sha,
+            Err(()) => {
+                return Err(abort_bundle_install(
+                    ins,
+                    BootError::new(
+                        EX_TEBAKO_UNAVAILABLE,
+                        format!(
+                            "cannot resolve runtime \"{runtime_ref}\": no checksum for {dll} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
+                        ),
+                    ),
+                ));
+            }
+        };
+        members.push(BundleMember {
+            name: dll.clone(),
+            sha256: sha.to_lowercase(),
+        });
+        dll_install_as = Some(install_as);
+    }
+
+    // Unpack in-process: the §2 grammar, the exact member set, the
+    // per-member pins, the closing SHA256SUMS cross-check. Any
+    // disagreement is InvalidBundle and nothing was installed.
+    let unpacked = match unpack_runtime_bundle(&tmp_bundle, &bundle.filename, &members, &ins.tmp_dir)
+    {
+        Ok(u) => u,
+        Err(e) => return Err(abort_bundle_install(ins, e)),
+    };
+    let _ = remove_file(&tmp_bundle);
+
+    // Stage the store layout inside the tmp dir — the same bytes and
+    // markers the per-file path lands (publish_entry's rename then
+    // installs the whole entry atomically).
+    for (name, sha) in &unpacked {
+        if name == asset {
+            continue; // the exe is publish_entry's payload
+        }
+        let install_name = if Some(name) == dll_name.as_ref() {
+            match &dll_install_as {
+                Some(as_) => as_.clone(),
+                None => continue,
+            }
+        } else {
+            name.clone()
+        };
+        let staged_member = ins.tmp_dir.join(name);
+        let install_path = ins.tmp_dir.join(&install_name);
+        if install_name != *name {
+            if let Err(e) = os_rename(&staged_member, &install_path) {
+                let detail = format!(
+                    "cannot stage the runtime dll as {install_name} in {}: {e}",
+                    ins.tmp_dir.display()
+                );
+                return Err(abort_bundle_install(ins, BootError::new(EX_TEBAKO_IO, detail)));
+            }
+        }
+        make_readonly(&install_path);
+        let _ = write_small_file(
+            &ins.tmp_dir.join(format!("{install_name}.sha256")),
+            &format!("{sha}  {install_name}\n"),
+        );
+        let _ = write_small_file(
+            &ins.tmp_dir.join(format!("{install_name}.origin")),
+            &format!("runtime_ref={runtime_ref}\nurl={bundle_url}\nsha256={sha}\n"),
+        );
+    }
+
+    let exe_actual = unpacked
+        .iter()
+        .find(|(name, _)| name == asset)
+        .map(|(_, sha)| sha.clone())
+        .unwrap_or_else(|| exe_sha.to_lowercase());
+    let origin = format!("runtime_ref={runtime_ref}\nurl={bundle_url}\nsha256={exe_actual}\n");
+    ux.prog.phase("installing (locked)");
+    let installed = publish_entry(ins, entry_dir, exe_path, asset, &exe_actual, &origin)?;
+    let size = std::fs::metadata(&installed).map(|m| m.len()).unwrap_or(0);
+    ux.prog.line(&installed_line(&layout.entry, size, entry_dir));
+    Ok(installed)
+}
+
+/// The bundle's declared detached signature (spec 09 §4's runtime-fetch
+/// point, always strict): the `.asc` fetches from the same release (a
+/// declaration without its signature asset is an invalid signing state
+/// — exit 71, never a skip), the bundle bytes verify against the
+/// trusted keyring with the embedded/dev roots and the successor chain
+/// as the trailer path's fallbacks, and the verified signer must BE the
+/// pinned keyid (a signing subkey pins by its resolved PRIMARY keyid,
+/// spec 09 §9). Invalid → 71; untrusted → 72. Returns the verified
+/// primary keyid (the audit journal's signer identity).
+#[cfg(feature = "openpgp-verify")]
+#[allow(clippy::too_many_arguments)]
+fn verify_bundle_signature(
+    home: &Path,
+    runtime_ref: &str,
+    bundle_path: &Path,
+    bundle: &BundleDecl,
+    sig: &BundleSignature,
+    base: &str,
+    rr: &RuntimeRef,
+    local: bool,
+    ins: &EntryInstall,
+) -> Result<(), BootError> {
+    // The asc names a sibling asset of the same release — a separator
+    // would escape it; refuse by name, never fetch.
+    if sig.asc.contains('/') || sig.asc.contains('\\') {
+        return Err(BootError::new(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "{} declares a signature asset (\"{}\") that is not a bare file name",
+                bundle.filename, sig.asc
+            ),
+        ));
+    }
+    let asc_url = format!("{base}/v{}/{}", rr.abi, sig.asc);
+    let asc_tmp = ins.tmp_dir.join(&sig.asc);
+    if fetch_url(&asc_url, local, &asc_tmp).is_err() {
+        return Err(BootError::new(
+            EX_TEBAKO_SIGNATURE,
+            format!(
+                "{} declares a signature but {asc_url} did not fetch — an invalid signing state; nothing was installed",
+                bundle.filename
+            ),
+        ));
+    }
+    let asc = match std::fs::read(&asc_tmp) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return Err(BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot read the fetched signature {}: {e}", asc_tmp.display()),
+            ))
+        }
+    };
+    // the signature sidecar is fetch plumbing, never a store artifact
+    let _ = remove_file(&asc_tmp);
+    let bytes = match std::fs::read(bundle_path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return Err(BootError::new(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot read the staged {} for the signature check: {e}",
+                    bundle_path.display()
+                ),
+            ))
+        }
+    };
+    let keyring = match tebako_signer::trusted_keyring_bytes(home) {
+        Ok(ring) => ring,
+        Err(e) => return Err(BootError::new(EX_TEBAKO_IO, e.to_string())),
+    };
+    let outcome = match tebako_signer::verify_detached_full(&keyring, &bytes, &asc) {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            return Err(BootError::new(
+                EX_TEBAKO_SIGNATURE,
+                format!(
+                    "cannot verify the declared signature of {}: {e}",
+                    bundle.filename
+                ),
+            ))
+        }
+    };
+    let issuer = match outcome {
+        tebako_signer::VerifyOutcome::Trusted(issuer) => issuer.to_ascii_lowercase(),
+        tebako_signer::VerifyOutcome::Untrusted(keyid) => {
+            // The trailer path's fallbacks: the embedded/dev trusted
+            // root, then the successor-statement rotation chain.
+            let signer_fp =
+                tebako_signer::signature_issuer_fingerprint(&asc).unwrap_or_default();
+            let roots = trusted_roots();
+            let mut verified = None;
+            for root in &roots {
+                if !root.fingerprint.eq_ignore_ascii_case(&signer_fp) {
+                    continue;
+                }
+                let mut ring = match tebako_signer::trusted_keyring_bytes(home) {
+                    Ok(ring) => ring,
+                    Err(e) => return Err(BootError::new(EX_TEBAKO_IO, e.to_string())),
+                };
+                if let Some(pk) = &root.public_key {
+                    ring.extend_from_slice(pk);
+                }
+                match tebako_signer::verify_detached_full(&ring, &bytes, &asc) {
+                    Ok(tebako_signer::VerifyOutcome::Trusted(issuer)) => {
+                        journal(
+                            home,
+                            &format!(
+                                "event=bundle-trusted-root runtime_ref={runtime_ref} bundle={} signer={signer_fp}",
+                                bundle.filename
+                            ),
+                        );
+                        verified = Some(issuer.to_ascii_lowercase());
+                    }
+                    _ => {}
+                }
+                break;
+            }
+            if verified.is_none() {
+                let mut keyid_bytes = [0u8; 8];
+                let kid = keyid.trim_start_matches("0x");
+                if kid.len() == 16 && kid.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    for (i, pair) in kid.as_bytes().chunks(2).enumerate() {
+                        keyid_bytes[i] = u8::from_str_radix(
+                            std::str::from_utf8(pair).unwrap_or("00"),
+                            16,
+                        )
+                        .unwrap_or(0);
+                    }
+                    match forward_trust_from_successors(
+                        home,
+                        &roots,
+                        &signer_fp,
+                        &bytes,
+                        &asc,
+                        &keyid_bytes,
+                    ) {
+                        Ok(true) => {
+                            journal(
+                                home,
+                                &format!(
+                                    "event=bundle-trusted-forwarded runtime_ref={runtime_ref} bundle={} signer={signer_fp}",
+                                    bundle.filename
+                                ),
+                            );
+                            let ring = match tebako_signer::trusted_keyring_bytes(home) {
+                                Ok(ring) => ring,
+                                Err(e) => {
+                                    return Err(BootError::new(EX_TEBAKO_IO, e.to_string()))
+                                }
+                            };
+                            match tebako_signer::verify_detached_full(&ring, &bytes, &asc) {
+                                Ok(tebako_signer::VerifyOutcome::Trusted(issuer)) => {
+                                    verified = Some(issuer.to_ascii_lowercase());
+                                }
+                                _ => {}
+                            }
+                        }
+                        Ok(false) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+            match verified {
+                Some(issuer) => issuer,
+                None => {
+                    return Err(BootError::new(
+                        EX_TEBAKO_TRUST,
+                        format!(
+                            "{} is signed by {keyid}, which is not in the trusted keyring — refusing to install or execute\n  keyring: {}\n  register the signer's public key with tebako-pkg (TOFU) if you trust it",
+                            bundle.filename,
+                            tebako_signer::trusted_keyring_path(home).display()
+                        ),
+                    ));
+                }
+            }
+        }
+        tebako_signer::VerifyOutcome::Invalid(keyid) => {
+            return Err(BootError::new(
+                EX_TEBAKO_SIGNATURE,
+                format!(
+                    "{} carries a signature that does not verify (signer {}) — the download or its signature is corrupt — refusing to install or execute; nothing was installed",
+                    bundle.filename,
+                    keyid.unwrap_or_else(|| "unknown".to_string())
+                ),
+            ));
+        }
+    };
+    // The signature may issue from a signing subkey — the identity the
+    // pin names is the resolved PRIMARY keyid (spec 09 §9).
+    let keyring = match tebako_signer::trusted_keyring_bytes(home) {
+        Ok(ring) => ring,
+        Err(e) => return Err(BootError::new(EX_TEBAKO_IO, e.to_string())),
+    };
+    let primary = match tebako_signer::primary_keyid_of(&keyring, &issuer) {
+        Ok(primary) => primary,
+        Err(e) => {
+            return Err(BootError::new(
+                EX_TEBAKO_SIGNATURE,
+                format!("{}: {e}", bundle.filename),
+            ))
+        }
+    };
+    let pin = sig.keyid.to_ascii_lowercase();
+    if issuer != pin && primary.as_deref() != Some(pin.as_str()) {
+        return Err(BootError::new(
+            EX_TEBAKO_TRUST,
+            format!(
+                "{} declares signer {pin} but was signed by {issuer} — the signer key changed — refusing to install or execute; nothing was installed",
+                bundle.filename
+            ),
+        ));
+    }
+    journal(
+        home,
+        &format!(
+            "event=bundle-fetch-verified runtime_ref={runtime_ref} bundle={} signer={}",
+            bundle.filename,
+            primary.unwrap_or(issuer)
+        ),
+    );
+    Ok(())
+}
+
+/// Unverified-first (the shipped default — `openpgp-verify` off): a
+/// declared bundle signature verifies sha256-only with a loud UNVERIFIED
+/// warning + audit journal, exactly as a signed trailer is treated
+/// (spec 06 §3, spec 09 §4's bootstrap carve-out). The
+/// TEBAKO_REQUIRE_SIGNED=1 refusal ran before the download.
+#[cfg(not(feature = "openpgp-verify"))]
+#[allow(clippy::too_many_arguments)]
+fn verify_bundle_signature(
+    home: &Path,
+    runtime_ref: &str,
+    _bundle_path: &Path,
+    bundle: &BundleDecl,
+    sig: &BundleSignature,
+    _base: &str,
+    _rr: &RuntimeRef,
+    _local: bool,
+    _ins: &EntryInstall,
+) -> Result<(), BootError> {
+    eprintln!(
+        "tebako-bootstrap: WARNING: the runtime bundle {} declares a signature (keyid {}) but is installed UNVERIFIED — this bootstrap was built without OpenPGP verification\n  — only run packages from sources you trust",
+        bundle.filename, sig.keyid
+    );
+    journal(
+        home,
+        &format!(
+            "event=bundle-fetch-unverified runtime_ref={runtime_ref} bundle={} keyid={}",
+            bundle.filename, sig.keyid
+        ),
+    );
+    Ok(())
 }
 
 // ---------------------------------------------------------------------
@@ -4693,6 +5619,526 @@ mod dll_tests {
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&home2);
         let _ = std::fs::remove_dir_all(&home3);
+    }
+}
+
+#[cfg(test)]
+mod bundle_tests {
+    use super::*;
+
+    const TV: &str = "0.17.0";
+    const RV: &str = "3.4.2";
+    const EXE_BYTES: &[u8] = b"fake runtime exe\n";
+    const IMAGE_BYTES: &[u8] = b"fake env image\n";
+
+    fn dir(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-boot-bundle-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn stem() -> String {
+        format!("tebako-runtime-{TV}-{RV}-{}", platform_string())
+    }
+
+    fn entry_name() -> String {
+        format!("ruby-{RV}-{TV}-{}", platform_string())
+    }
+
+    fn image_name() -> String {
+        format!("{}.tfs", stem())
+    }
+
+    fn bundle_name() -> String {
+        format!("{}.tar.gz", stem())
+    }
+
+    fn runtime_ref() -> String {
+        format!("ruby@{RV};tebako={TV};image")
+    }
+
+    /// Build a fixture bundle in-test (spec 36 §2's shape): the members
+    /// in order, then the closing SHA256SUMS (auto-computed unless
+    /// overridden). A member whose name starts with '@' is written as a
+    /// SYMLINK (the grammar-violation case); a name starting with '!'
+    /// is written raw into the header's name field (a spelling the tar
+    /// crate itself refuses, e.g. the `..` grammar violation).
+    /// `raw` writes garbage without any tar/gzip framing.
+    fn build_bundle(path: &Path, members: &[(&str, &[u8])], sums_override: Option<String>) {
+        let file = std::fs::File::create(path).unwrap();
+        let gz = flate2::write::GzEncoder::new(file, flate2::Compression::none());
+        let mut builder = tar::Builder::new(gz);
+        let mut sums = String::new();
+        for (name, bytes) in members {
+            if let Some(link) = name.strip_prefix('@') {
+                let mut h = tar::Header::new_gnu();
+                h.set_entry_type(tar::EntryType::Symlink);
+                h.set_size(0);
+                h.set_mode(0o777);
+                builder
+                    .append_data(&mut h, link, std::io::empty())
+                    .unwrap();
+                continue;
+            }
+            let mut h = tar::Header::new_gnu();
+            h.set_entry_type(tar::EntryType::Regular);
+            h.set_size(bytes.len() as u64);
+            h.set_mode(0o755);
+            if let Some(raw_name) = name.strip_prefix('!') {
+                h.as_mut_bytes()[..raw_name.len()].copy_from_slice(raw_name.as_bytes());
+                h.set_cksum();
+                builder.append(&h, *bytes).unwrap();
+                sums.push_str(&format!(
+                    "{}  {}\n",
+                    sha256_hex(&sha2::Sha256::digest(bytes)),
+                    raw_name
+                ));
+                continue;
+            }
+            builder.append_data(&mut h, name, *bytes).unwrap();
+            sums.push_str(&format!(
+                "{}  {}\n",
+                sha256_hex(&sha2::Sha256::digest(bytes)),
+                name
+            ));
+        }
+        let sums = sums_override.unwrap_or(sums);
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(tar::EntryType::Regular);
+        h.set_size(sums.len() as u64);
+        h.set_mode(0o444);
+        builder
+            .append_data(&mut h, "SHA256SUMS", sums.as_bytes())
+            .unwrap();
+        builder.finish().unwrap();
+    }
+
+    /// The shard text (spec 36 §3): identity triple + contract set + the
+    /// per-member pins + the additive `bundle` block.
+    fn shard(bundle_sha: &str, image_sha: &str, signature: &str) -> String {
+        let exe_sha = sha256_hex(&sha2::Sha256::digest(EXE_BYTES));
+        format!(
+            "{{\"tebako_version\":\"{TV}\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"/__tfs__\",\"ruby_version\":\"{RV}\",\"platform\":\"{}\",\"filename\":\"{}{}\",\"sha256\":\"{exe_sha}\",\"size_bytes\":17,\"image\":{{\"filename\":\"{}\",\"sha256\":\"{image_sha}\",\"size_bytes\":14}},\"bundle\":{{\"filename\":\"{}\",\"sha256\":\"{bundle_sha}\",\"size_bytes\":100{signature}}}}}\n",
+            platform_string(),
+            stem(),
+            exe_suffix(),
+            image_name(),
+            bundle_name(),
+        )
+    }
+
+    /// A cache layout in the shape dll_layout builds (the exe absent —
+    /// the download path's starting point).
+    fn bundle_layout(home: &Path) -> (CacheLayout, RuntimeRef) {
+        let asset = format!("{}{}", stem(), exe_suffix());
+        let entry_dir = home.join("runtimes").join(entry_name());
+        (
+            CacheLayout {
+                root: home.to_path_buf(),
+                exe_path: entry_dir.join(&asset),
+                asset,
+                asset_base: stem(),
+                entry: entry_name(),
+                entry_dir,
+            },
+            RuntimeRef {
+                r#type: "ruby".to_string(),
+                version: RV.to_string(),
+                abi: TV.to_string(),
+            },
+        )
+    }
+
+    /// A bundle-era mirror: the shard, the bundle built from `members`,
+    /// and (unless `without_sidecar`) the sidecar. Returns (home,
+    /// layout, rr, base). `pin_image_as` poisons the shard's image pin.
+    fn bundle_mirror(
+        tag: &str,
+        members: &[(&str, &[u8])],
+        sums_override: Option<String>,
+        raw: bool,
+        pin_image_as: Option<&str>,
+        without_sidecar: bool,
+        signature: &str,
+    ) -> (PathBuf, CacheLayout, RuntimeRef, String) {
+        let home = dir(tag);
+        let mirror = home.join("mirror").join(format!("v{TV}"));
+        std::fs::create_dir_all(&mirror).unwrap();
+        let bundle_path = mirror.join(bundle_name());
+        if raw {
+            std::fs::write(&bundle_path, b"this is not a gzip stream\n").unwrap();
+        } else {
+            build_bundle(&bundle_path, members, sums_override);
+        }
+        let bundle_sha = sha256_file_hex(&bundle_path).unwrap();
+        if !without_sidecar {
+            std::fs::write(
+                mirror.join(format!("{}.sha256", bundle_name())),
+                format!("{bundle_sha}  {}\n", bundle_name()),
+            )
+            .unwrap();
+        }
+        let image_sha = pin_image_as
+            .map(str::to_string)
+            .unwrap_or_else(|| sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES)));
+        std::fs::write(
+            mirror.join(format!("{}.manifest.json", stem())),
+            shard(&bundle_sha, &image_sha, signature),
+        )
+        .unwrap();
+        let (layout, rr) = bundle_layout(&home);
+        let base = format!("file://{}", home.join("mirror").display());
+        (home, layout, rr, base)
+    }
+
+    fn happy_members() -> Vec<(String, &'static [u8])> {
+        vec![
+            (format!("{}{}", stem(), exe_suffix()), EXE_BYTES),
+            (image_name(), IMAGE_BYTES),
+        ]
+    }
+
+    #[test]
+    fn the_bundle_block_parses_from_the_shard_entry() {
+        let text = format!(
+            "[{}]",
+            shard(&"b".repeat(64), &"c".repeat(64), "")
+        );
+        let entry =
+            manifest_entry_for_runtime(&text, "ruby", RV, TV, platform_string()).unwrap();
+        let bundle = manifest_entry_bundle(&entry).expect("the bundle block parses");
+        assert_eq!(bundle.filename, bundle_name());
+        assert_eq!(bundle.sha256, "b".repeat(64));
+        assert!(bundle.signature.is_none());
+        // the declared signature block rides along
+        let signed = format!(
+            "[{}]",
+            shard(
+                &"b".repeat(64),
+                &"c".repeat(64),
+                ",\"signature\":{\"keyid\":\"efc3c250f7862a48\",\"asc\":\"bundle.tar.gz.asc\"}"
+            )
+        );
+        let entry =
+            manifest_entry_for_runtime(&signed, "ruby", RV, TV, platform_string()).unwrap();
+        let sig = manifest_entry_bundle(&entry)
+            .and_then(|b| b.signature)
+            .expect("the declared signature");
+        assert_eq!(sig.keyid, "efc3c250f7862a48");
+        assert_eq!(sig.asc, "bundle.tar.gz.asc");
+        // an incomplete block is no bundle (the facet rule)
+        let torn = format!(
+            "[{{\"tebako_version\":\"{TV}\",\"ruby_version\":\"{RV}\",\"platform\":\"{}\",\"filename\":\"x\",\"sha256\":\"{}\",\"bundle\":{{\"filename\":\"b.tar.gz\"}}}}]",
+            platform_string(),
+            "a".repeat(64)
+        );
+        let entry = manifest_entry_for_runtime(&torn, "ruby", RV, TV, platform_string()).unwrap();
+        assert!(manifest_entry_bundle(&entry).is_none());
+    }
+
+    #[test]
+    fn the_bundle_fetch_installs_the_store_layout() {
+        let raw_members = happy_members();
+        let members: Vec<(&str, &[u8])> =
+            raw_members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
+        let (home, layout, rr, base) =
+            bundle_mirror("happy", &members, None, false, None, false, "");
+        let mut ux = BootUx::new();
+        let exe = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(exe, layout.exe_path);
+        assert_eq!(std::fs::read(&exe).unwrap(), EXE_BYTES);
+        // the exe markers (publish_entry's shape) from the member pin
+        let exe_sha = sha256_hex(&sha2::Sha256::digest(EXE_BYTES));
+        assert_eq!(
+            std::fs::read_to_string(layout.entry_dir.join("sha256")).unwrap(),
+            format!("{exe_sha}  {}\n", layout.asset)
+        );
+        let origin = std::fs::read_to_string(layout.entry_dir.join("origin")).unwrap();
+        assert!(
+            origin.contains(&format!("/v{TV}/{}", bundle_name())),
+            "the bundle URL is the origin: {origin}"
+        );
+        // the env image read-only with its trusted markers
+        let image_path = layout.entry_dir.join(image_name());
+        assert_eq!(std::fs::read(&image_path).unwrap(), IMAGE_BYTES);
+        let image_sha = sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES));
+        assert_eq!(
+            std::fs::read_to_string(layout.entry_dir.join(format!("{}.sha256", image_name())))
+                .unwrap(),
+            format!("{image_sha}  {}\n", image_name())
+        );
+        assert!(
+            layout
+                .entry_dir
+                .join(format!("{}.origin", image_name()))
+                .is_file()
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(
+                exe.metadata().unwrap().permissions().mode() & 0o777,
+                0o755
+            );
+            assert_eq!(
+                image_path.metadata().unwrap().permissions().mode() & 0o777,
+                0o444
+            );
+        }
+        // the gated shard rode into the entry; no per-file assets exist
+        assert!(layout.entry_dir.join("manifest.json").is_file());
+        assert!(
+            !home.join("mirror").join(format!("v{TV}")).join(&layout.asset).exists(),
+            "the per-file exe asset was never fetched"
+        );
+        // the follow-up facet resolutions are cache hits — no mirror at all
+        std::fs::remove_dir_all(home.join("mirror")).unwrap();
+        let mut ux = BootUx::new();
+        let image = resolve_image(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(image, image_path);
+        let mut ux = BootUx::new();
+        assert!(resolve_dll(&runtime_ref(), &rr, &layout, &mut ux, &base)
+            .unwrap()
+            .is_none());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Every spec 36 §7 violation is the named InvalidBundle (exit 70's
+    /// integrity class) naming the member — and nothing was installed.
+    #[test]
+    fn bundle_violations_are_named() {
+        let exe_asset = format!("{}{}", stem(), exe_suffix());
+        let cases: Vec<(&str, Vec<(String, &[u8])>, Option<String>, Option<String>, bool, &str)> = vec![
+            // a symlink member
+            (
+                "symlink",
+                happy_members()
+                    .into_iter()
+                    .map(|(n, b)| {
+                        if n == image_name() {
+                            (format!("@{n}"), b)
+                        } else {
+                            (n, b)
+                        }
+                    })
+                    .collect(),
+                None,
+                None,
+                false,
+                "regular files only",
+            ),
+            // a `..` segment
+            (
+                "dotdot",
+                happy_members()
+                    .into_iter()
+                    .map(|(n, b)| {
+                        if n == image_name() {
+                            ("!../evil".to_string(), b)
+                        } else {
+                            (n, b)
+                        }
+                    })
+                    .collect(),
+                None,
+                None,
+                false,
+                "bare relative file names",
+            ),
+            // a declared member absent from the bundle
+            (
+                "missing",
+                vec![(exe_asset.clone(), EXE_BYTES)],
+                Some(format!(
+                    "{}  {}\n",
+                    sha256_hex(&sha2::Sha256::digest(EXE_BYTES)),
+                    exe_asset
+                )),
+                None,
+                false,
+                "does not carry it",
+            ),
+            // an extra member the shard does not declare
+            (
+                "extra",
+                happy_members()
+                    .into_iter()
+                    .chain([("surprise.txt".to_string(), &b"surprise\n"[..])])
+                    .collect(),
+                None,
+                None,
+                false,
+                "does not declare this member",
+            ),
+            // a member whose bytes disagree with the shard's pin
+            (
+                "membersha",
+                happy_members(),
+                None,
+                Some("f".repeat(64)),
+                false,
+                "member checksum mismatch",
+            ),
+            // SHA256SUMS disagreeing with the member bytes
+            (
+                "sums",
+                happy_members(),
+                Some(format!(
+                    "{}  {}\n{}  {}\n",
+                    sha256_hex(&sha2::Sha256::digest(EXE_BYTES)),
+                    exe_asset,
+                    "0".repeat(64),
+                    image_name()
+                )),
+                None,
+                false,
+                "SHA256SUMS disagrees",
+            ),
+            // an undecodable stream
+            ("garbage", vec![], None, None, true, "undecodable"),
+        ];
+        for (tag, members, sums, pin_image_as, raw, detail) in cases {
+            let member_refs: Vec<(&str, &[u8])> =
+                members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
+            let (home, layout, rr, base) = bundle_mirror(
+                tag,
+                &member_refs,
+                sums,
+                raw,
+                pin_image_as.as_deref(),
+                false,
+                "",
+            );
+            let mut ux = BootUx::new();
+            let err = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base)
+                .unwrap_err();
+            assert_eq!(err.code, EX_TEBAKO_SHA, "{tag}: {}", err.message);
+            assert!(
+                err.message.contains("invalid release bundle"),
+                "{tag}: {}",
+                err.message
+            );
+            assert!(err.message.contains(detail), "{tag}: {}", err.message);
+            assert!(
+                !layout.exe_path.exists(),
+                "{tag}: nothing was installed"
+            );
+            assert!(
+                !layout.entry_dir.join(image_name()).exists(),
+                "{tag}: nothing was installed"
+            );
+            let _ = std::fs::remove_dir_all(&home);
+        }
+    }
+
+    #[test]
+    fn bundle_sidecar_failures_are_named() {
+        let raw_members = happy_members();
+        let members: Vec<(&str, &[u8])> =
+            raw_members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
+        // a missing sidecar: the not-found class (69)
+        let (home, layout, rr, base) =
+            bundle_mirror("nosidecar", &members, None, false, None, true, "");
+        let mut ux = BootUx::new();
+        let err = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE, "{}", err.message);
+        assert!(err.message.contains(".sha256"), "{}", err.message);
+        assert!(!layout.exe_path.exists());
+        let _ = std::fs::remove_dir_all(&home);
+
+        // a sidecar disagreeing with the shard's pin: the integrity class
+        let (home, layout, rr, base) =
+            bundle_mirror("sidecarmismatch", &members, None, false, None, false, "");
+        std::fs::write(
+            home.join("mirror")
+                .join(format!("v{TV}"))
+                .join(format!("{}.sha256", bundle_name())),
+            format!("{}  {}\n", "0".repeat(64), bundle_name()),
+        )
+        .unwrap();
+        let mut ux = BootUx::new();
+        let err = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_SHA, "{}", err.message);
+        assert!(err.message.contains("inconsistent"), "{}", err.message);
+        assert!(!layout.exe_path.exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Unverified-first (the shipped `openpgp-verify`-off bootstrap,
+    /// spec 09 §4's carve-out): a declared bundle signature installs
+    /// sha256-only with the UNVERIFIED journal; TEBAKO_REQUIRE_SIGNED=1
+    /// refuses BEFORE the download (exit 71, the missing capability
+    /// named). The env mutation shares one test so process-wide
+    /// variables never race a sibling.
+    #[cfg(not(feature = "openpgp-verify"))]
+    #[test]
+    fn a_declared_bundle_signature_is_unverified_first() {
+        let raw_members = happy_members();
+        let members: Vec<(&str, &[u8])> =
+            raw_members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
+        let sig = ",\"signature\":{\"keyid\":\"efc3c250f7862a48\",\"asc\":\"bundle.tar.gz.asc\"}";
+        let (home, layout, rr, base) =
+            bundle_mirror("signed", &members, None, false, None, false, sig);
+        let mut ux = BootUx::new();
+        download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert!(layout.exe_path.is_file());
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(
+            journal.contains("event=bundle-fetch-unverified"),
+            "{journal}"
+        );
+
+        // TEBAKO_REQUIRE_SIGNED=1 fails closed BEFORE any download
+        let (home2, layout2, rr2, base2) =
+            bundle_mirror("requiresigned", &members, None, false, None, false, sig);
+        std::env::set_var("TEBAKO_REQUIRE_SIGNED", "1");
+        let mut ux = BootUx::new();
+        let err =
+            download_executable(&runtime_ref(), &rr2, &layout2, &mut ux, &base2).unwrap_err();
+        std::env::remove_var("TEBAKO_REQUIRE_SIGNED");
+        assert_eq!(err.code, EX_TEBAKO_SIGNATURE, "{}", err.message);
+        assert!(
+            err.message.contains("WITHOUT OpenPGP verification"),
+            "{}",
+            err.message
+        );
+        assert!(!layout2.exe_path.exists());
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&home2);
+    }
+
+    /// A shard WITHOUT the bundle key takes the per-file path, forever
+    /// (the keep-forever rule — spec 36 §4).
+    #[test]
+    fn a_shard_without_the_bundle_key_fetches_per_file() {
+        let home = dir("perfile");
+        let mirror = home.join("mirror").join(format!("v{TV}"));
+        std::fs::create_dir_all(&mirror).unwrap();
+        let asset = format!("{}{}", stem(), exe_suffix());
+        std::fs::write(mirror.join(&asset), EXE_BYTES).unwrap();
+        std::fs::write(mirror.join(image_name()), IMAGE_BYTES).unwrap();
+        // the pre-bundle shard shape: no `bundle` key
+        let text = shard(&"b".repeat(64), &sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES)), "");
+        let shard = text.replace(
+            &format!(
+                ",\"bundle\":{{\"filename\":\"{}\",\"sha256\":\"{}\",\"size_bytes\":100}}",
+                bundle_name(),
+                "b".repeat(64)
+            ),
+            "",
+        );
+        assert!(!shard.contains("bundle"), "{shard}");
+        std::fs::write(mirror.join(format!("{}.manifest.json", stem())), shard).unwrap();
+        let (layout, rr) = bundle_layout(&home);
+        let base = format!("file://{}", home.join("mirror").display());
+        let mut ux = BootUx::new();
+        let exe = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), EXE_BYTES);
+        // the image is NOT installed by download_executable on the
+        // per-file path (resolve_image's own fetch does that)
+        assert!(!layout.entry_dir.join(image_name()).exists());
+        let _ = std::fs::remove_dir_all(&home);
     }
 }
 

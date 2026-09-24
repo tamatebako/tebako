@@ -81,6 +81,7 @@ pub mod publish;
 pub mod resolve;
 pub mod run;
 pub mod runner;
+pub mod runtime_bundle;
 pub mod scenario;
 pub mod sdk;
 pub mod spawn;
