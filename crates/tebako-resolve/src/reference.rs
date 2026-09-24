@@ -8,6 +8,12 @@
 //! tfs:github:owner/repo:version[#artifact]   service adapter (GitHub releases)
 //! tfs:gitlab:owner/repo:version[#artifact]   service adapter (GitLab releases)
 //! tfs:bb:owner/repo:version[#artifact]       service adapter (Bitbucket downloads)
+//! tfs+github://host/owner/repo:version[#artifact]   GitHub API shape at that
+//!                                              host (spec 37 §4: GHE — and
+//!                                              Gitea/Forgejo, which implement
+//!                                              the same releases/contents API)
+//! tfs+gitlab://host/group/sub/repo:version[#artifact]   GitLab API v4 at that
+//!                                              host (spec 37 §4, self-hosted)
 //! tfs+git://host/owner/repo.git[@ref][#path]   git protocol adapter
 //! tfs+https://cdn.example.com/tool.tfs   verbatim HTTPS fetch
 //! https://cdn.example.com/tool.tfs       (same class, bare form)
@@ -21,6 +27,12 @@
 //! `AssetNotFound`, more than one is `AmbiguousAssets`. The adapter NEVER
 //! auto-picks by host triplet; platform selection is the registry's
 //! declarative job (spec 04 §2).
+//!
+//! The federation refusals (spec 37 §4, both exit class 65): an explicit
+//! host on `tfs+bb://` is the named `UnsupportedService` (Bitbucket Data
+//! Center is not Bitbucket Cloud), and any ssh/git@ URL form is the named
+//! `SshTransportUnsupported` (git over ssh needs the system ssh binary —
+//! the no-shell-outs law forbids it).
 
 use std::fmt;
 
@@ -58,12 +70,18 @@ impl Service {
 /// (`?sha256=<hex>`, normalized to lowercase) on any class.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reference {
-    /// `tfs:github:owner/repo:version[#artifact]` (gitlab, bb). `owner`
-    /// keeps any nested groups (`group/sub`) for hosts that support them.
-    /// `artifact` is the `#name` asset selector of a multi-artifact
-    /// release (spec 04 §1); None means the single-`.tfs` rule.
+    /// `tfs:github:owner/repo:version[#artifact]` (gitlab, bb) — the
+    /// service's canonical SaaS host; `tfs+<svc>://host/owner/repo:…` is
+    /// the same service at an EXPLICIT host (spec 37 §4) and carries it
+    /// in `host` (`None` = the SaaS form). `owner` keeps any nested
+    /// groups (`group/sub`) for hosts that support them. `artifact` is
+    /// the `#name` asset selector of a multi-artifact release (spec 04
+    /// §1); None means the single-`.tfs` rule.
     Service {
         service: Service,
+        /// The explicit host of the `tfs+<svc>://host/…` form (spec 37
+        /// §4); `None` on the canonical SaaS forms.
+        host: Option<String>,
         owner: String,
         repo: String,
         version: String,
@@ -92,7 +110,8 @@ pub enum Reference {
 }
 
 impl Reference {
-    /// Parse a reference string (the spec 04 §1 dispatch rule).
+    /// Parse a reference string (the spec 04 §1 dispatch rule; spec 37 §4
+    /// adds the explicit-host forms and the two federation refusals).
     pub fn parse(input: &str) -> Result<Reference, ReferenceError> {
         let input = input.trim();
         for (prefix, service) in [
@@ -102,6 +121,23 @@ impl Reference {
         ] {
             if let Some(rest) = input.strip_prefix(prefix) {
                 return parse_service(input, rest, service);
+            }
+        }
+        for (prefix, service) in [
+            ("tfs+github://", Service::Github),
+            ("tfs+gitlab://", Service::Gitlab),
+        ] {
+            if let Some(rest) = input.strip_prefix(prefix) {
+                return parse_hosted_service(input, rest, service);
+            }
+        }
+        // Bitbucket Data Center is NOT a host variant of tfs:bb: (spec 37
+        // §4) — the named UnsupportedService, never a guess.
+        for prefix in ["tfs+bb://", "tfs+bitbucket://"] {
+            if input.starts_with(prefix) {
+                return Err(ReferenceError::UnsupportedService {
+                    input: input.to_string(),
+                });
             }
         }
         if let Some(rest) = input.strip_prefix("tfs+git://") {
@@ -116,9 +152,23 @@ impl Reference {
         if let Some(rest) = input.strip_prefix("file://") {
             return parse_file(input, rest);
         }
+        // Any ssh/git@ URL form fails closed by name (spec 37 §4) — before
+        // the malformed-family loop, which tfs+git+ssh:// would otherwise hit.
+        if is_ssh_form(input) {
+            return Err(ReferenceError::SshTransportUnsupported {
+                input: input.to_string(),
+            });
+        }
         // Recognized-but-malformed families get a targeted reason; anything
         // else is the named error listing the classes (never a guess).
-        for family in ["tfs:", "tfs+git:", "tfs+https:", "http://"] {
+        for family in [
+            "tfs:",
+            "tfs+git:",
+            "tfs+https:",
+            "tfs+github:",
+            "tfs+gitlab:",
+            "http://",
+        ] {
             if input.starts_with(family) {
                 return Err(ReferenceError::Invalid {
                     input: input.to_string(),
@@ -157,13 +207,20 @@ impl fmt::Display for Reference {
         match self {
             Reference::Service {
                 service,
+                host,
                 owner,
                 repo,
                 version,
                 artifact,
                 sha256,
             } => {
-                write!(f, "tfs:{}:{owner}/{repo}:{version}", service.scheme())?;
+                match host {
+                    // the explicit-host form (spec 37 §4)
+                    Some(h) => {
+                        write!(f, "tfs+{}://{h}/{owner}/{repo}:{version}", service.scheme())?
+                    }
+                    None => write!(f, "tfs:{}:{owner}/{repo}:{version}", service.scheme())?,
+                }
                 pin(f, sha256, "?")?;
                 if let Some(a) = artifact {
                     write!(f, "#{a}")?;
@@ -281,6 +338,41 @@ pub(crate) fn check_component(
 /// release asset by exact name; the pin stays in query form and never
 /// clashes with the fragment.
 fn parse_service(input: &str, rest: &str, service: Service) -> Result<Reference, ReferenceError> {
+    parse_service_body(input, rest, service, None)
+}
+
+/// `tfs+<svc>://<host>/<owner>/<repo>:<version>[?sha256=…][#artifact]`
+/// (spec 37 §4): the service's API shape at an EXPLICIT host — GHE (API
+/// base `https://<host>/api/v3`), self-hosted GitLab (`…/api/v4`),
+/// Gitea/Forgejo (the GitHub API shape; the grammar never special-cases
+/// them). The host splits off at the FIRST '/' before the service body
+/// parses, so a `host:port` never collides with the `:version` split.
+fn parse_hosted_service(
+    input: &str,
+    rest: &str,
+    service: Service,
+) -> Result<Reference, ReferenceError> {
+    let Some((host, body)) = rest.split_once('/') else {
+        return Err(invalid(
+            input,
+            format!(
+                "missing 'owner/repo' path — the form is tfs+{}://host/owner/repo:version",
+                service.scheme()
+            ),
+        ));
+    };
+    check_component(input, "host", host, &['?', '#', '@'])?;
+    parse_service_body(input, body, service, Some(host))
+}
+
+/// The shared body of the SaaS and explicit-host service forms — ONE code
+/// path (spec 37 §4: the host is a parameter, never a second grammar).
+fn parse_service_body(
+    input: &str,
+    rest: &str,
+    service: Service,
+    host: Option<&str>,
+) -> Result<Reference, ReferenceError> {
     let (before_frag, artifact) = match rest.split_once('#') {
         Some((b, f)) => {
             if f.is_empty() {
@@ -312,12 +404,30 @@ fn parse_service(input: &str, rest: &str, service: Service) -> Result<Reference,
     }
     Ok(Reference::Service {
         service,
+        host: host.map(str::to_string),
         owner: owner.to_string(),
         repo: repo.to_string(),
         version: version.to_string(),
         artifact: artifact.map(str::to_string),
         sha256,
     })
+}
+
+/// Any ssh/git@ URL form (spec 37 §4 — the named
+/// `SshTransportUnsupported`): the ssh scheme family, or scp-like syntax
+/// (`[user@]host:path` — an '@' ahead of the first ':' with no '/' before
+/// it, e.g. `git@github.com:owner/repo.git`).
+pub(crate) fn is_ssh_form(input: &str) -> bool {
+    if input.starts_with("ssh://")
+        || input.starts_with("tfs+ssh://")
+        || input.starts_with("tfs+git+ssh://")
+    {
+        return true;
+    }
+    match (input.find('@'), input.find(':'), input.find('/')) {
+        (Some(at), Some(colon), slash) => at < colon && slash.is_none_or(|s| at < s),
+        _ => false,
+    }
 }
 
 /// `tfs+git://<host>/<path>[.@ref][?sha256=…][#path-in-repo]`. The ref is
@@ -338,6 +448,19 @@ fn parse_git(input: &str, rest: &str) -> Result<Reference, ReferenceError> {
         None => (before_frag, None),
     };
     let sha256 = parse_exact_pin(input, query)?;
+    // A user part in the host segment (git@host/…) names the ssh
+    // transport — the named refusal (spec 37 §4), checked before the
+    // '@' ref split so git@h/r.git never reads as host `git`.
+    if before_query
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .contains('@')
+    {
+        return Err(ReferenceError::SshTransportUnsupported {
+            input: input.to_string(),
+        });
+    }
     let (host_path, git_ref) = match before_query.split_once('@') {
         Some((h, r)) => {
             check_component(input, "git ref", r, &['?', '#'])?;
@@ -457,6 +580,7 @@ mod tests {
             r,
             Reference::Service {
                 service: Service::Github,
+                host: None,
                 owner: "metanorma".into(),
                 repo: "metanorma".into(),
                 version: "1.2.3".into(),
@@ -472,6 +596,7 @@ mod tests {
             r,
             Reference::Service {
                 service: Service::Gitlab,
+                host: None,
                 owner: "group/sub".into(),
                 repo: "tool".into(),
                 version: "v2".into(),
@@ -499,6 +624,7 @@ mod tests {
             r,
             Reference::Service {
                 service: Service::Github,
+                host: None,
                 owner: "metanorma".into(),
                 repo: "metanorma".into(),
                 version: "1.2.3".into(),
@@ -677,6 +803,11 @@ mod tests {
             "tfs:github:o/r:",              // empty version
             "tfs:github:o/r:1.0?x=1",       // only sha256 pin is legal
             "tfs:github:o/r:1.0?sha256=zz", // bad hex
+            "tfs+github://h",               // no owner/repo path
+            "tfs+github:///o/r:1.0",        // empty host
+            "tfs+github://git@h/o/r:1.0",   // no user part on the host
+            "tfs+gitlab://h/o",             // no repo path
+            "tfs+gitlab://h/o/r",           // no version
             "tfs+git://h",                  // no repo path
             "tfs+git://h/",                 // empty repo path
             "tfs+git://h/r.git@",           // empty ref
@@ -694,6 +825,142 @@ mod tests {
                 ),
                 "{bad} must be a named error"
             );
+        }
+    }
+
+    // ---- the federation grammar (spec 37 §4) ------------------------------
+
+    #[test]
+    fn hosted_service_references_round_trip() {
+        // GHE: the GitHub API shape at an explicit host.
+        let r =
+            Reference::parse("tfs+github://ghe.corp.internal/metanorma/metanorma:1.2.3").unwrap();
+        assert_eq!(
+            r,
+            Reference::Service {
+                service: Service::Github,
+                host: Some("ghe.corp.internal".into()),
+                owner: "metanorma".into(),
+                repo: "metanorma".into(),
+                version: "1.2.3".into(),
+                artifact: None,
+                sha256: None,
+            }
+        );
+        assert_eq!(
+            r.to_string(),
+            "tfs+github://ghe.corp.internal/metanorma/metanorma:1.2.3"
+        );
+        assert_eq!(Reference::parse(&r.to_string()).unwrap(), r);
+
+        // self-hosted gitlab keeps nested groups in the owner
+        let r = Reference::parse("tfs+gitlab://gitlab.corp.internal/group/sub/repo:v2").unwrap();
+        assert_eq!(
+            r,
+            Reference::Service {
+                service: Service::Gitlab,
+                host: Some("gitlab.corp.internal".into()),
+                owner: "group/sub".into(),
+                repo: "repo".into(),
+                version: "v2".into(),
+                artifact: None,
+                sha256: None,
+            }
+        );
+        assert_eq!(
+            r.to_string(),
+            "tfs+gitlab://gitlab.corp.internal/group/sub/repo:v2"
+        );
+
+        // pin + artifact ride the hosted form; a host port survives the
+        // split (the host comes off at the FIRST '/', the version at the
+        // LAST ':')
+        let sha = "a".repeat(64);
+        let r = Reference::parse(&format!(
+            "tfs+github://ghe.corp.internal:8443/o/r:1.0?sha256={sha}#r.tfs"
+        ))
+        .unwrap();
+        assert!(
+            matches!(&r, Reference::Service { host: Some(h), artifact: Some(a), sha256: Some(s), .. } if h == "ghe.corp.internal:8443" && a == "r.tfs" && s == &sha)
+        );
+        assert_eq!(
+            r.to_string(),
+            format!("tfs+github://ghe.corp.internal:8443/o/r:1.0?sha256={sha}#r.tfs")
+        );
+        assert_eq!(Reference::parse(&r.to_string()).unwrap(), r);
+    }
+
+    #[test]
+    fn gitea_forgejo_hosts_ride_the_github_form() {
+        // spec 37 §4: Gitea/Forgejo implement the GitHub releases/contents
+        // API — the grammar never special-cases them.
+        let r = Reference::parse("tfs+github://gitea.corp.internal/o/r:1.0#r.tfs").unwrap();
+        assert!(
+            matches!(&r, Reference::Service { service: Service::Github, host: Some(h), .. } if h == "gitea.corp.internal")
+        );
+        let r = Reference::parse("tfs+github://forgejo.local/team/tool:2.0").unwrap();
+        assert!(
+            matches!(&r, Reference::Service { service: Service::Github, host: Some(h), .. } if h == "forgejo.local")
+        );
+    }
+
+    #[test]
+    fn the_saas_canonical_strings_are_unchanged() {
+        // Regression: the explicit-host grammar must not move the SaaS forms.
+        for saas in [
+            "tfs:github:metanorma/metanorma:1.2.3",
+            "tfs:gitlab:group/sub/tool:v2",
+            "tfs:bb:o/r:1.0",
+            "tfs:github:o/r:1.0#r.tfs",
+        ] {
+            let r = Reference::parse(saas).unwrap();
+            assert!(
+                matches!(&r, Reference::Service { host: None, .. }),
+                "{saas} is the SaaS form — no host"
+            );
+            assert_eq!(r.to_string(), saas);
+        }
+    }
+
+    #[test]
+    fn bitbucket_data_center_is_the_named_unsupported_service() {
+        for bad in [
+            "tfs+bb://bbdc.corp.internal/o/r:1.0",
+            "tfs+bitbucket://bbdc.corp.internal/o/r:1.0#r.tfs",
+        ] {
+            let err = Reference::parse(bad).unwrap_err();
+            assert!(
+                matches!(err, ReferenceError::UnsupportedService { .. }),
+                "{bad} must be UnsupportedService, got {err:?}"
+            );
+            let msg = err.to_string();
+            assert!(msg.contains("UnsupportedService"), "{msg}");
+            assert!(
+                msg.contains("bitbucket data center is not bitbucket cloud"),
+                "{msg}"
+            );
+            assert!(msg.contains("tfs+https:"), "{msg}");
+        }
+    }
+
+    #[test]
+    fn ssh_url_forms_are_the_named_ssh_transport_refusal() {
+        for bad in [
+            "git@github.com:owner/repo.git",
+            "ssh://git@github.com/owner/repo.git",
+            "tfs+ssh://github.com/owner/repo.git",
+            "tfs+git+ssh://github.com/owner/repo.git",
+            "tfs+git://git@github.com/owner/repo.git",
+        ] {
+            let err = Reference::parse(bad).unwrap_err();
+            assert!(
+                matches!(err, ReferenceError::SshTransportUnsupported { .. }),
+                "{bad} must be SshTransportUnsupported, got {err:?}"
+            );
+            let msg = err.to_string();
+            assert!(msg.contains("SshTransportUnsupported"), "{msg}");
+            assert!(msg.contains("no-shell-outs law"), "{msg}");
+            assert!(msg.contains("use a token over https, or file:"), "{msg}");
         }
     }
 }

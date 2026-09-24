@@ -8,7 +8,6 @@
 use sha2::Digest;
 use tebako_http::FetchError;
 
-use crate::adapters::adapter_for;
 use crate::error::ResolveError;
 #[cfg(feature = "git")]
 use crate::git;
@@ -128,12 +127,20 @@ impl<T: Transport> Fetcher<T> {
             }
             Reference::Service {
                 service,
+                host,
                 owner,
                 repo,
                 version,
                 artifact,
                 ..
-            } => self.fetch_service(*service, owner, repo, version, artifact.as_deref())?,
+            } => self.fetch_service(
+                *service,
+                host.as_deref(),
+                owner,
+                repo,
+                version,
+                artifact.as_deref(),
+            )?,
             Reference::Git {
                 url, git_ref, path, ..
             } => {
@@ -186,16 +193,19 @@ impl<T: Transport> Fetcher<T> {
     /// `#artifact` → [`ServiceAdapter::asset_named`] (missing is
     /// `AssetNotFound` naming it); no `#` →
     /// [`adapters::select_candidate`] over the release's `.tfs` assets.
-    /// Never a guess (spec 00 invariant 9).
+    /// `host` is the explicit host of the `tfs+<svc>://host/…` form (spec
+    /// 37 §4) — the adapter's base-URL parameter. Never a guess (spec 00
+    /// invariant 9).
     fn fetch_service(
         &self,
         service: Service,
+        host: Option<&str>,
         owner: &str,
         repo: &str,
         version: &str,
         artifact: Option<&str>,
     ) -> Result<(Vec<u8>, String), ResolveError> {
-        let adapter = adapter_for(service);
+        let adapter = crate::adapters::adapter_for_host(service, host)?;
         let asset = match artifact {
             Some(name) => adapter
                 .asset_named(&self.transport, owner, repo, version, name)?
@@ -282,6 +292,7 @@ mod tests {
         let f = Fetcher::with_transport(t);
         let r = Reference::Service {
             service: Service::Github,
+            host: None,
             owner: "o".into(),
             repo: "r".into(),
             version: "v1".into(),
@@ -330,6 +341,7 @@ mod tests {
         let f = Fetcher::with_transport(t);
         let r = Reference::Service {
             service: Service::Github,
+            host: None,
             owner: "o".into(),
             repo: "r".into(),
             version: "v1".into(),
@@ -381,6 +393,7 @@ mod tests {
         let f = Fetcher::with_transport(t);
         let r = Reference::Service {
             service: Service::Github,
+            host: None,
             owner: "o".into(),
             repo: "r".into(),
             version: "v1".into(),

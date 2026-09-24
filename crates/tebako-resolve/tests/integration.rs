@@ -235,6 +235,99 @@ fn release_artifact_form_uses_the_artifact_selector() {
     ));
 }
 
+// ---------------------------------------------------------------------
+// The federation grammar (spec 37 §4) — explicit hosts and the HTTPS
+// registry location, end to end through the fetch path.
+// ---------------------------------------------------------------------
+
+#[test]
+fn hosted_default_branch_form_resolves_through_the_ghe_contents_api() {
+    let api = "https://ghe.corp.internal/api/v3/repos/o/r/contents/tpkg-registry.yaml";
+    let doc = r#"{"name":"tpkg-registry.yaml","download_url":"https://ghe.corp.internal/raw/tpkg-registry.yaml"}"#;
+    let t = MockTransport::with(&[
+        (api, doc.as_bytes()),
+        (
+            "https://ghe.corp.internal/raw/tpkg-registry.yaml",
+            REGISTRY_YAML.as_bytes(),
+        ),
+    ]);
+    let fetcher = Fetcher::with_transport(t);
+    let r = RegistryRef::parse("tfs+github://ghe.corp.internal/o/r").unwrap();
+    let registry = fetcher.resolve_registry(&r).unwrap();
+    assert_eq!(registry.payloads[0].name, "tool");
+
+    // the pinned form verifies the registry file itself
+    let pinned = RegistryRef::parse(&format!(
+        "tfs+github://ghe.corp.internal/o/r?sha256={}",
+        sha256_hex(REGISTRY_YAML.as_bytes())
+    ))
+    .unwrap();
+    assert!(fetcher.resolve_registry(&pinned).is_ok());
+    let wrong = RegistryRef::parse(&format!(
+        "tfs+github://ghe.corp.internal/o/r?sha256={}",
+        "0".repeat(64)
+    ))
+    .unwrap();
+    assert!(matches!(
+        fetcher.resolve_registry(&wrong).unwrap_err(),
+        ResolveError::Sha256Mismatch { .. }
+    ));
+}
+
+#[test]
+fn hosted_release_artifact_form_uses_the_ghe_releases_api() {
+    let api = "https://ghe.corp.internal/api/v3/repos/o/r/releases/tags/v9";
+    let body = r#"{"assets":[
+        {"name":"tpkg-registry.yaml","browser_download_url":"https://ghe.corp.internal/dl/tpkg-registry.yaml"}]}"#;
+    let t = MockTransport::with(&[
+        (api, body.as_bytes()),
+        (
+            "https://ghe.corp.internal/dl/tpkg-registry.yaml",
+            REGISTRY_YAML.as_bytes(),
+        ),
+    ]);
+    let fetcher = Fetcher::with_transport(t);
+    let r = RegistryRef::parse("tfs+github://ghe.corp.internal/o/r:v9#tpkg-registry.yaml").unwrap();
+    let registry = fetcher.resolve_registry(&r).unwrap();
+    assert_eq!(registry.payloads[0].name, "tool");
+}
+
+#[test]
+fn the_https_registry_location_fetches_the_file_verbatim() {
+    let url = "https://artifacts.corp.internal/tebako/tpkg-registry.yaml";
+    let t = MockTransport::with(&[(url, REGISTRY_YAML.as_bytes())]);
+    let fetcher = Fetcher::with_transport(t);
+    let r = RegistryRef::parse("tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml")
+        .unwrap();
+    let registry = fetcher.resolve_registry(&r).unwrap();
+    assert_eq!(registry.payloads[0].name, "tool");
+
+    // the pin verifies the registry file itself; a wrong pin fails closed
+    let pinned = RegistryRef::parse(&format!(
+        "tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml?sha256={}",
+        sha256_hex(REGISTRY_YAML.as_bytes())
+    ))
+    .unwrap();
+    assert!(fetcher.resolve_registry(&pinned).is_ok());
+    let wrong = RegistryRef::parse(&format!(
+        "tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml?sha256={}",
+        "0".repeat(64)
+    ))
+    .unwrap();
+    assert!(matches!(
+        fetcher.resolve_registry(&wrong).unwrap_err(),
+        ResolveError::Sha256Mismatch { .. }
+    ));
+
+    // a missing object is the named NotFound, never a fallback
+    let t = MockTransport::with(&[]);
+    let fetcher = Fetcher::with_transport(t);
+    assert!(matches!(
+        fetcher.resolve_registry(&r).unwrap_err(),
+        ResolveError::NotFound { .. }
+    ));
+}
+
 #[test]
 fn git_blob_form_resolves_through_the_real_git_adapter() {
     let dir = scratch("reggit");

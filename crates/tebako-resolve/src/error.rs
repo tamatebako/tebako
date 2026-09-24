@@ -8,9 +8,11 @@ use std::path::PathBuf;
 use crate::reference::Service;
 
 /// The reference classes, spelled out in every [`ReferenceError::UnknownScheme`]
-/// message (spec 04 §1 dispatch table, last row).
+/// message (spec 04 §1 dispatch table, last row; spec 37 §4 adds the
+/// explicit-host forms).
 pub const REFERENCE_CLASSES: &str = "tfs:github:owner/repo:version, \
      tfs:gitlab:owner/repo:version, tfs:bb:owner/repo:version, \
+     tfs+github://host/owner/repo:version, tfs+gitlab://host/owner/repo:version, \
      tfs+git://host/owner/repo.git[@ref][#path], tfs+https://url, https://url, \
      file:///path (any of them with an optional ?sha256=<64 hex> pin)";
 
@@ -22,6 +24,15 @@ pub enum ReferenceError {
     /// A recognized class whose pieces are malformed (empty owner, bad
     /// sha256 pin, non-absolute file path, …).
     Invalid { input: String, reason: String },
+    /// An explicit-host reference names a service with no adapter at that
+    /// host (spec 37 §4): Bitbucket Data Center is not a host variant of
+    /// `tfs:bb:` — its API differs from Bitbucket Cloud's. A named
+    /// refusal, never a guess.
+    UnsupportedService { input: String },
+    /// Any ssh/git@ URL form (spec 37 §4): git over ssh needs the system
+    /// ssh binary — forbidden by the no-shell-outs law (spec 00 invariant
+    /// 1). Fail closed by name, exit class 65.
+    SshTransportUnsupported { input: String },
 }
 
 impl fmt::Display for ReferenceError {
@@ -34,6 +45,14 @@ impl fmt::Display for ReferenceError {
             ReferenceError::Invalid { input, reason } => {
                 write!(f, "invalid reference '{input}': {reason}")
             }
+            ReferenceError::UnsupportedService { input } => write!(
+                f,
+                "UnsupportedService: '{input}' — bitbucket data center is not bitbucket cloud; host the registry over tfs+git: or tfs+https:"
+            ),
+            ReferenceError::SshTransportUnsupported { input } => write!(
+                f,
+                "SshTransportUnsupported: '{input}' — git over ssh needs the system ssh binary, forbidden by the no-shell-outs law; use a token over https, or file:"
+            ),
         }
     }
 }
@@ -64,11 +83,15 @@ pub enum RegistryError {
 }
 
 /// The registry reference forms, spelled out in every
-/// [`RegistryError::BadRef`] message.
+/// [`RegistryError::BadRef`] message (spec 04 §2; spec 37 §4 adds the
+/// explicit-host forms and the HTTPS registry location).
 pub const REGISTRY_REF_FORMS: &str =
     "tfs:<service>:owner/repo (default-branch tpkg-registry.yaml), \
+     tfs+<service>://host/owner/repo (default-branch, explicit host), \
      tfs:<service>:owner/repo:version#tpkg-registry.yaml (release artifact), \
-     tfs+git://host/owner/repo.git[@ref]#path, file:///path/tpkg-registry.yaml";
+     tfs+<service>://host/owner/repo:version#tpkg-registry.yaml (release artifact, explicit host), \
+     tfs+git://host/owner/repo.git[@ref]#path, \
+     tfs+https://host/path/tpkg-registry.yaml, file:///path/tpkg-registry.yaml";
 
 impl fmt::Display for RegistryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

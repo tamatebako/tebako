@@ -12,13 +12,22 @@
 //! compatibility.
 //!
 //! Registry resolution (locked — exactly one location per form, no
-//! fallback chain):
+//! fallback chain; spec 37 §4 adds the explicit-host forms and the HTTPS
+//! registry location, amending spec 04 §2's "no other locations" by that
+//! one form):
 //!
 //! ```text
 //! tfs:<svc>:owner/repo                          → /tpkg-registry.yaml on the
 //!                                                 DEFAULT branch (contents API)
+//! tfs+<svc>://host/owner/repo                   → the same at an explicit
+//!                                                 host (GHE/self-hosted)
 //! tfs:<svc>:owner/repo:version#tpkg-registry.yaml → release artifact
+//! tfs+<svc>://host/owner/repo:version#tpkg-registry.yaml
+//!                                               → release artifact, explicit host
 //! tfs+git://host/owner/repo.git[@ref]#path      → git blob
+//! tfs+https://host/path/tpkg-registry.yaml      → the registry file itself
+//!                                                 over plain HTTPS (static
+//!                                                 server, S3/CDN, generic repo)
 //! file:///abs/path/tpkg-registry.yaml           → local mirror (tests,
 //!                                                 air-gapped sites)
 //! ```
@@ -559,27 +568,38 @@ pub enum PlatformSelection<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryRef {
     /// `tfs:<svc>:owner/repo[?sha256=<hex>]` — `/tpkg-registry.yaml` at
-    /// the DEFAULT branch via the service contents API. The pin (query
-    /// form, any class — spec 04 §1) verifies the registry file itself.
+    /// the DEFAULT branch via the service contents API. The explicit-host
+    /// form `tfs+<svc>://host/owner/repo` (spec 37 §4) carries the host;
+    /// `None` is the service's canonical SaaS host. The pin (query form,
+    /// any class — spec 04 §1) verifies the registry file itself.
     DefaultBranch {
         service: Service,
+        /// The explicit host of the `tfs+<svc>://host/…` form (spec 37
+        /// §4); `None` on the SaaS forms.
+        host: Option<String>,
         owner: String,
         repo: String,
         sha256: Option<String>,
     },
-    /// `tfs:<svc>:owner/repo:version#tpkg-registry.yaml` — the registry
-    /// file as a release artifact (pinned-immutable, versioned with its
-    /// payloads).
+    /// `tfs:<svc>:owner/repo:version#tpkg-registry.yaml` (or the
+    /// explicit-host form, spec 37 §4) — the registry file as a release
+    /// artifact (pinned-immutable, versioned with its payloads).
     ReleaseArtifact(Reference),
     /// `tfs+git://…#path` — a blob in any git ref/path.
     GitBlob(Reference),
+    /// `tfs+https://host/path/tpkg-registry.yaml` — the registry file
+    /// itself over plain HTTPS (spec 37 §4: the one new registry
+    /// location; artifact refs inside it stay ordinary spec 04
+    /// references). The File-like variant over [`Reference::Https`].
+    Https(Reference),
     /// `file:///abs/path` — local mirror (tests, air-gapped sites).
     File(Reference),
 }
 
 impl RegistryRef {
-    /// Parse a registry reference. Anything outside the four forms is a
-    /// named error listing them — no search, no fallback chain.
+    /// Parse a registry reference. Anything outside the forms is a named
+    /// error listing them — no search, no fallback chain (spec 04 §2;
+    /// spec 37 §4's federation refusals ride along by name).
     pub fn parse(input: &str) -> Result<RegistryRef, RegistryError> {
         let bad = |reason: String| RegistryError::BadRef {
             input: input.to_string(),
@@ -592,8 +612,32 @@ impl RegistryRef {
             ("tfs:bb:", Service::Bitbucket),
         ] {
             if let Some(rest) = input.strip_prefix(prefix) {
-                return parse_service_registry(input, rest, service);
+                return parse_service_registry(input, rest, service, None);
             }
+        }
+        for (prefix, service) in [
+            ("tfs+github://", Service::Github),
+            ("tfs+gitlab://", Service::Gitlab),
+        ] {
+            if let Some(rest) = input.strip_prefix(prefix) {
+                return parse_hosted_service_registry(input, rest, service);
+            }
+        }
+        // The federation refusals (spec 37 §4) keep their names on the
+        // registry path too — BadRef's reason carries the named message.
+        for prefix in ["tfs+bb://", "tfs+bitbucket://"] {
+            if input.starts_with(prefix) {
+                return Err(bad(ReferenceError::UnsupportedService {
+                    input: input.to_string(),
+                }
+                .to_string()));
+            }
+        }
+        if crate::reference::is_ssh_form(input) {
+            return Err(bad(ReferenceError::SshTransportUnsupported {
+                input: input.to_string(),
+            }
+            .to_string()));
         }
         if input.starts_with("tfs+git://") {
             let reference = Reference::parse(input).map_err(|e| bad(format!("{e}")))?;
@@ -604,6 +648,12 @@ impl RegistryRef {
                 ))),
                 _ => unreachable!("tfs+git:// parses as Reference::Git"),
             };
+        }
+        if input.starts_with("tfs+https://") {
+            // The HTTPS registry location (spec 37 §4): the registry file
+            // itself over plain HTTPS — the File-like variant.
+            let reference = Reference::parse(input).map_err(|e| bad(format!("{e}")))?;
+            return Ok(RegistryRef::Https(reference));
         }
         if input.starts_with("file://") {
             let reference = Reference::parse(input).map_err(|e| bad(format!("{e}")))?;
@@ -617,19 +667,24 @@ impl RegistryRef {
         match self {
             RegistryRef::DefaultBranch {
                 service,
+                host,
                 owner,
                 repo,
                 sha256,
             } => {
-                let base = format!("tfs:{}:{owner}/{repo}", service.scheme());
+                let base = match host {
+                    Some(h) => format!("tfs+{}://{h}/{owner}/{repo}", service.scheme()),
+                    None => format!("tfs:{}:{owner}/{repo}", service.scheme()),
+                };
                 match sha256 {
                     Some(sha) => format!("{base}?sha256={sha}"),
                     None => base,
                 }
             }
-            RegistryRef::ReleaseArtifact(r) | RegistryRef::GitBlob(r) | RegistryRef::File(r) => {
-                r.to_string()
-            }
+            RegistryRef::ReleaseArtifact(r)
+            | RegistryRef::GitBlob(r)
+            | RegistryRef::Https(r)
+            | RegistryRef::File(r) => r.to_string(),
         }
     }
 
@@ -649,11 +704,14 @@ impl std::fmt::Display for RegistryRef {
 /// The service forms: `owner/repo` (default branch) vs
 /// `owner/repo:version#tpkg-registry.yaml` (release artifact). The split
 /// mirrors `parse_service`'s grammar; a version WITHOUT the `#artifact`
-/// is a payload reference, not a registry one — named error.
+/// is a payload reference, not a registry one — named error. `host` is
+/// the explicit host of the `tfs+<svc>://host/…` form (spec 37 §4);
+/// `None` is the SaaS form. ONE code path — the host is a parameter.
 fn parse_service_registry(
     input: &str,
     rest: &str,
     service: Service,
+    host: Option<&str>,
 ) -> Result<RegistryRef, RegistryError> {
     let bad = |reason: String| RegistryError::BadRef {
         input: input.to_string(),
@@ -709,10 +767,36 @@ fn parse_service_registry(
         .map_err(|e: ReferenceError| bad(e.to_string()))?;
     Ok(RegistryRef::DefaultBranch {
         service,
+        host: host.map(str::to_string),
         owner: owner.to_string(),
         repo: repo.to_string(),
         sha256,
     })
+}
+
+/// The explicit-host service forms (spec 37 §4):
+/// `tfs+<svc>://host/owner/repo[?sha256=…]` (default branch at a GHE /
+/// self-hosted GitLab host) and `…:version#tpkg-registry.yaml` (release
+/// artifact). The host splits off at the FIRST '/' — a `host:port` never
+/// collides with the grammar-shape detection on the body.
+fn parse_hosted_service_registry(
+    input: &str,
+    rest: &str,
+    service: Service,
+) -> Result<RegistryRef, RegistryError> {
+    let bad = |reason: String| RegistryError::BadRef {
+        input: input.to_string(),
+        reason,
+    };
+    let Some((host, body)) = rest.split_once('/') else {
+        return Err(bad(format!(
+            "missing 'owner/repo' path — the form is tfs+{}://host/owner/repo[:version#tpkg-registry.yaml]",
+            service.scheme()
+        )));
+    };
+    check_component(input, "host", host, &['?', '#', '@'])
+        .map_err(|e: ReferenceError| bad(e.to_string()))?;
+    parse_service_registry(input, body, service, Some(host))
 }
 
 // ---------------------------------------------------------------------
@@ -732,15 +816,13 @@ impl<T: Transport> Fetcher<T> {
         match r {
             RegistryRef::DefaultBranch {
                 service,
+                host,
                 owner,
                 repo,
                 sha256,
             } => {
-                let bytes = crate::adapters::adapter_for(*service).registry_file(
-                    &self.transport,
-                    owner,
-                    repo,
-                )?;
+                let bytes = crate::adapters::adapter_for_host(*service, host.as_deref())?
+                    .registry_file(&self.transport, owner, repo)?;
                 if let Some(expected) = sha256 {
                     let actual = crate::fetch::sha256_hex(&bytes);
                     if &actual != expected {
@@ -755,6 +837,7 @@ impl<T: Transport> Fetcher<T> {
             }
             RegistryRef::ReleaseArtifact(reference)
             | RegistryRef::GitBlob(reference)
+            | RegistryRef::Https(reference)
             | RegistryRef::File(reference) => Ok(self.fetch(reference)?.bytes),
         }
     }
@@ -941,6 +1024,7 @@ payloads:
             r,
             RegistryRef::DefaultBranch {
                 service: Service::Github,
+                host: None,
                 owner: "metanorma".into(),
                 repo: "metanorma".into(),
                 sha256: None,
@@ -957,6 +1041,7 @@ payloads:
             r,
             RegistryRef::DefaultBranch {
                 service: Service::Bitbucket,
+                host: None,
                 owner: "o".into(),
                 repo: "r".into(),
                 sha256: Some(sha.clone()),
@@ -997,6 +1082,145 @@ payloads:
                 err.to_string().contains(needle),
                 "{bad}: expected '{needle}' in: {err}"
             );
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // The federation grammar (spec 37 §4): explicit hosts, the HTTPS
+    // registry location, the two named refusals.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn hosted_registry_refs_round_trip() {
+        // default-branch registry at a GHE host
+        let r = RegistryRef::parse("tfs+github://ghe.corp.internal/owner/repo").unwrap();
+        assert_eq!(
+            r,
+            RegistryRef::DefaultBranch {
+                service: Service::Github,
+                host: Some("ghe.corp.internal".into()),
+                owner: "owner".into(),
+                repo: "repo".into(),
+                sha256: None,
+            }
+        );
+        assert_eq!(
+            r.as_canonical_string(),
+            "tfs+github://ghe.corp.internal/owner/repo"
+        );
+        assert!(r.is_remote());
+
+        // the pin rides the hosted default-branch form
+        let sha = "e".repeat(64);
+        let r = RegistryRef::parse(&format!(
+            "tfs+github://ghe.corp.internal:8443/owner/repo?sha256={sha}"
+        ))
+        .unwrap();
+        assert_eq!(
+            r,
+            RegistryRef::DefaultBranch {
+                service: Service::Github,
+                host: Some("ghe.corp.internal:8443".into()),
+                owner: "owner".into(),
+                repo: "repo".into(),
+                sha256: Some(sha.clone()),
+            }
+        );
+        assert_eq!(
+            r.as_canonical_string(),
+            format!("tfs+github://ghe.corp.internal:8443/owner/repo?sha256={sha}")
+        );
+
+        // release-artifact form at a self-hosted gitlab, nested groups
+        let r = RegistryRef::parse(
+            "tfs+gitlab://gitlab.corp.internal/group/sub/r:v1#tpkg-registry.yaml",
+        )
+        .unwrap();
+        assert!(matches!(r, RegistryRef::ReleaseArtifact(_)));
+        assert_eq!(
+            r.as_canonical_string(),
+            "tfs+gitlab://gitlab.corp.internal/group/sub/r:v1#tpkg-registry.yaml"
+        );
+
+        for (bad, needle) in [
+            (
+                "tfs+github://ghe.corp.internal/owner/repo:v1",
+                "release artifact",
+            ),
+            ("tfs+github://ghe.corp.internal", "owner/repo"),
+            ("tfs+github://ghe.corp.internal/owner", "owner/repo"),
+            ("tfs+github://ghe.corp.internal/o/r#x.yaml", "no #fragment"),
+        ] {
+            let err = RegistryRef::parse(bad).unwrap_err();
+            assert!(
+                matches!(err, RegistryError::BadRef { .. }),
+                "{bad} must be BadRef, got {err:?}"
+            );
+            assert!(
+                err.to_string().contains(needle),
+                "{bad}: expected '{needle}' in: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_https_registry_location_parses_and_round_trips() {
+        // spec 37 §4: the registry file itself over plain HTTPS — the one
+        // new registry location (static server, S3/CDN, generic repo).
+        let r = RegistryRef::parse("tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml")
+            .unwrap();
+        assert!(
+            matches!(&r, RegistryRef::Https(Reference::Https { url, sha256: None }) if url == "https://artifacts.corp.internal/tebako/tpkg-registry.yaml")
+        );
+        assert_eq!(
+            r.as_canonical_string(),
+            "tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml"
+        );
+        assert!(r.is_remote());
+
+        // the digest pin (query form, any class) verifies the file itself
+        let sha = "d".repeat(64);
+        let r = RegistryRef::parse(&format!(
+            "tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml?sha256={sha}"
+        ))
+        .unwrap();
+        assert!(
+            matches!(&r, RegistryRef::Https(Reference::Https { sha256: Some(s), .. }) if s == &sha)
+        );
+        assert_eq!(
+            r.as_canonical_string(),
+            format!("tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml?sha256={sha}")
+        );
+
+        // the bare https:// form stays outside the registry grammar
+        let err =
+            RegistryRef::parse("https://artifacts.corp.internal/tpkg-registry.yaml").unwrap_err();
+        assert!(
+            err.to_string().contains("no registry form matches"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_federation_refusals_keep_their_names_on_the_registry_path() {
+        // Bitbucket Data Center is not a registry host variant of tfs:bb:
+        let err = RegistryRef::parse("tfs+bb://bbdc.corp.internal/o/r").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("UnsupportedService"), "{msg}");
+        assert!(
+            msg.contains("bitbucket data center is not bitbucket cloud"),
+            "{msg}"
+        );
+
+        // any ssh/git@ form fails closed by name
+        for bad in [
+            "git@ghe.corp.internal:o/r.git#tpkg-registry.yaml",
+            "ssh://git@ghe.corp.internal/o/r.git",
+        ] {
+            let err = RegistryRef::parse(bad).unwrap_err();
+            let msg = err.to_string();
+            assert!(msg.contains("SshTransportUnsupported"), "{bad}: {msg}");
+            assert!(msg.contains("no-shell-outs law"), "{bad}: {msg}");
         }
     }
 

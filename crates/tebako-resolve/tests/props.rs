@@ -31,6 +31,7 @@ fn arb_reference() -> impl Strategy<Value = Reference> {
         .prop_map(
             |(service, owner, repo, version, artifact, sha256)| Reference::Service {
                 service,
+                host: None,
                 owner,
                 repo,
                 version,
