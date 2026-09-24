@@ -93,6 +93,19 @@ by construction (identical content on a re-run is a digest-match skip —
 a re-run never replaces). Sidecars and shards are the authority; the
 resolver reads them first (spec 05 §2).
 
+**Bundle-era publish shape (additive, 2026-09-24 — spec 36 owns the
+format).** A bundle-era line publishes THREE assets per leg —
+`<stem>.tar.gz` (the bundle: exe + env image + member pins),
+`<stem>.tar.gz.sha256`, `<stem>.manifest.json` — plus one `.asc` of
+each on signing-enabled lines (spec 09 §5's every-served-name rule
+intact). The shard gains the additive `bundle` block (spec 36 §3) and
+keeps its per-member pins. The asset budget this buys: a signed catalog
+publish drops from ~1,800 assets (over GitHub's 1,000-asset release
+ceiling — the v0.16.28 wedge) to ~805, and a routine tips release to
+~175. Release topology follows spec 36 §6: tips by default, catalog
+runs are for migrations and derive their own per-line shard tags,
+withdrawal bounds growth.
+
 ```json
 {
   "tebako_version": "0.16.0",
