@@ -47,6 +47,11 @@ tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
 tebako-term = { version = "2.0.0", path = "../tebako-term" }
 libc = "0.2"
 sha2 = "0.10"
+# The spec 36 release bundle unpacks in-process (runtime_bundle.rs) —
+# the Rust tar crate + flate2's pure-Rust backend; no system deps, no
+# shell-outs (invariant 1).
+tar = { version = "0.4", default-features = false }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 # The Windows shell integration (shell_windows.rs): registry PATH +
 # WM_SETTINGCHANGE; the dispatch exec port (dispatch.rs): console Ctrl

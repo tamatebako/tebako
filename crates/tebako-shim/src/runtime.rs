@@ -48,6 +48,7 @@ use tebako_term::set::ProgressSet;
 use tpkg::{RuntimeRequirement, RuntimeRequirements};
 
 use crate::config::{self, RuntimePref};
+use crate::runtime_bundle;
 use crate::versions;
 use crate::{
     fail, Ctx, ShimError, EX_TEBAKO_CONTRACT, EX_TEBAKO_IO, EX_TEBAKO_MANIFEST, EX_TEBAKO_SHA,
@@ -63,8 +64,9 @@ const LOCK_POLL_MS: u64 = 200;
 // tpkg (spec 00 §10 — one owner, every consumer flows): the shim's
 // resolution/download layers below build on these re-exports.
 use tpkg::runtime_store::{
-    entry_asset_names, entry_dll_from_index, entry_filename, entry_matches, entry_meta,
-    entry_signature, newest_compatible_any, release_index_entry, EntrySignature,
+    entry_asset_names, entry_bundle, entry_dll_from_index, entry_filename, entry_matches,
+    entry_meta, entry_signature, newest_compatible_any, release_index_entry, EntryBundle,
+    EntrySignature,
 };
 pub use tpkg::runtime_store::{
     exe_suffix, newest_compatible, platform_string, scan_all_cached, scan_cached, CachedRuntime,
@@ -2177,6 +2179,182 @@ fn runtime_facet_item<'p>(
     })
 }
 
+/// One coreutils `<sha256>  <file>` line's pin for `name` (a `*`
+/// prefix rides along), None when no line names it.
+fn bundle_sidecar_pin(body: &str, name: &str) -> Option<String> {
+    for line in body.lines() {
+        let mut parts = line.trim().splitn(2, char::is_whitespace);
+        let (Some(sha), Some(file)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let file = file.trim().trim_start_matches('*');
+        if file == name && sha.len() == 64 && sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Some(sha.to_ascii_lowercase());
+        }
+    }
+    None
+}
+
+/// The plan item for a bundle-era shard (spec 36 §4): ONE fetch — the
+/// `<stem>.tar.gz` — whose commit verifies the declared signature FIRST
+/// (spec 09 §4's order), then the per-asset sidecar against the shard's
+/// bundle pin, then the bundle's own sha256, then unpacks in-process
+/// under the §2 member grammar (the shim's copy lives in
+/// `runtime_bundle`, pinned by the same spec section as the cli's and
+/// the bootstrap's) and stages the exact store layout the per-file path
+/// produces: exe 0755 + the entry-level `sha256`/`origin` markers,
+/// image/dll 0444 + their own facet markers. The `.origin` markers name
+/// the bundle URL (the truthful source) with the member's own pin in
+/// the sha256 line. The publish below is indistinguishable from a
+/// per-file install.
+#[allow(clippy::too_many_arguments)]
+fn runtime_bundle_item<'p>(
+    dir_url: &'p str,
+    local: bool,
+    bundle: &EntryBundle,
+    members: Vec<runtime_bundle::ExpectedMember>,
+    // (member name, install name, executable, entry-level markers) — one
+    // per declared member, in declaration order.
+    placements: Vec<(String, String, bool, bool)>,
+    signature: Option<&'p EntrySignature>,
+    trust: &'p FetchTrust,
+    sink: &'p RuntimePlanSink,
+    ctx: &'p Ctx,
+    tmp_dir: &Path,
+    runtime_ref: &str,
+) -> Result<FetchItem<'p>, ShimError> {
+    let url = format!("{dir_url}/{}", bundle.filename);
+    let reference = if local {
+        Reference::File {
+            path: url.clone(),
+            sha256: None,
+        }
+    } else {
+        Reference::parse(&url).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!("runtime asset url {url}: {e}"),
+            )
+        })?
+    };
+    let expected = bundle.sha256.to_lowercase();
+    let bundle_name = bundle.filename.clone();
+    let display = bundle_name.clone();
+    let size_hint = bundle.size_bytes;
+    let staging = tmp_dir.to_path_buf();
+    let runtime_ref = runtime_ref.to_string();
+    let sidecar_url = format!("{url}.sha256");
+    let commit = move |staged: &StagedArtifact| {
+        // 1. The declared signature verifies FIRST (spec 09 §4).
+        if let Some(declared) = signature {
+            match trust.verify_asset(ctx, dir_url, local, &staging, staged.tmp, &bundle_name, declared)
+            {
+                Ok(signer) => sink.add_signer(signer),
+                Err(e) => return Err(sink.fail(e)),
+            }
+        }
+        // 2. The per-asset sidecar must exist and agree with the shard's
+        //    pin (spec 36 §3): missing is the not-found class, a
+        //    disagreement the integrity class (the release is
+        //    inconsistent), named either way.
+        let sidecar_tmp = staging.join(format!("{bundle_name}.sidecar"));
+        if fetch_url(&sidecar_url, local, &sidecar_tmp).is_err() {
+            return Err(sink.fail(ShimError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "{sidecar_url}: not found — a shard declaring a bundle without its sidecar is an invalid publish; nothing was installed"
+                ),
+            )));
+        }
+        let sidecar_body = std::fs::read_to_string(&sidecar_tmp).unwrap_or_default();
+        let _ = std::fs::remove_file(&sidecar_tmp);
+        match bundle_sidecar_pin(&sidecar_body, &bundle_name) {
+            None => {
+                return Err(sink.fail(ShimError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "{sidecar_url} carries no pin for {bundle_name} — the release is incomplete; nothing was installed"
+                    ),
+                )));
+            }
+            Some(pin) if pin != expected => {
+                return Err(sink.fail(ShimError::new(
+                    EX_TEBAKO_SHA,
+                    format!(
+                        "{bundle_name}: the sidecar pins {pin} but the shard declares {expected} — the release is inconsistent; nothing was installed"
+                    ),
+                )));
+            }
+            _ => {}
+        }
+        // 3. The bundle's own sha256 compares here (AFTER the signature —
+        //    spec 09 §4's order; the item carries no pipeline pin).
+        if expected != staged.sha256 {
+            return Err(sink.fail(ShimError::new(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for downloaded runtime {bundle_name} — refusing to install or execute\n  expected: {expected} (from the release index)\n  actual:   {}\n  the download was deleted; the cache was not touched",
+                    staged.sha256
+                ),
+            )));
+        }
+        // 4. Unpack in-process: the §2 grammar + the exact member set +
+        //    the per-member pins + the closing SHA256SUMS cross-check.
+        let unpacked = match runtime_bundle::unpack_bundle(staged.tmp, &bundle_name, &members, &staging)
+        {
+            Ok(u) => u,
+            Err(e) => return Err(sink.fail(e)),
+        };
+        // 5. Stage the verified members exactly as the per-file path
+        //    does (the same permissions, the same trust markers).
+        for (member_name, install_name, executable, entry_markers) in &placements {
+            let Some(member) = unpacked.iter().find(|m| &m.name == member_name) else {
+                continue;
+            };
+            let dest = staging.join(install_name);
+            if let Err(e) = std::fs::rename(&member.path, &dest) {
+                return Err(sink.fail(ShimError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot stage {}: {e}", dest.display()),
+                )));
+            }
+            if *executable {
+                make_executable(&dest);
+            } else {
+                make_readonly(&dest);
+            }
+            let (sha_marker, origin_marker) = if *entry_markers {
+                (staging.join("sha256"), staging.join("origin"))
+            } else {
+                (
+                    staging.join(format!("{install_name}.sha256")),
+                    staging.join(format!("{install_name}.origin")),
+                )
+            };
+            let _ = std::fs::write(sha_marker, format!("{}  {install_name}\n", member.sha256));
+            let _ = std::fs::write(
+                origin_marker,
+                format!(
+                    "runtime_ref={runtime_ref}\nurl={url}\nsha256={}\n",
+                    member.sha256
+                ),
+            );
+        }
+        Ok(CommitReport { line: None })
+    };
+    Ok(FetchItem {
+        display,
+        reference,
+        // The sha compare rides the commit (AFTER the signature, spec
+        // 09 §4's order) on the inline-computed digest — no item carries
+        // the pipeline's pin.
+        sha256_pin: None,
+        size_hint,
+        tmp_dir: tmp_dir.to_path_buf(),
+        commit: Box::new(commit),
+    })
+}
+
 /// What the staging step produced: a fresh install (the staged names)
 /// or the discovery that another installer published the entry under
 /// the flowed spelling while the index was being fetched (use the
@@ -2390,12 +2568,19 @@ fn download_runtime(
         let exe_sig = declared_sig(None)?;
         let image_sig = declared_sig(Some("image"))?;
         let dll_sig = declared_sig(Some("dll"))?;
+        let bundle_sig = declared_sig(Some("bundle"))?;
+        // The additive `bundle` block (spec 36 §3): present ⇒ the ONE
+        // `<stem>.tar.gz` fetch below; absent ⇒ the per-file path,
+        // forever. A torn block reads as absent (the facet rule) — the
+        // per-file path then fails loud on a bundle-era release.
+        let bundle = entry_match.and_then(entry_bundle);
 
         // The unsigned rule (spec 09 §4): no verified index form AND no
         // declared per-artifact signature — the pre-signing keep-forever
         // line. Loud + journaled on EVERY fetch; refused (71) under
         // TEBAKO_REQUIRE_SIGNED=1 — before a byte of the runtime moves.
-        let any_declared = exe_sig.is_some() || image_sig.is_some() || dll_sig.is_some();
+        let any_declared =
+            exe_sig.is_some() || image_sig.is_some() || dll_sig.is_some() || bundle_sig.is_some();
         if index_trust.signer().is_none() && !any_declared {
             if require_signed(ctx) {
                 return fail(
@@ -2521,56 +2706,99 @@ fn download_runtime(
         // the plan; the caller drops the staging dir — a partial install
         // never publishes.
         let sink = RuntimePlanSink::default();
-        let mut items = vec![runtime_facet_item(
-            &dir_url,
-            local,
-            &asset,
-            &asset,
-            &expected,
-            exe_sig.as_ref(),
-            &trust,
-            &sink,
-            ctx,
-            &tmp_dir,
-            true,
-            true,
-            &runtime_ref,
-        )?];
         let has_image = image.sha.is_some();
-        if let Some(image_expected) = &image.sha {
-            items.push(runtime_facet_item(
+        let items = if let Some(bundle) = &bundle {
+            // The bundle era (spec 36 §4): ONE fetch — the
+            // `<stem>.tar.gz` — carries the leg's bytes; its commit
+            // verifies + unpacks + stages exactly the store layout the
+            // per-file path produces. The expected member set flows from
+            // the shard's own declarations (the per-member sha fields
+            // pin the UNPACKED bytes, spec 36 §3).
+            let mut members = vec![runtime_bundle::ExpectedMember {
+                name: asset.clone(),
+                sha256: expected.clone(),
+            }];
+            // (member name, install name, executable, entry-level markers)
+            let mut placements = vec![(asset.clone(), asset.clone(), true, true)];
+            if let Some(image_expected) = &image.sha {
+                members.push(runtime_bundle::ExpectedMember {
+                    name: image_asset.clone(),
+                    sha256: image_expected.clone(),
+                });
+                placements.push((image_asset.clone(), image_asset.clone(), false, false));
+            }
+            if let Some(facet) = &dll {
+                members.push(runtime_bundle::ExpectedMember {
+                    name: facet.filename.clone(),
+                    sha256: facet.sha256.clone(),
+                });
+                placements.push((facet.filename.clone(), facet.install_as.clone(), false, false));
+            }
+            vec![runtime_bundle_item(
                 &dir_url,
                 local,
-                &image_asset,
-                &image_asset,
-                image_expected,
-                image_sig.as_ref(),
+                bundle,
+                members,
+                placements,
+                bundle_sig.as_ref(),
                 &trust,
                 &sink,
                 ctx,
                 &tmp_dir,
-                false,
-                false,
                 &runtime_ref,
-            )?);
-        }
-        if let Some(facet) = &dll {
-            items.push(runtime_facet_item(
+            )?]
+        } else {
+            let mut items = vec![runtime_facet_item(
                 &dir_url,
                 local,
-                &facet.filename,
-                &facet.install_as,
-                &facet.sha256,
-                dll_sig.as_ref(),
+                &asset,
+                &asset,
+                &expected,
+                exe_sig.as_ref(),
                 &trust,
                 &sink,
                 ctx,
                 &tmp_dir,
-                false,
-                false,
+                true,
+                true,
                 &runtime_ref,
-            )?);
-        }
+            )?];
+            if let Some(image_expected) = &image.sha {
+                items.push(runtime_facet_item(
+                    &dir_url,
+                    local,
+                    &image_asset,
+                    &image_asset,
+                    image_expected,
+                    image_sig.as_ref(),
+                    &trust,
+                    &sink,
+                    ctx,
+                    &tmp_dir,
+                    false,
+                    false,
+                    &runtime_ref,
+                )?);
+            }
+            if let Some(facet) = &dll {
+                items.push(runtime_facet_item(
+                    &dir_url,
+                    local,
+                    &facet.filename,
+                    &facet.install_as,
+                    &facet.sha256,
+                    dll_sig.as_ref(),
+                    &trust,
+                    &sink,
+                    ctx,
+                    &tmp_dir,
+                    false,
+                    false,
+                    &runtime_ref,
+                )?);
+            }
+            items
+        };
         let jobs = resolve_fetch_jobs(
             ctx.env_get(FETCH_JOBS_ENV).map(str::to_string),
             cfg.fetch_jobs,
@@ -3297,6 +3525,181 @@ payloads:
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         assert!(err.message.contains("WithdrawnPayload"), "{err:?}");
         assert!(err.message.contains("21.0.12"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    // -----------------------------------------------------------------
+    // the bundle-era fetch commit (spec 36 §4)
+    // -----------------------------------------------------------------
+
+    use runtime_bundle::{sha256_hex, write_bundle, ExpectedMember};
+
+    /// A local "release" dir in the bundle era's shape: the
+    /// `<stem>.tar.gz` (exe + image + dll members) plus its sidecar —
+    /// no per-file assets at all.
+    struct BundleFixture {
+        release: PathBuf,
+        bundle: EntryBundle,
+        members: Vec<ExpectedMember>,
+        placements: Vec<(String, String, bool, bool)>,
+    }
+
+    fn bundle_fixture(tag: &str, with_sidecar: bool) -> (PathBuf, BundleFixture) {
+        let home = temp_home(tag);
+        let release = home.join("release");
+        std::fs::create_dir_all(&release).unwrap();
+        let stem = "tebako-runtime-9.9.9-3.4.2-windows-ucrt64";
+        let bundle_name = format!("{stem}.tar.gz");
+        let exe = b"the interpreter";
+        let img = b"the env image";
+        let dll = b"the ruby core dll";
+        write_bundle(
+            &release.join(&bundle_name),
+            &[(stem, exe, 0o755), ("tebako-runtime-9.9.9-3.4.2-windows-ucrt64.tfs", img, 0o444), ("tebako-runtime-9.9.9-3.4.2-windows-ucrt64.dll", dll, 0o644)],
+            None,
+        );
+        let bundle_sha = sha256_hex(&std::fs::read(release.join(&bundle_name)).unwrap());
+        if with_sidecar {
+            std::fs::write(
+                release.join(format!("{bundle_name}.sha256")),
+                format!("{bundle_sha}  {bundle_name}\n"),
+            )
+            .unwrap();
+        }
+        let image_name = format!("{stem}.tfs");
+        let dll_name = format!("{stem}.dll");
+        let fixture = BundleFixture {
+            release,
+            bundle: EntryBundle {
+                filename: bundle_name,
+                sha256: bundle_sha,
+                size_bytes: None,
+            },
+            members: vec![
+                ExpectedMember { name: stem.to_string(), sha256: sha256_hex(exe) },
+                ExpectedMember { name: image_name.clone(), sha256: sha256_hex(img) },
+                ExpectedMember { name: dll_name.clone(), sha256: sha256_hex(dll) },
+            ],
+            placements: vec![
+                (stem.to_string(), stem.to_string(), true, true),
+                (image_name.clone(), image_name, false, false),
+                (dll_name, "x64-ucrt-ruby342.dll".to_string(), false, false),
+            ],
+        };
+        (home, fixture)
+    }
+
+    /// Run the bundle item's commit as the plan would after streaming
+    /// the bundle into staging (the transport is not under test here).
+    fn run_bundle_commit(
+        fixture: &BundleFixture,
+        home: &Path,
+        ctx: &Ctx,
+    ) -> (Result<(), ResolveError>, Option<ShimError>) {
+        let source = RuntimeSource {
+            base: fixture.release.to_string_lossy().into_owned(),
+            tag: None,
+            channel: "test",
+            signer_pin: None,
+        };
+        let trust = FetchTrust::build(&source, ctx).unwrap();
+        let sink = RuntimePlanSink::default();
+        let tmp = home.join("tmp").join("entry.test");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let dir_url = fixture.release.to_string_lossy().into_owned();
+        let item = runtime_bundle_item(
+            &dir_url,
+            true,
+            &fixture.bundle,
+            fixture.members.clone(),
+            fixture.placements.clone(),
+            None,
+            &trust,
+            &sink,
+            ctx,
+            &tmp,
+            "ruby@3.4.2;tebako=9.9.9;image",
+        )
+        .unwrap();
+        let url = format!("{dir_url}/{}", fixture.bundle.filename);
+        let staged_tmp = tmp.join("staged-bundle");
+        std::fs::copy(fixture.release.join(&fixture.bundle.filename), &staged_tmp).unwrap();
+        let staged = StagedArtifact {
+            display: &item.display,
+            reference: &item.reference,
+            tmp: &staged_tmp,
+            sha256: &fixture.bundle.sha256,
+            origin: &url,
+            size: std::fs::metadata(&staged_tmp).unwrap().len(),
+        };
+        let outcome = (item.commit)(&staged).map(|_| ());
+        (outcome, sink.take_error())
+    }
+
+    #[test]
+    fn the_bundle_commit_stages_the_exact_store_layout() {
+        let (home, fixture) = bundle_fixture("commit-ok", true);
+        let ctx = test_ctx(&home);
+        let (outcome, refusal) = run_bundle_commit(&fixture, &home, &ctx);
+        assert!(refusal.is_none(), "{refusal:?}");
+        outcome.unwrap();
+        let tmp = home.join("tmp").join("entry.test");
+        let stem = "tebako-runtime-9.9.9-3.4.2-windows-ucrt64";
+        // exe 0755 + the entry-level markers; image/dll 0444 + facet
+        // markers; the dll installs under its PE name.
+        let exe = tmp.join(stem);
+        assert_eq!(std::fs::read(&exe).unwrap(), b"the interpreter");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777, 0o755);
+            let img = tmp.join(format!("{stem}.tfs"));
+            assert_eq!(std::fs::metadata(&img).unwrap().permissions().mode() & 0o777, 0o444);
+            assert!(tmp.join("x64-ucrt-ruby342.dll").is_file());
+        }
+        let sha_marker = std::fs::read_to_string(tmp.join("sha256")).unwrap();
+        assert_eq!(sha_marker, format!("{}  {stem}\n", sha256_hex(b"the interpreter")));
+        let origin = std::fs::read_to_string(tmp.join("origin")).unwrap();
+        assert!(origin.contains(&fixture.bundle.filename), "{origin}");
+        assert!(origin.contains(&sha256_hex(b"the interpreter")), "{origin}");
+        let facet_origin = std::fs::read_to_string(tmp.join(format!("{stem}.tfs.origin"))).unwrap();
+        assert!(facet_origin.contains(&fixture.bundle.filename), "{facet_origin}");
+        // The bundle's staged bytes + scratch are gone — only the
+        // store-layout names remain.
+        assert!(!tmp.join(&fixture.bundle.filename).exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_bundle_commit_refuses_a_missing_sidecar_by_name() {
+        let (home, fixture) = bundle_fixture("commit-nosidecar", false);
+        let ctx = test_ctx(&home);
+        let (outcome, refusal) = run_bundle_commit(&fixture, &home, &ctx);
+        assert!(outcome.is_err());
+        let refusal = refusal.expect("the sink carries the precise named refusal");
+        assert_eq!(refusal.code, EX_TEBAKO_UNAVAILABLE, "{refusal:?}");
+        assert!(refusal.message.contains("not found"), "{refusal:?}");
+        // Nothing staged: the tmp dir holds no store-layout names.
+        let tmp = home.join("tmp").join("entry.test");
+        assert!(!tmp.join("tebako-runtime-9.9.9-3.4.2-windows-ucrt64").exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_bundle_commit_refuses_a_sidecar_disagreement_as_inconsistent() {
+        let (home, fixture) = bundle_fixture("commit-badsidecar", true);
+        let ctx = test_ctx(&home);
+        // Re-pin the sidecar to a stranger: the release is inconsistent.
+        std::fs::write(
+            fixture.release.join(format!("{}.sha256", fixture.bundle.filename)),
+            format!("{}  {}\n", sha64('f'), fixture.bundle.filename),
+        )
+        .unwrap();
+        let (outcome, refusal) = run_bundle_commit(&fixture, &home, &ctx);
+        assert!(outcome.is_err());
+        let refusal = refusal.expect("the sink carries the precise named refusal");
+        assert_eq!(refusal.code, EX_TEBAKO_SHA, "{refusal:?}");
+        assert!(refusal.message.contains("inconsistent"), "{refusal:?}");
         let _ = std::fs::remove_dir_all(&home);
     }
 }

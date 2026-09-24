@@ -274,6 +274,53 @@ pub struct EntryDll {
     pub sha256: String,
 }
 
+// ---------------------------------------------------------------------
+// the release bundle (spec 36) — one grammar, read here
+// ---------------------------------------------------------------------
+
+/// The release-index entry's additive `bundle` block (spec 36 §3): one
+/// `<stem>.tar.gz` carrying the leg's bytes (exe + env image + dll when
+/// declared + the closing SHA256SUMS). `filename` + `sha256` pin the
+/// SERVED bundle (re-anchored to the served bytes at publish); the
+/// per-member sha fields keep pinning the UNPACKED members. `signature`
+/// parses through the generic facet accessor (`entry_signature(e,
+/// Some("bundle"))`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryBundle {
+    pub filename: String,
+    pub sha256: String,
+    pub size_bytes: Option<u64>,
+}
+
+/// The `bundle` block of a release-index entry. `None` when the key is
+/// absent (the per-file era, forever) — and when the block is torn
+/// (not a map, or an empty/absent `filename` or `sha256`): the facet
+/// rule (a torn facet is no facet), so the fetch path then fails loud on
+/// the absent per-file assets of a bundle-era release rather than
+/// silently half-honoring the block. A torn `signature` INSIDE the block
+/// stays the named error via `entry_signature`.
+pub fn entry_bundle(entry: &tebako_json::Value) -> Option<EntryBundle> {
+    let bundle = entry.find("bundle")?;
+    let filename = bundle
+        .find("filename")
+        .and_then(|v| v.as_string())
+        .filter(|s| !s.is_empty())?;
+    let sha256 = bundle
+        .find("sha256")
+        .and_then(|v| v.as_string())
+        .filter(|s| !s.is_empty())?;
+    let size_bytes = bundle.find("size_bytes").and_then(|v| match v {
+        tebako_json::Value::Number(n) => n.parse::<u64>().ok(),
+        tebako_json::Value::String(s) => s.parse::<u64>().ok(),
+        _ => None,
+    });
+    Some(EntryBundle {
+        filename,
+        sha256,
+        size_bytes,
+    })
+}
+
 /// Parse the `dll` facet out of a release-index text for the exe entry
 /// `exe_name`. `None` when the entry carries no `dll` key (every POSIX
 /// entry) or the key is incomplete — the facet is manifest-keyed.
@@ -1713,6 +1760,47 @@ mod tests {
         let err = on_runtime_mirror(&dir3, &exe).unwrap_err();
         assert!(err.contains("constraint"), "{err}");
         let _ = std::fs::remove_dir_all(&tmp3);
+    }
+
+    // -----------------------------------------------------------------
+    // the release bundle grammar (spec 36 §3)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn entry_bundle_reads_the_complete_block_only() {
+        let index = tebako_json::parse(
+            r#"[
+            {"filename": "exe-a", "bundle": {"filename": "stem.tar.gz",
+                "sha256": "cc", "size_bytes": 46012377,
+                "signature": {"keyid": "efc3c250f7862a48", "asc": "stem.tar.gz.asc"}}},
+            {"filename": "exe-b", "bundle": {"filename": "torn.tar.gz"}},
+            {"filename": "exe-c", "bundle": {"filename": "", "sha256": "dd"}},
+            {"filename": "exe-d"}
+        ]"#,
+        )
+        .unwrap();
+        let tebako_json::Value::Array(entries) = &index else {
+            panic!("the fixture is an array");
+        };
+        let bundle = entry_bundle(&entries[0]).expect("the full block reads");
+        assert_eq!(
+            bundle,
+            EntryBundle {
+                filename: "stem.tar.gz".to_string(),
+                sha256: "cc".to_string(),
+                size_bytes: Some(46_012_377),
+            }
+        );
+        // The block's signature rides the generic facet accessor.
+        let sig = entry_signature(&entries[0], Some("bundle"))
+            .expect("a well-formed block")
+            .expect("the declared signature reads");
+        assert_eq!(sig.asc, "stem.tar.gz.asc");
+        // Torn blocks (no sha256 / empty filename) and the absent key all
+        // read as None — the facet rule, never a guessed half-block.
+        assert_eq!(entry_bundle(&entries[1]), None);
+        assert_eq!(entry_bundle(&entries[2]), None);
+        assert_eq!(entry_bundle(&entries[3]), None);
     }
 
     // -----------------------------------------------------------------
