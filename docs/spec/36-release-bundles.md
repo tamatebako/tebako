@@ -165,8 +165,12 @@ faithful mirror of what the pinned release serves, era by era, and a
   like dwarfs→limnifs), and a catalog run DERIVES its per-line shard
   tags itself: `v<ver>-ruby<line>` per ruby line in the matrix
   vocabulary, no operator input (the v0.16.28 manual
-  `TEBAKO_RELEASE_TAG` input remains as the override). Each line's
-  audit + registry render lands its own bot PR per shard tag.
+  `TEBAKO_RELEASE_TAG` input remains as the override). The AUDIT rides
+  the tail of each (platform × shard) run — the duty is per-platform by
+  construction, and the platform run owns the matrix truth (its own
+  compute outputs; never a recomputation, never a cross-run stale read);
+  the coordinator's release job keeps only the registry renders, one bot
+  PR per shard tag.
 - **Withdrawal bounds growth** (spec 04 §2): a superseded patch version
   takes `status: withdrawn` at the line's next publish rather than
   being re-hosted on every migration. The catalog is the historical
