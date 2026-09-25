@@ -1133,6 +1133,9 @@ pub fn cache_list_json() {
         if let Some(origin) = &entry.origin {
             obj.push(("origin".to_string(), s(origin)));
         }
+        if let Some(registry) = &entry.registry {
+            obj.push(("registry".to_string(), s(registry)));
+        }
         payloads.push(J::Object(obj));
     }
 

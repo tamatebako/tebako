@@ -5,10 +5,12 @@ grammar + derivation, `DuplicateRegistryAlias` /
 `DuplicateDefaultRegistry`, `add-registry --name/--require-signed/
 --default`, the `list-registries` book rendering), §2.2's per-registry
 fail-closed signature policy (`UnsignedRegistryPayload`, exit 70),
-§3's qualified form (`alias/name` + the `registry:` pin scopes), and
+§3's qualified form (`alias/name` + the `registry:` pin scopes),
 §4's federation grammar (the explicit-host `tfs+<svc>://host/…` forms,
 the `tfs+https://` registry location, the `UnsupportedService` /
-`SshTransportUnsupported` refusals) SHIPPED. §5–§9 PLANNED (locked
+`SshTransportUnsupported` refusals), and §7's origin binding (the
+`.tfs.registry` marker, the confined version chains, the journaled
+rebind) SHIPPED. §5, §6, §8, §9 PLANNED (locked
 direction 2026-09-24; design reviewed with the owner across the
 2026-09-24 session — the alias grammar, the credential confinement
 model, and the federation forms below are the agreed shape). Nothing
@@ -220,14 +222,22 @@ registries:
 ## 7. Origin binding (upgrade confinement)
 
 A store entry's markers already record WHERE bytes came from; the book
-adds WHICH REGISTRY resolved them. Dispatch-time version chains (spec
-07 §1's chain, spec 05 §5) consult the payload's ORIGIN registry only:
-a same-named payload appearing in another registered registry is never
-a silent "upgrade" of an installed one (the confusion attack that
-priority-based ecosystems — rubygems sources, docker's implicit
-docker.io — leak by construction). Switching registries is an explicit
-act: `tebako install <alias>/<name>` reinstalls and rebinds the origin;
-the journal records the rebind.
+adds WHICH REGISTRY resolved them — the `.tfs.registry` marker beside
+`.tfs.origin`, carrying the resolving registry's canonical REFERENCE
+(never an alias; aliases are local and volatile). Dispatch-time version
+chains (spec 07 §1's chain, spec 05 §5) and unscoped install-time name
+searches alike consult the payload's ORIGIN registry only: a same-named
+payload appearing in another registered registry is never a silent
+"upgrade" of an installed one (the confusion attack that priority-based
+ecosystems — rubygems sources, docker's implicit docker.io — leak by
+construction). An authored `registry:` scope (§3) outranks the binding.
+Switching registries is an explicit act: `tebako install <alias>/<name>`
+reinstalls and rebinds the origin; the journal records the rebind
+(`event=origin-rebind`). A rebind whose registry-declared digest
+disagrees with the cached bytes is refused (`Sha256Mismatch`, exit 70)
+— the cache never overwrites a standing entry, so bytes are never
+re-tagged to a registry that never published them: uninstall first,
+then install from the new registry.
 
 ## 8. Private runtimes (schema MINOR 1, shipped by this spec)
 
@@ -274,6 +284,7 @@ transport concern the federation grammar never sees.
 | `SshTransportUnsupported` | 65 | any ssh/git@ URL — the token-over-https steer |
 | `CredentialRequired` | 69 unavailable | 401/403 with no matching credential — names the registry + env var looked for |
 | `UnsignedRegistryPayload` | 70 integrity | `require_signed` row without a verifying signature — fail-closed |
+| `Sha256Mismatch` | 70 integrity | (re-scoped from spec 04 §3) a rebind whose registry-declared digest disagrees with the cached bytes — uninstall first |
 
 Each maps to exactly one CI tier's assertion; none is a fallback — a
 failure here changes NOTHING about what is installed or resolved

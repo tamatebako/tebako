@@ -75,6 +75,21 @@ the pin resolves through — an alias that matches no registered
 registry is the named `UnknownRegistryAlias`, listing the book's
 aliases.
 
+Once a payload is installed, the store remembers WHICH registry
+resolved it (spec 37 §7's origin binding — a `.tfs.registry` marker
+next to the artifact, holding the registry's canonical reference). From
+then on, bare installs and dispatch-time version chains for that
+payload consult its origin registry only: a same-named payload showing
+up in another registered registry is never silently treated as a newer
+release of yours. Switching is an explicit act — `tebako install
+<alias>/<name>` reinstalls and rebinds the origin, and the journal
+records the switch (`event=origin-rebind`). If the new registry's
+declared digest disagrees with the bytes already installed, the rebind
+is refused (`Sha256Mismatch`, exit 70): uninstall first, then install
+from the new registry — bytes are never re-tagged to a registry that
+never published them. An authored `registry:` scope on a pin outranks
+the binding, exactly like the qualified install form.
+
 The index is fetched, its signing key is shown for confirmation, and
 the key is pinned to that registry. After that:
 

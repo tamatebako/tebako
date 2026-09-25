@@ -292,6 +292,11 @@ pub(crate) struct InstallPlan {
     /// the named `UnsignedRegistryPayload` (exit 70) at the fetch
     /// boundary. `None` = the registry (or the ref form) imposes none.
     require_signed: Option<String>,
+    /// Spec 37 §7's origin binding: the resolving registry's canonical
+    /// reference, bound onto the cache entry at install (a hit bound
+    /// elsewhere is the explicit rebind). `None` for the ref form and
+    /// local installs — they bind nothing.
+    pub(crate) origin_registry: Option<String>,
     /// Registry-declared entrypoint names (the ref form has none and
     /// falls back to the payload name).
     pub(crate) entrypoints: Vec<String>,
@@ -681,6 +686,7 @@ fn plan_from_reference(target: &str) -> Result<InstallPlan, TebakoError> {
         expected_sha256: None,
         signature: None,
         require_signed: None,
+        origin_registry: None,
         entrypoints: Vec::new(),
         runtime_requirement: None,
         strict_identity: false,
@@ -857,9 +863,23 @@ pub(crate) fn find_in_registries<T: Transport>(
     scope: Option<&str>,
 ) -> Result<Vec<RegistryHit>, TebakoError> {
     let cfg = config::load_config(home).map_err(map_shim)?;
+    // Spec 37 §7's origin binding: an UNSCOPED search for a payload whose
+    // installed versions are bound consults the origin registry set only
+    // — a same-named row anywhere else is never a silent upgrade (the
+    // confusion attack priority-based ecosystems leak). The qualified
+    // form (scope = Some) is the explicit switch act and bypasses the
+    // binding; the rebind lands in `finish_install`'s marker rewrite.
+    let bound = if scope.is_none() {
+        PayloadCache::with_root(home).bound_registries(name)
+    } else {
+        Vec::new()
+    };
     let mut found = Vec::new();
     for row in cfg.registry_book_scoped(scope).map_err(map_shim)? {
         let reg_ref = row.entry.reference();
+        if !bound.is_empty() && !bound.iter().any(|b| b == reg_ref) {
+            continue;
+        }
         let r = RegistryRef::parse(reg_ref).map_err(|e| {
             err(
                 EX_TEBAKO_MANIFEST,
@@ -1071,6 +1091,7 @@ pub(crate) fn plan_from_registry_entry(
         expected_sha256,
         signature: entry.signature.clone(),
         require_signed: hit.require_signed.clone(),
+        origin_registry: Some(hit.reference.clone()),
         entrypoints: entry.entrypoints.clone(),
         runtime_requirement: entry.runtime_requirement.as_ref().map(|r| {
             (
@@ -1228,6 +1249,49 @@ fn finish_install<T: Transport + Sync>(
             (entry, status, sink.take_signer())
         }
     };
+
+    // Spec 37 §7's origin binding: a registry-resolved plan binds the
+    // entry to the registry that resolved it (canonical ref, never the
+    // alias). A cache hit bound ELSEWHERE is the explicit rebind —
+    // `tebako install <alias>/<name>` — the bytes already stand verified
+    // against their trust anchor, so the marker rewrites in place and the
+    // journal records the switch; a miss binds at placement.
+    if let Some(registry) = &plan.origin_registry {
+        // The rebind act must never misattribute bytes: the cache never
+        // overwrites a standing entry, so when the NEW registry's own
+        // anchor disagrees with the cached bytes the rebind is the named
+        // Sha256Mismatch (exit 70) — uninstall first, never a silent
+        // re-tag of bytes the registry never published.
+        if entry.registry.as_deref() != Some(registry.as_str()) {
+            let anchor = plan
+                .expected_sha256
+                .as_deref()
+                .or_else(|| plan.reference.sha256());
+            if let Some(expected) = anchor {
+                if !expected.eq_ignore_ascii_case(&entry.sha256) {
+                    return Err(err(
+                        EX_TEBAKO_SHA,
+                        format!(
+                            "rebinding {} {} to {registry} is refused (Sha256Mismatch): the cached bytes have sha256 {} but the registry declares {expected}\n  uninstall first (`tebako uninstall {}`), then install from the new registry",
+                            plan.name, plan.version, entry.sha256, plan.name
+                        ),
+                    ));
+                }
+            }
+        }
+        if let Some(previous) = cache
+            .mark_registry(&plan.name, &plan.version, registry)
+            .map_err(map_resolve)?
+        {
+            journal(
+                home,
+                &format!(
+                    "event=origin-rebind name={} version={} from={previous} to={registry}",
+                    plan.name, plan.version
+                ),
+            );
+        }
+    }
 
     // The manifest mirror, IN MEMORY for now (the dispatcher-visible
     // record, spec 07 §0): the embedded manifest when the image carries
