@@ -59,6 +59,7 @@ enum SpawnEdge<'m> {
         engine: &'m str,
         implementation: Option<&'m str>,
         constraint: &'m tpkg::Constraint,
+        registry: Option<&'m str>,
         expose: &'m [String],
     },
     /// An expose-carrying `kind: executable` edge (spec 32 §1/§6).
@@ -115,6 +116,7 @@ where
                 implementation,
                 constraint,
                 expose,
+                registry,
                 ..
             } => {
                 // The lock's own validator refuses two rows for one
@@ -136,6 +138,7 @@ where
                     engine,
                     implementation: implementation.as_deref(),
                     constraint,
+                    registry: registry.as_deref(),
                     expose,
                 });
             }
@@ -186,6 +189,7 @@ where
                 engine,
                 implementation,
                 constraint,
+                registry,
                 expose,
             } => {
                 let row = spawned_runtime_row(
@@ -193,6 +197,7 @@ where
                     engine,
                     *implementation,
                     constraint,
+                    *registry,
                     expose,
                     preset,
                     &mut plan,
@@ -313,14 +318,21 @@ fn spawned_runtime_row(
     engine: &str,
     implementation: Option<&str>,
     constraint: &tpkg::Constraint,
+    registry: Option<&str>,
     expose: &[String],
     preset: ComposePreset,
     plan: &mut SpawnedPlan,
     next_slot: &mut u32,
 ) -> Result<tpkg::LockedSpawnedRuntime, TebakoError> {
-    let rt =
-        tebako_shim::runtime::resolve_runtime_edge(engine, implementation, constraint, true, ctx)
-            .map_err(install::map_shim)?;
+    let rt = tebako_shim::runtime::resolve_runtime_edge(
+        engine,
+        implementation,
+        constraint,
+        registry,
+        true,
+        ctx,
+    )
+    .map_err(install::map_shim)?;
     check_expose_against_runtime(engine, &rt, expose)?;
     gate_carried_runtime(
         &format!(
@@ -701,6 +713,7 @@ fn spawned_payload_row<T: Transport>(
         &engine,
         implementation.as_deref(),
         language,
+        None,
         true,
         ctx,
     )

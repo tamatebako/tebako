@@ -389,12 +389,14 @@ fn compose_spawn_lock(
                 engine,
                 implementation,
                 constraint,
+                registry,
                 ..
             } => {
                 let rt = runtime::resolve_runtime_edge(
                     engine,
                     implementation.as_deref(),
                     constraint,
+                    registry.as_deref(),
                     allow_download,
                     ctx,
                 )?;
@@ -490,6 +492,7 @@ pub fn plan(
         engine,
         implementation,
         constraint,
+        registry,
         ..
     }) = &res.exposed
     {
@@ -497,6 +500,7 @@ pub fn plan(
             engine,
             implementation.as_deref(),
             constraint,
+            registry.as_deref(),
             allow_download,
             ctx,
         )?;

@@ -38,8 +38,84 @@ use tebako_json::{parse as json_parse, Value as JsonValue};
 use std::collections::BTreeSet;
 
 use crate::error::ResolveError;
-use crate::reference::Service;
+use crate::reference::{Reference, Service};
 use crate::transport::Transport;
+
+/// The release-download coordinates a runtime registry row's `release.ref`
+/// derives (spec 37 §8 — the private-runtime chain): the base and tag the
+/// runtime fetch composes `{base}/{tag}{asset_infix}/<asset>` URLs from.
+/// This is the per-service PUBLIC download URL shape (never the API base):
+///
+/// - GitHub — SaaS and explicit host alike (GHE serves the same shape as
+///   github.com): `https://<host>/<owner>/<repo>/releases/download`, the
+///   asset directly under the tag (`asset_infix` empty).
+/// - GitLab — SaaS and self-hosted alike: release assets live under
+///   `https://<host>/<owner>/<repo>/-/releases/<tag>/downloads/<asset>`;
+///   the base stops at `/-/releases` and `asset_infix` carries the
+///   `/downloads` difference so `tag` stays the VERBATIM release tag
+///   (the runtime's pref naming rides it — a munged tag poisons the
+///   tebako-line derivation).
+///
+/// `None` for the ref classes with no release-asset semantics to derive
+/// from (`tfs+git:`, `tfs+https:`, `file:`, Bitbucket) — the caller
+/// journals the skip, never guesses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseDownloadLocator {
+    /// Everything before the tag in the asset URL.
+    pub base: String,
+    /// The release tag, verbatim from the reference.
+    pub tag: String,
+    /// The per-service infix between the tag and the asset name.
+    pub asset_infix: &'static str,
+}
+
+impl ReleaseDownloadLocator {
+    /// The asset-URL directory this locator spells: `{base}/{tag}{infix}`
+    /// — every release artifact (index cards, sidecars, the runtime
+    /// facets) composes below it.
+    pub fn dir_url(&self) -> String {
+        format!("{}/{}{}", self.base, self.tag, self.asset_infix)
+    }
+}
+
+/// Derive the download coordinates of a runtime row's `release.ref`
+/// (spec 37 §8) — the ONE derivation every runtime-registry consumer
+/// calls. See [`ReleaseDownloadLocator`] for the shapes.
+pub fn release_download_locator(reference: &Reference) -> Option<ReleaseDownloadLocator> {
+    match reference {
+        Reference::Service {
+            service: Service::Github,
+            host,
+            owner,
+            repo,
+            version,
+            ..
+        } => Some(ReleaseDownloadLocator {
+            base: format!(
+                "https://{}/{owner}/{repo}/releases/download",
+                host.as_deref().unwrap_or("github.com")
+            ),
+            tag: version.clone(),
+            asset_infix: "",
+        }),
+        Reference::Service {
+            service: Service::Gitlab,
+            host,
+            owner,
+            repo,
+            version,
+            ..
+        } => Some(ReleaseDownloadLocator {
+            base: format!(
+                "https://{}/{owner}/{repo}/-/releases",
+                host.as_deref().unwrap_or("gitlab.com")
+            ),
+            tag: version.clone(),
+            asset_infix: "/downloads",
+        }),
+        _ => None,
+    }
+}
 
 /// One downloadable asset: its file name, the URL to GET, and the fetch
 /// requirements that choice implies. The URL string carries nothing
@@ -1197,5 +1273,81 @@ mod tests {
         assert!(adapter_for_host(Service::Github, None).is_ok());
         assert!(adapter_for_host(Service::Github, Some("ghe.corp.internal")).is_ok());
         assert!(adapter_for_host(Service::Gitlab, Some("gitlab.corp.internal")).is_ok());
+    }
+
+    // ---- the release-download locator (spec 37 §8) ----------------------
+
+    fn locator(input: &str) -> Option<ReleaseDownloadLocator> {
+        release_download_locator(&Reference::parse(input).expect("test ref parses"))
+    }
+
+    #[test]
+    fn the_locator_derives_the_github_saas_shape() {
+        let loc = locator("tfs:github:acme/tebako-runtime-openjdk:v2.5.1").unwrap();
+        assert_eq!(
+            loc.base,
+            "https://github.com/acme/tebako-runtime-openjdk/releases/download"
+        );
+        assert_eq!(loc.tag, "v2.5.1");
+        assert_eq!(loc.asset_infix, "");
+        assert_eq!(
+            loc.dir_url(),
+            "https://github.com/acme/tebako-runtime-openjdk/releases/download/v2.5.1"
+        );
+    }
+
+    #[test]
+    fn the_locator_derives_the_ghe_shape_at_an_explicit_host() {
+        // GHE serves the same URL shape as github.com — the host is the
+        // only parameter (spec 37 §4's one-code-path rule).
+        let loc = locator("tfs+github://ghe.corp.internal:8443/acme/tebako-runtime-openjdk:v2.5.1")
+            .unwrap();
+        assert_eq!(
+            loc.base,
+            "https://ghe.corp.internal:8443/acme/tebako-runtime-openjdk/releases/download"
+        );
+        assert_eq!(loc.tag, "v2.5.1");
+        assert_eq!(loc.asset_infix, "");
+    }
+
+    #[test]
+    fn the_locator_derives_the_gitlab_asset_shape() {
+        // GitLab's release assets live under /-/releases/<tag>/downloads/
+        // — the infix carries the difference, the tag stays verbatim.
+        let loc = locator("tfs:gitlab:acme/tebako-runtime-python:v0.3.0").unwrap();
+        assert_eq!(
+            loc.base,
+            "https://gitlab.com/acme/tebako-runtime-python/-/releases"
+        );
+        assert_eq!(loc.tag, "v0.3.0");
+        assert_eq!(loc.asset_infix, "/downloads");
+        assert_eq!(
+            loc.dir_url(),
+            "https://gitlab.com/acme/tebako-runtime-python/-/releases/v0.3.0/downloads"
+        );
+    }
+
+    #[test]
+    fn the_locator_derives_self_hosted_gitlab_with_nested_groups() {
+        // Nested groups ride `owner`; the web download URL keeps the
+        // slashes (only the API form percent-encodes them).
+        let loc =
+            locator("tfs+gitlab://gitlab.corp.internal/group/sub/tebako-runtime-python:v0.3.0")
+                .unwrap();
+        assert_eq!(
+            loc.dir_url(),
+            "https://gitlab.corp.internal/group/sub/tebako-runtime-python/-/releases/v0.3.0/downloads"
+        );
+    }
+
+    #[test]
+    fn the_locator_refuses_the_classes_with_no_release_asset_semantics() {
+        // A bare git repo / bare https URL / file mirror / Bitbucket row
+        // has no release-asset shape to derive — the caller journals the
+        // skip with the class name, unchanged.
+        assert!(locator("tfs+git://git.corp.internal/acme/runtime.git@v1").is_none());
+        assert!(locator("tfs+https://artifacts.corp.internal/runtime.tfs").is_none());
+        assert!(locator("file:///mirror/runtime.tfs").is_none());
+        assert!(locator("tfs:bb:acme/runtime:v1").is_none());
     }
 }

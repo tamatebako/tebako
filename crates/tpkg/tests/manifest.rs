@@ -191,6 +191,7 @@ fn app_suite_fixture_shape() {
         constraint,
         triplets,
         mount,
+        registry,
     } = &m.requires[1]
     else {
         panic!("toolkit requirement, got {:?}", m.requires[1]);
@@ -203,6 +204,7 @@ fn app_suite_fixture_shape() {
     );
     // the MOUNT RULE: the consumer declares the mount point
     assert_eq!(mount.as_deref(), Some("/__layers__/gtk"));
+    assert_eq!(registry.as_deref(), None);
 }
 
 #[test]
@@ -535,6 +537,90 @@ fn runtime_edge_is_schema_legal() {
 }
 
 #[test]
+fn edge_registry_pin_is_schema_legal() {
+    // spec 37 §3 (schema_minor 14): the additive `registry:` key on every
+    // dependency edge kind but language — the pin narrows resolution to
+    // the one book entry the alias names. The versioned JSON Schema
+    // admits it and the model round-trips it.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-09-25T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires:\n  - {kind: language, engine: ruby, constraint: \"~> 3.3.0\"}\n\
+        \x20 - {kind: runtime, engine: java, constraint: \">= 21\", registry: acme-runtimes}\n\
+        \x20 - {kind: toolkit, name: gtk-layer, constraint: \">= 3.24\", registry: acme}\n\
+        \x20 - {kind: data, name: fonts, constraint: \">= 1\", registry: acme}\n\
+        \x20 - {kind: executable, name: xml2rfc, constraint: \">= 3.34\", expose: [xml2rfc], registry: acme-tools}\n";
+    let m = PayloadManifest::from_yaml(text).unwrap();
+    assert_eq!(m.requires.len(), 5);
+    assert_eq!(m.requires[0].registry(), None, "language carries no pin");
+    assert_eq!(m.requires[1].registry(), Some("acme-runtimes"));
+    assert_eq!(m.requires[2].registry(), Some("acme"));
+    assert_eq!(m.requires[3].registry(), Some("acme"));
+    assert_eq!(m.requires[4].registry(), Some("acme-tools"));
+    // …and the schema agrees (MECE cross-check).
+    let validator = schema_validator();
+    validator
+        .validate(&yaml_text_to_json(text))
+        .expect("the registry-pinned edges are schema-legal");
+    let back = PayloadManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, m);
+
+    // Omitted stays omitted on the wire (never a null spelling).
+    let unpinned = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-09-25T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires: [{kind: data, name: fonts, constraint: \">= 1\"}]\n";
+    let m = PayloadManifest::from_yaml(unpinned).unwrap();
+    let yaml = m.to_yaml().unwrap();
+    assert!(!yaml.contains("registry"), "omitted on the wire: {yaml}");
+}
+
+#[test]
+fn edge_registry_pin_refuses_a_bad_alias() {
+    // spec 37 §3: the pin is a registry alias — the `[a-z][a-z0-9-]*`
+    // grammar owns the refusal at parse/validate; whether the alias
+    // EXISTS is resolution-time's UnknownRegistryAlias, never the
+    // manifest's call.
+    for bad in ["Acme", "-acme", "acme_corp", "acme corp", ""] {
+        let text = format!(
+            "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+            \x20 producer: {{tool: tebako-cli, tool_version: 0.16.0}}\n  created: \"2026-09-25T00:00:00Z\"\n\
+            \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+            \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+            \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+            provides:\n  entrypoints:\n    - {{name: metanorma, path: /bin/metanorma}}\n\
+            \x20 platforms: universal\n  capabilities: {{exec: true, read: true}}\n\
+            requires: [{{kind: data, name: fonts, constraint: \">= 1\", registry: \"{bad}\"}}]\n"
+        );
+        let err = PayloadManifest::from_yaml(&text).unwrap_err();
+        assert!(
+            err.to_string().contains("requires[].registry"),
+            "'{bad}': the model refusal: {err}"
+        );
+        // …and the schema's $defs/registryAlias pattern agrees where the
+        // value is a string (the model alone refuses the empty string —
+        // serde's parse reports it before validate).
+        if !bad.is_empty() {
+            assert!(
+                !schema_validator().is_valid(&yaml_text_to_json(&text)),
+                "'{bad}': the JSON schema refuses"
+            );
+        }
+    }
+    assert!(tpkg::valid_registry_alias("acme"));
+    assert!(tpkg::valid_registry_alias("acme-runtimes-2"));
+    assert!(!tpkg::valid_registry_alias("2acme"));
+}
+
+#[test]
 fn runtime_edge_expose_never_collides_with_own_entrypoints() {
     // spec 30 §3: an exposed depended-entry name colliding with the
     // payload's OWN entrypoint is a named error at parse/validate.
@@ -573,6 +659,7 @@ fn executable_edge_fixture_shape() {
         expose,
         critical,
         triplets,
+        registry,
     } = &m.requires[1]
     else {
         panic!("executable edge, got {:?}", m.requires[1]);
@@ -584,6 +671,7 @@ fn executable_edge_fixture_shape() {
     assert_eq!(expose, &["xml2rfc".to_string()]);
     assert!(critical);
     assert!(triplets.is_none());
+    assert_eq!(registry.as_deref(), None);
 }
 
 #[test]
@@ -857,6 +945,7 @@ fn covers_host_semantics() {
         constraint: Constraint::new(">= 1").unwrap(),
         triplets: None,
         mount: None,
+        registry: None,
     };
     assert!(universal.triplets().is_none());
     for p in Platform::ALL {
@@ -867,6 +956,7 @@ fn covers_host_semantics() {
         constraint: Constraint::new(">= 1").unwrap(),
         triplets: Some(vec![Platform::Aarch64Macos]),
         mount: None,
+        registry: None,
     };
     assert!(listed.covers_host(Platform::Aarch64Macos));
     assert!(!listed.covers_host(Platform::X86_64LinuxGnu));

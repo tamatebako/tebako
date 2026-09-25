@@ -167,6 +167,11 @@
       "minItems": 1,
       "uniqueItems": true
     },
+    "registryAlias": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "spec 37 §3 (additive — schema_minor 14): the edge's registry scope — the alias of the one book entry the edge resolves through; an unknown alias is the named UnknownRegistryAlias at resolution, never a manifest error. Absent = the bare rule (every registered registry). The kind: language edge never carries it (runtime_requirement gains no alias field, spec 37 §8)."
+    },
     "platformsAxis": {
       "description": "`platforms` is EITHER \"universal\" OR an explicit triplet list (spec 03 §3).",
       "anyOf": [
@@ -518,7 +523,8 @@
             "name": { "type": "string", "minLength": 1 },
             "constraint": { "$ref": "#/$defs/constraint" },
             "triplets": { "$ref": "#/$defs/platformList" },
-            "mount": { "$ref": "#/$defs/absPath" }
+            "mount": { "$ref": "#/$defs/absPath" },
+            "registry": { "$ref": "#/$defs/registryAlias" }
           }
         },
         {
@@ -529,7 +535,8 @@
             "name": { "type": "string", "minLength": 1 },
             "constraint": { "$ref": "#/$defs/constraint" },
             "triplets": { "$ref": "#/$defs/platformList", "description": "spec 03 §2.3 (schema_minor 9): per-edge platform conditioning — the edge resolves on the listed hosts only; a non-covering host SKIPS the edge (no resolve/fetch/install/lock row/mount; loud + journaled, never an error). Absent = universal (byte-identical with pre-minor-9 behavior)." },
-            "mount": { "$ref": "#/$defs/absPath" }
+            "mount": { "$ref": "#/$defs/absPath" },
+            "registry": { "$ref": "#/$defs/registryAlias" }
           }
         },
         {
@@ -546,7 +553,8 @@
               "description": "spec 30 §1/§3 (schema_minor 4): the depended runtime's entries this payload surfaces — bare command names (no path separator, no drive qualifier), never repeated. The depended runtime resolves through the runtime index and is NEVER co-mounted (no mount key exists on this edge).",
               "items": { "type": "string", "minLength": 1, "pattern": "^[^/\\\\:]+$" },
               "uniqueItems": true
-            }
+            },
+            "registry": { "$ref": "#/$defs/registryAlias" }
           }
         },
         {
@@ -565,7 +573,8 @@
               "description": "spec 03 §8 + spec 32 §1 (schema_minor 5): the capability edge — exact-name resolution against provides.executables ∪ provides.entrypoints[].name (DependencyNotFound / AmbiguousProvider). mount and expose are ORTHOGONAL axes: mount opens the VFS surface (co-mount, consumer-declared); expose opens the spawn surface — each exposed name dispatches the provider's own spec-17 dispatch as a child, and exposed names never take the exec-tier path. Semantic rules (the tpkg validator): an edge with neither mount nor expose is a named manifest error; name ∈ expose is required; every exposed name must resolve to a runtime-carrying entrypoint of the provider (press/install cross-check).",
               "items": { "type": "string", "minLength": 1, "pattern": "^[^/\\\\:]+$" },
               "uniqueItems": true
-            }
+            },
+            "registry": { "$ref": "#/$defs/registryAlias" }
           }
         }
       ]

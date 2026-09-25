@@ -389,6 +389,7 @@ fn arb_requirement() -> impl Strategy<Value = Requirement> {
                 constraint,
                 triplets: Some(triplets),
                 mount: Some(mount),
+                registry: None,
             }
         ),
         (arb_name(), arb_constraint(), arb_triplets(), arb_path()).prop_map(
@@ -397,6 +398,7 @@ fn arb_requirement() -> impl Strategy<Value = Requirement> {
                 constraint,
                 triplets: Some(triplets),
                 mount: Some(mount),
+                registry: None,
             }
         ),
     ]

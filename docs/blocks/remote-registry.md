@@ -75,6 +75,20 @@ the pin resolves through — an alias that matches no registered
 registry is the named `UnknownRegistryAlias`, listing the book's
 aliases.
 
+Dependency edges carry the scope too: a payload manifest's `requires:`
+entries (toolkit, data, runtime, executable) accept `registry: <alias>`
+(spec 37 §3), so a payload built against a private registry resolves
+its dependencies — runtimes included — through exactly that registry.
+A scoped runtime edge never falls back to the public default line, and
+a scoped registry marked `--require-signed` refuses an unsigned runtime
+row with the same named `UnsignedRegistryPayload` as a payload row.
+
+Runtime discovery is federated (spec 37 §8): a registry's runtime rows
+resolve their downloads from GitHub, GitHub Enterprise, and GitLab
+(SaaS or self-hosted) release references alike — the per-service
+download-URL shape derives from the row's `release.ref`, never from a
+hand-configured mirror.
+
 Once a payload is installed, the store remembers WHICH registry
 resolved it (spec 37 §7's origin binding — a `.tfs.registry` marker
 next to the artifact, holding the registry's canonical reference). From
