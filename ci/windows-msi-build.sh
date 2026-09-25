@@ -82,11 +82,16 @@ case "$MODE" in
     # WiX's $(var.Bootstrap) errors (WIX0150) on an undefined variable
     # even inside a false <?if?>; the unbound shape binds it empty.
     BOOTSTRAP_BIND=(-d "Bootstrap=")
+    BOOTSTRAP_EXT=()
     if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
       : "${BOOTSTRAP_PAYLOADS:?BOOTSTRAP_PAYLOADS is required when BOOTSTRAP_REGISTRY is set (space-separated payload names)}"
       # WixQuietExec64 lives in the Util extension — pinned to the WiX
       # tool's line (the workflow installs wix 5.0.2; bump in lockstep).
+      # `wix extension add` only populates the cache: the build must also
+      # LOAD the extension (-ext), or the linker cannot resolve the CA
+      # binary (WIX0094 'Binary:Wix4UtilCA_X64' could not be found).
       wix extension add --global WixToolset.Util.wixext/5.0.2 >/dev/null
+      BOOTSTRAP_EXT=(-ext WixToolset.Util.wixext)
       {
         printf '@echo off\r\n'
         printf 'rem %s bootstrap seed (spec 16 §7) — composed at build time; safe to re-run.\r\n' "$PRODUCT_NAME"
@@ -129,6 +134,7 @@ case "$MODE" in
       -d "Manufacturer=$MANUFACTURER" \
       -d "UpgradeCode=$MSI_UPGRADE_CODE" \
       ${BOOTSTRAP_BIND[@]+"${BOOTSTRAP_BIND[@]}"} \
+      ${BOOTSTRAP_EXT[@]+"${BOOTSTRAP_EXT[@]}"} \
       -d "BinDir=$BIN_BINDIR" \
       -o "out/$ASSET"
     echo "built: out/$ASSET (unsigned — the Azure step signs in place when armed)"
