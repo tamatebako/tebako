@@ -1,0 +1,70 @@
+name: MSI template compile
+
+# Compile-asserts the WiX template in BOTH bound shapes on every change
+# to the template or its build script. The product's own MSI leg never
+# binds Bootstrap, so without this tier a break inside the
+# <?if Bootstrap?> block (the client web-bootstrapper shape, spec 16 §7)
+# ships silently — the WIX0230/WIX0400 pair that rode v2.8.6…v2.8.9
+# (#623) is the lesson. Compile assertion only: no signing, no publish.
+
+on:
+  pull_request:
+    paths:
+      - templates/installers/windows/**
+      - ci/windows-msi-build.sh
+      - .github/workflows/msi-template.yml
+  push:
+    branches: [main]
+    paths:
+      - templates/installers/windows/**
+      - ci/windows-msi-build.sh
+      - .github/workflows/msi-template.yml
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  compile:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the WiX v5 dotnet tool
+        shell: bash
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          echo "$USERPROFILE/.dotnet/tools" >> "$GITHUB_PATH"
+          wix --version
+
+      - name: Stage rehearsal exes and fragments
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p rehearsal-src rehearsal-frag
+          for t in tebako tebako-shim tfs tebako-pkg; do
+            printf 'MZ rehearsal' > "rehearsal-src/$t-0.0.0-windows-ucrt64.exe"
+            sha256sum < "rehearsal-src/$t-0.0.0-windows-ucrt64.exe" | cut -d' ' -f1 \
+              > "rehearsal-frag/$t-windows-ucrt64.sha256"
+          done
+
+      - name: Compile the product shape (Bootstrap unbound)
+        shell: bash
+        run: ci/windows-msi-build.sh build
+        env:
+          VERSION: 0.0.0
+          SRC_DIR: rehearsal-src
+          FRAG_DIR: rehearsal-frag
+          RUNNER_TEMP: ${{ runner.temp }}
+          MSI_UPGRADE_CODE: 7b6e0a52-3c41-4e9f-9d2b-1a5c8f04e6d7
+
+      - name: Compile the client web-bootstrapper shape (Bootstrap bound)
+        shell: bash
+        run: ci/windows-msi-build.sh build
+        env:
+          VERSION: 0.0.0
+          SRC_DIR: rehearsal-src
+          FRAG_DIR: rehearsal-frag
+          RUNNER_TEMP: ${{ runner.temp }}
+          MSI_UPGRADE_CODE: 7b6e0a52-3c41-4e9f-9d2b-1a5c8f04e6d7
+          BOOTSTRAP_REGISTRY: tfs:github:tebako-packages/registry
+          BOOTSTRAP_PAYLOADS: hello

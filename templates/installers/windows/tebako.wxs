@@ -109,8 +109,12 @@
 <?if $(var.Bootstrap) != "" ?>
     <!-- The web-bootstrapper payload (spec 16 §7): the seed script at the
          install root + the home\shims grammar marker (spec 05 §3.1) + the
-         shims dir on PATH. -->
-    <Component Id="BundleHome" Directory="INSTALLFOLDER">
+         shims dir on PATH. The Guid is explicit and stable: a component
+         combining a File with a registry KeyPath may not use an
+         auto-generated guid (WIX0230), and a fixed per-component GUID is
+         the correct identity across package versions anyway. -->
+    <Component Id="BundleHome" Directory="INSTALLFOLDER"
+               Guid="7f3a2c91-4e58-4b6d-9c1a-2d8e5f07a3b4">
       <File Source="$(var.BinDir)\bootstrap-seed.cmd" />
       <CreateFolder Directory="HOMESHIMSFOLDER" />
       <Environment Id="BundleShimsPath"
@@ -147,7 +151,9 @@
                   Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="BootstrapSeed.SetProperty" Before="BootstrapSeed" />
-      <Custom Action="BootstrapSeed" After="InstallFiles">NOT Installed</Custom>
+      <!-- WiX v5 takes the sequence condition on the Condition attribute;
+           inner text on Custom is rejected (WIX0400). -->
+      <Custom Action="BootstrapSeed" After="InstallFiles" Condition="NOT Installed" />
     </InstallExecuteSequence>
 <?endif?>
   </Package>
