@@ -37,6 +37,7 @@ pub mod registry;
 pub mod store;
 pub mod transport;
 
+pub use adapters::{release_download_locator, ReleaseDownloadLocator};
 pub use cache::{
     default_cache_root, CacheEntry, InstallStatus, PayloadCache, ProtectedSet, SeedOutcome,
 };

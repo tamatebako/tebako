@@ -233,10 +233,14 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 constraint,
                 triplets,
                 mount,
+                registry,
             } => {
                 let mut line = format!("    toolkit:{name}:{constraint}");
                 if let Some(m) = mount {
                     line.push_str(&format!(" → {m}"));
+                }
+                if let Some(r) = registry {
+                    line.push_str(&format!(" [registry: {r}]"));
                 }
                 render_triplets(&mut line, triplets);
                 out.push_str(&line);
@@ -247,10 +251,14 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 constraint,
                 triplets,
                 mount,
+                registry,
             } => {
                 let mut line = format!("    data:{name}:{constraint}");
                 if let Some(m) = mount {
                     line.push_str(&format!(" → {m}"));
+                }
+                if let Some(r) = registry {
+                    line.push_str(&format!(" [registry: {r}]"));
                 }
                 render_triplets(&mut line, triplets);
                 out.push_str(&line);
@@ -262,6 +270,7 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 constraint,
                 expose,
                 triplets,
+                registry,
             } => {
                 let mut line = format!("    runtime:{engine}:{constraint}");
                 if let Some(imp) = implementation {
@@ -269,6 +278,9 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 }
                 if !expose.is_empty() {
                     line.push_str(&format!(" exposes: {}", expose.join(", ")));
+                }
+                if let Some(r) = registry {
+                    line.push_str(&format!(" [registry: {r}]"));
                 }
                 render_triplets(&mut line, triplets);
                 out.push_str(&line);
@@ -282,10 +294,14 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 expose,
                 critical,
                 triplets,
+                registry,
             } => {
                 let mut line = format!("    executable:{name}:{constraint}");
                 if let Some(p) = payload {
                     line.push_str(&format!(" (payload: {p})"));
+                }
+                if let Some(r) = registry {
+                    line.push_str(&format!(" [registry: {r}]"));
                 }
                 if let Some(m) = mount {
                     line.push_str(&format!(" → {m}"));

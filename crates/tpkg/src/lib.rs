@@ -182,14 +182,14 @@ pub use io::{read_from, write_to};
 pub use jail::{ArgumentFiles, HostJail, JailAccess, JailError, JailMount};
 pub use macho::trailer_end;
 pub use manifest::{
-    check_check_name, checks_map, AppProvides, AugmentsEdge, BuiltAgainst, BuiltFrom, Capabilities,
-    Check, CheckEntry, CheckExpect, CheckNeed, CheckPlatform, CheckRequires, Constraint,
-    DataProvides, Digest, Encryption, EncryptionPart, EncryptionState, EngineProvides, Entrypoint,
-    ExtensionLayout, ExtensionPoint, GemVersion, Identity, LibraryAlias, ManifestError,
-    MountSemantics, OnRuntime, PayloadKind, PayloadManifest, Platform, Platforms, Producer,
-    Provides, Requirement, RuntimeProvides, RuntimeRequirement, RuntimeRequirements, Sbom, Signing,
-    SigningMechanism, SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides,
-    WindowsBoot, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
+    check_check_name, checks_map, valid_registry_alias, AppProvides, AugmentsEdge, BuiltAgainst,
+    BuiltFrom, Capabilities, Check, CheckEntry, CheckExpect, CheckNeed, CheckPlatform,
+    CheckRequires, Constraint, DataProvides, Digest, Encryption, EncryptionPart, EncryptionState,
+    EngineProvides, Entrypoint, ExtensionLayout, ExtensionPoint, GemVersion, Identity,
+    LibraryAlias, ManifestError, MountSemantics, OnRuntime, PayloadKind, PayloadManifest, Platform,
+    Platforms, Producer, Provides, Requirement, RuntimeProvides, RuntimeRequirement,
+    RuntimeRequirements, Sbom, Signing, SigningMechanism, SigningState, Source, ToolkitExecutable,
+    ToolkitLibrary, ToolkitProvides, WindowsBoot, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
 pub use merkle::{
     render_tree_hash, tree_digest, Child, FileHasher, MerkleDigest, NodeKind, TreeWalk,

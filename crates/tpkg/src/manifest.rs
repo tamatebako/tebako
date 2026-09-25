@@ -1465,6 +1465,19 @@ mod one_or_many {
 // DEPENDS (spec 03 §2.3 — `requires:`)
 // ---------------------------------------------------------------------
 
+/// The registry-alias grammar (spec 37 §2): `[a-z][a-z0-9-]*`. THE SINGLE
+/// OWNER — the edge `registry:` pin validates against it here, and the
+/// config book's own alias checks (tebako-shim's `config`) flow it from
+/// here (tpkg is the lower crate; the flow direction cannot reverse).
+pub fn valid_registry_alias(alias: &str) -> bool {
+    let mut chars = alias.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// One dependency edge, tagged by `kind`. The MOUNT RULE (locked): the
 /// `mount` is declared HERE, in the CONSUMER's manifest — the provider
 /// never dictates its mount location.
@@ -1485,8 +1498,8 @@ pub enum Requirement {
         triplets: Option<Vec<Platform>>,
     },
     /// A native toolkit layer (`{kind: toolkit, name, constraint,
-    /// triplets?, mount?}`); `triplets` conditions the edge per host
-    /// (spec 03 §2.3).
+    /// triplets?, mount?, registry?}`); `triplets` conditions the edge per
+    /// host (spec 03 §2.3).
     Toolkit {
         name: String,
         constraint: Constraint,
@@ -1494,9 +1507,11 @@ pub enum Requirement {
         triplets: Option<Vec<Platform>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mount: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        registry: Option<String>,
     },
     /// A data-payload edge (`{kind: data, name, constraint, triplets?,
-    /// mount?}`).
+    /// mount?, registry?}`).
     Data {
         name: String,
         constraint: Constraint,
@@ -1504,9 +1519,12 @@ pub enum Requirement {
         triplets: Option<Vec<Platform>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mount: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        registry: Option<String>,
     },
     /// A spawned-runtime edge (`{kind: runtime, engine,
-    /// implementation?, constraint, expose?, triplets?}`) — spec 30 §1
+    /// implementation?, constraint, expose?, triplets?, registry?}`) —
+    /// spec 30 §1
     /// (schema_minor 4): the depended runtime resolves through the
     /// RUNTIME index into the store's runtimes/ area and is NEVER
     /// co-mounted; its exposed entrypoints are spawned through the §2
@@ -1514,7 +1532,10 @@ pub enum Requirement {
     /// `expose` names the depended entries the payload surfaces (the §3
     /// shim surface) — bare command names, like library_aliases names.
     /// `triplets` (schema_minor 9) conditions the whole edge — resolve,
-    /// spawn surface, exposed names — per host (spec 03 §2.3).
+    /// spawn surface, exposed names — per host (spec 03 §2.3). `registry`
+    /// (spec 37 §3/§8, additive — schema_minor 14) scopes the runtime
+    /// discovery to the one book entry the alias names — an unknown alias
+    /// is the named `UnknownRegistryAlias` at resolution.
     Runtime {
         engine: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1524,9 +1545,12 @@ pub enum Requirement {
         expose: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         triplets: Option<Vec<Platform>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        registry: Option<String>,
     },
     /// An executable-capability edge (`{kind: executable, name,
-    /// payload?, constraint, mount?, expose?, critical?, triplets?}`) — spec 03
+    /// payload?, constraint, mount?, expose?, critical?, triplets?,
+    /// registry?}`) — spec 03
     /// §8 and spec 32 §1 (schema_minor 5): an executable another
     /// payload PROVIDES, exact-name matched against
     /// `provides.executables` ∪ `provides.entrypoints[].name`. `mount` and `expose` are the two
@@ -1540,7 +1564,9 @@ pub enum Requirement {
     /// refuse the edge, never skip it silently). `triplets`
     /// (schema_minor 9) conditions the edge per host (spec 03 §2.3);
     /// the skip applies regardless of `critical` — `critical` governs
-    /// reader-ERA refusal, never platform reach.
+    /// reader-ERA refusal, never platform reach. `registry` (spec 37 §3,
+    /// additive — schema_minor 14) scopes the provider's registry
+    /// resolution to the one book entry the alias names.
     Executable {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1554,6 +1580,8 @@ pub enum Requirement {
         critical: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         triplets: Option<Vec<Platform>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        registry: Option<String>,
     },
 }
 
@@ -1598,6 +1626,22 @@ fn check_edge_triplets(triplets: &Option<Vec<Platform>>) -> Result<(), ManifestE
     Ok(())
 }
 
+/// Shared per-edge `registry:` check (spec 37 §3): when present, the pin
+/// is a registry alias — the `[a-z][a-z0-9-]*` grammar
+/// ([`valid_registry_alias`], the one owner). Whether the alias EXISTS is
+/// resolution-time's `UnknownRegistryAlias`, never the manifest's call —
+/// a manifest is installable against a book that names it.
+fn check_edge_registry(registry: &Option<String>) -> Result<(), ManifestError> {
+    if let Some(alias) = registry {
+        if !valid_registry_alias(alias) {
+            return Err(ManifestError::Invalid(
+                "requires[].registry must be a registry alias ([a-z][a-z0-9-]*)",
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl Requirement {
     /// The edge's OPTIONAL platform conditioning (spec 03 §2.3,
     /// schema_minor 9): `None` = universal — the edge resolves on every
@@ -1610,6 +1654,21 @@ impl Requirement {
             | Requirement::Data { triplets, .. }
             | Requirement::Runtime { triplets, .. }
             | Requirement::Executable { triplets, .. } => triplets.as_deref(),
+        }
+    }
+
+    /// The edge's OPTIONAL registry scope (spec 37 §3): the alias of the
+    /// one book entry the edge resolves through. `None` = the bare rule
+    /// (every registered registry). Never present on a `kind: language`
+    /// edge — the primary runtime's `runtime_requirement` carries no
+    /// alias field (spec 37 §8).
+    pub fn registry(&self) -> Option<&str> {
+        match self {
+            Requirement::Language { .. } => None,
+            Requirement::Toolkit { registry, .. }
+            | Requirement::Data { registry, .. }
+            | Requirement::Runtime { registry, .. }
+            | Requirement::Executable { registry, .. } => registry.as_deref(),
         }
     }
 
@@ -1679,10 +1738,12 @@ impl Requirement {
                 name,
                 triplets,
                 mount,
+                registry,
                 ..
             } => {
                 check_non_empty(name, "requires[].name must not be empty")?;
                 check_edge_triplets(triplets)?;
+                check_edge_registry(registry)?;
                 if let Some(m) = mount {
                     check_abs_path(m, "requires[].mount must be absolute (consumer-declared)")?;
                 }
@@ -1691,10 +1752,12 @@ impl Requirement {
                 name,
                 triplets,
                 mount,
+                registry,
                 ..
             } => {
                 check_non_empty(name, "requires[].name must not be empty")?;
                 check_edge_triplets(triplets)?;
+                check_edge_registry(registry)?;
                 if let Some(m) = mount {
                     check_abs_path(m, "requires[].mount must be absolute (consumer-declared)")?;
                 }
@@ -1704,6 +1767,7 @@ impl Requirement {
                 implementation,
                 expose,
                 triplets,
+                registry,
                 ..
             } => {
                 check_non_empty(engine, "requires[].engine must not be empty")?;
@@ -1714,6 +1778,7 @@ impl Requirement {
                     )?;
                 }
                 check_edge_triplets(triplets)?;
+                check_edge_registry(registry)?;
                 // spec 30 §1/§3: exposed entries are bare command names
                 // (the shared spawn-surface grammar).
                 check_expose_names(expose)?;
@@ -1724,6 +1789,7 @@ impl Requirement {
                 mount,
                 expose,
                 triplets,
+                registry,
                 ..
             } => {
                 check_non_empty(name, "requires[].name must not be empty")?;
@@ -1731,6 +1797,7 @@ impl Requirement {
                     check_non_empty(p, "requires[].payload must not be empty when present")?;
                 }
                 check_edge_triplets(triplets)?;
+                check_edge_registry(registry)?;
                 if let Some(m) = mount {
                     check_abs_path(m, "requires[].mount must be absolute (consumer-declared)")?;
                 }

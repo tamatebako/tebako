@@ -1429,6 +1429,75 @@ fn install_walks_the_requires_closure_and_installs_the_deps() {
 }
 
 #[test]
+fn dep_walk_registry_pin_scopes_the_edge_to_the_named_registry() {
+    // spec 37 §3/§8: a requires edge carrying `registry: <alias>`
+    // resolves through the ONE named book entry — the same payload name
+    // in another registry is never the answer.
+    let fx = Fixture::new("depwalk-scoped");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: data\n    name: fonts\n    constraint: \">= 2\"\n    mount: /opt/fonts\n    registry: two\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+
+    // Both registries carry `fonts`; only `two` carries a satisfying
+    // version.
+    let one_ref = fx.payload("fonts-1.0.tfs", &data_image("fonts", "1.0"));
+    let one_reg = fx.registry(
+        "one.yaml",
+        &versions_registry_yaml("fonts", "data", &[("1.0", &one_ref)]),
+    );
+    let two_ref = fx.payload("fonts-2.1.tfs", &data_image("fonts", "2.1"));
+    let two_reg = fx.registry(
+        "two.yaml",
+        &versions_registry_yaml("fonts", "data", &[("2.1", &two_ref)]),
+    );
+    let named = |n: &str| tebako_shim::config::AddRegistryOptions {
+        name: Some(n.to_string()),
+        require_signed: false,
+        default: false,
+    };
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    install::add_registry_opts(&fx.home, &one_reg, &named("one")).unwrap();
+    install::add_registry_opts(&fx.home, &two_reg, &named("two")).unwrap();
+
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["app"]);
+    assert!(fx.payloads_dir().join("fonts/2.1.tfs").is_file());
+    assert!(
+        !fx.payloads_dir().join("fonts/1.0.tfs").exists(),
+        "the unpinned registry's row is never the scoped answer"
+    );
+}
+
+#[test]
+fn dep_walk_registry_pin_unknown_alias_is_the_named_error() {
+    // spec 37 §3: a pin no book entry carries is UnknownRegistryAlias,
+    // never a silent whole-book walk.
+    let fx = Fixture::new("depwalk-nosuch-alias");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: data\n    name: fonts\n    constraint: \">= 2\"\n    mount: /opt/fonts\n    registry: nosuch\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("UnknownRegistryAlias"), "{err:?}");
+    assert!(err.message.contains("nosuch"), "{err:?}");
+}
+
+#[test]
 fn install_skips_an_edge_not_covering_this_host() {
     // spec 03 §2.3 (schema_minor 9): a requires edge whose triplets: list
     // does not cover this host is SKIPPED — never resolved, never

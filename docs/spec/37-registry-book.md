@@ -11,9 +11,12 @@ the `tfs+https://` registry location, the `UnsupportedService` /
 `SshTransportUnsupported` refusals), §5's credential model (the
 two-tier book, the locked confinement, the fetch journal,
 `CredentialRequired` / `InvalidCredentialEntry` /
-`DuplicateCredentialSelector`), and §7's origin binding (the
+`DuplicateCredentialSelector`), §7's origin binding (the
 `.tfs.registry` marker, the confined version chains, the journaled
-rebind) SHIPPED. §6, §8, §9 PLANNED (locked
+rebind), and §8's private runtimes (the DEPENDS-edge `registry:` pin
+— payload-manifest schema_minor 14 — the federated release-download
+locator deriving `kind: runtime` rows on GitHub/GHE/GitLab, and
+`require_signed` riding runtime rows) SHIPPED. §6, §9 PLANNED (locked
 direction 2026-09-24; design reviewed with the owner across the
 2026-09-24 session — the alias grammar, the credential confinement
 model, and the federation forms below are the agreed shape). Nothing

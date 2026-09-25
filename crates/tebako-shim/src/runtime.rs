@@ -92,6 +92,22 @@ pub fn resolve_runtime(
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<RuntimeResolution, ShimError> {
+    resolve_runtime_scoped(requirement, None, allow_download, ctx)
+}
+
+/// [`resolve_runtime`] with the spec 37 §3 edge scope: `scope` is the
+/// DEPENDS edge's optional `registry:` alias — it narrows the
+/// download-source chain's registry walk (channel 3) to the one book
+/// entry; an unknown alias is the named `UnknownRegistryAlias`. The
+/// operator's own channels (the config `source:` pin, the mirror env)
+/// are not registry resolution and stay unscoped; a scoped edge never
+/// falls to the product default.
+fn resolve_runtime_scoped(
+    requirement: Option<&RuntimeRequirements>,
+    scope: Option<&str>,
+    allow_download: bool,
+    ctx: &Ctx,
+) -> Result<RuntimeResolution, ShimError> {
     let Some(reqs) = requirement else {
         return Ok(RuntimeResolution::Zero);
     };
@@ -244,7 +260,7 @@ pub fn resolve_runtime(
     // tebako#567) — computed once per download, threaded through the
     // index probe and the fetch. Every download journals the base and the
     // channel that supplied it.
-    let source = runtime_source(reqs, (!prefless).then_some(pref), &cfg, ctx)?;
+    let source = runtime_source(reqs, (!prefless).then_some(pref), &cfg, ctx, scope)?;
     // The pick may REDIRECT the source: the registry-first enumeration
     // (spec 05 §2, roadmap 85) names each version's own release (base +
     // tag + signature pin ride the picked row).
@@ -305,10 +321,14 @@ pub fn resolve_runtime(
 /// download rides the primary runtime's machinery (the engine's config
 /// preference / the default line), and the edge's own filters re-assert
 /// on the downloaded pick — a mismatch is a named error, never a guess.
+/// `registry_scope` is the edge's optional `registry:` pin (spec 37 §3):
+/// the registry walk narrows to the one book entry the alias names — an
+/// unknown alias is the named `UnknownRegistryAlias`.
 pub fn resolve_runtime_edge(
     engine: &str,
     implementation: Option<&str>,
     constraint: &tpkg::Constraint,
+    registry_scope: Option<&str>,
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<CachedRuntime, ShimError> {
@@ -361,8 +381,12 @@ pub fn resolve_runtime_edge(
         implementation: implementation.map(str::to_string),
         abi: None,
     };
-    let RuntimeResolution::Ready(rt) =
-        resolve_runtime(Some(&RuntimeRequirements::one(req)), allow_download, ctx)?
+    let RuntimeResolution::Ready(rt) = resolve_runtime_scoped(
+        Some(&RuntimeRequirements::one(req)),
+        registry_scope,
+        allow_download,
+        ctx,
+    )?
     else {
         unreachable!("a requirement was passed — never Zero");
     };
@@ -406,6 +430,7 @@ pub fn resolve_owner(
         &mirror.engine,
         mirror.implementation.as_deref(),
         &mirror.constraint,
+        None,
         allow_download,
         ctx,
     )?;
@@ -548,6 +573,7 @@ fn index_selected_target(
     // (its release.ref names it — the openjdk v2.5.1 shape, where the tag
     // is NOT the rows' tebako line), else the probed line's `v<tebako>`.
     let tag = source.tag_for(&pref.tebako);
+    let dir_url = release_dir_url(&base, &tag, source.asset_infix);
     let probe = ctx
         .home
         .join("tmp")
@@ -557,7 +583,7 @@ fn index_selected_target(
         // store dirs under the install lock and names the IO failure.
         return Ok(None);
     }
-    let text = fetch_manifest_text(&base, local, &tag, &probe);
+    let text = fetch_manifest_text(&dir_url, local, &probe);
     let _ = std::fs::remove_dir_all(&probe);
     let Some(text) = text else {
         // A registry-pinned tag (channel 3) has no fallback line: the
@@ -649,6 +675,75 @@ fn github_owner_repo(base: &str) -> Option<(String, String)> {
         return None;
     }
     Some((owner.to_string(), repo.to_string()))
+}
+
+/// The asset-URL directory a source composes (spec 37 §8): every release
+/// artifact — index cards, sidecars, the runtime facets — lives below
+/// `{base}/{tag}{asset_infix}`. The infix is the locator's (never munged
+/// into base or tag): "" for the GitHub shape, "/downloads" for GitLab.
+fn release_dir_url(base: &str, tag: &str, asset_infix: &str) -> String {
+    format!("{base}/{tag}{asset_infix}")
+}
+
+/// Derive a registry row's download coordinates from its `release.ref`
+/// (spec 37 §8) — the ONE call both runtime-registry sites make; the
+/// per-service shapes are tebako-resolve's locator's (github.com, GHE,
+/// GitLab SaaS/self-hosted — the spec 37 §4 federation grammar's service
+/// classes). A ref class with no release-asset semantics (`tfs+git:`,
+/// `tfs+https:`, `file:`, Bitbucket) is journaled and skipped, never
+/// guessed — the skip text predates §8 and is unchanged. `event` is the
+/// caller's journal event name (the two sites' differ).
+fn row_download_locator(
+    home: &Path,
+    event: &str,
+    engine: &str,
+    reg_ref: &str,
+    entry: &str,
+    version: &str,
+    ref_str: &str,
+) -> Option<tebako_resolve::ReleaseDownloadLocator> {
+    match tebako_resolve::Reference::parse(ref_str) {
+        Ok(reference) => match tebako_resolve::release_download_locator(&reference) {
+            Some(locator) => Some(locator),
+            None => {
+                journal(
+                    home,
+                    &format!(
+                        "event={event} engine={engine} registry={reg_ref} entry={entry} version={version} reason=release-ref-class-{}-not-a-download-base",
+                        match &reference {
+                            tebako_resolve::Reference::Service { service, .. } => service.name(),
+                            tebako_resolve::Reference::Git { .. } => "git",
+                            tebako_resolve::Reference::Https { .. } => "https",
+                            tebako_resolve::Reference::File { .. } => "file",
+                        }
+                    ),
+                );
+                None
+            }
+        },
+        Err(e) => {
+            journal(
+                home,
+                &format!(
+                    "event={event} engine={engine} registry={reg_ref} entry={entry} version={version} reason=bad-release-ref error={e}"
+                ),
+            );
+            None
+        }
+    }
+}
+
+/// The spec 37 §2.2 policy refusal for the runtime chain (§8): the row
+/// that would supply the runtime is unsigned (no `signature:` block) but
+/// the resolving book entry carries `require_signed: true` — the named
+/// `UnsignedRegistryPayload` (exit 70), never a download.
+fn unsigned_registry_runtime(engine: &str, name: &str, version: &str, registry: &str) -> ShimError {
+    ShimError::new(
+        EX_TEBAKO_SHA,
+        format!(
+            "the {engine} runtime {name} {version} is unsigned but registry '{registry}' requires signed rows (UnsignedRegistryPayload) — refusing to download; nothing was cached"
+        ),
+    )
 }
 
 /// The row's tebako line from its declared artifact's stem (spec 05 §2
@@ -757,6 +852,7 @@ fn registry_selected_target(
         tebako: String,
         base: String,
         tag: String,
+        asset_infix: &'static str,
         signer_pin: Option<String>,
         withdrawn: bool,
         /// The registry's own version key (the composite line id when
@@ -782,51 +878,21 @@ fn registry_selected_target(
                 continue;
             }
             // The row's release.ref names where THIS version lives —
-            // SaaS github.com service refs only (the runtime fetch
-            // grammar; the explicit-host forms of spec 37 §4 spell a
-            // different download base); any other class is journaled and
+            // spec 37 §8's federated derivation (github.com, GHE, GitLab
+            // SaaS/self-hosted); any other class is journaled and
             // skipped, never guessed.
-            let (base, tag) = match tebako_resolve::Reference::parse(&row.release.r#ref) {
-                Ok(tebako_resolve::Reference::Service {
-                    service: tebako_resolve::Service::Github,
-                    host: None,
-                    owner,
-                    repo,
-                    version: tag,
-                    ..
-                }) => (
-                    format!("https://github.com/{owner}/{repo}/releases/download"),
-                    tag,
-                ),
-                Ok(other) => {
-                    journal(
-                        &ctx.home,
-                        &format!(
-                            "event=runtime-index-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=release-ref-class-{}-not-a-download-base",
-                            entry.name,
-                            row.version,
-                            match &other {
-                                tebako_resolve::Reference::Service { service, .. } =>
-                                    service.name(),
-                                tebako_resolve::Reference::Git { .. } => "git",
-                                tebako_resolve::Reference::Https { .. } => "https",
-                                tebako_resolve::Reference::File { .. } => "file",
-                            }
-                        ),
-                    );
-                    continue;
-                }
-                Err(e) => {
-                    journal(
-                        &ctx.home,
-                        &format!(
-                            "event=runtime-index-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=bad-release-ref error={e}",
-                            entry.name, row.version
-                        ),
-                    );
-                    continue;
-                }
+            let Some(locator) = row_download_locator(
+                &ctx.home,
+                "runtime-index-registry-skip",
+                engine,
+                &reg_ref,
+                &entry.name,
+                &row.version,
+                &row.release.r#ref,
+            ) else {
+                continue;
             };
+            let (base, tag, asset_infix) = (locator.base, locator.tag, locator.asset_infix);
             // The row's tebako line: the declared artifact's stem (the
             // openjdk v2.5.1 shape — tag v2.5.1, rows riding tebako
             // 2.5.0), else the tag minus its 'v' (the factory convention
@@ -857,6 +923,7 @@ fn registry_selected_target(
                 tebako,
                 base,
                 tag,
+                asset_infix,
                 signer_pin: row.signature.as_ref().map(|s| s.keyid.clone()),
                 withdrawn: row.is_withdrawn(),
                 row_version: row.version.clone(),
@@ -904,6 +971,19 @@ fn registry_selected_target(
             .to_string(),
         );
     }
+    // spec 37 §2.2 (§8's runtime widening): the source rides the book
+    // entry's require_signed policy from channel 3 — an unsigned pick is
+    // the named UnsignedRegistryPayload, never a download.
+    if let Some(registry) = &source.require_signed {
+        if pick.signer_pin.is_none() {
+            return Err(unsigned_registry_runtime(
+                engine,
+                &pick.payload,
+                &pick.row_version,
+                registry,
+            ));
+        }
+    }
     Ok(Some((
         RuntimePref {
             version: pick.lang_version,
@@ -913,8 +993,10 @@ fn registry_selected_target(
         RuntimeSource {
             base: pick.base,
             tag: Some(pick.tag),
+            asset_infix: pick.asset_infix,
             channel: source.channel,
             signer_pin: pick.signer_pin,
+            require_signed: source.require_signed.clone(),
         },
     )))
 }
@@ -931,10 +1013,12 @@ pub(crate) fn offline_mode(ctx: &Ctx) -> bool {
 /// The per-engine download source (spec 05 §2's chain — tebako#567): the
 /// release download base, the tag the URLs ride, the chain channel that
 /// supplied them (journaled per fetch), and — channel 3 only — the
-/// registry entry's signature pin (spec 09 §9).
+/// registry entry's signature pin (spec 09 §9) and the book entry's
+/// `require_signed` policy (spec 37 §2.2, widened to runtime rows by §8).
 #[derive(Debug, Clone)]
 struct RuntimeSource {
-    /// The release download base (`{base}/{tag}/<asset>` URLs).
+    /// The release download base (`{base}/{tag}{asset_infix}/<asset>`
+    /// URLs).
     base: String,
     /// The pinned release tag. `None` = `v<tebako>` of the line being
     /// read (the factory convention: the probed line for the index, the
@@ -943,6 +1027,13 @@ struct RuntimeSource {
     /// names the release and a row's `tebako_version` stays the identity
     /// line (the openjdk v2.5.1 shape: tag v2.5.1, rows on tebako 2.5.0).
     tag: Option<String>,
+    /// The per-service infix between the tag and the asset name (spec 37
+    /// §8 — the locator's, never string-munged into base or tag): ""
+    /// for the GitHub shape (`…/releases/download/<tag>/<asset>`),
+    /// "/downloads" for the GitLab shape
+    /// (`…/-/releases/<tag>/downloads/<asset>`). Empty on channels
+    /// 1/2/4 (their bases are the GitHub shape by convention).
+    asset_infix: &'static str,
     /// The chain channel that supplied this source (spec 05 §2's journal
     /// requirement): `config-source` / `mirror-env` / `registry` /
     /// `default`.
@@ -950,6 +1041,12 @@ struct RuntimeSource {
     /// Channel 3's registry signature pin (spec 09 §9): the PRIMARY keyid
     /// the verified signer of the index/artifacts must resolve to.
     signer_pin: Option<String>,
+    /// Channel 3's book policy (spec 37 §2.2): the resolving book entry
+    /// carries `require_signed: true` — an unsigned pick is the named
+    /// `UnsignedRegistryPayload` (exit 70), never a download. The value
+    /// is the name the policy errors render (the alias when the entry
+    /// has one, else the reference).
+    require_signed: Option<String>,
 }
 
 impl RuntimeSource {
@@ -994,15 +1091,21 @@ pub(crate) fn require_signed(ctx: &Ctx) -> bool {
 /// 3. the registered registries' `kind: runtime` entries whose `engine`
 ///    (+ `implementation` when the edge names one) matches, with a
 ///    version satisfying the edge — the base AND the tag derive from
-///    that version's `release.ref` (the zero-config path);
-/// 4. the product default — the ruby factory, RUBY ONLY: a non-ruby
-///    engine no channel answers is the named error enumerating the
-///    channels (the #567 closeout).
+///    that version's `release.ref` (the zero-config path). `scope`
+///    (spec 37 §3 — the edge's `registry:` pin) narrows the walk to the
+///    one book entry the alias names; an unknown alias is the named
+///    `UnknownRegistryAlias`. A `require_signed` book entry's policy
+///    rides the derived source (spec 37 §2.2/§8).
+/// 4. the product default — the ruby factory, RUBY ONLY, and never under
+///    a scope (a scoped edge resolves through ITS registry or fails
+///    named): a non-ruby engine no channel answers is the named error
+///    enumerating the channels (the #567 closeout).
 fn runtime_source(
     reqs: &RuntimeRequirements,
     config_pref: Option<&RuntimePref>,
     cfg: &config::UserConfig,
     ctx: &Ctx,
+    scope: Option<&str>,
 ) -> Result<RuntimeSource, ShimError> {
     let engine = reqs.engine();
     let mirror = ctx
@@ -1026,8 +1129,10 @@ fn runtime_source(
         return Ok(RuntimeSource {
             base: base.to_string(),
             tag: None,
+            asset_infix: "",
             channel: "config-source",
             signer_pin: None,
+            require_signed: None,
         });
     }
     // Channel 2: the operator's global mirror.
@@ -1035,54 +1140,74 @@ fn runtime_source(
         return Ok(RuntimeSource {
             base: mirror.to_string(),
             tag: None,
+            asset_infix: "",
             channel: "mirror-env",
             signer_pin: None,
+            require_signed: None,
         });
     }
     // Channel 3: the registered registries (the zero-config path).
-    if let Some(source) = registry_derived_source(reqs, cfg, ctx)? {
+    if let Some(source) = registry_derived_source(reqs, cfg, ctx, scope)? {
         return Ok(source);
     }
     // Channel 4: the product default — the ruby factory hosts ruby only.
-    if engine == "ruby" {
+    if engine == "ruby" && scope.is_none() {
         return Ok(RuntimeSource {
             base: DEFAULT_RELEASES_BASE.to_string(),
             tag: None,
+            asset_infix: "",
             channel: "default",
             signer_pin: None,
+            require_signed: None,
         });
     }
+    let scoped_note = match scope {
+        Some(alias) => {
+            format!(" (scoped to the '{alias}' book entry by the edge's `registry:` pin)")
+        }
+        None => String::new(),
+    };
     fail(
         EX_TEBAKO_UNAVAILABLE,
         format!(
-            "no download source for {engine} runtimes — every channel of the per-engine chain came up empty:\n  1. config.yaml `runtimes: {{{engine}: {{source: …}}}}` — not set\n  2. TEBAKO_RUNTIME_MIRROR — not set\n  3. the registered registries — none lists a `kind: runtime` entry for engine \"{engine}\" with a version satisfying \"{reqs}\"\n  4. the product default — hosts ruby runtimes only\n  register the registry that publishes the {engine} runtime (`tebako add-registry`), or pin a source"
+            "no download source for {engine} runtimes{scoped_note} — every channel of the per-engine chain came up empty:\n  1. config.yaml `runtimes: {{{engine}: {{source: …}}}}` — not set\n  2. TEBAKO_RUNTIME_MIRROR — not set\n  3. the registered registries{scoped_note} — none lists a `kind: runtime` entry for engine \"{engine}\" with a version satisfying \"{reqs}\"\n  4. the product default — hosts ruby runtimes only\n  register the registry that publishes the {engine} runtime (`tebako add-registry`), or pin a source"
         ),
     )
 }
 
 /// Channel 3: the registry-derived source. Scans the configured
-/// registries IN ORDER; the first `kind: runtime` entry matching the
-/// engine (+ the edge's implementation when named) with a version
-/// satisfying the requirement answers — the base + tag derive from that
-/// version's `release.ref`. Only GitHub service refs derive a
-/// `{base}/{tag}` download root (the runtime fetch grammar); other ref
-/// classes skip with a journal note. A registry that does not resolve is
-/// journaled and skipped — it cannot answer, and a later channel still
-/// can (the failure is named in the no-channel error's enumeration).
+/// registries IN ORDER (or the ONE book entry `scope` names — spec 37
+/// §3's edge `registry:` pin; an unknown alias is the named
+/// `UnknownRegistryAlias`, never a silent fall back to the whole book);
+/// the first `kind: runtime` entry matching the engine (+ the edge's
+/// implementation when named) with a version satisfying the requirement
+/// answers — the base + tag + per-service asset infix derive from that
+/// version's `release.ref` through spec 37 §8's federated locator
+/// (github.com, GHE, GitLab SaaS/self-hosted); ref classes with no
+/// release-asset semantics skip with a journal note. A registry that
+/// does not resolve is journaled and skipped — it cannot answer, and a
+/// later channel still can (the failure is named in the no-channel
+/// error's enumeration).
 /// spec 04 §2: the pick is status-blind — a SELECTED withdrawn row is
 /// the named WithdrawnPayload refusal, never a silent skip.
+/// spec 37 §2.2 (§8's runtime widening): the supplying book entry's
+/// `require_signed: true` makes an unsigned pick the named
+/// `UnsignedRegistryPayload` (exit 70), never a download; the policy
+/// rides the derived source so the index-selection facet re-asserts it
+/// on a redirected pick.
 fn registry_derived_source(
     reqs: &RuntimeRequirements,
     cfg: &config::UserConfig,
     ctx: &Ctx,
+    scope: Option<&str>,
 ) -> Result<Option<RuntimeSource>, ShimError> {
     let engine = reqs.engine();
     let implementation = reqs
         .entries()
         .iter()
         .find_map(|r| r.implementation.as_deref());
-    for entry in &cfg.registries {
-        let reg_ref = entry.reference();
+    for row in cfg.registry_book_scoped(scope)? {
+        let reg_ref = row.entry.reference();
         let registry = match crate::regcache::registry_for(&ctx.home, reg_ref, ctx) {
             Ok(r) => r,
             Err(e) => {
@@ -1095,6 +1220,12 @@ fn registry_derived_source(
                 continue;
             }
         };
+        // §2.2's policy rides the row: the name the refusal renders (the
+        // alias when the entry has one, else the reference).
+        let require_signed = row
+            .entry
+            .require_signed
+            .then(|| row.alias.clone().unwrap_or_else(|| reg_ref.to_string()));
         for entry in registry.runtime_entries(engine, implementation) {
             // The newest registry version satisfying ANY entry of the
             // `any_of` requirement answers where this engine lives.
@@ -1118,56 +1249,39 @@ fn registry_derived_source(
                     .to_string(),
                 );
             }
-            let derived = match tebako_resolve::Reference::parse(&version.release.r#ref) {
-                Ok(tebako_resolve::Reference::Service {
-                    service: tebako_resolve::Service::Github,
-                    host: None,
-                    owner,
-                    repo,
-                    version: tag,
-                    ..
-                }) => Some(RuntimeSource {
-                    base: format!("https://github.com/{owner}/{repo}/releases/download"),
-                    tag: Some(tag),
-                    channel: "registry",
-                    signer_pin: version.signature.as_ref().map(|s| s.keyid.clone()),
-                }),
-                // A non-github.com release.ref (another class, or the
-                // explicit-host forms of spec 37 §4) cannot spell the
-                // `{base}/{tag}` download root the runtime fetch rides —
-                // journaled, never guessed.
-                Ok(other) => {
-                    journal(
-                        &ctx.home,
-                        &format!(
-                            "event=runtime-source-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=release-ref-class-{}-not-a-download-base",
-                            entry.name,
-                            version.version,
-                            match &other {
-                                tebako_resolve::Reference::Service { service, .. } =>
-                                    service.name(),
-                                tebako_resolve::Reference::Git { .. } => "git",
-                                tebako_resolve::Reference::Https { .. } => "https",
-                                tebako_resolve::Reference::File { .. } => "file",
-                            }
-                        ),
-                    );
-                    None
-                }
-                Err(e) => {
-                    journal(
-                        &ctx.home,
-                        &format!(
-                            "event=runtime-source-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=bad-release-ref error={e}",
-                            entry.name, version.version
-                        ),
-                    );
-                    None
-                }
+            let Some(locator) = row_download_locator(
+                &ctx.home,
+                "runtime-source-registry-skip",
+                engine,
+                reg_ref,
+                &entry.name,
+                &version.version,
+                &version.release.r#ref,
+            ) else {
+                continue;
             };
-            if derived.is_some() {
-                return Ok(derived);
+            // §2.2 fail-closed at the fetch boundary: the locator
+            // answered, so this row WOULD supply the runtime — an
+            // unsigned row under a require_signed book entry refuses
+            // here, never a download.
+            if let Some(registry) = &require_signed {
+                if version.signature.is_none() {
+                    return Err(unsigned_registry_runtime(
+                        engine,
+                        &entry.name,
+                        &version.version,
+                        registry,
+                    ));
+                }
             }
+            return Ok(Some(RuntimeSource {
+                base: locator.base,
+                tag: Some(locator.tag),
+                asset_infix: locator.asset_infix,
+                channel: "registry",
+                signer_pin: version.signature.as_ref().map(|s| s.keyid.clone()),
+                require_signed: require_signed.clone(),
+            }));
         }
     }
     Ok(None)
@@ -1408,13 +1522,13 @@ fn sha_from_sums(text: &str, asset: &str) -> Result<String, ()> {
     Err(())
 }
 
-/// Fetch the release index (`manifest.json`) at release tag `tag` into
-/// the tmp staging dir and return its text. `None` when it does not
-/// exist or does not read — the caller decides what that means (spec 18:
-/// the pre-era signal).
-fn fetch_manifest_text(base: &str, local: bool, tag: &str, tmp_dir: &Path) -> Option<String> {
+/// Fetch the release index (`manifest.json`) below the asset-URL
+/// directory into the tmp staging dir and return its text. `None` when
+/// it does not exist or does not read — the caller decides what that
+/// means (spec 18: the pre-era signal).
+fn fetch_manifest_text(dir_url: &str, local: bool, tmp_dir: &Path) -> Option<String> {
     let manifest_tmp = tmp_dir.join("manifest.json");
-    fetch_url(&format!("{base}/{tag}/manifest.json"), local, &manifest_tmp).ok()?;
+    fetch_url(&format!("{dir_url}/manifest.json"), local, &manifest_tmp).ok()?;
     std::fs::read_to_string(&manifest_tmp).ok()
 }
 
@@ -1484,9 +1598,9 @@ impl IndexTrust {
 /// asset-in-release identity plus the already-acquired index card and
 /// its trust verdict.
 struct ChecksumQuery<'a> {
-    base: &'a str,
+    /// The asset-URL directory (`{base}/{tag}{infix}` — spec 37 §8).
+    dir_url: &'a str,
     local: bool,
-    tag: &'a str,
     asset: &'a str,
     tmp_dir: &'a Path,
     index_text: &'a str,
@@ -1546,13 +1660,7 @@ fn expected_checksum(q: &ChecksumQuery) -> Result<ChecksumAnswer, ShimError> {
     if expected.is_none() {
         diag_sums = 1;
         let sums_tmp = q.tmp_dir.join("SHA256SUMS.txt");
-        if fetch_url(
-            &format!("{}/{}/SHA256SUMS.txt", q.base, q.tag),
-            q.local,
-            &sums_tmp,
-        )
-        .is_ok()
-        {
+        if fetch_url(&format!("{}/SHA256SUMS.txt", q.dir_url), q.local, &sums_tmp).is_ok() {
             diag_sums = 2;
             if let Ok(text) = std::fs::read_to_string(&sums_tmp) {
                 diag_sums = 3;
@@ -1863,9 +1971,8 @@ struct AcquiredIndex {
 fn acquire_index(
     trust: &FetchTrust,
     ctx: &Ctx,
-    base: &str,
+    dir_url: &str,
     local: bool,
-    tag: &str,
     stem: &str,
     engine: &str,
     lang_version: &str,
@@ -1874,7 +1981,6 @@ fn acquire_index(
     runtime_ref: &str,
     tmp_dir: &Path,
 ) -> Result<AcquiredIndex, ShimError> {
-    let dir_url = format!("{base}/{tag}");
     let shard_name = format!("{stem}.manifest.json");
     let shard_url = format!("{dir_url}/{shard_name}");
     let manifest_url = format!("{dir_url}/manifest.json");
@@ -2434,7 +2540,10 @@ fn download_runtime(
     // channel 3 pins the registry-named tag; the other channels ride the
     // pick's own tebako line (the factory's `v<tebako>` convention).
     let tag = source.tag_for(&pref.tebako);
-    let dir_url = format!("{base}/{tag}");
+    // The asset-URL directory (spec 37 §8): the per-service infix rides
+    // the source — GitLab's `/-/releases/<tag>/downloads/<asset>` shape
+    // composes exactly here, never by string-munging base or tag.
+    let dir_url = release_dir_url(&base, &tag, source.asset_infix);
 
     if offline_mode(ctx) {
         return fail(
@@ -2522,9 +2631,8 @@ fn download_runtime(
         let acquired = acquire_index(
             &trust,
             ctx,
-            &base,
+            &dir_url,
             local,
-            &tag,
             &stem,
             engine,
             &pref.version,
@@ -2640,9 +2748,8 @@ fn download_runtime(
 
         // executable
         let exe = expected_checksum(&ChecksumQuery {
-            base: &base,
+            dir_url: &dir_url,
             local,
-            tag: &tag,
             asset: &asset,
             tmp_dir: &tmp_dir,
             index_text: &manifest_text,
@@ -2679,9 +2786,8 @@ fn download_runtime(
         // The contract gate is the same one (the exe entry governs its
         // additive image too) — it ran above, before any download.
         let image = expected_checksum(&ChecksumQuery {
-            base: &base,
+            dir_url: &dir_url,
             local,
-            tag: &tag,
             asset: &image_asset,
             tmp_dir: &tmp_dir,
             index_text: &manifest_text,
@@ -3010,7 +3116,7 @@ payloads:
             Some("https://pinned.example.com/releases"),
         );
         let cfg = UserConfig::default();
-        let source = runtime_source(&reqs("java", ">= 21"), Some(&p), &cfg, &ctx).unwrap();
+        let source = runtime_source(&reqs("java", ">= 21"), Some(&p), &cfg, &ctx, None).unwrap();
         assert_eq!(source.base, "https://pinned.example.com/releases");
         assert_eq!(source.channel, "config-source");
         assert_eq!(source.tag, None, "a bare base pin rides the tebako line");
@@ -3032,7 +3138,7 @@ payloads:
         );
         let p = pref("21.0.12", "2.5.0", None);
         let cfg = UserConfig::default();
-        let source = runtime_source(&reqs("java", ">= 21"), Some(&p), &cfg, &ctx).unwrap();
+        let source = runtime_source(&reqs("java", ">= 21"), Some(&p), &cfg, &ctx, None).unwrap();
         assert_eq!(source.base, "https://mirror.invalid/releases");
         assert_eq!(source.channel, "mirror-env");
         let _ = std::fs::remove_dir_all(&home);
@@ -3051,7 +3157,7 @@ payloads:
             registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
-        let source = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap();
+        let source = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap();
         assert_eq!(source.channel, "registry");
         assert_eq!(
             source.base,
@@ -3077,7 +3183,7 @@ payloads:
         };
         // A constraint no registry version satisfies: the channel does
         // not answer (the named no-channel error for a non-ruby engine).
-        let err = runtime_source(&reqs("java", ">= 25"), None, &cfg, &ctx).unwrap_err();
+        let err = runtime_source(&reqs("java", ">= 25"), None, &cfg, &ctx, None).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         assert!(err.message.contains("no download source"), "{err:?}");
         // An implementation the registry entry does not carry: same.
@@ -3087,7 +3193,7 @@ payloads:
             implementation: Some("graalvm".to_string()),
             abi: None,
         });
-        let err = runtime_source(&req, None, &cfg, &ctx).unwrap_err();
+        let err = runtime_source(&req, None, &cfg, &ctx, None).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -3117,15 +3223,15 @@ payloads:
             registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
-        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap_err();
+        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         assert!(err.message.contains("kind: runtime"), "{err:?}");
         let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
-    fn a_non_github_release_ref_is_journaled_and_skipped() {
-        let home = temp_home("chain-nongithub");
+    fn a_gitlab_release_ref_derives_the_gitlab_download_shape() {
+        let home = temp_home("chain-gitlab");
         let ctx = test_ctx(&home);
         let reg = registry_ref(
             &home,
@@ -3146,14 +3252,236 @@ payloads:
             registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
-        let err = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx).unwrap_err();
+        let source = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx, None).unwrap();
+        assert_eq!(source.channel, "registry");
+        assert_eq!(
+            source.base,
+            "https://gitlab.com/acme/tebako-runtime-python/-/releases"
+        );
+        assert_eq!(source.tag.as_deref(), Some("v0.3.0"));
+        assert_eq!(source.asset_infix, "/downloads");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_non_download_release_ref_is_journaled_and_skipped() {
+        let home = temp_home("chain-nondownload");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-python
+    kind: runtime
+    engine: python
+    versions:
+      - version: '3.13.5'
+        platforms: universal
+        release: {ref: 'tfs+git://git.example.com/acme/tebako-runtime-python.git'}
+"#,
+        );
+        let cfg = UserConfig {
+            registries: vec![crate::config::RegistryBookEntry::bare(reg)],
+            ..UserConfig::default()
+        };
+        let err = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx, None).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
         assert!(
             journal.contains("event=runtime-source-registry-skip engine=python"),
             "{journal}"
         );
-        assert!(journal.contains("gitlab"), "{journal}");
+        assert!(journal.contains("git"), "{journal}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_ghe_release_ref_derives_the_enterprise_download_base() {
+        // spec 37 §8: the explicit-host github form (GHE/Gitea/Forgejo)
+        // derives the same asset shape at that host.
+        let home = temp_home("chain-ghe");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-python
+    kind: runtime
+    engine: python
+    versions:
+      - version: '3.13.5'
+        platforms: universal
+        release: {ref: 'tfs+github://ghe.corp.example:8443/acme/tebako-runtime-python:v0.3.0'}
+"#,
+        );
+        let cfg = UserConfig {
+            registries: vec![crate::config::RegistryBookEntry::bare(reg)],
+            ..UserConfig::default()
+        };
+        let source = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx, None).unwrap();
+        assert_eq!(source.channel, "registry");
+        assert_eq!(
+            source.base,
+            "https://ghe.corp.example:8443/acme/tebako-runtime-python/releases/download"
+        );
+        assert_eq!(source.tag.as_deref(), Some("v0.3.0"));
+        assert_eq!(source.asset_infix, "");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    const SCOPED_REGISTRY: &str = r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-python
+    kind: runtime
+    engine: python
+    versions:
+      - version: '3.13.5'
+        platforms: universal
+        release: {ref: 'tfs:gitlab:acme/tebako-runtime-python:v0.3.0'}
+"#;
+
+    fn scoped_book(home: &Path) -> UserConfig {
+        let empty = registry_ref(home, "empty.yaml", "schema_version: 1\npayloads: []\n");
+        let full = registry_ref(home, "tpkg-registry.yaml", SCOPED_REGISTRY);
+        UserConfig {
+            registries: vec![
+                crate::config::RegistryBookEntry {
+                    reference: empty,
+                    name: Some("one".to_string()),
+                    default: false,
+                    require_signed: false,
+                },
+                crate::config::RegistryBookEntry {
+                    reference: full,
+                    name: Some("two".to_string()),
+                    default: false,
+                    require_signed: false,
+                },
+            ],
+            ..UserConfig::default()
+        }
+    }
+
+    #[test]
+    fn the_registry_pin_scopes_the_walk_to_the_named_book_entry() {
+        // spec 37 §3/§8: the edge's `registry:` pin narrows channel 3's
+        // walk — the answer comes from the named entry only.
+        let home = temp_home("chain-scoped");
+        let ctx = test_ctx(&home);
+        let cfg = scoped_book(&home);
+        let source =
+            runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx, Some("two")).unwrap();
+        assert_eq!(source.channel, "registry");
+        assert_eq!(
+            source.base,
+            "https://gitlab.com/acme/tebako-runtime-python/-/releases"
+        );
+        // Scoped to the entry that does NOT carry the engine: the named
+        // no-channel error, annotated with the scope — never a fall back
+        // to the whole book, and channel 4 stays out of reach.
+        let err =
+            runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx, Some("one")).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(err.message.contains("no download source"), "{err:?}");
+        assert!(
+            err.message.contains("scoped to the 'one' book entry"),
+            "{err:?}"
+        );
+        // A scoped ruby edge does NOT reach the product default either.
+        let err =
+            runtime_source(&reqs("ruby", ">= 3.3"), None, &cfg, &ctx, Some("two")).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(
+            err.message.contains("scoped to the 'two' book entry"),
+            "{err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn an_unknown_registry_pin_is_the_named_error() {
+        // spec 37 §3: a pin no book entry carries is UnknownRegistryAlias
+        // (exit 65), never a silent whole-book walk.
+        let home = temp_home("chain-nosuch-alias");
+        let ctx = test_ctx(&home);
+        let cfg = scoped_book(&home);
+        let err = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx, Some("nosuch"))
+            .unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST);
+        assert!(err.message.contains("UnknownRegistryAlias"), "{err:?}");
+        assert!(err.message.contains("nosuch"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_require_signed_book_entry_refuses_an_unsigned_runtime_row() {
+        // spec 37 §2.2 widened to the runtime chain (§8): the supplying
+        // entry's policy refuses an unsigned pick (exit 70), never a
+        // download.
+        let home = temp_home("chain-require-signed");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", SCOPED_REGISTRY);
+        let cfg = UserConfig {
+            registries: vec![crate::config::RegistryBookEntry {
+                reference: reg,
+                name: Some("signed-only".to_string()),
+                default: false,
+                require_signed: true,
+            }],
+            ..UserConfig::default()
+        };
+        let err = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx, None).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_SHA);
+        assert!(err.message.contains("UnsignedRegistryPayload"), "{err:?}");
+        assert!(
+            err.message
+                .contains("registry 'signed-only' requires signed rows"),
+            "{err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_signed_row_resolves_with_the_policy_riding_the_source() {
+        // …and a signed row under the same policy answers — the policy
+        // name rides the source so the index-selection facet re-asserts
+        // it on a redirected pick.
+        let home = temp_home("chain-signed-ok");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-python
+    kind: runtime
+    engine: python
+    versions:
+      - version: '3.13.5'
+        platforms: universal
+        release: {ref: 'tfs:gitlab:acme/tebako-runtime-python:v0.3.0'}
+        signature: {keyid: 'efc3c250f7862a48', asc: 'python-3.13.5-universal.tfs.asc'}
+"#,
+        );
+        let cfg = UserConfig {
+            registries: vec![crate::config::RegistryBookEntry {
+                reference: reg,
+                name: Some("signed-only".to_string()),
+                default: false,
+                require_signed: true,
+            }],
+            ..UserConfig::default()
+        };
+        let source = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx, None).unwrap();
+        assert_eq!(source.channel, "registry");
+        assert_eq!(source.require_signed.as_deref(), Some("signed-only"));
+        assert_eq!(source.signer_pin.as_deref(), Some("efc3c250f7862a48"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -3162,11 +3490,11 @@ payloads:
         let home = temp_home("chain-default");
         let ctx = test_ctx(&home);
         let cfg = UserConfig::default();
-        let source = runtime_source(&reqs("ruby", ">= 3.3"), None, &cfg, &ctx).unwrap();
+        let source = runtime_source(&reqs("ruby", ">= 3.3"), None, &cfg, &ctx, None).unwrap();
         assert_eq!(source.channel, "default");
         assert_eq!(source.base, DEFAULT_RELEASES_BASE);
         assert_eq!(source.tag, None);
-        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap_err();
+        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         for channel in [
             "source:",
@@ -3186,6 +3514,8 @@ payloads:
             tag: None,
             channel: "default",
             signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
         };
         assert_eq!(unpinned.tag_for("0.16.22"), "v0.16.22");
         let pinned = RuntimeSource {
@@ -3193,6 +3523,8 @@ payloads:
             tag: Some("v2.5.1".to_string()),
             channel: "registry",
             signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
         };
         assert_eq!(pinned.tag_for("2.5.0"), "v2.5.1");
     }
@@ -3229,6 +3561,8 @@ payloads:
             tag: Some("v2.5.1".to_string()),
             channel: "registry",
             signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
         }
     }
 
@@ -3363,6 +3697,8 @@ payloads:
             tag: None,
             channel: "default",
             signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
         };
         let (pref, source) =
             registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
@@ -3393,6 +3729,8 @@ payloads:
             tag: None,
             channel: "default",
             signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
         };
         let (pref, _) = registry_selected_target(&reqs("ruby", ">= 4.0"), &source, &ctx)
             .unwrap()
@@ -3498,6 +3836,8 @@ payloads:
             tag: None,
             channel: "mirror-env",
             signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
         };
         assert!(
             registry_selected_target(&reqs("java", ">= 21"), &source, &ctx)
@@ -3536,7 +3876,7 @@ payloads:
             registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
         };
-        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap_err();
+        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         assert!(err.message.contains("WithdrawnPayload"), "{err:?}");
         assert!(err.message.contains("21.0.12"), "{err:?}");
@@ -3629,6 +3969,8 @@ payloads:
             tag: None,
             channel: "test",
             signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
         };
         let trust = FetchTrust::build(&source, ctx).unwrap();
         let sink = RuntimePlanSink::default();

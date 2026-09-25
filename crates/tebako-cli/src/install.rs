@@ -936,7 +936,9 @@ fn registered_registries_listing(home: &Path) -> Result<String, TebakoError> {
 /// The plan for one `requires:` edge (spec 03 §2.3): the edge's
 /// constraint — not the registry default — selects the version, newest
 /// satisfying. The consumer's identity heads the errors so the user
-/// knows which payload declared the edge.
+/// knows which payload declared the edge. `scope` is the edge's
+/// optional `registry:` pin (spec 37 §3): the registry walk narrows to
+/// the one book entry the alias names.
 fn plan_from_dependency_edge<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
@@ -944,8 +946,9 @@ fn plan_from_dependency_edge<T: Transport>(
     kind: &str,
     name: &str,
     constraint: &tpkg::Constraint,
+    scope: Option<&str>,
 ) -> Result<InstallPlan, TebakoError> {
-    let mut found = find_in_registries(home, fetcher, name, None)?;
+    let mut found = find_in_registries(home, fetcher, name, scope)?;
     let declares = || {
         format!(
             "{} {} requires {kind} {name} ({constraint})",
@@ -1437,6 +1440,7 @@ fn install_dependency_closure<T: Transport + Sync>(
             implementation,
             constraint,
             expose,
+            registry,
             ..
         } = req
         {
@@ -1445,6 +1449,7 @@ fn install_dependency_closure<T: Transport + Sync>(
                 engine,
                 implementation.as_deref(),
                 constraint,
+                registry.as_deref(),
                 expose,
                 shim_binary,
             )?;
@@ -1459,6 +1464,7 @@ fn install_dependency_closure<T: Transport + Sync>(
             payload,
             constraint,
             expose,
+            registry,
             ..
         } = req
         {
@@ -1469,13 +1475,14 @@ fn install_dependency_closure<T: Transport + Sync>(
                 name,
                 payload.as_deref(),
                 constraint,
+                registry.as_deref(),
                 expose,
                 shim_binary,
                 chain,
             )?;
             continue;
         }
-        let (kind, name, constraint) = match req {
+        let (kind, name, constraint, scope) = match req {
             tpkg::Requirement::Language { .. } => continue,
             tpkg::Requirement::Runtime { .. } => {
                 unreachable!("runtime edges install above the tuple match")
@@ -1484,11 +1491,17 @@ fn install_dependency_closure<T: Transport + Sync>(
                 unreachable!("executable edges install above the tuple match")
             }
             tpkg::Requirement::Toolkit {
-                name, constraint, ..
-            } => ("toolkit", name, constraint),
+                name,
+                constraint,
+                registry,
+                ..
+            } => ("toolkit", name, constraint, registry.as_deref()),
             tpkg::Requirement::Data {
-                name, constraint, ..
-            } => ("data", name, constraint),
+                name,
+                constraint,
+                registry,
+                ..
+            } => ("data", name, constraint, registry.as_deref()),
         };
         if chain.iter().any(|n| n == name) {
             let start = chain
@@ -1512,7 +1525,7 @@ fn install_dependency_closure<T: Transport + Sync>(
         if installed.iter().any(|v| eval.matches(v)) {
             continue;
         }
-        let plan = plan_from_dependency_edge(home, fetcher, mirror, kind, name, constraint)?;
+        let plan = plan_from_dependency_edge(home, fetcher, mirror, kind, name, constraint, scope)?;
         finish_install(home, fetcher, plan, shim_binary, chain)?;
     }
     Ok(())
@@ -1531,6 +1544,7 @@ fn install_runtime_edge(
     engine: &str,
     implementation: Option<&str>,
     constraint: &tpkg::Constraint,
+    registry: Option<&str>,
     expose: &[String],
     shim_binary: Option<&Path>,
 ) -> Result<(), TebakoError> {
@@ -1543,9 +1557,17 @@ fn install_runtime_edge(
     };
     // Pre-staging the runtime IS install's job (the dispatch would
     // download it otherwise); expose only drives the cross-check + shims.
-    let rt =
-        tebako_shim::runtime::resolve_runtime_edge(engine, implementation, constraint, true, &ctx)
-            .map_err(map_shim)?;
+    // The edge's `registry:` pin (spec 37 §3) scopes the download's
+    // registry walk to the one named book entry.
+    let rt = tebako_shim::runtime::resolve_runtime_edge(
+        engine,
+        implementation,
+        constraint,
+        registry,
+        true,
+        &ctx,
+    )
+    .map_err(map_shim)?;
     journal(
         home,
         &format!(
@@ -1643,6 +1665,7 @@ fn install_executable_edge<T: Transport + Sync>(
     name: &str,
     pin: Option<&str>,
     constraint: &tpkg::Constraint,
+    registry: Option<&str>,
     expose: &[String],
     shim_binary: Option<&Path>,
     chain: &mut Vec<String>,
@@ -1650,7 +1673,7 @@ fn install_executable_edge<T: Transport + Sync>(
     let eval = versions::from_validated(constraint);
     let provider = match pin {
         Some(p) => p.to_string(),
-        None => capability_provider(home, fetcher, consumer, name, constraint)?,
+        None => capability_provider(home, fetcher, consumer, name, constraint, registry)?,
     };
     if chain.iter().any(|n| n == &provider) {
         let start = chain
@@ -1685,6 +1708,7 @@ fn install_executable_edge<T: Transport + Sync>(
                 "executable",
                 &provider,
                 constraint,
+                registry,
             )?;
             finish_install(home, fetcher, plan, shim_binary, chain)?.version
         }
@@ -1749,12 +1773,15 @@ fn install_executable_edge<T: Transport + Sync>(
         // dispatch would download it otherwise) — the same posture as
         // install_runtime_edge. An any_of requirement pre-stages by its
         // FIRST entry (the L3 mirror's convention, spec 28 §8); the
-        // dispatch's own any-of resolution covers the rest.
+        // dispatch's own any-of resolution covers the rest. The
+        // entrypoint's runtime_requirement carries no registry pin —
+        // the pre-stage walks the whole book.
         let req = &reqs.entries()[0];
         let rt = tebako_shim::runtime::resolve_runtime_edge(
             &req.engine,
             req.implementation.as_deref(),
             &req.constraint,
+            None,
             true,
             &ctx,
         )
@@ -1798,6 +1825,7 @@ fn capability_provider<T: Transport>(
     consumer: &Manifest,
     name: &str,
     constraint: &tpkg::Constraint,
+    scope: Option<&str>,
 ) -> Result<String, TebakoError> {
     let declares = || {
         format!(
@@ -1827,8 +1855,11 @@ fn capability_provider<T: Transport>(
     }
     let eval = versions::from_validated(constraint);
     let mut found: Vec<String> = Vec::new();
-    for entry in &config::load_config(home).map_err(map_shim)?.registries {
-        let reg_ref = entry.reference();
+    // The edge's `registry:` pin (spec 37 §3) scopes the scan to the one
+    // named book entry; an unknown alias is the named UnknownRegistryAlias.
+    let cfg = config::load_config(home).map_err(map_shim)?;
+    for row in cfg.registry_book_scoped(scope).map_err(map_shim)? {
+        let reg_ref = row.entry.reference();
         let r = RegistryRef::parse(reg_ref).map_err(|e| {
             err(
                 EX_TEBAKO_MANIFEST,

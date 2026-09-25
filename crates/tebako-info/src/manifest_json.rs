@@ -373,6 +373,7 @@ fn requirement_json(r: &Requirement) -> Json {
             constraint,
             triplets,
             mount,
+            registry,
         } => {
             let mut out = vec![
                 ("kind".to_string(), s("toolkit")),
@@ -383,6 +384,9 @@ fn requirement_json(r: &Requirement) -> Json {
             if let Some(m) = mount {
                 out.push(("mount".to_string(), s(m)));
             }
+            if let Some(r) = registry {
+                out.push(("registry".to_string(), s(r)));
+            }
             Json::Object(out)
         }
         Requirement::Data {
@@ -390,6 +394,7 @@ fn requirement_json(r: &Requirement) -> Json {
             constraint,
             triplets,
             mount,
+            registry,
         } => {
             let mut out = vec![
                 ("kind".to_string(), s("data")),
@@ -400,6 +405,9 @@ fn requirement_json(r: &Requirement) -> Json {
             if let Some(m) = mount {
                 out.push(("mount".to_string(), s(m)));
             }
+            if let Some(r) = registry {
+                out.push(("registry".to_string(), s(r)));
+            }
             Json::Object(out)
         }
         Requirement::Runtime {
@@ -408,6 +416,7 @@ fn requirement_json(r: &Requirement) -> Json {
             constraint,
             expose,
             triplets,
+            registry,
         } => {
             let mut out = vec![
                 ("kind".to_string(), s("runtime")),
@@ -423,6 +432,9 @@ fn requirement_json(r: &Requirement) -> Json {
                     Json::Array(expose.iter().map(|e| s(e)).collect()),
                 ));
             }
+            if let Some(r) = registry {
+                out.push(("registry".to_string(), s(r)));
+            }
             push_triplets(&mut out, triplets);
             Json::Object(out)
         }
@@ -434,6 +446,7 @@ fn requirement_json(r: &Requirement) -> Json {
             expose,
             critical,
             triplets,
+            registry,
         } => {
             let mut out = vec![
                 ("kind".to_string(), s("executable")),
@@ -442,6 +455,9 @@ fn requirement_json(r: &Requirement) -> Json {
             ];
             if let Some(p) = payload {
                 out.push(("payload".to_string(), s(p)));
+            }
+            if let Some(r) = registry {
+                out.push(("registry".to_string(), s(r)));
             }
             if let Some(m) = mount {
                 out.push(("mount".to_string(), s(m)));

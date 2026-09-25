@@ -336,14 +336,12 @@ impl<'de> Deserialize<'de> for RegistryBookEntry {
     }
 }
 
-/// The registry-alias grammar (spec 37 §2): `[a-z][a-z0-9-]*`.
+/// The registry-alias grammar (spec 37 §2): `[a-z][a-z0-9-]*`. THE OWNER
+/// is tpkg (the edge `registry:` pin validates there — the flow direction
+/// cannot reverse, tpkg is the lower crate); the book's alias checks flow
+/// it from there.
 pub fn valid_registry_alias(alias: &str) -> bool {
-    let mut chars = alias.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_lowercase() => {}
-        _ => return false,
-    }
-    chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    tpkg::valid_registry_alias(alias)
 }
 
 /// One resolved book row: the entry plus its computed alias (the
