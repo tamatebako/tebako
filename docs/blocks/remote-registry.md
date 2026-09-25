@@ -48,7 +48,8 @@ tebako add-registry tfs:github:metanorma/metanorma
 Registrations can carry local policy (spec 37 — the "registry book"):
 `--name <alias>` gives the registry a short local handle for the
 qualified `alias/name` install form, `--require-signed` makes every
-install through it fail closed without a verifying signature, and
+install through it fail closed without a verifying signature (the
+named `UnsignedRegistryPayload`, exit 70), and
 `--default` marks the publish target when more than one registry is
 registered:
 

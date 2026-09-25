@@ -22,8 +22,11 @@
 //! the fetch boundary; the registry's per-triplet sha256 is the cache's
 //! expected anchor; a registry-carried OpenPGP signature is verified
 //! BEFORE anything enters the cache (strict — spec 09 §3), and an
-//! unsigned entry is accepted with the v1-legacy stderr warning + audit
-//! journal line (`TEBAKO_REQUIRE_SIGNED=1` hard-fails). Cache hits are
+//! unsigned entry is refused when the resolving registry's book entry
+//! carries `require_signed: true` (spec 37 §2.2 — the named
+//! `UnsignedRegistryPayload`, exit 70) or accepted with the v1-legacy
+//! stderr warning + audit journal line (`TEBAKO_REQUIRE_SIGNED=1`
+//! hard-fails). Cache hits are
 //! trusted per the `.sha256` anchor — never re-verified per run
 //! (spec 05 §4). `TEBAKO_OFFLINE=1`: cache hit or the named hard error.
 
@@ -283,6 +286,12 @@ pub(crate) struct InstallPlan {
     /// digest; the reference's own pin is verified at the fetch boundary).
     pub(crate) expected_sha256: Option<String>,
     signature: Option<SignaturePin>,
+    /// Spec 37 §2.2: the resolving registry's fail-closed signature
+    /// policy — `Some(name)` (the registry's alias, else its reference)
+    /// when the book entry demands signed rows; an unsigned row is then
+    /// the named `UnsignedRegistryPayload` (exit 70) at the fetch
+    /// boundary. `None` = the registry (or the ref form) imposes none.
+    require_signed: Option<String>,
     /// Registry-declared entrypoint names (the ref form has none and
     /// falls back to the payload name).
     pub(crate) entrypoints: Vec<String>,
@@ -671,6 +680,7 @@ fn plan_from_reference(target: &str) -> Result<InstallPlan, TebakoError> {
         reference,
         expected_sha256: None,
         signature: None,
+        require_signed: None,
         entrypoints: Vec::new(),
         runtime_requirement: None,
         strict_identity: false,
@@ -808,8 +818,8 @@ fn plan_from_nickname<T: Transport>(
             ))
         }
         1 => {
-            let (reg_ref, payload) = found.pop().expect("len == 1 checked");
-            plan_from_registry_entry(&reg_ref, &payload, version_req.as_deref(), host)
+            let hit = found.pop().expect("len == 1 checked");
+            plan_from_registry_entry(&hit, version_req.as_deref(), host)
         }
         n => Err(err(
             EX_TEBAKO_MANIFEST,
@@ -817,7 +827,7 @@ fn plan_from_nickname<T: Transport>(
                 "payload '{name}' is listed by {n} registered registries (AmbiguousRegistries):\n{}\n  disambiguate with the full reference: tebako install tfs:<service>:owner/repo:version[#artifact]",
                 found
                     .iter()
-                    .map(|(r, _)| format!("    - {r}"))
+                    .map(|hit| format!("    - {}", hit.reference))
                     .collect::<Vec<_>>()
                     .join("\n")
             ),
@@ -825,20 +835,31 @@ fn plan_from_nickname<T: Transport>(
     }
 }
 
-/// Every registered registry carrying `name`, as (registry ref, payload)
-/// pairs — the one search both the nickname form and dependency edges
-/// run (spec 04 §2: the registered set is the whole namespace).
-/// `scope` (spec 37 §3's qualified form) narrows the set to the one
-/// registry the alias names; an unknown alias is `UnknownRegistryAlias`.
+/// One registered registry's hit for a payload name: the row, the
+/// registry's canonical reference, and the book entry's policy (spec 37
+/// §2.2 — `require_signed` carries the name the policy errors render:
+/// the alias when the entry has one, else the reference).
+pub(crate) struct RegistryHit {
+    pub(crate) reference: String,
+    pub(crate) require_signed: Option<String>,
+    pub(crate) payload: RegistryPayload,
+}
+
+/// Every registered registry carrying `name` — the one search both the
+/// nickname form and dependency edges run (spec 04 §2: the registered
+/// set is the whole namespace). `scope` (spec 37 §3's qualified form)
+/// narrows the set to the one registry the alias names; an unknown
+/// alias is `UnknownRegistryAlias`.
 pub(crate) fn find_in_registries<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     name: &str,
     scope: Option<&str>,
-) -> Result<Vec<(String, RegistryPayload)>, TebakoError> {
+) -> Result<Vec<RegistryHit>, TebakoError> {
     let cfg = config::load_config(home).map_err(map_shim)?;
-    let mut found: Vec<(String, RegistryPayload)> = Vec::new();
-    for reg_ref in cfg.registry_refs_scoped(scope).map_err(map_shim)? {
+    let mut found = Vec::new();
+    for row in cfg.registry_book_scoped(scope).map_err(map_shim)? {
+        let reg_ref = row.entry.reference();
         let r = RegistryRef::parse(reg_ref).map_err(|e| {
             err(
                 EX_TEBAKO_MANIFEST,
@@ -847,7 +868,14 @@ pub(crate) fn find_in_registries<T: Transport>(
         })?;
         let registry = fetcher.resolve_registry(&r).map_err(map_resolve)?;
         if let Some(payload) = registry.payload(name) {
-            found.push((reg_ref.to_string(), payload.clone()));
+            found.push(RegistryHit {
+                reference: reg_ref.to_string(),
+                require_signed: row
+                    .entry
+                    .require_signed
+                    .then(|| row.alias.clone().unwrap_or_else(|| reg_ref.to_string())),
+                payload: payload.clone(),
+            });
         }
     }
     Ok(found)
@@ -905,22 +933,24 @@ fn plan_from_dependency_edge<T: Transport>(
             ))
         }
         1 => {
-            let (reg_ref, payload) = found.pop().expect("len == 1 checked");
+            let hit = found.pop().expect("len == 1 checked");
             let eval = versions::from_validated(constraint);
-            let version = payload
+            let version = hit
+                .payload
                 .versions
                 .iter()
                 .map(|v| v.version.as_str())
                 .filter(|v| eval.matches(v))
                 .max_by(|a, b| versions::compare(a, b));
             match version {
-                Some(v) => plan_from_registry_entry(&reg_ref, &payload, Some(v), None),
+                Some(v) => plan_from_registry_entry(&hit, Some(v), None),
                 None => Err(err(
                     EX_TEBAKO_MANIFEST,
                     format!(
-                        "{} but registry {reg_ref} offers no satisfying version (available: {})",
+                        "{} but registry {} offers no satisfying version (available: {})",
                         declares(),
-                        payload
+                        hit.reference,
+                        hit.payload
                             .versions
                             .iter()
                             .map(|v| v.version.as_str())
@@ -937,7 +967,7 @@ fn plan_from_dependency_edge<T: Transport>(
                 declares(),
                 found
                     .iter()
-                    .map(|(r, _)| format!("    - {r}"))
+                    .map(|hit| format!("    - {}", hit.reference))
                     .collect::<Vec<_>>()
                     .join("\n")
             ),
@@ -945,12 +975,16 @@ fn plan_from_dependency_edge<T: Transport>(
     }
 }
 
+/// The plan for one registry hit: the SELECTED version row resolves to
+/// the payload reference + the per-triplet sha anchor, and the hit's
+/// book policy (spec 37 §2.2) rides the plan to the fetch boundary.
 pub(crate) fn plan_from_registry_entry(
-    reg_ref: &str,
-    payload: &RegistryPayload,
+    hit: &RegistryHit,
     version_req: Option<&str>,
     host: Option<Platform>,
 ) -> Result<InstallPlan, TebakoError> {
+    let reg_ref = &hit.reference;
+    let payload = &hit.payload;
     let name = &payload.name;
     let available = || {
         payload
@@ -1036,6 +1070,7 @@ pub(crate) fn plan_from_registry_entry(
         reference,
         expected_sha256,
         signature: entry.signature.clone(),
+        require_signed: hit.require_signed.clone(),
         entrypoints: entry.entrypoints.clone(),
         runtime_requirement: entry.runtime_requirement.as_ref().map(|r| {
             (
@@ -2062,9 +2097,11 @@ fn resolve_shim_binary(explicit: Option<&Path>) -> Result<PathBuf, TebakoError> 
 // ---------------------------------------------------------------------
 
 /// Verify the fetched payload against the registry entry's signature.
-/// Returns the verified signer keyid. `None` signature → the spec 09 §3
-/// v1-legacy rule (loud warn + audit line; `TEBAKO_REQUIRE_SIGNED=1`
-/// hard-fails).
+/// Returns the verified signer keyid. `None` signature → spec 37 §2.2's
+/// per-registry fail-closed rule first (`UnsignedRegistryPayload`, exit
+/// 70, when the resolving registry's book entry carries
+/// `require_signed: true`), then the spec 09 §3 v1-legacy rule (loud
+/// warn + audit line; `TEBAKO_REQUIRE_SIGNED=1` hard-fails).
 ///
 /// The ONE consumer-side policy point for registry payload fetches
 /// (spec 09 §4): `finish_install` runs it at install time; the press
@@ -2077,6 +2114,15 @@ pub(crate) fn verify_signature<T: Transport>(
     plan: &InstallPlan,
 ) -> Result<Option<String>, TebakoError> {
     let Some(sig) = &plan.signature else {
+        if let Some(registry) = &plan.require_signed {
+            return Err(err(
+                EX_TEBAKO_SHA,
+                format!(
+                    "{} is unsigned but registry '{registry}' requires signed rows (UnsignedRegistryPayload) — refusing to install; nothing was cached",
+                    fetched.origin
+                ),
+            ));
+        }
         if require_signed() {
             return Err(err(
                 EX_TEBAKO_SIGNATURE,

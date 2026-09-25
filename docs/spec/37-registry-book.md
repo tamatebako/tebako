@@ -3,12 +3,17 @@
 Status: **PARTIAL** — §2's registry book (the config model, alias
 grammar + derivation, `DuplicateRegistryAlias` /
 `DuplicateDefaultRegistry`, `add-registry --name/--require-signed/
---default`, the `list-registries` book rendering) SHIPPED. §3–§9
-PLANNED (locked direction 2026-09-24; design reviewed with the owner
-across the 2026-09-24 session — the alias grammar, the credential
-confinement model, and the federation forms below are the agreed
-shape). Nothing here changes what shipped resolvers do with a config
-that carries none of the new keys.
+--default`, the `list-registries` book rendering), §2.2's per-registry
+fail-closed signature policy (`UnsignedRegistryPayload`, exit 70),
+§3's qualified form (`alias/name` + the `registry:` pin scopes), and
+§4's federation grammar (the explicit-host `tfs+<svc>://host/…` forms,
+the `tfs+https://` registry location, the `UnsupportedService` /
+`SshTransportUnsupported` refusals) SHIPPED. §5–§9 PLANNED (locked
+direction 2026-09-24; design reviewed with the owner across the
+2026-09-24 session — the alias grammar, the credential confinement
+model, and the federation forms below are the agreed shape). Nothing
+here changes what shipped resolvers do with a config that carries none
+of the new keys.
 
 Normative specification of the **registry book**: the named,
 policy-bearing list of registries in `~/.tebako/config.yaml` that turns
