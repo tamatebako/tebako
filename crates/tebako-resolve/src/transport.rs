@@ -37,6 +37,67 @@ pub trait Transport {
         self.get(url)
     }
 
+    /// [`Transport::get`] carrying the credential the caller's decision
+    /// produced (spec 37 §5): `header` is the decided `(name, value)` —
+    /// attached verbatim, winning over any ambient credential
+    /// (confinement was already decided by the caller) — or `None` for
+    /// an anonymous ride. The default drops the header: test mocks key
+    /// on the URL only.
+    fn get_with_header(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+    ) -> Result<Vec<u8>, FetchError> {
+        let _ = header;
+        self.get(url)
+    }
+
+    /// [`Transport::get_asset`] carrying the caller-decided credential
+    /// header (spec 37 §5) — the requirements-bearing form of
+    /// [`Transport::get_with_header`]. The default drops the header,
+    /// preserving the pre-spec-37 mock shape.
+    fn get_asset_with_header(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        authenticate: bool,
+        header: Option<(&str, &str)>,
+    ) -> Result<Vec<u8>, FetchError> {
+        let _ = header;
+        self.get_asset(url, accept, authenticate)
+    }
+
+    /// [`Transport::stream`] carrying the caller-decided credential
+    /// header (spec 37 §5). The default drops the header and rides
+    /// [`Transport::stream`] (test mocks key on the URL); the production
+    /// transport overrides with the header attached.
+    fn stream_with_header(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        let _ = header;
+        self.stream(url, writer, on_progress)
+    }
+
+    /// [`Transport::stream_asset`] carrying the caller-decided
+    /// credential header (spec 37 §5). The default drops the header and
+    /// rides [`Transport::stream_asset`].
+    fn stream_asset_with_header(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        authenticate: bool,
+        header: Option<(&str, &str)>,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        let _ = header;
+        self.stream_asset(url, accept, authenticate, writer, on_progress)
+    }
+
     /// Whether this transport authenticates to the service APIs (an
     /// ambient GitHub token). Adapters consult it to choose asset URLs:
     /// authenticated transports get the API asset URL — private repos
@@ -127,6 +188,55 @@ impl Transport for HttpTransport {
         self.get_with_retry(url, || tebako_http::get(url))
     }
 
+    fn get_with_header(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+    ) -> Result<Vec<u8>, FetchError> {
+        // The decided header attaches verbatim and wins over the
+        // ambient bearer; `None` rides anonymous (the caller's
+        // decision already accounted for the ambient tier).
+        self.get_with_retry(url, || tebako_http::get_with_explicit(url, None, header))
+    }
+
+    fn get_asset_with_header(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        _authenticate: bool,
+        header: Option<(&str, &str)>,
+    ) -> Result<Vec<u8>, FetchError> {
+        // The book's decision subsumes the descriptor's `authenticate`
+        // flag (confinement included); the decided header attaches
+        // verbatim, `None` rides anonymous.
+        self.get_with_retry(url, || tebako_http::get_with_explicit(url, accept, header))
+    }
+
+    fn stream_with_header(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        // ONE attempt, like `stream_asset`: the retry/throttle
+        // discipline lives in the plan executor, per worker per
+        // connection.
+        tebako_http::stream_to_writer_explicit(url, None, header, writer, on_progress)
+    }
+
+    fn stream_asset_with_header(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        _authenticate: bool,
+        header: Option<(&str, &str)>,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        tebako_http::stream_to_writer_explicit(url, accept, header, writer, on_progress)
+    }
+
     fn stream(
         &self,
         url: &str,
@@ -204,11 +314,15 @@ impl HttpTransport {
                 }
                 // TODO.v2-1/33's named networking failures are
                 // deterministic configuration answers — retried never,
-                // surfaced verbatim.
+                // surfaced verbatim. A credential refusal (spec 37 §5)
+                // is terminal too: retrying a rejected (or absent)
+                // credential never helps.
                 Err(
                     e @ (FetchError::ProxyAuthRequired(_)
                     | FetchError::NetworkingCompiledOut(_)
-                    | FetchError::Cancelled(_)),
+                    | FetchError::Cancelled(_)
+                    | FetchError::AuthRejected { .. }
+                    | FetchError::CredentialRequired { .. }),
                 ) => {
                     return Err(e);
                 }

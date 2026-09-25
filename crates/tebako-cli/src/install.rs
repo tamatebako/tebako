@@ -81,6 +81,10 @@ pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
         // spec 04 §2's withdrawn refusal is the availability class (the
         // yanked version is not available), never a manifest malformation.
         ResolveError::Registry(RegistryError::Withdrawn { .. }) => EX_TEBAKO_UNAVAILABLE,
+        // spec 37 §5's credential refusal — the unavailable class (69):
+        // the message names the registry (or host), the env var looked
+        // for, and the `credentials:` steer.
+        ResolveError::CredentialRequired { .. } => EX_TEBAKO_UNAVAILABLE,
         ResolveError::Registry(_) | ResolveError::InvalidCacheKey { .. } => EX_TEBAKO_MANIFEST,
         ResolveError::InvalidFetchJobs { .. } => EX_TEBAKO_MANIFEST,
         // The commit closures' cancel marker — the caller's error slot
@@ -297,6 +301,10 @@ pub(crate) struct InstallPlan {
     /// elsewhere is the explicit rebind). `None` for the ref form and
     /// local installs — they bind nothing.
     pub(crate) origin_registry: Option<String>,
+    /// Spec 37 §5: the resolving registry's book alias — the tier-1
+    /// credential key for every fetch this plan directs (the payload,
+    /// its `.asc`). `None` for the ref form (the anonymous scope).
+    pub(crate) registry_alias: Option<String>,
     /// Registry-declared entrypoint names (the ref form has none and
     /// falls back to the payload name).
     pub(crate) entrypoints: Vec<String>,
@@ -687,6 +695,7 @@ fn plan_from_reference(target: &str) -> Result<InstallPlan, TebakoError> {
         signature: None,
         require_signed: None,
         origin_registry: None,
+        registry_alias: None,
         entrypoints: Vec::new(),
         runtime_requirement: None,
         strict_identity: false,
@@ -842,12 +851,14 @@ fn plan_from_nickname<T: Transport>(
 }
 
 /// One registered registry's hit for a payload name: the row, the
-/// registry's canonical reference, and the book entry's policy (spec 37
+/// registry's canonical reference, the book entry's policy (spec 37
 /// §2.2 — `require_signed` carries the name the policy errors render:
-/// the alias when the entry has one, else the reference).
+/// the alias when the entry has one, else the reference), and the book
+/// entry's computed alias (spec 37 §5's tier-1 credential key).
 pub(crate) struct RegistryHit {
     pub(crate) reference: String,
     pub(crate) require_signed: Option<String>,
+    pub(crate) alias: Option<String>,
     pub(crate) payload: RegistryPayload,
 }
 
@@ -894,6 +905,7 @@ pub(crate) fn find_in_registries<T: Transport>(
                     .entry
                     .require_signed
                     .then(|| row.alias.clone().unwrap_or_else(|| reg_ref.to_string())),
+                alias: row.alias.clone(),
                 payload: payload.clone(),
             });
         }
@@ -1092,6 +1104,7 @@ pub(crate) fn plan_from_registry_entry(
         signature: entry.signature.clone(),
         require_signed: hit.require_signed.clone(),
         origin_registry: Some(hit.reference.clone()),
+        registry_alias: hit.alias.clone(),
         entrypoints: entry.entrypoints.clone(),
         runtime_requirement: entry.runtime_requirement.as_ref().map(|r| {
             (
@@ -1203,6 +1216,7 @@ fn finish_install<T: Transport + Sync>(
                 sha256_pin: None,
                 size_hint: None,
                 tmp_dir: cache.root().join("tmp"),
+                registry_alias: plan.registry_alias.clone(),
                 commit: Box::new(|staged: &StagedArtifact| {
                     match verify_signature_staged(home, fetcher, staged, &plan) {
                         Ok(Some(signer)) => sink.add_signer(signer),
@@ -2208,7 +2222,11 @@ pub(crate) fn verify_signature<T: Transport>(
     };
 
     let asc_ref = signature_reference(sig, &plan.reference)?;
-    let asc = fetcher.fetch(&asc_ref).map_err(map_resolve)?;
+    // The `.asc` rides the same credential scope as the payload it
+    // signs (spec 37 §5 — the registry row directed both fetches).
+    let asc = fetcher
+        .fetch_scoped(&asc_ref, plan.registry_alias.as_deref())
+        .map_err(map_resolve)?;
     // spec 09 §9's zero-interaction rule: the verification keyring is the
     // user's trusted keyring PLUS the embedded tamatebako root public key
     // (and the TEBAKO_TRUSTED_ROOT dev override's bundled key) — a

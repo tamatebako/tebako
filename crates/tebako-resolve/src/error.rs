@@ -156,6 +156,16 @@ pub enum ResolveError {
     },
     /// The service API answered with something unusable.
     ServiceFailed { service: Service, reason: String },
+    /// A fetch was refused (401/403) and the credential book holds no
+    /// usable credential for the host (spec 37 §5 — exit class 69).
+    /// `registry` is the book alias whose row directed the fetch (None
+    /// for an out-of-book fetch), `looked_for` the env var NAME a
+    /// matched entry wanted.
+    CredentialRequired {
+        registry: Option<String>,
+        host: String,
+        looked_for: Option<String>,
+    },
     /// The git adapter failed (clone, ref resolution, blob lookup).
     Git { url: String, reason: String },
     /// A `tfs+git:` reference without `#path` names a registry repo, not a
@@ -242,6 +252,26 @@ impl fmt::Display for ResolveError {
             ),
             ResolveError::ServiceFailed { service, reason } => {
                 write!(f, "{} API error: {reason}", service.name())
+            }
+            ResolveError::CredentialRequired {
+                registry,
+                host,
+                looked_for,
+            } => {
+                let scope = match registry {
+                    Some(alias) => format!("registry '{alias}'"),
+                    None => format!("host {host}"),
+                };
+                let env = match looked_for {
+                    Some(var) => {
+                        format!(" — its credential names the {var} env var, which is not set;")
+                    }
+                    None => String::new(),
+                };
+                write!(
+                    f,
+                    "{host} refused the fetch (401/403) and {scope} has no usable credential{env} register one under `credentials:` in ~/.tebako/config.yaml (CredentialRequired)"
+                )
             }
             ResolveError::Git { url, reason } => write!(f, "git fetch of {url} failed: {reason}"),
             ResolveError::GitPathRequired { url } => write!(

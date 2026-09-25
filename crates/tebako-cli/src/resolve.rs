@@ -565,6 +565,7 @@ impl Resolver {
             sha256_pin: (!signed).then_some(expected),
             size_hint: None,
             tmp_dir: self.cache_root.join(TMP_DIR),
+            registry_alias: None,
             commit: Box::new(commit),
         })
     }
@@ -607,6 +608,7 @@ impl Resolver {
             sha256_pin: (!signed).then_some(sha256),
             size_hint: None,
             tmp_dir: self.cache_root.join(TMP_DIR),
+            registry_alias: None,
             commit: Box::new(commit),
         })
     }
@@ -757,6 +759,7 @@ impl Resolver {
             sha256_pin: (!signed).then_some(pin),
             size_hint,
             tmp_dir: self.cache_root.join(TMP_DIR),
+            registry_alias: None,
             commit: Box::new(commit),
         })
     }

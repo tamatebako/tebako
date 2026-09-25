@@ -8,9 +8,12 @@ fail-closed signature policy (`UnsignedRegistryPayload`, exit 70),
 §3's qualified form (`alias/name` + the `registry:` pin scopes),
 §4's federation grammar (the explicit-host `tfs+<svc>://host/…` forms,
 the `tfs+https://` registry location, the `UnsupportedService` /
-`SshTransportUnsupported` refusals), and §7's origin binding (the
+`SshTransportUnsupported` refusals), §5's credential model (the
+two-tier book, the locked confinement, the fetch journal,
+`CredentialRequired` / `InvalidCredentialEntry` /
+`DuplicateCredentialSelector`), and §7's origin binding (the
 `.tfs.registry` marker, the confined version chains, the journaled
-rebind) SHIPPED. §5, §6, §8, §9 PLANNED (locked
+rebind) SHIPPED. §6, §8, §9 PLANNED (locked
 direction 2026-09-24; design reviewed with the owner across the
 2026-09-24 session — the alias grammar, the credential confinement
 model, and the federation forms below are the agreed shape). Nothing
@@ -283,6 +286,8 @@ transport concern the federation grammar never sees.
 | `UnsupportedService` | 65 | Bitbucket Data Center refs — the tfs+git:/tfs+https: steer |
 | `SshTransportUnsupported` | 65 | any ssh/git@ URL — the token-over-https steer |
 | `CredentialRequired` | 69 unavailable | 401/403 with no matching credential — names the registry + env var looked for |
+| `InvalidCredentialEntry` | 65 usage | config load; a credentials entry names both `registry:` and `host:`, neither, or a malformed `token_env` |
+| `DuplicateCredentialSelector` | 65 | config load; two entries key the same alias or host |
 | `UnsignedRegistryPayload` | 70 integrity | `require_signed` row without a verifying signature — fail-closed |
 | `Sha256Mismatch` | 70 integrity | (re-scoped from spec 04 §3) a rebind whose registry-declared digest disagrees with the cached bytes — uninstall first |
 

@@ -17,6 +17,11 @@
 //! monoliths, sums, registry YAML) stay small buffered GETs elsewhere.
 
 use std::collections::VecDeque;
+// The trait is in scope for HashWriter's impl without the import; the
+// import serves the git arm's `write_all` (and the test rendezvous) —
+// under default-features = false (tebako-bootstrap) an ungated import
+// is the one unused-import warning.
+#[cfg(any(feature = "git", test))]
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -81,6 +86,10 @@ pub struct FetchItem<'plan> {
     /// The directory the in-flight `<display>.<pid>.<idx>.part` lands in
     /// (the entry's store tmp dir — rename stays on one filesystem).
     pub tmp_dir: PathBuf,
+    /// The alias of the registry whose row directed this fetch (spec 37
+    /// §5's tier-1 credential key); None for the anonymous scope
+    /// (runtime fetches, direct references).
+    pub registry_alias: Option<String>,
     /// Install the verified staged bytes; runs on the worker right after
     /// THIS artifact's download (overlapped with the other streams).
     /// Receives the tmp path + the computed sha256 + the concrete
@@ -259,12 +268,26 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
     };
     let written = match &item.reference {
         Reference::Https { url, .. } => {
-            let r = transport.stream(url, &mut out, Some(&mut tick));
+            let scoped = crate::fetch::CredTransport::new(
+                transport,
+                crate::credentials::book(),
+                item.registry_alias.clone(),
+                None,
+                None,
+            );
+            let r = scoped.stream(url, &mut out, Some(&mut tick));
             (r, url.clone())
         }
         Reference::File { path, .. } => {
             let url = tebako_http::file_url(Path::new(path));
-            let r = transport.stream(&url, &mut out, Some(&mut tick));
+            let scoped = crate::fetch::CredTransport::new(
+                transport,
+                crate::credentials::book(),
+                item.registry_alias.clone(),
+                None,
+                None,
+            );
+            let r = scoped.stream(&url, &mut out, Some(&mut tick));
             (r, url)
         }
         Reference::Service {
@@ -276,8 +299,15 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
             artifact,
             ..
         } => {
-            let asset = select_service_asset(
+            let scoped = crate::fetch::CredTransport::new(
                 transport,
+                crate::credentials::book(),
+                item.registry_alias.clone(),
+                Some(*service),
+                host.clone(),
+            );
+            let asset = select_service_asset(
+                &scoped,
                 *service,
                 host.as_deref(),
                 owner,
@@ -286,7 +316,7 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
                 artifact.as_deref(),
             )
             .map_err(ItemFail::Named)?;
-            let r = transport.stream_asset(
+            let r = scoped.stream_asset(
                 &asset.url,
                 asset.accept.as_deref(),
                 asset.authenticate,
@@ -377,6 +407,28 @@ fn run_item<T: Transport, W: std::io::Write + Send>(
             Err(ItemFail::Transport(FetchError::Cancelled(_))) => {
                 let _ = std::fs::remove_file(&tmp);
                 return Ok(());
+            }
+            // The credential refusal (spec 37 §5) is terminal — the
+            // named error rides out verbatim, never retried.
+            Err(ItemFail::Transport(FetchError::CredentialRequired {
+                registry,
+                host,
+                looked_for,
+            })) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(ResolveError::CredentialRequired {
+                    registry,
+                    host,
+                    looked_for,
+                });
+            }
+            Err(ItemFail::Transport(FetchError::AuthRejected { .. })) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(ResolveError::CredentialRequired {
+                    registry: None,
+                    host: item.reference.to_string(),
+                    looked_for: None,
+                });
             }
             Err(ItemFail::Transport(FetchError::IndexUnavailable(msg))) => {
                 let _ = std::fs::remove_file(&tmp);
@@ -599,6 +651,7 @@ mod tests {
                 sha256_pin: pinned.then(|| crate::fetch::sha256_hex(bytes)),
                 size_hint: Some(bytes.len() as u64),
                 tmp_dir: dir.join("tmp"),
+                registry_alias: None,
                 commit: Box::new(move |staged| {
                     std::fs::rename(staged.tmp, &dest2).unwrap();
                     std::fs::write(&origin_note, staged.origin).unwrap();
@@ -728,6 +781,7 @@ mod tests {
             sha256_pin: pin,
             size_hint: None,
             tmp_dir: dir.join("tmp"),
+            registry_alias: None,
             commit: Box::new(move |staged| {
                 std::fs::rename(staged.tmp, &dest).unwrap();
                 Ok(CommitReport { line: None })

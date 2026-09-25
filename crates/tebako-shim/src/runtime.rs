@@ -2181,6 +2181,7 @@ fn runtime_facet_item<'p>(
         sha256_pin: None,
         size_hint: None,
         tmp_dir: tmp_dir.to_path_buf(),
+        registry_alias: None,
         commit: Box::new(commit),
     })
 }
@@ -2364,6 +2365,7 @@ fn runtime_bundle_item<'p>(
         sha256_pin: None,
         size_hint,
         tmp_dir: tmp_dir.to_path_buf(),
+        registry_alias: None,
         commit: Box::new(commit),
     })
 }

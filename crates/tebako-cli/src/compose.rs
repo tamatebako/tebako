@@ -359,7 +359,7 @@ pub fn resolve_closure<T: Transport>(
                     }));
                 }
                 let fetched = fetcher
-                    .fetch(&plan.reference)
+                    .fetch_scoped(&plan.reference, plan.registry_alias.as_deref())
                     .map_err(install::map_resolve)?;
                 install::verify_signature(home, fetcher, &fetched, &plan)?;
                 let (cached, _status) = cache

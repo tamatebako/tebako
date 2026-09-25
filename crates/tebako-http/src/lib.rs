@@ -14,7 +14,10 @@
 //!
 //! Error semantics mirror the gem's reader: a missing object (HTTP 404 /
 //! ENOENT on `file://`) is [`FetchError::IndexUnavailable`] — try the
-//! next index name; everything else is [`FetchError::DownloadFailed`].
+//! next index name; a plain 401/403 is [`FetchError::AuthRejected`] (the
+//! credential layer's remap point, spec 37 §5); a throttling 429/403 is
+//! [`FetchError::Throttled`]; everything else is
+//! [`FetchError::DownloadFailed`].
 
 use std::fmt;
 use std::sync::OnceLock;
@@ -59,6 +62,24 @@ pub enum FetchError {
     },
     /// A download failed at the transport or HTTP layer.
     DownloadFailed(String),
+    /// The server refused the presented (or absent) credential: a plain
+    /// 401, or a 403 WITHOUT rate-limit headers (a throttling 403 stays
+    /// [`FetchError::Throttled`] — a schedule, not a refusal). Terminal,
+    /// never retried: tebako-resolve's credential layer remaps this to
+    /// the named [`FetchError::CredentialRequired`] (spec 37 §5).
+    AuthRejected { url: String, status: u16 },
+    /// The fetch was refused and the credential book holds no usable
+    /// credential for the host (spec 37 §5, exit class 69). Data-only:
+    /// produced by tebako-resolve's credential-applying transport
+    /// wrapper out of [`FetchError::AuthRejected`], never by this
+    /// crate's classifiers. `registry` is the book alias whose row
+    /// directed the fetch, `looked_for` the env var NAME a matched
+    /// entry wanted (both absent for an out-of-book refusal).
+    CredentialRequired {
+        host: String,
+        registry: Option<String>,
+        looked_for: Option<String>,
+    },
     /// The caller aborted the stream (the fetch pipeline's plan-cancel
     /// path): the progress callback returned `false`. Never retried —
     /// the plan is already unwinding.
@@ -92,6 +113,28 @@ impl fmt::Display for FetchError {
                 None => write!(f, "throttled ({status})"),
             },
             FetchError::DownloadFailed(why) => write!(f, "{why}"),
+            FetchError::AuthRejected { url, status } => write!(
+                f,
+                "{status} fetching {url} — the credential was rejected (or one is required and none was presented)"
+            ),
+            FetchError::CredentialRequired {
+                host,
+                registry,
+                looked_for,
+            } => {
+                let scope = match registry {
+                    Some(alias) => format!("registry '{alias}'"),
+                    None => format!("host {host}"),
+                };
+                let env = match looked_for {
+                    Some(var) => format!(" — its credential names the {var} env var, which is not set;"),
+                    None => String::new(),
+                };
+                write!(
+                    f,
+                    "{host} refused the fetch (401/403) and {scope} has no usable credential{env} register one under `credentials:` in ~/.tebako/config.yaml (CredentialRequired)"
+                )
+            }
             FetchError::Cancelled(what) => write!(f, "fetch of {what} cancelled"),
             FetchError::ProxyAuthRequired(url) => write!(
                 f,
@@ -393,6 +436,16 @@ fn classify(
             retry_after: throttle_hint(&response),
         });
     }
+    // A plain 401/403 is a CREDENTIAL answer (spec 37 §5): terminal,
+    // never retried — the credential layer remaps it to the named
+    // CredentialRequired. A 403 carrying rate-limit headers is a
+    // schedule and was handled above.
+    if status == 401 || status == 403 {
+        return Err(FetchError::AuthRejected {
+            url: url.to_string(),
+            status,
+        });
+    }
     Err(FetchError::DownloadFailed(format!(
         "{status} fetching {url}"
     )))
@@ -462,7 +515,11 @@ pub fn github_token_from_env() -> Option<String> {
 /// headers on redirect — `RedirectAuthHeaders::Never` is its default —
 /// so the pre-signed redirect target of an api.github.com asset GET
 /// never sees the token either.)
-fn carries_ambient_github_token(url: &str) -> bool {
+///
+/// pub: tebako-resolve's credential book (spec 37 §5) ranks the ambient
+/// token as its github.com tier — ONE host check, here, never
+/// re-implemented.
+pub fn carries_ambient_github_token(url: &str) -> bool {
     url.starts_with("https://api.github.com/")
 }
 
@@ -542,6 +599,54 @@ pub fn get_with_options(url: &str, opts: &GetOptions) -> Result<Vec<u8>, FetchEr
         .limit(MAX_BODY_SIZE)
         .read_to_vec()
         .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))
+}
+
+/// [`get`] with an EXPLICIT credential header decided by the caller
+/// (spec 37 §5's credential layer): the header attaches verbatim and
+/// wins over the ambient bearer — confinement was already decided by
+/// the caller, and ureq never forwards auth headers on redirect
+/// (`RedirectAuthHeaders::Never` is the default), so a redirect target
+/// never sees it either. `None` rides anonymous.
+pub fn get_with_explicit(
+    url: &str,
+    accept: Option<&str>,
+    header: Option<(&str, &str)>,
+) -> Result<Vec<u8>, FetchError> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return read_file_url(file_path_from_url(path));
+    }
+    require_https(url)?;
+    network_guard()?;
+    let response = apply_explicit(url, agent()?.get(url), accept, header)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    let mut response = classify(response, url)?;
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY_SIZE)
+        .read_to_vec()
+        .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))
+}
+
+/// The explicit-header request shaping ([`get_with_explicit`],
+/// [`stream_to_writer_explicit`]): the declared Accept, then the
+/// caller-decided credential header verbatim. The ambient bearer is
+/// NEVER consulted here — the caller's decision already accounted for
+/// it (spec 37 §5's two-tier lookup ranks the ambient token).
+fn apply_explicit<'a>(
+    _url: &str,
+    mut req: ureq::RequestBuilder<ureq::typestate::WithoutBody>,
+    accept: Option<&'a str>,
+    header: Option<(&'a str, &'a str)>,
+) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
+    if let Some(accept) = accept {
+        req = req.header("Accept", accept);
+    }
+    if let Some((name, value)) = header {
+        req = req.header(name, value);
+    }
+    req
 }
 
 /// [`get`] with an explicit bearer token (the publish/verify channel —
@@ -637,46 +742,92 @@ pub fn stream_to_writer(
     url: &str,
     opts: &GetOptions,
     writer: &mut dyn std::io::Write,
-    mut on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
 ) -> Result<u64, FetchError> {
     if let Some(path) = url.strip_prefix("file://") {
-        let mut file = std::fs::File::open(file_path_from_url(path)).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                FetchError::IndexUnavailable(path.to_string())
-            } else {
-                FetchError::DownloadFailed(format!("{e} reading {path}"))
-            }
-        })?;
-        let total = file.metadata().ok().map(|m| m.len());
-        let mut written = 0u64;
-        let mut chunk = [0u8; 65536];
-        use std::io::Read as _;
-        loop {
-            let n = file
-                .read(&mut chunk)
-                .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {path}")))?;
-            if n == 0 {
-                break;
-            }
-            writer
-                .write_all(&chunk[..n])
-                .map_err(|e| FetchError::DownloadFailed(format!("{e} writing {url}")))?;
-            written += n as u64;
-            if let Some(cb) = on_progress.as_deref_mut() {
-                if !cb(written, total) {
-                    return Err(FetchError::Cancelled(url.to_string()));
-                }
-            }
-        }
-        return Ok(written);
+        return stream_file_url(path, url, writer, on_progress);
     }
     require_https(url)?;
-    use std::io::Read as _;
     network_guard()?;
     let response = apply_options(url, agent()?.get(url), opts)
         .call()
         .map_err(map_ureq_error(url))?;
-    let mut response = classify(response, url)?;
+    let response = classify(response, url)?;
+    stream_response(url, response, writer, on_progress)
+}
+
+/// [`stream_to_writer`] with an EXPLICIT credential header decided by
+/// the caller (spec 37 §5's credential layer — the same rule as
+/// [`get_with_explicit`]): the header attaches verbatim and wins over
+/// the ambient bearer; `None` rides anonymous.
+pub fn stream_to_writer_explicit(
+    url: &str,
+    accept: Option<&str>,
+    header: Option<(&str, &str)>,
+    writer: &mut dyn std::io::Write,
+    on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+) -> Result<u64, FetchError> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return stream_file_url(path, url, writer, on_progress);
+    }
+    require_https(url)?;
+    network_guard()?;
+    let response = apply_explicit(url, agent()?.get(url), accept, header)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    let response = classify(response, url)?;
+    stream_response(url, response, writer, on_progress)
+}
+
+/// The `file://` half of the streaming GETs (a local read streams like
+/// a remote body; credential headers are meaningless on it).
+fn stream_file_url(
+    path: &str,
+    url: &str,
+    writer: &mut dyn std::io::Write,
+    mut on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+) -> Result<u64, FetchError> {
+    let mut file = std::fs::File::open(file_path_from_url(path)).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            FetchError::IndexUnavailable(path.to_string())
+        } else {
+            FetchError::DownloadFailed(format!("{e} reading {path}"))
+        }
+    })?;
+    let total = file.metadata().ok().map(|m| m.len());
+    let mut written = 0u64;
+    let mut chunk = [0u8; 65536];
+    use std::io::Read as _;
+    loop {
+        let n = file
+            .read(&mut chunk)
+            .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {path}")))?;
+        if n == 0 {
+            break;
+        }
+        writer
+            .write_all(&chunk[..n])
+            .map_err(|e| FetchError::DownloadFailed(format!("{e} writing {url}")))?;
+        written += n as u64;
+        if let Some(cb) = on_progress.as_deref_mut() {
+            if !cb(written, total) {
+                return Err(FetchError::Cancelled(url.to_string()));
+            }
+        }
+    }
+    Ok(written)
+}
+
+/// The read loop of the streaming GETs: the classified response body
+/// flows chunk by chunk into `writer`, ticking progress and aborting
+/// with [`FetchError::Cancelled`] when the callback answers `false`.
+fn stream_response(
+    url: &str,
+    mut response: ureq::http::Response<ureq::Body>,
+    writer: &mut dyn std::io::Write,
+    mut on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+) -> Result<u64, FetchError> {
+    use std::io::Read as _;
     let content_length = response.body().content_length();
     let mut reader = response
         .body_mut()
