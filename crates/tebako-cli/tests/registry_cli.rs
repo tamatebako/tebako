@@ -38,6 +38,20 @@ fn run(home: &PathBuf, shim: &PathBuf, args: &[&str]) -> (i32, String) {
 }
 
 #[test]
+fn setup_takes_no_arguments() {
+    let dir = scratch("setupargs");
+    let home = dir.join("home");
+    let shim = dir.join("tebako-shim");
+    fs::write(&shim, b"#!/bin/sh\n").unwrap();
+
+    let (code, text) = run(&home, &shim, &["setup", "bogus"]);
+    assert_eq!(code, 1, "{text}");
+    assert!(text.contains("usage: tebako setup"), "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn registry_install_uninstall_smoke() {
     let dir = scratch("smoke");
     let home = dir.join("home");

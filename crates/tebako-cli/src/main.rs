@@ -50,6 +50,8 @@ const USAGE: &str = "Usage:
   tebako add-registry <ref>            register a tpkg-registry.yaml
   tebako list-registries               list the registered registries
   tebako update-registries             refresh the dispatch-time registry cache
+  tebako setup                         seed the official registry into the config
+                                       (installer flow; idempotent, user-removable)
   tebako keys import <file>            register a public key into the trusted keyring
   tebako install <ref | [alias/]name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
@@ -209,9 +211,10 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "doctor" => run_doctor(rest),
         "inspect" => run_inspect(rest),
         "publish" => run_publish(rest),
-        "clean" | "setup" | "hash" => Err(CliExit::Usage(format!(
+        "clean" | "hash" => Err(CliExit::Usage(format!(
             "'tebako {subcommand}' is a later tebako-rs milestone"
         ))),
+        "setup" => run_setup(rest),
         other => Err(CliExit::Usage(format!("unknown command '{other}'"))),
     }
 }
@@ -423,6 +426,31 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
                 names.join(", ")
             )
         }
+    }
+    Ok(())
+}
+
+/// `tebako setup` (spec 37 §6): seed the official registry entry — the
+/// installer-facing, idempotent config write. Takes no arguments; the
+/// seeded value is distribution content, never a resolution default.
+fn run_setup(args: &[String]) -> Result<(), CliExit> {
+    if !args.is_empty() {
+        return Err(CliExit::Usage("usage: tebako setup".to_string()));
+    }
+    let (outcome, registry) = tebako_cli::install::seed_official_registry(&tebako_home()?)?;
+    let count = registry.payloads.len();
+    match outcome {
+        tebako_shim::config::AddRegistryOutcome::Added => println!(
+            "seeded the official registry {} ({count} payload(s))",
+            tebako_cli::install::OFFICIAL_REGISTRY_REF
+        ),
+        tebako_shim::config::AddRegistryOutcome::AlreadyPresent => {
+            println!("the official registry is already seeded ({count} payload(s))")
+        }
+        tebako_shim::config::AddRegistryOutcome::Updated => println!(
+            "re-seeded the official registry {} ({count} payload(s))",
+            tebako_cli::install::OFFICIAL_REGISTRY_REF
+        ),
     }
     Ok(())
 }

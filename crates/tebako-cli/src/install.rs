@@ -180,6 +180,43 @@ pub fn add_registry_full<T: Transport>(
     Ok((outcome, registry))
 }
 
+// ---------------------------------------------------------------------
+// tebako setup — the official seed (spec 37 §6)
+// ---------------------------------------------------------------------
+
+/// The official registry's reference (spec 37 §6). ONLY the setup /
+/// installer flow carries this value — no resolution path defaults to
+/// it; a from-source `tebako` that never ran setup still ships zero
+/// registries. The repo is a CI-generated aggregate; each feedstock's
+/// own `tpkg-registry.yaml` stays the authored authority.
+pub const OFFICIAL_REGISTRY_REF: &str = "tfs:github:tebako-packages/registry";
+
+/// `tebako setup` (spec 37 §6): seed the official registry entry into
+/// the user config — authored, user-visible, user-removable config
+/// content (`name: official`, `default: true`). The seed fetches +
+/// validates the aggregate and primes the dispatch cache, exactly the
+/// `add-registry` path: an unreachable or malformed official registry
+/// is the same named error, never a silently-written dead entry.
+/// Idempotent — an unchanged seed reports `AlreadyPresent`.
+pub fn seed_official_registry(
+    home: &Path,
+) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
+    seed_official_registry_with(home, &Fetcher::new())
+}
+
+/// The transport-injected half of [`seed_official_registry`] (tests).
+pub fn seed_official_registry_with<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
+    let opts = tebako_shim::config::AddRegistryOptions {
+        name: Some("official".to_string()),
+        require_signed: false,
+        default: true,
+    };
+    add_registry_full(home, OFFICIAL_REGISTRY_REF, &opts, fetcher)
+}
+
 /// One `tebako list-registries` row (spec 37 §2): the resolved alias
 /// (None when the ref carries no `owner/repo` and no `name:` was
 /// authored), the reference, the policy flags, and the dispatch cache's

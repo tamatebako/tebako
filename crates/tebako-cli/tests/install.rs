@@ -244,6 +244,85 @@ fn add_registry_primes_the_dispatch_cache_for_remote_refs() {
     ));
 }
 
+// ---------------------------------------------------------------------
+// tebako setup — the official seed (spec 37 §6)
+// ---------------------------------------------------------------------
+
+/// A mock transport answering the official registry's GitHub
+/// contents-API hop + raw download (the ref is fixed by the seed, so
+/// the URLs are too).
+fn official_seed_fetcher(registry_yaml: &str) -> Fetcher<MockTransport> {
+    let contents = r#"{"name":"tpkg-registry.yaml","download_url":"https://raw.example/tebako-packages/registry/HEAD/tpkg-registry.yaml"}"#;
+    let t = MockTransport::new()
+        .with(
+            "https://api.github.com/repos/tebako-packages/registry/contents/tpkg-registry.yaml",
+            contents.as_bytes(),
+        )
+        .with(
+            "https://raw.example/tebako-packages/registry/HEAD/tpkg-registry.yaml",
+            registry_yaml.as_bytes(),
+        );
+    Fetcher::with_transport(t)
+}
+
+#[test]
+fn setup_seeds_the_official_registry_and_primes_the_cache() {
+    let fx = Fixture::new("seedofficial");
+    let registry_yaml = "schema_version: 1\npayloads: []\n";
+    let fetcher = official_seed_fetcher(registry_yaml);
+
+    let (outcome, _) = install::seed_official_registry_with(&fx.home, &fetcher).unwrap();
+    assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
+
+    // the seeded entry: the official ref, aliased, the default
+    let rows = install::list_registries(&fx.home).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].reference, "tfs:github:tebako-packages/registry");
+    assert_eq!(rows[0].alias.as_deref(), Some("official"));
+    assert!(rows[0].default);
+    assert!(!rows[0].require_signed);
+
+    // the dispatch cache is primed with the fetched bytes
+    let cached = fx.home.join("registries").join(format!(
+        "{}.yaml",
+        sha256_hex(b"tfs:github:tebako-packages/registry")
+    ));
+    assert_eq!(fs::read_to_string(&cached).unwrap(), registry_yaml);
+
+    // idempotent: a second setup reports AlreadyPresent, changes nothing
+    let (outcome, _) = install::seed_official_registry_with(&fx.home, &fetcher).unwrap();
+    assert_eq!(
+        outcome,
+        tebako_shim::config::AddRegistryOutcome::AlreadyPresent
+    );
+    assert_eq!(install::list_registries(&fx.home).unwrap().len(), 1);
+}
+
+#[test]
+fn setup_refuses_to_seed_a_second_default() {
+    let fx = Fixture::new("seeddefault");
+    // a pre-existing book whose entry is already the default
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
+    );
+    let opts = tebako_shim::config::AddRegistryOptions {
+        name: Some("mine".to_string()),
+        require_signed: false,
+        default: true,
+    };
+    install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+
+    let fetcher = official_seed_fetcher("schema_version: 1\npayloads: []\n");
+    let err = install::seed_official_registry_with(&fx.home, &fetcher).unwrap_err();
+    assert!(err.message.contains("DuplicateDefaultRegistry"), "{err:?}");
+    // fail-closed: the official entry was NOT written alongside
+    let rows = install::list_registries(&fx.home).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].alias.as_deref(), Some("mine"));
+}
+
 #[test]
 fn update_registries_refreshes_and_reports() {
     let fx = Fixture::new("updateregs");
