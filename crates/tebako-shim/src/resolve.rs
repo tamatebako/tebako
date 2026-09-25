@@ -978,7 +978,10 @@ fn resolve_named(
         // 4. registry default — scoped when a pin names the registry it
         // resolves through (spec 37 §3): the project file's `registry:`
         // wins over the user default pin's; an alias not in the book is
-        // the named UnknownRegistryAlias, fail-closed.
+        // the named UnknownRegistryAlias, fail-closed. With NO authored
+        // scope, spec 37 §7's origin binding confines the walk to the
+        // registries the installed versions are bound to — a same-named
+        // payload in another registry is never a silent upgrade.
         if picked.is_none() {
             let scope = match project_registry_scope(&ctx.cwd, tool)? {
                 Some(alias) => Some(alias),
@@ -987,9 +990,19 @@ fn resolve_named(
                     .get(tool)
                     .and_then(|pin| pin.registry().map(str::to_string)),
             };
-            if let Some((version, reg)) =
-                config::registry_default(&ctx.home, &cfg, payload_name, scope.as_deref(), ctx)?
-            {
+            let confine = if scope.is_none() {
+                tebako_resolve::PayloadCache::with_root(&ctx.home).bound_registries(payload_name)
+            } else {
+                Vec::new()
+            };
+            if let Some((version, reg)) = config::registry_default(
+                &ctx.home,
+                &cfg,
+                payload_name,
+                scope.as_deref(),
+                &confine,
+                ctx,
+            )? {
                 picked = Some((version, VersionSource::RegistryDefault(reg)));
             }
         }

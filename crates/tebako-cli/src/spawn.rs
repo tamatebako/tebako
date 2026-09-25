@@ -540,6 +540,13 @@ fn spawned_payload_row<T: Transport>(
                     || Ok(fetched),
                 )
                 .map_err(install::map_resolve)?;
+            // Spec 37 §7's origin binding rides the cache entry (press
+            // populates the same store install resolves from).
+            if let Some(registry) = &install_plan.origin_registry {
+                cache
+                    .mark_registry(&install_plan.name, &install_plan.version, registry)
+                    .map_err(install::map_resolve)?;
+            }
             cached
         }
     };

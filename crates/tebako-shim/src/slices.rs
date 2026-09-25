@@ -522,9 +522,15 @@ fn fetch_slice(
     pin: &SlicePin,
     ctx: &Ctx,
 ) -> Result<(), ShimError> {
+    let bound = tebako_resolve::PayloadCache::with_root(home).bound_registries(&pin.name);
     let mut hits = Vec::new();
     for entry in &cfg.registries {
         let reg_ref = entry.reference();
+        // Spec 37 §7's origin binding: a slice name already bound by an
+        // installed version resolves through its origin registry only.
+        if !bound.is_empty() && !bound.iter().any(|b| b == reg_ref) {
+            continue;
+        }
         let registry = crate::regcache::registry_for(home, reg_ref, ctx)?;
         if let Some(payload) = registry.payload(&pin.name) {
             if let Some(entry) = payload.versions.iter().find(|v| v.version == pin.version) {
@@ -532,7 +538,7 @@ fn fetch_slice(
             }
         }
     }
-    let (_reg_ref, entry) = match hits.len() {
+    let (reg_ref, entry) = match hits.len() {
         0 => {
             return fail(
                 EX_TEBAKO_MANIFEST,
@@ -660,6 +666,23 @@ fn fetch_slice(
     let entry = sink.take_entry().ok_or_else(|| {
         ShimError::new(EX_TEBAKO_IO, "the slice fetch plan ended without a commit")
     })?;
+    // Spec 37 §7's origin binding: the freshly landed slice binds to the
+    // registry that resolved it. Confinement above makes a differing
+    // prior binding reachable only when the name is bound to SEVERAL
+    // registries across versions and the row moved between them — the
+    // version follows the confinement set, and the journal records it.
+    if let Some(previous) = cache
+        .mark_registry(&pin.name, &pin.version, &reg_ref)
+        .map_err(map_fetch)?
+    {
+        crate::runtime::journal(
+            home,
+            &format!(
+                "event=origin-rebind name={} version={} from={previous} to={reg_ref}",
+                pin.name, pin.version
+            ),
+        );
+    }
     crate::runtime::journal(
         home,
         &format!(

@@ -1012,9 +1012,16 @@ pub fn registry_default(
     config: &UserConfig,
     payload_name: &str,
     scope: Option<&str>,
+    confine: &[String],
     ctx: &Ctx,
 ) -> Result<Option<(String, String)>, ShimError> {
     for reg_ref in config.registry_refs_scoped(scope)? {
+        // Spec 37 §7's origin binding: a confined walk (the payload's
+        // installed versions are bound and no authored scope overrides)
+        // consults the origin registry set only.
+        if !confine.is_empty() && !confine.iter().any(|b| b == reg_ref) {
+            continue;
+        }
         let registry = crate::regcache::registry_for(home, reg_ref, ctx)?;
         if let Some(p) = registry.payload(payload_name) {
             if let Some(default) = &p.default {

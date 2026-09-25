@@ -418,6 +418,136 @@ fn install_qualified_name_malformed_is_a_usage_error() {
     assert!(err.message.contains("qualified name"), "{err:?}");
 }
 
+// ---------------------------------------------------------------------
+// spec 37 §7 — origin binding (upgrade confinement)
+// ---------------------------------------------------------------------
+
+/// The two-registry fixture with authored aliases.
+fn two_registries(fx: &Fixture, versions: &[(&str, &[u8])]) -> (String, String) {
+    let named = |n: &str| tebako_shim::config::AddRegistryOptions {
+        name: Some(n.to_string()),
+        require_signed: false,
+        default: false,
+    };
+    let p_a = fx.payload("app-a.tfs", versions[0].1);
+    let p_b = fx.payload("app-b.tfs", versions[1].1);
+    let reg_a = fx.registry(
+        "one.yaml",
+        &registry_yaml("app", versions[0].0, &p_a, Some(versions[0].0)),
+    );
+    let reg_b = fx.registry(
+        "two.yaml",
+        &registry_yaml("app", versions[1].0, &p_b, Some(versions[1].0)),
+    );
+    install::add_registry_opts(&fx.home, &reg_a, &named("one")).unwrap();
+    install::add_registry_opts(&fx.home, &reg_b, &named("two")).unwrap();
+    (reg_a, reg_b)
+}
+
+#[test]
+fn origin_binding_confines_the_bare_install_to_the_origin_registry() {
+    let fx = Fixture::new("originconfine");
+    let (reg_a, _reg_b) = two_registries(&fx, &[("1.0", b"from-one"), ("9.9", b"from-two")]);
+
+    // Installed through one registry, the entry binds to it.
+    let out = install::install(&fx.home, "one/app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.version, "1.0");
+    let cache = tebako_resolve::PayloadCache::with_root(&fx.home);
+    assert_eq!(
+        cache
+            .get("app", "1.0")
+            .unwrap()
+            .unwrap()
+            .registry
+            .as_deref(),
+        Some(reg_a.as_str())
+    );
+    assert!(fx.payloads_dir().join("app/1.0.tfs.registry").is_file());
+
+    // The bare form now consults the ORIGIN registry only: no
+    // AmbiguousRegistries, and never the other registry's newer row.
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.version, "1.0");
+    assert!(!fx.payloads_dir().join("app/9.9.tfs").exists());
+}
+
+#[test]
+fn qualified_install_rebinds_the_origin_and_journals_the_switch() {
+    let fx = Fixture::new("originrebind");
+    let (reg_a, reg_b) = two_registries(&fx, &[("1.0", b"same-bytes"), ("1.0", b"same-bytes")]);
+
+    install::install(&fx.home, "one/app", None, Some(&fx.shim_binary)).unwrap();
+    let cache = tebako_resolve::PayloadCache::with_root(&fx.home);
+    assert_eq!(
+        cache
+            .get("app", "1.0")
+            .unwrap()
+            .unwrap()
+            .registry
+            .as_deref(),
+        Some(reg_a.as_str())
+    );
+
+    // The explicit switch: the same bytes vouched by both registries, so
+    // the marker rewrites in place and the journal records the rebind.
+    install::install(&fx.home, "two/app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(
+        cache
+            .get("app", "1.0")
+            .unwrap()
+            .unwrap()
+            .registry
+            .as_deref(),
+        Some(reg_b.as_str())
+    );
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains(&format!(
+            "event=origin-rebind name=app version=1.0 from={reg_a} to={reg_b}"
+        )),
+        "{journal}"
+    );
+}
+
+#[test]
+fn rebind_to_bytes_the_new_registry_does_not_vouch_for_is_refused() {
+    let fx = Fixture::new("originmismatch");
+    // `?sha256=` pins make each registry's digest assertion explicit.
+    let pa = fx.payload("app-a.tfs", b"from-one");
+    let pa = format!("{pa}?sha256={}", sha256_hex(b"from-one"));
+    let pb = fx.payload("app-b.tfs", b"from-two");
+    let pb = format!("{pb}?sha256={}", sha256_hex(b"from-two"));
+    let named = |n: &str| tebako_shim::config::AddRegistryOptions {
+        name: Some(n.to_string()),
+        require_signed: false,
+        default: false,
+    };
+    let reg_a = fx.registry("one.yaml", &registry_yaml("app", "1.0", &pa, Some("1.0")));
+    let reg_b = fx.registry("two.yaml", &registry_yaml("app", "1.0", &pb, Some("1.0")));
+    install::add_registry_opts(&fx.home, &reg_a, &named("one")).unwrap();
+    install::add_registry_opts(&fx.home, &reg_b, &named("two")).unwrap();
+
+    install::install(&fx.home, "one/app", None, Some(&fx.shim_binary)).unwrap();
+
+    // The same name@version under DIFFERENT bytes never rebinds: the
+    // cache never overwrites a standing entry, so the switch is the
+    // named Sha256Mismatch — and the marker does not move.
+    let err = install::install(&fx.home, "two/app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("Sha256Mismatch"), "{err:?}");
+    let cache = tebako_resolve::PayloadCache::with_root(&fx.home);
+    assert_eq!(
+        cache
+            .get("app", "1.0")
+            .unwrap()
+            .unwrap()
+            .registry
+            .as_deref(),
+        Some(reg_a.as_str())
+    );
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(!journal.contains("event=origin-rebind"), "{journal}");
+}
+
 #[test]
 fn install_nickname_resolves_default_and_explicit_versions() {
     let fx = Fixture::new("nick3");

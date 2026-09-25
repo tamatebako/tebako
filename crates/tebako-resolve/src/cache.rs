@@ -80,6 +80,10 @@ pub struct CacheEntry {
     pub sha256: String,
     /// Source URL/reference from the `.origin` marker, when present.
     pub origin: Option<String>,
+    /// The resolving registry's canonical reference from the `.registry`
+    /// marker (spec 37 §7's origin binding), when the bytes resolved
+    /// through one — never an alias (aliases are local and volatile).
+    pub registry: Option<String>,
 }
 
 /// The prune protected set: exact `(name, version)` pairs prune never
@@ -170,12 +174,16 @@ impl PayloadCache {
         let origin = fs::read_to_string(origin_marker(&file))
             .ok()
             .map(|s| s.trim().to_string());
+        let registry = fs::read_to_string(registry_marker(&file))
+            .ok()
+            .map(|s| s.trim().to_string());
         Ok(Some(CacheEntry {
             name: name.to_string(),
             version: version.to_string(),
             path: file,
             sha256: sha256.to_string(),
             origin,
+            registry,
         }))
     }
 
@@ -223,9 +231,9 @@ impl PayloadCache {
     /// under `all` (the locked rule: prune never strands a pin — the
     /// caller builds the set from config defaults, disabled selectors,
     /// and the per-name newest floor). Removal deletes the version's
-    /// whole record — `<v>.tfs`, the `.tfs.sha256`/`.tfs.origin` markers,
-    /// the `<v>.manifest.yaml` mirror, a materialized `<v>.tree/`, the
-    /// install lock — and the `<name>/` dir when it goes empty. Returns
+    /// whole record — `<v>.tfs`, the `.tfs.sha256`/`.tfs.origin`/
+    /// `.tfs.registry` markers, the `<v>.manifest.yaml` mirror, a
+    /// materialized `<v>.tree/`, the install lock — and the `<name>/` dir when it goes empty. Returns
     /// the removed pairs in `list()` order (name, then version).
     pub fn prune(
         &self,
@@ -258,6 +266,7 @@ impl PayloadCache {
                 entry.path.clone(),
                 sha_marker(&entry.path),
                 origin_marker(&entry.path),
+                registry_marker(&entry.path),
                 dir.join(format!("{}.manifest.yaml", entry.version)),
                 dir.join(format!(".install-{}.lock", entry.version)),
             ] {
@@ -276,6 +285,66 @@ impl PayloadCache {
             removed.push(key);
         }
         Ok(removed)
+    }
+
+    /// Spec 37 §7's origin binding: record WHICH registry resolved the
+    /// entry — the canonical registry REFERENCE, never an alias (aliases
+    /// are local and volatile; the marker must outlive config edits).
+    /// Returns the previous binding when one stood AND differed — the
+    /// caller journals that rebind (`install <alias>/<name>` is the only
+    /// act that produces it); `Ok(None)` is a first bind or an
+    /// idempotent re-mark. Marking an entry that is not installed is an
+    /// error (an orphan marker would bind nothing).
+    pub fn mark_registry(
+        &self,
+        name: &str,
+        version: &str,
+        registry: &str,
+    ) -> Result<Option<String>, ResolveError> {
+        let file = self.entry_file(name, version)?;
+        if self.get(name, version)?.is_none() {
+            return Err(ResolveError::CacheIo {
+                op: "marking the origin registry of",
+                path: file,
+                reason: "the payload entry is not installed".to_string(),
+            });
+        }
+        let marker = registry_marker(&file);
+        let previous = fs::read_to_string(&marker)
+            .ok()
+            .map(|s| s.trim().to_string());
+        fs::write(&marker, format!("{registry}\n")).map_err(|e| cache_io("marking", &marker, e))?;
+        Ok(previous.filter(|p| p != registry))
+    }
+
+    /// The distinct origin-registry bindings across the cached versions
+    /// of `name` (spec 37 §7) — the confinement set the resolution paths
+    /// consult: a bound payload resolves through its origin registry
+    /// only, and a same-named row anywhere else is never a silent
+    /// upgrade. Sorted, deduped; empty = unbound (a legacy cache, a
+    /// ref-form/local install, or a carried slice) and resolution
+    /// behaves as before. Read-only, like `list`.
+    pub fn bound_registries(&self, name: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        if Self::validate_key(name).is_err() {
+            return out;
+        }
+        if let Ok(files) = fs::read_dir(self.root.join("payloads").join(name)) {
+            for file in files.flatten() {
+                let file_name = file.file_name().to_string_lossy().into_owned();
+                if let Some(version) = file_name.strip_suffix(".tfs") {
+                    if let Ok(Some(entry)) = self.get(name, version) {
+                        if let Some(registry) = entry.registry {
+                            if !out.contains(&registry) {
+                                out.push(registry);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
     }
 
     /// `expected_sha256` when given (registry-supplied trust anchor), and
@@ -332,6 +401,7 @@ impl PayloadCache {
                     path: file,
                     sha256: fetched.sha256,
                     origin: Some(fetched.origin),
+                    registry: None,
                 },
                 InstallStatus::Installed,
             ))
@@ -401,6 +471,7 @@ impl PayloadCache {
                     path: file,
                     sha256,
                     origin: Some(origin),
+                    registry: None,
                 },
                 InstallStatus::Installed,
             ))
@@ -605,6 +676,15 @@ fn sha_marker(file: &Path) -> PathBuf {
 fn origin_marker(file: &Path) -> PathBuf {
     file.with_file_name(format!(
         "{}.origin",
+        file.file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default()
+    ))
+}
+
+fn registry_marker(file: &Path) -> PathBuf {
+    file.with_file_name(format!(
+        "{}.registry",
         file.file_name()
             .map(|n| n.to_string_lossy())
             .unwrap_or_default()
@@ -1261,6 +1341,112 @@ mod tests {
         assert!(!root.join("payloads/tool/.install-1.0.lock").exists());
         assert!(root.join("payloads/tool/2.0.tfs").is_file());
         assert!(root.join("payloads/tool/2.0.manifest.yaml").is_file());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn origin_binding_marks_round_trips_and_rebinds() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        cache
+            .install("tool", "1.0", None, || Ok(fetched(b"payload")))
+            .unwrap();
+        // a fresh install is unbound (spec 37 §7: the binding records the
+        // RESOLVING registry, which the bytes-only verbs never know)
+        let entry = cache.get("tool", "1.0").unwrap().unwrap();
+        assert_eq!(entry.registry, None);
+        assert_eq!(cache.bound_registries("tool"), Vec::<String>::new());
+
+        // first bind: no previous
+        let prev = cache
+            .mark_registry("tool", "1.0", "tfs:github:one/registry")
+            .unwrap();
+        assert_eq!(prev, None);
+        assert_eq!(
+            fs::read_to_string(root.join("payloads/tool/1.0.tfs.registry")).unwrap(),
+            "tfs:github:one/registry\n"
+        );
+        let entry = cache.get("tool", "1.0").unwrap().unwrap();
+        assert_eq!(entry.registry.as_deref(), Some("tfs:github:one/registry"));
+        assert_eq!(
+            cache.bound_registries("tool"),
+            vec!["tfs:github:one/registry".to_string()]
+        );
+
+        // an idempotent re-mark reports nothing; a DIFFERENT registry is
+        // the rebind and reports the previous binding
+        let prev = cache
+            .mark_registry("tool", "1.0", "tfs:github:one/registry")
+            .unwrap();
+        assert_eq!(prev, None);
+        let prev = cache
+            .mark_registry("tool", "1.0", "tfs:github:two/registry")
+            .unwrap();
+        assert_eq!(prev.as_deref(), Some("tfs:github:one/registry"));
+        assert_eq!(
+            cache
+                .get("tool", "1.0")
+                .unwrap()
+                .unwrap()
+                .registry
+                .as_deref(),
+            Some("tfs:github:two/registry")
+        );
+
+        // marking an entry that is not installed binds nothing
+        let err = cache
+            .mark_registry("ghost", "9.9", "tfs:github:one/registry")
+            .unwrap_err();
+        assert!(matches!(err, ResolveError::CacheIo { .. }));
+        assert!(!root.join("payloads/ghost/9.9.tfs.registry").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bound_registries_unions_across_versions_and_prune_drops_the_marker() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        cache
+            .install("tool", "1.0", None, || Ok(fetched(b"one")))
+            .unwrap();
+        cache
+            .install("tool", "2.0", None, || Ok(fetched(b"two")))
+            .unwrap();
+        cache
+            .install("tool", "3.0", None, || Ok(fetched(b"three")))
+            .unwrap();
+        cache
+            .mark_registry("tool", "2.0", "tfs:github:two/registry")
+            .unwrap();
+        cache
+            .mark_registry("tool", "1.0", "tfs:github:one/registry")
+            .unwrap();
+        // 3.0 stays unbound (a ref-form install): the union carries the
+        // bound registries only, sorted + deduped
+        cache
+            .mark_registry("tool", "3.0", "tfs:github:two/registry")
+            .unwrap();
+        assert_eq!(
+            cache.bound_registries("tool"),
+            vec![
+                "tfs:github:one/registry".to_string(),
+                "tfs:github:two/registry".to_string()
+            ]
+        );
+        assert_eq!(
+            cache.bound_registries("never-installed"),
+            Vec::<String>::new()
+        );
+
+        // pruning a bound version drops its registry marker with the
+        // rest of the record — the confinement set shrinks accordingly
+        let protected = std::collections::BTreeSet::new();
+        let removed = cache.prune(true, None, &protected).unwrap();
+        assert_eq!(removed.len(), 3);
+        assert!(!root.join("payloads/tool/1.0.tfs.registry").exists());
+        assert_eq!(cache.bound_registries("tool"), Vec::<String>::new());
         let _ = fs::remove_dir_all(&root);
     }
 }

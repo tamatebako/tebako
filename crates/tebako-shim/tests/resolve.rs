@@ -206,6 +206,60 @@ fn project_registry_scope_wins_over_the_user_default_scope() {
     assert_eq!(res.version, "1.0.0");
 }
 
+// ---------------------------------------------------------------------
+// spec 37 §7 — origin binding confines the registry default
+// ---------------------------------------------------------------------
+
+#[test]
+fn origin_binding_confines_the_registry_default_to_the_bound_registry() {
+    let tmp = TempDir::new("origin-bound");
+    let home = tmp.path().join("home");
+    seed_metanorma(&home);
+    let (one, two) = seed_two_registries(tmp.path());
+    two_registry_config(&home, &one, &two);
+    // Every installed version is bound to TWO — the second registry in
+    // book order. An unconfined walk would take one's 1.0.0 first; the
+    // binding confines the default to the origin registry's 1.2.2.
+    let cache = tebako_resolve::PayloadCache::with_root(&home);
+    for v in ["1.0.0", "1.2.2", "1.2.3"] {
+        cache
+            .mark_registry("metanorma", v, &tebako_http::file_url(&two))
+            .unwrap();
+    }
+    let res = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap();
+    assert_eq!(res.version, "1.2.2");
+    match &res.source {
+        VersionSource::RegistryDefault(reg) => assert_eq!(reg, &tebako_http::file_url(&two)),
+        other => panic!("expected the registry default, got {other:?}"),
+    }
+}
+
+#[test]
+fn authored_registry_scope_wins_over_the_origin_binding() {
+    let tmp = TempDir::new("origin-vs-scope");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_metanorma(&home);
+    let (one, two) = seed_two_registries(tmp.path());
+    two_registry_config(&home, &one, &two);
+    let cache = tebako_resolve::PayloadCache::with_root(&home);
+    for v in ["1.0.0", "1.2.2", "1.2.3"] {
+        cache
+            .mark_registry("metanorma", v, &tebako_http::file_url(&two))
+            .unwrap();
+    }
+    // The authored `registry:` pin is the explicit act (spec 37 §3) — it
+    // outranks the origin binding, exactly like `install <alias>/name`.
+    std::fs::write(
+        proj.join(".tebako-tools.yaml"),
+        "metanorma: {registry: one}\n",
+    )
+    .unwrap();
+    let res = resolve::resolve("metanorma", &ctx(&home, &proj)).unwrap();
+    assert_eq!(res.version, "1.0.0");
+}
+
 #[test]
 fn an_unknown_registry_alias_is_the_named_error_listing_the_book() {
     let tmp = TempDir::new("scope-unknown");
