@@ -106,6 +106,61 @@ key. A key that changes unexpectedly is a hard failure naming both
 fingerprints; legitimate rotation carries a signed successor statement
 that forward-verifies.
 
+## Credentials for private registries (spec 37 §5)
+
+Registries and payloads hosted on private repositories need a token.
+The `credentials:` section of `~/.tebako/config.yaml` declares them —
+by environment variable NAME only; a secret never appears in the
+config file:
+
+```yaml
+registries:
+  - ref: tfs:github:acme/private-flavors
+    name: acme
+credentials:
+  - registry: acme              # tier 1: keyed by the registry's alias
+    token_env: ACME_GH_TOKEN
+  - host: ghe.corp.internal     # tier 2: keyed by an exact host
+    token_env: GHE_TOKEN
+```
+
+Each entry names exactly one selector — `registry:` (a registry-book
+alias) or `host:` (an exact host, ports allowed). Both or neither is a
+named config error (`InvalidCredentialEntry`, exit 65), and so is a
+malformed `token_env` or two entries naming the same selector
+(`DuplicateCredentialSelector`, both entries named). Config validation
+is fail-closed at load, before any fetch.
+
+At fetch time the lookup is two-tier, then ambient, then anonymous:
+
+1. A tier-1 entry whose alias is the registry that directed the fetch —
+   and only within its **confinement**: the hosts of that registry's
+   own reference (a GitHub registry confines to `api.github.com` and
+   `github.com`; a self-hosted ref confines to its one host). The token
+   never leaks to another host: a confined-out URL falls through to the
+   host chain, never to the tier-1 token.
+2. A tier-2 entry matching the URL's exact host (no suffix games — a
+   subdomain of a named host is a different host).
+3. The ambient `TEBAKO_GITHUB_TOKEN` / `GITHUB_TOKEN`, on the GitHub
+   API host only (the pre-spec-37 behavior).
+4. Anonymous.
+
+The header shape follows the service: `Authorization: Bearer` for
+GitHub (and for plain-HTTPS hosts), `PRIVATE-TOKEN` for GitLab, and
+HTTP Basic of the raw `user:app-password` value for Bitbucket. A
+matched entry whose env var is unset attaches nothing and stops the
+chain — there is no fall-through past a named credential.
+
+Every credentialed fetch journals its decision to `journal.log` as
+`event=fetch host=<host> credential=<class>` where the class is
+`token:env:<VAR>` or `anonymous` — the credential CLASS only, never a
+value. Book-empty machines journal nothing new.
+
+A service's 401/403 is never retried as a download failure: it becomes
+the named `CredentialRequired` (exit 69), naming the host, the
+directing registry's alias, the env var a matched entry wanted, and the
+`credentials:` steer.
+
 ## Relationship to everything else
 
 The registry is only a finding mechanism. Verification, storage, and

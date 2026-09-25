@@ -813,6 +813,9 @@ impl<T: Transport> Fetcher<T> {
                 what: format!("registry {r}"),
             });
         }
+        // The tier-1 key (spec 37 §5): the registry-file fetch matches
+        // its OWN registry's alias — the book's ref reverse-lookup.
+        let alias = self.effective_book().alias_of(&r.as_canonical_string());
         match r {
             RegistryRef::DefaultBranch {
                 service,
@@ -821,8 +824,9 @@ impl<T: Transport> Fetcher<T> {
                 repo,
                 sha256,
             } => {
+                let scoped = self.scoped_transport(alias.as_deref(), Some(*service), host.clone());
                 let bytes = crate::adapters::adapter_for_host(*service, host.as_deref())?
-                    .registry_file(&self.transport, owner, repo)?;
+                    .registry_file(&scoped, owner, repo)?;
                 if let Some(expected) = sha256 {
                     let actual = crate::fetch::sha256_hex(&bytes);
                     if &actual != expected {
@@ -838,7 +842,9 @@ impl<T: Transport> Fetcher<T> {
             RegistryRef::ReleaseArtifact(reference)
             | RegistryRef::GitBlob(reference)
             | RegistryRef::Https(reference)
-            | RegistryRef::File(reference) => Ok(self.fetch(reference)?.bytes),
+            | RegistryRef::File(reference) => {
+                Ok(self.fetch_scoped(reference, alias.as_deref())?.bytes)
+            }
         }
     }
 

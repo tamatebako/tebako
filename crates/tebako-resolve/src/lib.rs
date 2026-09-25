@@ -26,6 +26,7 @@
 pub mod adapters;
 pub mod cache;
 pub mod contract;
+pub mod credentials;
 pub mod error;
 pub mod fetch;
 #[cfg(feature = "git")]
@@ -40,8 +41,9 @@ pub use cache::{
     default_cache_root, CacheEntry, InstallStatus, PayloadCache, ProtectedSet, SeedOutcome,
 };
 pub use contract::{ContractError, ContractSet};
+pub use credentials::{CredentialBook, CredentialEntry, Decision, Tier1Entry};
 pub use error::{ReferenceError, RegistryError, ResolveError};
-pub use fetch::{sha256_hex, FetchedPayload, Fetcher};
+pub use fetch::{sha256_hex, CredTransport, FetchedPayload, Fetcher};
 pub use plan::{
     execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
     DEFAULT_FETCH_JOBS, FETCH_JOBS_ENV,

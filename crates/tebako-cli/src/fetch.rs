@@ -26,8 +26,9 @@ pub fn read_url(url: &str) -> Result<Vec<u8>, FetchError> {
 /// `with_retries`: IndexUnavailable returns immediately (try the next
 /// index name); Throttled honors the server's schedule (bounded by
 /// THROTTLE_ATTEMPTS); the deterministic network-configuration errors
-/// (proxy auth refused, networking compiled out, invalid config) return
-/// immediately — no retry can change a config answer; other failures
+/// (proxy auth refused, networking compiled out, invalid config,
+/// credential answers) return immediately — no retry can change a
+/// config answer; other failures
 /// retry up to DOWNLOAD_ATTEMPTS with a fixed delay.
 pub fn with_retries<F>(url: &str, mut f: F) -> Result<Vec<u8>, FetchError>
 where
@@ -45,7 +46,9 @@ where
                 e @ (FetchError::ProxyAuthRequired(_)
                 | FetchError::NetworkingCompiledOut(_)
                 | FetchError::NetConfig(_)
-                | FetchError::Cancelled(_)),
+                | FetchError::Cancelled(_)
+                | FetchError::AuthRejected { .. }
+                | FetchError::CredentialRequired { .. }),
             ) => return Err(e),
             Err(FetchError::Throttled {
                 retry_after,

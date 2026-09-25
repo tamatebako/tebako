@@ -620,6 +620,7 @@ fn fetch_slice(
         sha256_pin: None,
         size_hint: None,
         tmp_dir: home.join("tmp"),
+        registry_alias: None,
         commit: Box::new(|staged: &StagedArtifact| {
             if let Err(e) = verify_slice_signature_staged(
                 ctx,

@@ -526,7 +526,10 @@ fn spawned_payload_row<T: Transport>(
                 }));
             }
             let fetched = fetcher
-                .fetch(&install_plan.reference)
+                .fetch_scoped(
+                    &install_plan.reference,
+                    install_plan.registry_alias.as_deref(),
+                )
                 .map_err(install::map_resolve)?;
             // spec 09 §4's press-time point: the declared signature
             // verifies BEFORE the bytes enter the cache and before the

@@ -18,10 +18,13 @@
 //!   named-error); the registry model is tebako-resolve's (one model,
 //!   parse + validate).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+
+pub use tebako_resolve::credentials::CredentialEntry;
+use tebako_resolve::credentials::{CredentialBook, Tier1Entry};
 
 use crate::{fail, Ctx, ShimError, EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 
@@ -40,6 +43,11 @@ pub struct UserConfig {
     /// alias-resolved view is [`UserConfig::registry_book`].
     #[serde(default)]
     pub registries: Vec<RegistryBookEntry>,
+    /// Spec 37 §5's credential book: env var NAMES (never secrets)
+    /// keyed by registry alias (tier 1) or host (tier 2). The
+    /// validated, book-resolved view is [`UserConfig::credential_book`].
+    #[serde(default)]
+    pub credentials: Vec<CredentialEntry>,
     /// Engine → runtime preference (the download fallback of spec 05 §5:
     /// "download the newest compatible" needs an exact ref; the
     /// preference names it until the runtime registry ships).
@@ -468,6 +476,154 @@ impl UserConfig {
     }
 }
 
+// ---------------------------------------------------------------------
+// spec 37 §5 — the credential book
+// ---------------------------------------------------------------------
+
+/// The `token_env` grammar (config holds env var NAMES, never secrets):
+/// `[A-Za-z_][A-Za-z0-9_]*`.
+fn valid_token_env(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// The hosts a tier-1 credential for the registry at `reference` may be
+/// presented to (spec 37 §5's confinement): the ref's own host plus the
+/// service's API host — derived from the ADAPTERS' base-url
+/// construction ([`tebako_resolve::adapters::service_hosts`], the SSOT),
+/// never a hand-written mapping here. A GitBlob ref contributes the git
+/// host, an Https ref the URL host, a File ref nothing.
+fn registry_ref_hosts(reference: &str) -> BTreeSet<String> {
+    use tebako_resolve::{Reference, RegistryRef};
+    match RegistryRef::parse(reference) {
+        Ok(RegistryRef::DefaultBranch { service, host, .. })
+        | Ok(RegistryRef::ReleaseArtifact(Reference::Service { service, host, .. })) => {
+            tebako_resolve::adapters::service_hosts(service, host.as_deref())
+        }
+        Ok(RegistryRef::GitBlob(Reference::Git { url, .. })) => url
+            .split('/')
+            .next()
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        Ok(RegistryRef::Https(Reference::Https { url, .. })) => {
+            tebako_resolve::credentials::url_host(&url)
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        }
+        _ => BTreeSet::new(),
+    }
+}
+
+/// The canonical form of a registry ref (the ref_index's lookup key —
+/// `resolve_registry` reverse-looks its parsed ref's canonical string).
+/// An unparseable ref indexes under its authored spelling (resolution
+/// names it later, at its own boundary).
+fn canonical_ref(reference: &str) -> String {
+    tebako_resolve::RegistryRef::parse(reference)
+        .map(|r| r.as_canonical_string())
+        .unwrap_or_else(|_| reference.to_string())
+}
+
+impl UserConfig {
+    /// The validated credential book (spec 37 §5), fail-closed at
+    /// config load like the registry book: exactly one selector per
+    /// entry (`registry:` XOR `host:` — both or neither is a named
+    /// config error), a well-formed `token_env`, and no duplicate
+    /// tier-1 alias or tier-2 host (`DuplicateCredentialSelector`,
+    /// both entries named). A tier-1 alias matching NO registry book
+    /// entry is ACCEPTED (absent-behavior — an entry for a later-added
+    /// registry must not break loads); its allowed-host set stays
+    /// empty until the registry exists.
+    pub fn credential_book(&self) -> Result<CredentialBook, ShimError> {
+        let mut tier1: Vec<Tier1Entry> = Vec::new();
+        let mut tier2: Vec<(String, String)> = Vec::new();
+        for entry in &self.credentials {
+            match (&entry.registry, &entry.host) {
+                (Some(_), Some(_)) => {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        "a credentials entry names both `registry:` and `host:` (InvalidCredentialEntry) — exactly one selector per entry (spec 37 §5)",
+                    )
+                }
+                (None, None) => {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        "a credentials entry names neither `registry:` nor `host:` (InvalidCredentialEntry) — exactly one selector per entry (spec 37 §5)",
+                    )
+                }
+                _ => {}
+            }
+            if !valid_token_env(&entry.token_env) {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "a credentials entry's token_env '{}' is malformed (InvalidCredentialEntry) — the grammar is [A-Za-z_][A-Za-z0-9_]* (config holds env var NAMES, never secrets)",
+                        entry.token_env
+                    ),
+                );
+            }
+            if let Some(alias) = &entry.registry {
+                if let Some(prior) = tier1.iter().find(|e| &e.alias == alias) {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "credentials entries for registry '{alias}' name both {} and {} (DuplicateCredentialSelector) — one entry per selector",
+                            prior.token_env, entry.token_env
+                        ),
+                    );
+                }
+                tier1.push(Tier1Entry {
+                    alias: alias.clone(),
+                    token_env: entry.token_env.clone(),
+                    allowed_hosts: BTreeSet::new(),
+                });
+            }
+            if let Some(host) = &entry.host {
+                if let Some((_, prior_env)) = tier2.iter().find(|(h, _)| h == host) {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "credentials entries for host '{host}' name both {prior_env} and {} (DuplicateCredentialSelector) — one entry per selector",
+                            entry.token_env
+                        ),
+                    );
+                }
+                tier2.push((host.clone(), entry.token_env.clone()));
+            }
+        }
+        // The tier-1 allowed-host sets flow from the registry book: the
+        // alias's ref, parsed through the ONE registry-ref grammar.
+        let rows = self.registry_book()?;
+        for entry in &mut tier1 {
+            if let Some(row) = rows
+                .iter()
+                .find(|r| r.alias.as_deref() == Some(entry.alias.as_str()))
+            {
+                entry.allowed_hosts = registry_ref_hosts(row.entry.reference());
+            }
+        }
+        let ref_index = rows
+            .iter()
+            .filter_map(|row| {
+                row.alias
+                    .clone()
+                    .map(|alias| (canonical_ref(row.entry.reference()), alias))
+            })
+            .collect();
+        Ok(CredentialBook {
+            tier1,
+            tier2,
+            ref_index,
+        })
+    }
+}
+
 /// The `network:` section of `~/.tebako/config.yaml` — all keys optional.
 /// These are the config MIRRORS of the env spellings; the environment
 /// always wins per key (merge in `tebako_http::netconfig`).
@@ -513,23 +669,36 @@ pub fn config_path(home: &Path) -> PathBuf {
 pub fn load_config(home: &Path) -> Result<UserConfig, ShimError> {
     let path = config_path(home);
     let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(UserConfig::default()),
+        Ok(t) => Some(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return fail(EX_TEBAKO_IO, format!("cannot read {}: {e}", path.display())),
     };
-    let cfg: UserConfig = serde_yaml::from_str(&text).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_MANIFEST,
-            format!(
-                "cannot parse {} ({e}) — fix or remove it; run `tebako-shim doctor`",
-                path.display()
-            ),
-        )
-    })?;
+    let cfg: UserConfig = match text {
+        None => UserConfig::default(),
+        Some(text) => serde_yaml::from_str(&text).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "cannot parse {} ({e}) — fix or remove it; run `tebako-shim doctor`",
+                    path.display()
+                ),
+            )
+        })?,
+    };
     // The registry book validates at load (spec 37 §2 — fail-closed):
     // a malformed alias, a collision, or two defaults is the named
     // error here, never a surprise mid-resolution.
     cfg.registry_book()?;
+    // The credential book validates at load too (spec 37 §5 — selector
+    // shape, token_env grammar, duplicate selectors), then installs
+    // process-wide HERE — the ONE install point, so every consumer
+    // (the cli, shim dispatch, pkg) decides with no call-site churn.
+    // Book-empty configs install the empty book: decisions
+    // short-circuit to the ambient/anonymous behavior and the fetch
+    // journal stays silent.
+    let book = cfg.credential_book()?;
+    tebako_resolve::credentials::install_book(book);
+    tebako_resolve::credentials::set_journal_home(Some(home.to_path_buf()));
     Ok(cfg)
 }
 
@@ -1547,5 +1716,157 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(rows[0].entry.require_signed);
         assert_eq!(rows[0].entry.reference(), "tfs:github:acme/signed");
+    }
+
+    // spec 37 §5 — the credential book
+
+    #[test]
+    fn credentials_parse_the_map_form() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "credentials:\n  - registry: nist\n    token_env: NIST_GH_TOKEN\n  - host: ghe.corp.internal\n    token_env: GHE_TOKEN\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.credentials.len(), 2);
+        assert_eq!(cfg.credentials[0].registry.as_deref(), Some("nist"));
+        assert_eq!(cfg.credentials[0].host, None);
+        assert_eq!(cfg.credentials[0].token_env, "NIST_GH_TOKEN");
+        assert_eq!(cfg.credentials[1].registry, None);
+        assert_eq!(
+            cfg.credentials[1].host.as_deref(),
+            Some("ghe.corp.internal")
+        );
+        assert_eq!(cfg.credentials[1].token_env, "GHE_TOKEN");
+    }
+
+    #[test]
+    fn credentials_reject_an_unknown_key_at_parse() {
+        let err = serde_yaml::from_str::<UserConfig>(
+            "credentials:\n  - registry: nist\n    token_env: NIST_GH_TOKEN\n    token: hunter2\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("token"), "{err}");
+    }
+
+    #[test]
+    fn credential_book_rejects_both_selectors() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "credentials:\n  - registry: nist\n    host: api.github.com\n    token_env: NIST_GH_TOKEN\n",
+        )
+        .unwrap();
+        let err = cfg.credential_book().unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{err:?}");
+        assert!(err.message.contains("(InvalidCredentialEntry)"), "{err:?}");
+    }
+
+    #[test]
+    fn credential_book_rejects_neither_selector() {
+        let cfg: UserConfig =
+            serde_yaml::from_str("credentials:\n  - token_env: NIST_GH_TOKEN\n").unwrap();
+        let err = cfg.credential_book().unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{err:?}");
+        assert!(err.message.contains("(InvalidCredentialEntry)"), "{err:?}");
+    }
+
+    #[test]
+    fn credential_book_rejects_a_malformed_token_env() {
+        for bad in ["9LIVES", "MY-TOKEN", "MY TOKEN", ""] {
+            let cfg: UserConfig = serde_yaml::from_str(&format!(
+                "credentials:\n  - registry: nist\n    token_env: \"{bad}\"\n"
+            ))
+            .unwrap();
+            let err = cfg.credential_book().unwrap_err();
+            assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{bad}: {err:?}");
+            assert!(
+                err.message.contains("(InvalidCredentialEntry)"),
+                "{bad}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn credential_book_rejects_a_duplicate_alias_naming_both_envs() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "credentials:\n  - registry: nist\n    token_env: NIST_GH_TOKEN\n  - registry: nist\n    token_env: OTHER_TOKEN\n",
+        )
+        .unwrap();
+        let err = cfg.credential_book().unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{err:?}");
+        assert!(
+            err.message.contains("(DuplicateCredentialSelector)"),
+            "{err:?}"
+        );
+        assert!(err.message.contains("NIST_GH_TOKEN"), "{err:?}");
+        assert!(err.message.contains("OTHER_TOKEN"), "{err:?}");
+        assert!(err.message.contains("nist"), "{err:?}");
+    }
+
+    #[test]
+    fn credential_book_rejects_a_duplicate_host_naming_both_envs() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "credentials:\n  - host: ghe.corp.internal\n    token_env: GHE_TOKEN\n  - host: ghe.corp.internal\n    token_env: GHE_TOKEN_2\n",
+        )
+        .unwrap();
+        let err = cfg.credential_book().unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{err:?}");
+        assert!(
+            err.message.contains("(DuplicateCredentialSelector)"),
+            "{err:?}"
+        );
+        assert!(err.message.contains("GHE_TOKEN"), "{err:?}");
+        assert!(err.message.contains("GHE_TOKEN_2"), "{err:?}");
+        assert!(err.message.contains("ghe.corp.internal"), "{err:?}");
+    }
+
+    #[test]
+    fn credential_book_derives_tier1_confinement_from_the_registry_book() {
+        let cfg: UserConfig = serde_yaml::from_str(
+            "registries:\n  - ref: tfs:github:acme/priv\n    name: nist\n  - ref: file:///opt/reg.yaml\n    name: local\ncredentials:\n  - registry: nist\n    token_env: NIST_GH_TOKEN\n  - registry: local\n    token_env: LOCAL_TOKEN\n  - registry: notyet\n    token_env: LATER_TOKEN\n  - host: ghe.corp.internal\n    token_env: GHE_TOKEN\n",
+        )
+        .unwrap();
+        let book = cfg.credential_book().unwrap();
+        let tier1 = |alias: &str| {
+            book.tier1
+                .iter()
+                .find(|e| e.alias == alias)
+                .unwrap_or_else(|| panic!("no tier-1 entry for {alias}"))
+        };
+        // The github ref confines to the service hosts (the adapters'
+        // SSOT), the file ref confines to nothing, and an alias the
+        // book does not carry yet is accepted with an empty set.
+        assert_eq!(
+            tier1("nist").allowed_hosts,
+            BTreeSet::from(["api.github.com".to_string(), "github.com".to_string()])
+        );
+        assert!(tier1("local").allowed_hosts.is_empty());
+        assert!(tier1("notyet").allowed_hosts.is_empty());
+        assert_eq!(
+            book.tier2,
+            vec![("ghe.corp.internal".to_string(), "GHE_TOKEN".to_string())]
+        );
+        assert_eq!(
+            book.alias_of("tfs:github:acme/priv"),
+            Some("nist".to_string())
+        );
+        assert_eq!(
+            book.alias_of("file:///opt/reg.yaml"),
+            Some("local".to_string())
+        );
+    }
+
+    #[test]
+    fn load_config_validates_the_credential_book_fail_closed() {
+        let home = fresh_home("credloadbad");
+        std::fs::write(
+            config_path(&home),
+            "credentials:\n  - registry: nist\n    token_env: NIST_GH_TOKEN\n  - registry: nist\n    token_env: OTHER_TOKEN\n",
+        )
+        .unwrap();
+        let err = load_config(&home).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{err:?}");
+        assert!(
+            err.message.contains("(DuplicateCredentialSelector)"),
+            "{err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

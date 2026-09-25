@@ -35,6 +35,8 @@
 use tebako_http::FetchError;
 use tebako_json::{parse as json_parse, Value as JsonValue};
 
+use std::collections::BTreeSet;
+
 use crate::error::ResolveError;
 use crate::reference::Service;
 use crate::transport::Transport;
@@ -111,6 +113,46 @@ pub trait ServiceAdapter {
         owner: &str,
         repo: &str,
     ) -> Result<Vec<u8>, ResolveError>;
+}
+
+/// The host set of `https://…` base/URL text (scheme and path dropped,
+/// `host[:port]` kept).
+fn host_of(base: &str) -> String {
+    base.strip_prefix("https://")
+        .unwrap_or(base)
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
+/// The hosts a credential for `service` at `host` may be presented to
+/// (spec 37 §5's confinement map — the SSOT, derived from the SAME
+/// base-url construction the adapters fetch through, never a second
+/// hand-written mapping): GitHub SaaS `{api.github.com, github.com}`
+/// (the API plus the browser/CDN host), GHE/self-hosted `{h}` (API and
+/// content ride one host), GitLab SaaS `{gitlab.com}` (the API IS the
+/// host), Bitbucket Cloud `{api.bitbucket.org, bitbucket.org}`.
+pub fn service_hosts(service: Service, host: Option<&str>) -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
+    match service {
+        Service::Github => {
+            set.insert(host_of(&GithubAdapter::at(host).api_base));
+            if host.is_none() {
+                set.insert("github.com".to_string());
+            }
+        }
+        Service::Gitlab => {
+            set.insert(host_of(&GitlabAdapter::at(host).api_base));
+        }
+        Service::Bitbucket => {
+            // The one Bitbucket base (Cloud only — an explicit host was
+            // refused at parse, spec 37 §4).
+            set.insert(host_of("https://api.bitbucket.org/2.0"));
+            set.insert("bitbucket.org".to_string());
+        }
+    }
+    set
 }
 
 /// The dispatch table (spec 04 §1): one adapter per service, at its
@@ -192,6 +234,23 @@ fn map_fetch(url: &str, e: FetchError) -> ResolveError {
         FetchError::DownloadFailed(msg) => ResolveError::DownloadFailed {
             origin: url.to_string(),
             reason: msg,
+        },
+        // The credential layer (spec 37 §5) remaps AuthRejected before
+        // this point; an unwrapped sighting is still the credential
+        // refusal, never a retried download failure.
+        FetchError::AuthRejected { .. } => ResolveError::CredentialRequired {
+            registry: None,
+            host: crate::credentials::url_host(url).unwrap_or(url).to_string(),
+            looked_for: None,
+        },
+        FetchError::CredentialRequired {
+            registry,
+            host,
+            looked_for,
+        } => ResolveError::CredentialRequired {
+            registry,
+            host,
+            looked_for,
         },
         // The plan-cancel abort never reaches the buffered adapter reads;
         // map it like a transport failure if a caller ever sees one.
