@@ -71,7 +71,9 @@ tebako install tfs+https://cdn.example.com/app.tfs?sha256=<hex>
   `tebako add-registry tfs:github:metanorma/metanorma` binds the name
   once; thereafter `tebako install metanorma@1.2.3` resolves within
   user-registered registries. The shipped config has ZERO registries —
-  no default of any kind.
+  no default of any kind (the binary itself never seeds one; the
+  INSTALLER's written config and `tebako setup` may seed the official
+  entry as authored, user-removable config — spec 37 §6).
 - Lifecycle: `tebako use app@ver` (switch/rollback, side-by-side
   versions), `.tebako-tools.yaml` per-project pins, `tebako uninstall`,
   `tebako cache list|prune`.

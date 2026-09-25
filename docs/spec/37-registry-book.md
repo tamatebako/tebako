@@ -1,6 +1,6 @@
 # Spec 37 — The registry book: federation, aliases, credentials, the official seed
 
-Status: **PARTIAL** — §2's registry book (the config model, alias
+Status: **SHIPPED** — §2's registry book (the config model, alias
 grammar + derivation, `DuplicateRegistryAlias` /
 `DuplicateDefaultRegistry`, `add-registry --name/--require-signed/
 --default`, the `list-registries` book rendering), §2.2's per-registry
@@ -11,12 +11,17 @@ the `tfs+https://` registry location, the `UnsupportedService` /
 `SshTransportUnsupported` refusals), §5's credential model (the
 two-tier book, the locked confinement, the fetch journal,
 `CredentialRequired` / `InvalidCredentialEntry` /
-`DuplicateCredentialSelector`), §7's origin binding (the
+`DuplicateCredentialSelector`), §6's official seed (`tebako setup` and
+the installer's written config; the tebako-packages/registry aggregate
+flowing the feedstocks' authored rows), §7's origin binding (the
 `.tfs.registry` marker, the confined version chains, the journaled
-rebind), and §8's private runtimes (the DEPENDS-edge `registry:` pin
+rebind), §8's private runtimes (the DEPENDS-edge `registry:` pin
 — payload-manifest schema_minor 14 — the federated release-download
 locator deriving `kind: runtime` rows on GitHub/GHE/GitLab, and
-`require_signed` riding runtime rows) SHIPPED. §6, §9 PLANNED (locked
+`require_signed` riding runtime rows), and §9's three operator tiers
+(their resolution paths — `tfs+https://`, explicit-host git services,
+`file://` + bundles — all ride the shipped grammar; the tier how-tos
+live on tebako.org). (Locked
 direction 2026-09-24; design reviewed with the owner across the
 2026-09-24 session — the alias grammar, the credential confinement
 model, and the federation forms below are the agreed shape). Nothing
