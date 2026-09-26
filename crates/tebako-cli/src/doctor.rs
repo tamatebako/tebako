@@ -240,11 +240,18 @@ fn store_section(home: &Path) -> Section {
                     let name = f.file_name().to_string_lossy().into_owned();
                     // The exe is `tebako-runtime-<ver>-<lang>-<triplet>[.exe]`
                     // (the version carries dots — no naive `contains('.')`);
-                    // images and sidecars ride known suffixes.
+                    // images and sidecars ride known suffixes. The signing
+                    // feature added `.asc` signatures and `manifest.json`
+                    // records — markers, never exes: checking them against
+                    // the exe's `sha256` anchor is a guaranteed false
+                    // mismatch (the anchor digests the exe, not the
+                    // sidecar).
                     let is_image_or_marker = name.ends_with(".tfs")
                         || name.ends_with(".dwarfs")
                         || name.ends_with(".sha256")
-                        || name.ends_with(".origin");
+                        || name.ends_with(".origin")
+                        || name.ends_with(".asc")
+                        || name.ends_with(".json");
                     if name.starts_with("tebako-runtime-") && !is_image_or_marker {
                         exes.push(f.path());
                     } else if name.ends_with(".tfs") || name.ends_with(".dwarfs") {
