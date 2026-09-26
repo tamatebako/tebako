@@ -59,6 +59,13 @@ impl Manifest {
         self.dispatchables().into_iter().find(|d| d.name == name)
     }
 
+    /// The payload's min-runtime floor (spec 03 §2.9, schema_minor 15,
+    /// tebako#666), if declared — runtime resolution discards cached
+    /// runtimes below it and fetches instead.
+    pub fn min_runtime_tebako(&self) -> Option<&str> {
+        self.inner.min_runtime_tebako.as_deref()
+    }
+
     /// The dispatchable commands of this payload: app PROVIDES
     /// entrypoints ∪ toolkit PROVIDES executables (a toolkit executable
     /// is a native, zero-runtime command — never a runtime_requirement).

@@ -94,6 +94,15 @@ pub fn compare(a: &str, b: &str) -> Ordering {
     Ordering::Equal
 }
 
+/// The payload min-runtime floor (spec 03 §2.9, schema_minor 15,
+/// tebako#666): a runtime whose own tebako version is BELOW the floor
+/// the payload declares is stale for that payload — resolution skips it
+/// (spec 05 §5) and the runtime's driver refuses the manifest by name
+/// (spec 17 §8).
+pub fn below_floor(tebako_version: &str, floor: &str) -> bool {
+    compare(tebako_version, floor) == Ordering::Less
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Op {
     Eq,
@@ -236,6 +245,18 @@ mod tests {
         assert_eq!(compare("1.10", "1.9"), Ordering::Greater);
         assert!(compare("3.3.5", "3.4.0") == Ordering::Less);
         assert_eq!(compare("4.0.6", "4.0.6"), Ordering::Equal);
+    }
+
+    #[test]
+    fn below_floor_matches_the_payload_min_runtime_rule() {
+        // spec 03 §2.9 (tebako#666): strictly-below is stale; equal or
+        // newer serves. Missing components are zero (`2.8` == `2.8.0`).
+        assert!(below_floor("2.8.7", "2.8.8"));
+        assert!(below_floor("0.16.23", "2.8.8"));
+        assert!(!below_floor("2.8.8", "2.8.8"));
+        assert!(!below_floor("2.9.0", "2.8.8"));
+        assert!(!below_floor("2.8.8", "2.8"));
+        assert!(below_floor("2.7", "2.8"));
     }
 
     #[test]

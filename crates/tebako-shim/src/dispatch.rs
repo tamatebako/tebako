@@ -322,7 +322,15 @@ fn provider_spawn_pair(
             .runtime_requirement
             .as_ref()
             .expect("provider_spawn_entrypoint post-asserts runtime_requirement");
-        let rt = match runtime::resolve_runtime(Some(reqs), allow_download, ctx)? {
+        // The PROVIDER manifest's min-runtime floor (spec 03 §2.9,
+        // tebako#666) gates this pick — the spawned child is the
+        // provider's own dispatch, driven by the provider's runtime.
+        let rt = match runtime::resolve_runtime(
+            Some(reqs),
+            provider.manifest.min_runtime_tebako.as_deref(),
+            allow_download,
+            ctx,
+        )? {
             runtime::RuntimeResolution::Ready(rt) => *rt,
             runtime::RuntimeResolution::Zero => {
                 unreachable!("a requirement was passed — never Zero")
@@ -372,6 +380,7 @@ fn provider_spawn_pair(
 /// spawn edges is a named error, never a recursion trap.
 fn compose_spawn_lock(
     requires: &[Requirement],
+    min_runtime_tebako: Option<&str>,
     allow_download: bool,
     ctx: &Ctx,
     visiting: &mut Vec<String>,
@@ -397,6 +406,7 @@ fn compose_spawn_lock(
                     implementation.as_deref(),
                     constraint,
                     registry.as_deref(),
+                    min_runtime_tebako,
                     allow_download,
                     ctx,
                 )?;
@@ -442,6 +452,7 @@ fn compose_spawn_lock(
                 visiting.push(provider.name.clone());
                 compose_spawn_lock(
                     &provider.manifest.requires,
+                    provider.manifest.min_runtime_tebako.as_deref(),
                     allow_download,
                     ctx,
                     visiting,
@@ -501,6 +512,7 @@ pub fn plan(
             implementation.as_deref(),
             constraint,
             registry.as_deref(),
+            res.manifest.min_runtime_tebako(),
             allow_download,
             ctx,
         )?;
@@ -574,6 +586,7 @@ pub fn plan(
         let mut visiting = vec![res.payload_name.clone(), provider.name.clone()];
         compose_spawn_lock(
             &provider.manifest.requires,
+            provider.manifest.min_runtime_tebako.as_deref(),
             allow_download,
             ctx,
             &mut visiting,
@@ -616,8 +629,12 @@ pub fn plan(
         }
     }
     let mut mounts = compose_mounts(res, ctx)?;
-    let runtime =
-        runtime::resolve_runtime(entry.runtime_requirement.as_ref(), allow_download, ctx)?;
+    let runtime = runtime::resolve_runtime(
+        entry.runtime_requirement.as_ref(),
+        res.manifest.min_runtime_tebako(),
+        allow_download,
+        ctx,
+    )?;
     // Extension slices (spec 03 §2.8 + spec 07 §2 step 3a): the attached
     // slices' triples append AFTER the app's own mounts, ahead of the
     // triple render in both Ready arms below (the Zero arm carries no
@@ -777,6 +794,7 @@ pub fn plan(
     let mut visiting = vec![res.payload_name.clone()];
     compose_spawn_lock(
         res.manifest.requires(),
+        res.manifest.min_runtime_tebako(),
         allow_download,
         ctx,
         &mut visiting,

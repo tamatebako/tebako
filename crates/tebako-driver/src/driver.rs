@@ -638,6 +638,34 @@ pub(crate) fn read_mounted_text(path: &str) -> Result<String, i32> {
     String::from_utf8(out).map_err(|_| libc::EINVAL)
 }
 
+/// The tebako tooling version this runtime was built from — the
+/// driver's own crate version (the factory builds the runtime exe off a
+/// tebako release; the store grammar names the runtime by that
+/// version). The "have" of the spec 03 §2.9 min-runtime floor.
+pub(crate) const DRIVER_TEBAKO_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The tebako#666 stale-runtime verdict on a PARSED manifest (spec 03
+/// §2.9 + spec 17 §8): `Some((floor, have))` iff the manifest declares a
+/// `min_runtime_tebako` floor above this runtime's tooling version. The
+/// floor key is additive and old-reader-safe, so a manifest can parse
+/// fine and still be too new for the runtime's semantics.
+pub(crate) fn stale_floor(m: &tpkg::PayloadManifest) -> Option<(String, &'static str)> {
+    let floor = m.min_runtime_tebako.as_deref()?;
+    tpkg::versions::below_floor(DRIVER_TEBAKO_VERSION, floor)
+        .then(|| (floor.to_string(), DRIVER_TEBAKO_VERSION))
+}
+
+/// The same verdict for a manifest TEXT whose full parse already FAILED
+/// (the loose scan, tebako#666 proposal 3): the manifest almost
+/// certainly uses grammar this runtime predates — the caller rewords its
+/// corrupt-manifest error into the stale-runtime one instead of blaming
+/// the payload.
+pub(crate) fn stale_floor_in_text(text: &str) -> Option<(String, &'static str)> {
+    let floor = tpkg::PayloadManifest::declared_min_runtime_tebako(text)?;
+    tpkg::versions::below_floor(DRIVER_TEBAKO_VERSION, &floor)
+        .then_some((floor, DRIVER_TEBAKO_VERSION))
+}
+
 /// The mounted image's own manifest, when readable: no manifest
 /// declares nothing (plain images mount fine); a corrupt one is the
 /// image lying about its self-description — a named 65. Shared by the
@@ -650,14 +678,33 @@ pub(crate) fn mounted_manifest_at(
     let Ok(text) = read_mounted_text(&path) else {
         return Ok(None);
     };
-    tpkg::PayloadManifest::from_yaml(&text)
-        .map(Some)
-        .map_err(|e| {
-            manifest(format!(
+    match tpkg::PayloadManifest::from_yaml(&text) {
+        Ok(m) => {
+            // spec 03 §2.9 (tebako#666): the floor gates even a clean
+            // parse — the runtime's semantics predate what the payload
+            // declares.
+            if let Some((floor, have)) = stale_floor(&m) {
+                return Err(manifest(format!(
+                    "the image mounted at '{mount}' declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for this payload's manifest (needs {floor}, have {have}); update the runtime — the payload is not at fault"
+                )));
+            }
+            Ok(Some(m))
+        }
+        Err(e) => {
+            // tebako#666 proposal 3: a manifest this runtime predates
+            // fails the parse — say "runtime too old", not
+            // "self-description lies", when the floor says so.
+            if let Some((floor, have)) = stale_floor_in_text(&text) {
+                return Err(manifest(format!(
+                    "the image mounted at '{mount}' declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for this payload's manifest (needs {floor}, have {have}); update the runtime — the payload is not corrupt (parse: {e})"
+                )));
+            }
+            Err(manifest(format!(
                 "corrupt {} in the image mounted at '{mount}' ({e}) — the payload's self-description lies",
                 tpkg::PAYLOAD_MANIFEST_PATH
-            ))
-        })
+            )))
+        }
+    }
 }
 
 /// The env-image layout check (spec 18 C3): after the env image mounts
@@ -1405,6 +1452,56 @@ pub fn boot_with_mount_modes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_floor_reads_the_declared_min_runtime() {
+        // spec 03 §2.9 (tebako#666): the verdict keys off the declared
+        // floor vs this driver's own tooling version.
+        let yaml = |extra: &str| {
+            format!(
+                "identity:\n  schema_version: 1\n  kind: data\n  name: x\n  version: 1.0.0\n\
+                 \x20 producer: {{tool: t, tool_version: \"1\"}}\n  created: now\n\
+                 \x20 digest: {{tree_hash: \"sha256:{}\", blob_sha256: {}}}\n\
+                 \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+                 provides:\n  mount_semantics: {{suggested: /usr/share/x}}\n  capabilities: {{exec: false, read: true}}\n{extra}",
+                "0".repeat(64),
+                "0".repeat(64),
+            )
+        };
+        let no_floor = tpkg::PayloadManifest::from_yaml(&yaml("")).unwrap();
+        assert!(stale_floor(&no_floor).is_none());
+        let served =
+            tpkg::PayloadManifest::from_yaml(&yaml("min_runtime_tebako: \"0.0.1\"\n")).unwrap();
+        assert!(stale_floor(&served).is_none());
+        let stale =
+            tpkg::PayloadManifest::from_yaml(&yaml("min_runtime_tebako: \"9999.0.0\"\n")).unwrap();
+        let (floor, have) = stale_floor(&stale).expect("a floor past this driver is stale");
+        assert_eq!(floor, "9999.0.0");
+        assert_eq!(have, DRIVER_TEBAKO_VERSION);
+    }
+
+    #[test]
+    fn stale_floor_in_text_survives_a_manifest_this_reader_predates() {
+        // tebako#666 proposal 3: the loose scan answers where the full
+        // parse fails (a requires edge kind from a later schema_minor).
+        let future = "identity:\n  schema_version: 1\n  kind: app\n  name: x\n  version: 1.0.0\n\
+                      \x20 producer: {tool: t, tool_version: \"1\"}\n  created: now\n\
+                      \x20 digest: {tree_hash: \"sha256:00\", blob_sha256: \"00\"}\n\
+                      \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+                      min_runtime_tebako: \"9999.0.0\"\n\
+                      provides:\n  entrypoints: []\n  capabilities: {exec: true, read: true}\n\
+                      requires:\n  - kind: quantum\n    name: q\n    constraint: \">= 1\"\n";
+        assert!(tpkg::PayloadManifest::from_yaml(future).is_err());
+        assert_eq!(
+            stale_floor_in_text(future),
+            Some(("9999.0.0".to_string(), DRIVER_TEBAKO_VERSION))
+        );
+        // Below the floor or absent: no verdict — the caller keeps the
+        // plain corrupt-manifest wording.
+        let old = &future.replace("9999.0.0", "0.0.1");
+        assert_eq!(stale_floor_in_text(old), None);
+        assert_eq!(stale_floor_in_text("not: a manifest\n"), None);
+    }
 
     #[test]
     fn vfs_drive_reads_the_root_drive() {

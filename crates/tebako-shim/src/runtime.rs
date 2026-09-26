@@ -89,10 +89,11 @@ pub enum RuntimeResolution {
 
 pub fn resolve_runtime(
     requirement: Option<&RuntimeRequirements>,
+    min_runtime_tebako: Option<&str>,
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<RuntimeResolution, ShimError> {
-    resolve_runtime_scoped(requirement, None, allow_download, ctx)
+    resolve_runtime_scoped(requirement, None, min_runtime_tebako, allow_download, ctx)
 }
 
 /// [`resolve_runtime`] with the spec 37 §3 edge scope: `scope` is the
@@ -102,9 +103,16 @@ pub fn resolve_runtime(
 /// operator's own channels (the config `source:` pin, the mirror env)
 /// are not registry resolution and stay unscoped; a scoped edge never
 /// falls to the product default.
+///
+/// `min_runtime_tebako` is the payload manifest's min-runtime floor
+/// (spec 03 §2.9, tebako#666): cached runtimes below it are STALE for
+/// this payload — never picked (the download path runs instead) and
+/// named in the miss errors; a downloaded runtime below the floor is
+/// the named stale-runtime refusal.
 fn resolve_runtime_scoped(
     requirement: Option<&RuntimeRequirements>,
     scope: Option<&str>,
+    min_runtime_tebako: Option<&str>,
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<RuntimeResolution, ShimError> {
@@ -119,6 +127,31 @@ fn resolve_runtime_scoped(
     // runtime's `language_version`, falling back to its version on
     // pre-field shards — see tpkg::runtime_store::entry_matches).
     let cached = scan_cached(&ctx.home, reqs.engine());
+    // spec 03 §2.9 (tebako#666): the payload's min-runtime floor —
+    // discard cached runtimes below it BEFORE the compatible pick; they
+    // are named in the miss note, never silently preferred.
+    let (cached, stale_note) = match min_runtime_tebako {
+        Some(floor) => {
+            let (eligible, stale): (Vec<CachedRuntime>, Vec<CachedRuntime>) = cached
+                .into_iter()
+                .partition(|c| !tpkg::versions::below_floor(&c.tebako_version, floor));
+            let note = if stale.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; {} cached runtime(s) below the payload's min_runtime_tebako {floor} were skipped ({})",
+                    stale.len(),
+                    stale
+                        .iter()
+                        .map(|c| format!("{} (tebako {})", c.lang_version, c.tebako_version))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            (eligible, note)
+        }
+        None => (cached, String::new()),
+    };
     if let Some(hit) = newest_compatible_any(&cached, reqs) {
         return Ok(RuntimeResolution::Ready(Box::new(hit)));
     }
@@ -157,10 +190,19 @@ fn resolve_runtime_scoped(
     let cfg = config::load_config(&ctx.home)?;
     let pref = cfg.runtimes.get(reqs.engine());
     let cached_note = if cached.is_empty() {
-        format!("no cached {} runtimes for this platform", reqs.engine())
+        match min_runtime_tebako {
+            // Every cached entry fell below the floor — say so; "no
+            // cached runtimes" would send the operator chasing the
+            // wrong axis (tebako#666).
+            Some(floor) => format!(
+                "no cached {} runtimes at or above the payload's min_runtime_tebako {floor} for this platform{stale_note}",
+                reqs.engine()
+            ),
+            None => format!("no cached {} runtimes for this platform", reqs.engine()),
+        }
     } else {
         format!(
-            "cached {} runtimes ({}) do not satisfy \"{}\"{}{}",
+            "cached {} runtimes ({}) do not satisfy \"{}\"{}{}{}",
             reqs.engine(),
             cached
                 .iter()
@@ -177,7 +219,8 @@ fn resolve_runtime_scoped(
             } else {
                 ""
             },
-            abi_note
+            abi_note,
+            stale_note
         )
     };
     // The download line: the config pin's when one is configured, else
@@ -250,6 +293,21 @@ fn resolve_runtime_scoped(
             ),
         );
     }
+    // tebako#666 proposal 2: with the floor in force, the OFFLINE
+    // refusal names it — the download path's own bare offline error
+    // would hide WHY the compatible cache entries were skipped.
+    if !stale_note.is_empty() && offline_mode(ctx) {
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "no compatible cached runtime for {} \"{}\" at or above the payload's min_runtime_tebako {}{}\n  and TEBAKO_OFFLINE is set — unset it (or set TEBAKO_RUNTIME_MIRROR to a reachable mirror) to fetch a newer runtime",
+                reqs.engine(),
+                described,
+                min_runtime_tebako.unwrap_or_default(),
+                stale_note
+            ),
+        );
+    }
     // The download target is the release index's pick, not only the
     // config pin's: the newest interpreter version that both satisfies
     // the constraint and is released for THIS platform. A readable index
@@ -296,6 +354,23 @@ fn resolve_runtime_scoped(
             }
         }
     }
+    // spec 03 §2.9 (tebako#666): the floor gates the download too — the
+    // configured/default line may serve a runtime older than what the
+    // payload declares (a pinned stale line is the classic case).
+    if let Some(floor) = min_runtime_tebako {
+        if tpkg::versions::below_floor(&rt.tebako_version, floor) {
+            return fail(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "downloaded runtime {}@{} is tebako {} — below the payload's min_runtime_tebako {floor}: the runtime line serving this machine is too old for the payload; pin a newer line (`tebako use --runtime {}@<version>:<tebako-version>`) or re-pin the payload to a version built for older tooling",
+                    reqs.engine(),
+                    target.version,
+                    rt.tebako_version,
+                    reqs.engine()
+                ),
+            );
+        }
+    }
     // spec 28 §8: SOME entry must match the downloaded shard on the
     // shard's own keys — the index's availability row is advisory; a
     // disagreement (implementation / language_version) is the release
@@ -324,11 +399,15 @@ fn resolve_runtime_scoped(
 /// `registry_scope` is the edge's optional `registry:` pin (spec 37 §3):
 /// the registry walk narrows to the one book entry the alias names — an
 /// unknown alias is the named `UnknownRegistryAlias`.
+/// `min_runtime_tebako` is the floor of the manifest owning the edge
+/// (spec 03 §2.9, tebako#666): a cache hit below it is a miss (the
+/// download path runs), and the offline note names it.
 pub fn resolve_runtime_edge(
     engine: &str,
     implementation: Option<&str>,
     constraint: &tpkg::Constraint,
     registry_scope: Option<&str>,
+    min_runtime_tebako: Option<&str>,
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<CachedRuntime, ShimError> {
@@ -336,7 +415,11 @@ pub fn resolve_runtime_edge(
     if let Some(hit) =
         tpkg::runtime_store::resolve_spawned(&ctx.home, engine, implementation, &evaluable)
     {
-        return Ok(hit);
+        let stale = min_runtime_tebako
+            .is_some_and(|floor| tpkg::versions::below_floor(&hit.tebako_version, floor));
+        if !stale {
+            return Ok(hit);
+        }
     }
     if !allow_download {
         // Name WHY the version-matching cache entries are ineligible —
@@ -352,10 +435,15 @@ pub fn resolve_runtime_edge(
                 .map(|c| {
                     let mut why = Vec::new();
                     if c.image.is_none() {
-                        why.push("no verified env image");
+                        why.push("no verified env image".to_string());
                     }
                     if !tpkg::runtime_store::implementation_matches(c, implementation) {
-                        why.push("implementation mismatch");
+                        why.push("implementation mismatch".to_string());
+                    }
+                    if let Some(floor) = min_runtime_tebako {
+                        if tpkg::versions::below_floor(&c.tebako_version, floor) {
+                            why.push(format!("below the payload's min_runtime_tebako {floor}"));
+                        }
                     }
                     format!(
                         "{} (tebako {}): {}",
@@ -384,6 +472,7 @@ pub fn resolve_runtime_edge(
     let RuntimeResolution::Ready(rt) = resolve_runtime_scoped(
         Some(&RuntimeRequirements::one(req)),
         registry_scope,
+        min_runtime_tebako,
         allow_download,
         ctx,
     )?
@@ -430,6 +519,9 @@ pub fn resolve_owner(
         &mirror.engine,
         mirror.implementation.as_deref(),
         &mirror.constraint,
+        None,
+        // spec 33's owner gate below is the composition's own version
+        // discipline; no payload-manifest floor applies here.
         None,
         allow_download,
         ctx,
