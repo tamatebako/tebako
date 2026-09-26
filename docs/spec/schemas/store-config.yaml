@@ -16,7 +16,7 @@
 
 schema: store-config
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 4 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them; 3: env per-tool interpreter-option maps — tebako#559; 4: defaults values may carry slices: + top-level auto_slices: — spec 07 §4 extension slices)
+schema_minor: 5 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them; 3: env per-tool interpreter-option maps — tebako#559; 4: defaults values may carry slices: + top-level auto_slices: — spec 07 §4 extension slices; 5: defaults keys gain the <registry>/<payload> payload-pin form covering every entrypoint of the payload — tebako#667)
 status: normative
 owner: crates/tebako-shim (the config model of record) in tamatebako/tebako
 edge: C13 (everything local → store)
@@ -59,7 +59,7 @@ declaration:
 
 grammar:
   defaults:
-    type: map(command name → [payload@]version pin string | {version?, slices?})
+    type: map(command name | <registry>/<payload> → [payload@]version pin string | {version?, slices?})
     required: false
     notes: >-
       Per-tool version pins, written by `tebako-shim use <tool> <pin>` —
@@ -70,7 +70,17 @@ grammar:
       the value may instead be the map form {version: "…", slices:
       [<slice>@<version>, …]} — either key may be absent (a slices-only
       entry pins no base version); `tebako-shim use` rewrites `version:`
-      in place and preserves `slices:`.
+      in place and preserves `slices:`. MINOR 5 (spec 07 §4, tebako#667):
+      a KEY of the form <registry>/<payload> is the payload-level pin —
+      it covers every entrypoint the payload declares (one line moves a
+      whole suite to a chosen version). The value carries version: only
+      (slices: is per-tool; registry: would duplicate the key's alias).
+      A tool-level pin beats the payload pin for its own command
+      (specific beats general, the chain's first-hit rule within the
+      config tier); a version-less payload pin only scopes the payload's
+      registry-default lookup to the key's alias. Two payload pins
+      naming the same payload with different versions are the named
+      ambiguity error, never a silent winner.
   auto_slices:
     type: boolean
     required: false
@@ -136,5 +146,10 @@ refusals:
       the NAMED grammar error at READ (EX_TEBAKO_MANIFEST, naming the
       chain link and the value — spec 07 §0/§7), never a silent skip to
       the next chain link
+  - case: a defaults key carrying '/' outside the <registry>/<payload> grammar, or two payload pins naming one payload with different versions (MINOR 5, tebako#667)
+    behavior: >-
+      the NAMED grammar / ambiguity error at dispatch
+      (EX_TEBAKO_MANIFEST, naming the keys), never a silent no-match or
+      a silent winner
 
 deprecated: [] # no field is in a deprecation window
