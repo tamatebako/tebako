@@ -2,7 +2,9 @@
 //! invariant 6, spec 07 §4):
 //!
 //! - `~/.tebako/config.yaml` — USER-authored: `defaults:` (per-tool
-//!   version, written by `tebako use <tool>@<version>`), `registries:`
+//!   version, written by `tebako use <tool>@<version>`; a
+//!   `<registry>/<payload>` KEY is the tebako#667 payload-level pin
+//!   covering every entrypoint of the payload), `registries:`
 //!   (spec 04 refs), `runtimes:` (per-engine runtime preferences, written
 //!   by `tebako use --runtime <engine>@<version>`). The dispatcher only
 //!   READS this file; the one write path is `tebako add-registry`
@@ -182,6 +184,129 @@ impl DefaultPin {
             DefaultPin::Version(_) => None,
             DefaultPin::Full { registry, .. } => registry.as_deref(),
         }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Payload-level pins (tebako#667, spec 07 §4)
+// ---------------------------------------------------------------------
+
+/// The `defaults:` key split (tebako#667): a bare key is the per-TOOL
+/// pin it always was; a `<registry>/<payload>` key is the PAYLOAD-level
+/// pin covering every entrypoint the payload declares. `/` never
+/// appears in command names or payload names (the path-component
+/// grammar), so exactly one `/` is unambiguous; the registry alias rides
+/// the KEY (the value's `registry:` field would duplicate it — spec 00
+/// §10, no duplicated authority).
+pub(crate) enum DefaultsKey<'a> {
+    /// `<tool>` — the pre-existing per-entrypoint pin.
+    Tool,
+    /// `<registry>/<payload>` — pins every entrypoint of the payload.
+    PayloadPin { registry: &'a str, payload: &'a str },
+}
+
+/// Classify one `defaults:` key. A key carrying `/` MUST be the
+/// well-formed `<registry>/<payload>` form — a malformed one is the
+/// named grammar error (invariant 9), never a silent no-match.
+pub(crate) fn defaults_key(key: &str) -> Result<DefaultsKey<'_>, ShimError> {
+    if !key.contains('/') {
+        return Ok(DefaultsKey::Tool);
+    }
+    let err = |why: &str| {
+        ShimError::new(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "config.yaml defaults key \"{key}\" is malformed ({why}) — the payload-pin grammar is <registry>/<payload> (spec 07 §4)"
+            ),
+        )
+    };
+    let parts: Vec<&str> = key.split('/').collect();
+    let [registry, payload] = parts.as_slice() else {
+        return Err(err("exactly one '/'"));
+    };
+    if !valid_registry_alias(registry) {
+        return Err(err("the registry part must match [a-z][a-z0-9-]*"));
+    }
+    crate::manifest::check_path_component("payload name", payload)
+        .map_err(|_| err("the payload part must be a payload name"))?;
+    Ok(DefaultsKey::PayloadPin { registry, payload })
+}
+
+/// A payload-level pin's resolved view (tebako#667): the key it came
+/// from, the registry alias, and the pinned version when the entry
+/// carries one (a version-less entry only scopes where resolution
+/// looks — the same rule as the tool form's registry-only entry).
+#[derive(Debug, Clone)]
+pub(crate) struct PayloadDefault {
+    pub registry: String,
+    pub version: Option<String>,
+}
+
+impl UserConfig {
+    /// The payload-level pin covering `payload_name` (tebako#667, spec
+    /// 07 §4): the `defaults:` keys of the `<registry>/<payload>` form
+    /// naming this payload. Two pins naming the same payload with
+    /// DIFFERENT versions (or, version-less, different registries) are
+    /// the named ambiguity error — never a silent winner. A payload pin
+    /// carrying `slices:` is a named error (extension slices are
+    /// per-tool, spec 07 §4).
+    pub(crate) fn payload_default(
+        &self,
+        payload_name: &str,
+    ) -> Result<Option<PayloadDefault>, ShimError> {
+        let mut hit: Option<(PayloadDefault, String)> = None;
+        for (key, pin) in &self.defaults {
+            let DefaultsKey::PayloadPin { registry, payload } = defaults_key(key)? else {
+                continue;
+            };
+            if !pin.slices().is_empty() {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "config.yaml defaults key \"{key}\": a payload pin (<registry>/<payload>) carries version: only — extension slices are per-tool (spec 07 §4)"
+                    ),
+                );
+            }
+            if pin.registry().is_some() {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "config.yaml defaults key \"{key}\": a payload pin's registry rides the KEY (<registry>/<payload>) — drop the value's redundant registry: field"
+                    ),
+                );
+            }
+            if payload != payload_name {
+                continue;
+            }
+            let candidate = PayloadDefault {
+                registry: registry.to_string(),
+                version: pin.version().filter(|v| !v.is_empty()).map(str::to_string),
+            };
+            match &hit {
+                None => hit = Some((candidate, key.clone())),
+                Some((prev, prev_key)) => {
+                    if prev.version != candidate.version {
+                        return fail(
+                            EX_TEBAKO_MANIFEST,
+                            format!(
+                                "config.yaml defaults pins payload \"{payload_name}\" twice with different versions (\"{prev_key}\" → {}, \"{key}\" → {}) — a payload-level pin is one version for the whole payload; drop one",
+                                prev.version.as_deref().unwrap_or("(none)"),
+                                candidate.version.as_deref().unwrap_or("(none)"),
+                            ),
+                        );
+                    }
+                    if prev.registry != candidate.registry && prev.version.is_none() {
+                        return fail(
+                            EX_TEBAKO_MANIFEST,
+                            format!(
+                                "config.yaml defaults pins payload \"{payload_name}\"'s registry scope twice (\"{prev_key}\" and \"{key}\") — keep one",
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(hit.map(|(pd, _)| pd))
     }
 }
 

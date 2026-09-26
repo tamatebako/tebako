@@ -1009,6 +1009,32 @@ fn doctor_routing(ctx: &Ctx, problems: &mut Vec<String>) {
     }
 
     for (tool, value, origin) in &pins {
+        // tebako#667: a `<registry>/<payload>` key is the payload-level
+        // pin — the check is payload + version installed, never the
+        // per-tool claim scan (the key names no command).
+        if tool.contains('/') {
+            match config::defaults_key(tool) {
+                Err(e) => problems.push(e.message),
+                Ok(config::DefaultsKey::PayloadPin { payload, .. }) => {
+                    if !ctx.home.join("payloads").join(payload).is_dir() {
+                        problems.push(format!(
+                            "dangling pin: payload pin \"{tool}\" ({origin}) names payload \"{payload}\", which is not installed"
+                        ));
+                        continue;
+                    }
+                    let installed =
+                        resolve::installed_versions(&ctx.home, payload).unwrap_or_default();
+                    if !installed.iter().any(|v| v == value) {
+                        problems.push(format!(
+                            "dangling pin: payload pin \"{tool}\" ({origin}) names version {value} of \"{payload}\" — installed: {}",
+                            installed.join(", ")
+                        ));
+                    }
+                }
+                Ok(config::DefaultsKey::Tool) => unreachable!("the key carries '/'"),
+            }
+            continue;
+        }
         let pin = match tpkg::toolpin::ToolPin::parse(value) {
             Ok(pin) => pin,
             Err(e) => {
