@@ -13,7 +13,9 @@
 //! 1. Payload VERSION resolution, first match wins:
 //!    `TEBAKO_<TOOL>_VERSION` env → nearest `.tebako-tools.yaml` walking
 //!    up from cwd → user default (`~/.tebako/config.yaml` `defaults:`,
-//!    written by `tebako-shim use`) → registry `default:` (spec 04 §2).
+//!    written by `tebako-shim use`; within the tier the per-tool pin
+//!    beats the tebako#667 payload-level `<registry>/<payload>` pin) →
+//!    registry `default:` (spec 04 §2).
 
 use std::path::{Path, PathBuf};
 
@@ -975,6 +977,18 @@ fn resolve_named(
                 picked = Some((version.to_string(), VersionSource::UserDefault));
             }
         }
+        // 3a. the payload-level pin (tebako#667, spec 07 §4): a
+        // `<registry>/<payload>` defaults key covers every entrypoint
+        // the payload declares. The tool-level pin above (specific)
+        // beats it (general) — the chain's first-hit rule within the
+        // config tier.
+        if picked.is_none() {
+            if let Some(pd) = cfg.payload_default(payload_name)? {
+                if let Some(version) = pd.version {
+                    picked = Some((version, VersionSource::UserDefault));
+                }
+            }
+        }
         // 4. registry default — scoped when a pin names the registry it
         // resolves through (spec 37 §3): the project file's `registry:`
         // wins over the user default pin's; an alias not in the book is
@@ -985,10 +999,16 @@ fn resolve_named(
         if picked.is_none() {
             let scope = match project_registry_scope(&ctx.cwd, tool)? {
                 Some(alias) => Some(alias),
-                None => cfg
+                None => match cfg
                     .defaults
                     .get(tool)
-                    .and_then(|pin| pin.registry().map(str::to_string)),
+                    .and_then(|pin| pin.registry().map(str::to_string))
+                {
+                    Some(alias) => Some(alias),
+                    // tebako#667: a version-less payload pin scopes the
+                    // payload's registry-default lookup to its alias.
+                    None => cfg.payload_default(payload_name)?.map(|pd| pd.registry),
+                },
             };
             let confine = if scope.is_none() {
                 tebako_resolve::PayloadCache::with_root(&ctx.home).bound_registries(payload_name)

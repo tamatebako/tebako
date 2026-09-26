@@ -696,3 +696,126 @@ fn provider_for_bare_default_reports_one_ambiguous_none() {
         other => panic!("expected One, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------
+// Payload-level version pins (tebako#667, spec 07 §4): a
+// `<registry>/<payload>` defaults key covers every entrypoint the
+// payload declares; the per-tool pin (specific) beats it (general).
+// ---------------------------------------------------------------------
+
+const TWO_ENTRIES: &str = "  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n    - name: metanorma-iso\n      path: /app/bin/metanorma-iso\n      runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n";
+
+fn seed_suite(home: &std::path::Path) {
+    for v in ["1.0.0", "1.2.3"] {
+        write_payload(
+            home,
+            "metanorma",
+            v,
+            &app_manifest("metanorma", v, TWO_ENTRIES),
+        );
+    }
+}
+
+#[test]
+fn payload_pin_covers_every_entrypoint() {
+    let tmp = TempDir::new("payload-pin-covers");
+    let home = tmp.path().join("home");
+    seed_suite(&home);
+    write_config(
+        &home,
+        "defaults:\n  \"metanorma/metanorma\": {version: 1.2.3}\n",
+    );
+    for tool in ["metanorma", "metanorma-iso"] {
+        let res = resolve::resolve(tool, &ctx(&home, tmp.path())).unwrap();
+        assert_eq!(res.version, "1.2.3", "{tool}");
+        assert_eq!(res.payload_name, "metanorma");
+        assert!(matches!(res.source, VersionSource::UserDefault), "{tool}");
+    }
+}
+
+#[test]
+fn tool_pin_beats_the_payload_pin() {
+    let tmp = TempDir::new("tool-beats-payload");
+    let home = tmp.path().join("home");
+    seed_suite(&home);
+    write_config(
+        &home,
+        "defaults:\n  metanorma: 1.0.0\n  \"metanorma/metanorma\": {version: 1.2.3}\n",
+    );
+    // the entrypoint-level pin (specific) wins for its own command…
+    let res = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap();
+    assert_eq!(res.version, "1.0.0");
+    // …while the payload pin still covers the rest of the suite
+    let res = resolve::resolve("metanorma-iso", &ctx(&home, tmp.path())).unwrap();
+    assert_eq!(res.version, "1.2.3");
+}
+
+#[test]
+fn env_and_project_beat_the_payload_pin() {
+    let tmp = TempDir::new("env-beats-payload-pin");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_suite(&home);
+    write_config(
+        &home,
+        "defaults:\n  \"metanorma/metanorma\": {version: 1.2.3}\n",
+    );
+    std::fs::write(proj.join(".tebako-tools.yaml"), "metanorma-iso: 1.0.0\n").unwrap();
+    let mut ctx = ctx(&home, &proj);
+    ctx.env
+        .insert("TEBAKO_METANORMA_VERSION".into(), "1.0.0".into());
+    let res = resolve::resolve("metanorma", &ctx).unwrap();
+    assert_eq!(res.version, "1.0.0");
+    assert!(matches!(res.source, VersionSource::Env(_)));
+    let res = resolve::resolve("metanorma-iso", &ctx).unwrap();
+    assert_eq!(res.version, "1.0.0");
+    assert!(matches!(res.source, VersionSource::ProjectFile(_)));
+}
+
+#[test]
+fn two_payload_pins_disagreeing_is_the_named_ambiguity() {
+    let tmp = TempDir::new("payload-pin-ambiguous");
+    let home = tmp.path().join("home");
+    seed_suite(&home);
+    write_config(
+        &home,
+        "defaults:\n  \"org-one/metanorma\": {version: 1.0.0}\n  \"org-two/metanorma\": {version: 1.2.3}\n",
+    );
+    let err = resolve::resolve("metanorma-iso", &ctx(&home, tmp.path())).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(err.message.contains("org-one/metanorma"), "{}", err.message);
+    assert!(err.message.contains("org-two/metanorma"), "{}", err.message);
+}
+
+#[test]
+fn a_malformed_payload_pin_key_is_a_named_grammar_error() {
+    let tmp = TempDir::new("payload-pin-malformed");
+    let home = tmp.path().join("home");
+    seed_suite(&home);
+    write_config(
+        &home,
+        "defaults:\n  \"metanorma/extra/metanorma\": {version: 1.2.3}\n",
+    );
+    let err = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(
+        err.message.contains("<registry>/<payload>"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn a_payload_pin_carrying_slices_is_a_named_error() {
+    let tmp = TempDir::new("payload-pin-slices");
+    let home = tmp.path().join("home");
+    seed_suite(&home);
+    write_config(
+        &home,
+        "defaults:\n  \"metanorma/metanorma\": {version: 1.2.3, slices: [metanorma-bsi@1.2.0]}\n",
+    );
+    let err = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(err.message.contains("slices"), "{}", err.message);
+}
