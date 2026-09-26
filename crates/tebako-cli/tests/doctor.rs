@@ -73,6 +73,67 @@ impl Fixture {
         .unwrap();
         image
     }
+    /// A cached runtime record: exe + the bare-hex `sha256` marker + env
+    /// image + its sidecars. With `signed`, the full signature/manifest
+    /// marker set a signed runtime release installs (`.asc`,
+    /// `manifest.json`, `.manifest.json.asc`) — markers, never exes.
+    fn runtime(&self, ver: &str, lang: &str, triplet: &str, signed: bool) {
+        let dir = self
+            .home
+            .join("runtimes")
+            .join(format!("{lang}-{ver}-{triplet}"));
+        fs::create_dir_all(&dir).unwrap();
+        let stem = format!("tebako-runtime-{ver}-{lang}-{triplet}");
+        let exe = dir.join(&stem);
+        fs::write(&exe, format!("the {stem} exe bytes\n")).unwrap();
+        fs::write(
+            dir.join("sha256"),
+            format!("{}\n", tebako_resolve::sha256_hex(&fs::read(&exe).unwrap())),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("origin"),
+            format!("https://example.invalid/{stem}\n"),
+        )
+        .unwrap();
+        let image = dir.join(format!("{stem}.tfs"));
+        fs::write(&image, format!("the {stem} image bytes\n")).unwrap();
+        fs::write(
+            dir.join(format!("{stem}.tfs.sha256")),
+            format!(
+                "{}  {stem}.tfs\n",
+                tebako_resolve::sha256_hex(&fs::read(&image).unwrap())
+            ),
+        )
+        .unwrap();
+        fs::write(
+            dir.join(format!("{stem}.tfs.origin")),
+            format!("https://example.invalid/{stem}.tfs\n"),
+        )
+        .unwrap();
+        if signed {
+            fs::write(
+                dir.join(format!("{stem}.asc")),
+                "-----BEGIN PGP SIGNATURE-----\n",
+            )
+            .unwrap();
+            fs::write(
+                dir.join(format!("{stem}.tfs.asc")),
+                "-----BEGIN PGP SIGNATURE-----\n",
+            )
+            .unwrap();
+            fs::write(
+                dir.join(format!("{stem}.manifest.json")),
+                format!("{{\"tebako_version\": \"{ver}\"}}\n"),
+            )
+            .unwrap();
+            fs::write(
+                dir.join(format!("{stem}.manifest.json.asc")),
+                "-----BEGIN PGP SIGNATURE-----\n",
+            )
+            .unwrap();
+        }
+    }
 }
 
 impl Drop for Fixture {
@@ -201,4 +262,32 @@ fn doctor_trust_lists_unsigned_and_signed_payloads() {
         out.contains("unsigned payload(s) in the store: demo 1.0.0"),
         "{out}"
     );
+}
+
+#[test]
+fn doctor_signed_runtime_record_is_not_a_false_mismatch() {
+    let fx = Fixture::new("signed-runtime");
+    fx.runtime("0.16.28", "ruby-3.3.12", "macos-arm64", true);
+    let (out, code) = tebako_cli::doctor::run(&fx.home, false, true, &fx.env()).unwrap();
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("tebako doctor: no problems found"), "{out}");
+    // exe + image verified; the .asc/manifest markers are not artifacts
+    assert!(out.contains("2 artifact(s) verified"), "{out}");
+    assert!(!out.contains("sha256 MISMATCH"), "{out}");
+}
+
+#[test]
+fn doctor_tampered_runtime_image_is_a_named_problem() {
+    let fx = Fixture::new("tampered-runtime");
+    let dir = fx
+        .home
+        .join("runtimes")
+        .join("ruby-3.3.12-0.16.28-macos-arm64");
+    fx.runtime("0.16.28", "ruby-3.3.12", "macos-arm64", true);
+    let image = dir.join("tebako-runtime-0.16.28-ruby-3.3.12-macos-arm64.tfs");
+    fs::write(&image, b"tampered image bytes\n").unwrap();
+    let (out, code) = tebako_cli::doctor::run(&fx.home, false, true, &fx.env()).unwrap();
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("sha256 MISMATCH"), "{out}");
+    assert!(out.contains(&image.display().to_string()), "{out}");
 }
