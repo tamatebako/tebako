@@ -564,7 +564,9 @@ fn warm_primary_runtime(
         if warmed.contains(&key) {
             continue;
         }
-        match runtime::resolve_runtime(Some(reqs), true, &ctx).map_err(map_shim)? {
+        match runtime::resolve_runtime(Some(reqs), mirror.min_runtime_tebako(), true, &ctx)
+            .map_err(map_shim)?
+        {
             RuntimeResolution::Ready(rt) => {
                 journal(
                     home,

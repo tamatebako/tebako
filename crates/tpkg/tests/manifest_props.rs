@@ -440,6 +440,7 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
                 materialize,
                 library_aliases,
                 checks,
+                min_runtime_tebako: None,
             }
         },
     )

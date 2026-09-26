@@ -439,3 +439,33 @@ manifest checks), 70 (a tree that fails verification after its one
 re-extraction), 74 (extraction IO failure, a symlink/special entry in
 the tree, the flock timeout). Runtime-side failures keep the
 interpreter's own codes (§4).
+
+## 8. The min-runtime floor (spec 03 §2.9, tebako#666)
+
+Every payload manifest the driver reads at boot — the app payload's, a
+spawned provider's, the env image's own — is gated on the declared
+`min_runtime_tebako` floor against the runtime's own tooling version
+(the driver crate version the factory built the exe from; the store
+grammar names the runtime by it):
+
+- **Clean parse, floor above the runtime:** the boot refuses with the
+  named stale-runtime error — "the runtime is too old for this
+  payload's manifest (needs X, have Y); update the runtime — the
+  payload is not at fault". The key is additive and old-reader-safe, so
+  a manifest can parse fine and still be too new for the runtime's
+  semantics.
+- **Parse failure, floor above the runtime:** the manifest almost
+  certainly uses grammar this runtime predates. The driver reads the
+  floor by a tolerant top-level scan of the raw YAML
+  (`PayloadManifest::declared_min_runtime_tebako`) and rewords the
+  refusal to the same stale-runtime message — NEVER "corrupt manifest /
+  self-description lies", which blames the wrong artifact (the
+  tebako#666 failure class: mount-ancestor routes on pre-#616 runtimes,
+  spec-32 `kind: executable` edges on pre-spec-32 runtimes).
+- **No floor, or a satisfied floor, or an unreadable scan:** the
+  existing wording and codes stand unchanged.
+
+The refusal keeps the manifest class's exit code (65,
+`EX_TEBAKO_MANIFEST`) — the wording, not the code, is the contract
+change; the loader-side resolution floor (spec 05 §5) is what keeps a
+stale runtime from being picked in the first place.

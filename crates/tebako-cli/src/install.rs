@@ -1487,6 +1487,7 @@ fn install_dependency_closure<T: Transport + Sync>(
                 implementation.as_deref(),
                 constraint,
                 registry.as_deref(),
+                mirror.min_runtime_tebako(),
                 expose,
                 shim_binary,
             )?;
@@ -1576,12 +1577,14 @@ fn install_dependency_closure<T: Transport + Sync>(
 /// the shim layer deliberately cannot read images) and register one shim
 /// per exposed name (spec 07's argv0 model; the runtime entrypoint's
 /// `active` flag applies).
+#[allow(clippy::too_many_arguments)] // the edge fields + the floor + install plumbing
 fn install_runtime_edge(
     home: &Path,
     engine: &str,
     implementation: Option<&str>,
     constraint: &tpkg::Constraint,
     registry: Option<&str>,
+    min_runtime_tebako: Option<&str>,
     expose: &[String],
     shim_binary: Option<&Path>,
 ) -> Result<(), TebakoError> {
@@ -1601,6 +1604,7 @@ fn install_runtime_edge(
         implementation,
         constraint,
         registry,
+        min_runtime_tebako,
         true,
         &ctx,
     )
@@ -1819,6 +1823,7 @@ fn install_executable_edge<T: Transport + Sync>(
             req.implementation.as_deref(),
             &req.constraint,
             None,
+            provider_mirror.min_runtime_tebako(),
             true,
             &ctx,
         )
@@ -2177,6 +2182,10 @@ fn synthesize_manifest(
         library_aliases: Vec::new(),
         // …and no checks (spec 26 §1 — the same mirror rule).
         checks: Default::default(),
+        // …and no min-runtime floor (spec 03 §2.9 — the same mirror
+        // rule: the floor is an authored declaration of the embedded
+        // manifest; a synthesized mirror never invents one).
+        min_runtime_tebako: None,
     })
 }
 

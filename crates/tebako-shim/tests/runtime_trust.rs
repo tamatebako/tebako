@@ -130,8 +130,9 @@ fn a_signed_release_verifies_and_journals_the_strength() {
     // Fail-closed mode on: a signed release must sail through it.
     ctx.env.insert("TEBAKO_REQUIRE_SIGNED".into(), "1".into());
 
-    let rt =
-        ready(runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap());
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx).unwrap(),
+    );
     assert_eq!(rt.lang_version, "4.0.6");
     assert!(rt.exe.is_file());
     assert!(rt.image.is_some());
@@ -187,8 +188,8 @@ fn an_untrusted_signer_is_exit_72() {
         tebako_signer::ANCHOR_BASE_ENV.into(),
         tebako_http::file_url(&anchor),
     );
-    let err =
-        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx)
+        .unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_TRUST, "{}", err.message);
     assert!(
         err.message.contains("trust-anchor channel"),
@@ -280,7 +281,7 @@ fn an_unknown_root_chain_signer_is_retrieved_admitted_and_installed() {
     );
     let old_root = std::env::var("TEBAKO_TRUSTED_ROOT").ok();
     std::env::set_var("TEBAKO_TRUSTED_ROOT", &root_fp);
-    let result = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx);
+    let result = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx);
     match &old_root {
         Some(v) => std::env::set_var("TEBAKO_TRUSTED_ROOT", v),
         None => std::env::remove_var("TEBAKO_TRUSTED_ROOT"),
@@ -347,8 +348,8 @@ fn a_served_key_off_the_root_chain_is_the_loud_refusal() {
         tebako_signer::ANCHOR_BASE_ENV.into(),
         tebako_http::file_url(&anchor),
     );
-    let err =
-        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx)
+        .unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_TRUST, "{}", err.message);
     assert!(
         err.message.contains(&rogue_fp),
@@ -412,8 +413,8 @@ fn a_tampered_artifact_is_exit_71_before_the_checksum() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let err =
-        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx)
+        .unwrap_err();
     assert_eq!(
         err.code,
         tebako_shim::EX_TEBAKO_SIGNATURE,
@@ -457,8 +458,8 @@ fn a_declared_signature_that_does_not_fetch_is_exit_71() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let err =
-        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx)
+        .unwrap_err();
     assert_eq!(
         err.code,
         tebako_shim::EX_TEBAKO_SIGNATURE,
@@ -496,8 +497,8 @@ fn a_signer_key_mismatch_against_the_declared_keyid_is_exit_72() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let err =
-        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx)
+        .unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_TRUST, "{}", err.message);
     assert!(
         err.message.contains("signer key changed"),
@@ -521,8 +522,9 @@ fn an_unsigned_release_warns_journals_and_installs() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let rt =
-        ready(runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap());
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx).unwrap(),
+    );
     assert_eq!(rt.lang_version, "4.0.6");
     let journal = journal_text(&home);
     let line = journal
@@ -548,8 +550,8 @@ fn an_unsigned_release_under_require_signed_is_exit_71() {
         tebako_http::file_url(&mirror),
     );
     ctx.env.insert("TEBAKO_REQUIRE_SIGNED".into(), "1".into());
-    let err =
-        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx)
+        .unwrap_err();
     assert_eq!(
         err.code,
         tebako_shim::EX_TEBAKO_SIGNATURE,
@@ -614,8 +616,8 @@ fn a_sums_only_signed_release_has_no_trusted_contract_card() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let err =
-        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx)
+        .unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT, "{}", err.message);
     assert!(
         err.message.contains("SHA256SUMS.txt verified"),
@@ -657,8 +659,9 @@ fn the_config_source_pin_shadows_the_mirror_loudly() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&shadowed),
     );
-    let rt =
-        ready(runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap());
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx).unwrap(),
+    );
     assert_eq!(
         rt.lang_version, "4.0.6",
         "the config source served, not the (empty) mirror"
@@ -684,6 +687,7 @@ fn a_non_ruby_engine_no_channel_answers_is_the_named_error() {
     let home = tmp.path().join("home");
     let err = runtime::resolve_runtime(
         Some(&req_engine("java", ">= 21")),
+        None,
         true,
         &ctx(&home, tmp.path()),
     )

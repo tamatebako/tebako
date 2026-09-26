@@ -442,6 +442,50 @@ the BASE's gem home at run time). Dispatch semantics live in spec 07
   then simply attaches nothing — loud at install, never silent);
   pre-minor-12 readers reject a suffixed pin by name (exit 65).
 
+### 2.9 MIN RUNTIME TEBAKO (`min_runtime_tebako:`, additive — schema_minor 15, tebako#666)
+
+An OPTIONAL top-level key naming the minimum tebako tooling version of
+the runtime this payload runs on:
+
+```yaml
+min_runtime_tebako: "2.8.8"
+```
+
+The author sets it when the payload starts depending on a newer
+runtime/driver capability (a mount-ancestor route, a spec-32
+`kind: executable` edge, …). The value is 1–4 dot-separated components
+of the schema_minor-12 component grammar (leading decimals, optional
+`-label` suffix); anything else is a named manifest error at parse.
+Absent = no floor. Old readers ignore the key (the unknown-field rule) —
+which is exactly why the key exists: the failure mode it retires is a
+stale cached runtime failing a newer payload with payload-blaming
+wording.
+
+Semantics (the three consumers, all fail-closed with named errors):
+
+- **Resolution (spec 05 §5):** "newest compatible cached" discards
+  cached runtimes whose own tebako version is below the floor and
+  fetches instead; the miss errors NAME the skipped entries.
+  `TEBAKO_OFFLINE=1` keeps fail-closed behavior — cache-or-named-error,
+  with the floor named. A downloaded runtime below the floor (a pinned
+  stale line) is the named stale-runtime refusal.
+- **The driver (spec 17 §8):** a runtime whose tooling version is below
+  the floor refuses the manifest by name — "the runtime is too old for
+  this payload's manifest (needs X, have Y)" — both when the manifest
+  parses (the key itself is old-reader-safe) and when the parse FAILED
+  (the manifest uses grammar this runtime predates; the floor is then
+  read by a tolerant top-level scan of the raw YAML). Never "corrupt
+  manifest / self-description lies" for the stale-runtime class.
+- **The floor constrains every runtime the payload's dispatch resolves**
+  — its own entrypoint runtime and the spawned runtimes of its
+  `requires` edges (a provider payload's floor likewise gates the
+  provider's own pair).
+
+The floor is a MINIMUM, not a pin: it never narrows which compatible
+runtime wins above it, and it never substitutes for the
+`runtime_requirement` constraint (the interpreter version axis is the
+requirement's; the tooling axis is the floor's).
+
 ## 3. Platform axis (locked, vcpkg-triplet form)
 
 `platforms` is EITHER `"universal"` (pure-ruby/data) OR an explicit list:

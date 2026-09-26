@@ -395,7 +395,7 @@ impl CheckTarget {
                         )
                     })?;
                     let resolved =
-                        runtime::resolve_runtime(Some(req), true, ctx).map_err(shim_err)?;
+                        runtime::resolve_runtime(Some(req), None, true, ctx).map_err(shim_err)?;
                     if matches!(resolved, RuntimeResolution::Zero) {
                         return Err(TebakoError::new(
                             "the composition's runtime resolved to zero runtimes — an exec check needs one",
@@ -1659,9 +1659,14 @@ fn plan_store(
     user_args: Vec<String>,
     ctx: &Ctx,
 ) -> Result<RunPlan, CheckStep> {
-    match runtime::resolve_runtime(d.runtime_requirement.as_ref(), true, ctx)
-        .map_err(shim_err)
-        .map_err(CheckStep::Abort)?
+    match runtime::resolve_runtime(
+        d.runtime_requirement.as_ref(),
+        res.manifest.min_runtime_tebako(),
+        true,
+        ctx,
+    )
+    .map_err(shim_err)
+    .map_err(CheckStep::Abort)?
     {
         RuntimeResolution::Zero => {
             // Zero-runtime: the install-time materialization is the
