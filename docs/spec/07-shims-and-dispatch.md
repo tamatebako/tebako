@@ -34,7 +34,10 @@ in `config.yaml` as the exact ref).
   error (`EX_TEBAKO_MANIFEST`, naming the link and value), never a
   silent skip.
 - **`~/.tebako/config.yaml` keys:** `defaults:` (command →
-  `[payload@]version`), `registries:` (spec 04 refs), `runtimes:`
+  `[payload@]version`; tebako#667: a KEY of the form
+  `<registry>/<payload>` is the payload-level pin — it covers every
+  entrypoint the payload declares, and a command-level pin beats it for
+  its own command, §4), `registries:` (spec 04 refs), `runtimes:`
   (engine → `{version, tebako, source?}` runtime preference; `source:`
   pins the engine's download base — spec 05 §2's per-engine chain,
   SHIPPED in the shim's dispatch-time fetch, tebako#567). The shim never
@@ -237,6 +240,30 @@ per declared entrypoint name — never as re-exec wrappers.
   to the pinned set). Pins override auto-discovery for the same slice
   name; a pin naming a slice installed at a DIFFERENT version attaches
   the pin exactly.
+
+- **Payload-level pins (store-config schema_minor 5, tebako#667):** a
+  `defaults:` KEY of the form `<registry>/<payload>` pins every
+  entrypoint the payload declares — the one-line form of "this machine
+  runs metanorma 1.16.9" for a 31-entrypoint suite:
+  ```yaml
+  defaults:
+    "metanorma/metanorma": {version: 1.16.9}   # all 31 entrypoints
+    metanorma-iso: {version: 1.16.8}           # specific beats general
+  ```
+  Version selection is a property of the payload, not of the command
+  name; the payload pin sits in the user-default tier (env and project
+  pins — per-tool by design — still beat it, as does a command-level
+  `defaults:` entry for its own command). The registry alias rides the
+  KEY (the value's `registry:` field would duplicate it — a payload pin
+  carrying one is the named grammar error); the value carries
+  `version:` only (`slices:` is per-tool). A version-less payload pin
+  only scopes the payload's registry-default lookup (link 4) to the
+  key's alias — the same rule as the tool form's registry-only entry.
+  Two payload pins naming the same payload with different versions are
+  the named ambiguity error, never a silent winner; a `/`-carrying key
+  outside the grammar is the named grammar error at dispatch.
+  `tebako-shim doctor` checks payload pins for dangling payload/version
+  references exactly like qualified tool pins.
 
 ## 5. Distribution forms (both produced by `tebako press`)
 
