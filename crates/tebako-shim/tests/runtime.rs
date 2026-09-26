@@ -32,8 +32,13 @@ fn range_constraint_picks_the_newest_cached() {
     write_runtime(&home, "4.0.6", "0.16.0", false);
     write_runtime(&home, "3.4.2", "0.16.0", false);
     let rt = ready(
-        runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx(&home, tmp.path()))
-            .unwrap(),
+        runtime::resolve_runtime(
+            Some(&req(">= 3.3, < 5.0")),
+            None,
+            true,
+            &ctx(&home, tmp.path()),
+        )
+        .unwrap(),
     );
     assert_eq!(rt.lang_version, "4.0.6");
 }
@@ -46,7 +51,8 @@ fn abi_line_constraint_locks_to_the_line() {
     write_runtime(&home, "4.0.6", "0.16.0", false);
     write_runtime(&home, "3.4.2", "0.16.0", false);
     let rt = ready(
-        runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx(&home, tmp.path())).unwrap(),
+        runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx(&home, tmp.path()))
+            .unwrap(),
     );
     assert_eq!(rt.lang_version, "3.3.5");
 }
@@ -58,7 +64,8 @@ fn same_language_version_picks_the_newer_tebako_build() {
     write_runtime(&home, "3.3.7", "0.15.9", false);
     write_runtime(&home, "3.3.7", "0.16.0", false);
     let rt = ready(
-        runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx(&home, tmp.path())).unwrap(),
+        runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx(&home, tmp.path()))
+            .unwrap(),
     );
     assert_eq!(rt.lang_version, "3.3.7");
     assert_eq!(
@@ -78,11 +85,11 @@ fn no_compatible_cached_offline_is_the_named_compat_error() {
         &home,
         "runtimes:\n  ruby:\n    version: 3.3.9\n    tebako: 0.16.0\n",
     );
-    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("TEBAKO_OFFLINE"), "{}", err.message);
     // the message names the ABI-line semantics — never a segfault
-    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), false, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, false, &ctx).unwrap_err();
     assert!(
         err.message.contains("ABI line") || err.message.contains("~> 3.3.0"),
         "{}",
@@ -103,7 +110,7 @@ fn no_runtime_preference_is_a_named_error() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(
         err.message.contains("runtime preference"),
@@ -127,7 +134,7 @@ fn no_preference_downloads_the_index_pick_on_the_default_line() {
         tebako_http::file_url(&mirror),
     );
 
-    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());
+    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx).unwrap());
     assert_eq!(rt.lang_version, "3.3.7");
     assert_eq!(rt.tebako_version, line);
     assert!(rt.exe.is_file());
@@ -150,7 +157,7 @@ fn the_index_pick_prefers_the_plain_twin_over_a_variant_suffix() {
         tebako_http::file_url(&mirror),
     );
 
-    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.13.0")), true, &ctx).unwrap());
+    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.13.0")), None, true, &ctx).unwrap());
     assert_eq!(rt.lang_version, "3.13.15");
     assert!(rt.exe.is_file());
 }
@@ -171,7 +178,7 @@ fn no_preference_and_an_index_without_a_satisfier_is_the_platform_error() {
         tebako_http::file_url(&mirror),
     );
 
-    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("satisfies"), "{}", err.message);
 }
@@ -184,7 +191,7 @@ fn preference_outside_the_constraint_is_a_named_error() {
         &home,
         "runtimes:\n  ruby:\n    version: 4.0.6\n    tebako: 0.16.0\n",
     );
-    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx(&home, tmp.path()))
+    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx(&home, tmp.path()))
         .unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("does not satisfy"), "{}", err.message);
@@ -206,7 +213,8 @@ fn download_installs_verified_readonly_image_and_markers() {
         tebako_http::file_url(&mirror),
     );
 
-    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    let rt =
+        ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), None, true, &ctx).unwrap());
     assert_eq!(rt.lang_version, "4.0.6");
     assert!(rt.exe.is_file());
     let image = rt.image.expect("image-era runtime");
@@ -228,7 +236,8 @@ fn download_installs_verified_readonly_image_and_markers() {
 
     // second resolution is a cache hit: the mirror is gone, still Ready
     std::fs::remove_dir_all(&mirror).unwrap();
-    let rt2 = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    let rt2 =
+        ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), None, true, &ctx).unwrap());
     assert_eq!(rt2.lang_version, "4.0.6");
 }
 
@@ -254,7 +263,8 @@ fn the_index_filename_is_the_authoritative_spelling() {
         tebako_http::file_url(&mirror),
     );
 
-    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    let rt =
+        ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), None, true, &ctx).unwrap());
     assert_eq!(rt.lang_version, "4.0.6");
     assert_eq!(
         rt.exe.file_name().unwrap().to_string_lossy(),
@@ -273,7 +283,8 @@ fn the_index_filename_is_the_authoritative_spelling() {
     // Second resolution is a cache hit under the flowed spelling: the
     // mirror is gone, still Ready (scan_cached flows the cached index).
     std::fs::remove_dir_all(&mirror).unwrap();
-    let rt2 = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    let rt2 =
+        ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), None, true, &ctx).unwrap());
     assert_eq!(rt2.exe, rt.exe);
     assert_eq!(rt2.image, rt.image);
 }
@@ -309,7 +320,7 @@ fn a_missing_index_entry_names_the_identity() {
         tebako_http::file_url(&mirror),
     );
 
-    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT);
     assert!(
         err.message
@@ -346,7 +357,7 @@ fn sha_mismatch_is_exit_70_and_nothing_enters_the_cache() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_SHA);
     assert!(
         !home
@@ -376,7 +387,7 @@ fn download_installs_the_dll_as_install_as_with_markers() {
         tebako_http::file_url(&mirror),
     );
 
-    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());
+    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx).unwrap());
     assert_eq!(rt.lang_version, "3.3.12");
     assert!(rt.exe.is_file());
     // the dll materializes under its PE name — never the asset name
@@ -411,7 +422,7 @@ fn download_installs_the_dll_as_install_as_with_markers() {
 
     // second resolution is a cache hit: the mirror is gone, still Ready
     std::fs::remove_dir_all(&mirror).unwrap();
-    let rt2 = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());
+    let rt2 = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx).unwrap());
     assert_eq!(rt2.lang_version, "3.3.12");
 }
 
@@ -430,7 +441,7 @@ fn dll_sha_mismatch_is_exit_70_and_nothing_enters_the_cache() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_SHA);
     assert!(
         !home
@@ -458,7 +469,8 @@ fn a_release_without_the_dll_key_installs_the_exe_alone() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    let rt =
+        ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), None, true, &ctx).unwrap());
     assert!(rt.exe.is_file());
     assert!(
         !std::fs::read_dir(&rt.dir)
@@ -491,7 +503,7 @@ fn a_dll_install_as_with_a_path_separator_is_a_named_error() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("bare file name"), "{}", err.message);
     assert!(!home.join("tmp").join("evil.dll").exists());
@@ -540,7 +552,7 @@ fn pre_era_release_is_refused_before_download() {
         tebako_http::file_url(&mirror),
     );
 
-    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT, "{}", err.message);
     assert!(err.message.contains("pre-era"), "{}", err.message);
     assert!(
@@ -575,7 +587,7 @@ fn a_newer_declared_contract_is_the_upgrade_refusal() {
         tebako_http::file_url(&mirror),
     );
 
-    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT, "{}", err.message);
     assert!(
         err.message.contains("contract_version 3"),
@@ -597,7 +609,7 @@ fn zero_requirement_skips_resolution_entirely() {
     let tmp = TempDir::new("zero-req");
     let home = tmp.path().join("home");
     // no runtimes dir, no mirror, no config — still Zero
-    let res = runtime::resolve_runtime(None, true, &ctx(&home, tmp.path())).unwrap();
+    let res = runtime::resolve_runtime(None, None, true, &ctx(&home, tmp.path())).unwrap();
     assert!(matches!(res, RuntimeResolution::Zero));
 }
 
@@ -645,7 +657,7 @@ fn a_multi_package_manifest_verifies_against_the_right_entry() {
         tebako_http::file_url(&mirror),
     );
 
-    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());
+    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), None, true, &ctx).unwrap());
     assert_eq!(rt.lang_version, "3.3.7");
     assert!(rt.exe.is_file());
     assert!(rt.image.is_some());
@@ -677,6 +689,7 @@ fn abi_line_filters_cached_runtimes_to_the_matching_platform_string() {
     let rt = ready(
         runtime::resolve_runtime(
             Some(&req_abi("~> 3.3.0", "arm64-darwin-23")),
+            None,
             false,
             &ctx(&home, tmp.path()),
         )
@@ -696,6 +709,7 @@ fn abi_mismatch_is_a_named_error_with_both_lines() {
     );
     let err = runtime::resolve_runtime(
         Some(&req_abi("~> 3.3.0", "arm64-darwin-23")),
+        None,
         false,
         &ctx(&home, tmp.path()),
     )
@@ -714,6 +728,7 @@ fn a_runtime_without_an_abi_line_stays_eligible() {
     let rt = ready(
         runtime::resolve_runtime(
             Some(&req_abi("~> 3.3.0", "arm64-darwin-23")),
+            None,
             false,
             &ctx(&home, tmp.path()),
         )
@@ -774,7 +789,8 @@ fn any_of_admits_a_shard_by_its_language_version() {
         },
         req_impl("jruby", "~> 9.5"),
     ]);
-    let rt = ready(runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap());
+    let rt =
+        ready(runtime::resolve_runtime(Some(&reqs), None, false, &ctx(&home, tmp.path())).unwrap());
     // Both shards match the language entry; newest by the version pair
     // wins.
     assert_eq!(rt.lang_version, "34.0.1");
@@ -788,8 +804,13 @@ fn a_language_entry_never_reads_the_own_version_of_a_keyed_shard() {
     let home = tmp.path().join("home");
     write_runtime_spec28(&home, "34.0.1", "0.16.0", "truffleruby", "3.4");
     let rt = ready(
-        runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), false, &ctx(&home, tmp.path()))
-            .unwrap(),
+        runtime::resolve_runtime(
+            Some(&req(">= 3.3, < 5.0")),
+            None,
+            false,
+            &ctx(&home, tmp.path()),
+        )
+        .unwrap(),
     );
     assert_eq!(rt.lang_version, "34.0.1");
 }
@@ -812,8 +833,13 @@ fn a_language_entry_falls_back_to_the_own_version_on_pre_field_shards() {
         &home,
         "runtimes:\n  ruby:\n    version: 34.0.1\n    tebako: 0.16.0\n",
     );
-    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), false, &ctx(&home, tmp.path()))
-        .unwrap_err();
+    let err = runtime::resolve_runtime(
+        Some(&req(">= 3.3, < 5.0")),
+        None,
+        false,
+        &ctx(&home, tmp.path()),
+    )
+    .unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("34.0.1"), "{}", err.message);
 }
@@ -827,7 +853,8 @@ fn an_implementation_entry_matches_only_its_own_line() {
     write_runtime_spec28(&home, "34.0.1", "0.16.0", "truffleruby", "3.4");
     write_runtime_spec28(&home, "9.5.0", "0.16.0", "jruby", "3.4");
     let reqs = RuntimeRequirements::one(req_impl("jruby", "~> 9.5"));
-    let rt = ready(runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap());
+    let rt =
+        ready(runtime::resolve_runtime(Some(&reqs), None, false, &ctx(&home, tmp.path())).unwrap());
     assert_eq!(rt.lang_version, "9.5.0");
     // …and the truffleruby shard's language version is NOT read for an
     // implementation entry: `>= 3.3` against jruby's own line fails.
@@ -836,7 +863,8 @@ fn an_implementation_entry_matches_only_its_own_line() {
         &home,
         "runtimes:\n  ruby:\n    version: 9.5.0\n    tebako: 0.16.0\n",
     );
-    let err = runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap_err();
+    let err =
+        runtime::resolve_runtime(Some(&reqs), None, false, &ctx(&home, tmp.path())).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
 }
 
@@ -854,7 +882,8 @@ fn any_of_zero_match_names_every_entry() {
         },
         req_impl("jruby", "~> 9.5"),
     ]);
-    let err = runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap_err();
+    let err =
+        runtime::resolve_runtime(Some(&reqs), None, false, &ctx(&home, tmp.path())).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains(">= 5.0"), "{}", err.message);
     assert!(err.message.contains("~> 9.5"), "{}", err.message);
@@ -893,7 +922,7 @@ fn a_constraint_nothing_released_satisfies_is_the_platform_availability_error() 
         tebako_http::file_url(&mirror),
     );
 
-    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     let platform = platform();
     assert!(
@@ -940,7 +969,7 @@ fn the_index_target_is_the_newest_released_version_satisfying_the_constraint() {
         tebako_http::file_url(&mirror),
     );
 
-    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.2")), true, &ctx).unwrap());
+    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.2")), None, true, &ctx).unwrap());
     assert_eq!(rt.lang_version, "3.2.11");
     assert_eq!(rt.tebako_version, "0.16.0");
     assert!(rt.exe.is_file());
@@ -962,7 +991,7 @@ fn a_cache_hit_never_consults_the_index() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&tmp.path().join("no-such-mirror")),
     );
-    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.2")), true, &ctx).unwrap());
+    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.2")), None, true, &ctx).unwrap());
     assert_eq!(rt.lang_version, "3.2.5");
 }
 
@@ -985,7 +1014,110 @@ fn offline_never_consults_the_index() {
         tebako_http::file_url(&mirror),
     );
     ctx.env.insert("TEBAKO_OFFLINE".into(), "1".into());
-    let err = runtime::resolve_runtime(Some(&req(">= 3.2")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req(">= 3.2")), None, true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("TEBAKO_OFFLINE"), "{}", err.message);
+}
+
+// ---------------------------------------------------------------------
+// spec 03 §2.9 (tebako#666): the payload min-runtime floor
+// ---------------------------------------------------------------------
+
+#[test]
+fn floor_below_the_cached_build_still_picks_the_cache() {
+    // A floor under the cached runtime's tebako version changes nothing.
+    let tmp = TempDir::new("floor-satisfied");
+    let home = tmp.path().join("home");
+    write_runtime(&home, "3.3.7", "2.8.17", false);
+    let rt = ready(
+        runtime::resolve_runtime(
+            Some(&req("~> 3.3.0")),
+            Some("2.8.8"),
+            true,
+            &ctx(&home, tmp.path()),
+        )
+        .unwrap(),
+    );
+    assert_eq!(rt.lang_version, "3.3.7");
+    assert_eq!(rt.tebako_version, "2.8.17");
+}
+
+#[test]
+fn floor_discards_a_stale_cached_runtime_and_fetches() {
+    // tebako#666's core: the compatible-but-stale cache entry is NOT
+    // picked — the download path runs and lands the current build.
+    let tmp = TempDir::new("floor-fetches");
+    let home = tmp.path().join("home");
+    write_runtime(&home, "3.3.7", "0.16.23", false);
+    let mirror = tmp.path().join("mirror");
+    write_release_index(&mirror, "2.8.17", &["3.3.9"]);
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.9\n    tebako: 2.8.17\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    let rt =
+        ready(runtime::resolve_runtime(Some(&req(">= 3.3")), Some("2.8.8"), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "3.3.9");
+    assert_eq!(rt.tebako_version, "2.8.17");
+}
+
+#[test]
+fn floor_offline_miss_names_the_floor_and_the_stale_entry() {
+    // TEBAKO_OFFLINE stays fail-closed (tebako#666 proposal 2): the
+    // named error says WHY the compatible cache entry was skipped.
+    let tmp = TempDir::new("floor-offline");
+    let home = tmp.path().join("home");
+    write_runtime(&home, "3.3.7", "0.16.23", false);
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.9\n    tebako: 2.8.17\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert("TEBAKO_OFFLINE".into(), "1".into());
+    let err =
+        runtime::resolve_runtime(Some(&req(">= 3.3")), Some("2.8.8"), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    assert!(
+        err.message.contains("min_runtime_tebako 2.8.8"),
+        "{}",
+        err.message
+    );
+    assert!(
+        err.message.contains("3.3.7 (tebako 0.16.23)"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn a_downloaded_runtime_below_the_floor_is_the_named_stale_refusal() {
+    // The pinned line itself serves a too-old build: the download
+    // succeeds byte-wise but the floor gate refuses it by name.
+    let tmp = TempDir::new("floor-download-stale");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_release_index(&mirror, "0.16.0", &["3.3.9"]);
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.9\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    let err =
+        runtime::resolve_runtime(Some(&req(">= 3.3")), Some("2.8.8"), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    assert!(
+        err.message
+            .contains("below the payload's min_runtime_tebako 2.8.8"),
+        "{}",
+        err.message
+    );
 }

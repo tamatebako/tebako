@@ -2371,6 +2371,16 @@ pub struct PayloadManifest {
     /// YAML mapping, not this model's storage order.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub checks: BTreeMap<String, Check>,
+    /// The minimum tebako version of the runtime tooling this payload
+    /// runs on (spec 03 §2.9, additive — schema_minor 15, tebako#666;
+    /// old readers ignore the key): set when the payload starts
+    /// depending on a newer runtime/driver capability. Resolution
+    /// discards cached runtimes below the floor and fetches instead
+    /// (spec 05 §5); a runtime/driver below the floor refuses the
+    /// manifest BY NAME (spec 17 §8) instead of failing with
+    /// payload-blaming wording. Absent = no floor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_runtime_tebako: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for PayloadManifest {
@@ -2389,6 +2399,8 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             library_aliases: Vec<LibraryAlias>,
             #[serde(default, deserialize_with = "checks_map::deserialize")]
             checks: BTreeMap<String, Check>,
+            #[serde(default)]
+            min_runtime_tebako: Option<String>,
         }
         let raw = Raw::deserialize(d)?;
         let provides = match raw.identity.kind {
@@ -2417,6 +2429,7 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             materialize: raw.materialize,
             library_aliases: raw.library_aliases,
             checks: raw.checks,
+            min_runtime_tebako: raw.min_runtime_tebako,
         })
     }
 }
@@ -2489,6 +2502,21 @@ impl PayloadManifest {
     pub fn to_yaml(&self) -> Result<String, ManifestError> {
         self.validate()?;
         Ok(serde_yml::to_string(self)?)
+    }
+
+    /// The declared `min_runtime_tebako` floor of a manifest TEXT,
+    /// tolerantly extracted (spec 03 §2.9, tebako#666) — for the
+    /// stale-runtime error path, where the manifest may use grammar this
+    /// reader predates and the full parse has ALREADY failed. A
+    /// top-level string scalar only; anything else (absent, non-scalar,
+    /// unparsable YAML) is None and the caller keeps the plain
+    /// corrupt-manifest wording.
+    pub fn declared_min_runtime_tebako(text: &str) -> Option<String> {
+        let value: serde_yml::Value = serde_yml::from_str(text).ok()?;
+        value
+            .get("min_runtime_tebako")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
     }
 
     /// Semantic checks beyond the serde structure: schema version,
@@ -2606,6 +2634,21 @@ impl PayloadManifest {
             if p.split('/').any(|component| component == "..") {
                 return Err(ManifestError::Invalid(
                     "materialize[] must not contain '..' components (the extraction target derives from the entry)",
+                ));
+            }
+        }
+        // spec 03 §2.9 (schema_minor 15): the min-runtime floor carries
+        // the version shape — 1..=4 dot-separated components of the
+        // schema_minor-12 component grammar (leading decimals, optional
+        // -label suffix).
+        if let Some(floor) = &self.min_runtime_tebako {
+            let components: Vec<&str> = floor.split('.').collect();
+            if components.is_empty()
+                || components.len() > 4
+                || !components.iter().all(|c| check_constraint_component(c))
+            {
+                return Err(ManifestError::Invalid(
+                    "min_runtime_tebako must be 1..=4 dot-separated components (leading decimals, optional -label suffix)",
                 ));
             }
         }
@@ -2934,6 +2977,7 @@ mod tests {
             materialize: Vec::new(),
             library_aliases: Vec::new(),
             checks: BTreeMap::new(),
+            min_runtime_tebako: None,
         };
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
@@ -3103,6 +3147,78 @@ mod tests {
         // A scalar is a structural error, never a one-item list.
         let err = PayloadManifest::from_yaml(&minimal_data_yaml("materialize: /x\n")).unwrap_err();
         assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
+    }
+
+    #[test]
+    fn min_runtime_tebako_defaults_absent_and_round_trips() {
+        // spec 03 §2.9 (schema_minor 15, tebako#666): the additive
+        // min-runtime floor — absent on pre-floor documents, never
+        // serialized when absent (old readers see the document they
+        // always saw).
+        let bare = PayloadManifest::from_yaml(&minimal_data_yaml("")).unwrap();
+        assert_eq!(bare.min_runtime_tebako, None);
+        assert!(!bare.to_yaml().unwrap().contains("min_runtime_tebako"));
+
+        let floored =
+            PayloadManifest::from_yaml(&minimal_data_yaml("min_runtime_tebako: \"2.8.8\"\n"))
+                .unwrap();
+        assert_eq!(floored.min_runtime_tebako.as_deref(), Some("2.8.8"));
+        let rendered = floored.to_yaml().unwrap();
+        assert!(rendered.contains("min_runtime_tebako"), "{rendered}");
+        let back = PayloadManifest::from_yaml(&rendered).unwrap();
+        assert_eq!(back, floored);
+        // The variant-suffixed component shape (schema_minor 12 grammar)
+        // is admissible.
+        let suffixed =
+            PayloadManifest::from_yaml(&minimal_data_yaml("min_runtime_tebako: \"2.8.8-rc1\"\n"))
+                .unwrap();
+        assert_eq!(suffixed.min_runtime_tebako.as_deref(), Some("2.8.8-rc1"));
+    }
+
+    #[test]
+    fn min_runtime_tebako_grammar_is_the_version_shape() {
+        for bad in ["abc", "2..8", "2.8.", "2.8.8.1.5", "v2.8.8", "2.8beta"] {
+            let yaml = minimal_data_yaml(&format!("min_runtime_tebako: \"{bad}\"\n"));
+            let err = PayloadManifest::from_yaml(&yaml).unwrap_err();
+            let ManifestError::Invalid(m) = &err else {
+                panic!("{bad}: expected Invalid, got {err}");
+            };
+            assert!(m.contains("min_runtime_tebako"), "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn declared_min_runtime_tebako_tolerates_unparsable_manifests() {
+        // tebako#666 proposal 3: the stale-runtime error path reads the
+        // floor out of a manifest THIS reader cannot fully parse (a
+        // requires edge kind from a later schema_minor, say) — the loose
+        // scan answers from the raw text.
+        let future = "identity:\n  schema_version: 1\n  kind: app\n  name: x\n  version: 1.0.0\n\
+                      \x20 producer: {tool: t, tool_version: \"1\"}\n  created: now\n\
+                      \x20 digest: {tree_hash: \"sha256:00\", blob_sha256: \"00\"}\n\
+                      \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+                      min_runtime_tebako: \"2.8.8\"\n\
+                      provides:\n  entrypoints: []\n  capabilities: {exec: true, read: true}\n\
+                      requires:\n  - kind: quantum\n    name: q\n    constraint: \">= 1\"\n";
+        assert!(PayloadManifest::from_yaml(future).is_err());
+        assert_eq!(
+            PayloadManifest::declared_min_runtime_tebako(future),
+            Some("2.8.8".to_string())
+        );
+        // Absent key, non-scalar value, and unparsable YAML all answer
+        // None — the caller keeps the plain corrupt-manifest wording.
+        assert_eq!(
+            PayloadManifest::declared_min_runtime_tebako(&minimal_data_yaml("")),
+            None
+        );
+        assert_eq!(
+            PayloadManifest::declared_min_runtime_tebako("min_runtime_tebako: [1, 2]\n"),
+            None
+        );
+        assert_eq!(
+            PayloadManifest::declared_min_runtime_tebako("{{{{not yaml"),
+            None
+        );
     }
 
     #[test]

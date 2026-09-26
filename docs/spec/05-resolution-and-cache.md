@@ -268,7 +268,16 @@ audit journal degrades to best-effort silence.
 (engine + optional implementation + constraint) → newest COMPATIBLE
 runtime already cached (no download) → else download the newest
 compatible from the runtime releases → verify → cache. Swapping runtimes
-never touches the payload.
+never touches the payload. **The min-runtime floor (spec 03 §2.9,
+schema_minor 15, tebako#666):** when the payload manifest declares
+`min_runtime_tebako`, cached runtimes whose own tebako version is below
+the floor are discarded BEFORE the compatible pick (they are named in
+the miss errors, never silently preferred) and the download path runs
+instead; a downloaded runtime below the floor (a pinned stale line) is
+the named stale-runtime refusal. `TEBAKO_OFFLINE=1` stays
+cache-or-named-error with the floor named. The floor gates every runtime
+the dispatch resolves — the entrypoint's own and the spawned edges'
+(spec 30/32); a provider payload's floor gates the provider's pair.
 
 **Runtime for a shared-runtime package (first run):** trailer
 runtime_ref → cache hit → use; miss → download from the index

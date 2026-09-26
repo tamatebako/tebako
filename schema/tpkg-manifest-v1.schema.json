@@ -38,6 +38,10 @@
       "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
       "additionalProperties": { "$ref": "#/$defs/check" },
       "description": "spec 26 §1 (payload-manifest schema_minor 3): the payload's own acceptance contracts — check name → check. A check WITH `entry` is an exec check; WITHOUT `entry` it is structural (the data-slice shape: asserts expect.image_files, no exec surface). The reserved entry spelling \"self\" is kind-runtime only, the exec/structural key split, the '..' refusals and the {scratch} arity are semantic (the tpkg validator); only shape is checked here. Any kind may declare; old readers ignore the key."
+    },
+    "min_runtime_tebako": {
+      "type": "string",
+      "description": "spec 03 §2.9 (payload-manifest schema_minor 15, tebako#666): the minimum tebako tooling version of the runtime this payload runs on. Resolution discards cached runtimes below the floor and fetches instead (spec 05 §5); the driver refuses a manifest whose floor exceeds the runtime's own tooling version with the named stale-runtime wording (spec 17 §8). Old readers ignore the key. The value grammar (1..=4 dot-separated components of the schema_minor-12 shape) is enforced by the tpkg validator."
     }
   },
   "allOf": [
