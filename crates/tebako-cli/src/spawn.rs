@@ -329,6 +329,10 @@ fn spawned_runtime_row(
         implementation,
         constraint,
         registry,
+        // The compose-time pre-stage walks no L1 payload manifest — no
+        // min-runtime floor applies on this path (spec 03 §2.9 binds the
+        // dispatch/boot of an installed payload).
+        None,
         true,
         ctx,
     )
@@ -713,6 +717,7 @@ fn spawned_payload_row<T: Transport>(
         &engine,
         implementation.as_deref(),
         language,
+        None,
         None,
         true,
         ctx,

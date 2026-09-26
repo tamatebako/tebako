@@ -62,8 +62,9 @@ fn a_signed_shard_only_release_resolves_and_caches_the_normalized_card() {
     );
     ctx.env.insert("TEBAKO_REQUIRE_SIGNED".into(), "1".into());
 
-    let rt =
-        ready(runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap());
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx).unwrap(),
+    );
     assert_eq!(rt.lang_version, "4.0.6");
     assert!(rt.exe.is_file());
     assert!(rt.image.is_some());
@@ -108,8 +109,9 @@ fn an_unsigned_shard_only_release_warns_journals_and_installs() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let rt =
-        ready(runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap());
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx).unwrap(),
+    );
     assert_eq!(rt.lang_version, "4.0.6");
     let journal = journal_text(&home);
     assert!(
@@ -134,8 +136,8 @@ fn an_unsigned_shard_only_release_under_require_signed_is_exit_71() {
         tebako_http::file_url(&mirror),
     );
     ctx.env.insert("TEBAKO_REQUIRE_SIGNED".into(), "1".into());
-    let err =
-        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap_err();
+    let err = runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx)
+        .unwrap_err();
     assert_eq!(
         err.code,
         tebako_shim::EX_TEBAKO_SIGNATURE,
@@ -182,8 +184,9 @@ fn a_triple_mismatched_shard_falls_through_to_the_monolith() {
         "TEBAKO_RUNTIME_MIRROR".into(),
         tebako_http::file_url(&mirror),
     );
-    let rt =
-        ready(runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), true, &ctx).unwrap());
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx).unwrap(),
+    );
     assert_eq!(
         rt.lang_version, "4.0.6",
         "the monolith served the download, not the mismatched shard"

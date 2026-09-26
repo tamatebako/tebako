@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 14 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env, 9: per-edge triplets conditioning on requires edges — data/runtime/executable gain the toolkit edge's triplets key; kind: language refuses it, 10: augments + provides.extension_points + provides.gems — the reverse extension-slice edge and its dedup inventory, spec 03 §2.8, 11: windows_boot on runtime provides — the windows materialize boot tier, spec 17 §7, 12: the constraint grammar admits the variant-suffixed component shape versions already carry — each component is leading decimals plus an optional -label ([0-9A-Za-z-]+) — so an exact pin can name a base/runtime LINE (spec 05 §5; pre-minor-12 readers reject a suffixed clause by name, exit 65), 13: aarch64-windows-ucrt joins the platforms axis, 14: the toolkit/data/runtime/executable requires edges gain the optional registry: alias pin — spec 37 §3's pin-surface rule; kind: language never carries it)
+schema_minor: 15 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env, 9: per-edge triplets conditioning on requires edges — data/runtime/executable gain the toolkit edge's triplets key; kind: language refuses it, 10: augments + provides.extension_points + provides.gems — the reverse extension-slice edge and its dedup inventory, spec 03 §2.8, 11: windows_boot on runtime provides — the windows materialize boot tier, spec 17 §7, 12: the constraint grammar admits the variant-suffixed component shape versions already carry — each component is leading decimals plus an optional -label ([0-9A-Za-z-]+) — so an exact pin can name a base/runtime LINE (spec 05 §5; pre-minor-12 readers reject a suffixed clause by name, exit 65), 13: aarch64-windows-ucrt joins the platforms axis, 14: the toolkit/data/runtime/executable requires edges gain the optional registry: alias pin — spec 37 §3's pin-surface rule; kind: language never carries it, 15: min_runtime_tebako — the payload's min-runtime tooling floor (spec 03 §2.9, tebako#666; resolution discards stale cached runtimes, the driver refuses by name))
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -418,6 +418,21 @@ grammar:
       (unknown-field rule): a pre-minor-8 dispatcher simply ships the
       interpreter's built-in default — the declaration is a default,
       never a requirement.
+  min_runtime_tebako:
+    type: string
+    required: false
+    since: schema_minor 15
+    grammar: 1..=4 dot-separated components of the schema_minor-12 component shape (leading decimals, optional -label suffix)
+    notes: >-
+      spec 03 §2.9 (tebako#666) — the minimum tebako tooling version of
+      the runtime this payload runs on. Resolution (spec 05 §5)
+      discards cached runtimes below the floor and fetches instead; the
+      driver (spec 17 §8) refuses a manifest whose floor exceeds the
+      runtime's own tooling version with the named stale-runtime
+      wording ("the runtime is too old for this payload's manifest"),
+      including on the parse-failure path via the tolerant top-level
+      scan. Old readers ignore the key (unknown-field rule). A value
+      outside the grammar is a named manifest error at parse (exit 65).
 
 refusals:
   - case: identity.schema_version missing
@@ -466,5 +481,9 @@ refusals:
     behavior: named error, exit 69 — \"not available on this platform\", never a silent fallback to another provider (spec 03 §2.3)
   - case: "a requires edge's registry: value outside the [a-z][a-z0-9-]* alias grammar (schema_minor 14)"
     behavior: named validation error at parse (exit 65) — the alias grammar is the config book's own (spec 37 §2/§3); whether the alias EXISTS is resolution-time's UnknownRegistryAlias, never the manifest's call
+  - case: "a min_runtime_tebako value outside the version grammar (schema_minor 15)"
+    behavior: named validation error at parse (exit 65) — the floor is data, never guessed (spec 03 §2.9)
+  - case: "a runtime whose tebako version is below the payload's declared min_runtime_tebako (schema_minor 15)"
+    behavior: resolution skips the stale cached runtime and fetches (TEBAKO_OFFLINE stays fail-closed); at boot the driver refuses with the named stale-runtime wording — \"the runtime is too old for this payload's manifest (needs X, have Y)\" — never \"corrupt manifest / self-description lies\" (spec 05 §5, spec 17 §8, tebako#666)
 
 deprecated: [] # no field is in a deprecation window

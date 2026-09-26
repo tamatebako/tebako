@@ -773,13 +773,33 @@ fn materialize_mirror(
             crate::driver::errno_text(e)
         )
     })?;
-    tpkg::PayloadManifest::from_yaml(&text).map_err(|e| {
-        format!(
-            "corrupt {} in the payload image '{}' — the provider's self-description lies: {e}",
-            tpkg::PAYLOAD_MANIFEST_PATH,
-            image.display()
-        )
-    })?;
+    match tpkg::PayloadManifest::from_yaml(&text) {
+        Ok(m) => {
+            // spec 03 §2.9 (tebako#666): the floor gates a clean parse
+            // too — the provider's semantics may postdate this runtime.
+            if let Some((floor, have)) = crate::driver::stale_floor(&m) {
+                return Err(format!(
+                    "the payload image '{}' declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for the provider's manifest (needs {floor}, have {have}); update the runtime — the payload is not at fault",
+                    image.display()
+                ));
+            }
+        }
+        Err(e) => {
+            // tebako#666 proposal 3: "runtime too old", not
+            // "self-description lies", when the floor says so.
+            if let Some((floor, have)) = crate::driver::stale_floor_in_text(&text) {
+                return Err(format!(
+                    "the payload image '{}' declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for the provider's manifest (needs {floor}, have {have}); update the runtime — the payload is not corrupt (parse: {e})",
+                    image.display()
+                ));
+            }
+            return Err(format!(
+                "corrupt {} in the payload image '{}' — the provider's self-description lies: {e}",
+                tpkg::PAYLOAD_MANIFEST_PATH,
+                image.display()
+            ));
+        }
+    }
     let tmp = mirror.with_file_name(format!(
         "{}.tmp",
         mirror
@@ -1164,13 +1184,34 @@ fn runtime_facts(rt: &CachedRuntime, runtime_root: &str) -> Result<Arc<RuntimeFa
             crate::driver::errno_text(e)
         )
     })?;
-    let manifest_doc = tpkg::PayloadManifest::from_yaml(&text).map_err(|e| {
-        format!(
-            "corrupt {} in the env image '{}' — the runtime's self-description lies: {e}",
-            tpkg::PAYLOAD_MANIFEST_PATH,
-            image.display()
-        )
-    })?;
+    let manifest_doc = match tpkg::PayloadManifest::from_yaml(&text) {
+        Ok(m) => {
+            // spec 03 §2.9 (tebako#666): the runtime's own env image
+            // declares the floor it was built with — a pair the factory
+            // shipped together never trips this; a mismatched pair is
+            // named, not blamed.
+            if let Some((floor, have)) = crate::driver::stale_floor(&m) {
+                return Err(format!(
+                    "the env image '{}' declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for its own image manifest (needs {floor}, have {have}); reinstall the runtime pair",
+                    image.display()
+                ));
+            }
+            m
+        }
+        Err(e) => {
+            if let Some((floor, have)) = crate::driver::stale_floor_in_text(&text) {
+                return Err(format!(
+                    "the env image '{}' declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for its own image manifest (needs {floor}, have {have}); reinstall the runtime pair (parse: {e})",
+                    image.display()
+                ));
+            }
+            return Err(format!(
+                "corrupt {} in the env image '{}' — the runtime's self-description lies: {e}",
+                tpkg::PAYLOAD_MANIFEST_PATH,
+                image.display()
+            ));
+        }
+    };
     let Provides::Runtime(runtime) = &manifest_doc.provides else {
         return Err(format!(
             "the env image '{}' is not a runtime payload — its spawn surface cannot resolve",
