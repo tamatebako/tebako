@@ -2091,6 +2091,12 @@ mod tests {
         );
     }
 
+    // POSIX-only surface: windows materializes every embedded argument
+    // parent-side and carries no triples (carry_mounts' cfg(windows) arm),
+    // so the ride-along assertion is meaningless there — and the fake
+    // image carries no jar to extract, so the arm would fail ENOENT by
+    // design.
+    #[cfg(not(windows))]
     #[test]
     fn an_argument_under_a_root_mounted_payload_carries_the_mount() {
         // tebako#669's residual: the metanorma dispatch mounts the payload
