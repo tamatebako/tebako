@@ -2091,6 +2091,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn an_argument_under_a_root_mounted_payload_carries_the_mount() {
+        // tebako#669's residual: the metanorma dispatch mounts the payload
+        // at `/`; ruby-jing's argv-form spawn hands the in-image jar path
+        // as a user argument. The `/` decl must ride as a child triple —
+        // else the spawned runtime boots with only its env image and the
+        // jar is unreadable.
+        let g = guard("carry-root");
+        store_entry(
+            &g.home,
+            "java",
+            "21.0.12",
+            "0.3.0",
+            &runtime_manifest(
+                "java",
+                "  entrypoints: [{name: java, path: /bin/java}]\n",
+                "",
+            ),
+        );
+        // A real image mounted at `/` (the app payload's seat).
+        let image = g.home.join("app.tfs");
+        build_image(
+            &image,
+            &app_manifest("metanorma", "1.17.0", "", ""),
+        );
+        let mount = tfs::mount::build_from_file(&image.to_string_lossy(), "/").unwrap();
+        context().write().unwrap().mount_checked(mount).unwrap();
+        state_with(one_expose());
+        let plan = plan(
+            "java",
+            &[
+                "-jar".to_string(),
+                "/lib/ruby/gems/3.3.0/gems/ruby-jing-0.1.0/lib/jing.jar".to_string(),
+            ],
+            &[],
+        )
+        .unwrap()
+        .expect("planned");
+        let triple = format!("{}:-:/", image.to_string_lossy());
+        assert!(
+            plan.argv.iter().any(|a| a == &triple),
+            "the `/` decl rides the child argv — got {:?}",
+            plan.argv
+        );
+        // The path argument itself flows verbatim (the child reads it
+        // through its own mount of the same image).
+        assert!(
+            plan.argv
+                .iter()
+                .any(|a| a.ends_with("ruby-jing-0.1.0/lib/jing.jar")),
+            "{:?}",
+            plan.argv
+        );
+    }
+
     /// spec 32 §6 meets spec 05 §3: the loader-seeded record (image +
     /// trust anchor, NO mirror — the bootstrap carries no image reader)
     /// completes on the first spawn: the mirror materializes from the
