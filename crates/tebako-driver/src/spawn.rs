@@ -2112,10 +2112,7 @@ mod tests {
         );
         // A real image mounted at `/` (the app payload's seat).
         let image = g.home.join("app.tfs");
-        build_image(
-            &image,
-            &app_manifest("metanorma", "1.17.0", "", ""),
-        );
+        build_image(&image, &app_manifest("metanorma", "1.17.0", "", ""));
         let mount = tfs::mount::build_from_file(&image.to_string_lossy(), "/").unwrap();
         context().write().unwrap().mount_checked(mount).unwrap();
         state_with(one_expose());
