@@ -746,10 +746,22 @@ fn unsigned_registry_runtime(engine: &str, name: &str, version: &str, registry: 
     )
 }
 
+/// A registry row's declared artifact reduced to the witnessed stem
+/// `tebako-runtime-<tebako>-<lang>-<platform>`: strip the era suffix —
+/// `.tfs` (the image-era payload spelling) or `.tar.gz` (the bundle-era
+/// spelling, spec 36 §5: bundle rows name the bundle). Every other
+/// suffix (or none — the per-file-era bare exe spelling) passes through.
+fn registry_artifact_stem(artifact: &str) -> &str {
+    artifact
+        .strip_suffix(".tar.gz")
+        .or_else(|| artifact.strip_suffix(".tfs"))
+        .unwrap_or(artifact)
+}
+
 /// The row's tebako line from its declared artifact's stem (spec 05 §2
 /// SSOT — the factory's `tebako-runtime-<tebako>-<lang>-<platform>`
 /// spelling is flowed, never re-derived elsewhere): strip the
-/// `tebako-runtime-` prefix, the `.tfs` payload suffix, and the
+/// `tebako-runtime-` prefix, the era suffix, and the
 /// `-<lang>-<release-asset-platform>` tail; what remains is the line.
 /// `None` when the artifact does not carry the spelling (the caller
 /// falls back to the release tag).
@@ -758,7 +770,7 @@ fn tebako_line_from_artifact(
     lang_version: &str,
     host: tpkg::Platform,
 ) -> Option<String> {
-    let stem = artifact.strip_suffix(".tfs").unwrap_or(artifact);
+    let stem = registry_artifact_stem(artifact);
     let rest = stem.strip_prefix("tebako-runtime-")?;
     let suffix = format!("-{lang_version}-{}", host.release_asset_name());
     let line = rest.strip_suffix(&suffix)?;
@@ -782,7 +794,7 @@ fn split_line_id(
     row_version: &str,
     host: tpkg::Platform,
 ) -> Option<(String, String)> {
-    let stem = artifact.strip_suffix(".tfs").unwrap_or(artifact);
+    let stem = registry_artifact_stem(artifact);
     let platform = host.release_asset_name();
     let mut found = None;
     for (i, _) in row_version.match_indices('-') {
@@ -3598,6 +3610,16 @@ payloads:
             tebako_line_from_artifact("openjdk-21.tar.gz", "21.0.12", host),
             None
         );
+        // the bundle-era spelling (spec 36 §5: the row names the bundle)
+        // witnesses the line the same way
+        assert_eq!(
+            tebako_line_from_artifact(
+                &format!("tebako-runtime-0.16.29-3.3.12-{asset}.tar.gz"),
+                "3.3.12",
+                host
+            ),
+            Some("0.16.29".to_string())
+        );
     }
 
     #[test]
@@ -3665,6 +3687,18 @@ payloads:
             split_line_id(&format!("tebako-runtime-2-1-{asset}.tfs"), "1-2", host),
             Some(("1".to_string(), "2".to_string()))
         );
+        // the bundle-era spelling (spec 36 §5: the row names the bundle)
+        // witnesses the same split — without it the composite row version
+        // survives whole and loses the pick to a per-file-era row
+        // (release > prerelease), tebako#669's silent 0.16.28 resolution
+        assert_eq!(
+            split_line_id(
+                &format!("tebako-runtime-0.16.29-3.3.12-{asset}.tar.gz"),
+                "3.3.12-0.16.29",
+                host
+            ),
+            Some(("3.3.12".to_string(), "0.16.29".to_string()))
+        );
     }
 
     /// The ruby factory's registry shape (composite line-id rows) — the
@@ -3709,6 +3743,47 @@ payloads:
         assert_eq!(pref.version, "4.0.6");
         assert_eq!(pref.tebako, "0.16.23");
         assert_eq!(source.tag.as_deref(), Some("v0.16.23"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_prefers_a_bundle_era_row_over_a_per_file_era_row() {
+        // tebako#669: the bundle-era row's artifact names the bundle
+        // (`<stem>.tar.gz`, spec 36 §5). An unsplit composite row version
+        // compares as a PRERELEASE of the language version (release >
+        // prerelease), so without the `.tar.gz` witness the per-file-era
+        // row on the OLDER line silently wins the pick.
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        let registry = format!(
+            "schema_version: 1\npayloads:\n  - name: ruby\n    kind: runtime\n    engine: ruby\n    versions:\n      - version: '3.3.12-0.16.28'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.16.28-3.3.12-{asset}, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.16.28'}}\n      - version: '3.3.12-0.16.29'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.16.29-3.3.12-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.16.29'}}\n",
+            sha64('e'),
+            sha64('f'),
+        );
+        let home = temp_home("regfacet-bundle-era");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-ruby",
+            registry.as_bytes(),
+        )
+        .unwrap();
+        let source = RuntimeSource {
+            base: "https://github.com/acme/tebako-runtime-ruby/releases/download".to_string(),
+            tag: None,
+            channel: "default",
+            signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
+        };
+        let (pref, source) =
+            registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
+                .unwrap()
+                .expect("an informative registry picks");
+        assert_eq!(pref.version, "3.3.12");
+        assert_eq!(pref.tebako, "0.16.29");
+        assert_eq!(source.tag.as_deref(), Some("v0.16.29"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
