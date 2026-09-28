@@ -441,6 +441,15 @@ the BASE's gem home at run time). Dispatch semantics live in spec 07
   MUST pin exactly. Pre-minor-10 readers ignore both keys (the slice
   then simply attaches nothing — loud at install, never silent);
   pre-minor-12 readers reject a suffixed pin by name (exit 65).
+  **Family completion:** when the lines' closure INVENTORIES are
+  identical (press-verified at build time against every family row's
+  published closure assets — never assumed), ONE slice release MAY
+  serve the whole family: it carries one exact-pin `augments` edge
+  per family row (each with its own `built_against` provenance naming
+  that row), and the dispatcher attaches when any edge matches (spec
+  07 §2 step 3a). The binding rule is unchanged — every edge pins
+  exactly the row whose inventory the press verified identical to the
+  subtraction source.
 
 ## 3. Platform axis (locked, vcpkg-triplet form)
 

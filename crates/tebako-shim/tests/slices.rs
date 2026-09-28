@@ -186,6 +186,100 @@ fn auto_scan_skips_a_base_version_mismatch_loudly() {
     assert!(!journal.contains("event=slice-augment"), "{journal}");
 }
 
+/// The FAMILY slice (spec 03 §2.8's suffixed-line completion): ONE slice
+/// carries one exact-pin `augments` edge per family row, each with its
+/// own `built_against` provenance.
+#[allow(clippy::too_many_arguments)]
+fn slice_manifest_family(
+    name: &str,
+    version: &str,
+    base: &str,
+    point: &str,
+    pin_a: &str,
+    built_a: &str,
+    pin_b: &str,
+    built_b: &str,
+) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako-shim-tests, tool_version: \"1\"}}\n  created: \"2026-07-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{tree}\"\n    blob_sha256: {blob}\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  mount_semantics: {{suggested: /slices.d/{name}}}\n  capabilities: {{exec: false, read: true}}\nrequires:\n  - kind: language\n    engine: ruby\n    constraint: \">= 3.3, < 5.0\"\naugments:\n  - payload: {base}\n    constraint: \"{pin_a}\"\n    extension_point: {point}\n    built_against:\n      version: \"{built_a}\"\n      closure_sha256: {closure}\n  - payload: {base}\n    constraint: \"{pin_b}\"\n    extension_point: {point}\n    built_against:\n      version: \"{built_b}\"\n      closure_sha256: {closure}\n",
+        tree = "a".repeat(64),
+        blob = "b".repeat(64),
+        closure = "c".repeat(64),
+    )
+}
+
+#[test]
+fn auto_scan_family_slice_attaches_on_any_exact_pin_edge() {
+    // The resolved base is the SUFFIXED row: the first edge's exact pin
+    // ("= 1.16.2", suffix-exact) misses it; the second edge's hits. Under
+    // the pre-family first-edge-only check this attached nothing.
+    let (tmp, home) = base_setup("slice-family", "metanorma", "1.16.2-ruby3.3");
+    write_payload(
+        &home,
+        "metanorma-bsi",
+        "1.0.0",
+        &slice_manifest_family(
+            "metanorma-bsi",
+            "1.0.0",
+            "metanorma",
+            "flavors",
+            "= 1.16.2",
+            "1.16.2",
+            "= 1.16.2-ruby3.3",
+            "1.16.2-ruby3.3",
+        ),
+    );
+
+    let plan = dispatch_pinned(&home, tmp.path(), "metanorma", "1.16.2-ruby3.3").unwrap();
+
+    assert_eq!(
+        slice_mounts(&plan),
+        vec![(
+            "1.0.0.tfs".to_string(),
+            "/flavors.d/metanorma-bsi".to_string()
+        )],
+        "the family slice attaches on the second edge's exact pin"
+    );
+    let journal = read_journal(&home);
+    assert!(
+        journal.contains(
+            "event=slice-augment slice=metanorma-bsi@1.0.0 base=metanorma mount=/flavors.d/metanorma-bsi"
+        ),
+        "{journal}"
+    );
+}
+
+#[test]
+fn auto_scan_family_slice_skips_when_no_edge_matches() {
+    // Neither family row's pin covers the resolved base — the loud skip
+    // keeps the base-version reason.
+    let (tmp, home) = base_setup("slice-family-miss", "metanorma", "1.16.9");
+    write_payload(
+        &home,
+        "metanorma-bsi",
+        "1.0.0",
+        &slice_manifest_family(
+            "metanorma-bsi",
+            "1.0.0",
+            "metanorma",
+            "flavors",
+            "= 1.16.2",
+            "1.16.2",
+            "= 1.16.2-ruby3.3",
+            "1.16.2-ruby3.3",
+        ),
+    );
+
+    let plan = dispatch_pinned(&home, tmp.path(), "metanorma", "1.16.9").unwrap();
+
+    assert!(slice_mounts(&plan).is_empty(), "nothing attaches");
+    let journal = read_journal(&home);
+    assert!(
+        journal.contains("event=slice-skip slice=metanorma-bsi@1.0.0 reason=base-version"),
+        "{journal}"
+    );
+}
+
 #[test]
 fn auto_scan_skips_an_unknown_point_loudly() {
     let (tmp, home) = base_setup("slice-unknown", "metanorma", "1.16.2");
