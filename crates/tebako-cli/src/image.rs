@@ -74,19 +74,23 @@ fn write_dwarfs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
 /// the backend resolves. Content drops ride lz4-or-store and the
 /// metadata blob rides lz4-HC (codec 0x13 — every reader dispatches it
 /// to the SAME fast-lz4 decoder, and the HC match finder keeps a
-/// realistic tree's blob under the inline ceiling: the
-/// native-extension e2e tree is 830 KiB lz4-hc vs 1049 KiB fast lz4,
-/// which overshoots the writer's 1000 KiB threshold; `store` (2.5 MB)
-/// overshoots the readers' 1 MiB hard ceiling outright). The
-/// shared-inline table stays off (`defaults.shared_inline = false`) —
-/// one handle kind, nil wire cost (spec 20 §5 constraint 1). This
-/// recipe emits NO seekable containers (the categorizer-less chunk
-/// path never sets the flag — limnifs#195); tebako#464's bounded cost
-/// comes from the reader's SIEVE drop cache instead. The metadata is
-/// inlined up to the readers' 1 MiB ceiling.
+/// realistic tree's blob small: the native-extension e2e tree is
+/// 830 KiB lz4-hc vs 1049 KiB fast lz4, and the metanorma payload tree
+/// (≈38 700 entries) is ≈7.9 MiB). The shared-inline table stays off
+/// (`defaults.shared_inline = false`) — one handle kind, nil wire cost
+/// (spec 20 §5 constraint 1). This recipe emits NO seekable containers
+/// (the categorizer-less chunk path never sets the flag — limnifs#195);
+/// tebako#464's bounded cost comes from the reader's SIEVE drop cache
+/// instead. The metadata is inlined ALWAYS — a self-contained tebako
+/// image cannot carry a sidecar — up to the product ceiling
+/// `tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES` (64 MiB on the wire; the
+/// writer's externalize threshold is set to the same value, so the
+/// sidecar branch below is the named guard, never the recipe).
 fn write_limnifs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
     let mut config = limnifs_write::WriteConfig::default_v0_1();
     config.dictionaries.enabled = false;
+    config.defaults.metadata_externalize_threshold =
+        tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES as usize;
     config.defaults.metadata_codec = "lz4-hc".to_string();
     config.defaults.text_codec = "lz4".to_string();
     config.defaults.binary_codec = "lz4".to_string();
@@ -100,9 +104,10 @@ fn write_limnifs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
     })?;
     if let Some(sidecar) = &artifact.metadata_sidecar {
         return Err(plain_error(format!(
-            "limnifs writer: the tree's metadata externalized ({} bytes to '{}') — a self-contained tebako image inlines the metadata; the tree is too large for this format today (press with --format dwarfs for trees this size)",
+            "limnifs writer: the tree's metadata externalized ({} bytes to '{}') past tebako's {} MiB inline ceiling — a self-contained tebako image inlines the metadata; the tree is too large for one image (split the payload, or press with --format dwarfs)",
             sidecar.bytes.len(),
-            sidecar.locator
+            sidecar.locator,
+            tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES / (1024 * 1024)
         )));
     }
     let mut image = artifact.bytes;

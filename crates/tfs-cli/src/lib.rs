@@ -1079,19 +1079,24 @@ fn write_dwarfs_image(_source: &Path, _output: &Path) -> Result<(), (String, i32
 /// backend resolves. Content drops ride lz4-or-store and the metadata
 /// blob rides lz4-HC (codec 0x13 — every reader dispatches it to the
 /// SAME fast-lz4 decoder, and the HC match finder keeps a realistic
-/// tree's blob under the inline ceiling: the native-extension e2e tree
-/// is 830 KiB lz4-hc vs 1049 KiB fast lz4, which overshoots the
-/// writer's 1000 KiB threshold; `store` (2.5 MB) overshoots the
-/// readers' 1 MiB hard ceiling outright). The shared-inline table stays
-/// off (`defaults.shared_inline = false`) — one handle kind, nil wire
-/// cost (spec 20 §5 constraint 1). Content chunks at or above the
-/// 256 KiB frame size ride flagged seekable containers (limnifs 0.3.1 —
-/// #195 fixed the chunk-path flag), so a large single file also reads
-/// back bounded; the reader's SIEVE drop cache bounds everything below.
-/// The metadata is inlined up to the readers' 1 MiB ceiling.
+/// tree's blob small: the native-extension e2e tree is 830 KiB lz4-hc
+/// vs 1049 KiB fast lz4, and the metanorma payload tree (≈38 700
+/// entries) is ≈7.9 MiB). The shared-inline table stays off
+/// (`defaults.shared_inline = false`) — one handle kind, nil wire cost
+/// (spec 20 §5 constraint 1). Content chunks at or above the 256 KiB
+/// frame size ride flagged seekable containers (limnifs 0.3.1 — #195
+/// fixed the chunk-path flag), so a large single file also reads back
+/// bounded; the reader's SIEVE drop cache bounds everything below. The
+/// metadata is inlined ALWAYS (a self-contained tebako image cannot
+/// carry a sidecar) up to the product ceiling
+/// `tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES` — the writer's externalize
+/// threshold is set to the same value, so the sidecar branch is the
+/// named guard, never the recipe.
 fn write_limnifs_image(source: &Path, output: &Path) -> Result<(), (String, i32)> {
     let mut config = limnifs_write::WriteConfig::default_v0_1();
     config.dictionaries.enabled = false;
+    config.defaults.metadata_externalize_threshold =
+        tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES as usize;
     config.defaults.metadata_codec = "lz4-hc".to_string();
     config.defaults.text_codec = "lz4".to_string();
     config.defaults.binary_codec = "lz4".to_string();
@@ -1106,9 +1111,10 @@ fn write_limnifs_image(source: &Path, output: &Path) -> Result<(), (String, i32)
     if let Some(sidecar) = &artifact.metadata_sidecar {
         return Err((
             format!(
-                "limnifs writer: the tree's metadata externalized ({} bytes to '{}') — a self-contained tebako image inlines the metadata; the tree is too large for this format today (mkimage with --format dwarfs for trees this size)",
+                "limnifs writer: the tree's metadata externalized ({} bytes to '{}') past tebako's {} MiB inline ceiling — a self-contained tebako image inlines the metadata; the tree is too large for one image (split the payload, or mkimage with --format dwarfs)",
                 sidecar.bytes.len(),
-                sidecar.locator
+                sidecar.locator,
+                tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES / (1024 * 1024)
             ),
             1,
         ));
@@ -1719,6 +1725,97 @@ mod tests {
         // The unsupported-format named error lists the new supported set.
         let (msg, _) = cmd_mkimage("ext4", &src, &out).unwrap_err();
         assert!(msg.contains("supported: dwarfs, limnifs"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The product ceiling regression test: a tree whose lz4-hc metadata
+    /// blob overshoots LimniFS's 1 MiB DEFAULT ceiling must still image
+    /// with the metadata inline (the writer's externalize threshold rides
+    /// `tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES`) and mount through the
+    /// raised reader ceiling. The fixture is self-calibrating: batches of
+    /// randomized entries (a deterministic xorshift, so names do not
+    /// compress to nothing — real trees never do either) until the
+    /// on-wire blob provably overshoots the 1 MiB default (the metanorma
+    /// payload's ≈38 700 entries take ≈7.9 MiB); the old default
+    /// externalized at 1000 KiB and this image would have failed mkimage
+    /// outright.
+    #[test]
+    fn mkimage_limnifs_inlines_metadata_past_the_limnifs_default_ceiling() {
+        let dir =
+            std::env::temp_dir().join(format!("tfs-cli-mkimage-bigmeta-{}", std::process::id()));
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        // Self-calibrating fixture: generate entries in batches until
+        // the on-wire blob provably overshoots the 1 MiB default (the
+        // default-ceiling parse erring IS the proof), so the test never
+        // silently passes under the old ceiling if per-entry wire costs
+        // drift. Hard cap names the re-calibration remedy.
+        let mut state = 0x9E3779B97F4A7C15u64;
+        let mut rand = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let out = dir.join("big.tfs");
+        let mut total = 0u32;
+        let mut overshot = false;
+        while !overshot && total < 48_000 {
+            for _ in 0..6_000u32 {
+                total += 1;
+                let sub = src.join(format!("d{:04x}", (rand() % 96) as u32));
+                std::fs::create_dir_all(&sub).unwrap();
+                std::fs::write(
+                    sub.join(format!(
+                        "file-{total:05}-{:016x}{:016x}.bin",
+                        rand(),
+                        rand()
+                    )),
+                    total.to_le_bytes(),
+                )
+                .unwrap();
+            }
+            cmd_mkimage("limnifs", &src, &out).expect("mkimage limnifs over the 1 MiB default");
+            let image = std::fs::read(&out).unwrap();
+            let mut probe = limnifs_core::ManifestCursor::new(&image);
+            limnifs_core::parse_manifest_header(&mut probe).unwrap();
+            limnifs_core::parse_feature_flags_section(&mut probe).unwrap();
+            overshot = limnifs_core::parse_metadata_reference(&mut probe.clone()).is_err();
+        }
+        assert!(
+            overshot,
+            "{total} entries still under LimniFS's 1 MiB default inline ceiling — \
+             raise the fixture's per-entry entropy"
+        );
+
+        // The tebako product ceiling accepts the same image inline.
+        let image = std::fs::read(&out).unwrap();
+        let mut cursor = limnifs_core::ManifestCursor::new(&image);
+        limnifs_core::parse_manifest_header(&mut cursor).unwrap();
+        limnifs_core::parse_feature_flags_section(&mut cursor).unwrap();
+        let meta_ref = limnifs_core::parse_metadata_reference_with_ceilings(
+            &mut cursor,
+            limnifs_core::DEFAULT_LOCATOR_MAX_URI_BYTES,
+            tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES,
+        )
+        .expect("the product ceiling parses the reference");
+        assert!(meta_ref.inline_metadata.is_some(), "the metadata is inline");
+
+        // The mount walk resolves entries through the raised ceiling;
+        // stat a sampled spread.
+        let mount = tfs::mount::build_from_file(&out.to_string_lossy(), "/mnt")
+            .expect("the over-default image mounts");
+        assert_eq!(mount.backend.name().to_str().unwrap(), "LimniFS");
+        let mut statted = 0u32;
+        for entry in std::fs::read_dir(&src).unwrap().flatten().take(8) {
+            let sub = entry.file_name().to_string_lossy().into_owned();
+            for file in std::fs::read_dir(entry.path()).unwrap().flatten().take(4) {
+                let rel = format!("{sub}/{}", file.file_name().to_string_lossy());
+                assert!(mount.backend.stat(&rel).is_ok(), "stat {rel}");
+                statted += 1;
+            }
+        }
+        assert!(statted > 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
