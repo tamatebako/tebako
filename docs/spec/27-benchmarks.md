@@ -478,7 +478,11 @@ landed:
   symlink (`git-5.1.0/.claude/skills -> ../.github/skills`,
   "unsupported file type", exit 255). v2-fat CI legs therefore press
   (or bundle) with dwarfs until the limnifs writer grows symlink
-  support AND the size ceiling lifts.
+  support AND the size ceiling lifts. **(Superseded 2026-09-29.)**
+  limnifs-write 0.3.x stores symlinks (`add_symlink`; the writer's
+  unsupported-type error now fires only on non-file/dir/link kinds)
+  and the 0.3 format line lifted the size ceilings — the two blockers
+  named here no longer stand.
 - **(b) limnifs cannot carry the metanorma payload tree today.**
   `tfs mkimage --format limnifs` on the extracted 1.16.9 payload
   (29,846 files, 643 MB, zero symlinks) fails: the tree's metadata
@@ -492,7 +496,16 @@ landed:
   upstream has NOT lifted the ceiling. Consequence: v2 arms report
   dwarfs-backend numbers for metanorma; a limnifs arm is a named gap
   until a small-payload suite or a lifted ceiling changes the facts.
-  Never fake it.
+  Never fake it. **(Resolved 2026-09-29.)** The 0.3 format line closed
+  this: metanorma 1.17.0-3 ships all six payload slices as LimniFS —
+  the 29,846-file tree included — magic-verified, mounted, and run by
+  the 2026-09-29 fresh-store acceptance (compile through the spawned
+  java edge green). The old-reader objection is void by the format
+  flip itself: the 0.3 reader rejects pre-flip bytes at mount-open
+  (limnifs#192), and the externalized-metadata form carries no 1 MiB
+  reader ceiling on the 0.3 line. The limnifs arm is no longer a gap;
+  v2 arms report limnifs-backend numbers for metanorma from this
+  acceptance onward.
 - **(c) packed-mn v1.14.4 `metanorma-darwin-arm64.tgz` is a
   single-member gzipped tar** (343.8 MB → one 355.4 MB Mach-O arm64
   executable, mode 0755, member name `metanorma-darwin-arm64`), sha256
