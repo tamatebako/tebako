@@ -223,14 +223,22 @@ its own, not a side effect of a dep bump:
    small-buffer case; the omnizip-zstd decoder (≤ 0.16.78) mis-decoded
    valid frames (omnizip-rs#315). lz4-HC (codec 0x13) dispatches to the
    same fast-lz4 decoder on every reader while the hash-chain match
-   finder keeps a realistic tree's blob under the 1 MiB inline ceiling
-   (fast lz4 and store both overshoot). Retained on its own merits.
-3. **The writer inlines metadata up to the readers' 1 MiB ceiling** —
-   stock since limnifs 0.2.53 (the
-   `defaults.metadata_externalize_threshold` default, 1000 KiB, is the
-   floor-safe value; limnifs#187). A tree whose lz4-HC blob exceeds the
-   ceiling fails press/mkimage with the named self-contained error —
-   the documented "too large for this format today" boundary.
+   finder keeps a realistic tree's blob small (the native-extension e2e
+   tree: 830 KiB lz4-hc vs 1049 KiB fast lz4; the metanorma payload
+   tree, ≈38 700 entries: ≈7.9 MiB). Retained on its own merits.
+3. **The writer inlines metadata up to the tebako product ceiling** —
+   `tfs::LIMNIFS_INLINE_METADATA_MAX_BYTES` (64 MiB on the wire,
+   compressed). A self-contained tebako image cannot carry a metadata
+   sidecar, so the press/mkimage recipe sets the writer's
+   `defaults.metadata_externalize_threshold` to the same value (the
+   limnifs default, 1000 KiB per limnifs#187, is LimniFS's floor-safe
+   value for ITS readers — tebako's single-file contract needs the
+   inline always); the backend's mount-open parses the reference with
+   the raised ceiling. A tree whose lz4-HC blob exceeds the product
+   ceiling fails press/mkimage with the named error (split the
+   payload, or press dwarfs) — the documented boundary. Reader/writer
+   agreement is one constant, never two hand-written copies (spec 00
+   invariant 10).
 4. **Content drops ride lz4-or-store** — `text_codec`/`binary_codec`
    pinned lz4, the compression tournament restricted to `store` +
    `lz4`. Historical: the two codec defects above (plus limnifs#188's

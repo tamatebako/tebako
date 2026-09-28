@@ -42,10 +42,11 @@ use std::collections::HashMap;
 
 use limnifs_core::{
     parse_feature_flags_section, parse_history, parse_manifest_header, parse_metadata_blob,
-    parse_metadata_reference, parse_slab, parse_slab_header, parse_slab_index,
+    parse_metadata_reference_with_ceilings, parse_slab, parse_slab_header, parse_slab_index,
     slab_cache::CachedSlabStore,
     slab_store::{SlabSource, SlabStore},
-    ContentHandle, CoreError, Inode, ManifestCursor, ManifestHeader, MetadataBlob, SLAB_HEADER_LEN,
+    ContentHandle, CoreError, Inode, ManifestCursor, ManifestHeader, MetadataBlob,
+    DEFAULT_LOCATOR_MAX_URI_BYTES, SLAB_HEADER_LEN,
 };
 
 use crate::backend::{Backend, EntryType, RawDirEntry, RawStat};
@@ -168,7 +169,12 @@ impl LimnifsBackend {
         }
         let flags_end = cursor.position();
 
-        let meta_ref = parse_metadata_reference(&mut cursor).map_err(open_error)?;
+        let meta_ref = parse_metadata_reference_with_ceilings(
+            &mut cursor,
+            DEFAULT_LOCATOR_MAX_URI_BYTES,
+            crate::LIMNIFS_INLINE_METADATA_MAX_BYTES,
+        )
+        .map_err(open_error)?;
         let meta_ref_end = cursor.position();
         let Some(blob_bytes) = meta_ref.inline_metadata.as_deref() else {
             return Err(unsupported(
@@ -1166,7 +1172,12 @@ mod tests {
         let mut cursor = ManifestCursor::new(image);
         let _ = parse_manifest_header(&mut cursor).unwrap();
         let _ = parse_feature_flags_section(&mut cursor).unwrap();
-        let reference = parse_metadata_reference(&mut cursor).unwrap();
+        let reference = parse_metadata_reference_with_ceilings(
+            &mut cursor,
+            DEFAULT_LOCATOR_MAX_URI_BYTES,
+            crate::LIMNIFS_INLINE_METADATA_MAX_BYTES,
+        )
+        .unwrap();
         assert!(reference.is_inlined());
         cursor.position()
     }

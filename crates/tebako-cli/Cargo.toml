@@ -48,7 +48,7 @@ dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 # + slice-map contract enforcement (0.3.43) and the omnizip 0.21.113
 # fleet (0.3.53); requires rustc 1.85 (the 0.3.54 MSRV bump — the
 # workspace rust-version rises with it).
-limnifs-write = "0.3.54"
+limnifs-write = "0.3.56"
 libc = "0.2"
 sha2 = "0.10"
 # RuntimeSdk provisioning extracts the ruby src release in-process (no tar

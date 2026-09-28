@@ -82,6 +82,20 @@
 
 pub mod backend;
 pub mod backends_cow;
+
+/// The tebako product ceiling on the **on-wire** (lz4-hc compressed)
+/// inline LimniFS metadata blob, in bytes (spec 20 §6). LimniFS's own
+/// default is 1 MiB (limnifs-core `DEFAULT_INLINE_METADATA_MAX_BYTES`,
+/// "≤ 1 MiB by default" — spec §5.3); tebako images are self-contained
+/// (no metadata sidecar is possible — the mount-open walk requires the
+/// blob inline), so the press recipe inlines always and the backend
+/// accepts up to this ceiling. A realistic payload fits with wide
+/// headroom: the metanorma tree (≈38 700 entries) compresses to ≈7.9 MiB.
+/// The writer threshold and the reader ceiling share this one value —
+/// the tfs-cli/tebako-cli mkimage paths set the limnifs-write
+/// `metadata_externalize_threshold` from it.
+pub const LIMNIFS_INLINE_METADATA_MAX_BYTES: u32 = 64 * 1024 * 1024;
+
 #[cfg(feature = "vendored-dwarfs")]
 pub mod backends_dwarfs;
 #[cfg(feature = "enc")]
