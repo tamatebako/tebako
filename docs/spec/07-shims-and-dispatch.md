@@ -141,6 +141,9 @@ per declared entrypoint name — never as re-exec wrappers.
    `<point.mount>/<slice.name>` (an unknown point name = loud skip);
    check the slice's `constraint` against the RESOLVED base version and
    its language edge against the RESOLVED runtime (engine + abi line).
+   A slice MAY carry several `augments` edges naming the root — the
+   suffixed-line family (spec 03 §2.8) ships one exact-pin edge per
+   family row; the candidate attaches when ANY such edge matches.
    Newest compatible version per slice name attaches (the store layout
    makes same-version duplicates impossible); an auto-discovered
    mismatch = loud skip + journal (`event=slice-skip slice=…

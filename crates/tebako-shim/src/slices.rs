@@ -213,8 +213,13 @@ pub fn attach(
 /// The §2 step-3a checks against ONE candidate slice manifest, in check
 /// order: an `augments:` edge naming the base → the base DECLARES the
 /// named point → the edge's constraint vs the base's RESOLVED version →
-/// the slice's language edges vs the RESOLVED runtime. `Ok` carries the
-/// point (the mount root).
+/// the slice's language edges vs the RESOLVED runtime. EVERY edge naming
+/// the base gets the point+constraint check and the candidate attaches
+/// on the first match — the suffixed-line family (spec 03 §2.8) ships
+/// ONE slice with one exact-pin edge per family row, so a first edge's
+/// miss never vetoes a later edge's hit (single-edge slices behave
+/// exactly as before). The language-edge check is slice-level and runs
+/// once, after an edge matches. `Ok` carries the point (the mount root).
 fn check_candidate(
     base_name: &str,
     base_version: &str,
@@ -222,67 +227,79 @@ fn check_candidate(
     rt: &tpkg::runtime_store::CachedRuntime,
     slice: &tpkg::PayloadManifest,
 ) -> Result<tpkg::ExtensionPoint, Reject> {
-    let Some(edge) = slice.augments.iter().find(|e| e.payload == base_name) else {
+    let mut first_reject: Option<Reject> = None;
+    let mut named = false;
+    for edge in slice.augments.iter().filter(|e| e.payload == base_name) {
+        named = true;
+        let Some(point) = points.iter().find(|p| p.name == edge.extension_point) else {
+            first_reject.get_or_insert_with(|| {
+                Reject::new(
+                    "unknown-point",
+                    format!(
+                        "names extension point \"{}\", which \"{base_name}\" does not declare",
+                        edge.extension_point
+                    ),
+                )
+            });
+            continue;
+        };
+        if !tpkg::versions::from_validated(&edge.constraint).matches(base_version) {
+            first_reject.get_or_insert_with(|| {
+                Reject::new(
+                    "base-version",
+                    format!(
+                        "constraint \"{}\" does not match the resolved {base_name} {base_version}",
+                        edge.constraint.as_str()
+                    ),
+                )
+            });
+            continue;
+        }
+        for req in &slice.requires {
+            if let tpkg::Requirement::Language {
+                engine, constraint, ..
+            } = req
+            {
+                if engine != &rt.engine {
+                    return Err(Reject::new(
+                        "runtime",
+                        format!(
+                            "language edge engine \"{engine}\" ≠ the resolved runtime's \"{}\"",
+                            rt.engine
+                        ),
+                    ));
+                }
+                // The language edge vs the RESOLVED runtime (spec 07 §2 step
+                // 3a) — entry_matches owns the version-line rule (and the abi
+                // line, when both sides carry one).
+                let check = tpkg::RuntimeRequirement {
+                    engine: engine.clone(),
+                    constraint: constraint.clone(),
+                    implementation: None,
+                    abi: None,
+                };
+                if !tpkg::runtime_store::entry_matches(rt, &check) {
+                    return Err(Reject::new(
+                        "runtime",
+                        format!(
+                            "language edge \"{engine} {}\" is not satisfied by the resolved runtime {} {}",
+                            constraint.as_str(),
+                            rt.engine,
+                            rt.lang_version
+                        ),
+                    ));
+                }
+            }
+        }
+        return Ok(point.clone());
+    }
+    if !named {
         return Err(Reject::new(
             "no-edge",
             format!("declares no `augments:` edge naming \"{base_name}\""),
         ));
-    };
-    let Some(point) = points.iter().find(|p| p.name == edge.extension_point) else {
-        return Err(Reject::new(
-            "unknown-point",
-            format!(
-                "names extension point \"{}\", which \"{base_name}\" does not declare",
-                edge.extension_point
-            ),
-        ));
-    };
-    if !tpkg::versions::from_validated(&edge.constraint).matches(base_version) {
-        return Err(Reject::new(
-            "base-version",
-            format!(
-                "constraint \"{}\" does not match the resolved {base_name} {base_version}",
-                edge.constraint.as_str()
-            ),
-        ));
     }
-    for req in &slice.requires {
-        if let tpkg::Requirement::Language {
-            engine, constraint, ..
-        } = req
-        {
-            if engine != &rt.engine {
-                return Err(Reject::new(
-                    "runtime",
-                    format!(
-                        "language edge engine \"{engine}\" ≠ the resolved runtime's \"{}\"",
-                        rt.engine
-                    ),
-                ));
-            }
-            // The language edge vs the RESOLVED runtime (spec 07 §2 step
-            // 3a) — entry_matches owns the version-line rule (and the abi
-            // line, when both sides carry one).
-            let check = tpkg::RuntimeRequirement {
-                engine: engine.clone(),
-                constraint: constraint.clone(),
-                implementation: None,
-                abi: None,
-            };
-            if !tpkg::runtime_store::entry_matches(rt, &check) {
-                return Err(Reject::new(
-                    "runtime",
-                    format!(
-                        "language edge \"{engine} {}\" is not satisfied by the resolved runtime {} {}",
-                        constraint.as_str(),
-                        rt.engine,
-                        rt.lang_version
-                    ),
-                ));
-            }
-        }
-    }
-    Ok(point.clone())
+    Err(first_reject.expect("an edge that named the base but never matched left a reject"))
 }
 
 /// A slice manifest's gem inventory, whichever provides kind carries it.
