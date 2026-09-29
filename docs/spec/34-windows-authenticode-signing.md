@@ -75,6 +75,15 @@ signing is a post-press step in the publisher's pipeline (§6). Press
 never signs; no `--signtool` flag exists. (`--sign`, spec 09, is the
 other plane.)
 
+Post-press Authenticode signing appends the WIN_CERTIFICATE table AFTER
+the trailer (the security data directory points at it); readers still
+find the trailer via the logical-EOF rule of spec 02 §1, so a signed
+stitched exe stays fully loadable — the PE twin of spec 31 §1.2's
+superblob compensation. Because the locator lives in the stitched
+package's embedded bootstrap, RUNNING a signed package requires a
+bootstrap built from a tebako line carrying the PE arm; a pre-locator
+bootstrap reads only the physical EOF and dies EX_TEBAKO_MANIFEST.
+
 ### 1.3 Sign-then-hash is mandatory
 
 Signing embeds a timestamped countersignature; digests must cover the

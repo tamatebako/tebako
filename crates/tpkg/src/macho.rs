@@ -1,4 +1,5 @@
-//! Mach-O awareness for the trailer locator (spec 02 §1, spec 31 §1.2).
+//! Post-press signature awareness for the trailer locator (spec 02 §1,
+//! spec 31 §1.2, spec 34 §1.2/§6).
 //!
 //! A package that was codesigned post-press carries the Mach-O
 //! code-signature superblob AFTER the trailer: codesign appends at the
@@ -8,10 +9,12 @@
 //! exactly that shape — a tail-reaching superblob — and locates the
 //! trailer by its self-validating header (magic + crc + bounds) in the
 //! window ending at the superblob start or at most 15 zero pad bytes
-//! earlier. Every other shape (non-Mach-O, unsigned, superblob not at
-//! the tail, unparseable header, no valid trailer under the superblob)
-//! yields the physical EOF unchanged. It never guesses and never fails
-//! on content: only i/o errors propagate.
+//! earlier. The PE twin (an Authenticode WIN_CERTIFICATE table appended
+//! at EOF, spec 34 §6) is the MZ arm, resolved by `crate::pe`. Every
+//! other shape (unknown format, unsigned, signature not at the tail,
+//! unparseable header, no valid trailer under the signature) yields the
+//! physical EOF unchanged. It never guesses and never fails on content:
+//! only i/o errors propagate.
 
 use std::io::{Read, Seek, SeekFrom};
 
@@ -24,8 +27,9 @@ const HEADER_64_LEN: usize = 32;
 /// Upper bound for the header + command-table read (linker output is a
 /// few KiB; anything larger is not a shape the locator recognizes).
 const MAX_COMMAND_AREA: u64 = 1 << 20;
-/// codesign aligns the superblob to 16 bytes; the zero pad between the
-/// trailer and the superblob is therefore shorter than this.
+/// codesign aligns the superblob to 16 bytes and Authenticode the
+/// WIN_CERTIFICATE table to 8; the zero pad between the trailer and the
+/// appended signature is therefore shorter than this.
 const SUPERBLOB_ALIGN: u64 = 16;
 
 /// The effective trailer end for a package of `eof` bytes.
@@ -37,25 +41,27 @@ pub fn trailer_end<R: Read + Seek>(r: &mut R, eof: u64) -> Result<u64, TpkgError
     r.seek(SeekFrom::Start(0))
         .and_then(|_| r.read_exact(&mut magic))
         .map_err(|_| TpkgError::Io)?;
-    let superblob = match magic {
+    let suffix_start = match magic {
         [0xcf, 0xfa, 0xed, 0xfe] => slice_signature_end(r, 0, eof, false),
         [0xfe, 0xed, 0xfa, 0xcf] => slice_signature_end(r, 0, eof, true),
         [0xca, 0xfe, 0xba, 0xbe] | [0xca, 0xfe, 0xba, 0xbf] => {
             fat_signature_end(r, eof, magic[3] == 0xbf)
         }
+        [0x4d, 0x5a, _, _] => crate::pe::certificate_table_start(r, eof),
         _ => None,
     };
-    match superblob {
+    match suffix_start {
         Some(start) => Ok(validated_end_before(r, start).unwrap_or(eof)),
         None => Ok(eof),
     }
 }
 
-/// The trailer end immediately before a superblob at `start`: `start`
-/// itself, or up to `SUPERBLOB_ALIGN - 1` zero pad bytes earlier. Only a
-/// candidate whose `TPKG_HEADER_SIZE` window validates as a trailer
-/// header (magic + crc + slot-table bounds) is accepted, so a superblob
-/// that does not bury a trailer yields `None` rather than a guess.
+/// The trailer end immediately before an appended signature at `start`
+/// (Mach-O superblob or PE certificate table): `start` itself, or up to
+/// `SUPERBLOB_ALIGN - 1` zero pad bytes earlier. Only a candidate whose
+/// `TPKG_HEADER_SIZE` window validates as a trailer header (magic + crc +
+/// slot-table bounds) is accepted, so a signature that does not bury a
+/// trailer yields `None` rather than a guess.
 fn validated_end_before<R: Read + Seek>(r: &mut R, start: u64) -> Option<u64> {
     let mut end = start;
     loop {
