@@ -157,6 +157,7 @@ pub mod merkle_host;
 mod model;
 mod package;
 pub mod payload_store;
+mod pe;
 mod region;
 pub mod runtime_store;
 pub mod settings;
