@@ -80,15 +80,19 @@ Two spellings, one semantics; both live:
       --tebako-image <shared mounts…> --tebako-entry <entry> <args…>
   ```
 
-  **Argument carry-over (locked):** an argument that lexically resolves
-  under one of the parent's mounts is carried by RE-MOUNTING that image
+  **Argument carry-over (locked):** an argument the parent's mounts
+  HOLD (spec 11 §11's held predicate — an entry in the image, or below
+  an existing in-image ancestor) is carried by RE-MOUNTING that image
   in the child AT THE SAME mount point (the bare store file or the
   package slot, serialized per spec 17 §2.1's emit rule) — argument
-  strings pass through UNREWRITTEN. On the exec-cache visibility class
-  (windows), where the child cannot serve in-VFS reads, the argument's
-  file is materialized to the exec cache and the argument rewritten to
-  the host path — the shipped ruby-windows behavior is this rule's
-  first instance.
+  strings pass through UNREWRITTEN. Lexical COVERAGE alone never
+  routes an argument: with a payload mounted at `/`, every absolute
+  host path is covered, and a covered-but-unheld argument is the
+  spec 08 host passthrough — it rides to the child untouched. On the
+  exec-cache visibility class (windows), where the child cannot serve
+  in-VFS reads, the held argument's file is materialized to the exec
+  cache and the argument rewritten to the host path — the shipped
+  ruby-windows behavior is this rule's first instance.
 - **Operator-mediated:** `tebako run <name>:<entry> -- <args…>` — the
   generic verb, pinned for runtime entries: `<name>` is the runtime
   payload's name (e.g. `openjdk`), `<entry>` one of its declared

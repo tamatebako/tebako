@@ -1227,13 +1227,17 @@ fn runtime_facts(rt: &CachedRuntime, runtime_root: &str) -> Result<Arc<RuntimeFa
 }
 
 /// The carried-mount scan (see the module doc): the child triples and
-/// the rewritten argument vector. POSIX carries the mounts an argument
-/// touches (all decls at the argument's point, establishment order,
-/// deduped, runtime-root decls excluded); an argument under the runtime
-/// root, under an EXCLUDED point (`exclude` — the spawned payload plan's
-/// `/` and the provider's dep mount points, which the CHILD's own mounts
-/// own), or under an unserializable mount materializes parent-side.
-/// Windows materializes every embedded argument and carries nothing.
+/// the rewritten argument vector. The scan routes only HELD arguments
+/// (`path_is_held`): coverage alone claims EVERY absolute host path
+/// under a `/` payload mount, and a covered-but-unheld path is the
+/// spec 08 host passthrough — it rides to the child untouched. POSIX
+/// carries the mounts a held argument touches (all decls at the
+/// argument's point, establishment order, deduped, runtime-root decls
+/// excluded); a held argument under the runtime root, under an
+/// EXCLUDED point (`exclude` — the spawned payload plan's `/` and the
+/// provider's dep mount points, which the CHILD's own mounts own), or
+/// under an unserializable mount materializes parent-side. Windows
+/// materializes every held argument and carries nothing.
 fn carry_mounts(
     state: &SpawnState,
     args: &[String],
@@ -1249,6 +1253,12 @@ fn carry_mounts(
         {
             let mut materialize_idx: Vec<usize> = Vec::new();
             for (i, arg) in args.iter().enumerate() {
+                if !ctx.path_is_held(arg) {
+                    // Covered but not held = the spec 08 host
+                    // passthrough (a `/` payload mount covers EVERY
+                    // absolute path; only image content spawn-routes).
+                    continue;
+                }
                 let Some(point) = ctx.mount_point_of(arg) else {
                     continue;
                 };
@@ -1283,7 +1293,10 @@ fn carry_mounts(
         {
             let mut materialize_idx: Vec<usize> = Vec::new();
             for (i, arg) in args.iter().enumerate() {
-                if ctx.path_is_embedded(arg) {
+                // Same held gate as POSIX: a covered-but-unheld
+                // argument is a host path (spec 08 passthrough), not
+                // image content to extract.
+                if ctx.path_is_held(arg) {
                     materialize_idx.push(i);
                 }
             }
@@ -1508,12 +1521,23 @@ mod tests {
     /// A real zip image carrying the manifest (the scratch-mount read's
     /// target — tfs mounts it for real).
     fn build_image(path: &Path, manifest: &str) {
+        build_image_with(path, manifest, &[]);
+    }
+
+    /// `build_image` plus extra in-image entries. An argument-routing
+    /// fixture must HOLD the paths it names: `path_is_held` probes the
+    /// image's entries, not the argument's spelling.
+    fn build_image_with(path: &Path, manifest: &str, files: &[(&str, &[u8])]) {
         let file = std::fs::File::create(path).unwrap();
         let mut zw = zip::ZipWriter::new(file);
         let opts = zip::write::SimpleFileOptions::default();
         zw.add_directory("__tpkg__/", opts).unwrap();
         zw.start_file("__tpkg__/manifest.yaml", opts).unwrap();
         zw.write_all(manifest.as_bytes()).unwrap();
+        for (name, content) in files {
+            zw.start_file(name, opts).unwrap();
+            zw.write_all(content).unwrap();
+        }
         zw.finish().unwrap();
     }
 
@@ -2157,9 +2181,17 @@ mod tests {
                 "",
             ),
         );
-        // A real image mounted at `/` (the app payload's seat).
+        // A real image mounted at `/` (the app payload's seat), HOLDING
+        // the jar the argument names (the routing probes the image).
         let image = g.home.join("app.tfs");
-        build_image(&image, &app_manifest("metanorma", "1.17.0", "", ""));
+        build_image_with(
+            &image,
+            &app_manifest("metanorma", "1.17.0", "", ""),
+            &[(
+                "lib/ruby/gems/3.3.0/gems/ruby-jing-0.1.0/lib/jing.jar",
+                b"jar".as_slice(),
+            )],
+        );
         let mount = tfs::mount::build_from_file(&image.to_string_lossy(), "/").unwrap();
         context().write().unwrap().mount_checked(mount).unwrap();
         state_with(one_expose());
@@ -2186,6 +2218,51 @@ mod tests {
                 .iter()
                 .any(|a| a.ends_with("ruby-jing-0.1.0/lib/jing.jar")),
             "{:?}",
+            plan.argv
+        );
+    }
+
+    #[test]
+    fn a_host_argument_under_a_root_mounted_payload_passes_through() {
+        // The metanorma-ietf case: the compile hands system() an
+        // ABSOLUTE HOST path (the workdir's mini.rfc.xml). With the
+        // payload mounted at `/`, coverage claims every absolute path —
+        // but the image does not HOLD the file: the spec 08 passthrough
+        // applies, the argument rides verbatim, and no mount triple is
+        // carried for it. (Pre-fix this died in materialization.)
+        let g = guard("carry-host");
+        store_entry(
+            &g.home,
+            "java",
+            "21.0.12",
+            "0.3.0",
+            &runtime_manifest(
+                "java",
+                "  entrypoints: [{name: java, path: /bin/java}]\n",
+                "",
+            ),
+        );
+        let image = g.home.join("app.tfs");
+        build_image(&image, &app_manifest("metanorma", "1.17.0", "", ""));
+        let mount = tfs::mount::build_from_file(&image.to_string_lossy(), "/").unwrap();
+        context().write().unwrap().mount_checked(mount).unwrap();
+        state_with(one_expose());
+        // A REAL host file (absolute spelling) the image does not hold.
+        let host_file = g.home.join("mini.rfc.xml");
+        std::fs::write(&host_file, b"<rfc/>\n").unwrap();
+        let host_arg = host_file.to_string_lossy().into_owned();
+        let plan = plan("java", &["-o".to_string(), host_arg.clone()], &[])
+            .unwrap()
+            .expect("planned");
+        assert!(
+            plan.argv.iter().any(|a| a == &host_arg),
+            "the host path rides verbatim — {:?}",
+            plan.argv
+        );
+        let triple = format!("{}:-:/", image.to_string_lossy());
+        assert!(
+            !plan.argv.iter().any(|a| a == &triple),
+            "a host-only argument carries nothing — got {:?}",
             plan.argv
         );
     }

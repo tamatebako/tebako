@@ -542,7 +542,7 @@ fn init_inner() -> Result<(), String> {
 
 /// Borrowed engine error text, lossy (for init messages).
 pub fn errno_text(e: i32) -> String {
-    String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+    tfs::errno::strerror_text(e).to_string()
 }
 
 #[cfg(test)]

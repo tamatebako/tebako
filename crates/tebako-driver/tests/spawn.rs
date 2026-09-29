@@ -366,6 +366,96 @@ fn the_boot_captures_and_the_ffi_plans_with_carried_mounts() {
     }
 }
 
+/// The failing-plan call: rc plus the out_error text (NULL → None).
+fn ffi_plan_err(command: &str, args: &[&str]) -> (i32, Option<String>) {
+    let cmd = CString::new(command).unwrap();
+    let mut packed: Vec<u8> = Vec::new();
+    for a in args {
+        packed.extend_from_slice(a.as_bytes());
+        packed.push(0);
+    }
+    let mut out_exe: *mut c_char = std::ptr::null_mut();
+    let mut out_argv: *mut c_char = std::ptr::null_mut();
+    let mut out_argv_len: usize = 0;
+    let mut out_env: *mut c_char = std::ptr::null_mut();
+    let mut out_env_len: usize = 0;
+    let mut out_error: *mut c_char = std::ptr::null_mut();
+    let rc = unsafe {
+        tebako_driver::ffi::tebako_spawn_runtime_plan(
+            cmd.as_ptr(),
+            packed.as_ptr() as *const c_char,
+            packed.len(),
+            &mut out_exe,
+            &mut out_argv,
+            &mut out_argv_len,
+            &mut out_env,
+            &mut out_env_len,
+            &mut out_error,
+        )
+    };
+    let msg = if out_error.is_null() {
+        None
+    } else {
+        let m = unsafe { std::ffi::CStr::from_ptr(out_error) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { libc::free(out_error as *mut libc::c_void) };
+        Some(m)
+    };
+    (rc, msg)
+}
+
+#[test]
+fn host_absolute_arguments_ride_to_the_child_untouched() {
+    // The metanorma-ietf compile case: the app payload mounts at `/`
+    // and the Ruby side calls system() with ABSOLUTE HOST paths (the
+    // workdir's input/output files). Coverage claims them (the `/`
+    // mount's longest prefix), but the image does not HOLD them — they
+    // are spec 08 host passthroughs: rc=1, argv verbatim, no mount
+    // triple. (Pre-fix this died in materialization and returned rc=-1
+    // with a NULL error string.)
+    let g = guard("ffi-host-args");
+    store_entry(&g.tmp.path().join("home"), "21.0.12", "0.3.0");
+    let (_env, app) = boot_app(&g, "[{name: java, path: /bin/java}]", "[java]");
+    let host_in = g.tmp.path().join("mini.rfc.xml");
+    std::fs::write(&host_in, b"<rfc/>\n").unwrap();
+    let host_in = host_in.to_string_lossy().into_owned();
+    let host_out = g.tmp.path().join("mini.txt").to_string_lossy().into_owned();
+    let (rc, plan) = ffi_plan("java", &["-o", host_out.as_str(), host_in.as_str()]);
+    assert_eq!(rc, 1);
+    let (argv, _env) = plan.expect("planned");
+    let entry_pos = argv.iter().position(|a| a == "--tebako-entry").unwrap();
+    let entry_args = &argv[entry_pos + 2..];
+    assert_eq!(
+        entry_args,
+        ["-o".to_string(), host_out.clone(), host_in.clone()],
+        "{argv:?}"
+    );
+    let triple = format!("{}:-:/", app.display());
+    assert!(
+        !argv.contains(&triple),
+        "host-only arguments carry no mount — {argv:?}"
+    );
+}
+
+#[test]
+fn a_failing_plan_always_names_its_error() {
+    // spec 00 §9 at the FFI boundary: a failed plan returns rc=-1 AND
+    // a NUL-free message — never a bare code. (The pre-fix spawn text
+    // embedded the errno string's wire NUL, CString::new refused the
+    // interior NUL, and the caller saw "spawn plan failed without a
+    // message".)
+    let g = guard("ffi-err");
+    let (_env, _app) = boot_app(&g, "[{name: java, path: /bin/java}]", "[java]");
+    // No store entry: the exposed name's resolution fails, named.
+    let (rc, msg) = ffi_plan_err("java", &[]);
+    assert_eq!(rc, -1);
+    let msg = msg.expect("the error string rides every rc=-1");
+    assert!(!msg.is_empty());
+    assert!(!msg.contains('\0'));
+    assert!(msg.contains("never downloads"), "{msg}");
+}
+
 #[test]
 fn a_platform_skipped_edge_registers_no_expose() {
     // spec 03 §2.3 (schema_minor 9): a spawn edge whose triplets: list

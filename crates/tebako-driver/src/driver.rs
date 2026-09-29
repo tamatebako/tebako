@@ -90,7 +90,7 @@ fn effective_root(declared: &str, env: &dyn Env) -> Result<String, DriverError> 
 }
 
 pub(crate) fn errno_text(e: i32) -> String {
-    String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+    tfs::errno::strerror_text(e).to_string()
 }
 
 /// Environment access, abstracted for tests (`TEBAKO_RUNTIME_IMAGE`,

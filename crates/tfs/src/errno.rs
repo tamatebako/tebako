@@ -96,3 +96,38 @@ pub fn strerror(err: i32) -> &'static [u8] {
     }
     .to_bytes_with_nul()
 }
+
+/// The Rust-text view of [`strerror`]: the same static message without
+/// the C wire's NUL terminator. Text consumers (formatted diagnostics,
+/// FFI error strings that ride `CString::new` — whose interior-NUL
+/// rejection would otherwise silently drop the message) take this view;
+/// the bytes view stays NUL-terminated for the C ABI (`tebako_strerror`).
+pub fn strerror_text(err: i32) -> &'static str {
+    let bytes = strerror(err);
+    // The table entries are NUL-terminated ASCII: the terminator is
+    // exactly the last byte, and the remainder is always valid UTF-8.
+    std::str::from_utf8(&bytes[..bytes.len() - 1]).unwrap_or("Unknown error")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The two views of one message: the C wire keeps its NUL
+    /// terminator (`tebako_strerror` returns the pointer), the Rust
+    /// text view drops it — a terminal NUL inside a formatted
+    /// diagnostic trips `CString::new`'s interior-NUL rejection at the
+    /// FFI boundary and the message vanishes (spec 00 §9's named-error
+    /// guarantee).
+    #[test]
+    fn strerror_text_is_the_wire_string_minus_its_nul() {
+        for code in [0, 1, 2, 13, 22, 65, 75, 76, -1, 9999] {
+            let wire = strerror(code);
+            assert_eq!(wire.last(), Some(&0), "the C view stays terminated");
+            let text = strerror_text(code);
+            assert!(!text.is_empty());
+            assert!(!text.contains('\0'), "code {code}: NUL in '{text}'");
+            assert_eq!(text.as_bytes(), &wire[..wire.len() - 1]);
+        }
+    }
+}
