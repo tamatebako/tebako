@@ -111,6 +111,9 @@ case "$MODE" in
           esac
           printf '"%%TEBAKO_HOME%%\\shims\\%s.exe" >NUL 2>&1\r\n' "$w"
         done
+        # Completion marker — mirrors the pkg seed (the rehearsal poll's
+        # readiness signal; see ci/macos-pkg-build.sh).
+        printf 'echo seed: complete\r\n'
       } > msi-input/bootstrap-seed.cmd
       BOOTSTRAP_BIND=(-d Bootstrap=1)
       echo "bootstrap seed staged: registry $BOOTSTRAP_REGISTRY — payloads: $BOOTSTRAP_PAYLOADS"

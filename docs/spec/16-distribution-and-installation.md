@@ -240,7 +240,11 @@ install sandbox's cwd is torn down at completion), and an offline
 machine's failed seed never rolls back the tools install — and (4) puts
 `home/shims` on PATH beside `bin/`. The CI rehearsal POLLS for the seed's
 effects (registry registered, payloads cached — detached effects land
-asynchronously), so a broken seed fails the leg, never a user machine.
+asynchronously) AND for the seed's completion marker in `home/seed.log`:
+the dependency closure's spawned runtimes land during the install step,
+so the effects alone do not prove the warm finished — a dispatch that
+races the warm hits the root-held runtime install locks. A broken seed
+fails the leg, never a user machine.
 
 The optional third knob `BOOTSTRAP_WARM` (a subset of
 `BOOTSTRAP_PAYLOADS`, default empty) makes the seed dispatch each named

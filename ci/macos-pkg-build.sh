@@ -112,6 +112,13 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
       esac
       echo "\"\$ROOT/home/shims/$w\" || echo \"warning: warm dispatch of $w failed (offline?) — the first user run downloads its runtime\" >&2"
     done
+    # Completion marker (the rehearsal poll's readiness signal): the
+    # dependency closure's spawned runtimes land during `tebako install`,
+    # so the store's effects alone do NOT mean the warm finished — a
+    # dispatch that races the warm hits the root-held runtime install
+    # locks (EACCES in the root-owned home). The line lands in
+    # home/seed.log on the detached install-time run.
+    echo 'echo "seed: complete"'
   } > "pkg-root$INSTALL_ROOT/bootstrap-seed.sh"
   chmod 755 "pkg-root$INSTALL_ROOT/bootstrap-seed.sh"
   mkdir -p "pkg-root$INSTALL_ROOT/home/shims"
@@ -211,11 +218,17 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
   # The seed runs DETACHED at install time (PackageKit's script budget), so
   # its effects land asynchronously — poll for them with a generous budget,
   # and on timeout dump the seed log + the installer log (the runner is
-  # networked; a healthy seed lands in well under a minute).
-  deadline=$(( $(date +%s) + 900 ))
+  # networked). The effects alone race the WARM: the closure's spawned
+  # runtimes land during `tebako install`, so a non-empty runtimes/ does
+  # not mean the warm finished — a rehearsal dispatch that fires mid-warm
+  # hits the root-held runtime install lock and dies on EACCES in the
+  # root-owned home. The seed's "seed: complete" line in seed.log is the
+  # readiness signal (a heavy payload closure can take many minutes).
+  deadline=$(( $(date +%s) + 1800 ))
   while :; do
     seeded=1
     [ -f "$INSTALL_ROOT/home/config.yaml" ] || seeded=0
+    grep -q 'seed: complete' "$INSTALL_ROOT/home/seed.log" 2>/dev/null || seeded=0
     for p in $BOOTSTRAP_PAYLOADS; do
       [ -d "$INSTALL_ROOT/home/payloads/$p" ] || seeded=0
     done
@@ -225,9 +238,9 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
     done
     [ "$seeded" = 1 ] && break
     if [ "$(date +%s)" -ge "$deadline" ]; then
-      echo "== the detached seed did not land within 900s — seed.log tail:"; sudo tail -30 "$INSTALL_ROOT/home/seed.log" 2>/dev/null || true
+      echo "== the detached seed did not land within 1800s — seed.log tail:"; sudo tail -30 "$INSTALL_ROOT/home/seed.log" 2>/dev/null || true
       echo "== install.log tail:"; sudo grep -a "$PRODUCT_NAME" /var/log/install.log 2>/dev/null | tail -20 || true
-      echo "::error::the detached seed's effects did not land within 900s (forensics above)"; exit 1
+      echo "::error::the detached seed's effects did not land within 1800s (forensics above)"; exit 1
     fi
     sleep 5
   done
