@@ -1175,7 +1175,7 @@ fn preload_lib_name() -> &'static str {
 /// Engine errno text for messages.
 #[cfg(unix)]
 fn errno_text(e: i32) -> String {
-    String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+    tfs::errno::strerror_text(e).to_string()
 }
 
 /// Locate the preload shim: `TEBAKO_TFS_PRELOAD` wins, else the sibling

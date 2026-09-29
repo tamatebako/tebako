@@ -1985,7 +1985,7 @@ fn materialize_zero_runtime(
                         format!(
                             "cannot materialize the home-layout payload {}: {}",
                             entry.path.display(),
-                            String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+                            tfs::errno::strerror_text(e)
                         ),
                     )
                 });
@@ -2001,7 +2001,7 @@ fn materialize_zero_runtime(
                         format!(
                             "cannot materialize the zero-runtime entrypoint {path} of {}: {}",
                             entry.path.display(),
-                            String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+                            tfs::errno::strerror_text(e)
                         ),
                     )
                 })?;

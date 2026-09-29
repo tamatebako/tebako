@@ -251,7 +251,7 @@ fn validate_binds(spec: &str) -> Result<(), TebakoError> {
         .map_err(|e| packaging_error(130, Some(&e.to_string())))?;
     tfs::policy::HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files).map_err(
         |e| {
-            let text = String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned();
+            let text = tfs::errno::strerror_text(e);
             packaging_error(
                 130,
                 Some(&format!("--jail/--mount: cannot bind policy: {text}")),
