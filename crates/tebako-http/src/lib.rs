@@ -743,6 +743,301 @@ pub fn stream_raw(
     stream_response(url, response, writer, on_progress)
 }
 
+// ---------------------------------------------------------------------
+// The range-fetch surface (spec 39 §2's transport half): positioned
+// Range GETs for the lazy mount-source byte layer
+// ---------------------------------------------------------------------
+
+/// One attempt budget for a single range GET (the gem's download
+/// discipline — tebako-resolve's DOWNLOAD_ATTEMPTS mirrors this value).
+pub const RANGE_ATTEMPTS: u32 = 3;
+/// Delay between range attempts (the gem's retry delay).
+pub const RANGE_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+/// One half-open byte range `[offset, offset + len)` of a remote object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ByteRange {
+    pub offset: u64,
+    pub len: u64,
+}
+
+impl ByteRange {
+    /// The block-group indexing of spec 39 §3: group `index` of
+    /// `group_size`-byte groups over an object of `size_bytes` — the
+    /// final group is SHORT when `size_bytes` is not a multiple.
+    /// `index` beyond the last group is a zero-length range (the
+    /// caller's size accounting bug — [`get_range`] refuses it by name).
+    pub fn group(index: u64, group_size: u64, size_bytes: u64) -> ByteRange {
+        let offset = index.saturating_mul(group_size);
+        let len = group_size.min(size_bytes.saturating_sub(offset));
+        ByteRange { offset, len }
+    }
+
+    /// The group count of `size_bytes` under `group_size` (0 for an
+    /// empty object).
+    pub fn group_count(size_bytes: u64, group_size: u64) -> u64 {
+        if group_size == 0 {
+            return 0;
+        }
+        size_bytes / group_size + u64::from(size_bytes % group_size != 0)
+    }
+
+    /// The wire spelling (`bytes=<offset>-<end>`, the inclusive-end
+    /// form). A zero-length range has no spelling — the caller refuses
+    /// it before the wire.
+    fn wire(&self) -> String {
+        format!("bytes={}-{}", self.offset, self.offset + self.len - 1)
+    }
+}
+
+/// The parsed `Content-Range: bytes <start>-<end>/<total>` of a 206
+/// (inclusive end, as the wire spells it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentRange {
+    pub start: u64,
+    pub end: u64,
+    pub total: u64,
+}
+
+/// Parse a `Content-Range` value: exactly the `bytes <start>-<end>/<total>`
+/// form (a 206's answer — the `bytes */<total>` form belongs to a 416,
+/// which never reaches here). `start > end` or `end >= total` is no
+/// Content-Range at all, never a clamp.
+fn parse_content_range(value: &str) -> Option<ContentRange> {
+    let rest = value.trim().strip_prefix("bytes")?.trim_start();
+    let (span, total) = rest.split_once('/')?;
+    let (start, end) = span.split_once('-')?;
+    let start: u64 = start.trim().parse().ok()?;
+    let end: u64 = end.trim().parse().ok()?;
+    let total: u64 = total.trim().parse().ok()?;
+    if start > end || end >= total {
+        return None;
+    }
+    Some(ContentRange { start, end, total })
+}
+
+/// The bytes one range GET returned, with the object's total size and
+/// the validator (`ETag`) the response carried — the caller's later
+/// `If-Range` input.
+#[derive(Debug, Clone)]
+pub struct RangeBody {
+    pub bytes: Vec<u8>,
+    pub total: u64,
+    pub etag: Option<String>,
+}
+
+/// The range GET's answer: the requested window, or the whole
+/// representation (the eager-fallback signal).
+#[derive(Debug, Clone)]
+pub enum RangeAnswer {
+    /// 206 with a Content-Range validated against the request (exact
+    /// start, exact length, total).
+    Partial(RangeBody),
+    /// 200 — the server ignored the Range header (no range support) or
+    /// answered an `If-Range` validator mismatch with the whole
+    /// representation: spec 39 §3's loud-eager-fallback signal. Never an
+    /// error, never silently treated as the window; the caller owns the
+    /// fallback law.
+    Full(RangeBody),
+}
+
+/// Read one response body fully (the range window — group-scale, far
+/// under [`MAX_BODY_SIZE`]), classifying a mid-stream failure as
+/// retryable by the caller.
+fn read_range_body(
+    url: &str,
+    response: &mut ureq::http::Response<ureq::Body>,
+) -> Result<Vec<u8>, FetchError> {
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY_SIZE)
+        .read_to_vec()
+        .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))
+}
+
+/// One range attempt. The retry loop owns the schedule; everything here
+/// is ONE shot — a mid-stream failure abandons the attempt so the loop
+/// restarts THE RANGE from zero (a partial window would fail its digest
+/// anyway — spec 39 §6, the pipeline's artifact rule at group scale).
+fn range_attempt(
+    url: &str,
+    range: ByteRange,
+    if_range: Option<&str>,
+    header: Option<(&str, &str)>,
+) -> Result<RangeAnswer, FetchError> {
+    let mut req = raw_agent()?.get(url).header("Range", range.wire());
+    if let Some(validator) = if_range {
+        req = req.header("If-Range", validator);
+    }
+    let response = apply_explicit(url, req, None, header)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    let status = response.status().as_u16();
+    let etag = |r: &ureq::http::Response<ureq::Body>| {
+        r.headers()
+            .get("etag")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    };
+    match status {
+        200 => {
+            let etag = etag(&response);
+            let mut response = response;
+            let bytes = read_range_body(url, &mut response)?;
+            Ok(RangeAnswer::Full(RangeBody {
+                total: bytes.len() as u64,
+                bytes,
+                etag,
+            }))
+        }
+        206 => {
+            let served = response
+                .headers()
+                .get("content-range")
+                .and_then(|v| v.to_str().ok())
+                .and_then(parse_content_range);
+            let mut response = response;
+            let Some(served) = served else {
+                drain_body(&mut response);
+                return Err(FetchError::DownloadFailed(format!(
+                    "206 from {url} carries no valid Content-Range"
+                )));
+            };
+            if served.start != range.offset || served.end - served.start + 1 != range.len {
+                drain_body(&mut response);
+                return Err(FetchError::DownloadFailed(format!(
+                    "206 from {url} serves bytes {}-{} but the request was {range:?}",
+                    served.start, served.end
+                )));
+            }
+            let etag = etag(&response);
+            let bytes = read_range_body(url, &mut response)?;
+            // A cleanly-delimited body that ends short of the window is
+            // as failed as a dropped connection: retry the range from
+            // zero, never serve a short group.
+            if bytes.len() as u64 != range.len {
+                return Err(FetchError::DownloadFailed(format!(
+                    "truncated range body from {url}: {} of {} bytes",
+                    bytes.len(),
+                    range.len
+                )));
+            }
+            Ok(RangeAnswer::Partial(RangeBody {
+                bytes,
+                total: served.total,
+                etag,
+            }))
+        }
+        _ => {
+            let mut response = response;
+            drain_body(&mut response);
+            match classify(response, url) {
+                Err(e) => Err(e),
+                Ok(_) => Err(FetchError::DownloadFailed(format!(
+                    "{status} fetching {url} — a range GET answers 206, 200, or an error"
+                ))),
+            }
+        }
+    }
+}
+
+/// Read and discard the body of a response the caller is about to
+/// reject (bounded): a fully-consumed body returns the connection to
+/// the agent's pool, while a dropped one forces a close — with unread
+/// bytes still in flight, a RST, and the next attempt's pooled
+/// connection then races its own teardown. Error bodies are small;
+/// one that outgrows the cap simply closes the connection instead.
+fn drain_body(response: &mut ureq::http::Response<ureq::Body>) {
+    const DRAIN_CAP: u64 = 4 * 1024 * 1024;
+    let _ = response
+        .body_mut()
+        .with_config()
+        .limit(DRAIN_CAP)
+        .read_to_vec();
+}
+
+/// GET one byte range of `url` (spec 39 — the lazy mount-source's
+/// transport): `Range: bytes=<offset>-<end>` is emitted; an `If-Range`
+/// validator (the ETag the caller holds from an earlier answer) rides
+/// along when supplied; the caller-decided credential header attaches
+/// verbatim — confinement was decided upstream, exactly like whole-file
+/// GETs (spec 39 §6). `https://`, loopback `http://` (the §10 fixture's
+/// carve-out), and `file://` (the test/airgap spelling — the range is
+/// sliced from disk, pread-clipped at EOF).
+///
+/// The answer distinguishes 206 ([`RangeAnswer::Partial`], Content-Range
+/// validated) from 200 ([`RangeAnswer::Full`] — the no-range-support /
+/// validator-mismatch eager-fallback signal). Every other status
+/// classifies exactly like [`get`].
+///
+/// Retry law (tebako-http's own, unreinvented): a throttled answer waits
+/// [`throttle_backoff`] (Retry-After honored exactly) for up to
+/// [`THROTTLE_ROUNDS`]; a transport failure — a dropped or truncated
+/// body included — retries THE RANGE FROM ZERO up to [`RANGE_ATTEMPTS`]
+/// times with [`RANGE_RETRY_DELAY`] between. A zero-length range is a
+/// named refusal, never a wire request.
+pub fn get_range(
+    url: &str,
+    range: ByteRange,
+    if_range: Option<&str>,
+    header: Option<(&str, &str)>,
+) -> Result<RangeAnswer, FetchError> {
+    if range.len == 0 {
+        return Err(FetchError::DownloadFailed(format!(
+            "a zero-length range (offset {}) is not a fetch — the caller's group indexing is off",
+            range.offset
+        )));
+    }
+    if let Some(path) = url.strip_prefix("file://") {
+        let bytes = read_file_url(file_path_from_url(path))?;
+        let total = bytes.len() as u64;
+        let start = (range.offset as usize).min(bytes.len());
+        let end = (start + (range.len as usize).min(bytes.len() - start)).min(bytes.len());
+        return Ok(RangeAnswer::Partial(RangeBody {
+            bytes: bytes[start..end].to_vec(),
+            total,
+            etag: None,
+        }));
+    }
+    require_https_or_loopback(url)?;
+    network_guard()?;
+    let mut attempts = 0;
+    let mut throttles = 0;
+    loop {
+        match range_attempt(url, range, if_range, header) {
+            Ok(answer) => return Ok(answer),
+            Err(FetchError::Throttled {
+                retry_after,
+                status,
+                ..
+            }) => {
+                throttles += 1;
+                if throttles >= THROTTLE_ROUNDS {
+                    return Err(FetchError::DownloadFailed(format!(
+                        "still throttled after {THROTTLE_ROUNDS} backoff rounds fetching {url} ({status})"
+                    )));
+                }
+                std::thread::sleep(throttle_backoff(throttles, retry_after));
+            }
+            Err(FetchError::DownloadFailed(msg)) => {
+                attempts += 1;
+                if attempts >= RANGE_ATTEMPTS {
+                    return Err(FetchError::DownloadFailed(format!(
+                        "failed to fetch the range {range:?} of {url} after {RANGE_ATTEMPTS} attempts: {msg}"
+                    )));
+                }
+                std::thread::sleep(RANGE_RETRY_DELAY);
+            }
+            // Everything else is terminal by the crate's one law:
+            // IndexUnavailable (try the next name), AuthRejected (the
+            // credential layer's remap point), Cancelled (the plan is
+            // already unwinding), the config answers (never retried).
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 /// The one request-shaping path: the declared Accept, plus the ambient
 /// bearer iff the caller allows credentials AND the host is the GitHub
 /// API. Every GET entry point builds through here so no path can drift.
@@ -1487,5 +1782,596 @@ mod tests {
         // the writer holds exactly the bytes up to the abort
         assert_eq!(out.len(), 65536);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+// ---------------------------------------------------------------------
+// The range-fetch surface's tests (spec 39 §10): pure range/Content-Range
+// math, then the contract tier against a hand-rolled std::net responder
+// (no test-only dependencies — the spec 38 §8 loopback carve-out is what
+// lets the fixture ride plain HTTP).
+// ---------------------------------------------------------------------
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    fn patterned(n: usize) -> Vec<u8> {
+        (0..n as u32).map(|i| (i % 251) as u8).collect()
+    }
+
+    // ------------------------- unit legs (pure) -------------------------
+
+    #[test]
+    fn group_math_covers_exact_short_and_empty_objects() {
+        assert_eq!(
+            ByteRange::group(0, 256, 1024),
+            ByteRange {
+                offset: 0,
+                len: 256
+            }
+        );
+        assert_eq!(
+            ByteRange::group(3, 256, 1024),
+            ByteRange {
+                offset: 768,
+                len: 256
+            }
+        );
+        // 1000 = 3 × 256 + 232 — the final group is short
+        assert_eq!(
+            ByteRange::group(3, 256, 1000),
+            ByteRange {
+                offset: 768,
+                len: 232
+            }
+        );
+        // beyond the last group: the zero-length range get_range refuses
+        assert_eq!(
+            ByteRange::group(4, 256, 1000),
+            ByteRange {
+                offset: 1024,
+                len: 0
+            }
+        );
+        assert_eq!(ByteRange::group_count(1024, 256), 4);
+        assert_eq!(ByteRange::group_count(1000, 256), 4);
+        assert_eq!(ByteRange::group_count(0, 256), 0);
+        assert_eq!(ByteRange::group_count(7, 0), 0);
+    }
+
+    #[test]
+    fn the_wire_spelling_is_the_inclusive_end_form() {
+        assert_eq!(ByteRange { offset: 8, len: 8 }.wire(), "bytes=8-15");
+        assert_eq!(ByteRange { offset: 0, len: 1 }.wire(), "bytes=0-0");
+    }
+
+    #[test]
+    fn content_range_parses_only_the_206_form() {
+        assert_eq!(
+            parse_content_range("bytes 0-99/200"),
+            Some(ContentRange {
+                start: 0,
+                end: 99,
+                total: 200
+            })
+        );
+        assert_eq!(
+            parse_content_range("bytes 8-15/1000"),
+            Some(ContentRange {
+                start: 8,
+                end: 15,
+                total: 1000
+            })
+        );
+        for bad in [
+            "bytes */1234",  // the 416 form, never a 206's
+            "0-1/2",         // no unit
+            "items 0-1/2",   // the wrong unit
+            "bytes 5-3/10",  // start past end
+            "bytes 0-10/10", // end past the object
+            "bytes 0-1",     // no total
+            "bytes a-b/c",
+            "",
+        ] {
+            assert_eq!(parse_content_range(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_zero_length_range_is_refused_before_any_io() {
+        let err = get_range(
+            "https://example.invalid/image.tfs",
+            ByteRange { offset: 0, len: 0 },
+            None,
+            None,
+        )
+        .unwrap_err();
+        let FetchError::DownloadFailed(msg) = err else {
+            panic!("expected DownloadFailed: {err:?}")
+        };
+        assert!(msg.contains("zero-length"), "{msg}");
+    }
+
+    #[test]
+    fn a_plain_http_remote_is_refused_before_the_network() {
+        let err = get_range(
+            "http://registry.corp.internal/image.tfs",
+            ByteRange { offset: 0, len: 4 },
+            None,
+            None,
+        )
+        .unwrap_err();
+        let FetchError::DownloadFailed(msg) = err else {
+            panic!("expected DownloadFailed: {err:?}")
+        };
+        assert!(msg.contains("non-HTTPS"), "{msg}");
+    }
+
+    #[test]
+    fn file_urls_slice_from_disk_clipped_at_eof() {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-http-test-range-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = patterned(1000);
+        let file = dir.join("image.tfs");
+        std::fs::write(&file, &payload).unwrap();
+        let url = file_url(&file);
+
+        // a middle window
+        let answer = get_range(&url, ByteRange { offset: 8, len: 8 }, None, None).unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial")
+        };
+        assert_eq!(body.bytes.as_slice(), &payload[8..16]);
+        assert_eq!(body.total, 1000);
+        assert_eq!(body.etag, None);
+
+        // the short final group
+        let answer = get_range(&url, ByteRange::group(3, 256, 1000), None, None).unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial")
+        };
+        assert_eq!(body.bytes.as_slice(), &payload[768..]);
+
+        // a range spilling past EOF clips at the object's end
+        let answer = get_range(
+            &url,
+            ByteRange {
+                offset: 900,
+                len: 500,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial")
+        };
+        assert_eq!(body.bytes.as_slice(), &payload[900..]);
+        assert_eq!(body.total, 1000);
+
+        // a missing file is the missing-object error
+        let missing = file_url(&dir.join("nope.tfs"));
+        let err = get_range(&missing, ByteRange { offset: 0, len: 8 }, None, None).unwrap_err();
+        assert!(matches!(err, FetchError::IndexUnavailable(_)), "{err:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ------------------- the contract fixture (§10) -------------------
+
+    /// What the fixture heard on one connection.
+    #[derive(Debug, Clone)]
+    struct Heard {
+        path: String,
+        range: Option<String>,
+        if_range: Option<String>,
+    }
+
+    /// One programmed answer. `content-length` always spells the FULL
+    /// body length; `truncate_to` delivers only a prefix before the
+    /// close — the dropped-connection injection (the header's lie is
+    /// what forces the client's mid-stream failure).
+    struct Reply {
+        status: u16,
+        reason: &'static str,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+        truncate_to: Option<usize>,
+    }
+
+    impl Reply {
+        fn whole(status: u16, reason: &'static str, body: Vec<u8>) -> Reply {
+            Reply {
+                status,
+                reason,
+                headers: Vec::new(),
+                body,
+                truncate_to: None,
+            }
+        }
+
+        fn header(mut self, name: &str, value: String) -> Reply {
+            self.headers.push((name.to_string(), value));
+            self
+        }
+    }
+
+    type Handler = Arc<dyn Fn(usize, &Heard) -> Reply + Send + Sync>;
+
+    /// The spec 39 §10 contract server: an accept loop on a loopback
+    /// port, one thread per connection, each connection speaking proper
+    /// HTTP/1.1 keep-alive (the client's pooled agent then never meets a
+    /// silently-closed socket — only the truncation injection closes,
+    /// which is exactly the mid-stream failure it means to be). Requests
+    /// are logged for the assertions (Range / If-Range spellings, hit
+    /// counts — the retry law's evidence).
+    struct RangeServer {
+        url: String,
+        heard: Arc<Mutex<Vec<Heard>>>,
+        stop: Arc<AtomicBool>,
+        join: Option<std::thread::JoinHandle<()>>,
+        listener: Option<TcpListener>,
+    }
+
+    /// Bound fixture listeners are NEVER closed mid-process: a closed
+    /// listener's port can be handed to the next fixture while the
+    /// shared agent's pool still holds idle keep-alive connections
+    /// keyed to it — the next fixture's requests would ghost into the
+    /// old fixture's lingering connection threads and the hit-count
+    /// evidence would lie. Parking every listener here keeps each
+    /// fixture's host:port unique for the process's life.
+    fn graveyard() -> &'static Mutex<Vec<TcpListener>> {
+        static GRAVEYARD: OnceLock<Mutex<Vec<TcpListener>>> = OnceLock::new();
+        GRAVEYARD.get_or_init(|| Mutex::new(Vec::new()))
+    }
+
+    impl RangeServer {
+        fn start(handler: Handler) -> RangeServer {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let heard = Arc::new(Mutex::new(Vec::new()));
+            let stop = Arc::new(AtomicBool::new(false));
+            let thread_heard = Arc::clone(&heard);
+            let thread_stop = Arc::clone(&stop);
+            let accept = listener.try_clone().unwrap();
+            let join = std::thread::spawn(move || loop {
+                match accept.accept() {
+                    Ok((stream, _)) => {
+                        let conn_handler = Arc::clone(&handler);
+                        let conn_heard = Arc::clone(&thread_heard);
+                        std::thread::spawn(move || serve(stream, &conn_handler, &conn_heard));
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if thread_stop.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            });
+            RangeServer {
+                url: format!("http://127.0.0.1:{port}/image.tfs"),
+                heard,
+                stop,
+                join: Some(join),
+                listener: Some(listener),
+            }
+        }
+
+        fn hits(&self) -> usize {
+            self.heard.lock().unwrap().len()
+        }
+
+        fn heard(&self) -> Vec<Heard> {
+            self.heard.lock().unwrap().clone()
+        }
+    }
+
+    impl Drop for RangeServer {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::SeqCst);
+            // Knock on the door so the accept loop notices the flag at
+            // once; the connection threads are detached and end with the
+            // client's sockets.
+            if let Some(addr) = self
+                .url
+                .strip_prefix("http://")
+                .and_then(|rest| rest.split('/').next())
+            {
+                let _ = TcpStream::connect(addr);
+            }
+            if let Some(join) = self.join.take() {
+                let _ = join.join();
+            }
+            // The listener never closes — see graveyard().
+            if let Some(listener) = self.listener.take() {
+                graveyard().lock().unwrap().push(listener);
+            }
+        }
+    }
+
+    /// One connection's keep-alive loop: read a header block, log it,
+    /// answer it, loop — until the client goes away (EOF, timeout) or
+    /// the reply is the truncation injection (the only answer that
+    /// closes, mid-body, content-length still spelling the full length).
+    fn serve(mut stream: TcpStream, handler: &Handler, heard: &Arc<Mutex<Vec<Heard>>>) {
+        // A socket accepted from a nonblocking listener inherits that
+        // mode on some platforms (BSD/macOS) — pin it explicitly or the
+        // keep-alive read below can WouldBlock-exit the thread mid-test.
+        stream.set_nonblocking(false).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut pending: Vec<u8> = Vec::new();
+        loop {
+            let head_end = loop {
+                if let Some(pos) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break pos + 4;
+                }
+                let mut buf = [0u8; 4096];
+                match stream.read(&mut buf) {
+                    // the Drop knock opens and closes without a byte
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => {
+                        pending.extend_from_slice(&buf[..n]);
+                        if pending.len() > 64 * 1024 {
+                            return;
+                        }
+                    }
+                }
+            };
+            let request: Vec<u8> = pending.drain(..head_end).collect();
+            let text = String::from_utf8_lossy(&request);
+            let mut lines = text.split("\r\n");
+            let path = lines
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .unwrap_or("/")
+                .to_string();
+            let mut range = None;
+            let mut if_range = None;
+            for line in lines {
+                if let Some((name, value)) = line.split_once(':') {
+                    if name.eq_ignore_ascii_case("range") {
+                        range = Some(value.trim().to_string());
+                    } else if name.eq_ignore_ascii_case("if-range") {
+                        if_range = Some(value.trim().to_string());
+                    }
+                }
+            }
+            let heard_one = Heard {
+                path,
+                range,
+                if_range,
+            };
+            let hit = {
+                let mut log = heard.lock().unwrap();
+                log.push(heard_one.clone());
+                log.len() - 1
+            };
+            let reply = handler(hit, &heard_one);
+            let closing = reply.truncate_to.is_some();
+            let mut head = format!(
+                "HTTP/1.1 {} {}\r\ncontent-length: {}\r\n",
+                reply.status,
+                reply.reason,
+                reply.body.len()
+            );
+            if closing {
+                head.push_str("connection: close\r\n");
+            }
+            for (name, value) in &reply.headers {
+                head.push_str(name);
+                head.push_str(": ");
+                head.push_str(value);
+                head.push_str("\r\n");
+            }
+            head.push_str("\r\n");
+            if stream.write_all(head.as_bytes()).is_err() {
+                return;
+            }
+            let body = match reply.truncate_to {
+                Some(n) => &reply.body[..n.min(reply.body.len())],
+                None => &reply.body[..],
+            };
+            if stream.write_all(body).is_err() {
+                return;
+            }
+            let _ = stream.flush();
+            if closing {
+                return;
+            }
+        }
+    }
+
+    /// The reference range responder: 206 with the exact window when a
+    /// Range header rides (and any If-Range validator is current), 200
+    /// with the whole object otherwise — the validator-mismatch law
+    /// included, so the eager-fallback leg rides the same responder.
+    fn range_responder(data: Arc<Vec<u8>>, etag: &str) -> Handler {
+        let etag = etag.to_string();
+        Arc::new(move |_, heard| {
+            let stale = matches!(&heard.if_range, Some(v) if *v != etag);
+            match (&heard.range, stale) {
+                (Some(range), false) => {
+                    let span = range.strip_prefix("bytes=").unwrap();
+                    let (start, end) = span.split_once('-').unwrap();
+                    let start: usize = start.parse().unwrap();
+                    let end: usize = end.parse().unwrap();
+                    assert!(end < data.len());
+                    Reply::whole(206, "Partial Content", data[start..=end].to_vec())
+                        .header(
+                            "content-range",
+                            format!("bytes {start}-{end}/{}", data.len()),
+                        )
+                        .header("etag", etag.clone())
+                }
+                _ => Reply::whole(200, "OK", data.as_ref().clone()).header("etag", etag.clone()),
+            }
+        })
+    }
+
+    // ----------------------- contract legs (§10) -----------------------
+
+    #[test]
+    fn a_206_answers_the_exact_window_with_total_and_etag() {
+        let data = Arc::new(patterned(64));
+        let server = RangeServer::start(range_responder(Arc::clone(&data), "\"v1\""));
+        let answer = get_range(&server.url, ByteRange { offset: 8, len: 8 }, None, None).unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial")
+        };
+        assert_eq!(body.bytes.as_slice(), &data[8..16]);
+        assert_eq!(body.total, 64);
+        assert_eq!(body.etag.as_deref(), Some("\"v1\""));
+        assert_eq!(server.hits(), 1);
+        let heard = server.heard();
+        assert_eq!(heard[0].path, "/image.tfs");
+        assert_eq!(heard[0].range.as_deref(), Some("bytes=8-15"));
+    }
+
+    #[test]
+    fn a_short_final_group_comes_back_exact() {
+        let data = Arc::new(patterned(1000));
+        let server = RangeServer::start(range_responder(Arc::clone(&data), "\"v1\""));
+        let group = ByteRange::group(3, 256, 1000);
+        let answer = get_range(&server.url, group, None, None).unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial")
+        };
+        assert_eq!(body.bytes.as_slice(), &data[768..]);
+        assert_eq!(body.total, 1000);
+        assert_eq!(server.heard()[0].range.as_deref(), Some("bytes=768-999"));
+    }
+
+    #[test]
+    fn a_200_answer_is_the_eager_fallback_signal() {
+        let data = Arc::new(patterned(300));
+        let whole = Arc::clone(&data);
+        let server = RangeServer::start(Arc::new(move |_, _| {
+            Reply::whole(200, "OK", whole.as_ref().clone()).header("etag", "\"v1\"".to_string())
+        }));
+        let answer = get_range(&server.url, ByteRange { offset: 8, len: 8 }, None, None).unwrap();
+        let RangeAnswer::Full(body) = answer else {
+            panic!("expected Full — a 200 must never pose as the window")
+        };
+        assert_eq!(body.bytes.as_slice(), data.as_slice());
+        assert_eq!(body.total, 300);
+        assert_eq!(body.etag.as_deref(), Some("\"v1\""));
+        assert_eq!(server.hits(), 1);
+    }
+
+    #[test]
+    fn if_range_revalidates_and_a_stale_validator_falls_back() {
+        let data = Arc::new(patterned(64));
+        let server = RangeServer::start(range_responder(Arc::clone(&data), "\"v2\""));
+        let range = ByteRange { offset: 0, len: 16 };
+
+        let answer = get_range(&server.url, range, Some("\"v2\""), None).unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("a current validator answers Partial")
+        };
+        assert_eq!(body.bytes.as_slice(), &data[0..16]);
+
+        let answer = get_range(&server.url, range, Some("\"v1\""), None).unwrap();
+        let RangeAnswer::Full(body) = answer else {
+            panic!("a stale validator answers the whole object")
+        };
+        assert_eq!(body.bytes.as_slice(), data.as_slice());
+
+        let heard = server.heard();
+        assert_eq!(heard.len(), 2);
+        assert_eq!(heard[0].if_range.as_deref(), Some("\"v2\""));
+        assert_eq!(heard[1].if_range.as_deref(), Some("\"v1\""));
+    }
+
+    #[test]
+    fn a_throttled_answer_waits_the_hint_then_retries() {
+        let data = Arc::new(patterned(64));
+        let responder = range_responder(Arc::clone(&data), "\"v1\"");
+        let server = RangeServer::start(Arc::new(move |hit, heard| {
+            if hit == 0 {
+                Reply::whole(429, "Too Many Requests", Vec::new())
+                    .header("retry-after", "0".to_string())
+            } else {
+                responder(hit, heard)
+            }
+        }));
+        let answer = get_range(&server.url, ByteRange { offset: 8, len: 8 }, None, None).unwrap();
+        assert!(matches!(answer, RangeAnswer::Partial(_)));
+        assert_eq!(server.hits(), 2);
+    }
+
+    #[test]
+    fn a_persistent_500_fails_after_the_attempt_budget() {
+        let server = RangeServer::start(Arc::new(|_, _| {
+            Reply::whole(500, "Internal Server Error", b"boom".to_vec())
+        }));
+        let err = get_range(&server.url, ByteRange { offset: 8, len: 8 }, None, None).unwrap_err();
+        assert!(matches!(err, FetchError::DownloadFailed(_)), "{err:?}");
+        assert_eq!(server.hits(), RANGE_ATTEMPTS as usize, "{err:?}");
+    }
+
+    #[test]
+    fn a_truncated_body_retries_the_range_from_zero() {
+        let data = Arc::new(patterned(64));
+        let responder = range_responder(Arc::clone(&data), "\"v1\"");
+        let server = RangeServer::start(Arc::new(move |hit, heard| {
+            let mut reply = responder(hit, heard);
+            if hit == 0 {
+                // The header keeps the full length; only half the window
+                // reaches the wire — a dropped mid-stream body.
+                reply.truncate_to = Some(4);
+            }
+            reply
+        }));
+        let answer = get_range(&server.url, ByteRange { offset: 8, len: 8 }, None, None).unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial after the retry")
+        };
+        assert_eq!(body.bytes.as_slice(), &data[8..16]);
+        assert_eq!(server.hits(), 2);
+    }
+
+    #[test]
+    fn a_wrong_content_range_is_retried_then_named() {
+        let server = RangeServer::start(Arc::new(|_, _| {
+            // Off-by-one start, every time: never the requested window.
+            Reply::whole(206, "Partial Content", patterned(8))
+                .header("content-range", "bytes 9-16/64".to_string())
+        }));
+        let err = get_range(&server.url, ByteRange { offset: 8, len: 8 }, None, None).unwrap_err();
+        let FetchError::DownloadFailed(msg) = err else {
+            panic!("expected DownloadFailed: {err:?}")
+        };
+        assert!(msg.contains("bytes 9-16"), "{msg}");
+        assert_eq!(server.hits(), RANGE_ATTEMPTS as usize, "{msg}");
+    }
+
+    #[test]
+    fn a_404_is_the_missing_object_error_not_a_retry() {
+        let server = RangeServer::start(Arc::new(|_, _| {
+            Reply::whole(404, "Not Found", b"no such object".to_vec())
+        }));
+        let err = get_range(&server.url, ByteRange { offset: 0, len: 8 }, None, None).unwrap_err();
+        assert!(matches!(err, FetchError::IndexUnavailable(_)), "{err:?}");
+        assert_eq!(server.hits(), 1);
+    }
+
+    #[test]
+    fn a_401_is_the_credential_error_not_a_retry() {
+        let server = RangeServer::start(Arc::new(|_, _| {
+            Reply::whole(401, "Unauthorized", b"credentials required".to_vec())
+        }));
+        let err = get_range(&server.url, ByteRange { offset: 0, len: 8 }, None, None).unwrap_err();
+        assert!(matches!(err, FetchError::AuthRejected { .. }), "{err:?}");
+        assert_eq!(server.hits(), 1);
     }
 }
