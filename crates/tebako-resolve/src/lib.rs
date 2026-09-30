@@ -31,6 +31,8 @@ pub mod error;
 pub mod fetch;
 #[cfg(feature = "git")]
 pub mod git;
+#[cfg(feature = "oci")]
+pub mod oci;
 pub mod plan;
 pub mod reference;
 pub mod registry;
@@ -54,6 +56,8 @@ pub use registry::{
     PlatformSelection, Registry, RegistryPayload, RegistryPlatforms, RegistryRef,
     RegistryRuntimeRequirement, RegistryVersion, ReleaseRef,
 };
+#[cfg(feature = "oci")]
+pub use tebako_oci::{payload_tag, signature_tag};
 pub use transport::{HttpTransport, Transport};
 
 /// The default tebako runtime release line (tamatebako/tebako-runtime-ruby)

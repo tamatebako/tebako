@@ -605,8 +605,21 @@ fn fetch_slice(
     let expected_sha256 = match entry.select(tpkg::Platform::host()) {
         Some(PlatformSelection::Universal) => None,
         Some(PlatformSelection::Selected { artifact, sha256 }) => {
-            if let Reference::Service { artifact: slot, .. } = &mut reference {
-                *slot = Some(artifact.to_string());
+            match &mut reference {
+                Reference::Service { artifact: slot, .. } => {
+                    *slot = Some(artifact.to_string());
+                }
+                // spec 38 §3: the per-triplet OCI tag derives —
+                // <version>-<triplet> (the registry's declarative
+                // selection; the ref itself names the bare repo).
+                Reference::Oci { tag, digest, .. } => {
+                    *tag = Some(tebako_resolve::payload_tag(
+                        &pin.version,
+                        Some(tpkg::Platform::host().as_triplet()),
+                    ));
+                    *digest = None;
+                }
+                _ => {}
             }
             Some(sha256.to_string())
         }
@@ -814,7 +827,7 @@ fn verify_slice_signature<T: Transport>(
         return Ok(());
     };
 
-    let asc_ref = signature_reference(sig, reference)?;
+    let asc_ref = signature_reference(sig, reference, &fetched.sha256)?;
     let asc = fetcher.fetch(&asc_ref).map_err(map_fetch)?;
     let mut keyring = shim_verification_keyring(ctx)?;
     let mut retrieved = false;
@@ -961,10 +974,31 @@ fn retrieve_slice_signer(
 
 /// The `.asc` of a signature pin: a full reference, or an asset name
 /// within the same release (`<artifact>.asc` by convention — the asc
-/// follows the SELECTED artifact, the install path's rule).
-fn signature_reference(sig: &SignaturePin, release: &Reference) -> Result<Reference, ShimError> {
-    if looks_like_reference(&sig.asc) {
-        return Reference::parse(&sig.asc).map_err(|e| {
+/// follows the SELECTED artifact, the install path's rule). On a
+/// `tfs+oci:` release there is no authored asc: the locator DERIVES from
+/// the signed blob's digest (spec 38 §3's `sha256-<hex>.asc` sibling tag).
+fn signature_reference(
+    sig: &SignaturePin,
+    release: &Reference,
+    signed_blob_sha256: &str,
+) -> Result<Reference, ShimError> {
+    if let Reference::Oci { host, repo, .. } = release {
+        return Ok(Reference::Oci {
+            host: host.clone(),
+            repo: repo.clone(),
+            tag: Some(tebako_resolve::signature_tag(signed_blob_sha256)),
+            digest: None,
+            sha256: None,
+        });
+    }
+    let Some(asc) = &sig.asc else {
+        return fail(
+            EX_TEBAKO_MANIFEST,
+            "signature.asc is absent on a non-OCI release ref — the registry row is malformed (validation refuses this shape)",
+        );
+    };
+    if looks_like_reference(asc) {
+        return Reference::parse(asc).map_err(|e| {
             ShimError::new(
                 EX_TEBAKO_MANIFEST,
                 format!("signature.asc does not parse: {e}"),
@@ -980,15 +1014,14 @@ fn signature_reference(sig: &SignaturePin, release: &Reference) -> Result<Refere
             *sha256 = None;
             *artifact = Some(match artifact {
                 Some(selected) => format!("{selected}.asc"),
-                None => sig.asc.clone(),
+                None => asc.clone(),
             });
             Ok(reference)
         }
         _ => fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "signature.asc '{}' is an asset name but the release is not a service release — name a full reference instead",
-                sig.asc
+                "signature.asc '{asc}' is an asset name but the release is not a service release — name a full reference instead"
             ),
         ),
     }
@@ -1006,7 +1039,11 @@ fn map_fetch(e: ResolveError) -> ShimError {
     let code = match &e {
         ResolveError::Sha256Mismatch { .. } => EX_TEBAKO_SHA,
         ResolveError::LockTimeout { .. } | ResolveError::CacheIo { .. } => EX_TEBAKO_IO,
-        ResolveError::Registry(_) | ResolveError::Reference(_) => EX_TEBAKO_MANIFEST,
+        ResolveError::Registry(_)
+        | ResolveError::Reference(_)
+        | ResolveError::OciInsecureTransport { .. }
+        | ResolveError::DockerConfigMalformed { .. }
+        | ResolveError::DockerCredentialHelperUnsupported { .. } => EX_TEBAKO_MANIFEST,
         _ => EX_TEBAKO_UNAVAILABLE,
     };
     ShimError::new(code, format!("cannot fetch the pinned slice: {e}"))

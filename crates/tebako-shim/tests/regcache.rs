@@ -372,3 +372,220 @@ fn stale_cache_and_a_successful_fetch_serves_the_fresh_bytes() {
     );
     assert!(!home.join("journal.log").exists());
 }
+
+// ---------------------------------------------------------------------
+// spec 38 §4 — the OCI registry forms' TTL mapping
+// ---------------------------------------------------------------------
+
+mod oci {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use tebako_http::{FetchError, RawResponse};
+
+    /// The tier-3 docker consult reads `$DOCKER_CONFIG` — the developer
+    /// machine's own config must not leak in (a shared empty dir; the
+    /// absent file is the anonymous ride).
+    fn isolate_docker_config() {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-shim-regcache-oci-docker-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("DOCKER_CONFIG", &dir);
+    }
+
+    /// The spec 38 §3 registry-class manifest for `yaml` (the contract
+    /// oracle — the media types and the canonical empty config asserted
+    /// verbatim). Returns (body, manifest hex digest).
+    fn registry_manifest(yaml: &str) -> (Vec<u8>, String) {
+        let layer_hex = tebako_resolve::sha256_hex(yaml.as_bytes());
+        let body = format!(
+            r#"{{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "artifactType": "application/vnd.tebako.registry.v1",
+  "config": {{"mediaType": "application/vnd.oci.empty.v1+json", "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fcd02fe2d1a42cb2d57b9b8b37d", "size": 2}},
+  "layers": [{{"mediaType": "application/vnd.tebako.registry.v1+yaml", "digest": "sha256:{layer_hex}", "size": {}}}],
+  "annotations": {{"org.opencontainers.image.title": "tpkg-registry.yaml"}}}}"#,
+            yaml.len(),
+        );
+        let hex = tebako_resolve::sha256_hex(body.as_bytes());
+        (body.into_bytes(), hex)
+    }
+
+    /// A mock registry whose served registry index can MOVE (the tag
+    /// points at whatever `yaml` currently is): manifest and blob hits
+    /// are counted separately — the re-serve law is "the digest check
+    /// saves the blob pull".
+    struct OciEndpoint {
+        state: Rc<RefCell<OciState>>,
+    }
+    struct OciState {
+        yaml: String,
+        manifest_hits: u64,
+        blob_hits: u64,
+    }
+
+    impl OciEndpoint {
+        fn new(yaml: &str) -> OciEndpoint {
+            OciEndpoint {
+                state: Rc::new(RefCell::new(OciState {
+                    yaml: yaml.to_string(),
+                    manifest_hits: 0,
+                    blob_hits: 0,
+                })),
+            }
+        }
+        fn set_yaml(&self, yaml: &str) {
+            self.state.borrow_mut().yaml = yaml.to_string();
+        }
+        fn hits(&self) -> (u64, u64) {
+            let st = self.state.borrow();
+            (st.manifest_hits, st.blob_hits)
+        }
+    }
+
+    impl Clone for OciEndpoint {
+        fn clone(&self) -> OciEndpoint {
+            OciEndpoint {
+                state: self.state.clone(),
+            }
+        }
+    }
+
+    impl Transport for OciEndpoint {
+        fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+            Err(FetchError::IndexUnavailable(format!(
+                "{url} (the OCI mock serves get_raw only)"
+            )))
+        }
+
+        fn get_raw(
+            &self,
+            url: &str,
+            _accept: Option<&str>,
+            _header: Option<(&str, &str)>,
+        ) -> Result<RawResponse, FetchError> {
+            let mut st = self.state.borrow_mut();
+            let (manifest, manifest_hex) = registry_manifest(&st.yaml);
+            let blob_hex = tebako_resolve::sha256_hex(st.yaml.as_bytes());
+            let base = "https://reg.example/v2/ns/tpkg-registry";
+            if url == format!("{base}/manifests/latest")
+                || url == format!("{base}/manifests/sha256:{manifest_hex}")
+            {
+                st.manifest_hits += 1;
+                return Ok(RawResponse::new(
+                    200,
+                    vec![(
+                        "Docker-Content-Digest".to_string(),
+                        format!("sha256:{manifest_hex}"),
+                    )],
+                    manifest,
+                ));
+            }
+            if url == format!("{base}/blobs/sha256:{blob_hex}") {
+                st.blob_hits += 1;
+                return Ok(RawResponse::new(
+                    200,
+                    Vec::new(),
+                    st.yaml.clone().into_bytes(),
+                ));
+            }
+            Ok(RawResponse::new(
+                404,
+                Vec::new(),
+                br#"{"errors":[{"code":"MANIFEST_UNKNOWN"}]}"#.to_vec(),
+            ))
+        }
+    }
+
+    const OCI_REF: &str = "tfs+oci://reg.example/ns/tpkg-registry:latest";
+
+    #[test]
+    fn a_tag_ref_stale_cache_re_serves_when_the_digest_still_matches() {
+        isolate_docker_config();
+        let tmp = TempDir::new("regcache-oci-reserve");
+        let home = tmp.path().join("home");
+        let ep = OciEndpoint::new(REGISTRY_YAML);
+        let fetcher = Fetcher::with_transport(ep.clone());
+        let t0 = now();
+
+        // miss → full pull (manifest + blob)
+        regcache::registry_for_with(&home, OCI_REF, &fetcher, false, t0).unwrap();
+        assert_eq!(ep.hits(), (1, 1));
+        // fresh within the TTL: no requests at all
+        regcache::registry_for_with(&home, OCI_REF, &fetcher, false, t0 + 3600).unwrap();
+        assert_eq!(ep.hits(), (1, 1));
+        // stale, digest unchanged: ONE manifest read, the blob pull is
+        // saved, the cache serves (and the freshness marker renews)
+        let registry =
+            regcache::registry_for_with(&home, OCI_REF, &fetcher, false, t0 + 25 * 3600).unwrap();
+        assert_eq!(ep.hits(), (2, 1));
+        assert_eq!(
+            registry.payload("metanorma").unwrap().default.as_deref(),
+            Some("1.2.3")
+        );
+        // the renewed marker (real time — the touch wall-clocks) makes
+        // the next in-TTL read request-free
+        regcache::registry_for_with(&home, OCI_REF, &fetcher, false, now() + 3600).unwrap();
+        assert_eq!(ep.hits(), (2, 1));
+    }
+
+    #[test]
+    fn a_tag_ref_stale_cache_fetches_fresh_when_the_tag_moved() {
+        isolate_docker_config();
+        let tmp = TempDir::new("regcache-oci-moved");
+        let home = tmp.path().join("home");
+        let ep = OciEndpoint::new(REGISTRY_YAML);
+        let fetcher = Fetcher::with_transport(ep.clone());
+        let t0 = now();
+
+        regcache::registry_for_with(&home, OCI_REF, &fetcher, false, t0).unwrap();
+        assert_eq!(ep.hits(), (1, 1));
+
+        // the tag moved: the digest check disagrees with the sidecar →
+        // the full pull runs (its own manifest read + the blob)
+        ep.set_yaml(REGISTRY_YAML_V2);
+        let registry =
+            regcache::registry_for_with(&home, OCI_REF, &fetcher, false, t0 + 25 * 3600).unwrap();
+        assert_eq!(ep.hits(), (3, 2));
+        assert_eq!(
+            registry.payload("metanorma").unwrap().default.as_deref(),
+            Some("1.2.4"),
+            "the moved tag's bytes serve"
+        );
+        // and the NEW digest is the sidecar now: a further stale read
+        // re-serves without a blob pull
+        regcache::registry_for_with(&home, OCI_REF, &fetcher, false, t0 + 50 * 3600).unwrap();
+        assert_eq!(ep.hits(), (4, 2));
+    }
+
+    #[test]
+    fn a_digest_pulled_ref_is_cached_forever() {
+        isolate_docker_config();
+        let tmp = TempDir::new("regcache-oci-pinned");
+        let home = tmp.path().join("home");
+        let ep = OciEndpoint::new(REGISTRY_YAML);
+        let (_, manifest_hex) = registry_manifest(REGISTRY_YAML);
+        let pinned = format!("tfs+oci://reg.example/ns/tpkg-registry@sha256:{manifest_hex}");
+        let fetcher = Fetcher::with_transport(ep.clone());
+        let t0 = now();
+
+        regcache::registry_for_with(&home, &pinned, &fetcher, false, t0).unwrap();
+        assert_eq!(ep.hits(), (1, 1));
+        // far past the TTL — even with the tag moved — the pinned cache
+        // serves with ZERO requests (pinned-immutable, spec 38 §4)
+        ep.set_yaml(REGISTRY_YAML_V2);
+        let registry =
+            regcache::registry_for_with(&home, &pinned, &fetcher, false, t0 + 365 * 86400).unwrap();
+        assert_eq!(ep.hits(), (1, 1));
+        assert_eq!(
+            registry.payload("metanorma").unwrap().default.as_deref(),
+            Some("1.2.3")
+        );
+        // and doctor never reports it stale
+        assert!(matches!(
+            regcache::freshness_at(&home, &pinned, t0 + 365 * 86400),
+            RegistryFreshness::Fresh(_)
+        ));
+    }
+}

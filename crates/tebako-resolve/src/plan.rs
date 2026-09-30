@@ -174,7 +174,7 @@ impl std::io::Write for HashWriter {
 
 /// A per-item failure: a transport answer (retryable per the schedule)
 /// or a terminal named error.
-enum ItemFail {
+pub(crate) enum ItemFail {
     Transport(FetchError),
     Named(ResolveError),
 }
@@ -353,6 +353,27 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
                 let _ = (git_ref, path);
                 return Err(ItemFail::Named(ResolveError::GitAdapterDisabled {
                     url: url.clone(),
+                }));
+            }
+        }
+        Reference::Oci { .. } => {
+            #[cfg(feature = "oci")]
+            {
+                match crate::oci::stream_artifact(
+                    transport,
+                    &item.reference,
+                    item.registry_alias.as_deref(),
+                    &mut out,
+                    &mut tick,
+                ) {
+                    Ok((n, origin)) => (Ok(n), origin),
+                    Err(fail) => return Err(fail),
+                }
+            }
+            #[cfg(not(feature = "oci"))]
+            {
+                return Err(ItemFail::Named(ResolveError::OciAdapterDisabled {
+                    reference: item.reference.to_string(),
                 }));
             }
         }

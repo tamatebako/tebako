@@ -9,11 +9,12 @@ use crate::reference::Service;
 
 /// The reference classes, spelled out in every [`ReferenceError::UnknownScheme`]
 /// message (spec 04 §1 dispatch table, last row; spec 37 §4 adds the
-/// explicit-host forms).
+/// explicit-host forms; spec 38 §2 adds the OCI form).
 pub const REFERENCE_CLASSES: &str = "tfs:github:owner/repo:version, \
      tfs:gitlab:owner/repo:version, tfs:bb:owner/repo:version, \
      tfs+github://host/owner/repo:version, tfs+gitlab://host/owner/repo:version, \
-     tfs+git://host/owner/repo.git[@ref][#path], tfs+https://url, https://url, \
+     tfs+git://host/owner/repo.git[@ref][#path], \
+     tfs+oci://host/repo[:tag|@sha256:digest], tfs+https://url, https://url, \
      file:///path (any of them with an optional ?sha256=<64 hex> pin)";
 
 /// Reference syntax errors (spec 04 §1).
@@ -91,6 +92,7 @@ pub const REGISTRY_REF_FORMS: &str =
      tfs:<service>:owner/repo:version#tpkg-registry.yaml (release artifact), \
      tfs+<service>://host/owner/repo:version#tpkg-registry.yaml (release artifact, explicit host), \
      tfs+git://host/owner/repo.git[@ref]#path, \
+     tfs+oci://host/repo[:tag|@sha256:digest] (registry-class artifact), \
      tfs+https://host/path/tpkg-registry.yaml, file:///path/tpkg-registry.yaml";
 
 impl fmt::Display for RegistryError {
@@ -175,6 +177,42 @@ pub enum ResolveError {
     /// (feature `git` off — the size-capped tebako-bootstrap, spec 04 §3):
     /// a named refusal, never a silent skip.
     GitAdapterDisabled { url: String },
+    /// A `tfs+oci:` reference reached a build without the OCI adapter
+    /// (feature `oci` off — the size-capped tebako-bootstrap, spec 38
+    /// §10): the `GitAdapterDisabled` precedent — steer to managed mode.
+    OciAdapterDisabled { reference: String },
+    /// A non-HTTPS OCI URL off the loopback carve-out (spec 38 §8 — a
+    /// token realm spelled plain HTTP to a remote host; there is no
+    /// insecure-registry spelling). Exit class 65.
+    OciInsecureTransport { url: String },
+    /// The manifest/tag/repository a `tfs+oci:` reference names is
+    /// absent (NAME_UNKNOWN / MANIFEST_UNKNOWN / TAG_INVALID, spec 38
+    /// §9). Exit class 69.
+    OciManifestNotFound { origin: String },
+    /// The blob a `tfs+oci:` manifest names is absent (BLOB_UNKNOWN,
+    /// spec 38 §9). Exit class 69.
+    OciBlobUnknown { origin: String },
+    /// A manifest violates the spec 38 §3 shape law (≠1 layer, a foreign
+    /// `artifactType`, a non-canonical config, a missing required
+    /// annotation) — never a best-effort read. Exit class 69.
+    OciArtifactMalformed { origin: String, reason: String },
+    /// A malformed or Basic-only `WWW-Authenticate`, or an unusable
+    /// token endpoint (spec 38 §6/§9). Exit class 69.
+    OciTokenChallengeInvalid { reason: String },
+    /// The challenge realm's host is not the registry host and no book
+    /// entry covers the realm host (spec 38 §6 — credentials never leak
+    /// across hosts). Exit class 69.
+    OciCrossHostAuthRefused {
+        registry_host: String,
+        realm_host: String,
+    },
+    /// The docker-config fallback (spec 38 §6 tier 3) was consulted and
+    /// the config did not parse — never a silent skip. Exit class 65.
+    DockerConfigMalformed { path: PathBuf, reason: String },
+    /// A `credHelpers`/`credsStore` entry would answer for the host —
+    /// helpers are shell-outs, forbidden by the no-shell-outs law (spec
+    /// 38 §6). Exit class 65.
+    DockerCredentialHelperUnsupported { host: String, helper: String },
     /// TEBAKO_OFFLINE is set and the entry is not cached (spec 05 §4:
     /// cache hit or hard error).
     Offline { what: String },
@@ -282,6 +320,45 @@ impl fmt::Display for ResolveError {
                 f,
                 "tfs+git://{url} needs the git adapter, which is not compiled into this build: \
                  fetch it in managed mode (tebako install / the shim) or mirror the payload to tfs+https"
+            ),
+            ResolveError::OciAdapterDisabled { reference } => write!(
+                f,
+                "OciAdapterDisabled: {reference} needs the OCI adapter, which is not compiled into this build: \
+                 fetch it in managed mode (tebako install / the shim) or mirror the payload to tfs+https"
+            ),
+            ResolveError::OciInsecureTransport { url } => write!(
+                f,
+                "OciInsecureTransport: the token realm {url} is neither https:// nor a loopback http:// URL — plain-HTTP registries do not exist (spec 38 §8)"
+            ),
+            ResolveError::OciManifestNotFound { origin } => write!(
+                f,
+                "OciManifestNotFound: {origin} names no manifest on the registry (repository, tag, or digest unknown)"
+            ),
+            ResolveError::OciBlobUnknown { origin } => write!(
+                f,
+                "OciBlobUnknown: the registry does not hold the blob {origin} names"
+            ),
+            ResolveError::OciArtifactMalformed { origin, reason } => {
+                write!(f, "OciArtifactMalformed: {origin}: {reason}")
+            }
+            ResolveError::OciTokenChallengeInvalid { reason } => {
+                write!(f, "OciTokenChallengeInvalid: {reason}")
+            }
+            ResolveError::OciCrossHostAuthRefused {
+                registry_host,
+                realm_host,
+            } => write!(
+                f,
+                "OciCrossHostAuthRefused: {registry_host}'s token realm lives on the foreign host {realm_host}, and no tier-2 `credentials:` entry covers {realm_host} — credentials never leak across hosts; add a `host:` entry for {realm_host}"
+            ),
+            ResolveError::DockerConfigMalformed { path, reason } => write!(
+                f,
+                "DockerConfigMalformed: cannot parse {}: {reason}",
+                path.display()
+            ),
+            ResolveError::DockerCredentialHelperUnsupported { host, helper } => write!(
+                f,
+                "DockerCredentialHelperUnsupported: the docker config answers '{host}' through the '{helper}' credential helper — helpers are shell-outs, forbidden by the no-shell-outs law; move the token into a `credentials:` entry's env var in ~/.tebako/config.yaml"
             ),
             ResolveError::Offline { what } => write!(
                 f,

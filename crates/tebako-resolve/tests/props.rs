@@ -77,7 +77,36 @@ fn arb_reference() -> impl Strategy<Value = Reference> {
                 sha256,
             }
         });
-    prop_oneof![service, git, https, file]
+    // spec 38 §2: lowercase host (+ optional port), lowercase repo
+    // components, and a tag XOR a manifest digest (both is the named
+    // Invalid) — the byte pin composes with either.
+    let oci = (
+        "[a-z0-9][a-z0-9.-]{0,15}",
+        prop::option::of(1u16..=65535),
+        prop::collection::vec("[a-z0-9]+(-[a-z0-9]+){0,2}", 1..=3),
+        prop::option::of("[a-zA-Z0-9][a-zA-Z0-9._-]{0,20}"),
+        prop::option::of("[0-9a-f]{64}"),
+        arb_sha256(),
+    )
+        .prop_map(|(host, port, repo_segs, tag, digest, sha256)| {
+            let host = match port {
+                Some(p) => format!("{host}:{p}"),
+                None => host,
+            };
+            // The grammar refuses tag AND digest on one reference.
+            let (tag, digest) = match (tag, digest) {
+                (Some(t), Some(_)) => (Some(t), None),
+                other => other,
+            };
+            Reference::Oci {
+                host,
+                repo: repo_segs.join("/"),
+                tag,
+                digest,
+                sha256,
+            }
+        });
+    prop_oneof![service, git, https, file, oci]
 }
 
 proptest! {
@@ -105,6 +134,7 @@ proptest! {
         prefix in prop::sample::select(vec![
             "tfs:github:", "tfs:gitlab:", "tfs:bb:", "tfs+git://",
             "tfs+https://", "https://", "file://", "tfs:",
+            "tfs+oci://", "tfs:oci:",
         ]),
         tail in "\\PC*",
     ) {
@@ -117,6 +147,61 @@ proptest! {
         if !["tfs", "https", "file"].contains(&s.split(':').next().unwrap_or_default()) {
             let err = Reference::parse(&s).unwrap_err();
             prop_assert!(err.to_string().contains("tfs:github:"));
+        }
+    }
+
+    /// spec 38 §2: a reference carrying BOTH a tag and a manifest digest
+    /// is the named Invalid, never a silent precedence.
+    #[test]
+    fn oci_tag_and_digest_is_named_invalid(
+        tag in "[a-z0-9][a-z0-9-]{0,10}",
+        digest in "[0-9a-f]{64}",
+    ) {
+        let s = format!("tfs+oci://reg.example/ns/tool:{tag}@sha256:{digest}");
+        let err = Reference::parse(&s).unwrap_err();
+        prop_assert!(err.to_string().contains("tag") || err.to_string().contains("digest"));
+    }
+
+    /// spec 38 §3: the payload tag derives <version>[-<triplet>] and the
+    /// derivation is injective within each domain (universal versions
+    /// distinct ⇒ tags distinct; same-triplet versions distinct ⇒ tags
+    /// distinct; distinct triplets on one version ⇒ tags distinct).
+    #[test]
+    fn oci_tag_derivation_injective(
+        v1 in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+        v2 in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}",
+        t1 in prop::sample::select(vec!["linux-gnu-x86_64", "macos-arm64", "windows-msvc-x86_64"]),
+        t2 in prop::sample::select(vec!["linux-gnu-x86_64", "macos-arm64", "windows-msvc-x86_64"]),
+    ) {
+        if v1 != v2 {
+            prop_assert_ne!(
+                tebako_resolve::payload_tag(&v1, None),
+                tebako_resolve::payload_tag(&v2, None)
+            );
+            prop_assert_ne!(
+                tebako_resolve::payload_tag(&v1, Some(t1)),
+                tebako_resolve::payload_tag(&v2, Some(t1))
+            );
+        }
+        if t1 != t2 {
+            prop_assert_ne!(
+                tebako_resolve::payload_tag(&v1, Some(t1)),
+                tebako_resolve::payload_tag(&v1, Some(t2))
+            );
+        }
+        // and every derived tag stays inside the OCI tag grammar
+        let tag = tebako_resolve::payload_tag(&v1, Some(t1));
+        prop_assert!(tag.len() <= 128);
+    }
+
+    /// spec 38 §3: the signature tag is keyed by the signed blob's
+    /// digest — distinct digests derive distinct tags.
+    #[test]
+    fn oci_signature_tag_keyed(d1 in "[0-9a-f]{64}", d2 in "[0-9a-f]{64}") {
+        let tag = tebako_resolve::signature_tag(&d1);
+        prop_assert_eq!(&tag, &format!("sha256-{d1}.asc"));
+        if d1 != d2 {
+            prop_assert_ne!(tag, tebako_resolve::signature_tag(&d2));
         }
     }
 }

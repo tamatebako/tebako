@@ -160,7 +160,7 @@ fn universal_signed_publish_end_to_end() {
     assert_eq!(v.release.r#ref, "tfs:github:acme/app:1.0");
     let sig = v.signature.clone().unwrap();
     assert_eq!(sig.keyid, keyid);
-    assert_eq!(sig.asc, "app-1.0.tfs.asc");
+    assert_eq!(sig.asc.as_deref(), Some("app-1.0.tfs.asc"));
     assert_eq!(v.entrypoints, vec!["app"]);
     assert!(v.runtime_requirement.is_some());
 

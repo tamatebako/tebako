@@ -182,7 +182,39 @@ fn tls_config_for(root_certs: ureq::tls::RootCerts) -> ureq::tls::TlsConfig {
 /// named errors at first use — never a silent fallback to direct/plain.
 #[cfg(feature = "network")]
 fn build_agent(global_timeout: Duration) -> Result<ureq::Agent, FetchError> {
-    agent_with_config(&netconfig::global(), global_timeout)
+    build_agent_with(global_timeout, true)
+}
+
+/// [`build_agent`] with the `https_only` latch as a parameter — `false`
+/// is the distribution surface's ([`raw_agent`]; the entry points enforce
+/// the https-or-loopback policy themselves, spec 38 §8).
+#[cfg(feature = "network")]
+fn build_agent_with(global_timeout: Duration, https_only: bool) -> Result<ureq::Agent, FetchError> {
+    agent_with_config_full(&netconfig::global(), global_timeout, https_only)
+}
+
+/// The one agent constructor (network feature): TLS roots and proxy from
+/// `cfg`, the `https_only` latch a parameter.
+#[cfg(feature = "network")]
+fn agent_with_config_full(
+    cfg: &netconfig::NetworkConfig,
+    global_timeout: Duration,
+    https_only: bool,
+) -> Result<ureq::Agent, FetchError> {
+    let tls = tls_config_for(netconfig::resolve_roots(cfg)?);
+    let mut builder = ureq::Agent::config_builder()
+        .tls_config(tls)
+        .https_only(https_only)
+        .max_redirects(REDIRECT_LIMIT)
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_global(Some(global_timeout))
+        // statuses are mapped by the caller: the rate-limit headers
+        // ride the RESPONSE, and ureq's StatusCode error drops them.
+        .http_status_as_error(false);
+    if let Some(proxy) = netconfig::resolve_proxy(cfg)? {
+        builder = builder.proxy(Some(proxy));
+    }
+    Ok(builder.build().into())
 }
 
 /// Testing seam: an agent on an EXPLICIT network config, bypassing the
@@ -194,20 +226,7 @@ pub fn agent_with_config(
     cfg: &netconfig::NetworkConfig,
     global_timeout: Duration,
 ) -> Result<ureq::Agent, FetchError> {
-    let tls = tls_config_for(netconfig::resolve_roots(cfg)?);
-    let mut builder = ureq::Agent::config_builder()
-        .tls_config(tls)
-        .https_only(true)
-        .max_redirects(REDIRECT_LIMIT)
-        .timeout_connect(Some(CONNECT_TIMEOUT))
-        .timeout_global(Some(global_timeout))
-        // statuses are mapped by the caller: the rate-limit headers
-        // ride the RESPONSE, and ureq's StatusCode error drops them.
-        .http_status_as_error(false);
-    if let Some(proxy) = netconfig::resolve_proxy(cfg)? {
-        builder = builder.proxy(Some(proxy));
-    }
-    Ok(builder.build().into())
+    agent_with_config_full(cfg, global_timeout, true)
 }
 
 /// The spec 35 §3 TLS probe verdict (tebako doctor's network section).
@@ -287,6 +306,13 @@ fn is_cert_rejection(e: &ureq::Error) -> bool {
 /// verifier via `TEBAKO_TLS_PLATFORM_ROOTS`; no proxy, no extra CAs.
 #[cfg(not(feature = "network"))]
 fn build_agent(global_timeout: Duration) -> Result<ureq::Agent, FetchError> {
+    build_agent_with(global_timeout, true)
+}
+
+/// [`build_agent`] with the `https_only` latch as a parameter (the
+/// distribution surface's [`raw_agent`] passes `false`).
+#[cfg(not(feature = "network"))]
+fn build_agent_with(global_timeout: Duration, https_only: bool) -> Result<ureq::Agent, FetchError> {
     let root_certs = if std::env::var_os(PLATFORM_ROOTS_ENV).is_some() {
         ureq::tls::RootCerts::PlatformVerifier
     } else {
@@ -294,7 +320,7 @@ fn build_agent(global_timeout: Duration) -> Result<ureq::Agent, FetchError> {
     };
     Ok(ureq::Agent::config_builder()
         .tls_config(tls_config_for(root_certs))
-        .https_only(true)
+        .https_only(https_only)
         .max_redirects(REDIRECT_LIMIT)
         .timeout_connect(Some(CONNECT_TIMEOUT))
         .timeout_global(Some(global_timeout))
@@ -549,6 +575,172 @@ impl Default for GetOptions<'_> {
             authenticate: true,
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// The OCI distribution surface (spec 38): raw-status GETs and the
+// loopback carve-out
+// ---------------------------------------------------------------------
+
+/// A raw HTTP response for the OCI distribution adapter (spec 38): the
+/// status is NOT classified — a 401 carries the `WWW-Authenticate`
+/// challenge the caller must read, and distribution error bodies map by
+/// their `code` field, not their status class.
+#[derive(Debug, Clone)]
+pub struct RawResponse {
+    pub status: u16,
+    headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl RawResponse {
+    /// Construct a raw response (the distribution adapter's test seams
+    /// and tebako-resolve's transport shims build these; the crate's own
+    /// [`get_raw`] fills them from the wire).
+    pub fn new(status: u16, headers: Vec<(String, String)>, body: Vec<u8>) -> Self {
+        RawResponse {
+            status,
+            headers,
+            body,
+        }
+    }
+
+    /// A response header by case-insensitive name.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+}
+
+/// The spec 38 §8 loopback carve-out, host-half: `localhost`,
+/// `127.0.0.0/8`, `[::1]` (an optional `:port` rides along). The ONLY
+/// hosts a plain-HTTP distribution URL may name — the test fixture and
+/// local development, never a remote registry.
+pub fn is_loopback_host(host: &str) -> bool {
+    let (bare, port) = match host.strip_prefix('[') {
+        Some(rest) => {
+            let mut it = rest.splitn(2, ']');
+            let bare = it.next().unwrap_or("");
+            match it.next() {
+                // the bracket closes the host: only :port may follow
+                None => (bare, None),
+                Some("") => (bare, None),
+                Some(tail) => (bare, tail.strip_prefix(':').or(Some("!"))),
+            }
+        }
+        None => match host.split_once(':') {
+            Some((h, p)) => (h, Some(p)),
+            None => (host, None),
+        },
+    };
+    // A port, when spelled, is digits — anything else is not a
+    // host[:port] this carve-out recognizes.
+    if port.is_some_and(|p| p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit())) {
+        return false;
+    }
+    if bare.eq_ignore_ascii_case("localhost") || bare == "::1" {
+        return true;
+    }
+    // 127.0.0.0/8, dotted-quad only (no shorthand forms — a guess would
+    // widen the carve-out).
+    let parts: Vec<&str> = bare.split('.').collect();
+    parts.len() == 4
+        && parts[0] == "127"
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The URL-half of the carve-out: a plain-`http://` URL naming a loopback
+/// host ([`is_loopback_host`]).
+pub fn is_loopback_http_url(url: &str) -> bool {
+    match url.strip_prefix("http://") {
+        Some(rest) => is_loopback_host(rest.split('/').next().unwrap_or("")),
+        None => false,
+    }
+}
+
+/// The spec 38 §8 transport rule: HTTPS everywhere, plain HTTP to
+/// loopback only (no insecure-registry spelling exists).
+fn require_https_or_loopback(url: &str) -> Result<(), FetchError> {
+    if url.starts_with("https://") || is_loopback_http_url(url) {
+        return Ok(());
+    }
+    Err(FetchError::DownloadFailed(format!(
+        "refusing non-HTTPS URL {url} (https://, loopback http://, and file:// are supported)"
+    )))
+}
+
+/// The distribution-API agent: identical discipline to the one agent
+/// (TLS roots, proxy, timeouts, redirects) but without ureq's
+/// `https_only` latch — the entry points below enforce the
+/// https-or-loopback policy themselves (the latch cannot express the
+/// carve-out).
+fn raw_agent() -> Result<&'static ureq::Agent, FetchError> {
+    static RAW_AGENT: OnceLock<Result<ureq::Agent, FetchError>> = OnceLock::new();
+    RAW_AGENT
+        .get_or_init(|| build_agent_with(GLOBAL_TIMEOUT, false))
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+/// GET `url` (https, or loopback http — spec 38 §8) WITHOUT status
+/// classification: any 2xx/4xx/5xx answer returns its status, headers,
+/// and body so the distribution adapter can read the 401
+/// `WWW-Authenticate` challenge and the error body's `code`. Transport
+/// failures (connect, TLS, body read) remain [`FetchError`]s.
+pub fn get_raw(
+    url: &str,
+    accept: Option<&str>,
+    header: Option<(&str, &str)>,
+) -> Result<RawResponse, FetchError> {
+    require_https_or_loopback(url)?;
+    network_guard()?;
+    let response = apply_explicit(url, raw_agent()?.get(url), accept, header)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    let status = response.status().as_u16();
+    let headers: Vec<(String, String)> = response
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
+        .collect();
+    let mut response = response;
+    let body = response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY_SIZE)
+        .read_to_vec()
+        .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))?;
+    Ok(RawResponse {
+        status,
+        headers,
+        body,
+    })
+}
+
+/// The distribution blob stream (spec 38 §5): the ordinary classified
+/// streaming GET (a 401 is [`FetchError::AuthRejected`] — the adapter's
+/// re-challenge cue; a 404 the missing-blob answer) with the
+/// https-or-loopback policy of [`get_raw`] in place of the https-only
+/// rule. The caller-decided credential header attaches verbatim; ureq
+/// never forwards it on redirect (`RedirectAuthHeaders::Never`).
+pub fn stream_raw(
+    url: &str,
+    accept: Option<&str>,
+    header: Option<(&str, &str)>,
+    writer: &mut dyn std::io::Write,
+    on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+) -> Result<u64, FetchError> {
+    require_https_or_loopback(url)?;
+    network_guard()?;
+    let response = apply_explicit(url, raw_agent()?.get(url), accept, header)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    let response = classify(response, url)?;
+    stream_response(url, response, writer, on_progress)
 }
 
 /// The one request-shaping path: the declared Accept, plus the ambient
@@ -1045,6 +1237,80 @@ mod tests {
             Err(FetchError::IndexUnavailable(_))
         ));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_loopback_carve_out_names_exactly_the_spec_38_hosts() {
+        for good in [
+            "localhost",
+            "localhost:5000",
+            "LOCALHOST",
+            "127.0.0.1",
+            "127.0.0.1:5000",
+            "127.42.13.7",
+            "[::1]",
+            "[::1]:5000",
+        ] {
+            assert!(is_loopback_host(good), "{good}");
+        }
+        for bad in [
+            "example.com",
+            "localhost.evil.example",
+            "128.0.0.1",
+            "127.0.0.1.evil.example",
+            "::1",           // IPv6 rides the bracketed form
+            "127.0.0.1:abc", // a port is digits
+            "[::1]x",        // the bracket closes the host
+            "",
+        ] {
+            assert!(!is_loopback_host(bad), "{bad}");
+        }
+        assert!(is_loopback_http_url("http://127.0.0.1:5000/v2/x"));
+        assert!(is_loopback_http_url("http://localhost/fixtures/tool"));
+        assert!(!is_loopback_http_url("https://127.0.0.1:5000/v2/x")); // http-only helper
+        assert!(!is_loopback_http_url("http://registry.corp.internal/v2/x"));
+        assert!(!is_loopback_http_url("file:///tmp/x"));
+    }
+
+    #[test]
+    fn the_distribution_surface_refuses_non_https_off_loopback() {
+        assert!(matches!(
+            get_raw("http://registry.corp.internal/v2/", None, None),
+            Err(FetchError::DownloadFailed(_))
+        ));
+        let mut sink: Vec<u8> = Vec::new();
+        assert!(matches!(
+            stream_raw(
+                "http://registry.corp.internal/v2/x/blobs/sha256:ab",
+                None,
+                None,
+                &mut sink,
+                None
+            ),
+            Err(FetchError::DownloadFailed(_))
+        ));
+        // the policy check fires before any network: a loopback URL passes
+        // require_https_or_loopback and fails (if at all) at connect.
+        assert!(require_https_or_loopback("http://127.0.0.1:9/v2/").is_ok());
+        assert!(require_https_or_loopback("https://ghcr.io/v2/").is_ok());
+    }
+
+    #[test]
+    fn raw_response_headers_lookup_case_insensitively() {
+        let r = RawResponse {
+            status: 401,
+            headers: vec![(
+                "WWW-Authenticate".to_string(),
+                "Bearer realm=\"https://h/token\"".to_string(),
+            )],
+            body: Vec::new(),
+        };
+        assert_eq!(r.status, 401);
+        assert_eq!(
+            r.header("www-authenticate"),
+            Some("Bearer realm=\"https://h/token\"")
+        );
+        assert_eq!(r.header("content-type"), None);
     }
 
     #[test]
