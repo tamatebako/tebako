@@ -174,6 +174,13 @@ withdrawal bounds growth.
   windows ucrt64) → size-gate table (bootstrap < 3 MB, hard fail) →
   SHA256SUMS + completeness gate (expected asset set; a partial upload
   fails the release) → signed (spec 09) once ceremony lands.
+- Every shipping leg closes with a GitHub artifact attestation
+  (`actions/attest-build-provenance`, SLSA Build L3) over the exact
+  staged bytes it uploads — sign-then-hash means the attested digest is
+  the signed artifact's. `finalize` attests SHA256SUMS + manifest.json.
+  The arm rides the same `upload_url` gate as the uploads, so PR
+  rehearsals never attest. Consumers verify with
+  `gh attestation verify <asset> --repo tamatebako/tebako`.
 - Reference shape: parsanol-rs release-binary.yml (native runners,
   dtolnay toolchain, upload-release-asset) + our additions (musl
   zigbuild, size gate, completeness gate).
