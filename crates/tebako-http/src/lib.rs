@@ -2041,6 +2041,16 @@ mod range_tests {
             let thread_stop = Arc::clone(&stop);
             let accept = listener.try_clone().unwrap();
             let join = std::thread::spawn(move || loop {
+                // The stop check leads the iteration: a BLOCKING accept
+                // wakes only when a connection lands, and Drop's knock
+                // is that connection — checking only on the WouldBlock
+                // arm would accept the knock and block in accept()
+                // again, wedging Drop's join forever (the windows CI
+                // stall: a cloned listener there does not keep the
+                // original's nonblocking mode).
+                if thread_stop.load(Ordering::SeqCst) {
+                    break;
+                }
                 match accept.accept() {
                     Ok((stream, _)) => {
                         let conn_handler = Arc::clone(&handler);
@@ -2048,9 +2058,6 @@ mod range_tests {
                         std::thread::spawn(move || serve(stream, &conn_handler, &conn_heard));
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        if thread_stop.load(Ordering::SeqCst) {
-                            break;
-                        }
                         std::thread::sleep(Duration::from_millis(10));
                     }
                     Err(_) => break,
@@ -2077,18 +2084,29 @@ mod range_tests {
     impl Drop for RangeServer {
         fn drop(&mut self) {
             self.stop.store(true, Ordering::SeqCst);
-            // Knock on the door so the accept loop notices the flag at
-            // once; the connection threads are detached and end with the
-            // client's sockets.
+            // Knock on the door so a blocking accept() wakes and sees
+            // the flag; the connection threads are detached and end
+            // with the client's sockets. Bounded: an untimed connect
+            // has no business in a teardown path.
             if let Some(addr) = self
                 .url
                 .strip_prefix("http://")
                 .and_then(|rest| rest.split('/').next())
+                .and_then(|authority| authority.parse::<std::net::SocketAddr>().ok())
             {
-                let _ = TcpStream::connect(addr);
+                let _ = TcpStream::connect_timeout(&addr, Duration::from_secs(2));
             }
             if let Some(join) = self.join.take() {
-                let _ = join.join();
+                // A wedged accept thread must never wedge the harness:
+                // join behind a timeout and leak the thread on expiry
+                // (the test process reaps it at exit, like the
+                // graveyard leaks the listener).
+                let (done_tx, done_rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = join.join();
+                    let _ = done_tx.send(());
+                });
+                let _ = done_rx.recv_timeout(Duration::from_secs(10));
             }
             // The listener never closes — see graveyard().
             if let Some(listener) = self.listener.take() {
@@ -2108,6 +2126,9 @@ mod range_tests {
         stream.set_nonblocking(false).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
             .unwrap();
         let mut pending: Vec<u8> = Vec::new();
         loop {
