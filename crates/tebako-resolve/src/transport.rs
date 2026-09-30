@@ -98,6 +98,44 @@ pub trait Transport {
         self.stream_asset(url, accept, authenticate, writer, on_progress)
     }
 
+    /// A raw, UNCLASSIFIED GET for the OCI distribution adapter (spec
+    /// 38 §5): any status returns with headers and body — the 401's
+    /// `WWW-Authenticate` challenge and the error body's `code` are the
+    /// adapter's inputs, so no status classification happens here.
+    /// `header` is the caller-decided credential, attached verbatim.
+    /// The default buffers through [`Transport::get_with_header`] and
+    /// synthesizes a headerless 200 (URL-keyed test mocks keep their
+    /// shape); the production transport overrides with tebako-http's
+    /// distribution surface (the https-or-loopback policy included).
+    fn get_raw(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        let _ = accept;
+        let body = self.get_with_header(url, header)?;
+        Ok(tebako_http::RawResponse::new(200, Vec::new(), body))
+    }
+
+    /// The distribution blob stream (spec 38 §5):
+    /// [`Transport::stream_with_header`] plus the spec 38 §8
+    /// https-or-loopback policy (a plain-HTTP loopback fixture is legal
+    /// on this path only). The default rides
+    /// [`Transport::stream_with_header`] (mocks key on the URL); the
+    /// production transport overrides with tebako-http's `stream_raw`.
+    fn stream_distribution(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        header: Option<(&str, &str)>,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        let _ = accept;
+        self.stream_with_header(url, header, writer, on_progress)
+    }
+
     /// Whether this transport authenticates to the service APIs (an
     /// ambient GitHub token). Adapters consult it to choose asset URLs:
     /// authenticated transports get the API asset URL — private repos
@@ -223,6 +261,44 @@ impl Transport for HttpTransport {
         // discipline lives in the plan executor, per worker per
         // connection.
         tebako_http::stream_to_writer_explicit(url, None, header, writer, on_progress)
+    }
+
+    fn get_raw(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        // The raw surface returns ANY status unclassified (the adapter
+        // reads 401 challenges and error-body codes itself); the retry
+        // discipline applies to transport-level failures only.
+        let mut attempts = 0;
+        loop {
+            match tebako_http::get_raw(url, accept, header) {
+                Ok(response) => return Ok(response),
+                Err(FetchError::DownloadFailed(msg)) => {
+                    attempts += 1;
+                    if attempts >= DOWNLOAD_ATTEMPTS {
+                        return Err(FetchError::DownloadFailed(format!(
+                            "failed to download {url} after {DOWNLOAD_ATTEMPTS} attempts: {msg}"
+                        )));
+                    }
+                    std::thread::sleep(RETRY_DELAY);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    fn stream_distribution(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        header: Option<(&str, &str)>,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        tebako_http::stream_raw(url, accept, header, writer, on_progress)
     }
 
     fn stream_asset_with_header(

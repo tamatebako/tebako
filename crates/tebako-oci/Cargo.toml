@@ -1,0 +1,32 @@
+[package]
+name = "tebako-oci"
+description = "The OCI distribution client (spec 38): manifest + blob pulls, the Bearer challenge dance, docker-config credentials — pure ureq via tebako-http, no async"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "oci", "distribution", "registry"]
+categories = ["web-programming", "parser-implementations"]
+
+[dependencies]
+# default-features = false so the bootstrap chain never pulls tebako-http's
+# `network` back in through feature unification (the toolchain builds it
+# back on via tebako-resolve's own `network` default — the same pattern
+# tebako-resolve uses).
+tebako-http = { version = "2.0.0", path = "../tebako-http", default-features = false }
+# Manifests, token responses, and the docker config parse with the
+# workspace's own minimal JSON parser — no serde in this stack, no
+# native deps (the tebako-resolve release-API convention).
+tebako-json = { version = "2.0.0", path = "../tebako-json" }
+# The manifest-digest verification (spec 38 §5 step 1) hashes the
+# manifest body.
+sha2 = "0.10"
+
+[lib]
+name = "tebako_oci"
+path = "src/lib.rs"
+
+[dev-dependencies]
+proptest = "1"

@@ -807,6 +807,7 @@ fn row_download_locator(
                             tebako_resolve::Reference::Git { .. } => "git",
                             tebako_resolve::Reference::Https { .. } => "https",
                             tebako_resolve::Reference::File { .. } => "file",
+                            tebako_resolve::Reference::Oci { .. } => "oci",
                         }
                     ),
                 );

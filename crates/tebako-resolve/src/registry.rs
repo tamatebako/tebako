@@ -107,7 +107,10 @@ pub struct RegistryVersion {
     /// covers exactly one artifact, so per-triplet releases carry one asc
     /// per artifact by convention (`<artifact>.asc`) and the installer
     /// verifies the SELECTED artifact against its own asc; `asc` names
-    /// the exact asset only for universal payloads.
+    /// the exact asset only for universal payloads. On a `tfs+oci:`
+    /// release ref the asc locator is DERIVED (spec 38 §3's
+    /// `sha256-<signed blob hex>.asc` sibling tag) and `asc` must be
+    /// absent — an authored one is a named validation error.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<SignaturePin>,
     /// The runtime the payload's entrypoints need (spec 03 §2.2);
@@ -139,11 +142,18 @@ pub enum RegistryPlatforms {
 }
 
 /// The per-triplet artifact entry: the asset name within the release and
-/// its sha256 pin (the registry-supplied trust anchor, spec 05 §4).
+/// its sha256 pin (the registry-supplied trust anchor, spec 05 §4). The
+/// additive `oci:` field (spec 38 §7) mirrors the artifact's OCI
+/// locator — a MIRROR, never a second authority: the primary
+/// `release.ref` resolves unless the book declares `channel: oci`;
+/// pre-OCI readers ignore the field (spec 37 §2's forward-compat
+/// leniency for unknown registry keys).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlatformArtifact {
     pub artifact: String,
     pub sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oci: Option<String>,
 }
 
 /// `release: {ref: …}`.
@@ -152,11 +162,18 @@ pub struct ReleaseRef {
     pub r#ref: String,
 }
 
-/// `signature: {keyid: …, asc: …}` (opt-in).
+/// `signature: {keyid: …, asc: …}` (opt-in). `asc` names the detached
+/// signature's locator — an asset name within the same release, or a
+/// full reference; it is REQUIRED on every class except `tfs+oci:`
+/// release refs, where the locator DERIVES from the signed blob's digest
+/// (the `sha256-<hex>.asc` sibling tag, spec 38 §3) and an authored
+/// `asc` is a named validation error (a locator that would be ignored
+/// is an authoring bug).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignaturePin {
     pub keyid: String,
-    pub asc: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asc: Option<String>,
 }
 
 /// `runtime_requirement: {engine: …, constraint: …, implementation?,
@@ -454,6 +471,40 @@ impl RegistryVersion {
                     )?;
                 }
             }
+            // spec 38 §2/§3: a per-triplet payload published to OCI. The
+            // platform rows keep their declarative pins (the sha256 binds
+            // the channels — spec 38 §11); the per-triplet TAG derives
+            // (<version>-<triplet>, the registry's declarative selection
+            // unchanged), so the ref itself must not carry a selector.
+            (RegistryPlatforms::PerTriplet(map), Reference::Oci { tag, digest, .. }) => {
+                if tag.is_some() || digest.is_some() {
+                    return Err(invalid_entry(format!(
+                        "payload '{}' {} release.ref is tfs+oci: with per-triplet platforms but carries a :tag/@digest — the per-triplet tag derives as <version>-<triplet>; name the bare tfs+oci://<host>/<repo>",
+                        payload.name, self.version
+                    )));
+                }
+                if map.is_empty() {
+                    return Err(invalid_entry(format!(
+                        "payload '{}' {} platforms map is empty (use \"universal\")",
+                        payload.name, self.version
+                    )));
+                }
+                for (platform, entry) in map {
+                    if entry.artifact.is_empty() {
+                        return Err(invalid_entry(format!(
+                            "payload '{}' {} platforms[{platform}].artifact must not be empty",
+                            payload.name, self.version
+                        )));
+                    }
+                    check_sha256(
+                        &format!(
+                            "payload '{}' {} platforms[{platform}].sha256",
+                            payload.name, self.version
+                        ),
+                        &entry.sha256,
+                    )?;
+                }
+            }
             (RegistryPlatforms::PerTriplet(_), _) => {
                 return Err(invalid_entry(format!(
                     "payload '{}' {} has per-triplet platforms but release.ref is not a service release — artifact names only exist on tfs:<service>: releases",
@@ -461,6 +512,31 @@ impl RegistryVersion {
                 )));
             }
             (RegistryPlatforms::Universal, _) => {}
+        }
+        // The additive per-row OCI mirror (spec 38 §7): when spelled it
+        // parses as a `tfs+oci:` reference (the row's artifact at its OCI
+        // locator — a mirror of resolution fields, never a second
+        // authority).
+        if let RegistryPlatforms::PerTriplet(map) = &self.platforms {
+            for (platform, entry) in map {
+                if let Some(oci) = &entry.oci {
+                    match Reference::parse(oci) {
+                        Ok(Reference::Oci { .. }) => {}
+                        Ok(_) => {
+                            return Err(invalid_entry(format!(
+                            "payload '{}' {} platforms[{platform}].oci is not a tfs+oci: reference",
+                            payload.name, self.version
+                        )))
+                        }
+                        Err(e) => {
+                            return Err(invalid_entry(format!(
+                                "payload '{}' {} platforms[{platform}].oci does not parse: {e}",
+                                payload.name, self.version
+                            )))
+                        }
+                    }
+                }
+            }
         }
         if let Some(sig) = &self.signature {
             let keyid_ok = sig.keyid.len() == 16
@@ -474,11 +550,31 @@ impl RegistryVersion {
                     payload.name, self.version
                 )));
             }
-            if sig.asc.is_empty() {
-                return Err(invalid_entry(format!(
-                    "payload '{}' {} signature.asc must not be empty",
-                    payload.name, self.version
-                )));
+            // spec 38 §3: on a tfs+oci: release ref the asc locator
+            // DERIVES from the signed blob's digest (the sibling
+            // digest-tag) — an authored one is a locator that would be
+            // ignored, i.e. an authoring bug, named here.
+            let is_oci = matches!(release, Reference::Oci { .. });
+            match (&sig.asc, is_oci) {
+                (Some(_), true) => {
+                    return Err(invalid_entry(format!(
+                        "payload '{}' {} signature.asc is authored on a tfs+oci: release ref — the asc locator derives from the signed blob's digest (the sha256-<hex>.asc sibling tag); drop the asc key",
+                        payload.name, self.version
+                    )));
+                }
+                (Some(asc), false) if asc.is_empty() => {
+                    return Err(invalid_entry(format!(
+                        "payload '{}' {} signature.asc must not be empty",
+                        payload.name, self.version
+                    )));
+                }
+                (None, false) => {
+                    return Err(invalid_entry(format!(
+                        "payload '{}' {} signature.asc is required (only a tfs+oci: release ref derives it)",
+                        payload.name, self.version
+                    )));
+                }
+                _ => {}
             }
         }
         if let Some(req) = &self.runtime_requirement {
@@ -592,6 +688,11 @@ pub enum RegistryRef {
     /// location; artifact refs inside it stay ordinary spec 04
     /// references). The File-like variant over [`Reference::Https`].
     Https(Reference),
+    /// `tfs+oci://host/repo[:tag|@sha256:digest]` — the registry index
+    /// as a spec 38 §3 registry-class artifact (the third location
+    /// form). A tag pull rides the dispatch-time cache's 24 h TTL; a
+    /// digest pull is the pinned-immutable form (spec 38 §4).
+    Oci(Reference),
     /// `file:///abs/path` — local mirror (tests, air-gapped sites).
     File(Reference),
 }
@@ -655,6 +756,12 @@ impl RegistryRef {
             let reference = Reference::parse(input).map_err(|e| bad(format!("{e}")))?;
             return Ok(RegistryRef::Https(reference));
         }
+        if input.starts_with("tfs+oci://") {
+            // The OCI registry location (spec 38 §4): the index as a
+            // registry-class artifact, tag- or digest-pulled.
+            let reference = Reference::parse(input).map_err(|e| bad(format!("{e}")))?;
+            return Ok(RegistryRef::Oci(reference));
+        }
         if input.starts_with("file://") {
             let reference = Reference::parse(input).map_err(|e| bad(format!("{e}")))?;
             return Ok(RegistryRef::File(reference));
@@ -684,6 +791,7 @@ impl RegistryRef {
             RegistryRef::ReleaseArtifact(r)
             | RegistryRef::GitBlob(r)
             | RegistryRef::Https(r)
+            | RegistryRef::Oci(r)
             | RegistryRef::File(r) => r.to_string(),
         }
     }
@@ -692,6 +800,19 @@ impl RegistryRef {
     /// `file://` mirrors resolve offline).
     pub fn is_remote(&self) -> bool {
         !matches!(self, RegistryRef::File(_))
+    }
+
+    /// The pinned-immutable registry forms (spec 38 §4): a digest-pulled
+    /// OCI registry is cached forever, never re-fetched — the digest
+    /// names the bytes, the TTL is inapplicable.
+    pub fn is_digest_pinned(&self) -> bool {
+        matches!(
+            self,
+            RegistryRef::Oci(Reference::Oci {
+                digest: Some(_),
+                ..
+            })
+        )
     }
 }
 
@@ -845,6 +966,24 @@ impl<T: Transport> Fetcher<T> {
             | RegistryRef::File(reference) => {
                 Ok(self.fetch_scoped(reference, alias.as_deref())?.bytes)
             }
+            RegistryRef::Oci(reference) => {
+                #[cfg(feature = "oci")]
+                {
+                    let (bytes, _origin) = crate::oci::fetch_registry_file(
+                        &self.transport,
+                        reference,
+                        alias.as_deref(),
+                    )?;
+                    Ok(bytes)
+                }
+                #[cfg(not(feature = "oci"))]
+                {
+                    let _ = reference;
+                    Err(ResolveError::OciAdapterDisabled {
+                        reference: r.as_canonical_string(),
+                    })
+                }
+            }
         }
     }
 
@@ -855,6 +994,63 @@ impl<T: Transport> Fetcher<T> {
             reason: format!("{e} decoding the registry file"),
         })?;
         Ok(Registry::from_yaml(&text)?)
+    }
+
+    /// [`fetch_registry`] plus, for an OCI registry ref, the manifest
+    /// digest the bytes were pulled under (spec 38 §4's dispatch-cache
+    /// sidecar — the digest flows out of the pull's own digest-pinned
+    /// origin, never a second manifest read; `None` for non-OCI refs).
+    pub fn fetch_registry_with_oci_digest(
+        &self,
+        r: &RegistryRef,
+    ) -> Result<(Vec<u8>, Option<String>), ResolveError> {
+        let RegistryRef::Oci(reference) = r else {
+            return Ok((self.fetch_registry(r)?, None));
+        };
+        #[cfg(feature = "oci")]
+        {
+            if crate::cache::offline() {
+                return Err(ResolveError::Offline {
+                    what: format!("registry {r}"),
+                });
+            }
+            let alias = self.effective_book().alias_of(&r.as_canonical_string());
+            let (bytes, origin) =
+                crate::oci::fetch_registry_file(&self.transport, reference, alias.as_deref())?;
+            let digest = match Reference::parse(&origin) {
+                Ok(Reference::Oci { digest, .. }) => digest,
+                _ => None,
+            };
+            Ok((bytes, digest))
+        }
+        #[cfg(not(feature = "oci"))]
+        {
+            let _ = reference;
+            Err(ResolveError::OciAdapterDisabled {
+                reference: r.as_canonical_string(),
+            })
+        }
+    }
+
+    /// spec 38 §4's re-serve check: the manifest digest an OCI registry
+    /// ref resolves to right now (None for non-OCI refs) — the dispatch
+    /// cache compares it against the digest recorded at fetch time and
+    /// re-serves the cached bytes when they agree, saving the blob pull.
+    pub fn oci_manifest_digest(&self, r: &RegistryRef) -> Result<Option<String>, ResolveError> {
+        #[cfg(feature = "oci")]
+        {
+            let RegistryRef::Oci(reference) = r else {
+                return Ok(None);
+            };
+            let alias = self.effective_book().alias_of(&r.as_canonical_string());
+            crate::oci::resolve_manifest_digest(&self.transport, reference, alias.as_deref())
+                .map(Some)
+        }
+        #[cfg(not(feature = "oci"))]
+        {
+            let _ = r;
+            Ok(None)
+        }
     }
 }
 

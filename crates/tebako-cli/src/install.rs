@@ -78,6 +78,21 @@ pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
         | ResolveError::Git { .. }
         | ResolveError::GitAdapterDisabled { .. }
         | ResolveError::Offline { .. } => EX_TEBAKO_UNAVAILABLE,
+        // spec 38 §9's OCI pull failures — the unavailable class (69):
+        // the manifest/tag not served, the blob unknown, the artifact
+        // shape refused, the token dance unusable, the cross-host realm
+        // refusal, the feature-gated adapter.
+        ResolveError::OciManifestNotFound { .. }
+        | ResolveError::OciBlobUnknown { .. }
+        | ResolveError::OciArtifactMalformed { .. }
+        | ResolveError::OciTokenChallengeInvalid { .. }
+        | ResolveError::OciCrossHostAuthRefused { .. }
+        | ResolveError::OciAdapterDisabled { .. } => EX_TEBAKO_UNAVAILABLE,
+        // spec 38 §9's 65-class OCI failures ride the manifest class with
+        // the other usage/manifest errors (the invalid-reference family).
+        ResolveError::OciInsecureTransport { .. }
+        | ResolveError::DockerConfigMalformed { .. }
+        | ResolveError::DockerCredentialHelperUnsupported { .. } => EX_TEBAKO_MANIFEST,
         // spec 04 §2's withdrawn refusal is the availability class (the
         // yanked version is not available), never a manifest malformation.
         ResolveError::Registry(RegistryError::Withdrawn { .. }) => EX_TEBAKO_UNAVAILABLE,
@@ -151,7 +166,9 @@ pub fn add_registry_full<T: Transport>(
     // artifact stream — no bar).
     tebako_term::set::ProgressSet::stderr()
         .line(&format!("fetching registry {}", r.as_canonical_string()));
-    let bytes = fetcher.fetch_registry(&r).map_err(map_resolve)?;
+    let (bytes, oci_manifest) = fetcher
+        .fetch_registry_with_oci_digest(&r)
+        .map_err(map_resolve)?;
     let text = String::from_utf8(bytes.clone()).map_err(|e| {
         err(
             EX_TEBAKO_MANIFEST,
@@ -170,7 +187,12 @@ pub fn add_registry_full<T: Transport>(
     // remote registry without a second fetch. A prime failure never fails
     // the add — dispatch refreshes on demand; noted, not silent.
     if r.is_remote() {
-        if let Err(e) = tebako_shim::regcache::prime(home, &r.as_canonical_string(), &bytes) {
+        if let Err(e) = tebako_shim::regcache::prime_with_oci_digest(
+            home,
+            &r.as_canonical_string(),
+            &bytes,
+            oci_manifest.as_deref(),
+        ) {
             eprintln!(
                 "tebako: note: could not prime the dispatch registry cache: {}",
                 e.message
@@ -765,6 +787,20 @@ fn reference_identity(reference: &Reference) -> Result<(String, String), TebakoE
             stem_of(path),
             pinned_version(path, sha256.as_deref())?,
         )),
+        Reference::Oci {
+            repo,
+            tag,
+            digest,
+            sha256,
+            ..
+        } => Ok((
+            stem_of(repo),
+            match (tag, digest, sha256) {
+                (Some(tag), _, _) => tag.clone(),
+                (_, Some(digest), _) => digest.clone(),
+                _ => pinned_version(&reference.to_string(), sha256.as_deref())?,
+            },
+        )),
     }
 }
 
@@ -1113,8 +1149,21 @@ pub(crate) fn plan_from_registry_entry(
         Some(PlatformSelection::Universal) => (reference, None),
         Some(PlatformSelection::Selected { artifact, sha256 }) => {
             let mut reference = reference;
-            if let Reference::Service { artifact: slot, .. } = &mut reference {
-                *slot = Some(artifact.to_string());
+            match &mut reference {
+                Reference::Service { artifact: slot, .. } => {
+                    *slot = Some(artifact.to_string());
+                }
+                // spec 38 §3: the per-triplet OCI tag derives —
+                // <version>-<triplet>, the registry's declarative
+                // selection (the ref itself names the bare repo).
+                Reference::Oci { tag, digest, .. } => {
+                    *tag = Some(tebako_resolve::payload_tag(
+                        &entry.version,
+                        Some(host.as_triplet()),
+                    ));
+                    *digest = None;
+                }
+                _ => {}
             }
             (reference, Some(sha256.to_string()))
         }
@@ -2298,7 +2347,7 @@ pub(crate) fn verify_signature<T: Transport>(
         return Ok(None);
     };
 
-    let asc_ref = signature_reference(sig, &plan.reference)?;
+    let asc_ref = signature_reference(sig, &plan.reference, &fetched.sha256)?;
     // The `.asc` rides the same credential scope as the payload it
     // signs (spec 37 §5 — the registry row directed both fetches).
     let asc = fetcher
@@ -2466,10 +2515,31 @@ fn verify_signature_staged<T: Transport>(
 /// (per-triplet registry entries, explicit `#artifact` forms), the asc
 /// follows the SELECTED artifact — `sig.asc` is read as the exact name
 /// only when no selection happened (universal payloads), which is also
-/// the shape the registry's spec example documents.
-fn signature_reference(sig: &SignaturePin, release: &Reference) -> Result<Reference, TebakoError> {
-    if looks_like_reference(&sig.asc) {
-        return Reference::parse(&sig.asc).map_err(|e| {
+/// the shape the registry's spec example documents. On a `tfs+oci:`
+/// release there is no authored asc: the locator DERIVES from the signed
+/// blob's digest (spec 38 §3's `sha256-<hex>.asc` sibling tag).
+fn signature_reference(
+    sig: &SignaturePin,
+    release: &Reference,
+    signed_blob_sha256: &str,
+) -> Result<Reference, TebakoError> {
+    if let Reference::Oci { host, repo, .. } = release {
+        return Ok(Reference::Oci {
+            host: host.clone(),
+            repo: repo.clone(),
+            tag: Some(tebako_resolve::signature_tag(signed_blob_sha256)),
+            digest: None,
+            sha256: None,
+        });
+    }
+    let Some(asc) = &sig.asc else {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            "signature.asc is absent on a non-OCI release ref — the registry row is malformed (validation refuses this shape)",
+        ));
+    };
+    if looks_like_reference(asc) {
+        return Reference::parse(asc).map_err(|e| {
             err(
                 EX_TEBAKO_MANIFEST,
                 format!("signature.asc does not parse: {e}"),
@@ -2485,15 +2555,14 @@ fn signature_reference(sig: &SignaturePin, release: &Reference) -> Result<Refere
             *sha256 = None;
             *artifact = Some(match artifact {
                 Some(selected) => format!("{selected}.asc"),
-                None => sig.asc.clone(),
+                None => asc.clone(),
             });
             Ok(reference)
         }
         _ => Err(err(
             EX_TEBAKO_MANIFEST,
             format!(
-                "signature.asc '{}' is an asset name but the release is not a service release — name a full reference instead",
-                sig.asc
+                "signature.asc '{asc}' is an asset name but the release is not a service release — name a full reference instead"
             ),
         )),
     }

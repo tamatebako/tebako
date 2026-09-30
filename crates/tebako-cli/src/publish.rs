@@ -881,6 +881,7 @@ pub fn publish_full(
                         tebako_resolve::registry::PlatformArtifact {
                             artifact: artifacts[i].0.clone(),
                             sha256: artifacts[i].1.clone(),
+                            oci: None,
                         },
                     )
                 })
@@ -895,7 +896,7 @@ pub fn publish_full(
         keyid: key.keyid_hex(),
         // universal: the exact asc; per-triplet: the convention asc of the
         // first artifact (the installer derives <selected-artifact>.asc).
-        asc: format!("{}.asc", artifacts[0].0),
+        asc: Some(format!("{}.asc", artifacts[0].0)),
     });
     let version_entry = RegistryVersion {
         version: version.clone(),

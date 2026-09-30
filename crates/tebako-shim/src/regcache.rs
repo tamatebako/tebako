@@ -23,6 +23,12 @@
 //!   fetch attempt;
 //! - `file://` refs (and hand-authored plain paths) read directly, no
 //!   cache at all;
+//! - `tfs+oci:` refs (spec 38 §4): a DIGEST-pulled ref is
+//!   pinned-immutable — cached forever, never re-fetched, TTL
+//!   inapplicable; a TAG-pulled ref rides the 24 h TTL, but a stale
+//!   cache whose manifest digest still matches the registry's (the
+//!   `<sha>.oci-manifest` sidecar recorded at fetch time) re-serves
+//!   WITHOUT the blob pull — the fetched-at marker is touched;
 //! - `tebako update-registries` ([`refresh`]) force-renews the cache;
 //!   `tebako add-registry` primes it with the bytes it already fetched.
 
@@ -94,8 +100,42 @@ fn read_fetched_at(home: &Path, canonical_ref: &str) -> Option<u64> {
         .and_then(|t| t.trim().parse().ok())
 }
 
-/// Write the cache (tmp + rename, like every cache-managed file).
-fn prime_unchecked(home: &Path, canonical_ref: &str, bytes: &[u8]) -> Result<(), ShimError> {
+/// The spec 38 §4 sidecar: the manifest digest a tag-pulled OCI
+/// registry's cached bytes were pulled under (`<sha>.oci-manifest`).
+fn oci_manifest_file(home: &Path, canonical_ref: &str) -> PathBuf {
+    registries_dir(home).join(format!("{}.oci-manifest", cache_key(canonical_ref)))
+}
+
+fn read_oci_manifest(home: &Path, canonical_ref: &str) -> Option<String> {
+    std::fs::read_to_string(oci_manifest_file(home, canonical_ref))
+        .ok()
+        .map(|t| t.trim().to_string())
+}
+
+/// Renew the freshness marker without re-caching the bytes (the OCI
+/// digest re-serve: the cached bytes are current by proof).
+fn touch_fetched_at(home: &Path, canonical_ref: &str) -> Result<(), ShimError> {
+    std::fs::write(
+        fetched_at_file(home, canonical_ref),
+        format!("{}\n", now_unix()),
+    )
+    .map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot write the fetched-at marker: {e}"),
+        )
+    })
+}
+
+/// Write the cache (tmp + rename, like every cache-managed file). An
+/// OCI manifest digest, when the pull supplied one, lands in the
+/// `<sha>.oci-manifest` sidecar (spec 38 §4).
+fn prime_unchecked(
+    home: &Path,
+    canonical_ref: &str,
+    bytes: &[u8],
+    oci_manifest: Option<&str>,
+) -> Result<(), ShimError> {
     let dir = registries_dir(home);
     std::fs::create_dir_all(&dir).map_err(|e| {
         ShimError::new(
@@ -120,6 +160,18 @@ fn prime_unchecked(home: &Path, canonical_ref: &str, bytes: &[u8]) -> Result<(),
             format!("cannot install {}: {e}", file.display()),
         )
     })?;
+    if let Some(digest) = oci_manifest {
+        std::fs::write(
+            oci_manifest_file(home, canonical_ref),
+            format!("{digest}\n"),
+        )
+        .map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_IO,
+                format!("cannot write the oci-manifest sidecar: {e}"),
+            )
+        })?;
+    }
     std::fs::write(
         fetched_at_file(home, canonical_ref),
         format!("{}\n", now_unix()),
@@ -136,6 +188,18 @@ fn prime_unchecked(home: &Path, canonical_ref: &str, bytes: &[u8]) -> Result<(),
 /// flow fetched the registry once to validate it — those bytes ARE the
 /// first cache entry). No-op for `file://` refs (they read directly).
 pub fn prime(home: &Path, canonical_ref: &str, bytes: &[u8]) -> Result<(), ShimError> {
+    prime_with_oci_digest(home, canonical_ref, bytes, None)
+}
+
+/// [`prime`] plus the OCI manifest digest the bytes were pulled under
+/// (spec 38 §4's sidecar; `None` for non-OCI refs and digest-pulled
+/// refs, which never consult it).
+pub fn prime_with_oci_digest(
+    home: &Path,
+    canonical_ref: &str,
+    bytes: &[u8],
+    oci_manifest: Option<&str>,
+) -> Result<(), ShimError> {
     if local_registry_path(canonical_ref).is_some() {
         return Ok(());
     }
@@ -148,7 +212,7 @@ pub fn prime(home: &Path, canonical_ref: &str, bytes: &[u8]) -> Result<(), ShimE
     if !parsed.is_remote() {
         return Ok(());
     }
-    prime_unchecked(home, &parsed.as_canonical_string(), bytes)
+    prime_unchecked(home, &parsed.as_canonical_string(), bytes, oci_manifest)
 }
 
 fn parse_registry(bytes: &[u8], origin: &str) -> Result<Registry, ShimError> {
@@ -170,7 +234,11 @@ fn map_resolve(home: &Path, reg_ref: &str, e: ResolveError) -> ShimError {
     let code = match &e {
         ResolveError::Sha256Mismatch { .. } => crate::EX_TEBAKO_SHA,
         ResolveError::LockTimeout { .. } | ResolveError::CacheIo { .. } => EX_TEBAKO_IO,
-        ResolveError::Registry(_) | ResolveError::Reference(_) => EX_TEBAKO_MANIFEST,
+        ResolveError::Registry(_)
+        | ResolveError::Reference(_)
+        | ResolveError::OciInsecureTransport { .. }
+        | ResolveError::DockerConfigMalformed { .. }
+        | ResolveError::DockerCredentialHelperUnsupported { .. } => EX_TEBAKO_MANIFEST,
         _ => EX_TEBAKO_UNAVAILABLE,
     };
     ShimError::new(
@@ -180,6 +248,17 @@ fn map_resolve(home: &Path, reg_ref: &str, e: ResolveError) -> ShimError {
             registries_dir(home).display()
         ),
     )
+}
+
+/// Read + parse the cached registry bytes.
+fn serve_cached(cache: &Path) -> Result<Registry, ShimError> {
+    let bytes = std::fs::read(cache).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot read the cached registry {}: {e}", cache.display()),
+        )
+    })?;
+    parse_registry(&bytes, &format!("the dispatch cache {}", cache.display()))
 }
 
 /// Resolve the registry `reg_ref` names for the dispatch-time chain:
@@ -226,13 +305,7 @@ pub fn registry_for_with<T: Transport>(
 
     if offline {
         if cache.is_file() {
-            let bytes = std::fs::read(&cache).map_err(|e| {
-                ShimError::new(
-                    EX_TEBAKO_IO,
-                    format!("cannot read the cached registry {}: {e}", cache.display()),
-                )
-            })?;
-            return parse_registry(&bytes, &format!("the dispatch cache {}", cache.display()));
+            return serve_cached(&cache);
         }
         return fail(
             EX_TEBAKO_UNAVAILABLE,
@@ -243,14 +316,28 @@ pub fn registry_for_with<T: Transport>(
         );
     }
 
-    if age.is_some_and(|a| a < REGISTRY_TTL_SECS) && cache.is_file() {
-        let bytes = std::fs::read(&cache).map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_IO,
-                format!("cannot read the cached registry {}: {e}", cache.display()),
-            )
-        })?;
-        return parse_registry(&bytes, &format!("the dispatch cache {}", cache.display()));
+    // spec 38 §4's TTL mapping: a DIGEST-pulled OCI registry is the
+    // pinned-immutable form — cached forever, never re-fetched; a
+    // tag-pulled one rides the ordinary TTL.
+    let oci_tag_pulled = matches!(&parsed, RegistryRef::Oci(_)) && !parsed.is_digest_pinned();
+    let oci_digest_pulled = parsed.is_digest_pinned();
+
+    if cache.is_file() && (oci_digest_pulled || age.is_some_and(|a| a < REGISTRY_TTL_SECS)) {
+        return serve_cached(&cache);
+    }
+
+    // A STALE tag-pulled OCI cache whose manifest digest still matches
+    // the registry's re-serves without the blob pull (spec 38 §4): the
+    // sidecar recorded at fetch time is the comparison anchor. A failed
+    // digest check falls through to the full fetch, whose own failure
+    // the stale-serve below then covers.
+    if oci_tag_pulled && cache.is_file() {
+        if let Ok(Some(digest)) = fetcher.oci_manifest_digest(&parsed) {
+            if read_oci_manifest(home, &canonical).as_deref() == Some(digest.as_str()) {
+                touch_fetched_at(home, &canonical)?;
+                return serve_cached(&cache);
+            }
+        }
     }
 
     // Stale or missing: fetch, publish, read. A PRESENT-but-stale cache
@@ -260,9 +347,9 @@ pub fn registry_for_with<T: Transport>(
     // tebako-term — a one-shot quiet-gated line (an index read, not an
     // artifact stream — no bar).
     tebako_term::set::ProgressSet::stderr().line(&format!("fetching registry {canonical}"));
-    match fetcher.fetch_registry(&parsed) {
-        Ok(bytes) => {
-            prime_unchecked(home, &canonical, &bytes)?;
+    match fetcher.fetch_registry_with_oci_digest(&parsed) {
+        Ok((bytes, oci_manifest)) => {
+            prime_unchecked(home, &canonical, &bytes, oci_manifest.as_deref())?;
             parse_registry(&bytes, &canonical)
         }
         Err(e) if cache.is_file() => {
@@ -276,13 +363,7 @@ pub fn registry_for_with<T: Transport>(
                 home,
                 &format!("event=stale-registry-serve ref={canonical} error={e}"),
             );
-            let bytes = std::fs::read(&cache).map_err(|e| {
-                ShimError::new(
-                    EX_TEBAKO_IO,
-                    format!("cannot read the cached registry {}: {e}", cache.display()),
-                )
-            })?;
-            parse_registry(&bytes, &format!("the dispatch cache {}", cache.display()))
+            serve_cached(&cache)
         }
         Err(e) => Err(map_resolve(home, &canonical, e)),
     }
@@ -322,12 +403,12 @@ pub fn refresh_with<T: Transport>(
     // tebako-term — a one-shot quiet-gated line (an index read, not an
     // artifact stream — no bar).
     tebako_term::set::ProgressSet::stderr().line(&format!("fetching registry {canonical}"));
-    let bytes = fetcher
-        .fetch_registry(&parsed)
+    let (bytes, oci_manifest) = fetcher
+        .fetch_registry_with_oci_digest(&parsed)
         .map_err(|e| map_resolve(home, &canonical, e))?;
     // refresh proves the registry still parses before caching it
     parse_registry(&bytes, &canonical)?;
-    prime_unchecked(home, &canonical, &bytes)?;
+    prime_unchecked(home, &canonical, &bytes, oci_manifest.as_deref())?;
     Ok(RefreshOutcome::Refreshed)
 }
 
@@ -369,7 +450,9 @@ pub fn freshness_at(home: &Path, reg_ref: &str, now: u64) -> RegistryFreshness {
     match read_fetched_at(home, &canonical) {
         Some(t) => {
             let age = now.saturating_sub(t);
-            if age < REGISTRY_TTL_SECS {
+            // spec 38 §4: a digest-pulled OCI registry is
+            // pinned-immutable — TTL inapplicable, never stale.
+            if parsed.is_digest_pinned() || age < REGISTRY_TTL_SECS {
                 RegistryFreshness::Fresh(age)
             } else {
                 RegistryFreshness::Stale(age)

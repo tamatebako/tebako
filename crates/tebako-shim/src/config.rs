@@ -482,9 +482,12 @@ pub struct BookRow<'a> {
 }
 
 /// Derive the alias from a registry reference: the `repo` segment of a
-/// service reference (`tfs:github:owner/repo[…]` → `repo`), None for
-/// every other form. Parsed through tebako-resolve's ONE registry-ref
-/// grammar — never string-sliced here.
+/// service reference (`tfs:github:owner/repo[…]` → `repo`), the repo's
+/// LAST component of an OCI reference (`tfs+oci://host/ns/repo` →
+/// `repo`, spec 38 §4), None for every other form. Parsed through
+/// tebako-resolve's ONE registry-ref grammar — never string-sliced here.
+/// An OCI component outside the alias grammar derives no alias (the
+/// entry is then unscoped-only), exactly like the non-service forms.
 fn derive_alias(reference: &str) -> Option<String> {
     use tebako_resolve::registry::RegistryRef;
     match RegistryRef::parse(reference) {
@@ -492,6 +495,11 @@ fn derive_alias(reference: &str) -> Option<String> {
         Ok(RegistryRef::ReleaseArtifact(tebako_resolve::Reference::Service { repo, .. })) => {
             Some(repo)
         }
+        Ok(RegistryRef::Oci(tebako_resolve::Reference::Oci { repo, .. })) => repo
+            .rsplit('/')
+            .next()
+            .filter(|last| valid_registry_alias(last))
+            .map(str::to_string),
         _ => None,
     }
 }
@@ -619,7 +627,8 @@ fn valid_token_env(name: &str) -> bool {
 /// service's API host — derived from the ADAPTERS' base-url
 /// construction ([`tebako_resolve::adapters::service_hosts`], the SSOT),
 /// never a hand-written mapping here. A GitBlob ref contributes the git
-/// host, an Https ref the URL host, a File ref nothing.
+/// host, an Https ref the URL host, an Oci ref its registry host (spec
+/// 38 §6 tier 1), a File ref nothing.
 fn registry_ref_hosts(reference: &str) -> BTreeSet<String> {
     use tebako_resolve::{Reference, RegistryRef};
     match RegistryRef::parse(reference) {
@@ -639,6 +648,7 @@ fn registry_ref_hosts(reference: &str) -> BTreeSet<String> {
                 .map(str::to_string)
                 .collect()
         }
+        Ok(RegistryRef::Oci(Reference::Oci { host, .. })) => std::iter::once(host).collect(),
         _ => BTreeSet::new(),
     }
 }

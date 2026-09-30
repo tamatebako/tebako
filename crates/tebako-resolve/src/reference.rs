@@ -15,6 +15,7 @@
 //! tfs+gitlab://host/group/sub/repo:version[#artifact]   GitLab API v4 at that
 //!                                              host (spec 37 §4, self-hosted)
 //! tfs+git://host/owner/repo.git[@ref][#path]   git protocol adapter
+//! tfs+oci://host/repo[:tag|@sha256:digest]     OCI distribution adapter (spec 38 §2)
 //! tfs+https://cdn.example.com/tool.tfs   verbatim HTTPS fetch
 //! https://cdn.example.com/tool.tfs       (same class, bare form)
 //! file:///opt/images/tool.tfs            local file
@@ -26,7 +27,10 @@
 //! the candidate class is `.tfs` images — exactly one is used, zero is
 //! `AssetNotFound`, more than one is `AmbiguousAssets`. The adapter NEVER
 //! auto-picks by host triplet; platform selection is the registry's
-//! declarative job (spec 04 §2).
+//! declarative job (spec 04 §2). The OCI class has no `#artifact`
+//! concept — the tag/digest IS the selector (spec 38 §2); its two pins
+//! are distinct anchors: `@sha256:` pins the manifest digest, `?sha256=`
+//! pins the artifact bytes (the layer blob).
 //!
 //! The federation refusals (spec 37 §4, both exit class 65): an explicit
 //! host on `tfs+bb://` is the named `UnsupportedService` (Bitbucket Data
@@ -98,6 +102,18 @@ pub enum Reference {
         path: Option<String>,
         sha256: Option<String>,
     },
+    /// `tfs+oci://<host>[:port]/<repo>[:tag|@sha256:digest][?sha256=…]`
+    /// (spec 38 §2): `host` is lowercase (the port kept), `repo` the
+    /// lowercase-only distribution name, `tag`/`digest` the selector
+    /// (never both — the parser refuses; both None = the `latest` tag),
+    /// `digest` the 64-hex half of the `@sha256:` manifest pin.
+    Oci {
+        host: String,
+        repo: String,
+        tag: Option<String>,
+        digest: Option<String>,
+        sha256: Option<String>,
+    },
     /// `tfs+https://…` or bare `https://…` — `url` is the canonical
     /// `https://…` form (the pin is removed from the query string; other
     /// query parameters, e.g. CDN signatures, are preserved).
@@ -143,6 +159,9 @@ impl Reference {
         if let Some(rest) = input.strip_prefix("tfs+git://") {
             return parse_git(input, rest);
         }
+        if let Some(rest) = input.strip_prefix("tfs+oci://") {
+            return parse_oci(input, rest);
+        }
         if let Some(rest) = input.strip_prefix("tfs+https://") {
             return parse_https(input, rest);
         }
@@ -159,11 +178,21 @@ impl Reference {
                 input: input.to_string(),
             });
         }
+        // The bare OCI form is the named teaching refusal (spec 38 §2:
+        // there is no canonical OCI host — name the registry
+        // explicitly). Before the family loop, which "tfs:oci:" hits.
+        if input.starts_with("tfs:oci:") {
+            return Err(invalid(
+                input,
+                "the OCI form is tfs+oci://<registry>/<repo> — there is no canonical OCI host; name the registry explicitly",
+            ));
+        }
         // Recognized-but-malformed families get a targeted reason; anything
         // else is the named error listing the classes (never a guess).
         for family in [
             "tfs:",
             "tfs+git:",
+            "tfs+oci:",
             "tfs+https:",
             "tfs+github:",
             "tfs+gitlab:",
@@ -189,6 +218,7 @@ impl Reference {
         match self {
             Reference::Service { sha256, .. }
             | Reference::Git { sha256, .. }
+            | Reference::Oci { sha256, .. }
             | Reference::Https { sha256, .. }
             | Reference::File { sha256, .. } => sha256.as_deref(),
         }
@@ -242,6 +272,21 @@ impl fmt::Display for Reference {
                     write!(f, "#{p}")?;
                 }
                 Ok(())
+            }
+            Reference::Oci {
+                host,
+                repo,
+                tag,
+                digest,
+                sha256,
+            } => {
+                write!(f, "tfs+oci://{host}/{repo}")?;
+                match (tag, digest) {
+                    (Some(t), None) => write!(f, ":{t}")?,
+                    (None, Some(d)) => write!(f, "@sha256:{d}")?,
+                    _ => {}
+                }
+                pin(f, sha256, "?")
             }
             Reference::Https { url, sha256 } => {
                 let bare = url.strip_prefix("https://").unwrap_or(url);
@@ -490,6 +535,153 @@ fn parse_git(input: &str, rest: &str) -> Result<Reference, ReferenceError> {
         path: frag.map(str::to_string),
         sha256,
     })
+}
+
+/// `tfs+oci://<host>[:port]/<repo>[:<tag>|@sha256:<digest>][?sha256=…]`
+/// (spec 38 §2). The host comes off at the FIRST '/' (a `host:port`
+/// never collides with the tag split — the `tfs+github://` rule); the
+/// tag splits at the LAST ':' of what remains; `@` selects the digest
+/// form; both selectors on one reference is the named Invalid. There is
+/// no `#artifact` concept — the tag/digest IS the selector.
+fn parse_oci(input: &str, rest: &str) -> Result<Reference, ReferenceError> {
+    if rest.contains('#') {
+        return Err(invalid(
+            input,
+            "no #artifact concept on the OCI form — the tag/digest IS the selector (tfs+oci://<registry>/<repo>[:tag|@sha256:<digest>])",
+        ));
+    }
+    let (before_query, query) = match rest.split_once('?') {
+        Some((b, q)) => (b, Some(q)),
+        None => (rest, None),
+    };
+    let sha256 = parse_exact_pin(input, query)?;
+    let Some((host, body)) = before_query.split_once('/') else {
+        return Err(invalid(
+            input,
+            "missing repository path — the form is tfs+oci://<registry>/<repo>[:tag|@sha256:<digest>]",
+        ));
+    };
+    check_component(input, "host", host, &['?', '#', '@'])?;
+    if host.starts_with('[') && !host.contains(']') {
+        return Err(invalid(
+            input,
+            format!("unclosed IPv6 bracket in host '{host}'"),
+        ));
+    }
+    let host = host.to_ascii_lowercase();
+    // The digest form splits at '@' FIRST: a ':' surviving in the repo
+    // half is a `:tag` beside the `@digest` — the named Invalid.
+    let (repo, tag, digest) = match body.split_once('@') {
+        Some((repo, digest)) => {
+            if repo.contains(':') {
+                return Err(invalid(
+                    input,
+                    "a reference carries a :tag OR an @digest, never both",
+                ));
+            }
+            let Some(hex) = digest.strip_prefix("sha256:") else {
+                return Err(invalid(
+                    input,
+                    format!("the @digest form is @sha256:<64 hex>, got '@{digest}'"),
+                ));
+            };
+            (repo, None, Some(validate_hex(input, hex)?))
+        }
+        None => match body.rsplit_once(':') {
+            Some((repo, tag)) => {
+                check_oci_tag(input, tag)?;
+                (repo, Some(tag.to_string()), None)
+            }
+            None => (body, None, None),
+        },
+    };
+    check_oci_repo(input, repo)?;
+    Ok(Reference::Oci {
+        host,
+        repo: repo.to_string(),
+        tag,
+        digest,
+        sha256,
+    })
+}
+
+/// The distribution-spec repo grammar (spec 38 §2's ABNF, incorporated
+/// not re-invented): `component *( "/" component )` with
+/// `component = [a-z0-9] *( [a-z0-9] | ( "." | "_" | "__" | "-" ) [a-z0-9] )`.
+/// Lowercase-only — an uppercase byte is a parse-time Invalid, never a
+/// downcasing guess.
+fn check_oci_repo(input: &str, repo: &str) -> Result<(), ReferenceError> {
+    if repo.is_empty() {
+        return Err(invalid(input, "empty repository name"));
+    }
+    if repo.bytes().any(|b| b.is_ascii_uppercase()) {
+        return Err(invalid(
+            input,
+            format!("repository names are lowercase-only per the distribution grammar ('{repo}') — never a downcasing guess"),
+        ));
+    }
+    for component in repo.split('/') {
+        if !valid_repo_component(component) {
+            return Err(invalid(
+                input,
+                format!("repository component '{component}' does not match [a-z0-9]+((.|_|__|-)[a-z0-9]+)*"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// One repo component against the ABNF: a leading `[a-z0-9]`, then
+/// alnums or a separator (`.`, `_`, `__`, `-`) IMMEDIATELY followed by
+/// an alnum.
+fn valid_repo_component(component: &str) -> bool {
+    let alnum = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    let bytes = component.as_bytes();
+    if bytes.is_empty() || !alnum(bytes[0]) {
+        return false;
+    }
+    let mut i = 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b if alnum(b) => i += 1,
+            b'.' | b'-' => {
+                i += 1;
+                if i >= bytes.len() || !alnum(bytes[i]) {
+                    return false;
+                }
+            }
+            b'_' => {
+                i += 1;
+                if i < bytes.len() && bytes[i] == b'_' {
+                    i += 1;
+                }
+                if i >= bytes.len() || !alnum(bytes[i]) {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// The distribution-spec tag grammar: `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`.
+fn check_oci_tag(input: &str, tag: &str) -> Result<(), ReferenceError> {
+    let bytes = tag.as_bytes();
+    let ok = !bytes.is_empty()
+        && bytes.len() <= 128
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes[1..]
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(b));
+    if ok {
+        Ok(())
+    } else {
+        Err(invalid(
+            input,
+            format!("tag '{tag}' does not match [A-Za-z0-9][A-Za-z0-9._-]{{0,127}}"),
+        ))
+    }
 }
 
 /// `(tfs+)https://…` — the pin is extracted from the query string; other
@@ -771,6 +963,151 @@ mod tests {
         );
         let r = Reference::parse(&url).unwrap();
         assert!(matches!(&r, Reference::File { sha256: Some(s), .. } if s == &sha));
+    }
+
+    // ---- the OCI grammar (spec 38 §2) ---------------------------------
+
+    #[test]
+    fn oci_references_round_trip_every_form() {
+        // tag
+        let r =
+            Reference::parse("tfs+oci://ghcr.io/tebako-packages/metanorma:1.2.3-linux-gnu-x86_64")
+                .unwrap();
+        assert_eq!(
+            r,
+            Reference::Oci {
+                host: "ghcr.io".into(),
+                repo: "tebako-packages/metanorma".into(),
+                tag: Some("1.2.3-linux-gnu-x86_64".into()),
+                digest: None,
+                sha256: None,
+            }
+        );
+        assert_eq!(
+            r.to_string(),
+            "tfs+oci://ghcr.io/tebako-packages/metanorma:1.2.3-linux-gnu-x86_64"
+        );
+        assert_eq!(Reference::parse(&r.to_string()).unwrap(), r);
+
+        // digest pin (the manifest pin; stored as the bare hex)
+        let sha = "a".repeat(64);
+        let r = Reference::parse(&format!(
+            "tfs+oci://ghcr.io/tamatebako/tebako-runtime-ruby@sha256:{sha}"
+        ))
+        .unwrap();
+        assert!(matches!(&r, Reference::Oci { digest: Some(d), tag: None, .. } if d == &sha));
+        assert_eq!(Reference::parse(&r.to_string()).unwrap(), r);
+
+        // no selector = the `latest` tag (the adapter's default)
+        let r = Reference::parse("tfs+oci://harbor.corp.internal/team/tpkg-registry").unwrap();
+        assert!(matches!(
+            &r,
+            Reference::Oci {
+                tag: None,
+                digest: None,
+                ..
+            }
+        ));
+        assert_eq!(
+            r.to_string(),
+            "tfs+oci://harbor.corp.internal/team/tpkg-registry"
+        );
+
+        // a host port survives (the host came off at the FIRST '/', the
+        // tag at the LAST ':'); the loopback fixture form
+        let r = Reference::parse("tfs+oci://127.0.0.1:5000/fixtures/tool:1.0").unwrap();
+        assert!(
+            matches!(&r, Reference::Oci { host, repo, tag: Some(t), .. } if host == "127.0.0.1:5000" && repo == "fixtures/tool" && t == "1.0")
+        );
+        assert_eq!(r.to_string(), "tfs+oci://127.0.0.1:5000/fixtures/tool:1.0");
+
+        // bracketed IPv6 rides the host half
+        let r = Reference::parse("tfs+oci://[::1]:5000/fixtures/tool:1.0").unwrap();
+        assert!(matches!(&r, Reference::Oci { host, .. } if host == "[::1]:5000"));
+
+        // the byte pin rides any selector form
+        let pin = "b".repeat(64);
+        let r = Reference::parse(&format!("tfs+oci://ghcr.io/o/r:1.0?sha256={pin}")).unwrap();
+        assert!(matches!(&r, Reference::Oci { sha256: Some(s), .. } if s == &pin));
+        assert_eq!(
+            r.to_string(),
+            format!("tfs+oci://ghcr.io/o/r:1.0?sha256={pin}")
+        );
+        assert_eq!(Reference::parse(&r.to_string()).unwrap(), r);
+
+        // both pins on one reference (the manifest pin and the byte pin)
+        let r =
+            Reference::parse(&format!("tfs+oci://ghcr.io/o/r@sha256:{sha}?sha256={pin}")).unwrap();
+        assert!(
+            matches!(&r, Reference::Oci { digest: Some(d), sha256: Some(s), .. } if d == &sha && s == &pin)
+        );
+
+        // the host downcases (DNS is case-insensitive); the repo never does
+        let r = Reference::parse("tfs+oci://GHCR.io/o/r:1.0").unwrap();
+        assert!(matches!(&r, Reference::Oci { host, .. } if host == "ghcr.io"));
+
+        // the repo grammar's separator forms
+        for good in [
+            "tfs+oci://h/library/x__internal:1.0",
+            "tfs+oci://h/a.b_c-d/e2:1.0",
+            "tfs+oci://h/0start:1.0",
+        ] {
+            assert!(Reference::parse(good).is_ok(), "{good}");
+        }
+    }
+
+    #[test]
+    fn oci_malformed_forms_are_named_errors() {
+        let sha = "a".repeat(64);
+        for (bad, needle) in [
+            // the bare form steers to the hosted spelling
+            ("tfs:oci:ghcr.io/o/r:1.0", "there is no canonical OCI host"),
+            // uppercase repo bytes are never downcased
+            ("tfs+oci://ghcr.io/O/r:1.0", "lowercase-only"),
+            ("tfs+oci://ghcr.io/o/R:1.0", "lowercase-only"),
+            // :tag AND @digest on one reference
+            (
+                &format!("tfs+oci://h/o/r:1.0@sha256:{sha}")[..],
+                "never both",
+            ),
+            // the digest form's shape
+            ("tfs+oci://h/o/r@1.0", "@sha256:<64 hex>"),
+            ("tfs+oci://h/o/r@sha256:zz", "64 hex"),
+            // no #artifact concept
+            ("tfs+oci://h/o/r:1.0#r.tfs", "no #artifact concept"),
+            // the repo grammar
+            ("tfs+oci://h/", "empty repository"),
+            ("tfs+oci://h", "missing repository path"),
+            ("tfs+oci://h/o//r:1.0", "repository component"),
+            ("tfs+oci://h/o/-r:1.0", "repository component"),
+            ("tfs+oci://h/o/_r:1.0", "repository component"),
+            ("tfs+oci://h/o/r-:1.0", "repository component"),
+            ("tfs+oci://h/o/r_-x:1.0", "repository component"),
+            ("tfs+oci://h/o/r___x:1.0", "repository component"),
+            ("tfs+oci://h/o/r.:1.0", "repository component"),
+            // the tag grammar
+            ("tfs+oci://h/o/r:", "[A-Za-z0-9]"),
+            ("tfs+oci://h/o/r:.1", "[A-Za-z0-9]"),
+            ("tfs+oci://h/o/r:1 0", "[A-Za-z0-9]"),
+            (
+                &format!("tfs+oci://h/o/r:{}", "t".repeat(129))[..],
+                "[A-Za-z0-9]",
+            ),
+            // only the sha256 pin rides the query
+            ("tfs+oci://h/o/r:1.0?x=1", "only the ?sha256"),
+            // an unclosed IPv6 bracket
+            ("tfs+oci://[::1/o/r:1.0", "IPv6"),
+        ] {
+            let err = Reference::parse(bad).unwrap_err();
+            assert!(
+                matches!(err, ReferenceError::Invalid { .. }),
+                "{bad} must be Invalid, got {err:?}"
+            );
+            assert!(
+                err.to_string().contains(needle),
+                "{bad}: expected '{needle}' in: {err}"
+            );
+        }
     }
 
     #[test]

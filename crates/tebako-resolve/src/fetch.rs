@@ -48,7 +48,7 @@ pub(crate) fn hex_digest(digest: &[u8]) -> String {
 /// object is `NotFound` (the next-index walk), everything else
 /// `DownloadFailed`; the named networking failures ride their own
 /// messages, never NotFound.
-fn map_fetch_error(url: &str, e: FetchError) -> ResolveError {
+pub(crate) fn map_fetch_error(url: &str, e: FetchError) -> ResolveError {
     match e {
         FetchError::IndexUnavailable(_) => ResolveError::NotFound {
             origin: url.to_string(),
@@ -374,6 +374,23 @@ impl<T: Transport> Fetcher<T> {
                 {
                     let _ = (git_ref, path);
                     return Err(ResolveError::GitAdapterDisabled { url: url.clone() });
+                }
+            }
+            Reference::Oci { .. } => {
+                #[cfg(feature = "oci")]
+                {
+                    crate::oci::fetch_artifact(
+                        &self.transport,
+                        reference,
+                        alias,
+                        tebako_oci::ShapeExpectation::AnyTebako,
+                    )?
+                }
+                #[cfg(not(feature = "oci"))]
+                {
+                    return Err(ResolveError::OciAdapterDisabled {
+                        reference: reference.to_string(),
+                    });
                 }
             }
         };
