@@ -78,14 +78,18 @@ grammar:
           version: {type: string, required: true}
           implementation: {type: string, required: false, notes: "the pre-MINOR-1 spelling of the payload-level axis (MINOR 2's compat read) — never authored anew; payload-level wins when both are present"}
           platforms:
-            type: "\"universal\" | map(vcpkg triplet → {artifact, sha256})"
+            type: "\"universal\" | map(vcpkg triplet → {artifact, sha256, oci?})"
             required: true
             notes: >-
               The declarative host-triplet selection (spec 04 §2):
               `universal` for pure-language payloads (one artifact, the
               single-.tfs rule), else the triplet → artifact map. The
               dispatcher reads platforms[host].artifact — never
-              adapter-side guessing.
+              adapter-side guessing. The additive `oci` field (spec 38,
+              MINOR 3) mirrors the artifact's OCI locator
+              (`tfs+oci://<host>/<repo>:<version>-<triplet>`); readers
+              ignore it unless the registry book declares `channel: oci`,
+              and pre-OCI readers skip it as an unknown key.
           release:
             type: map
             required: true
