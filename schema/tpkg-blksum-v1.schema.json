@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tebako.org/schemas/tpkg-blksum-v1.schema.json",
+  "title": "tpkg blksum v1",
+  "description": "The per-block-group digest sidecar for lazy range-fetch mounting (spec 39 §3): one sha256 per 4 MiB group of the IMAGE bytes, plus the whole-image sha256 the seal pass re-verifies. Generated in-process by `tebako publish` (or the factory release leg) in the same invocation that stages the release bytes; anchored by the release shard/registry row's additive `image.blksum` field. Unknown keys are tolerated at every level for forward compatibility; schema_version pins the version.",
+  "type": "object",
+  "required": ["schema_version", "group_size", "size_bytes", "sha256", "groups"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "group_size": {
+      "type": "integer",
+      "const": 4194304,
+      "description": "The locked fetch unit: 4 MiB of image bytes (spec 39 §11.3). The final group is short."
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The whole image's byte length — group count derives as ceil(size_bytes / group_size) and MUST equal groups.length."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "The whole-image sha256 — identical to the image's `.sha256` sidecar value; the seal pass's mandatory second anchor."
+    },
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "description": "One sha256 per group, in index order: group i covers image bytes [i*group_size, min((i+1)*group_size, size_bytes)). A range GET's bytes verify against groups[i] BEFORE entering the block cache."
+    }
+  }
+}
