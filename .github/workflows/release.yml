@@ -48,6 +48,14 @@
 # sha256-verified tebako-pkg — a release is never the first execution of
 # its own bits. Armed + a missing secret is a fast named failure.
 #
+# Build provenance: every shipping leg closes with a GitHub artifact
+# attestation (actions/attest-build-provenance, SLSA Build L3) over the
+# exact staged bytes it uploads — sign-then-hash means the attested digest
+# is the SIGNED artifact's. finalize attests SHA256SUMS + manifest.json,
+# the trust-anchor pair. The arm rides the same upload_url gate as the
+# uploads, so PR rehearsals never attest. Consumers verify with
+# `gh attestation verify <asset> --repo tamatebako/tebako`.
+#
 # macOS signing (spec 31 §5): the macOS legs codesign (Developer ID
 # Application, hardened runtime) the staged binaries BEFORE their sha256
 # fragments are written, then notarize + quarantine-mark them so the leg's
@@ -200,6 +208,10 @@ jobs:
       # packages:write populates the org's GitHub Packages vcpkg binary
       # cache (ci/vcpkg-nuget-cache.sh).
       packages: write
+      # attestations/id-token: the SLSA L3 provenance arm at the leg tail
+      # (gated with the uploads; disarmed on rehearsals).
+      attestations: write
+      id-token: write
     runs-on: ${{ matrix.os }}
     needs: prepare
     strategy:
@@ -424,6 +436,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # SLSA L3 provenance over everything this leg ships — the staged
+      # (signed + notarized, when armed) bytes the uploads above carried.
+      # Gated with the uploads; disarmed on rehearsals.
+      - name: Attest build provenance
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: tebako-rs/out/*
+
   # ==========================================================================
   # Linux GNU (native runners incl. arm64 — no cross)
   # ==========================================================================
@@ -433,6 +454,10 @@ jobs:
     name: Linux GNU (${{ matrix.platform }})
     permissions:
       contents: write
+      # attestations/id-token: the SLSA L3 provenance arm at the leg tail
+      # (gated with the uploads; disarmed on rehearsals).
+      attestations: write
+      id-token: write
     runs-on: ${{ matrix.os }}
     needs: prepare
     strategy:
@@ -563,6 +588,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # SLSA L3 provenance over everything this leg ships (gated with
+      # the uploads; disarmed on rehearsals).
+      - name: Attest build provenance
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: tebako-rs/out/*
+
   # ==========================================================================
   # Linux musl (Alpine container via docker run from the glibc host —
   # node actions cannot run on musl; the proven native-musl path:
@@ -578,6 +611,10 @@ jobs:
     # the is_packaging() misfire that broke 0.1.1's vendored mode).
     permissions:
       contents: write
+      # attestations/id-token: the SLSA L3 provenance arm at the leg tail
+      # (gated with the uploads; disarmed on rehearsals).
+      attestations: write
+      id-token: write
     runs-on: ${{ matrix.os }}
     needs: prepare
     strategy:
@@ -701,6 +738,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # SLSA L3 provenance over everything this leg ships (gated with
+      # the uploads; disarmed on rehearsals).
+      - name: Attest build provenance
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: tebako-rs/out/*
+
   # ==========================================================================
   # finalize: SHA256SUMS + manifest.json + the item-11 completeness gate
   # ==========================================================================
@@ -708,6 +753,10 @@ jobs:
     name: Finalize (sums, manifest, gate)
     permissions:
       contents: write
+      # attestations/id-token: SLSA L3 provenance over SHA256SUMS +
+      # manifest.json (the trust-anchor pair every consumer verifies).
+      attestations: write
+      id-token: write
     runs-on: ubuntu-24.04
     needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit, windows, windows-arm64-ship, installer-msi, installer-pkg]
     steps:
@@ -739,6 +788,17 @@ jobs:
         run: bash .github/workflows/lib/release-upload.sh --metadata "${{ needs.prepare.outputs.tag_name }}" "out/manifest.json"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # SLSA L3 provenance over the trust-anchor pair — a consumer can
+      # `gh attestation verify` SHA256SUMS and then trust every digest
+      # inside it. Gated with the uploads; disarmed on rehearsals.
+      - name: Attest build provenance (trust anchors)
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            out/SHA256SUMS
+            out/manifest.json
 
       # tebako#493: the per-asset sidecars — the resolver's
       # first-preference index from this release on.
@@ -815,6 +875,10 @@ jobs:
       # packages:write populates the org's GitHub Packages vcpkg binary
       # cache (ci/vcpkg-nuget-cache.sh).
       packages: write
+      # attestations/id-token: the SLSA L3 provenance arm below (gated
+      # with the upload; disarmed on rehearsals).
+      attestations: write
+      id-token: write
     runs-on: windows-latest
     needs: prepare
     env:
@@ -926,6 +990,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # SLSA L3 provenance for the shipped link-unit tarball (gated with
+      # the upload; disarmed on rehearsals).
+      - name: Attest build provenance
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: tebako-rs/out/link-unit-*.tar.gz
+
   # ==========================================================================
   # Windows (ucrt64) — the five binaries. Provisioning mirrors the ci.yml
   # windows-gnu legs (setup-msys2 ucrt64 + the closed PATH, the make
@@ -951,6 +1023,9 @@ jobs:
       # steps below are gated on WINDOWS_SIGNING_ENABLED: unsigned runs
       # carry the environment but never request a token.
       id-token: write
+      # attestations: the SLSA L3 provenance arm at the leg tail (gated
+      # with the uploads; disarmed on rehearsals).
+      attestations: write
     # Spec 34 §5's attestation boundary (see the id-token note above).
     environment: windows-signing
     runs-on: windows-latest
@@ -1260,6 +1335,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # SLSA L3 provenance over everything this leg ships — the staged
+      # SIGNED bytes (sign-then-hash, spec 34 §1.3) the uploads above
+      # carried. Gated with the uploads; disarmed on rehearsals.
+      - name: Attest build provenance
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: tebako-rs/out/*
+
   # ==========================================================================
   # Windows arm64 (roadmap 02 Gap 1, phase 1 — build + smoke, ships
   # nothing). Cross-built on this x64 runner under the VS x64_arm64
@@ -1391,6 +1475,10 @@ jobs:
     name: Windows arm64 (ucrt) — tfs + tebako-pkg + link-unit
     permissions:
       contents: write
+      # attestations/id-token: the SLSA L3 provenance arm below (gated
+      # with the uploads; disarmed on rehearsals).
+      attestations: write
+      id-token: write
     runs-on: windows-11-arm
     needs: prepare
     steps:
@@ -1463,6 +1551,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # SLSA L3 provenance over everything this leg ships (gated with
+      # the uploads; disarmed on rehearsals).
+      - name: Attest build provenance
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: tebako-rs/out/*
+
   # ==========================================================================
   # Installer containers (roadmap 83, spec 16 §7): the system MSI + pkg,
   # built from THIS release's own signed bytes (downloaded back from the
@@ -1481,6 +1577,9 @@ jobs:
       # job's note) — the same windows-signing environment federates
       # this leg's Azure token.
       id-token: write
+      # attestations: the SLSA L3 provenance arm below (same ship gate
+      # as the MSI upload; disarmed on rehearsals).
+      attestations: write
     environment: windows-signing
     runs-on: windows-latest
     needs: [prepare, windows]
@@ -1658,6 +1757,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # SLSA L3 provenance for the shipped MSI — the exact signed bytes
+      # that uploaded above (same ship gate; disarmed on rehearsals).
+      - name: Attest build provenance (MSI)
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: tebako-rs/out/tebako-setup-*.msi
+
       - name: Mark the installer frag as not-shipped (gate disarmed or dry run)
         if: steps.signgate.outputs.armed != 'true' || needs.prepare.outputs.upload_url == ''
         working-directory: tebako-rs
@@ -1678,6 +1785,10 @@ jobs:
     name: macOS pkg installer (${{ matrix.platform }})
     permissions:
       contents: write
+      # attestations/id-token: the SLSA L3 provenance arm below (gated on
+      # the same ship gate as the pkg upload; disarmed on rehearsals).
+      attestations: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -1763,6 +1874,15 @@ jobs:
         run: bash tebako-rs/.github/workflows/lib/release-upload.sh --metadata "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-setup-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.pkg"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # SLSA L3 provenance for the shipped pkg — the exact signed +
+      # notarized bytes that uploaded above (same ship gate; disarmed on
+      # rehearsals). Verify: gh attestation verify --repo tamatebako/tebako.
+      - name: Attest build provenance (pkg)
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: tebako-rs/out/tebako-setup-*.pkg
 
       - name: Mark the installer frag as not-shipped (gate disarmed or dry run)
         if: steps.signgate.outputs.armed != 'true' || needs.prepare.outputs.upload_url == ''
