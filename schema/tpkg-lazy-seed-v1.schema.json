@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tebako.org/schemas/tpkg-lazy-seed-v1.schema.json",
+  "title": "tpkg lazy seed descriptor v1",
+  "description": "The LAZY_SEEDING seed descriptor (`<image>.lazy.json`, spec 39 §4): present in a runtime store entry if and only if the entry is mid-seeding. Written tmp+rename under the entry's flock by the loader INSTEAD of the image download; its rename is the lazy install's commit point. Machine-written by the resolve-install path, machine-read by the driver's mount open. Unknown keys are tolerated at every level for forward compatibility; schema_version pins the version.",
+  "type": "object",
+  "required": ["schema_version", "source", "sha256", "blksum_sha256", "group_size", "size_bytes", "group_count"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The concrete origin URL the groups fetch from (https, or file/loopback-http per spec 39 §6's carve-outs). Recorded verbatim; the origin marker keeps the resolution-level form."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "The whole-image sha256 pin — the seal pass re-verifies against exactly this value."
+    },
+    "blksum_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "The digest of the `.blksum.json` sidecar this seed was opened against — verified before the first range read (spec 39 §3)."
+    },
+    "group_size": {
+      "type": "integer",
+      "const": 4194304,
+      "description": "Must match the sidecar's group_size (spec 39 §3)."
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "group_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "ceil(size_bytes / group_size); the block directory's completeness bound — `*.blk` files named by zero-padded index below this count."
+    }
+  }
+}
