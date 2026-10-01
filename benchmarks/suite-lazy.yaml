@@ -1,0 +1,58 @@
+# Lazy-vs-eager suite — spec 39 §10's default-flip data (spec 27 §10.5):
+# what does a LAZY_SEEDING first boot cost against the ordinary
+# whole-image mount, per workload, cold and warm — the touch-everything
+# pathology included. Both arms are the SAME runtime pair, fetched
+# sha256-verified from the factory release; the lazy arm restages it as
+# a spec 39 §4 seeding entry whose source is the harness's in-process
+# loopback Range fixture (WAN variance stays out of the machinery
+# measurement). The arms carry no on-system-/tebako- prefix, so the
+# pairing/probe machinery does not engage; the workload ids carry no
+# language prefix, so every workload runs on every arm. Validate with:
+#   tebako-bench validate --kind suite benchmarks/suite-lazy.yaml
+schema_version: 1
+name: runtime-lazy-vs-eager
+baseline: eager-ruby
+
+workloads:
+  # boot — the first-mount cost alone: interpreter startup on an empty
+  # entry (cold: the sidecar anchor + the touched groups stream).
+  - id: boot
+    argv: ["-e", "puts 1"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+  # fib — steady-state compute: the mount form must not tax the run
+  # after boot (warm parity is the expectation).
+  - id: fib
+    argv: ["-e", "def fib(n) n < 2 ? n : fib(n-1) + fib(n-2) end; puts fib(32)"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+  # ioread — sequential read bandwidth over a mounted payload image
+  # (identical for both arms: the fixture mount is eager either way).
+  - id: ioread
+    argv: ["-e", "File.open(ARGV[0], 'rb') { |f| while f.read(1048576); end }", "{fixture}"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+  # treewalk — the touch-everything pathology (spec 39 §10): reads EVERY
+  # file of the runtime's own tree. The lazy cold cell streams the whole
+  # image on demand; its wall time bounded against the eager arm's is
+  # the no-regression-class evidence.
+  - id: treewalk
+    argv: ["-e", "Dir.glob(File.join(RbConfig::CONFIG['rubylibdir'], '..', '**', '*')).each { |f| File.read(f) unless File.directory?(f) }"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 600
+
+targets:
+  # The eager arm: the runtime pair booted bare (the whole staged env
+  # image mounts at boot).
+  - id: eager-ruby
+    kind: runtime-exe
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.25, lang_version: "3.3.12" }
+  # The lazy arm: the same pair staged as a LAZY_SEEDING entry — the
+  # image absent, the seed descriptor naming the leg's loopback Range
+  # fixture; the driver state-detects the entry, no opt-in env rides
+  # the run.
+  - id: lazy-ruby
+    kind: runtime-exe-lazy
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.25, lang_version: "3.3.12" }
+
+run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 3, interleave: true }

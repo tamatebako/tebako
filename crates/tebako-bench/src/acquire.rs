@@ -201,6 +201,10 @@ impl BenchLayout {
     ///   TMPDIR — the driver's/exec-cache's first-boot state. The runtime
     ///   pair itself stays staged (its download+verify is acquisition in
     ///   this suite; the measured span is the first mount).
+    /// - runtime-exe-lazy (spec 27 §10.5): the same, plus the entry
+    ///   RESEEDS — the sealed image and block cache go, the pristine
+    ///   seed descriptor returns, so every cold cell re-measures the
+    ///   on-demand stream from an empty entry.
     /// - on-system never reaches here: its cold cell is a declared gap.
     pub fn wipe_cold_caches(
         &self,
@@ -225,10 +229,28 @@ impl BenchLayout {
                 wipes.push(self.store());
                 wipes.push(self.tmp.join(target));
             }
+            TargetKind::RuntimeExeLazy => {
+                wipes.push(self.store());
+                wipes.push(self.tmp.join(target));
+            }
             TargetKind::OnSystem => {}
         }
         for dir in &wipes {
             remove_tree(dir)?;
+        }
+        if kind == TargetKind::RuntimeExeLazy {
+            // The lazy arm's wipe RESEEDS the entry (spec 27 §10.5):
+            // the sealed image + block cache go, the pristine seed
+            // descriptor returns — the next cold cell re-measures the
+            // on-demand stream from an empty entry.
+            reseed_lazy_entry(
+                runtime_dir
+                    .ok_or_else(|| {
+                        BenchError::operational(format!(
+                            "acquire: the runtime-exe-lazy cold wipe for '{target}' needs the entry dir (harness bug)"
+                        ))
+                    })?,
+            )?;
         }
         // The wiped TMPDIR must exist again for the next child.
         std::fs::create_dir_all(self.tmp.join(target)).map_err(|e| {
@@ -1388,6 +1410,157 @@ pub fn acquire_runtime_pair(
         tebako_version,
         lang_version: rr.lang_version.clone(),
     })
+}
+
+/// A staged LAZY_SEEDING entry (runtime-exe-lazy targets, spec 27
+/// §10.5): the same verified pair as [`acquire_runtime_pair`], restaged
+/// as a spec 39 §4 store entry — the exe present, the env image ABSENT,
+/// the seed descriptor's `source` naming the leg's loopback fixture.
+pub struct LazyPair {
+    /// `entry/<exe name>` — the measured program.
+    pub exe: PathBuf,
+    /// `entry/<image name>` — the absent image TEBAKO_RUNTIME_IMAGE
+    /// names (the driver state-detects the seeding entry beside it).
+    pub image: PathBuf,
+    /// The entry dir — the cold wipe's reseed target.
+    pub entry_dir: PathBuf,
+    /// The serving loopback fixture (lives for the whole leg).
+    pub server: crate::lazy_server::LazyServer,
+}
+
+/// Acquire the pair, then build the seeding entry: the exe copied in,
+/// the blksum sidecar authored in-process from the verified image bytes
+/// (spec 39 §3's publisher rule — the harness IS this fixture's
+/// publisher), the descriptor written against the fixture's port, and a
+/// pristine descriptor copy kept for the cold reseed.
+pub fn acquire_lazy_runtime_pair(
+    layout: &BenchLayout,
+    triplet: &str,
+    target: &Target,
+) -> Result<LazyPair, BenchError> {
+    let pair = acquire_runtime_pair(layout, triplet, target)?;
+    let exe_name = pair
+        .exe
+        .file_name()
+        .ok_or_else(|| {
+            BenchError::operational(format!(
+                "acquire: the staged exe {} has no file name",
+                pair.exe.display()
+            ))
+        })?
+        .to_string_lossy()
+        .into_owned();
+    let image_base = pair
+        .image
+        .file_name()
+        .ok_or_else(|| {
+            BenchError::operational(format!(
+                "acquire: the staged image {} has no file name",
+                pair.image.display()
+            ))
+        })?
+        .to_string_lossy()
+        .into_owned();
+    let image_bytes = std::fs::read(&pair.image).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot read the staged image {}: {e}",
+            pair.image.display()
+        ))
+    })?;
+    let blksum = tpkg::lazy::Blksum::from_image_bytes(&image_bytes).render();
+    let server = crate::lazy_server::LazyServer::start(
+        pair.image.clone(),
+        blksum.clone().into_bytes(),
+    )?;
+    let seed = tpkg::lazy::LazySeed {
+        source: format!("http://127.0.0.1:{}/{image_base}", server.port),
+        sha256: tpkg::lazy::sha256_hex(&image_bytes),
+        blksum_sha256: tpkg::lazy::sha256_hex(blksum.as_bytes()),
+        size_bytes: image_bytes.len() as u64,
+        group_count: tpkg::lazy::group_count_for(image_bytes.len() as u64),
+    };
+    let entry = layout.targets.join(&target.id).join("entry");
+    std::fs::create_dir_all(&entry).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot create {}: {e}",
+            entry.display()
+        ))
+    })?;
+    let exe = entry.join(&exe_name);
+    std::fs::copy(&pair.exe, &exe).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot stage {} as {}: {e}",
+            pair.exe.display(),
+            exe.display()
+        ))
+    })?;
+    chmod_0755(&exe)?;
+    tpkg::lazy::write_descriptor(&entry, &image_base, &seed)
+        .map_err(|e| BenchError::operational(format!("acquire: cannot write the seed descriptor: {e}")))?;
+    // The cold reseed's pristine copy: `pristine/<image>.lazy.json` —
+    // the wipe restores it verbatim after removing the sealed state.
+    let pristine = entry.join("pristine");
+    std::fs::create_dir_all(&pristine).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot create {}: {e}",
+            pristine.display()
+        ))
+    })?;
+    std::fs::write(
+        pristine.join(tpkg::lazy::descriptor_name(&image_base)),
+        seed.render(),
+    )
+    .map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: cannot stage the pristine descriptor copy: {e}"
+        ))
+    })?;
+    Ok(LazyPair {
+        exe,
+        image: entry.join(&image_base),
+        entry_dir: entry,
+        server,
+    })
+}
+
+/// The lazy arm's cold reseed (spec 27 §10.5): remove the sealed image
+/// and the block cache, restore the pristine LAZY_SEEDING descriptor —
+/// every cold cell pays the on-demand seeding boot from an empty entry.
+pub fn reseed_lazy_entry(entry: &Path) -> Result<(), BenchError> {
+    let pristine = entry.join("pristine");
+    let copies = std::fs::read_dir(&pristine).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: the lazy entry {} carries no pristine descriptor copy: {e}",
+            entry.display()
+        ))
+    })?;
+    for copy in copies {
+        let copy = copy.map_err(|e| {
+            BenchError::operational(format!("acquire: cannot scan {}: {e}", pristine.display()))
+        })?;
+        let name = copy.file_name().to_string_lossy().into_owned();
+        let Some(image_base) = name.strip_suffix(".lazy.json") else {
+            continue;
+        };
+        match std::fs::remove_file(entry.join(image_base)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(BenchError::operational(format!(
+                    "acquire: cannot remove the sealed image {}: {e}",
+                    entry.join(image_base).display()
+                )))
+            }
+        }
+        remove_tree(&entry.join(tpkg::lazy::blocks_dir_name(image_base)))?;
+        std::fs::copy(copy.path(), entry.join(&name)).map_err(|e| {
+            BenchError::operational(format!(
+                "acquire: cannot restore the pristine descriptor {}: {e}",
+                copy.path().display()
+            ))
+        })?;
+    }
+    Ok(())
 }
 
 /// Spawn `program args` and capture stdout+stderr (the version probes —

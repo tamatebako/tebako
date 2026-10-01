@@ -41,6 +41,7 @@ fn valid_fixtures_pass_both_gates() {
     for (kind, name) in [
         (DocKind::Suite, "suite-valid.yaml"),
         (DocKind::Suite, "suite-runtime-valid.yaml"),
+        (DocKind::Suite, "suite-lazy-valid.yaml"),
         (DocKind::Result, "result-valid.json"),
     ] {
         let violations = validate::validate_text(kind, &read(&fixture_path(name)))
@@ -70,6 +71,11 @@ fn invalid_fixtures_are_named() {
             DocKind::Suite,
             "suite-invalid-doc-without-source.yaml",
             "doc",
+        ),
+        (
+            DocKind::Suite,
+            "suite-invalid-lazy-missing-runtime.yaml",
+            "runtime",
         ),
         (
             DocKind::Result,
@@ -131,6 +137,15 @@ fn repo_authored_documents_validate() {
         violations.is_empty(),
         "benchmarks/suite-runtime.yaml must be VALID, violations: {violations:?}"
     );
+    let violations = validate::validate_text(
+        DocKind::Suite,
+        &read(&repo_path("benchmarks/suite-lazy.yaml")),
+    )
+    .expect("suite-lazy.yaml: operational");
+    assert!(
+        violations.is_empty(),
+        "benchmarks/suite-lazy.yaml must be VALID, violations: {violations:?}"
+    );
 
     // platforms.yaml has no JSON Schema artifact in this revision (spec 27
     // §3): the serde model + its semantic rules are the gate.
@@ -155,8 +170,10 @@ fn schema_and_model_gates_agree() {
     for (kind, name) in [
         (DocKind::Suite, "suite-valid.yaml"),
         (DocKind::Suite, "suite-runtime-valid.yaml"),
+        (DocKind::Suite, "suite-lazy-valid.yaml"),
         (DocKind::Suite, "suite-invalid-floating-ref.yaml"),
         (DocKind::Suite, "suite-invalid-v2-missing-payload.yaml"),
+        (DocKind::Suite, "suite-invalid-lazy-missing-runtime.yaml"),
         (DocKind::Result, "result-valid.json"),
         (DocKind::Result, "result-invalid-gap-no-reason.json"),
         (DocKind::Result, "result-invalid-ok-missing-metrics.json"),

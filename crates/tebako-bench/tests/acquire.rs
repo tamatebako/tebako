@@ -354,6 +354,53 @@ fn cold_wipe_matches_the_arm() {
 }
 
 #[test]
+fn the_lazy_cold_wipe_reseeds_the_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let layout = BenchLayout::new(dir.path()).unwrap();
+    // A SEALED lazy entry (the state after a warm run sealed it): the
+    // image present, the descriptor gone, the block cache spent.
+    let entry = layout.targets.join("lazy-ruby").join("entry");
+    std::fs::create_dir_all(&entry).unwrap();
+    std::fs::write(entry.join("image.tfs"), b"sealed image bytes").unwrap();
+    std::fs::create_dir_all(entry.join("image.tfs.blocks")).unwrap();
+    std::fs::write(entry.join("image.tfs.blocks/000000.blk"), b"x").unwrap();
+    let pristine = entry.join("pristine");
+    std::fs::create_dir_all(&pristine).unwrap();
+    std::fs::write(
+        pristine.join("image.tfs.lazy.json"),
+        br#"{"schema_version":1,"source":"http://127.0.0.1:1/image.tfs","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blksum_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","group_size":4194304,"size_bytes":18,"group_count":1}"#,
+    )
+    .unwrap();
+
+    layout
+        .wipe_cold_caches("lazy-ruby", TargetKind::RuntimeExeLazy, Some(&entry))
+        .unwrap();
+    assert!(
+        !entry.join("image.tfs").exists(),
+        "the sealed image goes"
+    );
+    assert!(
+        !entry.join("image.tfs.blocks").exists(),
+        "the block cache goes"
+    );
+    assert_eq!(
+        std::fs::read(entry.join("image.tfs.lazy.json")).unwrap(),
+        std::fs::read(pristine.join("image.tfs.lazy.json")).unwrap(),
+        "the pristine descriptor returns — the entry is LAZY_SEEDING again"
+    );
+    assert!(
+        pristine.join("image.tfs.lazy.json").exists(),
+        "the pristine copy itself survives (the next wipe reseeds from it)"
+    );
+
+    // A lazy wipe without the entry dir is a named harness bug.
+    let err = layout
+        .wipe_cold_caches("lazy-ruby", TargetKind::RuntimeExeLazy, None)
+        .unwrap_err();
+    assert!(err.message.contains("harness bug"), "{}", err.message);
+}
+
+#[test]
 fn child_env_is_the_hermetic_bench_home() {
     let dir = tempfile::tempdir().unwrap();
     let layout = BenchLayout::new(dir.path()).unwrap();

@@ -78,12 +78,15 @@ pub struct PreparedTarget {
 
 /// Leg-level staged resources the workload runs share (spec 27 §10):
 /// the ioread fixture (host bytes, plus the in-leg-built image the
-/// tebako arms mount) and the in-leg compiled Java classes.
+/// tebako arms mount), the in-leg compiled Java classes, and the lazy
+/// arms' loopback Range fixtures (spec 27 §10.5 — they serve for the
+/// whole leg; the drop at leg end shuts them down).
 #[derive(Debug, Default)]
 pub struct LegContext {
     pub fixture_host: Option<PathBuf>,
     pub fixture_image: Option<PathBuf>,
     pub classes_dir: Option<PathBuf>,
+    pub lazy_servers: Vec<crate::lazy_server::LazyServer>,
 }
 
 /// The `run` surface: acquire, execute, emit, and return the exit code
@@ -214,6 +217,10 @@ fn prepare_targets(
     let mut tools: Option<TebakoTools> = None;
     let mut versions = Versions::default();
     let mut prepared = Vec::new();
+    // The lazy arms' loopback fixtures — they serve for the whole leg
+    // (the seal thread's between-runs fetches ride them too) and land in
+    // the LegContext so the drop happens at leg end.
+    let mut lazy_servers = Vec::new();
     for target in &suite.targets {
         let state = match target.kind {
             TargetKind::V1Exe => match &entry.v1_asset {
@@ -290,6 +297,21 @@ fn prepare_targets(
                     },
                     Err(e) => Prepared::Unavailable {
                         reason: format!("runtime acquisition failed: {e}"),
+                    },
+                }
+            }
+            TargetKind::RuntimeExeLazy => {
+                match acquire::acquire_lazy_runtime_pair(layout, triplet, target) {
+                    Ok(pair) => {
+                        lazy_servers.push(pair.server);
+                        Prepared::Ready {
+                            program: pair.exe,
+                            image: Some(pair.image),
+                            runtime_dir: Some(pair.entry_dir),
+                        }
+                    }
+                    Err(e) => Prepared::Unavailable {
+                        reason: format!("lazy runtime acquisition failed: {e}"),
                     },
                 }
             }
@@ -443,6 +465,7 @@ fn prepare_targets(
     // The leg-level resources: the ioread fixture (host bytes + the
     // in-leg image the tebako arms mount) and the compiled java classes.
     let mut leg = LegContext::default();
+    leg.lazy_servers = lazy_servers;
     if suite
         .workloads
         .iter()
@@ -459,7 +482,10 @@ fn prepare_targets(
         acquire::generate_fixture(&fixture)?;
         leg.fixture_host = Some(fixture);
         let any_runtime_ready = prepared.iter().any(|pt| {
-            pt.target.kind == TargetKind::RuntimeExe && matches!(pt.state, Prepared::Ready { .. })
+            matches!(
+                pt.target.kind,
+                TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy
+            ) && matches!(pt.state, Prepared::Ready { .. })
         });
         if any_runtime_ready {
             let built = acquire::fetch_tfs_tool(layout, tebako_release, triplet).and_then(
@@ -476,8 +502,10 @@ fn prepare_targets(
                 }
                 Err(e) => {
                     for pt in &mut prepared {
-                        if pt.target.kind == TargetKind::RuntimeExe
-                            && matches!(pt.state, Prepared::Ready { .. })
+                        if matches!(
+                            pt.target.kind,
+                            TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy
+                        ) && matches!(pt.state, Prepared::Ready { .. })
                         {
                             pt.state = Prepared::Unavailable {
                                 reason: format!("the fixture image build failed: {e}"),
@@ -590,7 +618,7 @@ fn prepare_v2(
         TargetKind::V2Press => {
             acquire::assemble_fat_package(layout, tools_ref, &payload, &runtime, target)?
         }
-        TargetKind::V1Exe | TargetKind::OnSystem | TargetKind::RuntimeExe => {
+        TargetKind::V1Exe | TargetKind::OnSystem | TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy => {
             return Err(BenchError::operational(format!(
                 "engine: prepare_v2 called for the non-v2 target '{}' (harness bug)",
                 target.id
@@ -949,7 +977,12 @@ fn run_once(
     })?;
     let wants_fixture = workload.argv.iter().any(|a| a == "{fixture}");
     let mut argv = vec![program.to_string_lossy().into_owned()];
-    if wants_fixture && target.kind == TargetKind::RuntimeExe {
+    if wants_fixture
+        && matches!(
+            target.kind,
+            TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy
+        )
+    {
         let img = ctx.fixture_image.as_ref().ok_or_else(|| {
             BenchError::operational(format!(
                 "engine: workload '{}' uses {{fixture}} but the leg built no fixture image (harness bug)",
@@ -968,7 +1001,9 @@ fn run_once(
                 ))
             })?,
             "{fixture}" => match target.kind {
-                TargetKind::RuntimeExe => acquire::FIXTURE_VFS_PATH.to_string(),
+                TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy => {
+                    acquire::FIXTURE_VFS_PATH.to_string()
+                }
                 _ => ctx
                     .fixture_host
                     .as_ref()
@@ -1005,7 +1040,10 @@ fn run_once(
             env.push(acquire::version_pin_env(name, version));
         }
     }
-    if target.kind == TargetKind::RuntimeExe {
+    if matches!(
+        target.kind,
+        TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy
+    ) {
         let image = image.as_ref().ok_or_else(|| {
             BenchError::operational(format!(
                 "engine: runtime-exe target '{}' is ready without its env image (harness bug)",
