@@ -120,6 +120,9 @@ pub mod overlay_spec;
 pub mod policy;
 #[cfg(feature = "enc")]
 pub mod secure_buf;
+pub mod source;
+#[cfg(feature = "backend-remote")]
+pub mod source_remote;
 pub mod trace;
 pub mod tree_walk;
 
@@ -134,6 +137,9 @@ pub const ENOKEY: i32 = 126;
 pub use context::{TebakoCDirent, DT_DIR, DT_REG, TEBAKO_FD_FLAG, TEBAKO_FD_MAX};
 pub use mount::{MountMode, TEBAKO_MOUNT_COW, TEBAKO_MOUNT_RO, TEBAKO_MOUNT_RW};
 pub use policy::{HostAccess, HostMount, HostMountSpec, HostPolicy, JailSpec, JailSpecError};
+pub use source::{ByteSource, SourceError, SourceErrorKind};
+#[cfg(feature = "backend-remote")]
+pub use source_remote::{RangeFetch, RangeFetchAnswer, RemoteByteSource};
 
 /// Image-level metadata as JSON for an image file (item 24's
 /// `image_info_json`), built straight from the backend — outside the
