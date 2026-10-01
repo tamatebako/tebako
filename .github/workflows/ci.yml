@@ -357,6 +357,15 @@ jobs:
             cargo test -p libtfs-preload --doc
           fi
 
+      # spec 38 §12: the publish half against a REAL OCI registry — zot
+      # (pinned by version + per-platform sha256) on a loopback port.
+      # Dual publish, the write-once conflict, the signature sibling
+      # tags, and the channel: oci install all ride target/debug/tebako
+      # from the workspace build above.
+      - name: OCI publish e2e (zot, loopback)
+        working-directory: tebako-rs
+        run: bash ci/oci-zot-e2e.sh
+
       - name: clippy
         working-directory: tebako-rs
         env:
