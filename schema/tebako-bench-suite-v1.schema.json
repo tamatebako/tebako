@@ -107,8 +107,8 @@
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "kind": {
-          "enum": ["v1-exe", "v2-managed", "v2-press", "on-system", "runtime-exe"],
-          "description": "v1-exe: the packed-mn release asset (asset from platforms.yaml). v2-managed: registry install + shim dispatch, warm store. v2-press: fat tpkg assembled in-leg from verified published artifacts. on-system: the host toolchain binary (CI-provisioned, version-pinned). runtime-exe: the tebako runtime pair fetched sha256-verified from its factory release."
+          "enum": ["v1-exe", "v2-managed", "v2-press", "on-system", "runtime-exe", "runtime-exe-lazy"],
+          "description": "v1-exe: the packed-mn release asset (asset from platforms.yaml). v2-managed: registry install + shim dispatch, warm store. v2-press: fat tpkg assembled in-leg from verified published artifacts. on-system: the host toolchain binary (CI-provisioned, version-pinned). runtime-exe: the tebako runtime pair fetched sha256-verified from its factory release. runtime-exe-lazy (2026-10-01 amendment, spec 27 §10.5): the same pair staged as a spec 39 LAZY_SEEDING entry, the image + blksum sidecar served by the harness's in-process loopback Range fixture."
         },
         "payload": {
           "type": "string",
@@ -172,6 +172,10 @@
         },
         {
           "if": { "properties": { "kind": { "const": "runtime-exe" } }, "required": ["kind"] },
+          "then": { "required": ["runtime"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "runtime-exe-lazy" } }, "required": ["kind"] },
           "then": { "required": ["runtime"] }
         }
       ]

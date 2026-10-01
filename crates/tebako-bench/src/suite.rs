@@ -135,6 +135,12 @@ pub enum TargetKind {
     /// The tebako runtime pair (exe + env image) booted bare, fetched
     /// sha256-verified from its factory release (spec 27 §10.1).
     RuntimeExe,
+    /// The same pair staged as a spec 39 LAZY_SEEDING entry (spec 27
+    /// §10.5): the exe present, the env image absent, the seed
+    /// descriptor's source naming the harness's in-process loopback
+    /// Range fixture. The driver state-detects the seeding entry — no
+    /// opt-in env rides the measured run.
+    RuntimeExeLazy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,11 +239,16 @@ impl SuiteFile {
                         }
                     }
                 }
-                TargetKind::RuntimeExe => {
+                TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy => {
                     if t.runtime.is_none() {
                         violations.push(format!(
-                            "targets/{}: a runtime-exe target needs runtime (repo, tag, lang_version)",
-                            t.id
+                            "targets/{}: a {} target needs runtime (repo, tag, lang_version)",
+                            t.id,
+                            if t.kind == TargetKind::RuntimeExe {
+                                "runtime-exe"
+                            } else {
+                                "runtime-exe-lazy"
+                            }
                         ));
                     }
                 }

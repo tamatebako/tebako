@@ -22,6 +22,7 @@
 pub mod acquire;
 pub mod engine;
 pub mod error;
+pub mod lazy_server;
 pub mod platforms;
 pub mod report;
 pub mod result;

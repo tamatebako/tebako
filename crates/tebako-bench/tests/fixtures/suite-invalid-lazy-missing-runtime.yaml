@@ -1,0 +1,15 @@
+schema_version: 1
+name: lazy-missing-runtime-suite
+baseline: eager-ruby
+workloads:
+  - id: boot
+    argv: ["-e", "puts 1"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 60
+targets:
+  - id: eager-ruby
+    kind: runtime-exe
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.25, lang_version: "3.3.12" }
+  - id: lazy-ruby
+    kind: runtime-exe-lazy
+run_policy: { warmup: 1, repetitions: 3, cold_repetitions: 1, interleave: true }
