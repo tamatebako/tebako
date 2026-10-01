@@ -130,4 +130,9 @@ proptest = "1"
 # The lazy loopback e2e wires the REAL range transport (spec 39 PR 2's
 # get_range) into the byte source's fetch closure — test-only.
 tebako-http = { version = "2.0.0", path = "../tebako-http" }
+# The lazy-over-OCI contract test wires the REAL OCI client (spec 38's
+# range-capable blob fetch, spec 39 §8's closure arm) into the byte
+# source's fetch closure against a loopback distribution fixture —
+# test-only, the same caller-side adapter shape.
+tebako-oci = { version = "2.0.0", path = "../tebako-oci" }
 
