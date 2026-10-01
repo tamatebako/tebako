@@ -464,8 +464,10 @@ fn prepare_targets(
 
     // The leg-level resources: the ioread fixture (host bytes + the
     // in-leg image the tebako arms mount) and the compiled java classes.
-    let mut leg = LegContext::default();
-    leg.lazy_servers = lazy_servers;
+    let mut leg = LegContext {
+        lazy_servers,
+        ..LegContext::default()
+    };
     if suite
         .workloads
         .iter()
@@ -618,7 +620,10 @@ fn prepare_v2(
         TargetKind::V2Press => {
             acquire::assemble_fat_package(layout, tools_ref, &payload, &runtime, target)?
         }
-        TargetKind::V1Exe | TargetKind::OnSystem | TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy => {
+        TargetKind::V1Exe
+        | TargetKind::OnSystem
+        | TargetKind::RuntimeExe
+        | TargetKind::RuntimeExeLazy => {
             return Err(BenchError::operational(format!(
                 "engine: prepare_v2 called for the non-v2 target '{}' (harness bug)",
                 target.id

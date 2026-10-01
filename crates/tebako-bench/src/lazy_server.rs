@@ -91,10 +91,7 @@ impl LazyServer {
 
 /// One connection: a loop of simple GET exchanges (tebako-http's agent
 /// pools connections — `Connection: close` or EOF ends the loop).
-fn serve_connection(
-    mut stream: std::net::TcpStream,
-    state: Arc<(PathBuf, String, Vec<u8>)>,
-) {
+fn serve_connection(mut stream: std::net::TcpStream, state: Arc<(PathBuf, String, Vec<u8>)>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
     let mut pending: Vec<u8> = Vec::new();
     loop {
@@ -108,7 +105,10 @@ fn serve_connection(
         let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
         let range = request
             .lines()
-            .find_map(|l| l.strip_prefix("Range:").or_else(|| l.strip_prefix("range:")))
+            .find_map(|l| {
+                l.strip_prefix("Range:")
+                    .or_else(|| l.strip_prefix("range:"))
+            })
             .and_then(|v| parse_bytes_range(v.trim()));
         let response = if method != "GET" {
             (405, "Method Not Allowed".to_string(), Vec::new())
@@ -170,7 +170,10 @@ fn parse_bytes_range(value: &str) -> Option<(u64, Option<u64>)> {
 /// The image exchange: a whole GET is the 200, a satisfiable range the
 /// 206 with a well-formed `Content-Range` (the byte source validates
 /// the window against its request — spec 39 §8's answer law).
-fn serve_image(path: &std::path::Path, range: Option<(u64, Option<u64>)>) -> (u16, String, Vec<u8>) {
+fn serve_image(
+    path: &std::path::Path,
+    range: Option<(u64, Option<u64>)>,
+) -> (u16, String, Vec<u8>) {
     let Ok(bytes) = std::fs::read(path) else {
         return (500, "Internal Server Error".to_string(), Vec::new());
     };
@@ -223,9 +226,60 @@ mod tests {
 
     #[test]
     fn the_range_grammar_parses_the_bounded_and_open_forms() {
-        assert_eq!(parse_bytes_range("bytes=0-4194303"), Some((0, Some(4194303))));
+        assert_eq!(
+            parse_bytes_range("bytes=0-4194303"),
+            Some((0, Some(4194303)))
+        );
         assert_eq!(parse_bytes_range("bytes=4096-"), Some((4096, None)));
         assert_eq!(parse_bytes_range("items=0-10"), None);
         assert_eq!(parse_bytes_range("bytes=-500"), None);
+    }
+
+    /// The fixture speaks the driver's dialect end-to-end: a real
+    /// socket, tebako-http's range GET (the same transport the driver's
+    /// lazy byte source rides) against the image, the sidecar GET, and
+    /// the 404 class.
+    #[test]
+    fn the_server_answers_ranges_and_the_sidecar_over_a_real_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("image.tfs");
+        let bytes: Vec<u8> = (0..10_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&image, &bytes).unwrap();
+        let server = LazyServer::start(image, br#"{"schema_version":1}"#.to_vec()).unwrap();
+        let base = format!("http://127.0.0.1:{}/image.tfs", server.port);
+        let range = |offset, len| tebako_http::ByteRange { offset, len };
+
+        // a bounded window rides the 206 arm
+        let answer = tebako_http::get_range(&base, range(100, 300), None, None).unwrap();
+        let tebako_http::RangeAnswer::Partial(body) = answer else {
+            panic!("a range-capable fixture answers Partial, got {answer:?}")
+        };
+        assert_eq!(body.bytes, bytes[100..400], "the exact requested window");
+        assert_eq!(body.total, bytes.len() as u64);
+
+        // a window ending exactly at EOF (the driver's final group is
+        // short — its span arithmetic clamps, so a past-EOF request
+        // never rides the wire)
+        let answer = tebako_http::get_range(&base, range(9_900, 100), None, None).unwrap();
+        let tebako_http::RangeAnswer::Partial(body) = answer else {
+            panic!("the tail range answers Partial, got {answer:?}")
+        };
+        assert_eq!(body.bytes, bytes[9_900..], "the exact final window");
+
+        // the sidecar is a whole-document 200 (the driver's get_document
+        // rides the same unclassified surface)
+        let sidecar = tebako_http::get_raw(&format!("{base}.blksum.json"), None, None).unwrap();
+        assert_eq!(sidecar.status, 200);
+        assert_eq!(sidecar.body, br#"{"schema_version":1}"#);
+
+        // an unknown path is the 404 class (the driver's sidecar-missing
+        // signal reads the status)
+        let missing = tebako_http::get_raw(
+            &format!("http://127.0.0.1:{}/nope", server.port),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(missing.status, 404);
     }
 }

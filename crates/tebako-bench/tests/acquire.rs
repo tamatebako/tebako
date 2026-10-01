@@ -375,10 +375,7 @@ fn the_lazy_cold_wipe_reseeds_the_entry() {
     layout
         .wipe_cold_caches("lazy-ruby", TargetKind::RuntimeExeLazy, Some(&entry))
         .unwrap();
-    assert!(
-        !entry.join("image.tfs").exists(),
-        "the sealed image goes"
-    );
+    assert!(!entry.join("image.tfs").exists(), "the sealed image goes");
     assert!(
         !entry.join("image.tfs.blocks").exists(),
         "the block cache goes"
