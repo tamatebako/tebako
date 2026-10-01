@@ -1274,27 +1274,23 @@ payloads:
         let bad_sha = per_triplet.replace(&pin_sha, "zz23");
         let err = Registry::from_yaml(&bad_sha).unwrap_err();
         assert!(
-            err.to_string().contains("platforms[aarch64-macos].blksum.sha256 must be 64 lowercase hex"),
+            err.to_string()
+                .contains("platforms[aarch64-macos].blksum.sha256 must be 64 lowercase hex"),
             "{err}"
         );
         let empty_name = per_triplet.replace("filename: a.tfs.blksum.json", "filename: \"\"");
         let err = Registry::from_yaml(&empty_name).unwrap_err();
         assert!(
-            err.to_string().contains("blksum.filename must not be empty"),
+            err.to_string()
+                .contains("blksum.filename must not be empty"),
             "{err}"
         );
         // A pin missing a required half inside the platforms map fails
         // at the untagged platforms parse — the same named YAML refusal
         // a missing `artifact`/`sha256` key produces there.
-        let missing_half = per_triplet.replace(
-            &format!(", sha256: \"{pin_sha}\"",),
-            "",
-        );
+        let missing_half = per_triplet.replace(&format!(", sha256: \"{pin_sha}\"",), "");
         let err = Registry::from_yaml(&missing_half).unwrap_err();
-        assert!(
-            matches!(err, RegistryError::Yaml { .. }),
-            "{err}"
-        );
+        assert!(matches!(err, RegistryError::Yaml { .. }), "{err}");
         let torn_universal = universal.replace(
             &format!("filename: x-1.0.tfs.blksum.json, sha256: \"{pin_sha}\""),
             "filename: x-1.0.tfs.blksum.json",

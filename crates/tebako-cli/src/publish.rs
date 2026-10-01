@@ -833,6 +833,7 @@ pub fn publish_full_with_oci_sink(
 
     // ---- 2. payloads: bytes, digests, the embedded manifest ----------
     let mut artifacts: Vec<(String, String, Vec<u8>)> = Vec::new(); // (upload name, sha, bytes)
+
     // The blksum sidecars (spec 39 §3), one per payload image, in
     // `artifacts` order: (sidecar name, sidecar sha, sidecar bytes).
     let mut blksum_uploads: Vec<(String, String, Vec<u8>)> = Vec::new();
