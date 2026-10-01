@@ -1030,11 +1030,23 @@ pub fn cache_list() {
         let mut total = 0u64;
         for entry in &entries {
             total += entry.size_bytes;
+            // spec 39 §7: a LAZY_SEEDING entry reads distinctly.
+            let seeding = lazy_seed_state_of(&entry.path)
+                .map(|state| {
+                    format!(
+                        " (seeding {}%, {}/{} groups)",
+                        state.percent(),
+                        state.present.len(),
+                        state.seed.group_count
+                    )
+                })
+                .unwrap_or_default();
             println!(
-                "{:<44} {:>9}  {}",
+                "{:<44} {:>9}  {}{}",
                 entry.name,
                 human_size(entry.size_bytes),
-                human_age(entry.installed_at)
+                human_age(entry.installed_at),
+                seeding
             );
         }
         println!(
@@ -1115,6 +1127,17 @@ pub fn cache_list_json() {
         if let Some(origin) = marker("origin") {
             obj.push(("origin".to_string(), s(&origin)));
         }
+        // spec 39 §7 (additive): a LAZY_SEEDING entry's seed state.
+        if let Some(state) = lazy_seed_state_of(&entry.path) {
+            obj.push((
+                "lazy_seeding".to_string(),
+                J::Object(vec![
+                    ("present_groups".to_string(), n(state.present.len() as u64)),
+                    ("total_groups".to_string(), n(state.seed.group_count)),
+                    ("percent".to_string(), n(state.percent())),
+                ]),
+            ));
+        }
         runtimes.push(J::Object(obj));
     }
 
@@ -1150,6 +1173,226 @@ pub fn cache_list_json() {
         ("total_bytes".to_string(), n(total)),
     ]);
     println!("{}", json_to_string(&doc));
+}
+
+// ---------------------------------------------------------------------
+// cache seal (spec 39 §5): the toolchain's synchronous seal pass
+// ---------------------------------------------------------------------
+
+/// A runtime entry's LAZY_SEEDING state for the listing surfaces (spec
+/// 39 §7): the validated seed state when the entry holds a seed
+/// descriptor and the image is still absent. A torn descriptor is the
+/// doctor's named problem — the listings simply do not mark.
+fn lazy_seed_state_of(entry_dir: &Path) -> Option<tpkg::lazy::SeedState> {
+    for f in fs::read_dir(entry_dir).ok()?.flatten() {
+        let name = f.file_name().to_string_lossy().into_owned();
+        let Some(image_base) = name.strip_suffix(".lazy.json") else {
+            continue;
+        };
+        if entry_dir.join(image_base).is_file() {
+            continue; // sealed already; the descriptor is stale
+        }
+        if let Ok(Some(state)) = tpkg::lazy::seed_state(entry_dir, image_base) {
+            return Some(state);
+        }
+    }
+    None
+}
+
+/// A lazy model failure's toolchain error (spec 39 §6's classes ride
+/// the exit code verbatim).
+fn seal_lazy_error(e: tpkg::lazy::LazyError) -> TebakoError {
+    TebakoError::new(e.to_string(), e.exit_code())
+}
+
+/// A byte-source failure's class (spec 39 §6): fetch/unsupported 69,
+/// integrity 70, store IO 74.
+fn seal_source_error(image_base: &str, e: tfs::source::SourceError) -> TebakoError {
+    let code = match e.kind {
+        tfs::source::SourceErrorKind::Fetch | tfs::source::SourceErrorKind::Unsupported => 69,
+        tfs::source::SourceErrorKind::Integrity => 70,
+        tfs::source::SourceErrorKind::Io => 74,
+    };
+    TebakoError::new(format!("the lazy env image {image_base}: {e}"), code)
+}
+
+/// The seal verb's sidecar GET: `file://` from disk (the test/airgap
+/// spelling), else tebako-http's one agent (https + the loopback
+/// carve-out); a non-200 is the named 69, never a guess.
+fn get_sidecar(url: &str) -> Result<Vec<u8>, TebakoError> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return fs::read(path).map_err(|e| TebakoError::new(format!("{url}: {e}"), 69));
+    }
+    let response = tebako_http::get_raw(url, Some("application/json"), None)
+        .map_err(|e| TebakoError::new(format!("{url}: {e}"), 69))?;
+    if response.status != 200 {
+        return Err(TebakoError::new(
+            format!(
+                "{url}: status {} — the blksum sidecar must be a 200",
+                response.status
+            ),
+            69,
+        ));
+    }
+    Ok(response.body)
+}
+
+/// `tebako cache seal [<entry>|--all]` (spec 39 §5): the synchronous
+/// seal pass from the toolchain — fill each LAZY_SEEDING entry's
+/// missing groups over the descriptor's origin (the same per-group
+/// verification the driver's background seal rides), then the seal
+/// commit flips the entry to SEALED. Unlike the driver's thread the
+/// verb is strict: a failure is THE named error of the run (a fetch 69,
+/// a digest mismatch 70, store IO 74), never a logged skip. Offline
+/// (TEBAKO_OFFLINE=1) the source is cache-only — a complete block map
+/// still seals; a miss is the named offline-at-group-granularity error.
+pub fn cache_seal(selector: Option<&str>, all: bool) -> Result<(), TebakoError> {
+    let manager = Resolver::new();
+    let runtimes = tpkg::runtime_store::scan_all_cached(&manager.cache_root);
+    let targets: Vec<tpkg::runtime_store::CachedRuntime> = match (selector, all) {
+        (None, true) => runtimes.into_iter().filter(|rt| rt.lazy.is_some()).collect(),
+        (Some(name), false) => {
+            let Some(rt) = runtimes.into_iter().find(|rt| {
+                rt.dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy() == name)
+                    .unwrap_or(false)
+            }) else {
+                return Err(TebakoError::new(
+                    format!(
+                        "no cached runtime entry named '{name}' — `tebako cache list` shows the entries"
+                    ),
+                    65,
+                ));
+            };
+            if rt.lazy.is_none() {
+                println!("{name} is sealed already — nothing to do");
+                return Ok(());
+            }
+            vec![rt]
+        }
+        // main.rs's run_cache validates the grammar; anything else is a
+        // programming error, not a user one.
+        _ => return Err(plain_error("usage: tebako cache seal [<entry>|--all]")),
+    };
+    if targets.is_empty() {
+        println!("no LAZY_SEEDING runtime entries — nothing to seal");
+        return Ok(());
+    }
+    let offline = tebako_resolve::cache::offline();
+    let mut prog = tebako_term::Progress::stderr();
+    for rt in &targets {
+        seal_one(rt, offline, &mut prog)?;
+    }
+    Ok(())
+}
+
+/// One entry's synchronous seal: open the descriptor's remote source
+/// (cache-only offline), fill the missing groups under the byte
+/// progress bar, then the seal commit.
+fn seal_one(
+    rt: &tpkg::runtime_store::CachedRuntime,
+    offline: bool,
+    prog: &mut tebako_term::Progress<std::io::Stderr>,
+) -> Result<(), TebakoError> {
+    let Some(lazy) = &rt.lazy else {
+        return Ok(());
+    };
+    let seed = &lazy.seed;
+    let blocks = tpkg::lazy::blocks_dir(&rt.dir, &lazy.image_base);
+    let source = if offline {
+        tfs::source_remote::RemoteByteSource::new_cache_only(
+            seed.size_bytes,
+            &blocks,
+            &seed.source,
+        )
+    } else {
+        let body = get_sidecar(&format!("{}.blksum.json", seed.source))?;
+        let blksum = tpkg::lazy::verify_blksum(seed, &body).map_err(seal_lazy_error)?;
+        let url = seed.source.clone();
+        // The spec 39 §8 closure shape: the byte source stays
+        // transport-free; tebako-http's retry law rides inside
+        // get_range (the driver's open_lazy_source is the runtime-side
+        // twin of this wiring).
+        let fetch = move |offset: u64, len: usize, if_range: Option<&str>| {
+            let range = tebako_http::ByteRange {
+                offset,
+                len: len as u64,
+            };
+            match tebako_http::get_range(&url, range, if_range, None) {
+                Ok(tebako_http::RangeAnswer::Partial(body)) => {
+                    Ok(tfs::source_remote::RangeFetchAnswer::Partial {
+                        bytes: body.bytes,
+                        etag: body.etag,
+                    })
+                }
+                Ok(tebako_http::RangeAnswer::Full(body)) => {
+                    Ok(tfs::source_remote::RangeFetchAnswer::Full {
+                        bytes: body.bytes,
+                        etag: body.etag,
+                    })
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        };
+        tfs::source_remote::RemoteByteSource::new(
+            std::sync::Arc::new(fetch),
+            blksum,
+            &blocks,
+            &seed.source,
+        )
+    }
+    .map_err(|e| seal_source_error(&lazy.image_base, e))?;
+    let source = std::sync::Arc::new(source);
+
+    prog.download_begin(&format!("sealing {}", lazy.image_base));
+    let mut filled = std::cmp::min(
+        lazy.present * tpkg::lazy::LAZY_GROUP_SIZE,
+        seed.size_bytes,
+    );
+    prog.download_tick(filled, Some(seed.size_bytes));
+    loop {
+        let missing = source.missing_groups().map_err(|e| {
+            prog.download_abort();
+            seal_lazy_error(e)
+        })?;
+        if missing.is_empty() {
+            break;
+        }
+        for index in missing {
+            if let Err(e) = source.seed_group(index) {
+                prog.download_abort();
+                return Err(seal_source_error(&lazy.image_base, e));
+            }
+            let (_, len) = seed
+                .group_span(index)
+                .expect("a missing group is in range");
+            filled = std::cmp::min(filled + len, seed.size_bytes);
+            prog.download_tick(filled, Some(seed.size_bytes));
+        }
+    }
+    prog.download_end();
+    match tpkg::lazy::seal_entry(&rt.dir, &lazy.image_base) {
+        Ok(tpkg::lazy::SealOutcome::Sealed { bytes, groups }) => {
+            prog.line(&format!(
+                "sealed {} ({}) — {groups} groups; {} is an ordinary cached runtime now",
+                lazy.image_base,
+                tebako_term::human_bytes(bytes),
+                rt.dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            ));
+        }
+        Ok(tpkg::lazy::SealOutcome::AlreadySealed) => {
+            prog.line(&format!(
+                "{} was already sealed (a concurrent sealer committed first)",
+                lazy.image_base
+            ));
+        }
+        Err(e) => return Err(seal_lazy_error(e)),
+    }
+    Ok(())
 }
 
 /// `tebako cache prune [--runtimes] [--payloads] [--all | --older-than Nd]`.

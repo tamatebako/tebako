@@ -1349,6 +1349,7 @@ fn finish_install<T: Transport + Sync>(
                 size_hint: None,
                 tmp_dir: cache.root().join("tmp"),
                 registry_alias: plan.registry_alias.clone(),
+                lazy: false,
                 commit: Box::new(|staged: &StagedArtifact| {
                     match verify_signature_staged(home, fetcher, staged, &plan) {
                         Ok(Some(signer)) => sink.add_signer(signer),

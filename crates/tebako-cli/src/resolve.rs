@@ -566,6 +566,7 @@ impl Resolver {
             size_hint: None,
             tmp_dir: self.cache_root.join(TMP_DIR),
             registry_alias: None,
+            lazy: false,
             commit: Box::new(commit),
         })
     }
@@ -609,6 +610,7 @@ impl Resolver {
             size_hint: None,
             tmp_dir: self.cache_root.join(TMP_DIR),
             registry_alias: None,
+            lazy: false,
             commit: Box::new(commit),
         })
     }
@@ -760,6 +762,7 @@ impl Resolver {
             size_hint,
             tmp_dir: self.cache_root.join(TMP_DIR),
             registry_alias: None,
+            lazy: false,
             commit: Box::new(commit),
         })
     }

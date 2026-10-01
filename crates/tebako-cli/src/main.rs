@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use tebako_cli::error::TebakoError;
 use tebako_cli::options::{resolve_prefix, PressMode, PressOptions};
 use tebako_cli::runner::verbose_mode;
-use tebako_cli::{cache_list, cache_list_json, cache_prune, press, VERSION_BANNER};
+use tebako_cli::{cache_list, cache_list_json, cache_prune, cache_seal, press, VERSION_BANNER};
 
 const USAGE: &str = "Usage:
   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>] [-c <cwd>]
@@ -43,6 +43,8 @@ const USAGE: &str = "Usage:
                [--runtime <exe> --runtime-image <env.tfs>]
                                        the payload's in-image acceptance checks
   tebako cache list [--json]
+  tebako cache seal [<entry>|--all]   fill + seal LAZY_SEEDING runtime env images
+                                       (spec 39 — the synchronous seal pass)
   tebako cache prune [--runtimes] [--payloads] [--all] [--older-than Nd]
                                        bare = runtimes only; the payload arm never
                                        prunes a pinned or a name's newest version
@@ -989,7 +991,7 @@ fn run_check(args: &[String]) -> Result<(), CliExit> {
 fn run_cache(args: &[String]) -> Result<(), CliExit> {
     let Some(action) = args.first() else {
         return Err(CliExit::Usage(
-            "cache subcommand expected: list | prune".to_string(),
+            "cache subcommand expected: list | seal | prune".to_string(),
         ));
     };
     match action.as_str() {
@@ -1007,6 +1009,38 @@ fn run_cache(args: &[String]) -> Result<(), CliExit> {
                 cache_list();
             }
             Ok(())
+        }
+        "seal" => {
+            let mut all = false;
+            let mut entry: Option<String> = None;
+            for arg in &args[1..] {
+                match arg.as_str() {
+                    "--all" => all = true,
+                    s if s.starts_with("--") => {
+                        return Err(CliExit::Usage(format!("unknown cache option '{s}'")));
+                    }
+                    s => {
+                        if entry.is_some() {
+                            return Err(CliExit::Usage(format!(
+                                "cache seal takes at most one entry ('{s}' is a second)"
+                            )));
+                        }
+                        entry = Some(s.to_string());
+                    }
+                }
+            }
+            match (&entry, all) {
+                (Some(_), true) => Err(CliExit::Usage(
+                    "cache seal takes an entry OR --all, not both".to_string(),
+                )),
+                (None, false) => Err(CliExit::Usage(
+                    "cache seal expects an entry name or --all".to_string(),
+                )),
+                _ => {
+                    cache_seal(entry.as_deref(), all)?;
+                    Ok(())
+                }
+            }
         }
         "prune" => {
             let mut runtimes = false;

@@ -72,10 +72,10 @@ regex = "1"
 # there (TODO.v2-1/02). The per-target split lives in the consumer (cargo
 # features cannot be target-conditional from inside tfs).
 [target.'cfg(not(windows))'.dependencies]
-tfs = { version = "2.0.0", path = "../tfs" }
+tfs = { version = "2.0.0", path = "../tfs", features = ["backend-remote"] }
 
 [target.'cfg(windows)'.dependencies]
-tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs", "backend-remote"] }
 # The runtime/SDK install locks (src/resolve.rs flock port): LockFileEx on
 # one byte at offset 0 — the tebako-shim runtime.rs shape. FFI is
 # quarantined in that one function.
