@@ -95,11 +95,18 @@ where
 /// seeded on demand.
 pub struct RemoteByteSource {
     /// The range transport (a closure — tebako-http's `get_range`
-    /// adapted by the caller).
-    fetch: Arc<dyn RangeFetch>,
+    /// adapted by the caller). `None` on a cache-only source (the
+    /// TEBAKO_OFFLINE=1 arm): fetches are FORBIDDEN without the digest
+    /// table — fail-closed, offline at group granularity (spec 39 §6).
+    fetch: Option<Arc<dyn RangeFetch>>,
     /// The verified blksum sidecar (the group digests + the
-    /// whole-image sha256 the Full fallback verifies against).
-    blksum: Blksum,
+    /// whole-image sha256 the Full fallback verifies against). `None`
+    /// on a cache-only source — cached groups serve unverified (the
+    /// per-run law: the cache is trusted once written).
+    blksum: Option<Blksum>,
+    /// The whole image's byte length (the blksum's, or the
+    /// descriptor's on a cache-only source).
+    size_bytes: u64,
     /// The entry's `<image>.blocks` directory.
     blocks: PathBuf,
     /// The origin's display name for log lines (a URL, a digest —
@@ -129,6 +136,23 @@ impl RemoteByteSource {
         blocks: &Path,
         origin: impl Into<String>,
     ) -> Result<RemoteByteSource, SourceError> {
+        let size_bytes = blksum.size_bytes;
+        let mut source = RemoteByteSource::new_cache_only(size_bytes, blocks, origin)?;
+        source.fetch = Some(fetch);
+        source.blksum = Some(blksum);
+        Ok(source)
+    }
+
+    /// Open a CACHE-ONLY source over `blocks` (spec 39 §6's
+    /// TEBAKO_OFFLINE=1 arm): cached groups serve (trusted once
+    /// written, unverified per run); a miss is the named fetch failure
+    /// on the touching read — never a fetch without the digest table,
+    /// never a fabricated zero-fill.
+    pub fn new_cache_only(
+        size_bytes: u64,
+        blocks: &Path,
+        origin: impl Into<String>,
+    ) -> Result<RemoteByteSource, SourceError> {
         let origin = origin.into();
         std::fs::create_dir_all(blocks)
             .map_err(|e| SourceError::io(format!("create {}: {e}", blocks.display())))?;
@@ -136,10 +160,11 @@ impl RemoteByteSource {
         // re-validates on every open regardless — this keeps the
         // directory tight).
         let _ =
-            scan_blocks(blocks, blksum.size_bytes).map_err(|e| SourceError::io(e.to_string()))?;
+            scan_blocks(blocks, size_bytes).map_err(|e| SourceError::io(e.to_string()))?;
         Ok(RemoteByteSource {
-            fetch,
-            blksum,
+            fetch: None,
+            blksum: None,
+            size_bytes,
             blocks: blocks.to_path_buf(),
             origin,
             etag: Mutex::new(None),
@@ -150,18 +175,50 @@ impl RemoteByteSource {
     /// The seeded set (sorted group indices) — the progress surface's
     /// data (`sealing <image> … groups 831/1340`, spec 39 §7).
     pub fn seeded_groups(&self) -> Result<Vec<u64>, SourceError> {
-        scan_blocks(&self.blocks, self.blksum.size_bytes)
-            .map_err(|e| SourceError::io(e.to_string()))
+        scan_blocks(&self.blocks, self.size_bytes).map_err(|e| SourceError::io(e.to_string()))
+    }
+
+    /// The missing group indices, in index order (the seal thread's
+    /// work list — it fills gaps around demand, spec 39 §5).
+    pub fn missing_groups(&self) -> Result<Vec<u64>, SourceError> {
+        let present = self.seeded_groups()?;
+        let mut cursor = 0u64;
+        let mut out = Vec::new();
+        for &g in &present {
+            while cursor < g {
+                out.push(cursor);
+                cursor += 1;
+            }
+            cursor = g + 1;
+        }
+        let count = self.group_count();
+        while cursor < count {
+            out.push(cursor);
+            cursor += 1;
+        }
+        Ok(out)
+    }
+
+    /// Seed group `index` on demand — the seal thread's fetch unit
+    /// (spec 39 §5). Identical to a touching read's seed: re-check
+    /// under the install lock (an on-demand read preempts), fetch →
+    /// verify → install. On a cache-only source it is the named
+    /// failure — the seal thread is never spawned there.
+    pub fn seed_group(&self, index: u64) -> Result<(), SourceError> {
+        self.ensure_group(index)
     }
 
     /// The whole image's byte length.
     pub fn size_bytes(&self) -> u64 {
-        self.blksum.size_bytes
+        self.size_bytes
     }
 
     /// The group count.
     pub fn group_count(&self) -> u64 {
-        self.blksum.group_count()
+        match &self.blksum {
+            Some(blksum) => blksum.group_count(),
+            None => tpkg::lazy::group_count_for(self.size_bytes),
+        }
     }
 
     /// One cached group file's path.
@@ -172,7 +229,7 @@ impl RemoteByteSource {
     /// Is group `index` seeded? (Presence + exact size — the scan's
     /// validity law at one index, without the directory walk.)
     fn group_cached(&self, index: u64) -> bool {
-        let Some((_, want_len)) = self.blksum.group_span(index) else {
+        let Some((_, want_len)) = tpkg::lazy::group_span(self.size_bytes, index) else {
             return false;
         };
         std::fs::metadata(self.block_path(index))
@@ -218,24 +275,28 @@ impl RemoteByteSource {
     /// One fetch of group `index`'s span (the transport's retry law
     /// rides inside the closure — a group is retried FROM ZERO, never
     /// resumed mid-body, spec 39 §6).
-    fn fetch_group_once(&self, index: u64) -> Result<RangeFetchAnswer, SourceError> {
-        let Some((offset, len)) = self.blksum.group_span(index) else {
+    fn fetch_group_once(
+        &self,
+        fetch: &dyn RangeFetch,
+        index: u64,
+    ) -> Result<RangeFetchAnswer, SourceError> {
+        let Some((offset, len)) = tpkg::lazy::group_span(self.size_bytes, index) else {
             return Err(SourceError::fetch(format!(
                 "group {index} is past the image's group count {}",
-                self.blksum.group_count()
+                self.group_count()
             )));
         };
         let len = usize::try_from(len)
             .map_err(|_| SourceError::fetch(format!("group {index} length exceeds usize")))?;
         let held = self.held_etag();
-        self.fetch
+        fetch
             .fetch(offset, len, held.as_deref())
             .map_err(|why| SourceError::fetch(format!("group {index} of {}: {why}", self.origin)))
     }
 
     /// Verify fetched window bytes against the group's sidecar digest.
-    fn group_verified(&self, index: u64, bytes: &[u8]) -> bool {
-        sha256_hex(bytes) == self.blksum.groups[index as usize]
+    fn group_verified(&self, blksum: &Blksum, index: u64, bytes: &[u8]) -> bool {
+        sha256_hex(bytes) == blksum.groups[index as usize]
     }
 
     /// Ensure group `index` is seeded: serve from the cache when
@@ -246,7 +307,9 @@ impl RemoteByteSource {
     /// `Full` answer takes the loud eager fallback: the whole body
     /// verifies against the whole-image pin and seeds EVERY missing
     /// group (equal trust — every byte digest-verified; loud — warned
-    /// on the log).
+    /// on the log). On a cache-only source a miss is the named fetch
+    /// failure (spec 39 §6's offline at group granularity) — named on
+    /// the tebako-log with origin, group index, and cause either way.
     fn ensure_group(&self, index: u64) -> Result<(), SourceError> {
         if self.group_cached(index) {
             return Ok(());
@@ -257,13 +320,49 @@ impl RemoteByteSource {
         if self.group_cached(index) {
             return Ok(());
         }
-        match self.fetch_group_once(index)? {
+        let (Some(fetch), Some(blksum)) = (&self.fetch, &self.blksum) else {
+            let err = SourceError::fetch(format!(
+                "group {index} of {} is not cached and this source is cache-only (offline at group granularity, spec 39 §6)",
+                self.origin
+            ));
+            tebako_log::log!(
+                tebako_log::Level::Warn,
+                "tfs",
+                "lazy: {err}"
+            );
+            return Err(err);
+        };
+        let answer = match self.fetch_group_once(fetch.as_ref(), index) {
+            Ok(answer) => answer,
+            Err(err) => {
+                tebako_log::log!(
+                    tebako_log::Level::Warn,
+                    "tfs",
+                    "lazy: fetch failed: {err}"
+                );
+                return Err(err);
+            }
+        };
+        self.seed_from_answer(fetch.as_ref(), blksum, index, answer)
+    }
+
+    /// Seed group `index` from one fetch answer: a `Partial` window
+    /// verifies against its sidecar digest (a mismatch refetches ONCE;
+    /// a second is the named integrity failure — fail closed, never a
+    /// silent serve); a `Full` answer takes the loud eager fallback.
+    fn seed_from_answer(
+        &self,
+        fetch: &dyn RangeFetch,
+        blksum: &Blksum,
+        index: u64,
+        answer: RangeFetchAnswer,
+    ) -> Result<(), SourceError> {
+        match answer {
             RangeFetchAnswer::Partial { bytes, etag } => {
                 self.learn_etag(etag);
-                let (_, want_len) = self
-                    .blksum
-                    .group_span(index)
-                    .expect("an in-range group spans");
+                let (_, want_len) =
+                    tpkg::lazy::group_span(self.size_bytes, index)
+                        .expect("an in-range group spans");
                 if bytes.len() as u64 != want_len {
                     return Err(SourceError::fetch(format!(
                         "group {index} of {} arrived truncated ({} of {want_len} bytes)",
@@ -271,7 +370,7 @@ impl RemoteByteSource {
                         bytes.len()
                     )));
                 }
-                if self.group_verified(index, &bytes) {
+                if self.group_verified(blksum, index, &bytes) {
                     return self.install_group(index, &bytes);
                 }
                 // First mismatch: drop, refetch once (spec 39 §3).
@@ -281,10 +380,12 @@ impl RemoteByteSource {
                     "lazy: group {index} of {} failed its sidecar digest — refetching once",
                     self.origin
                 );
-                match self.fetch_group_once(index)? {
+                match self.fetch_group_once(fetch, index)? {
                     RangeFetchAnswer::Partial { bytes, etag } => {
                         self.learn_etag(etag);
-                        if bytes.len() as u64 == want_len && self.group_verified(index, &bytes) {
+                        if bytes.len() as u64 == want_len
+                            && self.group_verified(blksum, index, &bytes)
+                        {
                             return self.install_group(index, &bytes);
                         }
                         Err(SourceError::integrity(format!(
@@ -294,13 +395,13 @@ impl RemoteByteSource {
                     }
                     RangeFetchAnswer::Full { bytes, etag } => {
                         self.learn_etag(etag);
-                        self.eager_seed(bytes, index)
+                        self.eager_seed(blksum, bytes, index)
                     }
                 }
             }
             RangeFetchAnswer::Full { bytes, etag } => {
                 self.learn_etag(etag);
-                self.eager_seed(bytes, index)
+                self.eager_seed(blksum, bytes, index)
             }
         }
     }
@@ -312,8 +413,8 @@ impl RemoteByteSource {
     /// sidecar digest — a disagreement between a verified whole and
     /// the sidecar is evidence of a publisher-side fault and is
     /// reported, never healed), and warn LOUDLY.
-    fn eager_seed(&self, bytes: Vec<u8>, touched: u64) -> Result<(), SourceError> {
-        if sha256_hex(&bytes) != self.blksum.sha256 {
+    fn eager_seed(&self, blksum: &Blksum, bytes: Vec<u8>, touched: u64) -> Result<(), SourceError> {
+        if sha256_hex(&bytes) != blksum.sha256 {
             return Err(SourceError::integrity(format!(
                 "the whole body of {} does not match the whole-image sha256 pin — the fallback refuses it",
                 self.origin
@@ -325,16 +426,14 @@ impl RemoteByteSource {
             "lazy: {} answered a Range GET with the whole body — seeding eagerly (the loud eager fallback, spec 39 §3)",
             self.origin
         );
-        for index in 0..self.blksum.group_count() {
+        for index in 0..blksum.group_count() {
             if self.group_cached(index) {
                 continue;
             }
-            let (offset, len) = self
-                .blksum
-                .group_span(index)
+            let (offset, len) = tpkg::lazy::group_span(self.size_bytes, index)
                 .expect("an in-range group spans");
             let slice = &bytes[offset as usize..(offset + len) as usize];
-            if !self.group_verified(index, slice) {
+            if !self.group_verified(blksum, index, slice) {
                 return Err(SourceError::integrity(format!(
                     "group {index} of the verified whole body of {} disagrees with its sidecar digest — a publisher-side fault, reported never healed",
                     self.origin
@@ -357,7 +456,7 @@ impl ByteSource for RemoteByteSource {
     /// the named failure on THIS read — the mount and every cached
     /// group remain valid; the next read resumes (spec 39 §6).
     fn read_at(&self, offset: u64, len: usize) -> Result<Vec<u8>, SourceError> {
-        let size = self.blksum.size_bytes;
+        let size = self.size_bytes;
         if len == 0 || offset >= size {
             return Ok(Vec::new());
         }
@@ -392,7 +491,7 @@ impl ByteSource for RemoteByteSource {
     }
 
     fn len(&self) -> Option<u64> {
-        Some(self.blksum.size_bytes)
+        Some(self.size_bytes)
     }
 }
 
@@ -601,6 +700,60 @@ mod tests {
         let err = src.read_at(0, 8).unwrap_err();
         assert_eq!(err.kind, crate::source::SourceErrorKind::Integrity);
         assert!(err.detail.contains("whole-image sha256"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_cache_only_source_serves_seeded_groups_and_names_the_miss() {
+        let dir = scratch("cache-only");
+        let bytes = image_bytes();
+        let blocks = dir.join("blocks");
+        // Seed group 1 through a fetching source, then open cache-only
+        // (the TEBAKO_OFFLINE=1 arm).
+        let mock = Arc::new(Mock::new(bytes.clone()));
+        let src = source(Arc::clone(&mock), &blocks);
+        let _ = src.read_at(tpkg::lazy::LAZY_GROUP_SIZE, 128).unwrap();
+        drop(src);
+        let requests_before = mock.request_count();
+        let offline = RemoteByteSource::new_cache_only(SIZE, &blocks, "mock://image.tfs").unwrap();
+        assert_eq!(offline.size_bytes(), SIZE);
+        assert_eq!(offline.group_count(), 3);
+        // The seeded group serves without a fetch and without
+        // re-verification (the per-run law: trusted once written).
+        let got = offline.read_at(tpkg::lazy::LAZY_GROUP_SIZE, 128).unwrap();
+        assert_eq!(
+            got,
+            &bytes[tpkg::lazy::LAZY_GROUP_SIZE as usize..][..128]
+        );
+        assert_eq!(mock.request_count(), requests_before);
+        // A miss is the named fetch failure — never a fetch without
+        // the digest table, never a zero-fill.
+        let err = offline.read_at(0, 8).unwrap_err();
+        assert_eq!(err.kind, crate::source::SourceErrorKind::Fetch);
+        assert!(err.detail.contains("cache-only"), "{err}");
+        // seed_group on a cache-only source names the same refusal
+        // (the seal thread is never spawned there).
+        let err = offline.seed_group(2).unwrap_err();
+        assert_eq!(err.kind, crate::source::SourceErrorKind::Fetch);
+        assert_eq!(mock.request_count(), requests_before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_groups_is_the_seeded_set_complement() {
+        let dir = scratch("missing");
+        let mock = Arc::new(Mock::new(image_bytes()));
+        let src = source(Arc::clone(&mock), &dir);
+        assert_eq!(src.missing_groups().unwrap(), vec![0, 1, 2]);
+        // Group 1 seeds via a touching read…
+        let _ = src.read_at(tpkg::lazy::LAZY_GROUP_SIZE, 8).unwrap();
+        assert_eq!(src.missing_groups().unwrap(), vec![0, 2]);
+        // …group 2 via the short tail…
+        let _ = src.read_at(SIZE - 8, 8).unwrap();
+        assert_eq!(src.missing_groups().unwrap(), vec![0]);
+        // …and group 0 via the seal thread's unit.
+        src.seed_group(0).unwrap();
+        assert_eq!(src.missing_groups().unwrap(), Vec::<u64>::new());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
