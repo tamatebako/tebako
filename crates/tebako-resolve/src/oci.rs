@@ -599,11 +599,10 @@ fn pull_blksum<H: Http, C: CredentialSource>(
         origin: artifact.origin.clone(),
         reason: "the blksum sidecar is not UTF-8".to_string(),
     })?;
-    let blksum =
-        tpkg::lazy::Blksum::parse(&text).map_err(|e| OciError::ArtifactMalformed {
-            origin: artifact.origin.clone(),
-            reason: format!("the blksum sidecar document: {e}"),
-        })?;
+    let blksum = tpkg::lazy::Blksum::parse(&text).map_err(|e| OciError::ArtifactMalformed {
+        origin: artifact.origin.clone(),
+        reason: format!("the blksum sidecar document: {e}"),
+    })?;
     if !blksum.sha256.eq_ignore_ascii_case(image_blob_sha256) {
         return Err(OciError::Sha256Mismatch {
             origin: artifact.origin,

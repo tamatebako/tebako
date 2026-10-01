@@ -1774,7 +1774,12 @@ pub(crate) mod tests {
     fn a_200_range_answer_is_the_loud_eager_fallback_signal() {
         let _guard = token_guard();
         let (http, artifact) = resolve_ok(ShapeExpectation::Class(ArtifactClass::Payload));
-        http.push_range("/blobs/sha256:", 200, &[("ETag", "\"v1\"".to_string())], BLOB);
+        http.push_range(
+            "/blobs/sha256:",
+            200,
+            &[("ETag", "\"v1\"".to_string())],
+            BLOB,
+        );
         let creds = MockCreds::anonymous();
         let client = Client::new(&http, &creds);
         let answer = client

@@ -635,7 +635,11 @@ fn lazy_mount_over_oci_streams_groups_and_matches_the_golden() {
     // One blob request per touched 4 MiB group: group 0 at open, the
     // window's group on the touch — nothing else crossed the wire.
     assert_eq!(fixture.blob_requests(), 2, "one request per touched group");
-    assert_eq!(fixture.token_requests(), 0, "an anonymous registry never dances");
+    assert_eq!(
+        fixture.token_requests(),
+        0,
+        "an anonymous registry never dances"
+    );
 }
 
 #[test]
@@ -652,8 +656,15 @@ fn the_bearer_dance_rides_the_oci_closure() {
     // The dance happened ONCE (the challenge's token then rode every
     // request preemptively — the per-process token cache), and the blob
     // fetches presented it.
-    assert_eq!(fixture.token_requests(), 1, "one mint, then the cached token");
-    assert!(fixture.saw_bearer(), "the blob requests carried the Bearer token");
+    assert_eq!(
+        fixture.token_requests(),
+        1,
+        "one mint, then the cached token"
+    );
+    assert!(
+        fixture.saw_bearer(),
+        "the blob requests carried the Bearer token"
+    );
 }
 
 #[test]

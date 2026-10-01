@@ -781,10 +781,7 @@ fn per_triplet_publish_with_oci_pushes_and_mirrors_the_rows() {
             "app-1.0-linux-gnu-x86_64.tfs.blksum.json",
         ),
     ] {
-        assert!(matches!(
-            req.class,
-            tebako_resolve::ArtifactClass::Blksum
-        ));
+        assert!(matches!(req.class, tebako_resolve::ArtifactClass::Blksum));
         assert_eq!(req.tag, tebako_resolve::blksum_tag(&image_sha));
         assert_eq!(req.annotations.title.as_deref(), Some(sidecar_name));
         assert_eq!(
@@ -879,10 +876,7 @@ fn signed_publish_with_oci_pushes_the_signature_siblings() {
     // the blksum sibling rides signed publishes too — it is integrity
     // data about the image, not a signature (spec 39 §8)
     let blk = &reqs[2];
-    assert!(matches!(
-        blk.class,
-        tebako_resolve::ArtifactClass::Blksum
-    ));
+    assert!(matches!(blk.class, tebako_resolve::ArtifactClass::Blksum));
     assert_eq!(blk.tag, tebako_resolve::blksum_tag(&sha));
     assert_eq!(
         blk.annotations.title.as_deref(),
