@@ -576,7 +576,34 @@ fn mount_env_image(
     let desc = format!("env image '{image}'");
     let what = format!("failed to mount the runtime filesystem image from '{image}'");
     let mount = match slot {
-        None => build_error(tfs::mount::build_from_file(&image, runtime_root), &what)?,
+        None => match crate::lazy::env_image_state(&image)? {
+            // LAZY_SEEDING (spec 39 §4/§9): the image is absent and the
+            // descriptor validates — mount the caching remote byte
+            // source, then set the background seal going (the run never
+            // waits on it). Offline opens the cache-only arm and never
+            // spawns the seal (a fetch without the digest table is
+            // forbidden).
+            crate::lazy::EnvImageState::Seeding {
+                entry_dir,
+                image_base,
+                seed,
+            } => {
+                let offline = crate::lazy::offline(env_var(env, "TEBAKO_OFFLINE"));
+                let source =
+                    crate::lazy::open_lazy_source(&entry_dir, &image_base, &seed, offline)?;
+                let byte_source: std::sync::Arc<dyn tfs::source::ByteSource> = source.clone();
+                let mount =
+                    build_error(tfs::mount::build_from_source(byte_source, runtime_root), &what)?;
+                if !offline && crate::lazy::seal_enabled(env_var(env, "TEBAKO_LAZY_SEAL"))? {
+                    crate::lazy::spawn_seal_thread(&source, entry_dir, image_base);
+                }
+                mount
+            }
+            // Sealed (the image file is present) or Absent (the
+            // ordinary named unavailable fires inside the build) —
+            // today's whole-file mount, unchanged.
+            _ => build_error(tfs::mount::build_from_file(&image, runtime_root), &what)?,
+        },
         Some(n) => {
             let resolved = resolve_image(Path::new(path), SlotRef::Slot(n), path, runtime_root)?;
             match resolved.region {

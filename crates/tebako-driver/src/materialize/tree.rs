@@ -193,6 +193,23 @@ pub fn boot_tier(
     };
     let trees = Path::new(&cache).join(TREES);
     let (path, slot) = crate::driver::env_image_ref(&image);
+    // LAZY_SEEDING × the materialize tier (spec 39 §4 × spec 17 §7):
+    // the tier extracts host trees from the image FILE — absent on a
+    // lazy entry. Fail closed by name (never a raw ENOENT); the seal
+    // (or an eager re-install) is the remedy.
+    if !Path::new(path).is_file()
+        && matches!(
+            crate::lazy::env_image_state(path),
+            Ok(crate::lazy::EnvImageState::Seeding { .. })
+        )
+    {
+        return Err(DriverError::new(
+            crate::EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "the env image '{image}' is LAZY_SEEDING but the windows materialize tier extracts host trees from the image file — seal it with `tebako cache seal` (or re-install the runtime eagerly) and run again"
+            ),
+        ));
+    }
     let env_root = ensure_tree(&trees, &tree_key(Path::new(path), slot)?, runtime_root)?;
     let mut payloads = Vec::new();
     for spec in images {

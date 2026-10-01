@@ -20,6 +20,9 @@ crate-type = ["staticlib", "rlib"]
 tebako-log = { version = "2.0.0", path = "../tebako-log" }
 # Trailer probing for `<self|package>:<slot>` resolution (spec 02).
 tpkg = { version = "2.0.0", path = "../tpkg" }
+# The lazy env-image mount's range transport + blksum sidecar fetch
+# (spec 39 §6: one agent — TLS roots, proxy policy, credentials).
+tebako-http = { version = "2.0.0", path = "../tebako-http" }
 # The resolve trace events' detail values (spec 25 §7 blesses tebako-json
 # for trace emission; the envelope renderer lives in tfs::trace).
 tebako-json = { version = "2.0.0", path = "../tebako-json" }
@@ -47,16 +50,16 @@ base64ct = { version = "1", features = ["alloc"] }
 # Windows ships dwarfs-only (squashfs-tools-ng is POSIX/autotools-only,
 # TODO.v2-1/02; ENC needs rnp's mingw build, TODO.v2-1/08).
 [target.'cfg(not(windows))'.dependencies]
-tfs = { version = "2.0.0", path = "../tfs" }
+tfs = { version = "2.0.0", path = "../tfs", features = ["backend-remote"] }
 
 # windows-arm64 is limnifs-only until dwarfs-t's arm64 closure lands
 # (dwarfs-t #100): a dwarfs mount there answers the named ENOTSUP of a
 # compiled-out backend, and the arm64 link unit carries no closure.
 [target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
-tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs", "backend-remote"] }
 
 [target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
-tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["backend-limnifs"] }
+tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["backend-limnifs", "backend-remote"] }
 
 [target.'cfg(windows)'.dependencies]
 # The spec-17 §7 tree cache's per-entry flock (materialize/tree.rs —
@@ -80,3 +83,8 @@ cc = "1"
 [dev-dependencies]
 # Zip fixtures built in-code (the tests/contract pattern).
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# The lazy-mount e2e writes its limnifs fixture in-process (never a
+# limni binary — the tfs tests' pattern) and stages the store entry in
+# a tempdir.
+limnifs-write = "0.3.57"
+tempfile = "3"
