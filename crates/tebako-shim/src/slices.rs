@@ -604,7 +604,9 @@ fn fetch_slice(
     })?;
     let expected_sha256 = match entry.select(tpkg::Platform::host()) {
         Some(PlatformSelection::Universal) => None,
-        Some(PlatformSelection::Selected { artifact, sha256 }) => {
+        Some(PlatformSelection::Selected {
+            artifact, sha256, ..
+        }) => {
             match &mut reference {
                 Reference::Service { artifact: slot, .. } => {
                     *slot = Some(artifact.to_string());
