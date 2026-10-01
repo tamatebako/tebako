@@ -336,7 +336,7 @@ fn provider_spawn_pair(
                 unreachable!("a requirement was passed — never Zero")
             }
         };
-        if rt.image.is_none() {
+        if !rt.has_env_image() {
             return fail(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
@@ -517,8 +517,7 @@ pub fn plan(
             ctx,
         )?;
         let image = rt
-            .image
-            .clone()
+            .image_handoff_path()
             .expect("resolve_runtime_edge post-asserts the env image");
         let mut argv = vec![
             rt.exe.to_string_lossy().into_owned(),
@@ -562,8 +561,7 @@ pub fn plan(
         provider_spawn_entrypoint(&provider, name, &res.tool)?;
         let pair = provider_spawn_pair(&provider, name, expose, allow_download, ctx)?;
         let image = pair
-            .image
-            .clone()
+            .image_handoff_path()
             .expect("provider_spawn_pair post-asserts the env image");
         let mounts = mounts_for(&provider.image, &provider.manifest.requires, &res.tool, ctx)?;
         let mut argv = vec![pair.exe.to_string_lossy().into_owned()];
@@ -678,6 +676,19 @@ pub fn plan(
             match mirror {
                 Some(mirror) => {
                     let Some(dep_image) = rt.image.clone() else {
+                        // A LAZY_SEEDING dep cannot co-mount: the
+                        // `--tebako-image` triple grammar mounts FILES
+                        // (spec 39 changes the env-image handoff only)
+                        // — the named refusal points at the seal.
+                        if rt.lazy.is_some() {
+                            return fail(
+                                EX_TEBAKO_UNAVAILABLE,
+                                format!(
+                                    "the resolved {} runtime {} (tebako {}) declares on_runtime but its env image is LAZY_SEEDING — an on_runtime co-mount needs the sealed image; seal it with `tebako cache seal` or re-install the runtime eagerly",
+                                    rt.engine, rt.lang_version, rt.tebako_version
+                                ),
+                            );
+                        }
                         return fail(
                             EX_TEBAKO_UNAVAILABLE,
                             format!(
@@ -688,8 +699,7 @@ pub fn plan(
                     };
                     let owner = runtime::resolve_owner(&mirror, allow_download, ctx)?;
                     let owner_image = owner
-                        .image
-                        .clone()
+                        .image_handoff_path()
                         .expect("resolve_runtime_edge post-asserts the env image");
                     tebako_log::log!(
                         tebako_log::Level::Debug,
@@ -734,9 +744,12 @@ pub fn plan(
                     }
                     argv.push("--tebako-entry".to_string());
                     argv.push(entry.path.clone());
-                    if let Some(image) = &rt.image {
+                    if let Some(image) = rt.image_handoff_path() {
                         // spec 06 §2: image-era drivers mount the env image; v1
-                        // runtimes ignore it (graceful degradation).
+                        // runtimes ignore it (graceful degradation). A
+                        // LAZY_SEEDING entry hands the ABSENT image path —
+                        // the driver state-detects against the descriptor
+                        // (spec 39 §9).
                         env.push((
                             "TEBAKO_RUNTIME_IMAGE".to_string(),
                             image.to_string_lossy().into_owned(),

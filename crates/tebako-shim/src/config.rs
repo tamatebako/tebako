@@ -65,6 +65,11 @@ pub struct UserConfig {
     /// over this value; absent = the default 3.
     #[serde(default)]
     pub fetch_jobs: Option<u32>,
+    /// The LAZY_SEEDING install policy (spec 39 §7): `true` installs the
+    /// runtime env image lazily (seed on demand, seal in background).
+    /// `TEBAKO_RUNTIME_LAZY` wins per key; absent = eager.
+    #[serde(default)]
+    pub runtime_lazy: Option<bool>,
     /// Enterprise networking (TODO.v2-1/33, spec 04 amendment): proxy +
     /// trust anchors. Env wins per key; see [`install_network_config`].
     #[serde(default)]
