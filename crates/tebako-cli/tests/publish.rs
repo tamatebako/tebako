@@ -741,7 +741,11 @@ fn per_triplet_publish_with_oci_pushes_and_mirrors_the_rows() {
     .unwrap();
 
     let reqs = sink.taken();
-    assert_eq!(reqs.len(), 2, "one §3 artifact per payload: {reqs:?}");
+    assert_eq!(
+        reqs.len(),
+        4,
+        "one §3 artifact + one blksum sibling per payload: {reqs:?}"
+    );
     assert_eq!(reqs[0].host, "oci.example");
     assert_eq!(reqs[0].repo, "acme/app");
     assert_eq!(reqs[0].tag, "1.0-aarch64-macos");
@@ -765,6 +769,34 @@ fn per_triplet_publish_with_oci_pushes_and_mirrors_the_rows() {
     assert_eq!(reqs[0].bytes, fs::read(&mac).unwrap());
     assert_eq!(reqs[1].bytes, fs::read(&linux).unwrap());
 
+    // the blksum siblings (spec 39 §8): one `sha256-<hex>.blksum.json`
+    // tag per image, keyed by the image's digest, carrying the staged
+    // sidecar bytes the registry row pins
+    let mac_sha = tebako_resolve::sha256_hex(&fs::read(&mac).unwrap());
+    for (req, image_sha, sidecar_name) in [
+        (&reqs[2], mac_sha, "app-1.0-macos-arm64.tfs.blksum.json"),
+        (
+            &reqs[3],
+            tebako_resolve::sha256_hex(&fs::read(&linux).unwrap()),
+            "app-1.0-linux-gnu-x86_64.tfs.blksum.json",
+        ),
+    ] {
+        assert!(matches!(
+            req.class,
+            tebako_resolve::ArtifactClass::Blksum
+        ));
+        assert_eq!(req.tag, tebako_resolve::blksum_tag(&image_sha));
+        assert_eq!(req.annotations.title.as_deref(), Some(sidecar_name));
+        assert_eq!(
+            req.annotations.blksum_subject.as_deref(),
+            Some(format!("sha256:{image_sha}").as_str())
+        );
+        assert_eq!(
+            req.bytes,
+            fs::read(fx.work.join(format!("mirror/1.0/{sidecar_name}"))).unwrap()
+        );
+    }
+
     // the registry rows mirror the per-triplet oci: locator
     let registry = registry_at(&fx);
     let v = registry.payload("app").unwrap().version("1.0").unwrap();
@@ -783,7 +815,7 @@ fn per_triplet_publish_with_oci_pushes_and_mirrors_the_rows() {
     assert_eq!(v.release.r#ref, "tfs:github:acme/app:1.0");
 
     // the outcome records the digest-pinned origins
-    assert_eq!(outcome.oci_refs.len(), 2);
+    assert_eq!(outcome.oci_refs.len(), 4);
     assert!(outcome.oci_refs[0].starts_with("tfs+oci://oci.example/acme/app@sha256:"));
 }
 
@@ -815,7 +847,11 @@ fn signed_publish_with_oci_pushes_the_signature_siblings() {
 
     let sha = tebako_resolve::sha256_hex(&fs::read(&payload).unwrap());
     let reqs = sink.taken();
-    assert_eq!(reqs.len(), 2, "the payload + its signature sibling");
+    assert_eq!(
+        reqs.len(),
+        3,
+        "the payload + its signature sibling + its blksum sibling"
+    );
     // the universal payload rides the <version> tag
     assert_eq!(reqs[0].tag, "1.0");
     assert_eq!(reqs[0].annotations.triplet.as_deref(), Some("universal"));
@@ -838,6 +874,27 @@ fn signed_publish_with_oci_pushes_the_signature_siblings() {
     assert_eq!(
         sig.bytes,
         fs::read(fx.work.join("mirror/1.0/app-1.0.tfs.asc")).unwrap()
+    );
+
+    // the blksum sibling rides signed publishes too — it is integrity
+    // data about the image, not a signature (spec 39 §8)
+    let blk = &reqs[2];
+    assert!(matches!(
+        blk.class,
+        tebako_resolve::ArtifactClass::Blksum
+    ));
+    assert_eq!(blk.tag, tebako_resolve::blksum_tag(&sha));
+    assert_eq!(
+        blk.annotations.title.as_deref(),
+        Some("app-1.0.tfs.blksum.json")
+    );
+    assert_eq!(
+        blk.annotations.blksum_subject.as_deref(),
+        Some(format!("sha256:{sha}").as_str())
+    );
+    assert_eq!(
+        blk.bytes,
+        fs::read(fx.work.join("mirror/1.0/app-1.0.tfs.blksum.json")).unwrap()
     );
 
     // spec 38 §7's row mirror is per-triplet only: the universal row
