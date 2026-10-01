@@ -701,6 +701,27 @@ pub fn get_raw(
     let response = apply_explicit(url, raw_agent()?.get(url), accept, header)
         .call()
         .map_err(map_ureq_error(url))?;
+    into_raw_response(url, response)
+}
+
+/// The publish path's write agent (spec 38 §7): the distribution
+/// surface's policy (https-or-loopback enforced by the entry points,
+/// never the latch) with the upload channel's timeout — monolithic blob
+/// PUTs are ≲150 MB.
+fn raw_upload_agent() -> Result<&'static ureq::Agent, FetchError> {
+    static RAW_UPLOAD_AGENT: OnceLock<Result<ureq::Agent, FetchError>> = OnceLock::new();
+    RAW_UPLOAD_AGENT
+        .get_or_init(|| build_agent_with(UPLOAD_TIMEOUT, false))
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+/// Read a raw-agent answer into the unclassified [`RawResponse`] shape
+/// (the write verbs and [`get_raw`] share it).
+fn into_raw_response(
+    url: &str,
+    response: ureq::http::Response<ureq::Body>,
+) -> Result<RawResponse, FetchError> {
     let status = response.status().as_u16();
     let headers: Vec<(String, String)> = response
         .headers()
@@ -719,6 +740,54 @@ pub fn get_raw(
         headers,
         body,
     })
+}
+
+/// POST `body` to `url` (https, or loopback http — spec 38 §8) WITHOUT
+/// status classification: the publish path's blob-mount/upload-session
+/// open (spec 38 §7), where 201 (mounted), 202 (session opened, the
+/// `Location` header its handle), and 401 (the dance cue) are all
+/// answers the caller reads itself. The caller-decided credential
+/// header attaches verbatim; ureq never forwards it on redirect
+/// (`RedirectAuthHeaders::Never`).
+pub fn post_raw(
+    url: &str,
+    body: &[u8],
+    content_type: Option<&str>,
+    header: Option<(&str, &str)>,
+) -> Result<RawResponse, FetchError> {
+    require_https_or_loopback(url)?;
+    network_guard()?;
+    let mut req = raw_upload_agent()?.post(url);
+    if let Some(content_type) = content_type {
+        req = req.header("Content-Type", content_type);
+    }
+    if let Some((name, value)) = header {
+        req = req.header(name, value);
+    }
+    let response = req.send(body).map_err(map_ureq_error(url))?;
+    into_raw_response(url, response)
+}
+
+/// PUT `body` to `url` (https, or loopback http — spec 38 §8) WITHOUT
+/// status classification: the publish path's monolithic blob upload and
+/// manifest placement (spec 38 §7). The same discipline as
+/// [`post_raw`].
+pub fn put_raw(
+    url: &str,
+    body: &[u8],
+    content_type: &str,
+    header: Option<(&str, &str)>,
+) -> Result<RawResponse, FetchError> {
+    require_https_or_loopback(url)?;
+    network_guard()?;
+    let mut req = raw_upload_agent()?
+        .put(url)
+        .header("Content-Type", content_type);
+    if let Some((name, value)) = header {
+        req = req.header(name, value);
+    }
+    let response = req.send(body).map_err(map_ureq_error(url))?;
+    into_raw_response(url, response)
 }
 
 /// The distribution blob stream (spec 38 §5): the ordinary classified
@@ -1976,6 +2045,7 @@ mod range_tests {
     /// body length; `truncate_to` delivers only a prefix before the
     /// close — the dropped-connection injection (the header's lie is
     /// what forces the client's mid-stream failure).
+    #[derive(Clone)]
     struct Reply {
         status: u16,
         reason: &'static str,
@@ -2394,5 +2464,276 @@ mod range_tests {
         let err = get_range(&server.url, ByteRange { offset: 0, len: 8 }, None, None).unwrap_err();
         assert!(matches!(err, FetchError::AuthRejected { .. }), "{err:?}");
         assert_eq!(server.hits(), 1);
+    }
+
+    // ---------------- the write-verbs fixture (spec 38 §7) ----------------
+
+    /// What the write fixture heard on one request: the method line's
+    /// two halves, the headers the publish path sets, and the exact body
+    /// bytes (the range fixture never reads bodies — writes need them).
+    #[derive(Debug, Clone)]
+    struct WriteHeard {
+        method: String,
+        path: String,
+        content_type: Option<String>,
+        auth: Option<String>,
+        body: Vec<u8>,
+    }
+
+    /// A minimal write server: one request per connection (answered
+    /// `connection: close` — the shared upload agent pools keep-alive
+    /// sockets, so the listener rides the same graveyard as the range
+    /// fixture's and its port is never recycled under a stale pooled
+    /// connection), the request body read to its content-length, replies
+    /// scripted 1:1 (the last one repeating when the script runs dry).
+    struct WriteServer {
+        url: String,
+        heard: Arc<Mutex<Vec<WriteHeard>>>,
+        stop: Arc<AtomicBool>,
+        join: Option<std::thread::JoinHandle<()>>,
+        listener: Option<TcpListener>,
+    }
+
+    impl WriteServer {
+        fn start(replies: Vec<Reply>) -> WriteServer {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let heard = Arc::new(Mutex::new(Vec::new()));
+            let stop = Arc::new(AtomicBool::new(false));
+            let thread_heard = Arc::clone(&heard);
+            let thread_stop = Arc::clone(&stop);
+            let accept = listener.try_clone().unwrap();
+            let join = std::thread::spawn(move || loop {
+                if thread_stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                match accept.accept() {
+                    Ok((stream, _)) => {
+                        let conn_heard = Arc::clone(&thread_heard);
+                        let conn_replies = Arc::new(replies.clone());
+                        std::thread::spawn(move || serve_write(stream, &conn_replies, &conn_heard));
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            });
+            WriteServer {
+                url: format!("http://127.0.0.1:{port}"),
+                heard,
+                stop,
+                join: Some(join),
+                listener: Some(listener),
+            }
+        }
+
+        fn heard(&self) -> Vec<WriteHeard> {
+            self.heard.lock().unwrap().clone()
+        }
+    }
+
+    impl Drop for WriteServer {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::SeqCst);
+            if let Some(addr) = self
+                .url
+                .strip_prefix("http://")
+                .and_then(|authority| authority.parse::<std::net::SocketAddr>().ok())
+            {
+                let _ = TcpStream::connect_timeout(&addr, Duration::from_secs(2));
+            }
+            if let Some(join) = self.join.take() {
+                let (done_tx, done_rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = join.join();
+                    let _ = done_tx.send(());
+                });
+                let _ = done_rx.recv_timeout(Duration::from_secs(10));
+            }
+            if let Some(listener) = self.listener.take() {
+                graveyard().lock().unwrap().push(listener);
+            }
+        }
+    }
+
+    /// One request on one connection: head, then exactly content-length
+    /// body bytes, logged, answered, closed. A request without a
+    /// content-length is read as body-less (the write verbs always send
+    /// one — ureq sizes a `&[u8]` body).
+    fn serve_write(mut stream: TcpStream, replies: &[Reply], heard: &Arc<Mutex<Vec<WriteHeard>>>) {
+        stream.set_nonblocking(false).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut pending: Vec<u8> = Vec::new();
+        let head_end = loop {
+            if let Some(pos) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                break pos + 4;
+            }
+            let mut buf = [0u8; 4096];
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => {
+                    pending.extend_from_slice(&buf[..n]);
+                    if pending.len() > 1024 * 1024 {
+                        return;
+                    }
+                }
+            }
+        };
+        let request: Vec<u8> = pending.drain(..head_end).collect();
+        let text = String::from_utf8_lossy(&request);
+        let mut lines = text.split("\r\n");
+        let request_line = lines.next().unwrap_or("");
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or("").to_string();
+        let path = parts.next().unwrap_or("/").to_string();
+        let mut content_type = None;
+        let mut auth = None;
+        let mut content_length = 0usize;
+        for line in lines {
+            if let Some((name, value)) = line.split_once(':') {
+                if name.eq_ignore_ascii_case("content-type") {
+                    content_type = Some(value.trim().to_string());
+                } else if name.eq_ignore_ascii_case("authorization") {
+                    auth = Some(value.trim().to_string());
+                } else if name.eq_ignore_ascii_case("content-length") {
+                    content_length = value.trim().parse().unwrap_or(0);
+                }
+            }
+        }
+        while pending.len() < content_length {
+            let mut buf = [0u8; 8192];
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => return,
+                Ok(n) => pending.extend_from_slice(&buf[..n]),
+            }
+        }
+        let body: Vec<u8> = pending.drain(..content_length).collect();
+        let hit = {
+            let mut log = heard.lock().unwrap();
+            log.push(WriteHeard {
+                method,
+                path,
+                content_type,
+                auth,
+                body,
+            });
+            log.len() - 1
+        };
+        let reply = &replies[hit.min(replies.len() - 1)];
+        let mut head = format!(
+            "HTTP/1.1 {} {}\r\ncontent-length: {}\r\nconnection: close\r\n",
+            reply.status,
+            reply.reason,
+            reply.body.len()
+        );
+        for (name, value) in &reply.headers {
+            head.push_str(name);
+            head.push_str(": ");
+            head.push_str(value);
+            head.push_str("\r\n");
+        }
+        head.push_str("\r\n");
+        if stream.write_all(head.as_bytes()).is_err() {
+            return;
+        }
+        let _ = stream.write_all(&reply.body);
+        let _ = stream.flush();
+    }
+
+    // --------------------- write-verb legs (spec 38 §7) ---------------------
+
+    #[test]
+    fn post_raw_delivers_the_body_type_and_credential_header() {
+        let server = WriteServer::start(vec![Reply::whole(202, "Accepted", Vec::new())
+            .header("location", "/v2/repo/blobs/uploads/abc".to_string())]);
+        let url = format!(
+            "{}/v2/repo/blobs/uploads/?mount=sha256:aa&from=repo",
+            server.url
+        );
+        let response = post_raw(&url, b"", None, Some(("Authorization", "Bearer tok"))).unwrap();
+        assert_eq!(response.status, 202);
+        assert_eq!(
+            response.header("location"),
+            Some("/v2/repo/blobs/uploads/abc")
+        );
+        let heard = server.heard();
+        assert_eq!(heard.len(), 1);
+        assert_eq!(heard[0].method, "POST");
+        assert_eq!(
+            heard[0].path,
+            "/v2/repo/blobs/uploads/?mount=sha256:aa&from=repo"
+        );
+        assert_eq!(heard[0].auth.as_deref(), Some("Bearer tok"));
+        assert!(heard[0].body.is_empty());
+    }
+
+    #[test]
+    fn post_raw_carries_a_content_type_when_given_one() {
+        let server = WriteServer::start(vec![Reply::whole(200, "OK", Vec::new())]);
+        let url = format!("{}/v2/x", server.url);
+        post_raw(&url, b"{}", Some("application/json"), None).unwrap();
+        let heard = server.heard();
+        assert_eq!(heard[0].content_type.as_deref(), Some("application/json"));
+        assert_eq!(heard[0].body, b"{}");
+        assert_eq!(heard[0].auth, None);
+    }
+
+    #[test]
+    fn put_raw_delivers_the_manifest_bytes_and_status_unclassified() {
+        let server = WriteServer::start(vec![Reply::whole(201, "Created", Vec::new())
+            .header("docker-content-digest", "sha256:bb".to_string())]);
+        let url = format!("{}/v2/repo/manifests/1.0", server.url);
+        let response = put_raw(
+            &url,
+            b"{\"schemaVersion\":2}",
+            "application/vnd.oci.image.manifest.v1+json",
+            Some(("Authorization", "Bearer tok")),
+        )
+        .unwrap();
+        assert_eq!(response.status, 201);
+        assert_eq!(response.header("docker-content-digest"), Some("sha256:bb"));
+        let heard = server.heard();
+        assert_eq!(heard.len(), 1);
+        assert_eq!(heard[0].method, "PUT");
+        assert_eq!(heard[0].path, "/v2/repo/manifests/1.0");
+        assert_eq!(
+            heard[0].content_type.as_deref(),
+            Some("application/vnd.oci.image.manifest.v1+json")
+        );
+        assert_eq!(heard[0].body, b"{\"schemaVersion\":2}");
+    }
+
+    #[test]
+    fn the_write_verbs_refuse_a_plain_http_remote() {
+        let err = post_raw("http://registry.example/v2/x", b"", None, None).unwrap_err();
+        let FetchError::DownloadFailed(msg) = err else {
+            panic!("expected DownloadFailed: {err:?}")
+        };
+        assert!(msg.contains("refusing non-HTTPS URL"), "{msg}");
+        let err = put_raw("http://registry.example/v2/x", b"", "text/plain", None).unwrap_err();
+        assert!(matches!(err, FetchError::DownloadFailed(_)), "{err:?}");
+    }
+
+    #[test]
+    fn the_write_verbs_surface_a_401_unclassified() {
+        let server = WriteServer::start(vec![Reply::whole(401, "Unauthorized", Vec::new())
+            .header(
+                "www-authenticate",
+                "Bearer realm=\"https://auth.example/token\"".to_string(),
+            )]);
+        let url = format!("{}/v2/x", server.url);
+        let response = put_raw(&url, b"{}", "application/json", None).unwrap();
+        assert_eq!(response.status, 401);
+        assert!(response
+            .header("www-authenticate")
+            .unwrap()
+            .contains("Bearer realm="));
     }
 }
