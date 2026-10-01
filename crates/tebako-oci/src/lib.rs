@@ -22,6 +22,7 @@
 pub mod auth;
 pub mod dockerconfig;
 pub mod model;
+pub mod push;
 
 use std::io::Write;
 
@@ -31,7 +32,7 @@ use tebako_json::{parse as json_parse, Value as JsonValue};
 
 pub use model::{
     payload_tag, signature_tag, Annotations, ArtifactClass, Descriptor, Manifest, ShapeExpectation,
-    MANIFEST_MT,
+    EMPTY_CONFIG_DIGEST, EMPTY_CONFIG_MT, MANIFEST_MT,
 };
 
 /// The credential presentation on one request.
@@ -94,6 +95,28 @@ pub trait Http {
         &self,
         url: &str,
         accept: Option<&str>,
+        auth: Auth<'_>,
+    ) -> Result<tebako_http::RawResponse, FetchError>;
+    /// A buffered, UNCLASSIFIED POST for the publish path (spec 38 §7):
+    /// the blob-mount/upload-session open. Any status returns like
+    /// [`Http::get`] — the push flow reads 201 (mounted) / 202 (upload
+    /// session opened, the Location header its handle) / 401 (the dance
+    /// cue) itself.
+    fn post(
+        &self,
+        url: &str,
+        body: &[u8],
+        content_type: Option<&str>,
+        auth: Auth<'_>,
+    ) -> Result<tebako_http::RawResponse, FetchError>;
+    /// A buffered, UNCLASSIFIED PUT for the publish path (spec 38 §7):
+    /// the monolithic blob upload and the manifest placement. Any status
+    /// returns like [`Http::get`].
+    fn put(
+        &self,
+        url: &str,
+        body: &[u8],
+        content_type: &str,
         auth: Auth<'_>,
     ) -> Result<tebako_http::RawResponse, FetchError>;
     /// A classified streaming GET (a 401 is [`FetchError::AuthRejected`]
@@ -178,6 +201,16 @@ pub enum OciError {
         expected: String,
         actual: String,
     },
+    /// Publish (spec 38 §7's write-once): the tag already names a
+    /// DIFFERENT manifest digest. Re-publish of identical bytes is the
+    /// idempotent skip (never this error); moving a tag is refused.
+    /// Exit class 69 (`OciTagConflict`).
+    TagConflict {
+        origin: String,
+        tag: String,
+        existing: String,
+        attempted: String,
+    },
 }
 
 impl std::fmt::Display for OciError {
@@ -229,6 +262,15 @@ impl std::fmt::Display for OciError {
             } => write!(
                 f,
                 "sha256 mismatch for {origin}: expected {expected}, got {actual}"
+            ),
+            OciError::TagConflict {
+                origin,
+                tag,
+                existing,
+                attempted,
+            } => write!(
+                f,
+                "OciTagConflict: {origin} tag '{tag}' already points at {existing} — pushing {attempted} would move the tag (write-once, spec 38 §7); re-publish of identical bytes is an idempotent skip, otherwise publish a new version or a new tag"
             ),
         }
     }
@@ -291,9 +333,15 @@ impl RepoRef<'_> {
     }
 }
 
-/// The pull scope every request of this client dances for.
+/// The pull scope the pull path's requests dance for.
 fn scope_for(repo: &str) -> String {
     format!("repository:{repo}:pull")
+}
+
+/// The publish path's scope (spec 38 §7): writes dance for pull,push —
+/// the mount probe reads (cross-repo mount source), the upload writes.
+pub(crate) fn push_scope_for(repo: &str) -> String {
+    format!("repository:{repo}:pull,push")
 }
 
 /// `http` iff the host is the tebako-http loopback carve-out (the test
@@ -398,8 +446,16 @@ impl<'a, H: Http, C: CredentialSource> Client<'a, H, C> {
     }
 
     /// The §6 dance: parse the 401's Bearer challenge, answer it with a
-    /// token (cache first, then the realm).
-    fn dance(&self, r: &RepoRef<'_>, www_authenticate: Option<&str>) -> Result<String, OciError> {
+    /// token (cache first, then the realm). `default_scope` is the scope
+    /// requested when the challenge carries none (pull on the read path,
+    /// pull,push on the publish path); a challenge's own scope is honored
+    /// verbatim — the registry knows the action the rejected call needed.
+    fn dance(
+        &self,
+        r: &RepoRef<'_>,
+        www_authenticate: Option<&str>,
+        default_scope: &str,
+    ) -> Result<String, OciError> {
         let header = www_authenticate.ok_or_else(|| OciError::TokenChallengeInvalid {
             reason: "the 401 carries no WWW-Authenticate header".to_string(),
         })?;
@@ -410,7 +466,10 @@ impl<'a, H: Http, C: CredentialSource> Client<'a, H, C> {
                     "the 401's challenge carries no Bearer scheme ('{header}') — a Basic-only registry is not the distribution spec's shape"
                 ),
             })?;
-        let scope = challenge.scope.clone().unwrap_or_else(|| scope_for(r.repo));
+        let scope = challenge
+            .scope
+            .clone()
+            .unwrap_or_else(|| default_scope.to_string());
         // The realm's transport and host discipline (§6/§8): https or
         // loopback only, and a FOREIGN realm host answers only to its
         // own tier-2 credential — absent one, the named refusal (even
@@ -494,37 +553,37 @@ impl<'a, H: Http, C: CredentialSource> Client<'a, H, C> {
         Ok(token)
     }
 
-    /// A buffered GET with the full dance discipline: a preemptive
-    /// cached token when one exists, the dance on a 401, ONE
-    /// re-challenge (evict + re-dance) when a token draws a 401, and
-    /// the terminal 401 mapped to `CredentialRequired` by the caller
-    /// (which knows the endpoint kind). Returns the response plus the
-    /// credential class in play.
-    fn get_with_dance(
+    /// One request with the full dance discipline, any verb: a
+    /// preemptive cached token when one exists, the dance on a 401, ONE
+    /// re-challenge (evict + re-dance) when a token draws a 401, and the
+    /// terminal 401 mapped to `CredentialRequired` by the caller (which
+    /// knows the endpoint kind). `scope` is the token scope this call
+    /// dances for (pull on the read path, pull,push on publish). Returns
+    /// the response plus the credential class in play.
+    pub(crate) fn send_with_dance(
         &self,
-        url: &str,
-        accept: Option<&str>,
         r: &RepoRef<'_>,
+        scope: &str,
+        send: &dyn Fn(Auth<'_>) -> Result<tebako_http::RawResponse, FetchError>,
     ) -> Result<(tebako_http::RawResponse, String), OciError> {
-        let scope = scope_for(r.repo);
         let class = self.registry_class()?;
-        let mut token = auth::cached_token_for_host(r.host, &scope, &class);
+        let mut token = auth::cached_token_for_host(r.host, scope, &class);
         let mut dances = 0u8;
         loop {
             let presentation = match &token {
                 Some(token) => Auth::Bearer(token),
                 None => Auth::Anonymous,
             };
-            let resp = self.http.get(url, accept, presentation)?;
+            let resp = send(presentation)?;
             if resp.status != 401 {
                 return Ok((resp, class));
             }
             match dances {
                 0 | 1 => {
                     if token.is_some() {
-                        auth::evict_token_for_host(r.host, &scope, &class);
+                        auth::evict_token_for_host(r.host, scope, &class);
                     }
-                    token = Some(self.dance(r, resp.header("www-authenticate"))?);
+                    token = Some(self.dance(r, resp.header("www-authenticate"), scope)?);
                     dances += 1;
                 }
                 _ => {
@@ -535,6 +594,19 @@ impl<'a, H: Http, C: CredentialSource> Client<'a, H, C> {
                 }
             }
         }
+    }
+
+    /// A buffered GET with the full dance discipline — the pull path's
+    /// form of [`Client::send_with_dance`] at the pull scope.
+    fn get_with_dance(
+        &self,
+        url: &str,
+        accept: Option<&str>,
+        r: &RepoRef<'_>,
+    ) -> Result<(tebako_http::RawResponse, String), OciError> {
+        self.send_with_dance(r, &scope_for(r.repo), &|auth| {
+            self.http.get(url, accept, auth)
+        })
     }
 
     /// The distribution error-body map (§5): the `code` field names the
@@ -758,7 +830,7 @@ impl<'a, H: Http, C: CredentialSource> Client<'a, H, C> {
                         // GET: the 401's body is the small error JSON,
                         // never the blob.
                         let probe = self.http.get(&url, None, Auth::Anonymous)?;
-                        token = Some(self.dance(r, probe.header("www-authenticate"))?);
+                        token = Some(self.dance(r, probe.header("www-authenticate"), &scope)?);
                         dances += 1;
                     }
                     _ => {
@@ -794,7 +866,7 @@ impl Write for HashingWriter<'_> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::{HashMap, VecDeque};
     use std::sync::Mutex;
@@ -803,11 +875,11 @@ mod tests {
     // The scripted seams
     // -------------------------------------------------------------
 
-    struct ScriptedGet {
-        url_part: &'static str,
-        status: u16,
-        headers: Vec<(String, String)>,
-        body: Vec<u8>,
+    pub(crate) struct ScriptedGet {
+        pub(crate) url_part: &'static str,
+        pub(crate) status: u16,
+        pub(crate) headers: Vec<(String, String)>,
+        pub(crate) body: Vec<u8>,
     }
 
     enum ScriptedStream {
@@ -815,23 +887,39 @@ mod tests {
         Bytes(Vec<u8>),
     }
 
-    struct MockHttp {
+    /// One scripted write answer plus the received body (the publish
+    /// tests assert the manifest PUT's bytes).
+    pub(crate) struct ScriptedWrite {
+        pub(crate) url_part: &'static str,
+        pub(crate) status: u16,
+        pub(crate) headers: Vec<(String, String)>,
+        pub(crate) body: Vec<u8>,
+    }
+
+    pub(crate) struct MockHttp {
         gets: Mutex<VecDeque<ScriptedGet>>,
         streams: Mutex<VecDeque<ScriptedStream>>,
+        posts: Mutex<VecDeque<ScriptedWrite>>,
+        puts: Mutex<VecDeque<ScriptedWrite>>,
         /// (url, authorization-header-or-"anonymous")
         log: Mutex<Vec<(String, String)>>,
+        /// (url, request body) of every POST/PUT, in order.
+        write_log: Mutex<Vec<(String, Vec<u8>)>>,
     }
 
     impl MockHttp {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             MockHttp {
                 gets: Mutex::new(VecDeque::new()),
                 streams: Mutex::new(VecDeque::new()),
+                posts: Mutex::new(VecDeque::new()),
+                puts: Mutex::new(VecDeque::new()),
                 log: Mutex::new(Vec::new()),
+                write_log: Mutex::new(Vec::new()),
             }
         }
 
-        fn push_get(
+        pub(crate) fn push_get(
             &self,
             url_part: &'static str,
             status: u16,
@@ -839,6 +927,42 @@ mod tests {
             body: &[u8],
         ) {
             self.gets.lock().unwrap().push_back(ScriptedGet {
+                url_part,
+                status,
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+                body: body.to_vec(),
+            });
+        }
+
+        pub(crate) fn push_post(
+            &self,
+            url_part: &'static str,
+            status: u16,
+            headers: &[(&str, String)],
+            body: &[u8],
+        ) {
+            self.posts.lock().unwrap().push_back(ScriptedWrite {
+                url_part,
+                status,
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+                body: body.to_vec(),
+            });
+        }
+
+        pub(crate) fn push_put(
+            &self,
+            url_part: &'static str,
+            status: u16,
+            headers: &[(&str, String)],
+            body: &[u8],
+        ) {
+            self.puts.lock().unwrap().push_back(ScriptedWrite {
                 url_part,
                 status,
                 headers: headers
@@ -857,8 +981,46 @@ mod tests {
             self.log.lock().unwrap().push((url.to_string(), presented));
         }
 
-        fn requests(&self) -> Vec<(String, String)> {
+        fn record_write(&self, url: &str, body: &[u8]) {
+            self.write_log
+                .lock()
+                .unwrap()
+                .push((url.to_string(), body.to_vec()));
+        }
+
+        pub(crate) fn requests(&self) -> Vec<(String, String)> {
             self.log.lock().unwrap().clone()
+        }
+
+        pub(crate) fn writes(&self) -> Vec<(String, Vec<u8>)> {
+            self.write_log.lock().unwrap().clone()
+        }
+
+        fn write(
+            &self,
+            queue: &Mutex<VecDeque<ScriptedWrite>>,
+            verb: &str,
+            url: &str,
+            body: &[u8],
+            auth: Auth<'_>,
+        ) -> Result<tebako_http::RawResponse, FetchError> {
+            self.record(url, auth);
+            self.record_write(url, body);
+            let next = queue
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| panic!("no scripted {verb} left for {url}"));
+            assert!(
+                url.contains(next.url_part),
+                "scripted {verb} for '{}' got '{url}'",
+                next.url_part
+            );
+            Ok(tebako_http::RawResponse::new(
+                next.status,
+                next.headers,
+                next.body,
+            ))
         }
     }
 
@@ -886,6 +1048,26 @@ mod tests {
                 next.headers,
                 next.body,
             ))
+        }
+
+        fn post(
+            &self,
+            url: &str,
+            body: &[u8],
+            _content_type: Option<&str>,
+            auth: Auth<'_>,
+        ) -> Result<tebako_http::RawResponse, FetchError> {
+            self.write(&self.posts, "POST", url, body, auth)
+        }
+
+        fn put(
+            &self,
+            url: &str,
+            body: &[u8],
+            _content_type: &str,
+            auth: Auth<'_>,
+        ) -> Result<tebako_http::RawResponse, FetchError> {
+            self.write(&self.puts, "PUT", url, body, auth)
         }
 
         fn stream(
@@ -918,13 +1100,13 @@ mod tests {
         }
     }
 
-    struct MockCreds {
+    pub(crate) struct MockCreds {
         registry: Option<BasicCred>,
         realms: HashMap<String, BasicCred>,
     }
 
     impl MockCreds {
-        fn anonymous() -> Self {
+        pub(crate) fn anonymous() -> Self {
             MockCreds {
                 registry: None,
                 realms: HashMap::new(),
@@ -948,7 +1130,7 @@ mod tests {
 
     /// Serialize the dance-asserting tests on the process-global token
     /// cache (and start each cold).
-    fn token_guard() -> std::sync::MutexGuard<'static, ()> {
+    pub(crate) fn token_guard() -> std::sync::MutexGuard<'static, ()> {
         let guard = auth::TEST_TOKEN_LOCK.lock().unwrap();
         auth::clear_tokens();
         guard
