@@ -6553,18 +6553,18 @@ mod manifest_identity_tests {
         // fallback (every pre-2026 release).
         let no_image = ManifestEntry {
             filename: "x".to_string(),
-            body: r#"{"filename": "x"}"#,
+            body: r#""filename": "x""#,
         };
         assert_eq!(manifest_entry_blksum(&no_image), Ok(None));
         let no_row = ManifestEntry {
             filename: "x".to_string(),
-            body: r#"{"image": {"filename": "x.tfs", "sha256": "aaaa"}}"#,
+            body: r#""image": {"filename": "x.tfs", "sha256": "aaaa"}"#,
         };
         assert_eq!(manifest_entry_blksum(&no_row), Ok(None));
         // The full row flows; the pin lowercases.
         let row = ManifestEntry {
             filename: "x".to_string(),
-            body: r#"{"image": {"filename": "x.tfs", "sha256": "bbbb", "blksum": {"filename": "x.tfs.blksum.json", "sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}}"#,
+            body: r#""image": {"filename": "x.tfs", "sha256": "bbbb", "blksum": {"filename": "x.tfs.blksum.json", "sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}"#,
         };
         assert_eq!(
             manifest_entry_blksum(&row),
@@ -6573,12 +6573,12 @@ mod manifest_identity_tests {
         // Present-but-torn is Err — never a silent downgrade to eager.
         let torn = ManifestEntry {
             filename: "x".to_string(),
-            body: r#"{"image": {"filename": "x.tfs", "blksum": {"filename": "x.tfs.blksum.json"}}}"#,
+            body: r#""image": {"filename": "x.tfs", "blksum": {"filename": "x.tfs.blksum.json"}}"#,
         };
         assert!(manifest_entry_blksum(&torn).is_err());
         let not_a_map = ManifestEntry {
             filename: "x".to_string(),
-            body: r#"{"image": {"filename": "x.tfs", "blksum": "yes"}}"#,
+            body: r#""image": {"filename": "x.tfs", "blksum": "yes"}"#,
         };
         assert!(manifest_entry_blksum(&not_a_map).is_err());
     }
