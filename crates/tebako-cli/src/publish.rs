@@ -1116,6 +1116,35 @@ pub fn publish_full_with_oci_sink(
                 oci_refs.push(pushed.origin);
             }
         }
+        // The blksum siblings (spec 39 §8, the fifth spec 38 §3
+        // artifact class): one `sha256-<hex>.blksum.json` tag per
+        // payload image, keyed by the image's digest — the lazy
+        // runtime's sidecar resolution resolves exactly this sibling
+        // tag. Pushed signed-or-not: the sidecar is integrity data
+        // about the image, not a signature.
+        for (i, (sidecar_name, _, sidecar_bytes)) in blksum_uploads.iter().enumerate() {
+            let (_, image_sha, _) = &artifacts[i];
+            let tag = tebako_resolve::blksum_tag(image_sha);
+            let annotations = tebako_resolve::Annotations {
+                title: Some(sidecar_name.clone()),
+                blksum_subject: Some(format!("sha256:{image_sha}")),
+                ..tebako_resolve::Annotations::default()
+            };
+            let pushed = oci_sink(&OciPushRequest {
+                host: oci_host.clone(),
+                repo: oci_repo_name.clone(),
+                tag: tag.clone(),
+                class: tebako_resolve::ArtifactClass::Blksum,
+                annotations,
+                bytes: sidecar_bytes.clone(),
+            })?;
+            if pushed.skipped {
+                notes.push(format!(
+                    "tfs+oci://{oci_host}/{oci_repo_name}:{tag} already names these bytes — the idempotent re-publish skip"
+                ));
+            }
+            oci_refs.push(pushed.origin);
+        }
         if universal {
             // spec 38 §7's `oci:` row mirror is per-triplet only — the
             // universal payload rides the OCI repo under its <version>
