@@ -52,6 +52,13 @@ pub struct CachedRuntime {
     /// The image-era runtime image, present iff both the `.tfs` and its
     /// `.sha256` trust marker are cached.
     pub image: Option<PathBuf>,
+    /// The LAZY_SEEDING state (spec 39 §4): the entry's env image is
+    /// being seeded group-by-group — the descriptor is present and
+    /// valid, the image ABSENT. `None` for sealed and embedded-era
+    /// entries. A lazy entry counts as INSTALLED for resolution (the
+    /// spec 05 §5 pick sees it) and reports distinctly on every
+    /// listing surface.
+    pub lazy: Option<LazySeeding>,
     /// The runtime's own platform string (ruby: `Gem::Platform.local` —
     /// from the release index's `abi` key); `None` for releases that
     /// predate the field (the compat window — eligible, never a match
@@ -69,6 +76,42 @@ pub struct CachedRuntime {
     /// entry then matches `lang_version` itself (the compat window: for
     /// mri the two are equal by construction).
     pub language_version: Option<String>,
+}
+
+/// The LAZY_SEEDING half of a cache entry (spec 39 §4): the validated
+/// seed descriptor plus the seeded-group count at scan time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LazySeeding {
+    /// The env image's file name within the entry (`<name>.tfs` — the
+    /// flowed index spelling, else the synthesized fallback).
+    pub image_base: String,
+    /// The validated seed descriptor.
+    pub seed: crate::lazy::LazySeed,
+    /// Seeded groups at scan time (the listing surfaces' numerator).
+    pub present: u64,
+}
+
+impl CachedRuntime {
+    /// Does this entry serve an env image — sealed (`image`) or
+    /// LAZY_SEEDING (`lazy`)? The resolution pick's eligibility test
+    /// (spec 39 §4: a LAZY_SEEDING entry counts as installed).
+    pub fn has_env_image(&self) -> bool {
+        self.image.is_some() || self.lazy.is_some()
+    }
+
+    /// The path the handoff exports as `TEBAKO_RUNTIME_IMAGE`: the
+    /// sealed image, or — LAZY_SEEDING — the entry's image path whose
+    /// ABSENCE the driver state-detects against the descriptor (spec
+    /// 39 §9: the path names the entry; the driver reads the on-disk
+    /// state). `None` for an embedded-era entry.
+    pub fn image_handoff_path(&self) -> Option<PathBuf> {
+        if let Some(image) = &self.image {
+            return Some(image.clone());
+        }
+        self.lazy
+            .as_ref()
+            .map(|lazy| self.dir.join(&lazy.image_base))
+    }
 }
 
 /// Parse a cache entry directory name `<lang>-<lv>-<ver>-<triplet>`:
@@ -321,6 +364,53 @@ pub fn entry_bundle(entry: &tebako_json::Value) -> Option<EntryBundle> {
     })
 }
 
+// ---------------------------------------------------------------------
+// the image blksum sidecar pin (spec 39 §3) — additive, mirror-only
+// ---------------------------------------------------------------------
+
+/// The release-index entry's additive `image.blksum` block (spec 39
+/// §3): the publisher-authored sidecar's asset name within the same
+/// release and its sha256 pin — the tier-3 mirror of the sidecar's own
+/// anchor, covered by the index's signature exactly like
+/// `image.sha256` where the index is signed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryBlksum {
+    /// The sidecar asset's filename within the release.
+    pub filename: String,
+    /// The sidecar bytes' sha256 pin.
+    pub sha256: String,
+}
+
+/// The `blksum` block of a release-index entry's `image` facet.
+/// `Ok(None)` when the facet or the key is absent (every pre-2026
+/// release — the loader's loud-eager-fallback case when lazy was
+/// requested). A PRESENT but torn block (not a map, empty/absent
+/// `filename` or `sha256`) is the named error: the index the fetch
+/// path already trusted is lying about a trust anchor — never a silent
+/// downgrade to the eager path (the `entry_signature` rule).
+pub fn entry_blksum(entry: &tebako_json::Value) -> Result<Option<EntryBlksum>, String> {
+    let Some(image) = entry.find("image") else {
+        return Ok(None);
+    };
+    let Some(block) = image.find("blksum") else {
+        return Ok(None);
+    };
+    if !matches!(block, tebako_json::Value::Object(_)) {
+        return Err("the entry's image.blksum must be a map".to_string());
+    }
+    let field = |name: &str| -> Result<String, String> {
+        block
+            .find(name)
+            .and_then(|v| v.as_string())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| format!("the entry's image.blksum lacks a usable {name}"))
+    };
+    Ok(Some(EntryBlksum {
+        filename: field("filename")?,
+        sha256: field("sha256")?,
+    }))
+}
+
 /// Parse the `dll` facet out of a release-index text for the exe entry
 /// `exe_name`. `None` when the entry carries no `dll` key (every POSIX
 /// entry) or the key is incomplete — the facet is manifest-keyed.
@@ -465,6 +555,25 @@ pub fn on_runtime_mirror(
     }))
 }
 
+/// One entry's LAZY_SEEDING state for the CachedRuntime constructions
+/// outside the scan (the download path's raced/installed returns): the
+/// validated descriptor + the seeded count, `None` when the image is
+/// sealed, the descriptor is absent, or the descriptor is torn (the
+/// scan's rule — never a heal).
+pub fn cached_lazy(entry_dir: &Path, image_base: &str) -> Option<LazySeeding> {
+    if entry_dir.join(image_base).is_file() {
+        return None;
+    }
+    crate::lazy::seed_state(entry_dir, image_base)
+        .ok()
+        .flatten()
+        .map(|state| LazySeeding {
+            image_base: image_base.to_string(),
+            present: state.present.len() as u64,
+            seed: state.seed,
+        })
+}
+
 /// One store entry dir → a [`CachedRuntime`] when it is well-formed
 /// (parseable name for this platform, exe present); `None` otherwise.
 /// Lenient by design: malformed entries are invisible to resolution
@@ -486,6 +595,16 @@ fn scan_entry(
     } else {
         None
     };
+    // The LAZY_SEEDING state (spec 39 §4): the image absent, the
+    // descriptor present AND valid. A torn descriptor scans as no lazy
+    // state — the entry reads embedded-era (never eligible for an
+    // image-requiring pick) and doctor names the inconsistency; the
+    // scan never heals.
+    let lazy = if image.is_none() {
+        cached_lazy(entry_dir, &image_base)
+    } else {
+        None
+    };
     let rt = CachedRuntime {
         engine: lang.clone(),
         lang_version: lv.clone(),
@@ -493,6 +612,7 @@ fn scan_entry(
         dir: entry_dir.to_path_buf(),
         exe,
         image,
+        lazy,
         abi: entry_meta(entry_dir, &exe_name, "abi"),
         implementation: entry_meta(entry_dir, &exe_name, "implementation"),
         language_version: entry_meta(entry_dir, &exe_name, "language_version"),
@@ -585,9 +705,10 @@ pub fn implementation_matches(cached: &CachedRuntime, want: Option<&str>) -> boo
 /// The spawned-runtime edge pick (spec 30 §1/§2): engine + optional
 /// implementation + constraint against the cache, requiring the env
 /// image (the spec-29 wrapper mounts it — an entry without the verified
-/// image pair is pre-era or partial and can never serve a spawn).
-/// Newest-compatible wins; `None` is data for the caller's named error
-/// (never a guess).
+/// image pair is pre-era or partial and can never serve a spawn; a
+/// LAZY_SEEDING entry (spec 39 §4) COUNTS — its descriptor is the
+/// verified pair in progress). Newest-compatible wins; `None` is data
+/// for the caller's named error (never a guess).
 pub fn resolve_spawned(
     home: &Path,
     engine: &str,
@@ -596,7 +717,7 @@ pub fn resolve_spawned(
 ) -> Option<CachedRuntime> {
     let cached: Vec<CachedRuntime> = scan_cached(home, engine)
         .into_iter()
-        .filter(|c| c.image.is_some() && implementation_matches(c, implementation))
+        .filter(|c| c.has_env_image() && implementation_matches(c, implementation))
         .collect();
     newest_compatible(&cached, constraint)
 }
@@ -657,7 +778,7 @@ pub fn resolve_spawned_any(
 ) -> Option<CachedRuntime> {
     let cached: Vec<CachedRuntime> = scan_cached(home, reqs.engine())
         .into_iter()
-        .filter(|c| c.image.is_some())
+        .filter(|c| c.has_env_image())
         .collect();
     newest_compatible_any(&cached, reqs)
 }
@@ -1079,6 +1200,141 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    // -------------------------------------------------------------
+    // the LAZY_SEEDING state (spec 39 §4) and the index blksum pin
+    // -------------------------------------------------------------
+
+    #[test]
+    fn entry_blksum_reads_the_additive_row_field_by_name() {
+        let entry = tebako_json::parse(
+            "{\"filename\": \"exe\", \"image\": {\"filename\": \"img.tfs\", \"sha256\": \"aa\", \"blksum\": {\"filename\": \"img.tfs.blksum.json\", \"sha256\": \"bb\"}}}",
+        )
+        .unwrap();
+        let pin = entry_blksum(&entry).unwrap().unwrap();
+        assert_eq!(pin.filename, "img.tfs.blksum.json");
+        assert_eq!(pin.sha256, "bb");
+        // No image facet, or an image facet predating the key: None.
+        let no_image = tebako_json::parse("{\"filename\": \"exe\"}").unwrap();
+        assert_eq!(entry_blksum(&no_image).unwrap(), None);
+        let pre_key = tebako_json::parse(
+            "{\"filename\": \"exe\", \"image\": {\"filename\": \"img.tfs\", \"sha256\": \"aa\"}}",
+        )
+        .unwrap();
+        assert_eq!(entry_blksum(&pre_key).unwrap(), None);
+        // A torn block is the named error (the entry_signature rule —
+        // never a guess).
+        for torn in [
+            "{\"image\": {\"blksum\": \"yes\"}}",
+            "{\"image\": {\"blksum\": {\"filename\": \"f\"}}}",
+            "{\"image\": {\"blksum\": {\"sha256\": \"s\"}}}",
+            "{\"image\": {\"blksum\": {\"filename\": \"\", \"sha256\": \"s\"}}}",
+        ] {
+            let entry = tebako_json::parse(torn).unwrap();
+            let err = entry_blksum(&entry).unwrap_err();
+            assert!(err.contains("image.blksum"), "{torn} -> {err}");
+        }
+    }
+
+    /// A LAZY_SEEDING fixture entry: exe + descriptor + `groups`
+    /// seeded block files, no image.
+    fn fixture_lazy_entry(home: &Path, lv: &str, ver: &str, groups: u64) {
+        let platform = platform_string();
+        let dir = home
+            .join("runtimes")
+            .join(format!("java-{lv}-{ver}-{platform}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(entry_exe_name(lv, ver, platform)), b"exe").unwrap();
+        let image = synthesized_image_base(lv, ver, platform);
+        let seed = crate::lazy::LazySeed {
+            source: "https://example.test/img.tfs".to_string(),
+            sha256: "a".repeat(64),
+            blksum_sha256: "b".repeat(64),
+            size_bytes: 4 * crate::lazy::LAZY_GROUP_SIZE,
+            group_count: 4,
+        };
+        crate::lazy::write_descriptor(&dir, &image, &seed).unwrap();
+        let blocks = crate::lazy::blocks_dir(&dir, &image);
+        std::fs::create_dir_all(&blocks).unwrap();
+        for index in 0..groups {
+            std::fs::write(
+                blocks.join(crate::lazy::block_name(index)),
+                vec![0u8; crate::lazy::LAZY_GROUP_SIZE as usize],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn a_lazy_seeding_entry_scans_as_installed_with_its_state() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-runtime-store-lazy-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        fixture_lazy_entry(&tmp, "21.0.12", "0.3.0", 2);
+        // A sealed entry beside it for the contrast.
+        fixture_entry(&tmp, "21.0.11", "0.3.0", true, None);
+        let cached = scan_cached(&tmp, "java");
+        assert_eq!(cached.len(), 2);
+        let lazy = cached.iter().find(|c| c.lang_version == "21.0.12").unwrap();
+        assert_eq!(lazy.image, None);
+        let seeding = lazy.lazy.as_ref().unwrap();
+        assert_eq!(seeding.present, 2);
+        assert_eq!(seeding.seed.group_count, 4);
+        // Installed for resolution: the spawn pick's eligibility test
+        // sees the env image; the handoff path names the absent image
+        // (the driver state-detects against the descriptor).
+        assert!(lazy.has_env_image());
+        let platform = platform_string();
+        assert_eq!(
+            lazy.image_handoff_path().unwrap(),
+            lazy.dir
+                .join(synthesized_image_base("21.0.12", "0.3.0", platform))
+        );
+        let sealed = cached.iter().find(|c| c.lang_version == "21.0.11").unwrap();
+        assert_eq!(sealed.lazy, None);
+        assert!(sealed.has_env_image());
+        assert_eq!(sealed.image_handoff_path(), sealed.image.clone());
+        // The spawn pick takes the LAZY_SEEDING newest.
+        let ge21 = crate::Constraint::new(">= 21").unwrap();
+        let c = versions::from_validated(&ge21);
+        let pick = resolve_spawned(&tmp, "java", None, &c).unwrap();
+        assert_eq!(pick.lang_version, "21.0.12");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn a_torn_descriptor_scans_as_no_lazy_state() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-runtime-store-torn-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        fixture_lazy_entry(&tmp, "21.0.12", "0.3.0", 0);
+        let platform = platform_string();
+        let dir = tmp
+            .join("runtimes")
+            .join(format!("java-21.0.12-0.3.0-{platform}"));
+        let image = synthesized_image_base("21.0.12", "0.3.0", platform);
+        std::fs::write(crate::lazy::descriptor_path(&dir, &image), "{{").unwrap();
+        let cached = scan_cached(&tmp, "java");
+        assert_eq!(cached.len(), 1);
+        // The scan never guesses and never heals: the entry reads
+        // embedded-era (no image, no lazy state) and is invisible to an
+        // image-requiring pick.
+        assert_eq!(cached[0].lazy, None);
+        assert!(!cached[0].has_env_image());
+        assert_eq!(cached[0].image_handoff_path(), None);
+        let ge21 = crate::Constraint::new(">= 21").unwrap();
+        let c = versions::from_validated(&ge21);
+        assert!(resolve_spawned(&tmp, "java", None, &c).is_none());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     /// spec 28 §8 fixtures: a truffleruby shard (the implementation +
     /// language_version + abi keys) and a pre-field mri shard (no keys —
     /// the compat window), plus an imageless newest shard that never
@@ -1248,6 +1504,7 @@ mod tests {
             dir: PathBuf::new(),
             exe: PathBuf::new(),
             image: None,
+            lazy: None,
             abi: None,
             implementation: None,
             language_version: None,

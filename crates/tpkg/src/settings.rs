@@ -93,6 +93,33 @@ pub const SIGN: Setting = Setting {
 /// Every registered setting (help/schema/docs render from this table).
 pub const SETTINGS: &[Setting] = &[QUIET_NOTICES, SIGN];
 
+/// `runtime_lazy` — the LAZY_SEEDING install policy (spec 39 §7): a
+/// runtime install seeds the env image group-by-group on demand instead
+/// of fetching it whole. Not in [`SETTINGS`]: this is a RUN-TIME store
+/// policy, not a press setting — its config channel is
+/// `~/.tebako/config.yaml`, not the compose document, so the compose
+/// schema and the press `--help` must never render it. Consumers
+/// resolve through [`resolve_runtime_lazy`].
+pub const RUNTIME_LAZY: Setting = Setting {
+    config: Some("runtime_lazy"),
+    env: Some("TEBAKO_RUNTIME_LAZY"),
+    cli: None,
+    doc: "install the runtime env image lazily — seed 4 MiB groups on \
+          demand and seal in the background (spec 39)",
+};
+
+/// Resolve the lazy-install policy across the channels its consumers
+/// carry (spec 39 §7): environment → store config → default (eager).
+/// The bootstrap passes `None` for `config` (it opens no config file —
+/// the TEBAKO_FETCH_JOBS precedent); the shim passes its UserConfig
+/// `runtime_lazy` key. A malformed env value is the caller's named 65.
+pub fn resolve_runtime_lazy(
+    env: Option<String>,
+    config: Option<bool>,
+) -> Result<bool, SettingsError> {
+    resolve_bool(&RUNTIME_LAZY, None, env, config)
+}
+
 /// A settings resolution failure.
 #[derive(Debug)]
 pub enum SettingsError {
@@ -317,6 +344,23 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("TEBAKO_QUIET_NOTICES"), "{msg}");
         assert!(msg.contains("maybe"), "{msg}");
+    }
+
+    // ---- the `runtime_lazy` setting (spec 39 §7) ----
+
+    #[test]
+    fn runtime_lazy_env_beats_config_beats_default() {
+        // Default: eager.
+        assert!(!resolve_runtime_lazy(None, None).unwrap());
+        // The store-config key.
+        assert!(resolve_runtime_lazy(None, Some(true)).unwrap());
+        assert!(!resolve_runtime_lazy(None, Some(false)).unwrap());
+        // The env wins per key (the TEBAKO_FETCH_JOBS rule), both ways.
+        assert!(resolve_runtime_lazy(Some("1".into()), Some(false)).unwrap());
+        assert!(!resolve_runtime_lazy(Some("0".into()), Some(true)).unwrap());
+        // Garbage is the named error, never a silent clamp.
+        let err = resolve_runtime_lazy(Some("maybe".into()), Some(true)).unwrap_err();
+        assert!(err.to_string().contains("TEBAKO_RUNTIME_LAZY"), "{err}");
     }
 
     // ---- the `sign` setting (spec 09 §9) ----
