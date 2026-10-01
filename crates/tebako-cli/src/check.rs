@@ -1630,7 +1630,9 @@ fn plan_exec(
             }
             args.push("--tebako-entry".to_string());
             args.push(entry_path.clone());
-            if let Some(image) = &rt.image {
+            // spec 39 §9: a lazy-seeding entry hands off its (absent)
+            // image path too — the driver state-detects.
+            if let Some(image) = rt.image_handoff_path() {
                 env.push((
                     "TEBAKO_RUNTIME_IMAGE".to_string(),
                     image.to_string_lossy().into_owned(),
@@ -1704,7 +1706,9 @@ fn plan_store(
             }
             args.push("--tebako-entry".to_string());
             args.push(entry_path.to_string());
-            if let Some(image) = &rt.image {
+            // spec 39 §9: a lazy-seeding entry hands off its (absent)
+            // image path too — the driver state-detects.
+            if let Some(image) = rt.image_handoff_path() {
                 env.push((
                     "TEBAKO_RUNTIME_IMAGE".to_string(),
                     image.to_string_lossy().into_owned(),

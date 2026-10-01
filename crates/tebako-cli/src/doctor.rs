@@ -271,6 +271,36 @@ fn store_section(home: &Path) -> Section {
                 check_artifact(&mut s, &image, &sidecar, "runtime image");
                 verified += 1;
             }
+            // spec 39 §7: the seed state per runtime entry — a
+            // LAZY_SEEDING entry reports its progress and source; a
+            // descriptor/block-dir inconsistency is named, never
+            // healed.
+            if let Ok(files) = std::fs::read_dir(&dir) {
+                for f in files.flatten() {
+                    let name = f.file_name().to_string_lossy().into_owned();
+                    let Some(image_base) = name.strip_suffix(".lazy.json") else {
+                        continue;
+                    };
+                    let entry_name = entry.file_name().to_string_lossy().into_owned();
+                    if dir.join(image_base).is_file() {
+                        s.note(format!(
+                            "runtime {entry_name}: sealed with a leftover seed descriptor ({name}) — harmless litter from a crashed seal cleanup"
+                        ));
+                        continue;
+                    }
+                    match tpkg::lazy::seed_state(&dir, image_base) {
+                        Ok(Some(state)) => s.note(format!(
+                            "runtime {entry_name}: LAZY_SEEDING — {}/{} groups ({}%), source {}, seal resumable",
+                            state.present.len(),
+                            state.seed.group_count,
+                            state.percent(),
+                            seed_source_host(&state.seed.source),
+                        )),
+                        Ok(None) => {}
+                        Err(e) => s.problem(format!("runtime {entry_name}: {e}")),
+                    }
+                }
+            }
         }
     }
     let payloads = home.join("payloads");
@@ -310,6 +340,20 @@ fn dispatch_section(ctx: &tebako_shim::Ctx) -> Section {
         s.ok("no shims or payloads installed");
     }
     s
+}
+
+/// The seed state's `source <host>` rendering (spec 39 §7): the URL's
+/// host, the path verbatim for the `file:` spelling.
+fn seed_source_host(source: &str) -> String {
+    if let Some(rest) = source.strip_prefix("file://") {
+        return rest.to_string();
+    }
+    source
+        .split("://")
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .unwrap_or(source)
+        .to_string()
 }
 
 /// The hosts the doctor probes (spec 35 §3): the release-resolution API
