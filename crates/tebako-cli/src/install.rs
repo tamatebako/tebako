@@ -81,12 +81,14 @@ pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
         // spec 38 §9's OCI pull failures — the unavailable class (69):
         // the manifest/tag not served, the blob unknown, the artifact
         // shape refused, the token dance unusable, the cross-host realm
-        // refusal, the feature-gated adapter.
+        // refusal, the feature-gated adapter — and §7's publish-side
+        // write-once refusal (the tag names different bytes).
         ResolveError::OciManifestNotFound { .. }
         | ResolveError::OciBlobUnknown { .. }
         | ResolveError::OciArtifactMalformed { .. }
         | ResolveError::OciTokenChallengeInvalid { .. }
         | ResolveError::OciCrossHostAuthRefused { .. }
+        | ResolveError::OciTagConflict { .. }
         | ResolveError::OciAdapterDisabled { .. } => EX_TEBAKO_UNAVAILABLE,
         // spec 38 §9's 65-class OCI failures ride the manifest class with
         // the other usage/manifest errors (the invalid-reference family).
@@ -235,6 +237,7 @@ pub fn seed_official_registry_with<T: Transport>(
         name: Some("official".to_string()),
         require_signed: false,
         default: true,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     add_registry_full(home, OFFICIAL_REGISTRY_REF, &opts, fetcher)
 }
@@ -926,12 +929,15 @@ fn plan_from_nickname<T: Transport>(
 /// One registered registry's hit for a payload name: the row, the
 /// registry's canonical reference, the book entry's policy (spec 37
 /// §2.2 — `require_signed` carries the name the policy errors render:
-/// the alias when the entry has one, else the reference), and the book
-/// entry's computed alias (spec 37 §5's tier-1 credential key).
+/// the alias when the entry has one, else the reference), the book
+/// entry's computed alias (spec 37 §5's tier-1 credential key), and the
+/// book entry's channel declaration (spec 38 §11 — `channel: oci`
+/// routes rows through their `oci:` mirror field).
 pub(crate) struct RegistryHit {
     pub(crate) reference: String,
     pub(crate) require_signed: Option<String>,
     pub(crate) alias: Option<String>,
+    pub(crate) channel_oci: bool,
     pub(crate) payload: RegistryPayload,
 }
 
@@ -979,6 +985,7 @@ pub(crate) fn find_in_registries<T: Transport>(
                     .require_signed
                     .then(|| row.alias.clone().unwrap_or_else(|| reg_ref.to_string())),
                 alias: row.alias.clone(),
+                channel_oci: row.entry.channel == Some(config::BookChannel::Oci),
                 payload: payload.clone(),
             });
         }
@@ -1146,26 +1153,62 @@ pub(crate) fn plan_from_registry_entry(
         None => host_platform()?,
     };
     let (reference, expected_sha256) = match entry.select(host) {
-        Some(PlatformSelection::Universal) => (reference, None),
-        Some(PlatformSelection::Selected { artifact, sha256 }) => {
-            let mut reference = reference;
-            match &mut reference {
-                Reference::Service { artifact: slot, .. } => {
-                    *slot = Some(artifact.to_string());
-                }
-                // spec 38 §3: the per-triplet OCI tag derives —
-                // <version>-<triplet>, the registry's declarative
-                // selection (the ref itself names the bare repo).
-                Reference::Oci { tag, digest, .. } => {
-                    *tag = Some(tebako_resolve::payload_tag(
-                        &entry.version,
-                        Some(host.as_triplet()),
-                    ));
-                    *digest = None;
-                }
-                _ => {}
+        Some(PlatformSelection::Universal) => {
+            if hit.channel_oci {
+                return Err(err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "registry {reg_ref} declares channel: oci but its row for {name} {} is universal — the `oci:` mirror exists per-triplet only (spec 38 §7); the channel declaration cannot resolve this row",
+                        entry.version
+                    ),
+                ));
             }
-            (reference, Some(sha256.to_string()))
+            (reference, None)
+        }
+        Some(PlatformSelection::Selected {
+            artifact,
+            sha256,
+            oci,
+        }) => {
+            if hit.channel_oci {
+                // spec 38 §11: the channel is DECLARED, never probed —
+                // the row's `oci:` field resolves; a row lacking one is
+                // a named error naming the row (fail-closed, never a
+                // fallback to the primary release.ref). The sha256 pin
+                // binds both channels (a mirror serving different bytes
+                // is a 70).
+                let Some(locator) = oci else {
+                    return Err(err(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "registry {reg_ref} declares channel: oci but its row for {name} {} [{host}] carries no `oci:` locator (spec 38 §11) — publish the row's mirror field or drop the channel declaration; never a silent fallback to release.ref",
+                            entry.version
+                        ),
+                    ));
+                };
+                let reference = Reference::parse(locator)
+                    .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
+                (reference, Some(sha256.to_string()))
+            } else {
+                let mut reference = reference;
+                match &mut reference {
+                    Reference::Service { artifact: slot, .. } => {
+                        *slot = Some(artifact.to_string());
+                    }
+                    // spec 38 §3: the per-triplet OCI tag derives —
+                    // <version>-<triplet>, the registry's declarative
+                    // selection (the ref itself names the bare repo).
+                    Reference::Oci { tag, digest, .. } => {
+                        *tag = Some(tebako_resolve::payload_tag(
+                            &entry.version,
+                            Some(host.as_triplet()),
+                        ));
+                        *digest = None;
+                    }
+                    _ => {}
+                }
+                (reference, Some(sha256.to_string()))
+            }
         }
         None => {
             let published = entry

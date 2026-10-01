@@ -95,6 +95,13 @@ pub struct PublishOptions {
     /// `./tpkg-registry.yaml`; `-` prints to stdout).
     pub registry_out: Option<String>,
     pub skip_verify: bool,
+    /// `--oci tfs+oci://<host>/<repo>` — the dual-publish (spec 38
+    /// §11): every payload's §3 artifact (and each signed blob's
+    /// `sha256-<hex>.asc` sibling) rides the OCI repo from the SAME
+    /// staged bytes the release leg uploaded; the registry's
+    /// per-triplet rows mirror the `oci:` locator. The bare repo form
+    /// only — the per-triplet tag derives (spec 38 §3).
+    pub oci: Option<String>,
 }
 
 /// What a publish produced.
@@ -115,6 +122,10 @@ pub struct PublishOutcome {
     pub formula_path: Option<PathBuf>,
     /// The built-in verify's summary line (unless --skip-verify).
     pub verified: Option<String>,
+    /// The digest-pinned OCI origins `--oci` placed
+    /// (`tfs+oci://<host>/<repo>@sha256:<manifest digest>` — payload
+    /// artifacts and signature siblings, push order).
+    pub oci_refs: Vec<String>,
     pub notes: Vec<String>,
 }
 
@@ -193,6 +204,68 @@ fn payload_artifact_name(name: &str, version: &str, triplet: Option<Platform>) -
         Some(p) => format!("{name}-{version}-{}.tfs", p.release_asset_name()),
         None => format!("{name}-{version}.tfs"),
     }
+}
+
+/// The L1 IDENTITY kind spelling (spec 03: `app | data | toolkit` —
+/// publish ships no other kinds; checked before this is called).
+fn payload_kind_str(kind: tpkg::PayloadKind) -> &'static str {
+    match kind {
+        tpkg::PayloadKind::App => "app",
+        tpkg::PayloadKind::Data => "data",
+        tpkg::PayloadKind::Toolkit => "toolkit",
+        tpkg::PayloadKind::Runtime => "runtime",
+        tpkg::PayloadKind::Language => "language",
+    }
+}
+
+/// The §3 annotation map for one payload artifact (spec 38 §3 — the L3
+/// mirror subset: resolution fields only; the full L1 manifest stays
+/// in-image). `title` is the served file name (the one required
+/// annotation).
+fn payload_annotations(
+    title: &str,
+    name: &str,
+    version: &str,
+    kind: tpkg::PayloadKind,
+    triplet: Option<Platform>,
+    entrypoints: &[String],
+    runtime_requirement: Option<&RegistryRuntimeRequirement>,
+) -> tebako_resolve::Annotations {
+    tebako_resolve::Annotations {
+        title: Some(title.to_string()),
+        name: Some(name.to_string()),
+        version: Some(version.to_string()),
+        kind: Some(payload_kind_str(kind).to_string()),
+        triplet: Some(match triplet {
+            Some(p) => p.as_triplet().to_string(),
+            None => "universal".to_string(),
+        }),
+        entrypoints: (!entrypoints.is_empty()).then(|| entrypoints.join(",")),
+        runtime_requirement: runtime_requirement.map(runtime_requirement_json),
+        ..tebako_resolve::Annotations::default()
+    }
+}
+
+/// The `org.tebako.runtime-requirement` annotation's JSON object
+/// (spec 38 §3 — the L3 mirror's single-map form, spec 28 §8):
+/// `implementation`/`abi` ride only when present.
+fn runtime_requirement_json(req: &RegistryRuntimeRequirement) -> String {
+    let mut out = format!(
+        "{{\"engine\":\"{}\",\"constraint\":\"{}\"",
+        tebako_json::escape(&req.engine),
+        tebako_json::escape(&req.constraint)
+    );
+    if let Some(implementation) = &req.implementation {
+        out.push_str(&format!(
+            ",\"implementation\":\"{}\"",
+            tebako_json::escape(implementation)
+        ));
+    }
+    if let Some(abi) = &req.abi {
+        out.push_str(&format!(",\"abi\":\"{}\"", tebako_json::escape(abi)));
+    }
+    out.push('}');
+    out
 }
 
 /// A standalone binary's upload name (no `.tfs` — the tap formula's urls).
@@ -641,6 +714,64 @@ pub fn publish_full(
     cwd: &Path,
     shim_binary: Option<&Path>,
 ) -> Result<PublishOutcome, TebakoError> {
+    publish_full_with_oci_sink(opts, home, cwd, shim_binary, &oci_push_sink)
+}
+
+/// One `--oci` push request (spec 38 §7): one §3 artifact's placement
+/// under `tfs+oci://<host>/<repo>:<tag>` — `bytes` are the SAME staged
+/// bytes the release leg uploaded (the layer digest IS the file's
+/// sha256 trust anchor). Public so the integration tests' scripted sink
+/// sees exactly what production would send.
+#[derive(Debug, Clone)]
+pub struct OciPushRequest {
+    pub host: String,
+    pub repo: String,
+    pub tag: String,
+    pub class: tebako_resolve::ArtifactClass,
+    pub annotations: tebako_resolve::Annotations,
+    pub bytes: Vec<u8>,
+}
+
+/// What one push reports: the digest-pinned origin the outcome records,
+/// and whether the tag already named these bytes (the idempotent
+/// re-publish skip — nothing was uploaded).
+#[derive(Debug, Clone)]
+pub struct OciPushResult {
+    pub origin: String,
+    pub skipped: bool,
+}
+
+/// The production OCI sink: tebako-resolve's push adapter over the real
+/// transport (the credential chain, the push-scope dance, the
+/// https-or-loopback policy all ride it); resolve errors map through
+/// the install path's own exit-code table (OciTagConflict is a 69).
+fn oci_push_sink(req: &OciPushRequest) -> Result<OciPushResult, TebakoError> {
+    let outcome = tebako_resolve::oci::push_artifact(
+        &tebako_resolve::HttpTransport,
+        &req.host,
+        &req.repo,
+        &req.tag,
+        req.class,
+        &req.annotations,
+        &req.bytes,
+    )
+    .map_err(crate::install::map_resolve)?;
+    Ok(OciPushResult {
+        origin: outcome.origin,
+        skipped: outcome.skipped,
+    })
+}
+
+/// [`publish_full`] with the OCI push seam injected (spec 38 §7 — the
+/// integration tests script the sink; production rides
+/// [`oci_push_sink`]).
+pub fn publish_full_with_oci_sink(
+    opts: &PublishOptions,
+    home: &Path,
+    cwd: &Path,
+    shim_binary: Option<&Path>,
+    oci_sink: &dyn Fn(&OciPushRequest) -> Result<OciPushResult, TebakoError>,
+) -> Result<PublishOutcome, TebakoError> {
     let mut notes = Vec::new();
 
     // ---- 1. inputs --------------------------------------------------
@@ -866,6 +997,103 @@ pub fn publish_full(
         store.upload_asset(&owner, &repo, &tag, name, asc)?;
     }
 
+    // ---- 5b. the OCI dual-publish (--oci, spec 38 §11) ------------------
+    let mut oci_refs: Vec<String> = Vec::new();
+    let oci_repo: Option<(String, String)> = match &opts.oci {
+        None => None,
+        Some(reference) => {
+            let parsed = tebako_resolve::Reference::parse(reference)
+                .map_err(|e| err(EX_USAGE, format!("invalid --oci '{reference}': {e}")))?;
+            match parsed {
+                tebako_resolve::Reference::Oci {
+                    host,
+                    repo,
+                    tag: None,
+                    digest: None,
+                    sha256: None,
+                } => Some((host, repo)),
+                _ => {
+                    return Err(err(
+                        EX_USAGE,
+                        format!(
+                            "invalid --oci '{reference}' — name the bare tfs+oci://<host>/<repo>; the per-triplet tag derives (spec 38 §3)"
+                        ),
+                    ))
+                }
+            }
+        }
+    };
+    if let Some((oci_host, oci_repo_name)) = &oci_repo {
+        for (i, input) in opts.payloads.iter().enumerate() {
+            let (artifact_name, _, bytes) = &artifacts[i];
+            let tag = tebako_resolve::payload_tag(&version, input.triplet.map(|p| p.as_triplet()));
+            let annotations = payload_annotations(
+                artifact_name,
+                &opts.name,
+                &version,
+                embedded.identity.kind,
+                input.triplet,
+                &entrypoints,
+                runtime_requirement.as_ref(),
+            );
+            let pushed = oci_sink(&OciPushRequest {
+                host: oci_host.clone(),
+                repo: oci_repo_name.clone(),
+                tag: tag.clone(),
+                class: tebako_resolve::ArtifactClass::Payload,
+                annotations,
+                bytes: bytes.clone(),
+            })?;
+            if pushed.skipped {
+                notes.push(format!(
+                    "tfs+oci://{oci_host}/{oci_repo_name}:{tag} already names these bytes — the idempotent re-publish skip"
+                ));
+            }
+            oci_refs.push(pushed.origin);
+        }
+        // The signature siblings (spec 38 §3): one `sha256-<hex>.asc`
+        // tag per SIGNED BLOB, keyed by the blob's digest. Standalones
+        // are not §3 artifacts — the OCI channel serves payloads only.
+        if let Some(key) = &key {
+            for (artifact_name, sha, _) in &artifacts {
+                let asc_name = format!("{artifact_name}.asc");
+                let (_, asc_bytes) = ascs
+                    .iter()
+                    .find(|(n, _)| *n == asc_name)
+                    .expect("every payload artifact signed above");
+                let tag = tebako_resolve::signature_tag(sha);
+                let annotations = tebako_resolve::Annotations {
+                    title: Some(asc_name),
+                    signature_keyid: Some(key.keyid_hex()),
+                    signature_subject: Some(format!("sha256:{sha}")),
+                    ..tebako_resolve::Annotations::default()
+                };
+                let pushed = oci_sink(&OciPushRequest {
+                    host: oci_host.clone(),
+                    repo: oci_repo_name.clone(),
+                    tag: tag.clone(),
+                    class: tebako_resolve::ArtifactClass::Signature,
+                    annotations,
+                    bytes: asc_bytes.clone(),
+                })?;
+                if pushed.skipped {
+                    notes.push(format!(
+                        "tfs+oci://{oci_host}/{oci_repo_name}:{tag} already names these bytes — the idempotent re-publish skip"
+                    ));
+                }
+                oci_refs.push(pushed.origin);
+            }
+        }
+        if universal {
+            // spec 38 §7's `oci:` row mirror is per-triplet only — the
+            // universal payload rides the OCI repo under its <version>
+            // tag but the row keeps the primary ref alone.
+            notes.push(format!(
+                "the universal payload rides tfs+oci://{oci_host}/{oci_repo_name} under its <version> tag; the `oci:` row mirror is per-triplet only (spec 38 §7), so the registry row keeps the primary ref alone"
+            ));
+        }
+    }
+
     // ---- 6. the registry ----------------------------------------------
     let release_ref = format!("tfs:github:{owner}/{repo}:{tag}");
     let platforms = if universal {
@@ -876,12 +1104,25 @@ pub fn publish_full(
                 .iter()
                 .enumerate()
                 .map(|(i, p)| {
+                    let triplet = p.triplet.expect("per-triplet checked");
                     (
-                        p.triplet.expect("per-triplet checked"),
+                        triplet,
                         tebako_resolve::registry::PlatformArtifact {
                             artifact: artifacts[i].0.clone(),
                             sha256: artifacts[i].1.clone(),
-                            oci: None,
+                            // spec 38 §7's per-triplet mirror: the dual
+                            // publish records the row's OCI locator (the
+                            // tag derives exactly as the push derived
+                            // it); the sha256 pin binds both channels.
+                            oci: oci_repo.as_ref().map(|(oci_host, oci_repo_name)| {
+                                format!(
+                                    "tfs+oci://{oci_host}/{oci_repo_name}:{}",
+                                    tebako_resolve::payload_tag(
+                                        &version,
+                                        Some(triplet.as_triplet())
+                                    )
+                                )
+                            }),
                         },
                     )
                 })
@@ -1060,6 +1301,7 @@ pub fn publish_full(
         formula,
         formula_path,
         verified,
+        oci_refs,
         notes,
     })
 }
