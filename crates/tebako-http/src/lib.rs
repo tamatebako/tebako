@@ -2531,11 +2531,15 @@ mod range_tests {
         // A 401 is an ANSWER (the challenge rides its headers), never a
         // classified error — the client's dance owns what happens next.
         let server = RangeServer::start(Arc::new(|_, _| {
-            Reply::whole(401, "Unauthorized", br#"{"errors":[{"code":"UNAUTHORIZED"}]}"#.to_vec())
-                .header(
-                    "www-authenticate",
-                    "Bearer realm=\"http://127.0.0.1/token\",service=\"fixture\"".to_string(),
-                )
+            Reply::whole(
+                401,
+                "Unauthorized",
+                br#"{"errors":[{"code":"UNAUTHORIZED"}]}"#.to_vec(),
+            )
+            .header(
+                "www-authenticate",
+                "Bearer realm=\"http://127.0.0.1/token\",service=\"fixture\"".to_string(),
+            )
         }));
         let resp = get_range_raw(&server.url, ByteRange { offset: 0, len: 8 }, None, None).unwrap();
         assert_eq!(resp.status, 401);
@@ -2572,8 +2576,8 @@ mod range_tests {
         .unwrap();
         assert_eq!(resp.status, 206);
         assert_eq!(server.heard()[0].if_range.as_deref(), Some("\"v2\""));
-        let err = get_range_raw(&server.url, ByteRange { offset: 0, len: 0 }, None, None)
-            .unwrap_err();
+        let err =
+            get_range_raw(&server.url, ByteRange { offset: 0, len: 0 }, None, None).unwrap_err();
         assert!(matches!(err, FetchError::DownloadFailed(_)), "{err:?}");
         assert_eq!(server.hits(), 1, "the refusal never reaches the wire");
     }

@@ -510,9 +510,7 @@ fn a_blksum_tag_naming_a_non_blksum_artifact_is_malformed() {
     let blob = b"not a blksum at all";
     let (manifest, _) = manifest_for(ArtifactClass::Payload, "tool-1.0.tfs", blob);
     let mock = DistMock::new().ok(
-        &format!(
-            "https://reg.example/v2/ns/tool/manifests/sha256-{image_hex}.blksum.json"
-        ),
+        &format!("https://reg.example/v2/ns/tool/manifests/sha256-{image_hex}.blksum.json"),
         &[],
         &manifest,
     );
@@ -547,9 +545,7 @@ fn a_sidecar_pinning_a_different_image_is_the_named_mismatch() {
     let sidecar_hex = sha256_hex(sidecar.as_bytes());
     let mock = DistMock::new()
         .ok(
-            &format!(
-                "https://reg.example/v2/ns/tool/manifests/sha256-{image_b_hex}.blksum.json"
-            ),
+            &format!("https://reg.example/v2/ns/tool/manifests/sha256-{image_b_hex}.blksum.json"),
             &[],
             &manifest,
         )
@@ -582,9 +578,7 @@ fn a_torn_sidecar_document_is_malformed_by_name() {
     let sidecar_hex = sha256_hex(sidecar);
     let mock = DistMock::new()
         .ok(
-            &format!(
-                "https://reg.example/v2/ns/tool/manifests/sha256-{image_hex}.blksum.json"
-            ),
+            &format!("https://reg.example/v2/ns/tool/manifests/sha256-{image_hex}.blksum.json"),
             &[],
             &manifest,
         )

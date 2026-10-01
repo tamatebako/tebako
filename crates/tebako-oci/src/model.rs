@@ -640,9 +640,7 @@ mod tests {
             Some(format!("sha256:{}", "a".repeat(64)).as_str())
         );
         // AnyTebako recognizes the fifth class; a class mismatch names it.
-        parsed
-            .validate_shape(ShapeExpectation::AnyTebako)
-            .unwrap();
+        parsed.validate_shape(ShapeExpectation::AnyTebako).unwrap();
         let err = parsed
             .validate_shape(ShapeExpectation::Class(ArtifactClass::Payload))
             .unwrap_err();
