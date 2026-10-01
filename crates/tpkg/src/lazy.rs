@@ -98,16 +98,20 @@ fn is_sha256_hex(value: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// Lowercase hex of raw bytes.
+fn hex_lower(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
+}
+
 /// The sha256 hex of `bytes` (the one anchor vocabulary — spec 39
 /// §11.9: sha256 everywhere; BLAKE3 stays image-internal).
 pub fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::Digest;
-    let digest = sha2::Sha256::digest(bytes);
-    let mut out = String::with_capacity(64);
-    for byte in digest {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
+    hex_lower(&sha2::Sha256::digest(bytes))
 }
 
 /// The group count of a `size_bytes` image: ceil(size / group size).
@@ -304,6 +308,37 @@ impl Blksum {
             groups,
         }
     }
+}
+
+/// Verify fetched blksum sidecar BYTES against a seed's pins (spec 39
+/// §3): the sidecar's sha256 against `blksum_sha256` BEFORE any range
+/// read (a mismatch is [`LazyError::Sha256Mismatch`]), the strict parse
+/// (malformed is [`LazyError::BlksumInvalid`]), then the cross-check —
+/// the sidecar's whole-image sha and geometry against the descriptor
+/// (a disagreement between the two publisher-anchored documents is a
+/// release-side fault: reported, never healed). The fetch itself is the
+/// caller's transport (tebako-http in every consumer — the driver's
+/// mount-open, the toolchain's `tebako cache seal`); the install-time
+/// paths (shim, bootstrap) validate against the release row directly —
+/// their descriptor is not written yet, the size pin does not exist.
+pub fn verify_blksum(seed: &LazySeed, body: &[u8]) -> Result<Blksum, LazyError> {
+    let actual = sha256_hex(body);
+    if actual != seed.blksum_sha256 {
+        return Err(LazyError::Sha256Mismatch(format!(
+            "the blksum sidecar hashes {actual} but the seed descriptor pins {}",
+            seed.blksum_sha256
+        )));
+    }
+    let text = std::str::from_utf8(body)
+        .map_err(|_| LazyError::BlksumInvalid("the blksum sidecar is not UTF-8".to_string()))?;
+    let blksum = Blksum::parse(text)?;
+    if blksum.sha256 != seed.sha256 || blksum.size_bytes != seed.size_bytes {
+        return Err(LazyError::Sha256Mismatch(format!(
+            "the blksum sidecar declares sha256 {} / {} bytes but the seed descriptor pins {} / {} bytes — the two publisher-anchored documents disagree",
+            blksum.sha256, blksum.size_bytes, seed.sha256, seed.size_bytes
+        )));
+    }
+    Ok(blksum)
 }
 
 // ---------------------------------------------------------------------
@@ -517,6 +552,224 @@ pub fn descriptor_path(entry_dir: &Path, image_base: &str) -> PathBuf {
 }
 
 // ---------------------------------------------------------------------
+// the seed state and the seal pass (spec 39 §5)
+// ---------------------------------------------------------------------
+
+/// One LAZY_SEEDING entry's live state: the validated descriptor plus
+/// the seeded set (the directory scan's answer — the block map IS the
+/// directory).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeedState {
+    /// The seed descriptor.
+    pub seed: LazySeed,
+    /// The seeded group indices (sorted).
+    pub present: Vec<u64>,
+}
+
+impl SeedState {
+    /// Every group seeded — the seal may commit.
+    pub fn is_complete(&self) -> bool {
+        self.present.len() as u64 == self.seed.group_count
+            && self
+                .present
+                .iter()
+                .enumerate()
+                .all(|(i, &g)| g == i as u64)
+    }
+
+    /// Seeded percentage, integer (the listing surfaces' `(seeding
+    /// 17%)`).
+    pub fn percent(&self) -> u64 {
+        if self.seed.group_count == 0 {
+            return 100;
+        }
+        self.present.len() as u64 * 100 / self.seed.group_count
+    }
+
+    /// The missing group indices, in index order (the seal thread's
+    /// work list — it fills gaps around demand).
+    pub fn missing(&self) -> Vec<u64> {
+        let mut cursor = 0u64;
+        let mut out = Vec::new();
+        for &g in &self.present {
+            while cursor < g {
+                out.push(cursor);
+                cursor += 1;
+            }
+            cursor = g + 1;
+        }
+        while cursor < self.seed.group_count {
+            out.push(cursor);
+            cursor += 1;
+        }
+        out
+    }
+}
+
+/// Read the entry's seed state: `Ok(None)` when no descriptor names
+/// `image_base` (the entry is not LAZY_SEEDING — sealed or
+/// embedded-era), the named [`LazyError::LazyDescriptorInvalid`] when
+/// the descriptor is torn (never a guess, never a silent heal).
+pub fn seed_state(entry_dir: &Path, image_base: &str) -> Result<Option<SeedState>, LazyError> {
+    let Some(seed) = read_descriptor(entry_dir, image_base)? else {
+        return Ok(None);
+    };
+    let present = scan_blocks(&blocks_dir(entry_dir, image_base), seed.size_bytes)?;
+    Ok(Some(SeedState { seed, present }))
+}
+
+/// What [`seal_entry`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SealOutcome {
+    /// The entry flipped to SEALED: the image assembled, the anchors
+    /// written, the blocks and descriptor removed.
+    Sealed {
+        /// The sealed image's byte count.
+        bytes: u64,
+        /// The group count the seal assembled.
+        groups: u64,
+    },
+    /// The descriptor was already gone — a concurrent sealer committed
+    /// first (seal is idempotent; a run never fails because of it).
+    AlreadySealed,
+}
+
+/// The seal commit (spec 39 §5): with every group present, assemble
+/// `<image>` from the verified blocks (concatenation in index order —
+/// NO second network pass), stream the whole-file sha256 over the
+/// assembly in one constant-memory pass, compare the descriptor's pin
+/// (a mismatch is the named [`LazyError::Sha256Mismatch`] — the tmp
+/// drops, the groups KEEP: a publisher-anchored group cannot silently
+/// disagree with the pin; the disagreement is reported, never healed),
+/// rename `<image>` read-only, then the `<image>.sha256` anchor (its
+/// rename is the commit point — byte-identical in shape and meaning to
+/// the eager install's) and `<image>.origin` (the eager shape: the
+/// `runtime_ref` line flows from the exe's entry-level `origin` marker
+/// when it carries one), then remove the blocks and the descriptor.
+///
+/// Every staging file is pid-unique and renamed into place; a crash
+/// anywhere before the anchor's rename leaves LAZY_SEEDING, fully
+/// resumable. Concurrent sealers race harmless renames of identical,
+/// verified bytes; the loser's descriptor read answers
+/// [`SealOutcome::AlreadySealed`]. The entry's flock is the CALLER's
+/// when it holds one (the seal is also correct lock-free: every step
+/// is atomic or idempotent).
+pub fn seal_entry(entry_dir: &Path, image_base: &str) -> Result<SealOutcome, LazyError> {
+    let Some(state) = seed_state(entry_dir, image_base)? else {
+        // No descriptor: sealed already (the image's presence is the
+        // caller's listing concern), or never lazy — the named 69 for
+        // the latter keeps `tebako cache seal` honest about a
+        // non-entry.
+        if entry_dir.join(image_base).is_file() {
+            return Ok(SealOutcome::AlreadySealed);
+        }
+        return Err(LazyError::LazyUnavailable(format!(
+            "{} is not a LAZY_SEEDING entry (no {} and no sealed image)",
+            entry_dir.display(),
+            descriptor_name(image_base)
+        )));
+    };
+    if !state.is_complete() {
+        return Err(LazyError::LazyUnavailable(format!(
+            "{}: seal needs every group — {}/{} seeded",
+            descriptor_path(entry_dir, image_base).display(),
+            state.present.len(),
+            state.seed.group_count
+        )));
+    }
+    let blocks = blocks_dir(entry_dir, image_base);
+    let final_image = entry_dir.join(image_base);
+    let part = entry_dir.join(format!("{image_base}.{}.seal.part", std::process::id()));
+    let io = |what: &str, path: &Path, e: std::io::Error| {
+        LazyError::LazyStoreIo(format!("{what} {}: {e}", path.display()))
+    };
+    // Assemble + hash in one pass (the spec 05 §6 discipline).
+    let assembled = (|| -> Result<String, LazyError> {
+        use sha2::Digest as _;
+        use std::io::{Read as _, Write as _};
+        let mut out = std::fs::File::create(&part).map_err(|e| io("create", &part, e))?;
+        let mut hasher = sha2::Sha256::new();
+        let mut buf = [0u8; 256 * 1024];
+        for index in 0..state.seed.group_count {
+            let block = blocks.join(block_name(index));
+            let mut input = std::fs::File::open(&block).map_err(|e| io("open", &block, e))?;
+            loop {
+                let n = input.read(&mut buf).map_err(|e| io("read", &block, e))?;
+                if n == 0 {
+                    break;
+                }
+                out.write_all(&buf[..n]).map_err(|e| io("write", &part, e))?;
+                hasher.update(&buf[..n]);
+            }
+        }
+        Ok(hex_lower(&hasher.finalize()))
+    })();
+    let whole = match assembled {
+        Ok(whole) => whole,
+        Err(e) => {
+            let _ = std::fs::remove_file(&part);
+            return Err(e);
+        }
+    };
+    if whole != state.seed.sha256 {
+        let _ = std::fs::remove_file(&part);
+        return Err(LazyError::Sha256Mismatch(format!(
+            "the assembled {image_base} hashes {whole} but the descriptor pins {} — a publisher- or anchor-side fault; the verified groups were kept, nothing was sealed",
+            state.seed.sha256
+        )));
+    }
+    // The image: read-only, renamed into place.
+    let mut perms = std::fs::metadata(&part)
+        .map_err(|e| io("stat", &part, e))?
+        .permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(&part, perms).map_err(|e| io("chmod", &part, e))?;
+    std::fs::rename(&part, &final_image).map_err(|e| io("rename", &final_image, e))?;
+    // The anchor — its rename is the commit point (the eager install's
+    // coreutils shape, byte-identical in meaning).
+    let anchor = entry_dir.join(format!("{image_base}.sha256"));
+    let anchor_part = entry_dir.join(format!("{image_base}.{}.sha256.part", std::process::id()));
+    std::fs::write(&anchor_part, format!("{}  {image_base}\n", state.seed.sha256))
+        .map_err(|e| io("write", &anchor_part, e))?;
+    std::fs::rename(&anchor_part, &anchor).map_err(|e| io("rename", &anchor, e))?;
+    // The origin marker (the eager shape): the runtime_ref line flows
+    // from the exe's entry-level marker when one declares it.
+    let runtime_ref = std::fs::read_to_string(entry_dir.join("origin"))
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .find_map(|l| l.strip_prefix("runtime_ref="))
+                .map(str::to_string)
+        });
+    let mut origin = String::new();
+    if let Some(runtime_ref) = runtime_ref {
+        origin.push_str(&format!("runtime_ref={runtime_ref}\n"));
+    }
+    origin.push_str(&format!("url={}\nsha256={}\n", state.seed.source, state.seed.sha256));
+    let origin_path = entry_dir.join(format!("{image_base}.origin"));
+    let origin_part = entry_dir.join(format!("{image_base}.{}.origin.part", std::process::id()));
+    std::fs::write(&origin_part, origin).map_err(|e| io("write", &origin_part, e))?;
+    std::fs::rename(&origin_part, &origin_path).map_err(|e| io("rename", &origin_path, e))?;
+    // Committed: the blocks and the descriptor retire (a concurrent
+    // sealer's already-gone answers are fine).
+    match std::fs::remove_dir_all(&blocks) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io("remove", &blocks, e)),
+    }
+    let descriptor = descriptor_path(entry_dir, image_base);
+    match std::fs::remove_file(&descriptor) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io("remove", &descriptor, e)),
+    }
+    Ok(SealOutcome::Sealed {
+        bytes: state.seed.size_bytes,
+        groups: state.seed.group_count,
+    })
+}
+
+// ---------------------------------------------------------------------
 // tests
 // ---------------------------------------------------------------------
 
@@ -697,6 +950,39 @@ mod tests {
         assert!(LazySeed::parse(&forward).is_ok());
     }
 
+    #[test]
+    fn verify_blksum_enforces_the_three_anchors() {
+        let seed = seed();
+        let repin = |mut s: LazySeed, body: &[u8]| {
+            s.blksum_sha256 = sha256_hex(body);
+            s
+        };
+        // The happy path: the pin, the parse, the cross-check all pass.
+        let good = blksum_doc(seed.size_bytes, &[HEX, HEX2]);
+        let verified = verify_blksum(&repin(seed.clone(), good.as_bytes()), good.as_bytes())
+            .expect("a pinned, well-formed, agreeing sidecar verifies");
+        assert_eq!(verified.group_count(), 2);
+        // The sidecar pin mismatch → 70, before any parse.
+        let err = verify_blksum(&seed, good.as_bytes()).unwrap_err();
+        assert!(matches!(err, LazyError::Sha256Mismatch(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 70);
+        // A pin-correct but malformed sidecar → 65.
+        let err = verify_blksum(&repin(seed.clone(), b"garbage"), b"garbage").unwrap_err();
+        assert!(matches!(err, LazyError::BlksumInvalid(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 65);
+        // Non-UTF-8 is the same 65 class.
+        let bad_utf8 = [0xff, 0xfe, 0x00];
+        let err = verify_blksum(&repin(seed.clone(), &bad_utf8), &bad_utf8).unwrap_err();
+        assert!(matches!(err, LazyError::BlksumInvalid(_)), "{err:?}");
+        // A pin-correct sidecar that disagrees with the descriptor's
+        // whole-image geometry → 70 (reported, never healed).
+        let other = blksum_doc(seed.size_bytes * 2, &[HEX, HEX2, HEX]);
+        let err =
+            verify_blksum(&repin(seed.clone(), other.as_bytes()), other.as_bytes()).unwrap_err();
+        assert!(matches!(err, LazyError::Sha256Mismatch(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 70);
+    }
+
     // -------------------------------------------------------------
     // the store record
     // -------------------------------------------------------------
@@ -773,6 +1059,209 @@ mod tests {
             scan_blocks(&dir.join("nope"), size).unwrap(),
             Vec::<u64>::new()
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -------------------------------------------------------------
+    // the seed state and the seal pass
+    // -------------------------------------------------------------
+
+    /// Deterministic image bytes of `full` whole groups plus `tail`
+    /// bytes.
+    fn fixture_image(full: u64, tail: u64) -> Vec<u8> {
+        let n = (full * LAZY_GROUP_SIZE + tail) as usize;
+        (0..n).map(|i| (i % 251) as u8).collect()
+    }
+
+    /// The seed every image fixture pairs with (its digests derived
+    /// from the bytes — a publisher's answers).
+    fn seed_for(bytes: &[u8]) -> (LazySeed, Blksum) {
+        let sum = Blksum::from_image_bytes(bytes);
+        let seed = LazySeed {
+            source: "https://example.test/img.tfs".to_string(),
+            sha256: sum.sha256.clone(),
+            blksum_sha256: sha256_hex(sum.render().as_bytes()),
+            size_bytes: sum.size_bytes,
+            group_count: sum.group_count(),
+        };
+        (seed, sum)
+    }
+
+    /// Write group `index`'s bytes as its block file.
+    fn write_block(dir: &Path, image: &str, bytes: &[u8], index: u64) {
+        let blocks = blocks_dir(dir, image);
+        std::fs::create_dir_all(&blocks).unwrap();
+        let (offset, len) = group_span(bytes.len() as u64, index).unwrap();
+        std::fs::write(
+            blocks.join(block_name(index)),
+            &bytes[offset as usize..(offset + len) as usize],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn seed_state_tracks_present_missing_and_percent() {
+        let dir = scratch("seedstate");
+        let image = "img.tfs";
+        let bytes = fixture_image(3, 7); // 4 groups
+        let (seed, _sum) = seed_for(&bytes);
+        write_descriptor(&dir, image, &seed).unwrap();
+        write_block(&dir, image, &bytes, 0);
+        write_block(&dir, image, &bytes, 2);
+        let state = seed_state(&dir, image).unwrap().unwrap();
+        assert_eq!(state.present, vec![0, 2]);
+        assert_eq!(state.missing(), vec![1, 3]);
+        assert_eq!(state.percent(), 50);
+        assert!(!state.is_complete());
+        write_block(&dir, image, &bytes, 1);
+        write_block(&dir, image, &bytes, 3);
+        let state = seed_state(&dir, image).unwrap().unwrap();
+        assert!(state.is_complete());
+        assert_eq!(state.percent(), 100);
+        assert_eq!(state.missing(), Vec::<u64>::new());
+        // No descriptor → not LAZY_SEEDING at all.
+        assert_eq!(seed_state(&dir, "other.tfs").unwrap(), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn seal_entry_commits_a_complete_seed_and_is_idempotent() {
+        let dir = scratch("seal");
+        let image = "img.tfs";
+        let bytes = fixture_image(2, 7); // 3 groups
+        let (seed, _sum) = seed_for(&bytes);
+        // The exe's entry-level origin marker carries the runtime_ref
+        // the image's marker flows.
+        std::fs::write(
+            dir.join("origin"),
+            "runtime_ref=ruby@4.0.6;tebako=0.16.6;image\nurl=https://example.test/exe\n",
+        )
+        .unwrap();
+        write_descriptor(&dir, image, &seed).unwrap();
+        for index in 0..seed.group_count {
+            write_block(&dir, image, &bytes, index);
+        }
+        let outcome = seal_entry(&dir, image).unwrap();
+        assert_eq!(
+            outcome,
+            SealOutcome::Sealed {
+                bytes: bytes.len() as u64,
+                groups: 3
+            }
+        );
+        // The image is the byte-identical assembly, read-only.
+        assert_eq!(std::fs::read(dir.join(image)).unwrap(), bytes);
+        assert!(std::fs::metadata(dir.join(image))
+            .unwrap()
+            .permissions()
+            .readonly());
+        // The anchor: the eager install's coreutils shape.
+        assert_eq!(
+            std::fs::read_to_string(dir.join(format!("{image}.sha256"))).unwrap(),
+            format!("{}  {image}\n", seed.sha256)
+        );
+        // The origin marker flows the runtime_ref and records the seed.
+        assert_eq!(
+            std::fs::read_to_string(dir.join(format!("{image}.origin"))).unwrap(),
+            format!(
+                "runtime_ref=ruby@4.0.6;tebako=0.16.6;image\nurl={}\nsha256={}\n",
+                seed.source, seed.sha256
+            )
+        );
+        // The blocks and the descriptor retired; no tmp debris.
+        assert!(!blocks_dir(&dir, image).exists());
+        assert!(!descriptor_path(&dir, image).exists());
+        assert_eq!(
+            std::fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().contains(".part"))
+                .count(),
+            0
+        );
+        // A second seal answers AlreadySealed — idempotent against
+        // concurrent sealers.
+        assert_eq!(seal_entry(&dir, image).unwrap(), SealOutcome::AlreadySealed);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn seal_entry_origin_without_a_runtime_ref_line() {
+        let dir = scratch("seal-no-ref");
+        let image = "img.tfs";
+        let bytes = fixture_image(0, 100);
+        let (seed, _sum) = seed_for(&bytes);
+        write_descriptor(&dir, image, &seed).unwrap();
+        write_block(&dir, image, &bytes, 0);
+        seal_entry(&dir, image).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join(format!("{image}.origin"))).unwrap(),
+            format!("url={}\nsha256={}\n", seed.source, seed.sha256)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn seal_entry_refuses_an_incomplete_seed_by_name() {
+        let dir = scratch("seal-incomplete");
+        let image = "img.tfs";
+        let bytes = fixture_image(1, 7); // 2 groups
+        let (seed, _sum) = seed_for(&bytes);
+        write_descriptor(&dir, image, &seed).unwrap();
+        write_block(&dir, image, &bytes, 0);
+        let err = seal_entry(&dir, image).unwrap_err();
+        assert!(matches!(err, LazyError::LazyUnavailable(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 69);
+        assert!(err.to_string().contains("1/2 seeded"), "{err}");
+        // Nothing was consumed: the groups and the descriptor stay.
+        assert!(blocks_dir(&dir, image).join(block_name(0)).is_file());
+        assert!(descriptor_path(&dir, image).is_file());
+        assert!(!dir.join(image).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn seal_entry_reports_a_whole_pin_mismatch_and_keeps_the_groups() {
+        let dir = scratch("seal-mismatch");
+        let image = "img.tfs";
+        let bytes = fixture_image(1, 7);
+        let (seed, _sum) = seed_for(&bytes);
+        write_descriptor(&dir, image, &seed).unwrap();
+        for index in 0..seed.group_count {
+            write_block(&dir, image, &bytes, index);
+        }
+        // Tamper with a seeded block AFTER its fetch-time verification
+        // (the seal's whole-pin re-check is the second anchor).
+        let block = blocks_dir(&dir, image).join(block_name(0));
+        let mut tampered = std::fs::read(&block).unwrap();
+        tampered[0] ^= 0xff;
+        std::fs::write(&block, tampered).unwrap();
+        let err = seal_entry(&dir, image).unwrap_err();
+        assert!(matches!(err, LazyError::Sha256Mismatch(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 70);
+        assert!(err.to_string().contains("the verified groups were kept"), "{err}");
+        // The tmp dropped; the groups and the descriptor KEEP.
+        assert!(blocks_dir(&dir, image).join(block_name(0)).is_file());
+        assert!(descriptor_path(&dir, image).is_file());
+        assert!(!dir.join(image).exists());
+        assert_eq!(
+            std::fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().contains(".seal.part"))
+                .count(),
+            0
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn seal_entry_names_a_non_entry() {
+        let dir = scratch("seal-nonentry");
+        let err = seal_entry(&dir, "img.tfs").unwrap_err();
+        assert!(matches!(err, LazyError::LazyUnavailable(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 69);
+        assert!(err.to_string().contains("is not a LAZY_SEEDING entry"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
