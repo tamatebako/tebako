@@ -31,8 +31,8 @@ use tebako_http::FetchError;
 use tebako_json::{parse as json_parse, Value as JsonValue};
 
 pub use model::{
-    payload_tag, signature_tag, Annotations, ArtifactClass, Descriptor, Manifest, ShapeExpectation,
-    EMPTY_CONFIG_DIGEST, EMPTY_CONFIG_MT, MANIFEST_MT,
+    blksum_tag, payload_tag, signature_tag, Annotations, ArtifactClass, Descriptor, Manifest,
+    ShapeExpectation, EMPTY_CONFIG_DIGEST, EMPTY_CONFIG_MT, MANIFEST_MT,
 };
 
 /// The credential presentation on one request.
@@ -129,6 +129,26 @@ pub trait Http {
         writer: &mut dyn Write,
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<u64, FetchError>;
+
+    /// A buffered, UNCLASSIFIED positioned GET (spec 39 §8's closure
+    /// arm): `Range: bytes=<offset>-<end>` plus the caller's `If-Range`
+    /// validator, any status returning with headers and body exactly
+    /// like [`Http::get`] — the client reads the 206's Content-Range,
+    /// the 200 fallback, and the 401 dance cue itself. DEFAULTED: the
+    /// pre-range transports (test scripts, third-party adapters) keep
+    /// compiling, and a range fetch against one is this named error,
+    /// never a silent whole-file read.
+    fn get_range(
+        &self,
+        url: &str,
+        _range: tebako_http::ByteRange,
+        _if_range: Option<&str>,
+        _auth: Auth<'_>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        Err(FetchError::DownloadFailed(format!(
+            "{url}: this transport does not serve range GETs — the spec 39 §8 OCI lazy arm rides the production distribution transport"
+        )))
+    }
 }
 
 /// A `user:pass` pair plus its credential CLASS (the token cache's
@@ -778,6 +798,72 @@ impl<'a, H: Http, C: CredentialSource> Client<'a, H, C> {
         Ok(resp.body)
     }
 
+    /// The spec 39 §8 closure arm: one positioned GET of the artifact's
+    /// one layer — `Range: bytes=<offset>-<end>` (plus the caller's
+    /// `If-Range` validator), every attempt dancing at the pull scope.
+    /// 206 answers with the Content-Range validated against the request
+    /// (exact start, exact length, a body of exactly the window — never
+    /// a short group); 200 is the range-unaware answer, the
+    /// loud-eager-fallback signal — byte-identical in meaning with the
+    /// plain-HTTPS transport's [`tebako_http::RangeAnswer`], which this
+    /// returns. A range window carries NO whole-blob digest check by
+    /// construction: the sidecar's per-group digests (spec 39 §3) are
+    /// the integrity layer, one level up.
+    pub fn fetch_blob_range(
+        &self,
+        r: &RepoRef<'_>,
+        layer: &Descriptor,
+        offset: u64,
+        len: u64,
+        if_range: Option<&str>,
+    ) -> Result<tebako_http::RangeAnswer, OciError> {
+        let url = self.blob_url(r, layer)?;
+        let range = tebako_http::ByteRange { offset, len };
+        let (resp, class) = self.send_with_dance(r, &scope_for(r.repo), &|auth| {
+            self.http.get_range(&url, range, if_range, auth)
+        })?;
+        let etag = resp.header("etag").map(str::to_string);
+        match resp.status {
+            206 => {
+                let served = resp
+                    .header("content-range")
+                    .and_then(tebako_http::parse_content_range)
+                    .ok_or_else(|| {
+                        OciError::Transport(FetchError::DownloadFailed(format!(
+                            "206 from {url} carries no valid Content-Range"
+                        )))
+                    })?;
+                if served.start != offset || served.end - served.start + 1 != len {
+                    return Err(OciError::Transport(FetchError::DownloadFailed(format!(
+                        "206 from {url} serves bytes {}-{} but the request was {range:?}",
+                        served.start, served.end
+                    ))));
+                }
+                if resp.body.len() as u64 != len {
+                    return Err(OciError::Transport(FetchError::DownloadFailed(format!(
+                        "truncated range body from {url}: {} of {len} bytes",
+                        resp.body.len()
+                    ))));
+                }
+                Ok(tebako_http::RangeAnswer::Partial(tebako_http::RangeBody {
+                    bytes: resp.body,
+                    total: served.total,
+                    etag,
+                }))
+            }
+            200 => Ok(tebako_http::RangeAnswer::Full(tebako_http::RangeBody {
+                total: resp.body.len() as u64,
+                bytes: resp.body,
+                etag,
+            })),
+            401 => Err(OciError::CredentialRequired {
+                host: r.host.to_string(),
+                looked_for: Some(class),
+            }),
+            _ => Err(self.classify_error(&url, Endpoint::Blob, r, &resp)),
+        }
+    }
+
     /// Stream the artifact's one layer to `writer`, hashing as it goes;
     /// the byte stream verifies against the layer digest. The blob GET
     /// preemptively attaches a cached token (no probe 401); a refusal
@@ -901,6 +987,7 @@ pub(crate) mod tests {
         streams: Mutex<VecDeque<ScriptedStream>>,
         posts: Mutex<VecDeque<ScriptedWrite>>,
         puts: Mutex<VecDeque<ScriptedWrite>>,
+        ranges: Mutex<VecDeque<ScriptedGet>>,
         /// (url, authorization-header-or-"anonymous")
         log: Mutex<Vec<(String, String)>>,
         /// (url, request body) of every POST/PUT, in order.
@@ -914,6 +1001,7 @@ pub(crate) mod tests {
                 streams: Mutex::new(VecDeque::new()),
                 posts: Mutex::new(VecDeque::new()),
                 puts: Mutex::new(VecDeque::new()),
+                ranges: Mutex::new(VecDeque::new()),
                 log: Mutex::new(Vec::new()),
                 write_log: Mutex::new(Vec::new()),
             }
@@ -927,6 +1015,24 @@ pub(crate) mod tests {
             body: &[u8],
         ) {
             self.gets.lock().unwrap().push_back(ScriptedGet {
+                url_part,
+                status,
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+                body: body.to_vec(),
+            });
+        }
+
+        pub(crate) fn push_range(
+            &self,
+            url_part: &'static str,
+            status: u16,
+            headers: &[(&str, String)],
+            body: &[u8],
+        ) {
+            self.ranges.lock().unwrap().push_back(ScriptedGet {
                 url_part,
                 status,
                 headers: headers
@@ -1097,6 +1203,32 @@ pub(crate) mod tests {
                     Ok(bytes.len() as u64)
                 }
             }
+        }
+
+        fn get_range(
+            &self,
+            url: &str,
+            _range: tebako_http::ByteRange,
+            _if_range: Option<&str>,
+            auth: Auth<'_>,
+        ) -> Result<tebako_http::RawResponse, FetchError> {
+            self.record(url, auth);
+            let next = self
+                .ranges
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| panic!("no scripted range GET left for {url}"));
+            assert!(
+                url.contains(next.url_part),
+                "scripted range GET for '{}' got '{url}'",
+                next.url_part
+            );
+            Ok(tebako_http::RawResponse::new(
+                next.status,
+                next.headers,
+                next.body,
+            ))
         }
     }
 
@@ -1608,6 +1740,187 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(n, BLOB.len() as u64);
         assert_eq!(out, BLOB);
+    }
+
+    #[test]
+    fn the_blob_range_fetch_validates_the_window() {
+        let _guard = token_guard();
+        let (http, artifact) = resolve_ok(ShapeExpectation::Class(ArtifactClass::Payload));
+        http.push_range(
+            "/blobs/sha256:",
+            206,
+            &[
+                ("Content-Range", format!("bytes 4-11/{}", BLOB.len())),
+                ("ETag", "\"v1\"".to_string()),
+            ],
+            &BLOB[4..12],
+        );
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let answer = client
+            .fetch_blob_range(&repo(Selector::Tag("1.0")), &artifact.layer, 4, 8, None)
+            .unwrap();
+        let tebako_http::RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial: {answer:?}")
+        };
+        assert_eq!(body.bytes.as_slice(), &BLOB[4..12]);
+        assert_eq!(body.total, BLOB.len() as u64);
+        assert_eq!(body.etag.as_deref(), Some("\"v1\""));
+        // the resolve dance's token rode the range fetch preemptively
+        assert_eq!(http.requests().last().unwrap().1, "Bearer tok-1");
+    }
+
+    #[test]
+    fn a_200_range_answer_is_the_loud_eager_fallback_signal() {
+        let _guard = token_guard();
+        let (http, artifact) = resolve_ok(ShapeExpectation::Class(ArtifactClass::Payload));
+        http.push_range("/blobs/sha256:", 200, &[("ETag", "\"v1\"".to_string())], BLOB);
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let answer = client
+            .fetch_blob_range(&repo(Selector::Tag("1.0")), &artifact.layer, 4, 8, None)
+            .unwrap();
+        let tebako_http::RangeAnswer::Full(body) = answer else {
+            panic!("a 200 must never pose as the window: {answer:?}")
+        };
+        assert_eq!(body.bytes, BLOB);
+        assert_eq!(body.total, BLOB.len() as u64);
+    }
+
+    #[test]
+    fn a_wrong_content_range_and_a_short_window_are_named() {
+        let _guard = token_guard();
+        let (http, artifact) = resolve_ok(ShapeExpectation::Class(ArtifactClass::Payload));
+        http.push_range(
+            "/blobs/sha256:",
+            206,
+            &[("Content-Range", format!("bytes 5-12/{}", BLOB.len()))],
+            &BLOB[4..12],
+        );
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let err = client
+            .fetch_blob_range(&repo(Selector::Tag("1.0")), &artifact.layer, 4, 8, None)
+            .unwrap_err();
+        assert!(
+            matches!(err, OciError::Transport(FetchError::DownloadFailed(ref m)) if m.contains("bytes 5-12")),
+            "{err:?}"
+        );
+        // a matching Content-Range with a short body is just as named
+        auth::clear_tokens();
+        let (http, artifact) = resolve_ok(ShapeExpectation::Class(ArtifactClass::Payload));
+        http.push_range(
+            "/blobs/sha256:",
+            206,
+            &[("Content-Range", format!("bytes 4-11/{}", BLOB.len()))],
+            &BLOB[4..9],
+        );
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let err = client
+            .fetch_blob_range(&repo(Selector::Tag("1.0")), &artifact.layer, 4, 8, None)
+            .unwrap_err();
+        assert!(
+            matches!(err, OciError::Transport(FetchError::DownloadFailed(ref m)) if m.contains("truncated range body")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_range_refusal_dances_once_then_serves_the_window() {
+        let _guard = token_guard();
+        // a public manifest resolve (no dance), then the range GET is
+        // refused: the challenge harvests, the token mints, the retry
+        // rides Bearer — the spec 38 §6 flow inside the closure arm.
+        let http = MockHttp::new();
+        http.push_get("/manifests/1.0", 200, &[], &manifest_bytes());
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let artifact = client
+            .resolve(&repo(Selector::Tag("1.0")), ShapeExpectation::AnyTebako)
+            .unwrap();
+        http.push_range(
+            "/blobs/sha256:",
+            401,
+            &[(
+                "WWW-Authenticate",
+                challenge(&format!("https://{HOST}/token")),
+            )],
+            b"",
+        );
+        http.push_get("/token?", 200, &[], br#"{"token":"tok-r"}"#);
+        http.push_range(
+            "/blobs/sha256:",
+            206,
+            &[("Content-Range", format!("bytes 0-7/{}", BLOB.len()))],
+            &BLOB[0..8],
+        );
+        let answer = client
+            .fetch_blob_range(&repo(Selector::Tag("1.0")), &artifact.layer, 0, 8, None)
+            .unwrap();
+        assert!(matches!(answer, tebako_http::RangeAnswer::Partial(_)));
+        let log = http.requests();
+        assert_eq!(log.len(), 4, "{log:?}");
+        assert_eq!(log[1].1, "anonymous");
+        assert_eq!(log[3].1, "Bearer tok-r");
+    }
+
+    #[test]
+    fn a_transport_without_ranges_fails_by_name() {
+        let _guard = token_guard();
+        struct NoRangeHttp;
+        impl Http for NoRangeHttp {
+            fn get(
+                &self,
+                _url: &str,
+                _accept: Option<&str>,
+                _auth: Auth<'_>,
+            ) -> Result<tebako_http::RawResponse, FetchError> {
+                unreachable!("the range arm never whole-GETs the blob")
+            }
+            fn post(
+                &self,
+                _url: &str,
+                _body: &[u8],
+                _content_type: Option<&str>,
+                _auth: Auth<'_>,
+            ) -> Result<tebako_http::RawResponse, FetchError> {
+                unreachable!()
+            }
+            fn put(
+                &self,
+                _url: &str,
+                _body: &[u8],
+                _content_type: &str,
+                _auth: Auth<'_>,
+            ) -> Result<tebako_http::RawResponse, FetchError> {
+                unreachable!()
+            }
+            fn stream(
+                &self,
+                _url: &str,
+                _auth: Auth<'_>,
+                _writer: &mut dyn Write,
+                _on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+            ) -> Result<u64, FetchError> {
+                unreachable!()
+            }
+        }
+        let layer = Descriptor {
+            media_type: ArtifactClass::Payload.layer_media_type().to_string(),
+            digest: format!("sha256:{}", blob_hex()),
+            size: BLOB.len() as u64,
+        };
+        let http = NoRangeHttp;
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let err = client
+            .fetch_blob_range(&repo(Selector::Tag("1.0")), &layer, 0, 8, None)
+            .unwrap_err();
+        assert!(
+            matches!(err, OciError::Transport(FetchError::DownloadFailed(ref m)) if m.contains("does not serve range GETs")),
+            "{err:?}"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! The spec 38 §3 artifact model: the media types, the manifest shape,
 //! the annotation map, and the tag derivation — the single owner of all
-//! four. Every served file is ONE OCI image-manifest artifact: the empty
+//! five. Every served file is ONE OCI image-manifest artifact: the empty
 //! config (`application/vnd.oci.empty.v1+json`, the canonical `{}` bytes)
 //! and EXACTLY ONE layer — the file's raw bytes, so the layer digest IS
 //! the artifact's sha256 (the `.sha256` sidecar's exact equivalence). A
@@ -34,8 +34,9 @@ pub const ANNOTATION_RUNTIME_REQUIREMENT: &str = "org.tebako.runtime-requirement
 pub const ANNOTATION_RUNTIME_SHARD: &str = "org.tebako.runtime.shard";
 pub const ANNOTATION_SIGNATURE_KEYID: &str = "org.tebako.signature.keyid";
 pub const ANNOTATION_SIGNATURE_SUBJECT: &str = "org.tebako.signature.subject";
+pub const ANNOTATION_BLKSUM_SUBJECT: &str = "org.tebako.blksum.subject";
 
-/// The four artifact classes of spec 38 §3 — one artifact per served
+/// The five artifact classes of spec 38 §3 — one artifact per served
 /// file, the class self-describing via `artifactType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtifactClass {
@@ -47,6 +48,9 @@ pub enum ArtifactClass {
     RegistryIndex,
     /// A detached OpenPGP signature.
     Signature,
+    /// A spec 39 §3 blksum sidecar (the lazy mount's block-group digest
+    /// document), sibling-tagged by the image blob's digest.
+    Blksum,
 }
 
 impl ArtifactClass {
@@ -57,6 +61,7 @@ impl ArtifactClass {
             ArtifactClass::RuntimeBundle => "application/vnd.tebako.runtime-bundle.v1",
             ArtifactClass::RegistryIndex => "application/vnd.tebako.registry.v1",
             ArtifactClass::Signature => "application/vnd.tebako.signature.v1",
+            ArtifactClass::Blksum => "application/vnd.tebako.blksum.v1",
         }
     }
 
@@ -67,16 +72,18 @@ impl ArtifactClass {
             ArtifactClass::RuntimeBundle => "application/vnd.tebako.runtime-bundle.v1+tar.gz",
             ArtifactClass::RegistryIndex => "application/vnd.tebako.registry.v1+yaml",
             ArtifactClass::Signature => "application/vnd.tebako.signature.v1+asc",
+            ArtifactClass::Blksum => "application/vnd.tebako.blksum.v1+json",
         }
     }
 
-    /// The class an `artifactType` names, if it is one of the four.
+    /// The class an `artifactType` names, if it is one of the five.
     pub fn from_artifact_type(media_type: &str) -> Option<ArtifactClass> {
         [
             ArtifactClass::Payload,
             ArtifactClass::RuntimeBundle,
             ArtifactClass::RegistryIndex,
             ArtifactClass::Signature,
+            ArtifactClass::Blksum,
         ]
         .into_iter()
         .find(|c| c.artifact_type() == media_type)
@@ -85,13 +92,13 @@ impl ArtifactClass {
 
 /// What a manifest read expects (spec 38 §3's shape law): a specific
 /// class where the caller knows it (a registry fetch refuses a payload
-/// manifest served as the registry), or the union of the four tebako
+/// manifest served as the registry), or the union of the five tebako
 /// classes for the generic small-file fetch (the `.asc` rider).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShapeExpectation {
     /// Exactly this class.
     Class(ArtifactClass),
-    /// Any of the four spec 38 §3 classes.
+    /// Any of the five spec 38 §3 classes.
     AnyTebako,
 }
 
@@ -131,6 +138,9 @@ pub struct Annotations {
     pub signature_keyid: Option<String>,
     /// The digest of the signed blob (signature artifacts).
     pub signature_subject: Option<String>,
+    /// The digest of the image blob the sidecar serves (blksum
+    /// artifacts — the sibling the tag is keyed by).
+    pub blksum_subject: Option<String>,
 }
 
 /// A parsed image manifest.
@@ -209,6 +219,7 @@ impl Manifest {
                     ANNOTATION_RUNTIME_SHARD => annotations.runtime_shard = Some(value),
                     ANNOTATION_SIGNATURE_KEYID => annotations.signature_keyid = Some(value),
                     ANNOTATION_SIGNATURE_SUBJECT => annotations.signature_subject = Some(value),
+                    ANNOTATION_BLKSUM_SUBJECT => annotations.blksum_subject = Some(value),
                     _ => {}
                 }
             }
@@ -253,6 +264,7 @@ impl Manifest {
                         ArtifactClass::RuntimeBundle => "runtime-bundle",
                         ArtifactClass::RegistryIndex => "registry",
                         ArtifactClass::Signature => "signature",
+                        ArtifactClass::Blksum => "blksum",
                     },
                     artifact_type,
                 ));
@@ -321,6 +333,7 @@ impl Manifest {
             (ANNOTATION_RUNTIME_SHARD, &annotations.runtime_shard),
             (ANNOTATION_SIGNATURE_KEYID, &annotations.signature_keyid),
             (ANNOTATION_SIGNATURE_SUBJECT, &annotations.signature_subject),
+            (ANNOTATION_BLKSUM_SUBJECT, &annotations.blksum_subject),
         ] {
             if let Some(value) = value {
                 out.push_str(&format!(",\"{key}\":\"{}\"", tebako_json::escape(value)));
@@ -350,6 +363,16 @@ pub fn payload_tag(version: &str, triplet: Option<&str>) -> String {
 /// layer descriptor the fetcher already holds. No listing, no guessing.
 pub fn signature_tag(signed_blob_sha256: &str) -> String {
     format!("sha256-{signed_blob_sha256}.asc")
+}
+
+/// The blksum sidecar tag: `sha256-<64 hex of the IMAGE blob's
+/// digest>.blksum.json` — the same sibling digest-tag rule as the
+/// signature's (spec 38 §3, spec 39 §8), derived from the image's
+/// layer descriptor the fetcher already holds. The sidecar artifact's
+/// own layer digest IS the blksum document's sha256 — the seed
+/// descriptor's `blksum_sha256` pin binds it with no second file.
+pub fn blksum_tag(image_blob_sha256: &str) -> String {
+    format!("sha256-{image_blob_sha256}.blksum.json")
 }
 
 #[cfg(test)]
@@ -584,5 +607,45 @@ mod tests {
             signature_tag(&"e".repeat(64)),
             format!("sha256-{}.asc", "e".repeat(64))
         );
+        assert_eq!(
+            blksum_tag(&"f".repeat(64)),
+            format!("sha256-{}.blksum.json", "f".repeat(64))
+        );
+    }
+
+    #[test]
+    fn the_blksum_class_round_trips_the_shape_law_and_the_subject() {
+        let layer = Descriptor {
+            media_type: ArtifactClass::Blksum.layer_media_type().to_string(),
+            digest: format!("sha256:{}", "b".repeat(64)),
+            size: 123,
+        };
+        let annotations = Annotations {
+            title: Some(format!("sha256-{}.blksum.json", "a".repeat(64))),
+            blksum_subject: Some(format!("sha256:{}", "a".repeat(64))),
+            ..Annotations::default()
+        };
+        let bytes = Manifest::render(ArtifactClass::Blksum, &layer, &annotations).unwrap();
+        let parsed = Manifest::parse(&bytes).unwrap();
+        assert_eq!(
+            parsed.artifact_type.as_deref(),
+            Some(ArtifactClass::Blksum.artifact_type())
+        );
+        let validated = parsed
+            .validate_shape(ShapeExpectation::Class(ArtifactClass::Blksum))
+            .unwrap();
+        assert_eq!(validated, &layer);
+        assert_eq!(
+            parsed.annotations.blksum_subject.as_deref(),
+            Some(format!("sha256:{}", "a".repeat(64)).as_str())
+        );
+        // AnyTebako recognizes the fifth class; a class mismatch names it.
+        parsed
+            .validate_shape(ShapeExpectation::AnyTebako)
+            .unwrap();
+        let err = parsed
+            .validate_shape(ShapeExpectation::Class(ArtifactClass::Payload))
+            .unwrap_err();
+        assert!(err.contains("(payload)"), "{err}");
     }
 }
