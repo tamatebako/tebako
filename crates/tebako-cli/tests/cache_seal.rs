@@ -106,8 +106,23 @@ fn seal_all_fills_and_flips_the_entry() {
     // The machine form carries the additive lazy_seeding object.
     let (code, out, _) = run(&home, &["cache", "list", "--json"], &[]);
     assert_eq!(code, 0);
-    assert!(out.contains("\"lazy_seeding\""), "{out}");
-    assert!(out.contains("\"total_groups\":\"2\""), "{out}");
+    let doc = tebako_pkg::json_parse(&out).expect("stdout must be one JSON document");
+    let tebako_pkg::JsonValue::Array(rts) = doc.find("runtimes").unwrap() else {
+        panic!("runtimes must be an array: {out}")
+    };
+    let seeding = rts[0]
+        .find("lazy_seeding")
+        .expect("the seeding entry carries lazy_seeding");
+    assert_eq!(
+        seeding.find("total_groups").and_then(|v| v.as_u64()),
+        Some(2),
+        "{out}"
+    );
+    assert_eq!(
+        seeding.find("present_groups").and_then(|v| v.as_u64()),
+        Some(0),
+        "{out}"
+    );
     // Doctor reports the seed state by name.
     let (_, out, err) = run(&home, &["doctor"], &[]);
     assert!(
@@ -144,10 +159,11 @@ fn seal_a_named_entry_and_the_named_miss() {
     let (entry_name, image_base) = seed_entry(&home, &origin);
     let entry_dir = home.join("runtimes").join(&entry_name);
 
-    // An unknown entry name is the named 65.
-    let (code, _, err) = run(&home, &["cache", "seal", "ruby-9.9.9-0.0.0-nope"], &[]);
+    // An unknown entry name is the named 65 (the CLI prints TebakoError
+    // on stdout; stderr carries the notes).
+    let (code, out, err) = run(&home, &["cache", "seal", "ruby-9.9.9-0.0.0-nope"], &[]);
     assert_eq!(code, 65, "{err}");
-    assert!(err.contains("no cached runtime entry named"), "{err}");
+    assert!(out.contains("no cached runtime entry named"), "{out}");
 
     // The named selector seals exactly that entry.
     let (code, _, err) = run(&home, &["cache", "seal", &entry_name], &[]);
