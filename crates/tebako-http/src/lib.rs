@@ -871,8 +871,10 @@ pub struct ContentRange {
 /// Parse a `Content-Range` value: exactly the `bytes <start>-<end>/<total>`
 /// form (a 206's answer — the `bytes */<total>` form belongs to a 416,
 /// which never reaches here). `start > end` or `end >= total` is no
-/// Content-Range at all, never a clamp.
-fn parse_content_range(value: &str) -> Option<ContentRange> {
+/// Content-Range at all, never a clamp. Public for the OCI client's
+/// range arm (tebako-oci validates the distribution blob's 206 itself —
+/// the grammar's one owner stays here).
+pub fn parse_content_range(value: &str) -> Option<ContentRange> {
     let rest = value.trim().strip_prefix("bytes")?.trim_start();
     let (span, total) = rest.split_once('/')?;
     let (start, end) = span.split_once('-')?;
@@ -1105,6 +1107,40 @@ pub fn get_range(
             Err(e) => return Err(e),
         }
     }
+}
+
+/// [`get_range`]'s UNCLASSIFIED single-shot twin for the distribution
+/// surface (spec 39 §8's OCI closure arm): the same `Range` (and
+/// optional `If-Range`) wire shape, but ANY status returns its headers
+/// and body so the OCI client reads a 401's `WWW-Authenticate`
+/// challenge, a 206's `Content-Range`, and a distribution error body's
+/// `code` itself — the dance, the 206/200 split, and the retry law are
+/// the caller's (exactly [`get_raw`]'s discipline against the blob
+/// endpoint). No `file://` arm and no retry loop: the distribution
+/// surface is https-or-loopback only, and the client's dance owns
+/// attempts. A zero-length range is the same named refusal.
+pub fn get_range_raw(
+    url: &str,
+    range: ByteRange,
+    if_range: Option<&str>,
+    header: Option<(&str, &str)>,
+) -> Result<RawResponse, FetchError> {
+    if range.len == 0 {
+        return Err(FetchError::DownloadFailed(format!(
+            "a zero-length range (offset {}) is not a fetch — the caller's group indexing is off",
+            range.offset
+        )));
+    }
+    require_https_or_loopback(url)?;
+    network_guard()?;
+    let mut req = raw_agent()?.get(url).header("Range", range.wire());
+    if let Some(validator) = if_range {
+        req = req.header("If-Range", validator);
+    }
+    let response = apply_explicit(url, req, None, header)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    into_raw_response(url, response)
 }
 
 /// The one request-shaping path: the declared Accept, plus the ambient
@@ -2464,6 +2500,82 @@ mod range_tests {
         let err = get_range(&server.url, ByteRange { offset: 0, len: 8 }, None, None).unwrap_err();
         assert!(matches!(err, FetchError::AuthRejected { .. }), "{err:?}");
         assert_eq!(server.hits(), 1);
+    }
+
+    // ---------------- the raw range surface (spec 39 §8) ----------------
+
+    #[test]
+    fn get_range_raw_returns_the_206_unclassified() {
+        let data = Arc::new(patterned(64));
+        let server = RangeServer::start(range_responder(Arc::clone(&data), "\"v1\""));
+        let resp = get_range_raw(&server.url, ByteRange { offset: 8, len: 8 }, None, None).unwrap();
+        assert_eq!(resp.status, 206);
+        assert_eq!(resp.body.as_slice(), &data[8..16]);
+        let served = parse_content_range(resp.header("content-range").expect("content-range"))
+            .expect("the fixture's Content-Range parses");
+        assert_eq!(
+            served,
+            ContentRange {
+                start: 8,
+                end: 15,
+                total: 64
+            }
+        );
+        assert_eq!(resp.header("etag"), Some("\"v1\""));
+        let heard = server.heard();
+        assert_eq!(heard[0].range.as_deref(), Some("bytes=8-15"));
+    }
+
+    #[test]
+    fn get_range_raw_hands_the_caller_the_dance_cue_and_the_fallback() {
+        // A 401 is an ANSWER (the challenge rides its headers), never a
+        // classified error — the client's dance owns what happens next.
+        let server = RangeServer::start(Arc::new(|_, _| {
+            Reply::whole(401, "Unauthorized", br#"{"errors":[{"code":"UNAUTHORIZED"}]}"#.to_vec())
+                .header(
+                    "www-authenticate",
+                    "Bearer realm=\"http://127.0.0.1/token\",service=\"fixture\"".to_string(),
+                )
+        }));
+        let resp = get_range_raw(&server.url, ByteRange { offset: 0, len: 8 }, None, None).unwrap();
+        assert_eq!(resp.status, 401);
+        assert!(
+            resp.header("www-authenticate")
+                .is_some_and(|v| v.contains("Bearer realm=")),
+            "{:?}",
+            resp.headers
+        );
+        assert_eq!(server.hits(), 1, "no retry, no classification");
+
+        // A 200 (the range-unaware answer) comes back raw too — the
+        // 206/200 split is the caller's law.
+        let data = Arc::new(patterned(32));
+        let whole = Arc::clone(&data);
+        let server = RangeServer::start(Arc::new(move |_, _| {
+            Reply::whole(200, "OK", whole.as_ref().clone())
+        }));
+        let resp = get_range_raw(&server.url, ByteRange { offset: 8, len: 8 }, None, None).unwrap();
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body.as_slice(), data.as_slice());
+    }
+
+    #[test]
+    fn get_range_raw_sends_if_range_and_refuses_the_empty_range() {
+        let data = Arc::new(patterned(64));
+        let server = RangeServer::start(range_responder(Arc::clone(&data), "\"v2\""));
+        let resp = get_range_raw(
+            &server.url,
+            ByteRange { offset: 0, len: 16 },
+            Some("\"v2\""),
+            None,
+        )
+        .unwrap();
+        assert_eq!(resp.status, 206);
+        assert_eq!(server.heard()[0].if_range.as_deref(), Some("\"v2\""));
+        let err = get_range_raw(&server.url, ByteRange { offset: 0, len: 0 }, None, None)
+            .unwrap_err();
+        assert!(matches!(err, FetchError::DownloadFailed(_)), "{err:?}");
+        assert_eq!(server.hits(), 1, "the refusal never reaches the wire");
     }
 
     // ---------------- the write-verbs fixture (spec 38 §7) ----------------
