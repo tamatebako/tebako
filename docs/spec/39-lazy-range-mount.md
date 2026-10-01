@@ -333,7 +333,7 @@ SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics
 - **`tebako cache list`** marks lazy entries (`(seeding 17%)`); the
   origin marker carries the source URL as today.
 
-## 8. Interaction with spec 38 (OCI) — supported-but-later
+## 8. Interaction with spec 38 (OCI)
 
 The byte source is transport-shaped, not URL-shaped: it consumes a
 range-fetch closure. An OCI blob GET (`/v2/<repo>/blobs/<digest>`,
@@ -342,9 +342,37 @@ digest IS the artifact sha256 (spec 38 §3's trust-anchor equivalence) —
 so a range source over an OCI blob needs NO grammar, NO divergence: the
 OCI adapter supplies its closure (Bearer flow and confinement of spec 38
 §6 included), the blksum sidecar publishes as one more §3 artifact
-class. Sequenced after spec 38 lands; this spec commits nothing about
-it beyond the closure shape. The sidecar-over-OCI anchor rides the same
-sibling digest-tag rule when it ships.
+class.
+
+**The closure arm (locked 2026-10-01 with PR 6).** The OCI client's
+blob fetch carries the range arm: one positioned GET
+(`Range: bytes=<offset>-<end>`, the caller-decided credential header
+attached verbatim per dance attempt), answering 206 with a
+Content-Range validated against the request (exact start, exact
+length) or 200 — the §3 loud-eager-fallback signal, byte-identical in
+meaning with the plain-HTTPS transport's. A range window carries no
+whole-blob digest check by construction: the per-group digests of §3
+are the integrity layer, exactly as over plain HTTPS. The blksum
+sidecar's OCI spellings are spec 38 §3's (that section owns the class
+table and the tag rules): artifactType
+`application/vnd.tebako.blksum.v1`, layer media type
+`application/vnd.tebako.blksum.v1+json`, the sibling digest-tag
+`sha256-<64 hex of the IMAGE blob's digest>.blksum.json` with the
+`org.tebako.blksum.subject` annotation naming the image digest. The
+sidecar's layer digest IS the blksum document's sha256 — the seed
+descriptor's `blksum_sha256` pin binds it with no second file, and a
+resolve of the sibling tag that finds nothing is the §3
+blksum-missing signal (the loud eager fallback), never an error.
+
+**Recorded, not committed (the run-time wiring).** PR 6 ships the
+transport arm, the sidecar class, the resolve-side sidecar resolution,
+and the publish push — the pieces any OCI-staged lazy entry needs. The
+two downstream legs land with their own specs' PRs: OCI runtime
+distribution itself is spec 38's PR 4 (runtime bundles over OCI), and
+the driver's mount-open OCI arm (state-detecting an OCI-sourced seed
+descriptor, the run-time credential chain for a mount that outlives
+the install) is designed with that leg — this spec commits the closure
+shape only.
 
 ## 9. What does NOT change (locked)
 

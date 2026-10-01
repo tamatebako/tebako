@@ -121,6 +121,7 @@ file). A manifest violating the shape (≠1 layer, a foreign
 | runtime bundle (spec 36) | `application/vnd.tebako.runtime-bundle.v1` | `application/vnd.tebako.runtime-bundle.v1+tar.gz` |
 | registry index (`tpkg-registry.yaml`) | `application/vnd.tebako.registry.v1` | `application/vnd.tebako.registry.v1+yaml` |
 | detached OpenPGP signature | `application/vnd.tebako.signature.v1` | `application/vnd.tebako.signature.v1+asc` |
+| blksum sidecar (spec 39 §3) | `application/vnd.tebako.blksum.v1` | `application/vnd.tebako.blksum.v1+json` |
 
 **Annotations mirror resolution fields only** (the spec 03 §4 tier-3
 rule — the registry mirrors, never duplicates authority). The full L1
@@ -136,6 +137,7 @@ L3 subset, so a dispatcher never pulls a blob to resolve:
 | `org.tebako.runtime-requirement` | the requirement object, JSON-encoded (payloads) |
 | `org.tebako.runtime.shard` | the per-package shard JSON VERBATIM (runtime-bundle artifacts only — one manifest read replaces the shard fetch of spec 36 §4) |
 | `org.tebako.signature.keyid` / `org.tebako.signature.subject` | the signer's PRIMARY keyid (spec 09 §9's primary rule) / the digest of the signed blob (signature artifacts only) |
+| `org.tebako.blksum.subject` | the digest of the image blob the sidecar serves (blksum artifacts only — the sibling the tag is keyed by) |
 
 **Tag derivation (locked — the single owner of both rules is this
 section):**
@@ -151,6 +153,12 @@ section):**
 - signature: `sha256-<64 hex of the SIGNED BLOB's digest>.asc` — keyed
   by the signed bytes, derived deterministically from the layer
   descriptor the fetcher already holds. No listing, no guessing.
+- blksum sidecar (added with spec 39 §8's OCI arm):
+  `sha256-<64 hex of the IMAGE blob's digest>.blksum.json` — the same
+  sibling digest-tag rule as the signature's, keyed by the image bytes.
+  The artifact's layer digest IS the sidecar document's own sha256 —
+  the seed descriptor's `blksum_sha256` pin (spec 39 §3) binds it with
+  no second file.
 
 **Per-triplet tags, never an OCI image index (locked — the tebako#695
 DECIDE).** Platform selection in tebako is the REGISTRY's declarative
@@ -307,7 +315,9 @@ never the ORAS CLI (the no-shell-outs law binds shipped artifacts and
 tests; ORAS in a CI workflow is permitted sugar, never the contract).
 
 - `tebako publish … --oci tfs+oci://<host>/<repo>` uploads each
-  payload's §3 artifact (plus signature artifacts when signing) from
+  payload's §3 artifact (plus signature artifacts when signing, plus
+  the blksum sidecar sibling for every payload the staged sidecar
+  exists for — spec 39 §8) from
   the SAME staged bytes the git-host release leg uploads, and writes
   the additive `oci:` mirror field into the registry row it maintains:
 
