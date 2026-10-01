@@ -90,6 +90,17 @@ pub struct FetchItem<'plan> {
     /// §5's tier-1 credential key); None for the anonymous scope
     /// (runtime fetches, direct references).
     pub registry_alias: Option<String>,
+    /// The LAZY_SEEDING arm (spec 39 §7/§9): when true the item streams
+    /// NOTHING — no tmp file, no inline pin pass. The commit closure
+    /// runs immediately on a synthesized [`StagedArtifact`] whose `tmp`
+    /// names a path that never exists (the closure must not consume
+    /// it), whose `sha256` carries the item's pin (a lazy item MUST set
+    /// `sha256_pin` — it is the descriptor's whole-image pin), whose
+    /// `origin` is the reference's concrete spelling, and whose `size`
+    /// is the size hint. The closure's one job: write the seed
+    /// descriptor into the staging dir. The plan's offline gate applies
+    /// verbatim (the descriptor records a fetch the run would owe).
+    pub lazy: bool,
     /// Install the verified staged bytes; runs on the worker right after
     /// THIS artifact's download (overlapped with the other streams).
     /// Receives the tmp path + the computed sha256 + the concrete
@@ -399,6 +410,44 @@ fn run_item<T: Transport, W: std::io::Write + Send>(
     if let Some(p) = progress {
         p.download_begin(idx, &item.display);
     }
+    if item.lazy {
+        // The LAZY_SEEDING arm (spec 39 §7/§9): nothing streams — the
+        // commit closure writes the seed descriptor on a synthesized
+        // staged artifact. The offline gate applies verbatim (the
+        // descriptor records a fetch this run would owe the network).
+        if offline {
+            return Err(ResolveError::Offline {
+                what: item.display.clone(),
+            });
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let sha256 = item.sha256_pin.clone().unwrap_or_default();
+        let origin = item.reference.to_string();
+        let size = item.size_hint.unwrap_or(0);
+        let tmp = tmp_path(&item, idx, plan_seq); // never created
+        if let Some(p) = progress {
+            p.verifying(idx);
+        }
+        let staged = StagedArtifact {
+            display: &item.display,
+            reference: &item.reference,
+            tmp: &tmp,
+            sha256: &sha256,
+            origin: &origin,
+            size,
+        };
+        return match (item.commit)(&staged) {
+            Ok(report) => {
+                if let Some(p) = progress {
+                    p.installed(idx, size, report.line.as_deref());
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        };
+    }
     let tmp = tmp_path(&item, idx, plan_seq);
     if let Some(dir) = tmp.parent() {
         std::fs::create_dir_all(dir).map_err(|e| ResolveError::CacheIo {
@@ -673,6 +722,7 @@ mod tests {
                 size_hint: Some(bytes.len() as u64),
                 tmp_dir: dir.join("tmp"),
                 registry_alias: None,
+                lazy: false,
                 commit: Box::new(move |staged| {
                     std::fs::rename(staged.tmp, &dest2).unwrap();
                     std::fs::write(&origin_note, staged.origin).unwrap();
@@ -803,6 +853,7 @@ mod tests {
             size_hint: None,
             tmp_dir: dir.join("tmp"),
             registry_alias: None,
+            lazy: false,
             commit: Box::new(move |staged| {
                 std::fs::rename(staged.tmp, &dest).unwrap();
                 Ok(CommitReport { line: None })
@@ -946,6 +997,72 @@ mod tests {
         let err = run_plan(&dir, vec![item], 1).unwrap_err();
         std::env::remove_var("TEBAKO_OFFLINE");
         assert!(matches!(err, ResolveError::Offline { .. }), "{err:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -------------------------------------------------------------
+    // the LAZY_SEEDING arm (spec 39 §7/§9)
+    // -------------------------------------------------------------
+
+    /// A lazy item: its reference names a source that DOES NOT EXIST —
+    /// if the pipeline streamed it, the plan would fail.
+    fn lazy_item(dir: &Path, name: &str) -> (FetchItem<'static>, PathBuf) {
+        let note = dir.join(format!("lazy-note-{name}"));
+        let note2 = note.clone();
+        let name = name.to_string();
+        (
+            FetchItem {
+                display: name.to_string(),
+                reference: Reference::File {
+                    path: dir.join("no-such-source").to_string_lossy().into_owned(),
+                    sha256: None,
+                },
+                sha256_pin: Some("a".repeat(64)),
+                size_hint: Some(4_194_304),
+                tmp_dir: dir.join("tmp"),
+                registry_alias: None,
+                lazy: true,
+                commit: Box::new(move |staged| {
+                    // The synthesized artifact: the pin, the size, a tmp
+                    // that never existed.
+                    assert_eq!(staged.sha256, "a".repeat(64));
+                    assert_eq!(staged.size, 4_194_304);
+                    assert!(!staged.tmp.exists());
+                    std::fs::write(&note2, staged.origin).unwrap();
+                    Ok(CommitReport {
+                        line: Some(format!(
+                            "runtime env image {name} (4194304) — lazy: seeding on demand, sealing in background"
+                        )),
+                    })
+                }),
+            },
+            note,
+        )
+    }
+
+    #[test]
+    fn lazy_items_stream_nothing_and_commit_the_descriptor() {
+        let _guard = env_guard();
+        let dir = scratch("lazy");
+        let (item, note) = lazy_item(&dir, "img.tfs");
+        run_plan(&dir, vec![item], 1).unwrap();
+        // The commit ran on the synthesized artifact; no tmp was ever
+        // created (the pipeline's tmp dir does not even exist).
+        assert!(note.is_file());
+        assert!(!dir.join("tmp").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lazy_items_are_the_named_offline_error_too() {
+        let _guard = env_guard();
+        std::env::set_var("TEBAKO_OFFLINE", "1");
+        let dir = scratch("lazy-offline");
+        let (item, note) = lazy_item(&dir, "img.tfs");
+        let err = run_plan(&dir, vec![item], 1).unwrap_err();
+        std::env::remove_var("TEBAKO_OFFLINE");
+        assert!(matches!(err, ResolveError::Offline { .. }), "{err:?}");
+        assert!(!note.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
