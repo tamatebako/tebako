@@ -150,6 +150,7 @@ mod error;
 mod ext;
 mod io;
 pub mod jail;
+pub mod lazy;
 pub mod macho;
 mod manifest;
 pub mod merkle;
