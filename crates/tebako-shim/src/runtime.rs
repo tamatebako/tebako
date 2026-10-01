@@ -3460,12 +3460,14 @@ payloads:
                     name: Some("one".to_string()),
                     default: false,
                     require_signed: false,
+                    channel: None,
                 },
                 crate::config::RegistryBookEntry {
                     reference: full,
                     name: Some("two".to_string()),
                     default: false,
                     require_signed: false,
+                    channel: None,
                 },
             ],
             ..UserConfig::default()
@@ -3537,6 +3539,7 @@ payloads:
                 name: Some("signed-only".to_string()),
                 default: false,
                 require_signed: true,
+                channel: None,
             }],
             ..UserConfig::default()
         };
@@ -3580,6 +3583,7 @@ payloads:
                 name: Some("signed-only".to_string()),
                 default: false,
                 require_signed: true,
+                channel: None,
             }],
             ..UserConfig::default()
         };

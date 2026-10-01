@@ -314,9 +314,10 @@ impl UserConfig {
 /// pre-book shape is a bare spec 04 reference string; the book shape is
 /// a map carrying `ref:` plus optional `name:` (the LOCAL alias — never
 /// published, never embedded, never on any wire), `default:` (§2.1's
-/// publish/UX anchor, never a resolution tiebreaker), and
-/// `require_signed:` (§2.2's fail-closed trust policy). Both spellings
-/// deserialize here; a bare entry's flags are absent/false.
+/// publish/UX anchor, never a resolution tiebreaker), `require_signed:`
+/// (§2.2's fail-closed trust policy), and `channel:` (spec 38 §11's
+/// declared resolution channel). Both spellings deserialize here; a
+/// bare entry's flags are absent/false.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegistryBookEntry {
     /// The spec 04 registry reference (the canonical string form —
@@ -329,6 +330,21 @@ pub struct RegistryBookEntry {
     pub default: bool,
     /// §2.2's fail-closed signature policy for this registry's rows.
     pub require_signed: bool,
+    /// The declared resolution channel (spec 38 §11 — DECLARED, never
+    /// probed). Absent = the primary `release.ref` resolves (today's
+    /// behavior, unchanged bit for bit).
+    pub channel: Option<BookChannel>,
+}
+
+/// The book's channel declaration (spec 38 §11): rows of a
+/// `channel: oci` registry resolve through their per-triplet `oci:`
+/// mirror field — a row lacking one is a named error naming the row
+/// (fail-closed, never a fallback to the primary `release.ref`). There
+/// is no both-fetch, no race-the-channels, no failover.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BookChannel {
+    /// Rows resolve through their `oci:` field.
+    Oci,
 }
 
 impl RegistryBookEntry {
@@ -339,6 +355,7 @@ impl RegistryBookEntry {
             name: None,
             default: false,
             require_signed: false,
+            channel: None,
         }
     }
 
@@ -350,7 +367,7 @@ impl RegistryBookEntry {
     /// True when no book keys are set — the entry serializes as the
     /// bare ref string (round-trip cleanliness for pre-book configs).
     pub fn is_bare(&self) -> bool {
-        self.name.is_none() && !self.default && !self.require_signed
+        self.name.is_none() && !self.default && !self.require_signed && self.channel.is_none()
     }
 
     /// The YAML form of this entry for authored-config writes: a bare
@@ -382,7 +399,22 @@ impl RegistryBookEntry {
                 serde_yaml::Value::Bool(true),
             );
         }
+        if let Some(channel) = &self.channel {
+            m.insert(
+                serde_yaml::Value::String("channel".to_string()),
+                serde_yaml::Value::String(channel.as_str().to_string()),
+            );
+        }
         serde_yaml::Value::Mapping(m)
+    }
+}
+
+impl BookChannel {
+    /// The authored spelling.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BookChannel::Oci => "oci",
+        }
     }
 }
 
@@ -442,6 +474,24 @@ impl<'de> Deserialize<'de> for RegistryBookEntry {
                                 }
                             };
                         }
+                        "channel" => {
+                            entry.channel = match v {
+                                serde_yaml::Value::Null => None,
+                                serde_yaml::Value::String(s) if s == "oci" => {
+                                    Some(BookChannel::Oci)
+                                }
+                                serde_yaml::Value::String(s) => {
+                                    return Err(D::Error::custom(format!(
+                                        "a `registries` map entry's `channel:` is 'oci' or absent — '{s}' names no channel (spec 38 §11)"
+                                    )))
+                                }
+                                _ => {
+                                    return Err(D::Error::custom(
+                                        "a `registries` map entry's `channel:` is a string ('oci')",
+                                    ))
+                                }
+                            };
+                        }
                         // Unknown keys are ignored (forward compat — the
                         // same leniency as `defaults:` map entries).
                         _ => {}
@@ -455,7 +505,7 @@ impl<'de> Deserialize<'de> for RegistryBookEntry {
                 Ok(entry)
             }
             _ => Err(D::Error::custom(
-                "a `registries` entry is a reference string or a {ref, name?, default?, require_signed?} map",
+                "a `registries` entry is a reference string or a {ref, name?, default?, require_signed?, channel?} map",
             )),
         }
     }
@@ -932,6 +982,9 @@ pub struct AddRegistryOptions {
     /// `--default` — §2.1's publish/UX anchor; a second default in the
     /// book is `DuplicateDefaultRegistry`.
     pub default: bool,
+    /// `--channel oci` — spec 38 §11's declared resolution channel
+    /// (rows resolve through their `oci:` mirror field).
+    pub channel: Option<BookChannel>,
 }
 
 /// Append `reg_ref` to `registries:` in `~/.tebako/config.yaml`,
@@ -998,12 +1051,14 @@ pub fn add_registry(
             name: opts.name.clone(),
             default: opts.default,
             require_signed: opts.require_signed,
+            channel: opts.channel,
         };
         // A bare re-add never strips an existing entry's book keys —
         // only an explicit policy flag rewrites (`tebako add-registry
         // <ref>` on a `require_signed:` entry is AlreadyPresent, not a
         // silent downgrade).
-        let has_opts = opts.name.is_some() || opts.default || opts.require_signed;
+        let has_opts =
+            opts.name.is_some() || opts.default || opts.require_signed || opts.channel.is_some();
         if let Some(pos) = entries.iter().position(|e| e.reference == reg_ref) {
             if !has_opts || entries[pos] == requested {
                 outcome = AddRegistryOutcome::AlreadyPresent;
@@ -1620,6 +1675,58 @@ mod tests {
     }
 
     #[test]
+    fn book_map_form_parses_the_channel_declaration() {
+        let cfg: UserConfig =
+            serde_yaml::from_str("registries:\n  - ref: tfs:github:acme/app\n    channel: oci\n")
+                .unwrap();
+        let book = cfg.registry_book().unwrap();
+        assert_eq!(book[0].entry.channel, Some(BookChannel::Oci));
+        assert!(!book[0].entry.is_bare());
+        // …and the authored write spells it back (round-trip through
+        // to_yaml_value)
+        let value = book[0].entry.to_yaml_value();
+        let text = serde_yaml::to_string(&value).unwrap();
+        assert!(text.contains("channel: oci"), "{text}");
+    }
+
+    #[test]
+    fn book_channel_rejects_an_unknown_value_by_name() {
+        let err = serde_yaml::from_str::<UserConfig>(
+            "registries:\n  - ref: tfs:github:acme/app\n    channel: https\n",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("'oci'"), "{msg}");
+        assert!(msg.contains("'https'"), "{msg}");
+    }
+
+    #[test]
+    fn add_registry_with_channel_writes_and_readds() {
+        let home = fresh_home("addchannel");
+        let opts = AddRegistryOptions {
+            channel: Some(BookChannel::Oci),
+            ..AddRegistryOptions::default()
+        };
+        add_registry(&home, "tfs:github:acme/app", &opts).unwrap();
+        let text = std::fs::read_to_string(config_path(&home)).unwrap();
+        assert!(text.contains("channel: oci"), "{text}");
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(cfg.registries[0].channel, Some(BookChannel::Oci));
+        // a bare re-add never strips the channel; the same channel is
+        // AlreadyPresent
+        let outcome =
+            add_registry(&home, "tfs:github:acme/app", &AddRegistryOptions::default()).unwrap();
+        assert_eq!(outcome, AddRegistryOutcome::AlreadyPresent);
+        assert_eq!(
+            load_config(&home).unwrap().registries[0].channel,
+            Some(BookChannel::Oci)
+        );
+        let outcome = add_registry(&home, "tfs:github:acme/app", &opts).unwrap();
+        assert_eq!(outcome, AddRegistryOutcome::AlreadyPresent);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
     fn book_map_form_without_ref_is_a_config_error() {
         let err =
             serde_yaml::from_str::<UserConfig>("registries:\n  - name: orphan\n").unwrap_err();
@@ -1698,6 +1805,7 @@ mod tests {
             name: Some("nist".to_string()),
             require_signed: true,
             default: true,
+            ..AddRegistryOptions::default()
         };
         add_registry(&home, "tfs:github:acme/flavor-nist", &opts).unwrap();
         let cfg = load_config(&home).unwrap();
@@ -1715,6 +1823,7 @@ mod tests {
             name: None,
             require_signed: true,
             default: false,
+            ..AddRegistryOptions::default()
         };
         add_registry(&home, "tfs:github:acme/app", &opts).unwrap();
         let outcome =
@@ -1733,6 +1842,7 @@ mod tests {
             name: Some("acme".to_string()),
             require_signed: false,
             default: false,
+            ..AddRegistryOptions::default()
         };
         let outcome = add_registry(&home, "tfs:github:acme/app", &opts).unwrap();
         assert_eq!(outcome, AddRegistryOutcome::Updated);
@@ -1749,6 +1859,7 @@ mod tests {
             name: None,
             require_signed: false,
             default: true,
+            ..AddRegistryOptions::default()
         };
         add_registry(&home, "tfs:github:acme/one", &opts).unwrap();
         let err = add_registry(&home, "tfs:github:acme/two", &opts).unwrap_err();
@@ -1766,6 +1877,7 @@ mod tests {
             name: Some("nist".to_string()),
             require_signed: false,
             default: false,
+            ..AddRegistryOptions::default()
         };
         add_registry(&home, "tfs:github:metanorma/flavor", &opts).unwrap();
         // acme/nist's DERIVED alias collides with the explicit one.
@@ -1788,6 +1900,7 @@ mod tests {
             name: Some("BAD".to_string()),
             require_signed: false,
             default: false,
+            ..AddRegistryOptions::default()
         };
         let err = add_registry(&home, "tfs:github:acme/app", &opts).unwrap_err();
         assert!(err.message.contains("[a-z][a-z0-9-]*"), "{err:?}");
