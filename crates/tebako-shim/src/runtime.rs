@@ -64,9 +64,9 @@ const LOCK_POLL_MS: u64 = 200;
 // tpkg (spec 00 §10 — one owner, every consumer flows): the shim's
 // resolution/download layers below build on these re-exports.
 use tpkg::runtime_store::{
-    entry_asset_names, entry_bundle, entry_dll_from_index, entry_filename, entry_matches,
-    entry_meta, entry_signature, newest_compatible_any, release_index_entry, EntryBundle,
-    EntrySignature,
+    cached_lazy, entry_asset_names, entry_blksum, entry_bundle, entry_dll_from_index,
+    entry_filename, entry_matches, entry_meta, entry_signature, newest_compatible_any,
+    release_index_entry, EntryBundle, EntrySignature,
 };
 pub use tpkg::runtime_store::{
     exe_suffix, newest_compatible, platform_string, scan_all_cached, scan_cached, CachedRuntime,
@@ -434,7 +434,7 @@ pub fn resolve_runtime_edge(
                 .iter()
                 .map(|c| {
                     let mut why = Vec::new();
-                    if c.image.is_none() {
+                    if !c.has_env_image() {
                         why.push("no verified env image".to_string());
                     }
                     if !tpkg::runtime_store::implementation_matches(c, implementation) {
@@ -479,7 +479,7 @@ pub fn resolve_runtime_edge(
     else {
         unreachable!("a requirement was passed — never Zero");
     };
-    if rt.image.is_none() {
+    if !rt.has_env_image() {
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
@@ -2393,6 +2393,7 @@ fn runtime_facet_item<'p>(
         size_hint: None,
         tmp_dir: tmp_dir.to_path_buf(),
         registry_alias: None,
+        lazy: false,
         commit: Box::new(commit),
     })
 }
@@ -2577,6 +2578,7 @@ fn runtime_bundle_item<'p>(
         size_hint,
         tmp_dir: tmp_dir.to_path_buf(),
         registry_alias: None,
+        lazy: false,
         commit: Box::new(commit),
     })
 }
@@ -2595,6 +2597,113 @@ enum StageOutcome {
         asset: String,
         image_asset: String,
     },
+}
+
+// ---------------------------------------------------------------------
+// the LAZY_SEEDING install (spec 39 §7)
+// ---------------------------------------------------------------------
+
+/// The blksum sidecar fetch's three answers (spec 39 §7): the
+/// document, the loud-eager-fallback signal (404 / no such file), or
+/// the named transport failure (69 — never a fallback).
+enum SidecarAnswer {
+    Document(Vec<u8>),
+    Missing,
+    Failed(String),
+}
+
+/// Fetch the blksum sidecar with fetch_url's retry discipline, the
+/// classes kept apart (a 404 is not a transport failure).
+fn fetch_sidecar(url: &str, local: bool) -> SidecarAnswer {
+    if local {
+        return match std::fs::read(Path::new(url)) {
+            Ok(bytes) => SidecarAnswer::Document(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => SidecarAnswer::Missing,
+            Err(e) => SidecarAnswer::Failed(format!("{url}: {e}")),
+        };
+    }
+    let mut attempts = 0;
+    let mut throttles = 0;
+    loop {
+        match tebako_http::get(url) {
+            Ok(bytes) => return SidecarAnswer::Document(bytes),
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => return SidecarAnswer::Missing,
+            Err(tebako_http::FetchError::Throttled { retry_after, .. }) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return SidecarAnswer::Failed(format!(
+                        "{url}: still throttled after {} backoff rounds",
+                        tebako_http::THROTTLE_ROUNDS
+                    ));
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
+            Err(e) => {
+                attempts += 1;
+                if attempts >= 3 {
+                    return SidecarAnswer::Failed(format!("{url}: {e}"));
+                }
+            }
+        }
+    }
+}
+
+/// The lazy install's plan decision.
+enum LazyPlan {
+    /// No lazy install (the opt-in is off, the bundle era carries the
+    /// bytes, or the release declares no image).
+    Eager,
+    /// The opt-in is on but the release cannot serve it — the LOUD
+    /// eager fallback (spec 39 §7): the image item reverts to the
+    /// ordinary facet fetch; the journal carries the reason.
+    Fallback(&'static str),
+    /// Install lazily: the plan item writes this seed descriptor.
+    Lazy(Box<tpkg::lazy::LazySeed>),
+}
+
+/// The LAZY_SEEDING plan item (spec 39 §7/§9): no bytes stream — the
+/// commit writes the seed descriptor into the staging dir (the
+/// descriptor's rename into the entry is the lazy install's commit
+/// point, the exe install's flock covering it). The progress line is
+/// spec 39 §7's verbatim.
+fn runtime_lazy_image_item(
+    image_asset: &str,
+    seed: &tpkg::lazy::LazySeed,
+    tmp_dir: &Path,
+) -> FetchItem<'static> {
+    let staging = tmp_dir.to_path_buf();
+    let image_base = image_asset.to_string();
+    let display = image_base.clone();
+    let line = format!(
+        "runtime env image {image_asset} ({}) — lazy: seeding on demand, sealing in background",
+        tebako_term::human_bytes(seed.size_bytes)
+    );
+    let descriptor = seed.clone();
+    let reference = Reference::parse(&seed.source)
+        .unwrap_or_else(|_| Reference::File {
+            path: seed.source.clone(),
+            sha256: None,
+        });
+    let commit = move |_staged: &StagedArtifact| {
+        tpkg::lazy::write_descriptor(&staging, &image_base, &descriptor).map_err(|e| {
+            ResolveError::Commit {
+                reason: format!(
+                    "cannot stage the lazy seed descriptor for {image_base}: {e}"
+                ),
+            }
+        })?;
+        Ok(CommitReport { line: Some(line) })
+    };
+    FetchItem {
+        display,
+        reference,
+        sha256_pin: Some(seed.sha256.clone()),
+        size_hint: Some(seed.size_bytes),
+        tmp_dir: tmp_dir.to_path_buf(),
+        registry_alias: None,
+        lazy: true,
+        commit: Box::new(commit),
+    }
 }
 
 /// Download the preferred runtime into the shared cache with the
@@ -2633,6 +2742,7 @@ fn download_runtime(
                 .join(&image_asset)
                 .is_file()
                 .then(|| entry_dir.join(&image_asset)),
+            lazy: cached_lazy(&entry_dir, &image_asset),
             abi: entry_meta(&entry_dir, &asset, "abi"),
             implementation: entry_meta(&entry_dir, &asset, "implementation"),
             language_version: entry_meta(&entry_dir, &asset, "language_version"),
@@ -2704,6 +2814,7 @@ fn download_runtime(
                 .join(&image_asset)
                 .is_file()
                 .then(|| entry_dir.join(&image_asset)),
+            lazy: cached_lazy(&entry_dir, &image_asset),
             abi: entry_meta(&entry_dir, &asset, "abi"),
             implementation: entry_meta(&entry_dir, &asset, "implementation"),
             language_version: entry_meta(&entry_dir, &asset, "language_version"),
@@ -2932,7 +3043,115 @@ fn download_runtime(
         // the plan; the caller drops the staging dir — a partial install
         // never publishes.
         let sink = RuntimePlanSink::default();
-        let has_image = image.sha.is_some();
+        // The LAZY_SEEDING install (spec 39 §7): the opt-in
+        // (TEBAKO_RUNTIME_LAZY over config `runtime_lazy: true` — env
+        // wins per key, a malformed value is the named 65), the
+        // per-file path only (the bundle era's one tar fetch IS the
+        // runtime — eager by construction), the image declared, and
+        // the release index's additive `image.blksum` row field
+        // anchoring the sidecar. A missing row field or a missing
+        // sidecar is the LOUD eager fallback (stderr + the journal);
+        // a torn row field is the named error; a sidecar transport
+        // failure is 69; a sidecar off its pin or off the image's
+        // index sha is 70.
+        let lazy_opt_in = tpkg::settings::resolve_runtime_lazy(
+            ctx.env_get(
+                tpkg::settings::RUNTIME_LAZY
+                    .env
+                    .expect("the RUNTIME_LAZY setting declares its env spelling"),
+            )
+            .map(str::to_string),
+            cfg.runtime_lazy,
+        )
+        .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
+        let lazy_plan = if bundle.is_none() && lazy_opt_in {
+            match &image.sha {
+                None => LazyPlan::Eager,
+                Some(image_expected) => {
+                    let blksum_row = entry_match
+                        .map(entry_blksum)
+                        .transpose()
+                        .map_err(|m| {
+                            ShimError::new(
+                                EX_TEBAKO_MANIFEST,
+                                format!("runtime \"{runtime_ref}\": the release index's {m}"),
+                            )
+                        })?
+                        .flatten();
+                    match blksum_row {
+                        None => LazyPlan::Fallback("blksum-missing"),
+                        Some(pin) => {
+                            let sidecar_url = format!("{dir_url}/{}", pin.filename);
+                            match fetch_sidecar(&sidecar_url, local) {
+                                SidecarAnswer::Missing => LazyPlan::Fallback("blksum-missing"),
+                                SidecarAnswer::Failed(why) => {
+                                    return fail(
+                                        EX_TEBAKO_UNAVAILABLE,
+                                        format!(
+                                            "cannot fetch the blksum sidecar for the lazy install of runtime \"{runtime_ref}\": {why}"
+                                        ),
+                                    );
+                                }
+                                SidecarAnswer::Document(bytes) => {
+                                    let actual = tpkg::lazy::sha256_hex(&bytes);
+                                    let pinned = pin.sha256.to_lowercase();
+                                    if actual != pinned {
+                                        return fail(
+                                            EX_TEBAKO_SHA,
+                                            format!(
+                                                "{sidecar_url} hashes {actual} but the release index pins {pinned} — the release is inconsistent; nothing was installed"
+                                            ),
+                                        );
+                                    }
+                                    let text = String::from_utf8(bytes).map_err(|_| {
+                                        ShimError::new(
+                                            EX_TEBAKO_MANIFEST,
+                                            format!("{sidecar_url}: the blksum sidecar is not UTF-8"),
+                                        )
+                                    })?;
+                                    let sum = tpkg::lazy::Blksum::parse(&text).map_err(|e| {
+                                        ShimError::new(
+                                            e.exit_code(),
+                                            format!("{sidecar_url}: {e}"),
+                                        )
+                                    })?;
+                                    let expected = image_expected.to_lowercase();
+                                    if sum.sha256 != expected {
+                                        return fail(
+                                            EX_TEBAKO_SHA,
+                                            format!(
+                                                "{sidecar_url} pins the whole image at {} but the release index pins {expected} — the release is inconsistent; nothing was installed",
+                                                sum.sha256
+                                            ),
+                                        );
+                                    }
+                                    LazyPlan::Lazy(Box::new(tpkg::lazy::LazySeed {
+                                        source: format!("{dir_url}/{image_asset}"),
+                                        sha256: sum.sha256.clone(),
+                                        blksum_sha256: pinned,
+                                        size_bytes: sum.size_bytes,
+                                        group_count: sum.group_count(),
+                                    }))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyPlan::Eager
+        };
+        if let LazyPlan::Fallback(reason) = &lazy_plan {
+            eprintln!(
+                "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — the release carries no blksum sidecar; fetching the env image whole (the loud eager fallback, spec 39 §7)"
+            );
+            journal(
+                &ctx.home,
+                &format!("event=lazy-fallback runtime_ref={runtime_ref} reason={reason}"),
+            );
+        }
+        let has_image =
+            image.sha.is_some() && !matches!(lazy_plan, LazyPlan::Lazy(_));
         let items = if let Some(bundle) = &bundle {
             // The bundle era (spec 36 §4): ONE fetch — the
             // `<stem>.tar.gz` — carries the leg's bytes; its commit
@@ -2990,21 +3209,28 @@ fn download_runtime(
                 &runtime_ref,
             )?];
             if let Some(image_expected) = &image.sha {
-                items.push(runtime_facet_item(
-                    &dir_url,
-                    local,
-                    &image_asset,
-                    &image_asset,
-                    image_expected,
-                    image_sig.as_ref(),
-                    &trust,
-                    &sink,
-                    ctx,
-                    &tmp_dir,
-                    false,
-                    false,
-                    &runtime_ref,
-                )?);
+                match &lazy_plan {
+                    // The LAZY_SEEDING item: no bytes stream — the
+                    // commit writes the seed descriptor (spec 39 §7).
+                    LazyPlan::Lazy(seed) => {
+                        items.push(runtime_lazy_image_item(&image_asset, seed, &tmp_dir))
+                    }
+                    _ => items.push(runtime_facet_item(
+                        &dir_url,
+                        local,
+                        &image_asset,
+                        &image_asset,
+                        image_expected,
+                        image_sig.as_ref(),
+                        &trust,
+                        &sink,
+                        ctx,
+                        &tmp_dir,
+                        false,
+                        false,
+                        &runtime_ref,
+                    )?),
+                }
             }
             if let Some(facet) = &dll {
                 items.push(runtime_facet_item(
@@ -3080,6 +3306,7 @@ fn download_runtime(
                     .join(&image_asset)
                     .is_file()
                     .then(|| entry_dir.join(&image_asset)),
+                lazy: cached_lazy(&entry_dir, &image_asset),
                 abi: entry_meta(&entry_dir, &asset, "abi"),
                 implementation: entry_meta(&entry_dir, &asset, "implementation"),
                 language_version: entry_meta(&entry_dir, &asset, "language_version"),
@@ -3121,6 +3348,7 @@ fn download_runtime(
                 tebako_version: pref.tebako.clone(),
                 exe: entry_dir.join(&asset),
                 image: has_image.then(|| entry_dir.join(&image_asset)),
+                lazy: cached_lazy(&entry_dir, &image_asset),
                 abi: entry_meta(&entry_dir, &asset, "abi"),
                 implementation: entry_meta(&entry_dir, &asset, "implementation"),
                 language_version: entry_meta(&entry_dir, &asset, "language_version"),
