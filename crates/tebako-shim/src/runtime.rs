@@ -3111,7 +3111,7 @@ fn download_runtime(
                                     })?;
                                     let sum = tpkg::lazy::Blksum::parse(&text).map_err(|e| {
                                         ShimError::new(
-                                            e.exit_code(),
+                                            e.exit_code() as u8,
                                             format!("{sidecar_url}: {e}"),
                                         )
                                     })?;
