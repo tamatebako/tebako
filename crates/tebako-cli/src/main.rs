@@ -75,7 +75,8 @@ const USAGE: &str = "Usage:
   tebako publish --name <app> [--version <v>] --release tfs:github:<owner>/<repo>[:<tag>]
                (--payload <path> | --payload <triplet>=<path>)...
                [--standalone <triplet>=<path>]... [--sign[=<keyid>]]
-               [--upload-mirror <dir>] [--tap <org/homebrew-tap> [--tap-dir <dir>]]
+               [--upload-mirror <dir>] [--oci tfs+oci://<host>/<repo>]
+               [--tap <org/homebrew-tap> [--tap-dir <dir>]]
                [--registry-out <path>] [--skip-verify]";
 
 fn main() -> ExitCode {
@@ -376,7 +377,7 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
             "--name" => {
                 let Some(value) = args.get(i + 1) else {
                     return Err(CliExit::Usage(
-                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]".to_string(),
+                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci]".to_string(),
                     ));
                 };
                 opts.name = Some(value.clone());
@@ -390,20 +391,36 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
                 opts.default = true;
                 i += 1;
             }
+            "--channel" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(CliExit::Usage(
+                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci]".to_string(),
+                    ));
+                };
+                match value.as_str() {
+                    "oci" => opts.channel = Some(tebako_shim::config::BookChannel::Oci),
+                    other => {
+                        return Err(CliExit::Usage(format!(
+                            "unknown channel '{other}' — the one declared channel is 'oci' (spec 38 §11)"
+                        )))
+                    }
+                }
+                i += 2;
+            }
             other if registry_ref.is_none() && !other.starts_with("--") => {
                 registry_ref = Some(other);
                 i += 1;
             }
             _ => {
                 return Err(CliExit::Usage(
-                    "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]".to_string(),
+                    "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci]".to_string(),
                 ));
             }
         }
     }
     let Some(registry_ref) = registry_ref else {
         return Err(CliExit::Usage(
-            "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]"
+            "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci]"
                 .to_string(),
         ));
     };
@@ -792,6 +809,7 @@ fn parse_publish(args: &[String]) -> Result<tebako_cli::publish::PublishOptions,
     let mut homepage: Option<String> = None;
     let mut registry_out: Option<String> = None;
     let mut skip_verify = false;
+    let mut oci: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -837,6 +855,7 @@ fn parse_publish(args: &[String]) -> Result<tebako_cli::publish::PublishOptions,
             "--homepage" => homepage = Some(take_value(&mut i)?),
             "--registry-out" => registry_out = Some(take_value(&mut i)?),
             "--skip-verify" => skip_verify = true,
+            "--oci" => oci = Some(take_value(&mut i)?),
             other => return Err(CliExit::Usage(format!("unknown publish option '{other}'"))),
         }
         i += 1;
@@ -869,6 +888,7 @@ fn parse_publish(args: &[String]) -> Result<tebako_cli::publish::PublishOptions,
         homepage,
         registry_out,
         skip_verify,
+        oci,
     })
 }
 
@@ -888,6 +908,9 @@ fn run_publish(args: &[String]) -> Result<(), CliExit> {
     }
     if let Some(signer) = &outcome.signer {
         println!("  signed (keyid {signer}): {} .asc", outcome.ascs.len());
+    }
+    for origin in &outcome.oci_refs {
+        println!("  oci {origin}");
     }
     if let Some(path) = &outcome.registry_path {
         println!("  registry {}", path.display());

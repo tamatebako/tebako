@@ -107,6 +107,7 @@ fn base_opts(fx: &Fixture, name: &str) -> PublishOptions {
         homepage: None,
         registry_out: Some(fx.work.join("tpkg-registry.yaml").display().to_string()),
         skip_verify: false,
+        oci: None,
     }
 }
 
@@ -609,4 +610,287 @@ fn publish_ships_data_payloads_with_no_entrypoints() {
         !registry.contains("entrypoints"),
         "a data payload declares no entrypoints: {registry}"
     );
+}
+
+// ---------- the OCI dual-publish leg (spec 38 §7/§11) ----------
+
+/// A scripted OCI sink: records every request, answers a digest-pinned
+/// origin (the shape production reports); `skip_tags` answers the
+/// idempotent re-publish skip for the named tags.
+struct ScriptedSink {
+    requests: std::sync::Mutex<Vec<publish::OciPushRequest>>,
+    skip_tags: Vec<String>,
+}
+
+impl ScriptedSink {
+    fn new() -> ScriptedSink {
+        ScriptedSink {
+            requests: std::sync::Mutex::new(Vec::new()),
+            skip_tags: Vec::new(),
+        }
+    }
+
+    fn call(
+        &self,
+        req: &publish::OciPushRequest,
+    ) -> Result<publish::OciPushResult, tebako_cli::error::TebakoError> {
+        let skipped = self.skip_tags.contains(&req.tag);
+        let origin = format!(
+            "tfs+oci://{}/{}@sha256:{}",
+            req.host,
+            req.repo,
+            "d".repeat(64)
+        );
+        self.requests.lock().unwrap().push(req.clone());
+        Ok(publish::OciPushResult { origin, skipped })
+    }
+
+    fn taken(&self) -> Vec<publish::OciPushRequest> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+#[test]
+fn per_triplet_publish_with_oci_pushes_and_mirrors_the_rows() {
+    let fx = Fixture::new("ocitriplet");
+    let mac = write_payload(
+        &fx,
+        "app-1.0-macos-arm64.tfs",
+        &app_manifest_yaml("app", "1.0", &["app"]),
+    );
+    let linux = write_payload(
+        &fx,
+        "app-1.0-linux-gnu-x86_64.tfs",
+        &app_manifest_yaml("app", "1.0", &["app"]),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.payloads = vec![
+        PayloadInput {
+            triplet: Some(Platform::Aarch64Macos),
+            path: mac.clone(),
+        },
+        PayloadInput {
+            triplet: Some(Platform::X86_64LinuxGnu),
+            path: linux.clone(),
+        },
+    ];
+    opts.oci = Some("tfs+oci://oci.example/acme/app".to_string());
+
+    let sink = ScriptedSink::new();
+    let outcome = publish::publish_full_with_oci_sink(
+        &opts,
+        &fx.home,
+        &fx.work,
+        Some(&fx.shim_binary),
+        &|req| sink.call(req),
+    )
+    .unwrap();
+
+    let reqs = sink.taken();
+    assert_eq!(reqs.len(), 2, "one §3 artifact per payload: {reqs:?}");
+    assert_eq!(reqs[0].host, "oci.example");
+    assert_eq!(reqs[0].repo, "acme/app");
+    assert_eq!(reqs[0].tag, "1.0-aarch64-macos");
+    assert_eq!(reqs[1].tag, "1.0-x86_64-linux-gnu");
+    assert!(matches!(
+        reqs[0].class,
+        tebako_resolve::ArtifactClass::Payload
+    ));
+    // the §3 annotation map mirrors the L3 subset
+    let ann = &reqs[0].annotations;
+    assert_eq!(ann.title.as_deref(), Some("app-1.0-macos-arm64.tfs"));
+    assert_eq!(ann.name.as_deref(), Some("app"));
+    assert_eq!(ann.version.as_deref(), Some("1.0"));
+    assert_eq!(ann.kind.as_deref(), Some("app"));
+    assert_eq!(ann.triplet.as_deref(), Some("aarch64-macos"));
+    assert_eq!(ann.entrypoints.as_deref(), Some("app"));
+    let rr = ann.runtime_requirement.as_deref().unwrap();
+    assert!(rr.contains("\"engine\":\"ruby\""), "{rr}");
+    assert!(rr.contains("\"constraint\":\""), "{rr}");
+    // the SAME staged bytes the release leg uploaded
+    assert_eq!(reqs[0].bytes, fs::read(&mac).unwrap());
+    assert_eq!(reqs[1].bytes, fs::read(&linux).unwrap());
+
+    // the registry rows mirror the per-triplet oci: locator
+    let registry = registry_at(&fx);
+    let v = registry.payload("app").unwrap().version("1.0").unwrap();
+    let tebako_resolve::RegistryPlatforms::PerTriplet(map) = &v.platforms else {
+        panic!("per-triplet platforms");
+    };
+    assert_eq!(
+        map[&Platform::Aarch64Macos].oci.as_deref(),
+        Some("tfs+oci://oci.example/acme/app:1.0-aarch64-macos")
+    );
+    assert_eq!(
+        map[&Platform::X86_64LinuxGnu].oci.as_deref(),
+        Some("tfs+oci://oci.example/acme/app:1.0-x86_64-linux-gnu")
+    );
+    // …and the release.ref stays the primary (dual publish, §11)
+    assert_eq!(v.release.r#ref, "tfs:github:acme/app:1.0");
+
+    // the outcome records the digest-pinned origins
+    assert_eq!(outcome.oci_refs.len(), 2);
+    assert!(outcome.oci_refs[0].starts_with("tfs+oci://oci.example/acme/app@sha256:"));
+}
+
+#[test]
+fn signed_publish_with_oci_pushes_the_signature_siblings() {
+    let fx = Fixture::new("ocisigned");
+    let payload = write_payload(
+        &fx,
+        "app-1.0.tfs",
+        &app_manifest_yaml("app", "1.0", &["app"]),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.payloads.push(PayloadInput {
+        triplet: None,
+        path: payload.clone(),
+    });
+    opts.sign = Some(None); // the press-local key
+    opts.oci = Some("tfs+oci://oci.example/acme/app".to_string());
+
+    let sink = ScriptedSink::new();
+    let outcome = publish::publish_full_with_oci_sink(
+        &opts,
+        &fx.home,
+        &fx.work,
+        Some(&fx.shim_binary),
+        &|req| sink.call(req),
+    )
+    .unwrap();
+
+    let sha = tebako_resolve::sha256_hex(&fs::read(&payload).unwrap());
+    let reqs = sink.taken();
+    assert_eq!(reqs.len(), 2, "the payload + its signature sibling");
+    // the universal payload rides the <version> tag
+    assert_eq!(reqs[0].tag, "1.0");
+    assert_eq!(reqs[0].annotations.triplet.as_deref(), Some("universal"));
+    // the sibling tag keys on the SIGNED BLOB's digest (spec 38 §3)
+    let sig = &reqs[1];
+    assert!(matches!(
+        sig.class,
+        tebako_resolve::ArtifactClass::Signature
+    ));
+    assert_eq!(sig.tag, tebako_resolve::signature_tag(&sha));
+    assert_eq!(sig.annotations.title.as_deref(), Some("app-1.0.tfs.asc"));
+    assert_eq!(
+        sig.annotations.signature_keyid.as_deref(),
+        Some(outcome.signer.as_deref().unwrap())
+    );
+    assert_eq!(
+        sig.annotations.signature_subject.as_deref(),
+        Some(format!("sha256:{sha}").as_str())
+    );
+    assert_eq!(
+        sig.bytes,
+        fs::read(fx.work.join("mirror/1.0/app-1.0.tfs.asc")).unwrap()
+    );
+
+    // spec 38 §7's row mirror is per-triplet only: the universal row
+    // keeps the primary ref alone, and the publish says so
+    let registry = registry_at(&fx);
+    let v = registry.payload("app").unwrap().version("1.0").unwrap();
+    assert!(matches!(
+        v.platforms,
+        tebako_resolve::RegistryPlatforms::Universal
+    ));
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("row mirror is per-triplet only")),
+        "{:?}",
+        outcome.notes
+    );
+}
+
+#[test]
+fn oci_republish_skips_and_sink_errors_propagate() {
+    let fx = Fixture::new("ociskip");
+    let payload = write_payload(
+        &fx,
+        "app-1.0-macos-arm64.tfs",
+        &app_manifest_yaml("app", "1.0", &["app"]),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.payloads.push(PayloadInput {
+        triplet: Some(Platform::Aarch64Macos),
+        path: payload,
+    });
+    opts.oci = Some("tfs+oci://oci.example/acme/app".to_string());
+
+    // the tag already names these bytes: the idempotent skip is a note,
+    // never an error
+    let mut sink = ScriptedSink::new();
+    sink.skip_tags = vec!["1.0-aarch64-macos".to_string()];
+    let outcome = publish::publish_full_with_oci_sink(
+        &opts,
+        &fx.home,
+        &fx.work,
+        Some(&fx.shim_binary),
+        &|req| sink.call(req),
+    )
+    .unwrap();
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("idempotent re-publish skip")),
+        "{:?}",
+        outcome.notes
+    );
+
+    // a sink failure (production: OciTagConflict's 69) propagates
+    // verbatim — publish never retries, never downgrades
+    let err = publish::publish_full_with_oci_sink(
+        &opts,
+        &fx.home,
+        &fx.work,
+        Some(&fx.shim_binary),
+        &|_req| {
+            Err(tebako_cli::error::TebakoError::new(
+                "OciTagConflict: tag moved".to_string(),
+                69,
+            ))
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 69);
+    assert!(err.message.contains("OciTagConflict"), "{err:?}");
+}
+
+#[test]
+fn the_oci_option_names_the_bare_repo_only() {
+    let fx = Fixture::new("ociusage");
+    let payload = write_payload(
+        &fx,
+        "app-1.0.tfs",
+        &app_manifest_yaml("app", "1.0", &["app"]),
+    );
+    let hex = "a".repeat(64);
+    for bad in [
+        "tfs+oci://oci.example/acme/app:1.0".to_string(),
+        format!("tfs+oci://oci.example/acme/app@sha256:{hex}"),
+        format!("tfs+oci://oci.example/acme/app?sha256={hex}"),
+        "tfs:github:acme/app:1.0".to_string(),
+    ] {
+        let mut opts = base_opts(&fx, "app");
+        opts.payloads = vec![PayloadInput {
+            triplet: None,
+            path: payload.clone(),
+        }];
+        opts.oci = Some(bad.clone());
+        let sink = ScriptedSink::new();
+        let err = publish::publish_full_with_oci_sink(
+            &opts,
+            &fx.home,
+            &fx.work,
+            Some(&fx.shim_binary),
+            &|req| sink.call(req),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, 64, "{bad}: {err:?}");
+        assert!(err.message.contains("bare tfs+oci://"), "{bad}: {err:?}");
+        assert!(sink.taken().is_empty(), "{bad}: nothing pushed");
+    }
 }

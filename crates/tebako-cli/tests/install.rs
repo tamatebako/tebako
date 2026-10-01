@@ -152,6 +152,7 @@ fn add_registry_book_keys_round_trip_and_render() {
         name: Some("bookish".to_string()),
         require_signed: true,
         default: true,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
     assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
@@ -176,6 +177,7 @@ fn add_registry_book_keys_round_trip_and_render() {
         name: Some("bookish".to_string()),
         require_signed: false,
         default: true,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
     assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Updated);
@@ -311,6 +313,7 @@ fn setup_refuses_to_seed_a_second_default() {
         name: Some("mine".to_string()),
         require_signed: false,
         default: true,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
 
@@ -428,6 +431,7 @@ fn install_qualified_name_scopes_to_the_named_registry() {
         name: Some(n.to_string()),
         require_signed: false,
         default: false,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     install::add_registry_opts(&fx.home, &reg_a, &name("one")).unwrap();
     install::add_registry_opts(&fx.home, &reg_b, &name("two")).unwrap();
@@ -457,6 +461,7 @@ fn install_qualified_name_unknown_alias_is_the_named_error() {
         name: Some("mine".to_string()),
         require_signed: false,
         default: false,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
 
@@ -477,6 +482,7 @@ fn install_qualified_name_scoped_not_found_names_the_registry() {
         name: Some("mine".to_string()),
         require_signed: false,
         default: false,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
 
@@ -507,6 +513,7 @@ fn two_registries(fx: &Fixture, versions: &[(&str, &[u8])]) -> (String, String) 
         name: Some(n.to_string()),
         require_signed: false,
         default: false,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     let p_a = fx.payload("app-a.tfs", versions[0].1);
     let p_b = fx.payload("app-b.tfs", versions[1].1);
@@ -600,6 +607,7 @@ fn rebind_to_bytes_the_new_registry_does_not_vouch_for_is_refused() {
         name: Some(n.to_string()),
         require_signed: false,
         default: false,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     let reg_a = fx.registry("one.yaml", &registry_yaml("app", "1.0", &pa, Some("1.0")));
     let reg_b = fx.registry("two.yaml", &registry_yaml("app", "1.0", &pb, Some("1.0")));
@@ -1540,6 +1548,7 @@ fn dep_walk_registry_pin_scopes_the_edge_to_the_named_registry() {
         name: Some(n.to_string()),
         require_signed: false,
         default: false,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     install::add_registry(&fx.home, &app_reg).unwrap();
     install::add_registry_opts(&fx.home, &one_reg, &named("one")).unwrap();
@@ -2395,6 +2404,7 @@ fn require_signed_opts(name: &str) -> tebako_shim::config::AddRegistryOptions {
         name: Some(name.to_string()),
         require_signed: true,
         default: false,
+        ..tebako_shim::config::AddRegistryOptions::default()
     }
 }
 
@@ -2434,6 +2444,7 @@ fn require_signed_registry_refuses_unsigned_rows() {
         name: Some("priv".to_string()),
         require_signed: false,
         default: false,
+        ..tebako_shim::config::AddRegistryOptions::default()
     };
     let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
     assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Updated);
@@ -2489,4 +2500,105 @@ fn require_signed_registry_governs_dependency_edges() {
         "the provider's registry is named: {err:?}"
     );
     assert!(!fx.payloads_dir().join("inkscape/1.4.3.tfs").exists());
+}
+
+// ---------- channel: oci row resolution (spec 38 §11) ----------
+
+/// A per-triplet registry row for the HOST triplet: `oci` present or
+/// absent per the leg — the fail-closed assertions need the select() to
+/// land on a row on every CI platform.
+fn per_triplet_registry_yaml(name: &str, version: &str, oci: Option<&str>) -> String {
+    let triplet = tpkg::Platform::host().as_triplet();
+    let oci_field = oci
+        .map(|locator| format!(", oci: '{locator}'"))
+        .unwrap_or_default();
+    format!(
+        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: {version}\n        platforms:\n          {triplet}: {{artifact: {name}-{version}-x.tfs, sha256: '{sha}'{oci_field}}}\n        release: {{ref: 'tfs:github:acme/{name}:{version}'}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{name}]\n    default: {version}\n",
+        sha = sha(b'a')
+    )
+}
+
+fn oci_channel_opts() -> tebako_shim::config::AddRegistryOptions {
+    tebako_shim::config::AddRegistryOptions {
+        channel: Some(tebako_shim::config::BookChannel::Oci),
+        ..tebako_shim::config::AddRegistryOptions::default()
+    }
+}
+
+#[test]
+fn channel_oci_resolves_the_rows_oci_locator() {
+    let fx = Fixture::new("chanoci");
+    // The row's oci: locator names a loopback registry nothing listens
+    // on: reaching the CONNECT failure proves the plan resolved the OCI
+    // channel (a release.ref fallback would have named the github
+    // service instead).
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &per_triplet_registry_yaml("app", "1.0", Some("tfs+oci://127.0.0.1:9/mirror/app:1.0-x")),
+    );
+    install::add_registry_opts(&fx.home, &reg_ref, &oci_channel_opts()).unwrap();
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    // The exact failure depends on the host's docker config (a
+    // credsStore answers 65 before the connect; without one the
+    // connection refused is a 69) — either way the OCI channel's
+    // locator is the one the failure names, never the release.ref.
+    assert!(
+        err.message.contains("127.0.0.1:9"),
+        "the OCI channel's locator is the one resolved: {err:?}"
+    );
+    assert!(!err.message.contains("github"), "{err:?}");
+}
+
+#[test]
+fn channel_oci_fails_closed_on_a_row_without_the_oci_locator() {
+    let fx = Fixture::new("chanoci-missing");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &per_triplet_registry_yaml("app", "1.0", None),
+    );
+    install::add_registry_opts(&fx.home, &reg_ref, &oci_channel_opts()).unwrap();
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(err.message.contains("channel: oci"), "{err:?}");
+    assert!(err.message.contains("carries no `oci:` locator"), "{err:?}");
+    assert!(
+        err.message.contains(&reg_ref),
+        "the registry is named: {err:?}"
+    );
+    assert!(err.message.contains("app 1.0"), "the row is named: {err:?}");
+}
+
+#[test]
+fn channel_oci_fails_closed_on_a_universal_row() {
+    let fx = Fixture::new("chanoci-univ");
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
+    );
+    install::add_registry_opts(&fx.home, &reg_ref, &oci_channel_opts()).unwrap();
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(err.message.contains("universal"), "{err:?}");
+    assert!(err.message.contains("channel: oci"), "{err:?}");
+}
+
+#[test]
+fn a_row_without_the_channel_declaration_never_reads_the_oci_field() {
+    let fx = Fixture::new("chanoci-off");
+    // The SAME row shape (an oci: mirror present) resolves through the
+    // primary release.ref when the book declares no channel — spec 38
+    // §11's declared-never-probed law, bit for bit. The release.ref is
+    // the github service here: the failure names it, never the OCI
+    // host.
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &per_triplet_registry_yaml("app", "1.0", Some("tfs+oci://127.0.0.1:9/mirror/app:1.0-x")),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(
+        !err.message.contains("127.0.0.1:9"),
+        "the oci: field is inert without the declaration: {err:?}"
+    );
 }
