@@ -159,8 +159,7 @@ impl RemoteByteSource {
         // Drop the debris of a crashed previous run up front (the scan
         // re-validates on every open regardless — this keeps the
         // directory tight).
-        let _ =
-            scan_blocks(blocks, size_bytes).map_err(|e| SourceError::io(e.to_string()))?;
+        let _ = scan_blocks(blocks, size_bytes).map_err(|e| SourceError::io(e.to_string()))?;
         Ok(RemoteByteSource {
             fetch: None,
             blksum: None,
@@ -325,21 +324,13 @@ impl RemoteByteSource {
                 "group {index} of {} is not cached and this source is cache-only (offline at group granularity, spec 39 §6)",
                 self.origin
             ));
-            tebako_log::log!(
-                tebako_log::Level::Warn,
-                "tfs",
-                "lazy: {err}"
-            );
+            tebako_log::log!(tebako_log::Level::Warn, "tfs", "lazy: {err}");
             return Err(err);
         };
         let answer = match self.fetch_group_once(fetch.as_ref(), index) {
             Ok(answer) => answer,
             Err(err) => {
-                tebako_log::log!(
-                    tebako_log::Level::Warn,
-                    "tfs",
-                    "lazy: fetch failed: {err}"
-                );
+                tebako_log::log!(tebako_log::Level::Warn, "tfs", "lazy: fetch failed: {err}");
                 return Err(err);
             }
         };
@@ -360,9 +351,8 @@ impl RemoteByteSource {
         match answer {
             RangeFetchAnswer::Partial { bytes, etag } => {
                 self.learn_etag(etag);
-                let (_, want_len) =
-                    tpkg::lazy::group_span(self.size_bytes, index)
-                        .expect("an in-range group spans");
+                let (_, want_len) = tpkg::lazy::group_span(self.size_bytes, index)
+                    .expect("an in-range group spans");
                 if bytes.len() as u64 != want_len {
                     return Err(SourceError::fetch(format!(
                         "group {index} of {} arrived truncated ({} of {want_len} bytes)",
@@ -430,8 +420,8 @@ impl RemoteByteSource {
             if self.group_cached(index) {
                 continue;
             }
-            let (offset, len) = tpkg::lazy::group_span(self.size_bytes, index)
-                .expect("an in-range group spans");
+            let (offset, len) =
+                tpkg::lazy::group_span(self.size_bytes, index).expect("an in-range group spans");
             let slice = &bytes[offset as usize..(offset + len) as usize];
             if !self.group_verified(blksum, index, slice) {
                 return Err(SourceError::integrity(format!(
@@ -721,10 +711,7 @@ mod tests {
         // The seeded group serves without a fetch and without
         // re-verification (the per-run law: trusted once written).
         let got = offline.read_at(tpkg::lazy::LAZY_GROUP_SIZE, 128).unwrap();
-        assert_eq!(
-            got,
-            &bytes[tpkg::lazy::LAZY_GROUP_SIZE as usize..][..128]
-        );
+        assert_eq!(got, &bytes[tpkg::lazy::LAZY_GROUP_SIZE as usize..][..128]);
         assert_eq!(mock.request_count(), requests_before);
         // A miss is the named fetch failure — never a fetch without
         // the digest table, never a zero-fill.

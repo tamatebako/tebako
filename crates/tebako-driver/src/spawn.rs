@@ -1160,8 +1160,9 @@ fn runtime_facts(rt: &CachedRuntime, runtime_root: &str) -> Result<Arc<RuntimeFa
         // thread: a scratch read owes the entry nothing.
         Some(seeding) => {
             let offline = crate::lazy::offline(std::env::var("TEBAKO_OFFLINE").ok());
-            let source = crate::lazy::open_lazy_source(&rt.dir, &seeding.image_base, &seeding.seed, offline)
-                .map_err(|e| e.message)?;
+            let source =
+                crate::lazy::open_lazy_source(&rt.dir, &seeding.image_base, &seeding.seed, offline)
+                    .map_err(|e| e.message)?;
             let byte_source: std::sync::Arc<dyn tfs::source::ByteSource> = source;
             tfs::mount::build_from_source(byte_source, &point).map_err(|e| {
                 format!(

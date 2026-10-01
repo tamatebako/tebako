@@ -570,11 +570,7 @@ impl SeedState {
     /// Every group seeded — the seal may commit.
     pub fn is_complete(&self) -> bool {
         self.present.len() as u64 == self.seed.group_count
-            && self
-                .present
-                .iter()
-                .enumerate()
-                .all(|(i, &g)| g == i as u64)
+            && self.present.iter().enumerate().all(|(i, &g)| g == i as u64)
     }
 
     /// Seeded percentage, integer (the listing surfaces' `(seeding
@@ -698,7 +694,8 @@ pub fn seal_entry(entry_dir: &Path, image_base: &str) -> Result<SealOutcome, Laz
                 if n == 0 {
                     break;
                 }
-                out.write_all(&buf[..n]).map_err(|e| io("write", &part, e))?;
+                out.write_all(&buf[..n])
+                    .map_err(|e| io("write", &part, e))?;
                 hasher.update(&buf[..n]);
             }
         }
@@ -729,8 +726,11 @@ pub fn seal_entry(entry_dir: &Path, image_base: &str) -> Result<SealOutcome, Laz
     // coreutils shape, byte-identical in meaning).
     let anchor = entry_dir.join(format!("{image_base}.sha256"));
     let anchor_part = entry_dir.join(format!("{image_base}.{}.sha256.part", std::process::id()));
-    std::fs::write(&anchor_part, format!("{}  {image_base}\n", state.seed.sha256))
-        .map_err(|e| io("write", &anchor_part, e))?;
+    std::fs::write(
+        &anchor_part,
+        format!("{}  {image_base}\n", state.seed.sha256),
+    )
+    .map_err(|e| io("write", &anchor_part, e))?;
     std::fs::rename(&anchor_part, &anchor).map_err(|e| io("rename", &anchor, e))?;
     // The origin marker (the eager shape): the runtime_ref line flows
     // from the exe's entry-level marker when one declares it.
@@ -745,7 +745,10 @@ pub fn seal_entry(entry_dir: &Path, image_base: &str) -> Result<SealOutcome, Laz
     if let Some(runtime_ref) = runtime_ref {
         origin.push_str(&format!("runtime_ref={runtime_ref}\n"));
     }
-    origin.push_str(&format!("url={}\nsha256={}\n", state.seed.source, state.seed.sha256));
+    origin.push_str(&format!(
+        "url={}\nsha256={}\n",
+        state.seed.source, state.seed.sha256
+    ));
     let origin_path = entry_dir.join(format!("{image_base}.origin"));
     let origin_part = entry_dir.join(format!("{image_base}.{}.origin.part", std::process::id()));
     std::fs::write(&origin_part, origin).map_err(|e| io("write", &origin_part, e))?;
@@ -1239,7 +1242,10 @@ mod tests {
         let err = seal_entry(&dir, image).unwrap_err();
         assert!(matches!(err, LazyError::Sha256Mismatch(_)), "{err:?}");
         assert_eq!(err.exit_code(), 70);
-        assert!(err.to_string().contains("the verified groups were kept"), "{err}");
+        assert!(
+            err.to_string().contains("the verified groups were kept"),
+            "{err}"
+        );
         // The tmp dropped; the groups and the descriptor KEEP.
         assert!(blocks_dir(&dir, image).join(block_name(0)).is_file());
         assert!(descriptor_path(&dir, image).is_file());
@@ -1261,7 +1267,10 @@ mod tests {
         let err = seal_entry(&dir, "img.tfs").unwrap_err();
         assert!(matches!(err, LazyError::LazyUnavailable(_)), "{err:?}");
         assert_eq!(err.exit_code(), 69);
-        assert!(err.to_string().contains("is not a LAZY_SEEDING entry"), "{err}");
+        assert!(
+            err.to_string().contains("is not a LAZY_SEEDING entry"),
+            "{err}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
