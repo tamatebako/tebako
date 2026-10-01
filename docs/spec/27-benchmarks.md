@@ -634,6 +634,45 @@ Compilation failure gaps both java arms with the reason named.
   runtime suite on the host; the static musl runtime exes execute
   there unchanged. The metanorma suite keeps its containerized shape.
 
+### 10.5 The lazy arm — spec 39 §10's flip data (added 2026-10-01)
+
+The **lazy suite** (`benchmarks/suite-lazy.yaml`, suite name
+`runtime-lazy-vs-eager`) answers the default-flip question of spec 39
+§10: what does a LAZY_SEEDING first boot cost against the ordinary
+whole-image mount — per workload, cold and warm, the touch-everything
+pathology included. One new arm kind:
+
+| kind | What it is |
+|------|-----------|
+| `runtime-exe-lazy` | The same runtime pair as `runtime-exe` (same `runtime:` ref), staged as a LAZY_SEEDING store entry: the exe present, the env image ABSENT, the spec 39 §4 seed descriptor written with its `source` naming the harness's in-process loopback Range fixture (the spec 38 §8 carve-out — a plain-HTTP `127.0.0.1` server serving the acquired image bytes and its in-leg-generated blksum sidecar). The measured child boots the ordinary spec 17 handoff (`TEBAKO_RUNTIME_IMAGE` names the absent image; the driver state-detects the seeding entry) — no opt-in env rides the run. |
+
+- **The arms are eager vs lazy, named outside the §10.1 pairing law**:
+  target ids `eager-<lang>` (a plain `runtime-exe`) and `lazy-<lang>`
+  carry no `on-system-`/`tebako-` prefix, so the pairing/probe machinery
+  does not engage (the two arms are byte-identical pairs by
+  construction — the probe would compare a runtime against itself).
+  Workload ids carry NO language prefix (`boot`, `fib`, `ioread`,
+  `treewalk`), so the §10.2 routing law runs every workload on every
+  target. The suite's `baseline:` is the eager arm — the report's
+  speedup column IS the flip number.
+- **Cold reseeds the entry.** The §5 wipe discipline for the lazy arm
+  removes the block cache and any sealed image, then restores the seed
+  descriptor from the pristine copy staged at acquisition: every cold
+  cell pays the on-demand seeding boot from an empty entry, the seal
+  thread's between-runs progress never leaking into a measured cell.
+- **The pathology arm is a workload, not a mode.** `treewalk` reads
+  EVERY file of the runtime's own tree (the touch-everything worst
+  case of spec 39 §10); its lazy-arm wall time bounded against the
+  eager arm's is the no-regression-class evidence, and the fetched-byte
+  bound (≤ eager bytes + one sidecar + per-group overhead) is asserted
+  in the byte-source contract tier, not here.
+- **The pair's download stays acquisition** (§10.3's rule): both arms
+  boot staged pairs. The loopback fixture keeps WAN variance out of
+  the machinery measurement; the full-matrix numbers against factory
+  releases that serve the sidecar natively are the bench-runner's
+  legs (spec 39 §10's rule needs every tier-1 platform before the
+  default flips).
+
 ## 11. Publication: bench-history, the latest mirrors, and the trend feed (added 2026-09-17)
 
 The `benchmark.yml` fan-in publishes on release runs AND on
