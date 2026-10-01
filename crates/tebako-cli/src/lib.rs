@@ -1354,7 +1354,7 @@ fn seal_one(
     loop {
         let missing = source.missing_groups().map_err(|e| {
             prog.download_abort();
-            seal_lazy_error(e)
+            seal_source_error(&lazy.image_base, e)
         })?;
         if missing.is_empty() {
             break;
