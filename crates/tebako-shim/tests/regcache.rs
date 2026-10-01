@@ -403,7 +403,7 @@ mod oci {
         let body = format!(
             r#"{{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
   "artifactType": "application/vnd.tebako.registry.v1",
-  "config": {{"mediaType": "application/vnd.oci.empty.v1+json", "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fcd02fe2d1a42cb2d57b9b8b37d", "size": 2}},
+  "config": {{"mediaType": "application/vnd.oci.empty.v1+json", "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "size": 2}},
   "layers": [{{"mediaType": "application/vnd.tebako.registry.v1+yaml", "digest": "sha256:{layer_hex}", "size": {}}}],
   "annotations": {{"org.opencontainers.image.title": "tpkg-registry.yaml"}}}}"#,
             yaml.len(),

@@ -14,9 +14,13 @@ use tebako_json::{parse as json_parse, Value as JsonValue};
 pub const MANIFEST_MT: &str = "application/vnd.oci.image.manifest.v1+json";
 /// The empty config's media type.
 pub const EMPTY_CONFIG_MT: &str = "application/vnd.oci.empty.v1+json";
-/// The empty config's canonical digest (sha256 of `{}`).
+/// The empty config's canonical digest (sha256 of the two bytes `{}` —
+/// `44136fa3…caaff8a`; the digest the OCI image spec's own example
+/// shows for the empty config is a known upstream erratum and does NOT
+/// hash `{}` — real registries (zot) hash the blob themselves, so only
+/// the true digest round-trips).
 pub const EMPTY_CONFIG_DIGEST: &str =
-    "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fcd02fe2d1a42cb2d57b9b8b37d";
+    "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
 
 // The annotation keys (spec 38 §3 — annotations mirror resolution
 // fields only; the in-image L1 manifest stays authoritative).
@@ -272,6 +276,59 @@ impl Manifest {
         }
         Ok(layer)
     }
+
+    /// The publish half of the §3 model (spec 38 §7): render the manifest
+    /// bytes for one artifact — the empty config, EXACTLY ONE layer (the
+    /// descriptor names the file's raw bytes; its digest IS the sha256),
+    /// and the L3-mirror annotations. The render is DETERMINISTIC (fixed
+    /// field order, canonical spacing): the same inputs produce the same
+    /// bytes on every machine, so the manifest digest is the write-once
+    /// comparison key of the publish flow. The title annotation is the
+    /// shape law's one REQUIRED field — an absent or empty one is the
+    /// same refusal the read side names.
+    pub fn render(
+        class: ArtifactClass,
+        layer: &Descriptor,
+        annotations: &Annotations,
+    ) -> Result<Vec<u8>, String> {
+        let title = annotations
+            .title
+            .as_deref()
+            .filter(|t| !t.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "the required {ANNOTATION_TITLE} annotation is missing (the served file name)"
+                )
+            })?;
+        let mut out = format!(
+            "{{\"schemaVersion\":2,\"mediaType\":\"{MANIFEST_MT}\",\"artifactType\":\"{}\",\"config\":{{\"mediaType\":\"{EMPTY_CONFIG_MT}\",\"digest\":\"{EMPTY_CONFIG_DIGEST}\",\"size\":2}},\"layers\":[{{\"mediaType\":\"{}\",\"digest\":\"{}\",\"size\":{}}}],\"annotations\":{{\"{ANNOTATION_TITLE}\":\"{}\"",
+            class.artifact_type(),
+            tebako_json::escape(&layer.media_type),
+            tebako_json::escape(&layer.digest),
+            layer.size,
+            tebako_json::escape(title),
+        );
+        for (key, value) in [
+            (ANNOTATION_NAME, &annotations.name),
+            (ANNOTATION_VERSION, &annotations.version),
+            (ANNOTATION_KIND, &annotations.kind),
+            (ANNOTATION_TRIPLET, &annotations.triplet),
+            (ANNOTATION_ENTRYPOINTS, &annotations.entrypoints),
+            (
+                ANNOTATION_RUNTIME_REQUIREMENT,
+                &annotations.runtime_requirement,
+            ),
+            (ANNOTATION_RUNTIME_SHARD, &annotations.runtime_shard),
+            (ANNOTATION_SIGNATURE_KEYID, &annotations.signature_keyid),
+            (ANNOTATION_SIGNATURE_SUBJECT, &annotations.signature_subject),
+        ] {
+            if let Some(value) = value {
+                out.push_str(&format!(",\"{key}\":\"{}\"", tebako_json::escape(value)));
+            }
+        }
+        out.push_str("}}");
+        Ok(out.into_bytes())
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -298,6 +355,18 @@ pub fn signature_tag(signed_blob_sha256: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The canonical constant IS the sha256 of the two bytes `{}` —
+    /// pinned against the hasher so a spec-example erratum can never
+    /// ride in again (real registries hash the config blob themselves).
+    #[test]
+    fn the_empty_config_digest_hashes_the_canonical_bytes() {
+        use sha2::Digest as _;
+        assert_eq!(
+            EMPTY_CONFIG_DIGEST,
+            format!("sha256:{:x}", sha2::Sha256::digest(b"{}"))
+        );
+    }
 
     fn manifest_json(artifact_type: &str, layer_mt: &str, title: Option<&str>) -> String {
         let title = title
@@ -427,6 +496,81 @@ mod tests {
         assert!(a.runtime_shard.is_none());
         m.validate_shape(ShapeExpectation::Class(ArtifactClass::Payload))
             .unwrap();
+    }
+
+    #[test]
+    fn the_render_round_trips_through_parse_and_the_shape_law() {
+        let layer = Descriptor {
+            media_type: ArtifactClass::Payload.layer_media_type().to_string(),
+            digest: format!("sha256:{}", "d".repeat(64)),
+            size: 42,
+        };
+        let annotations = Annotations {
+            title: Some("metanorma-1.2.3-linux-gnu-x86_64.tfs".to_string()),
+            name: Some("metanorma".to_string()),
+            version: Some("1.2.3".to_string()),
+            kind: Some("app".to_string()),
+            triplet: Some("x86_64-linux-gnu".to_string()),
+            entrypoints: Some("metanorma,mn2pdf".to_string()),
+            runtime_requirement: Some(
+                "{\"engine\":\"ruby\",\"constraint\":\">= 3.3\"}".to_string(),
+            ),
+            ..Annotations::default()
+        };
+        let bytes = Manifest::render(ArtifactClass::Payload, &layer, &annotations).unwrap();
+        let parsed = Manifest::parse(&bytes).unwrap();
+        assert_eq!(
+            parsed.artifact_type.as_deref(),
+            Some(ArtifactClass::Payload.artifact_type())
+        );
+        assert_eq!(parsed.config.media_type, EMPTY_CONFIG_MT);
+        assert_eq!(parsed.config.digest, EMPTY_CONFIG_DIGEST);
+        assert_eq!(parsed.layers, vec![layer.clone()]);
+        assert_eq!(parsed.annotations, annotations);
+        let validated = parsed
+            .validate_shape(ShapeExpectation::Class(ArtifactClass::Payload))
+            .unwrap();
+        assert_eq!(validated, &layer);
+        // determinism: the same inputs render the same bytes
+        assert_eq!(
+            Manifest::render(ArtifactClass::Payload, &layer, &annotations).unwrap(),
+            bytes
+        );
+        // the title is the shape law's one required annotation
+        let bare = Annotations {
+            title: None,
+            ..annotations.clone()
+        };
+        let err = Manifest::render(ArtifactClass::Payload, &layer, &bare).unwrap_err();
+        assert!(err.contains(ANNOTATION_TITLE), "{err}");
+    }
+
+    #[test]
+    fn the_render_carries_the_signature_annotations() {
+        let layer = Descriptor {
+            media_type: ArtifactClass::Signature.layer_media_type().to_string(),
+            digest: format!("sha256:{}", "e".repeat(64)),
+            size: 7,
+        };
+        let annotations = Annotations {
+            title: Some("tool-1.0.tfs.asc".to_string()),
+            signature_keyid: Some("0123456789abcdef".to_string()),
+            signature_subject: Some(format!("sha256:{}", "d".repeat(64))),
+            ..Annotations::default()
+        };
+        let bytes = Manifest::render(ArtifactClass::Signature, &layer, &annotations).unwrap();
+        let parsed = Manifest::parse(&bytes).unwrap();
+        parsed
+            .validate_shape(ShapeExpectation::Class(ArtifactClass::Signature))
+            .unwrap();
+        assert_eq!(
+            parsed.annotations.signature_keyid.as_deref(),
+            Some("0123456789abcdef")
+        );
+        assert_eq!(
+            parsed.annotations.signature_subject.as_deref(),
+            Some(format!("sha256:{}", "d".repeat(64)).as_str())
+        );
     }
 
     #[test]
