@@ -623,6 +623,7 @@ impl RegistryVersion {
                 map.get(&host).map(|e| PlatformSelection::Selected {
                     artifact: e.artifact.as_str(),
                     sha256: e.sha256.as_str(),
+                    oci: e.oci.as_deref(),
                 })
             }
         }
@@ -652,8 +653,15 @@ pub enum PlatformSelection<'a> {
     /// §1 no-`#` rule), pinned only when the release ref carries
     /// `?sha256=`.
     Universal,
-    /// The host triplet's declared artifact + sha256 pin.
-    Selected { artifact: &'a str, sha256: &'a str },
+    /// The host triplet's declared artifact + sha256 pin. `oci` mirrors
+    /// the artifact's `tfs+oci:` locator (spec 38 §7) — read only when
+    /// the book declares `channel: oci`; the sha256 pin binds both
+    /// channels.
+    Selected {
+        artifact: &'a str,
+        sha256: &'a str,
+        oci: Option<&'a str>,
+    },
 }
 
 // ---------------------------------------------------------------------
@@ -1127,6 +1135,7 @@ payloads:
             Some(PlatformSelection::Selected {
                 artifact: "metanorma-1.2.3-macos-arm64.tfs",
                 sha256: &"b".repeat(64),
+                oci: None,
             })
         );
         assert_eq!(
@@ -1134,6 +1143,7 @@ payloads:
             Some(PlatformSelection::Selected {
                 artifact: "metanorma-1.2.3-linux-gnu-x86_64.tfs",
                 sha256: &"a".repeat(64),
+                oci: None,
             })
         );
         // a triplet the registry does not publish → None (the caller's

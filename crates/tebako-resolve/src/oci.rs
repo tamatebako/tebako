@@ -84,6 +84,38 @@ impl<T: Transport> Http for OciTransport<'_, T> {
             on_progress,
         )
     }
+
+    fn post(
+        &self,
+        url: &str,
+        body: &[u8],
+        content_type: Option<&str>,
+        auth: tebako_oci::Auth<'_>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        let header = tebako_oci::authorization_header(auth);
+        self.0.post_raw(
+            url,
+            body,
+            content_type,
+            header.as_ref().map(|(k, v)| (*k, v.as_str())),
+        )
+    }
+
+    fn put(
+        &self,
+        url: &str,
+        body: &[u8],
+        content_type: &str,
+        auth: tebako_oci::Auth<'_>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        let header = tebako_oci::authorization_header(auth);
+        self.0.put_raw(
+            url,
+            body,
+            content_type,
+            header.as_ref().map(|(k, v)| (*k, v.as_str())),
+        )
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -284,6 +316,17 @@ fn named(alias: Option<&str>, looked_for: Option<String>, err: OciError) -> Reso
         OciError::DockerConfig(DockerConfigError::HelperUnsupported { host, helper }) => {
             ResolveError::DockerCredentialHelperUnsupported { host, helper }
         }
+        OciError::TagConflict {
+            origin,
+            tag,
+            existing,
+            attempted,
+        } => ResolveError::OciTagConflict {
+            origin,
+            tag,
+            existing,
+            attempted,
+        },
         OciError::Sha256Mismatch {
             origin,
             expected,
@@ -397,6 +440,55 @@ pub fn fetch_registry_file<T: Transport>(
         alias,
         ShapeExpectation::Class(ArtifactClass::RegistryIndex),
     )
+}
+
+// ---------------------------------------------------------------------
+// The push entry point (spec 38 §7)
+// ---------------------------------------------------------------------
+
+/// Place one §3 artifact under `tfs+oci://<host>/<repo>:<tag>` — the
+/// CLI's `--oci` publish leg. `bytes` are the SAME staged bytes the
+/// git-host release leg uploads (the layer digest IS the file's sha256
+/// trust anchor); `annotations` carries the L3 mirror with the title
+/// set. The client checks the tag write-once (a same-bytes re-publish
+/// is the idempotent skip, anything else the named 69), mounts or
+/// uploads the blob, and places the manifest — every request dancing at
+/// the `repository:<repo>:pull,push` scope. No registry alias rides a
+/// command-line reference (the credential chain's tier 1 has no name to
+/// match). Throttled answers ride tebako-http's backoff schedule,
+/// unchanged.
+pub fn push_artifact<T: Transport>(
+    transport: &T,
+    host: &str,
+    repo: &str,
+    tag: &str,
+    class: ArtifactClass,
+    annotations: &tebako_oci::Annotations,
+    bytes: &[u8],
+) -> Result<tebako_oci::push::PushOutcome, ResolveError> {
+    let book = OciBook::new(crate::credentials::book(), None, host);
+    let oci_transport = OciTransport(transport);
+    let client = Client::new(&oci_transport, &book);
+    let mut throttles = 0;
+    loop {
+        match tebako_oci::push::push_artifact(&client, host, repo, tag, class, annotations, bytes) {
+            Ok(outcome) => return Ok(outcome),
+            Err(OciError::Transport(FetchError::Throttled { retry_after, .. })) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(ResolveError::DownloadFailed {
+                        origin: format!("tfs+oci://{host}/{repo}:{tag}"),
+                        reason: format!(
+                            "still throttled after {} backoff rounds",
+                            tebako_http::THROTTLE_ROUNDS
+                        ),
+                    });
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
+            Err(e) => return Err(named(None, book.take_looked_for(), e)),
+        }
+    }
 }
 
 /// The manifest digest a reference resolves to right now (spec 38 §4's
@@ -696,6 +788,15 @@ mod tests {
                     actual: "a".into(),
                 },
                 "sha256 mismatch",
+            ),
+            (
+                OciError::TagConflict {
+                    origin: "o".into(),
+                    tag: "1.0".into(),
+                    existing: "sha256:aa".into(),
+                    attempted: "sha256:bb".into(),
+                },
+                "OciTagConflict",
             ),
         ];
         for (err, needle) in cases {

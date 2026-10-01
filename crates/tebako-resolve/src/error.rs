@@ -213,6 +213,16 @@ pub enum ResolveError {
     /// helpers are shell-outs, forbidden by the no-shell-outs law (spec
     /// 38 §6). Exit class 65.
     DockerCredentialHelperUnsupported { host: String, helper: String },
+    /// The publish path's write-once law (spec 38 §7): the tag already
+    /// stands and names DIFFERENT bytes than this push would place.
+    /// Tags are mutable in the OCI model; tebako treats them as
+    /// immutable by policy — re-run with a fresh version. Exit class 69.
+    OciTagConflict {
+        origin: String,
+        tag: String,
+        existing: String,
+        attempted: String,
+    },
     /// TEBAKO_OFFLINE is set and the entry is not cached (spec 05 §4:
     /// cache hit or hard error).
     Offline { what: String },
@@ -359,6 +369,15 @@ impl fmt::Display for ResolveError {
             ResolveError::DockerCredentialHelperUnsupported { host, helper } => write!(
                 f,
                 "DockerCredentialHelperUnsupported: the docker config answers '{host}' through the '{helper}' credential helper — helpers are shell-outs, forbidden by the no-shell-outs law; move the token into a `credentials:` entry's env var in ~/.tebako/config.yaml"
+            ),
+            ResolveError::OciTagConflict {
+                origin,
+                tag,
+                existing,
+                attempted,
+            } => write!(
+                f,
+                "OciTagConflict: {origin} tag '{tag}' already points at {existing} — pushing {attempted} would move the tag (write-once, spec 38 §7); re-publish of identical bytes is an idempotent skip, otherwise publish a new version or a new tag"
             ),
             ResolveError::Offline { what } => write!(
                 f,

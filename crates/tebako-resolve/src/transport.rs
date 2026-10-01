@@ -136,6 +136,42 @@ pub trait Transport {
         self.stream_with_header(url, header, writer, on_progress)
     }
 
+    /// A raw, UNCLASSIFIED POST for the OCI publish path (spec 38 §7):
+    /// the blob-mount / upload-session open, where 201, 202, and 401 are
+    /// all answers the caller reads itself. `header` is the
+    /// caller-decided credential, attached verbatim. The default is a
+    /// named refusal — a read-only mock must never pose as a registry;
+    /// the production transport overrides with tebako-http's
+    /// `post_raw` (the https-or-loopback policy included).
+    fn post_raw(
+        &self,
+        url: &str,
+        body: &[u8],
+        content_type: Option<&str>,
+        header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        let _ = (body, content_type, header);
+        Err(FetchError::DownloadFailed(format!(
+            "this transport does not serve writes (POST {url})"
+        )))
+    }
+
+    /// A raw, UNCLASSIFIED PUT for the OCI publish path (spec 38 §7):
+    /// the monolithic blob upload and the manifest placement. The same
+    /// discipline as [`Transport::post_raw`].
+    fn put_raw(
+        &self,
+        url: &str,
+        body: &[u8],
+        content_type: &str,
+        header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        let _ = (body, content_type, header);
+        Err(FetchError::DownloadFailed(format!(
+            "this transport does not serve writes (PUT {url})"
+        )))
+    }
+
     /// Whether this transport authenticates to the service APIs (an
     /// ambient GitHub token). Adapters consult it to choose asset URLs:
     /// authenticated transports get the API asset URL — private repos
@@ -299,6 +335,26 @@ impl Transport for HttpTransport {
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<u64, FetchError> {
         tebako_http::stream_raw(url, accept, header, writer, on_progress)
+    }
+
+    fn post_raw(
+        &self,
+        url: &str,
+        body: &[u8],
+        content_type: Option<&str>,
+        header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        tebako_http::post_raw(url, body, content_type, header)
+    }
+
+    fn put_raw(
+        &self,
+        url: &str,
+        body: &[u8],
+        content_type: &str,
+        header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        tebako_http::put_raw(url, body, content_type, header)
     }
 
     fn stream_asset_with_header(
