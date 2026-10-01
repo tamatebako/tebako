@@ -95,6 +95,13 @@ pub struct RegistryVersion {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub implementation: Option<String>,
     pub platforms: RegistryPlatforms,
+    /// The universal row's blksum sidecar pin (spec 39 §3, MINOR 4): a
+    /// `platforms: universal` row names ONE artifact by the single-.tfs
+    /// rule, so its sidecar pin lives at the version level — spelled on
+    /// a per-triplet row it is a named validation error (the pins live
+    /// in `platforms[<triplet>].blksum`; exactly one location per form).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blksum: Option<BlksumPin>,
     /// The payload's release home — a spec 04 §1 reference (any class;
     /// per-triplet `platforms` require a service release, since artifact
     /// names only exist there).
@@ -147,13 +154,34 @@ pub enum RegistryPlatforms {
 /// locator — a MIRROR, never a second authority: the primary
 /// `release.ref` resolves unless the book declares `channel: oci`;
 /// pre-OCI readers ignore the field (spec 37 §2's forward-compat
-/// leniency for unknown registry keys).
+/// leniency for unknown registry keys). The additive `blksum:` field
+/// (spec 39 §3, MINOR 4) pins the artifact's lazy-mount digest sidecar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlatformArtifact {
     pub artifact: String,
     pub sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oci: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blksum: Option<BlksumPin>,
+}
+
+/// `blksum: {filename, sha256}` (spec 39 §3, additive — MINOR 4): the
+/// pin anchoring the artifact's `<image>.blksum.json` lazy-mount digest
+/// sidecar — the sidecar is fetched and verified against THIS sha256
+/// BEFORE the first range read, exactly like `image.sha256` anchors the
+/// image itself. Mirror-only (spec 03 §4's tier-3 rule): the sidecar
+/// itself carries the per-group digests; a resolver never derives one.
+/// Where the index is signed (spec 09 §5) the field is covered exactly
+/// like `image.sha256`. Present but torn (a missing/empty half) is a
+/// named validation error — never a silent downgrade to the eager path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlksumPin {
+    /// The sidecar's asset name within the same release
+    /// (`<artifact>.blksum.json`).
+    pub filename: String,
+    /// The sidecar bytes' sha256 (64 lowercase hex).
+    pub sha256: String,
 }
 
 /// `release: {ref: …}`.
@@ -259,6 +287,17 @@ fn check_sha256(what: &str, value: &str) -> Result<(), RegistryError> {
         )));
     }
     Ok(())
+}
+
+/// The additive blksum sidecar pin (spec 39 §3): present but torn (an
+/// empty filename or a malformed digest) is a named error — the lazy
+/// reader's loud "blksum-missing" eager fallback applies to an ABSENT
+/// pin, never to a broken one.
+fn check_blksum_pin(what: &str, pin: &BlksumPin) -> Result<(), RegistryError> {
+    if pin.filename.is_empty() {
+        return Err(invalid_entry(format!("{what}.filename must not be empty")));
+    }
+    check_sha256(&format!("{what}.sha256"), &pin.sha256)
 }
 
 impl Registry {
@@ -513,6 +552,22 @@ impl RegistryVersion {
             }
             (RegistryPlatforms::Universal, _) => {}
         }
+        // The universal row's sidecar pin (spec 39 §3): a `platforms:
+        // universal` row names ONE artifact by the single-.tfs rule, so
+        // the pin lives at the version level; spelled on a per-triplet
+        // row it duplicates the platforms map's job — a named error.
+        if let Some(blksum) = &self.blksum {
+            if !matches!(self.platforms, RegistryPlatforms::Universal) {
+                return Err(invalid_entry(format!(
+                    "payload '{}' {} blksum at the version level names the universal payload's single artifact — per-triplet pins live in platforms[<triplet>].blksum",
+                    payload.name, self.version
+                )));
+            }
+            check_blksum_pin(
+                &format!("payload '{}' {} blksum", payload.name, self.version),
+                blksum,
+            )?;
+        }
         // The additive per-row OCI mirror (spec 38 §7): when spelled it
         // parses as a `tfs+oci:` reference (the row's artifact at its OCI
         // locator — a mirror of resolution fields, never a second
@@ -535,6 +590,15 @@ impl RegistryVersion {
                             )))
                         }
                     }
+                }
+                if let Some(blksum) = &entry.blksum {
+                    check_blksum_pin(
+                        &format!(
+                            "payload '{}' {} platforms[{platform}].blksum",
+                            payload.name, self.version
+                        ),
+                        blksum,
+                    )?;
                 }
             }
         }
@@ -1168,6 +1232,87 @@ payloads:
         let yaml = registry.to_yaml().unwrap();
         let again = Registry::from_yaml(&yaml).unwrap();
         assert_eq!(registry, again);
+    }
+
+    #[test]
+    fn the_blksum_pin_round_trips_and_torn_pins_are_named() {
+        // spec 39 §3's additive row field: the pin anchoring an
+        // artifact's `<image>.blksum.json` sidecar — per-triplet rows
+        // carry it in the platforms map entry, a universal row at the
+        // version level (exactly one location per form).
+        let whole = "a".repeat(64);
+        let pin_sha = "c".repeat(64);
+        let per_triplet = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos:\n            artifact: a.tfs\n            sha256: \"{whole}\"\n            blksum: {{filename: a.tfs.blksum.json, sha256: \"{pin_sha}\"}}\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n"
+        );
+        let registry = Registry::from_yaml(&per_triplet).unwrap();
+        let v = registry.payload("x").unwrap().version("1.0").unwrap();
+        assert!(v.blksum.is_none());
+        let RegistryPlatforms::PerTriplet(map) = &v.platforms else {
+            panic!("per-triplet platforms");
+        };
+        let pin = map[&Platform::Aarch64Macos].blksum.as_ref().unwrap();
+        assert_eq!(pin.filename, "a.tfs.blksum.json");
+        assert_eq!(pin.sha256, pin_sha);
+        // round-trip identity with the pin present
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+
+        let universal = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        blksum: {{filename: x-1.0.tfs.blksum.json, sha256: \"{pin_sha}\"}}\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n"
+        );
+        let registry = Registry::from_yaml(&universal).unwrap();
+        let v = registry.payload("x").unwrap().version("1.0").unwrap();
+        let pin = v.blksum.as_ref().unwrap();
+        assert_eq!(pin.filename, "x-1.0.tfs.blksum.json");
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+
+        // Torn pins are named errors — the loud "blksum-missing" eager
+        // fallback (spec 39 §3) applies to an ABSENT pin, never a
+        // broken one.
+        let bad_sha = per_triplet.replace(&pin_sha, "zz23");
+        let err = Registry::from_yaml(&bad_sha).unwrap_err();
+        assert!(
+            err.to_string().contains("platforms[aarch64-macos].blksum.sha256 must be 64 lowercase hex"),
+            "{err}"
+        );
+        let empty_name = per_triplet.replace("filename: a.tfs.blksum.json", "filename: \"\"");
+        let err = Registry::from_yaml(&empty_name).unwrap_err();
+        assert!(
+            err.to_string().contains("blksum.filename must not be empty"),
+            "{err}"
+        );
+        // A pin missing a required half inside the platforms map fails
+        // at the untagged platforms parse — the same named YAML refusal
+        // a missing `artifact`/`sha256` key produces there.
+        let missing_half = per_triplet.replace(
+            &format!(", sha256: \"{pin_sha}\"",),
+            "",
+        );
+        let err = Registry::from_yaml(&missing_half).unwrap_err();
+        assert!(
+            matches!(err, RegistryError::Yaml { .. }),
+            "{err}"
+        );
+        let torn_universal = universal.replace(
+            &format!("filename: x-1.0.tfs.blksum.json, sha256: \"{pin_sha}\""),
+            "filename: x-1.0.tfs.blksum.json",
+        );
+        let err = Registry::from_yaml(&torn_universal).unwrap_err();
+        assert!(err.to_string().contains("sha256"), "{err}");
+        // The version-level spelling on a per-triplet row duplicates the
+        // platforms map's job — refused by name.
+        let misplaced = per_triplet.replace(
+            "        release:",
+            &format!("        blksum: {{filename: a.tfs.blksum.json, sha256: \"{pin_sha}\"}}\n        release:"),
+        );
+        let err = Registry::from_yaml(&misplaced).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("per-triplet pins live in platforms[<triplet>].blksum"),
+            "{err}"
+        );
     }
 
     #[test]
