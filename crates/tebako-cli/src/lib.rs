@@ -1250,7 +1250,10 @@ pub fn cache_seal(selector: Option<&str>, all: bool) -> Result<(), TebakoError> 
     let manager = Resolver::new();
     let runtimes = tpkg::runtime_store::scan_all_cached(&manager.cache_root);
     let targets: Vec<tpkg::runtime_store::CachedRuntime> = match (selector, all) {
-        (None, true) => runtimes.into_iter().filter(|rt| rt.lazy.is_some()).collect(),
+        (None, true) => runtimes
+            .into_iter()
+            .filter(|rt| rt.lazy.is_some())
+            .collect(),
         (Some(name), false) => {
             let Some(rt) = runtimes.into_iter().find(|rt| {
                 rt.dir
@@ -1301,11 +1304,7 @@ fn seal_one(
     let seed = &lazy.seed;
     let blocks = tpkg::lazy::blocks_dir(&rt.dir, &lazy.image_base);
     let source = if offline {
-        tfs::source_remote::RemoteByteSource::new_cache_only(
-            seed.size_bytes,
-            &blocks,
-            &seed.source,
-        )
+        tfs::source_remote::RemoteByteSource::new_cache_only(seed.size_bytes, &blocks, &seed.source)
     } else {
         let body = get_sidecar(&format!("{}.blksum.json", seed.source))?;
         let blksum = tpkg::lazy::verify_blksum(seed, &body).map_err(seal_lazy_error)?;
@@ -1346,10 +1345,7 @@ fn seal_one(
     let source = std::sync::Arc::new(source);
 
     prog.download_begin(&format!("sealing {}", lazy.image_base));
-    let mut filled = std::cmp::min(
-        lazy.present * tpkg::lazy::LAZY_GROUP_SIZE,
-        seed.size_bytes,
-    );
+    let mut filled = std::cmp::min(lazy.present * tpkg::lazy::LAZY_GROUP_SIZE, seed.size_bytes);
     prog.download_tick(filled, Some(seed.size_bytes));
     loop {
         let missing = source.missing_groups().map_err(|e| {
@@ -1364,9 +1360,7 @@ fn seal_one(
                 prog.download_abort();
                 return Err(seal_source_error(&lazy.image_base, e));
             }
-            let (_, len) = seed
-                .group_span(index)
-                .expect("a missing group is in range");
+            let (_, len) = seed.group_span(index).expect("a missing group is in range");
             filled = std::cmp::min(filled + len, seed.size_bytes);
             prog.download_tick(filled, Some(seed.size_bytes));
         }

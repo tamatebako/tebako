@@ -82,10 +82,7 @@ fn seed_entry(home: &Path, origin: &Path) -> (String, String) {
 fn seed_block(home: &Path, entry_name: &str, image_base: &str, origin: &Path, index: u64) {
     let bytes = fs::read(origin).unwrap();
     let (offset, len) = tpkg::lazy::group_span(bytes.len() as u64, index).unwrap();
-    let blocks = tpkg::lazy::blocks_dir(
-        &home.join("runtimes").join(entry_name),
-        image_base,
-    );
+    let blocks = tpkg::lazy::blocks_dir(&home.join("runtimes").join(entry_name), image_base);
     fs::create_dir_all(&blocks).unwrap();
     fs::write(
         blocks.join(tpkg::lazy::block_name(index)),

@@ -2679,17 +2679,14 @@ fn runtime_lazy_image_item(
         tebako_term::human_bytes(seed.size_bytes)
     );
     let descriptor = seed.clone();
-    let reference = Reference::parse(&seed.source)
-        .unwrap_or_else(|_| Reference::File {
-            path: seed.source.clone(),
-            sha256: None,
-        });
+    let reference = Reference::parse(&seed.source).unwrap_or_else(|_| Reference::File {
+        path: seed.source.clone(),
+        sha256: None,
+    });
     let commit = move |_staged: &StagedArtifact| {
         tpkg::lazy::write_descriptor(&staging, &image_base, &descriptor).map_err(|e| {
             ResolveError::Commit {
-                reason: format!(
-                    "cannot stage the lazy seed descriptor for {image_base}: {e}"
-                ),
+                reason: format!("cannot stage the lazy seed descriptor for {image_base}: {e}"),
             }
         })?;
         Ok(CommitReport { line: Some(line) })

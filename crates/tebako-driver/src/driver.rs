@@ -592,8 +592,10 @@ fn mount_env_image(
                 let source =
                     crate::lazy::open_lazy_source(&entry_dir, &image_base, &seed, offline)?;
                 let byte_source: std::sync::Arc<dyn tfs::source::ByteSource> = source.clone();
-                let mount =
-                    build_error(tfs::mount::build_from_source(byte_source, runtime_root), &what)?;
+                let mount = build_error(
+                    tfs::mount::build_from_source(byte_source, runtime_root),
+                    &what,
+                )?;
                 if !offline && crate::lazy::seal_enabled(env_var(env, "TEBAKO_LAZY_SEAL"))? {
                     crate::lazy::spawn_seal_thread(&source, entry_dir, image_base);
                 }

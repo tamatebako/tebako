@@ -68,7 +68,8 @@ pub(crate) fn env_image_state(image_path: &str) -> Result<EnvImageState, DriverE
     if path.is_file() {
         return Ok(EnvImageState::Sealed);
     }
-    let (Some(entry_dir), Some(image_base)) = (path.parent(), path.file_name().and_then(|n| n.to_str()))
+    let (Some(entry_dir), Some(image_base)) =
+        (path.parent(), path.file_name().and_then(|n| n.to_str()))
     else {
         return Ok(EnvImageState::Absent);
     };
@@ -120,16 +121,18 @@ fn source_error(e: SourceError) -> DriverError {
 /// 69, never a guess.
 fn get_document(url: &str) -> Result<Vec<u8>, DriverError> {
     if let Some(path) = url.strip_prefix("file://") {
-        return std::fs::read(path).map_err(|e| {
-            DriverError::new(EX_TEBAKO_UNAVAILABLE, format!("{url}: {e}"))
-        });
+        return std::fs::read(path)
+            .map_err(|e| DriverError::new(EX_TEBAKO_UNAVAILABLE, format!("{url}: {e}")));
     }
     let response = tebako_http::get_raw(url, Some("application/json"), None)
         .map_err(|e| DriverError::new(EX_TEBAKO_UNAVAILABLE, format!("{url}: {e}")))?;
     if response.status != 200 {
         return Err(DriverError::new(
             EX_TEBAKO_UNAVAILABLE,
-            format!("{url}: status {} — the blksum sidecar must be a 200", response.status),
+            format!(
+                "{url}: status {} — the blksum sidecar must be a 200",
+                response.status
+            ),
         ));
     }
     Ok(response.body)
@@ -304,11 +307,7 @@ mod tests {
         let image_path = tmp.path().join("image.tfs");
         std::fs::write(&image_path, &image).unwrap();
         let blksum = Blksum::from_image_bytes(&image);
-        std::fs::write(
-            tmp.path().join("image.tfs.blksum.json"),
-            blksum.render(),
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("image.tfs.blksum.json"), blksum.render()).unwrap();
         (tmp, image_path, blksum)
     }
 
@@ -402,10 +401,7 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        assert!(
-            sealed_image.is_file(),
-            "the seal thread installs the image"
-        );
+        assert!(sealed_image.is_file(), "the seal thread installs the image");
         assert!(entry.path().join(format!("{image_base}.sha256")).is_file());
         assert!(!tpkg::lazy::descriptor_path(entry.path(), &image_base).exists());
         assert!(!tpkg::lazy::blocks_dir(entry.path(), &image_base).exists());
@@ -438,7 +434,10 @@ mod tests {
         let mount = tfs::mount::build_from_source(byte_source, &mount_point)
             .expect("the offline mount opens from the cached prefix");
         let mut buf = [0u8; 32];
-        let n = mount.backend.pread("hello.txt", &mut buf, 0).expect("cached read");
+        let n = mount
+            .backend
+            .pread("hello.txt", &mut buf, 0)
+            .expect("cached read");
         assert_eq!(&buf[..n], b"hello, lazy driver\n");
         // An UNseeded group's touching read is EIO — never a fabricated
         // zero-fill, never a silent short read (spec 39 §6).
