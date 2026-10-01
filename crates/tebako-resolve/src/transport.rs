@@ -172,6 +172,27 @@ pub trait Transport {
         )))
     }
 
+    /// A raw, UNCLASSIFIED positioned GET for the OCI lazy arm (spec 39
+    /// §8): `Range: bytes=<offset>-<end>` plus the caller's `If-Range`
+    /// validator, any status returning with headers and body exactly
+    /// like [`Transport::get_raw`]. The default is a named refusal —
+    /// the range arm rides the production distribution transport, never
+    /// a silent whole-file read; the production transport overrides
+    /// with tebako-http's `get_range_raw` (the https-or-loopback
+    /// policy included).
+    fn get_range_raw(
+        &self,
+        url: &str,
+        range: tebako_http::ByteRange,
+        if_range: Option<&str>,
+        header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        let _ = (range, if_range, header);
+        Err(FetchError::DownloadFailed(format!(
+            "this transport does not serve range GETs ({url})"
+        )))
+    }
+
     /// Whether this transport authenticates to the service APIs (an
     /// ambient GitHub token). Adapters consult it to choose asset URLs:
     /// authenticated transports get the API asset URL — private repos
@@ -355,6 +376,16 @@ impl Transport for HttpTransport {
         header: Option<(&str, &str)>,
     ) -> Result<tebako_http::RawResponse, FetchError> {
         tebako_http::put_raw(url, body, content_type, header)
+    }
+
+    fn get_range_raw(
+        &self,
+        url: &str,
+        range: tebako_http::ByteRange,
+        if_range: Option<&str>,
+        header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        tebako_http::get_range_raw(url, range, if_range, header)
     }
 
     fn stream_asset_with_header(
