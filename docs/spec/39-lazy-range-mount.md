@@ -1,10 +1,17 @@
 # Spec 39 — Lazy range-fetch mounting of runtime images
 
-Status: **PLANNED** (locked direction 2026-09-30, tebako#696 — spec-first
-per spec 14; the seam, the trust decision, and the store-state amendment
-below are the agreed shape before any code lands). Nothing here changes
-what a shipped loader, driver, or resolver does with a store that
-carries none of the new artifacts — the feature is opt-in
+Status: **PARTIAL** (locked direction 2026-09-30, tebako#696 — spec-first
+per spec 14). PRs 1–4 SHIPPED: the spec + schemas, the Range transport
+(tebako-http), the byte-source seam + caching remote source + lazy
+store record (tfs/tpkg), and the loader + driver wire (resolve plan
+lazy arm, shim/bootstrap opt-in, the state-detecting env-image mount,
+the background seal thread, `tebako cache seal` + the listing/doctor
+surfaces). PLANNED remain PR 5 (the publish path — in-process blksum
+generation + the additive `image.blksum` index field, the factory
+legs) and PR 6 (OCI range, the bench arms, the default flip per §10's
+rule — until then the default stays eager). Nothing here changes what
+a shipped loader, driver, or resolver does with a store that carries
+none of the new artifacts — the feature is opt-in
 (`TEBAKO_RUNTIME_LAZY=1`, §7) and every published image remains runnable
 exactly as today.
 
