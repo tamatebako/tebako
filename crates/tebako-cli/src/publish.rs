@@ -31,7 +31,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use tebako_resolve::registry::SignaturePin;
+use tebako_resolve::registry::{BlksumPin, SignaturePin};
 use tebako_resolve::{
     Fetcher, Registry, RegistryPayload, RegistryPlatforms, RegistryRuntimeRequirement,
     RegistryVersion, ReleaseRef, Transport,
@@ -112,6 +112,9 @@ pub struct PublishOutcome {
     pub tag: String,
     /// `(artifact name, sha256)` of every uploaded artifact.
     pub artifacts: Vec<(String, String)>,
+    /// `(sidecar name, sha256)` of every uploaded blksum sidecar (spec
+    /// 39 §3 — one per payload image, staged in the same invocation).
+    pub blksums: Vec<(String, String)>,
     /// Uploaded `.asc` names (when signed).
     pub ascs: Vec<String>,
     /// The signer keyid (when signed).
@@ -830,6 +833,9 @@ pub fn publish_full_with_oci_sink(
 
     // ---- 2. payloads: bytes, digests, the embedded manifest ----------
     let mut artifacts: Vec<(String, String, Vec<u8>)> = Vec::new(); // (upload name, sha, bytes)
+    // The blksum sidecars (spec 39 §3), one per payload image, in
+    // `artifacts` order: (sidecar name, sidecar sha, sidecar bytes).
+    let mut blksum_uploads: Vec<(String, String, Vec<u8>)> = Vec::new();
     for input in &opts.payloads {
         if !input.path.is_file() {
             return Err(err(
@@ -843,8 +849,26 @@ pub fn publish_full_with_oci_sink(
                 format!("cannot read {}: {e}", input.path.display()),
             )
         })?;
+        if bytes.is_empty() {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "payload {} is empty — a 0-byte image has no blksum and is not a publishable .tfs",
+                    input.path.display()
+                ),
+            ));
+        }
         let name = payload_artifact_name(&opts.name, &version, input.triplet);
         let sha = tebako_resolve::sha256_hex(&bytes);
+        // spec 39 §3: the PUBLISHER authors the lazy-mount digest
+        // sidecar in-process, in the same invocation that stages the
+        // release bytes (a resolver never derives one — derivation
+        // would require the whole file and arrive unanchored).
+        let sidecar = tpkg::lazy::Blksum::from_image_bytes(&bytes)
+            .render()
+            .into_bytes();
+        let sidecar_sha = tebako_resolve::sha256_hex(&sidecar);
+        blksum_uploads.push((format!("{name}.blksum.json"), sidecar_sha, sidecar));
         artifacts.push((name, sha, bytes));
     }
     let manifest_text = image_manifest::read_embedded_manifest(&opts.payloads[0].path)?
@@ -993,6 +1017,13 @@ pub fn publish_full_with_oci_sink(
     for (name, _, bytes) in artifacts.iter().chain(standalone_uploads.iter()) {
         store.upload_asset(&owner, &repo, &tag, name, bytes)?;
     }
+    // The blksum sidecars publish beside their images in the same
+    // staging invocation (spec 39 §3). They carry no .asc of their own:
+    // the sidecar's anchor is the registry row's blksum pin, covered by
+    // the registry's own trust chain exactly like image.sha256.
+    for (name, _, bytes) in &blksum_uploads {
+        store.upload_asset(&owner, &repo, &tag, name, bytes)?;
+    }
     for (name, asc) in &ascs {
         store.upload_asset(&owner, &repo, &tag, name, asc)?;
     }
@@ -1096,6 +1127,16 @@ pub fn publish_full_with_oci_sink(
 
     // ---- 6. the registry ----------------------------------------------
     let release_ref = format!("tfs:github:{owner}/{repo}:{tag}");
+    // spec 39 §3's sidecar anchor: per-triplet rows pin the sidecar in
+    // the platforms map entry (beside artifact/sha256); a universal row
+    // names ONE artifact, so its pin lives at the version level.
+    let blksum_pin = |i: usize| {
+        let (filename, sha256, _) = &blksum_uploads[i];
+        BlksumPin {
+            filename: filename.clone(),
+            sha256: sha256.clone(),
+        }
+    };
     let platforms = if universal {
         RegistryPlatforms::Universal
     } else {
@@ -1123,6 +1164,7 @@ pub fn publish_full_with_oci_sink(
                                     )
                                 )
                             }),
+                            blksum: Some(blksum_pin(i)),
                         },
                     )
                 })
@@ -1150,6 +1192,9 @@ pub fn publish_full_with_oci_sink(
         // yank is a registry edit, spec 04 §2) — publish never sets it.
         status: None,
         platforms,
+        // The universal row's sidecar pin (spec 39 §3); per-triplet rows
+        // carry theirs in the platforms map entries above.
+        blksum: universal.then(|| blksum_pin(0)),
         release: ReleaseRef {
             r#ref: release_ref.clone(),
         },
@@ -1294,6 +1339,10 @@ pub fn publish_full_with_oci_sink(
                     .iter()
                     .map(|(n, s, _)| (n.clone(), s.clone())),
             )
+            .collect(),
+        blksums: blksum_uploads
+            .iter()
+            .map(|(n, s, _)| (n.clone(), s.clone()))
             .collect(),
         ascs: ascs.iter().map(|(n, _)| n.clone()).collect(),
         signer: key.as_ref().map(|k| k.keyid_hex()),
