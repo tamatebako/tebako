@@ -21,7 +21,7 @@
 
 schema: runtime-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 0 # MINOR — additive changes only
+schema_minor: 1 # MINOR — additive changes only (1: the image facet's blksum sidecar pin (spec 39 §3))
 status: normative
 owner: tebako-runtime-ruby (the runtime factory); mirrored here as the cross-repo contract
 edge: C2 (runtime factory → loader; = C9 loader/shim → runtime release manifest)
@@ -141,6 +141,25 @@ grammar:
       filename: {type: string, required: true}
       sha256: {type: string, required: true, notes: 64 lowercase hex}
       size_bytes: {type: int, required: true}
+      blksum:
+        type: map
+        required: false
+        notes: >-
+          The env image's lazy-mount digest sidecar pin (spec 39 §3,
+          MINOR 1): the factory publishes `<image>.blksum.json` beside
+          the image in the same staging invocation, and the loader
+          verifies the sidecar against this sha256 BEFORE the first
+          range read — exactly like image.sha256 anchors the image
+          itself (covered by the index's signature exactly like
+          image.sha256 where the index is signed, spec 09 §5).
+          Mirror-only (spec 03 §4's tier-3 rule); a resolver never
+          derives a sidecar. Absent on pre-lazy releases — the loader's
+          loud eager fallback (spec 39 §3); present but torn (a missing
+          or empty half) is a named validation error, never a silent
+          downgrade.
+        fields:
+          filename: {type: string, required: true, notes: "the sidecar's asset name within the same release (<image>.blksum.json)"}
+          sha256: {type: string, required: true, notes: 64 lowercase hex — the sidecar bytes' digest}
   built_from:
     type: map
     required: true
