@@ -39,17 +39,24 @@
 //! misses → `ENOENT`.
 
 use std::collections::HashMap;
+#[cfg(feature = "backend-remote")]
+use std::sync::Arc;
 
 use limnifs_core::{
     parse_feature_flags_section, parse_history, parse_manifest_header, parse_metadata_blob,
     parse_metadata_reference_with_ceilings, parse_slab, parse_slab_header, parse_slab_index,
     slab_cache::CachedSlabStore,
+    slab_source::SlabSource as LimnifsSlabSource,
     slab_store::{SlabSource, SlabStore},
-    ContentHandle, CoreError, Inode, ManifestCursor, ManifestHeader, MetadataBlob,
+    ContentHandle, CoreError, Inode, ManifestCursor, ManifestHeader, MetadataBlob, SlabIndex,
     DEFAULT_LOCATOR_MAX_URI_BYTES, SLAB_HEADER_LEN,
 };
+#[cfg(feature = "backend-remote")]
+use limnifs_core::{PagedSlabSet, PositionedReader};
 
 use crate::backend::{Backend, EntryType, RawDirEntry, RawStat};
+#[cfg(feature = "backend-remote")]
+use crate::source::{read_exact_at, ByteSource};
 
 /// The slab section magic (`LIM1`) — a section marker inside the
 /// image, checked at the slab-region boundary (spec 20 §3).
@@ -58,6 +65,76 @@ const SLAB_MAGIC: &[u8; 4] = b"LIM1";
 /// Nanoseconds per second, for the `mtime_ns` → `RawStat` seconds
 /// truncation (spec 20 §8).
 const NANOS_PER_SEC: u64 = 1_000_000_000;
+
+/// The slab-serving engine behind the backend: the limnifs#192 cached
+/// store for resident images (SIEVE drop cache + seekable-frame cache),
+/// or — the `backend-remote` feature — limnifs-core 0.3.57's
+/// `PagedSlabSet` for a sourced image (record tables parsed eagerly
+/// over the byte source; drop payload bytes fetched on demand, spec 39
+/// §2). Both ride limnifs-core's `slab_source::SlabSource` trait, so
+/// the read path below speaks one vocabulary; the cached store keeps
+/// its seekable-frame fast path through the trait's
+/// `decoded_range_into` override (tebako#464 does not regress).
+enum SlabServing {
+    /// Resident image: `SlabStore` behind `CachedSlabStore` (boxed —
+    /// the cached store is ~5× the paged set; one indirection keeps the
+    /// enum small, one per mount so the deref is never hot).
+    Cached(Box<CachedSlabStore>),
+    /// Sourced image (spec 39): paged slabs over the byte source.
+    #[cfg(feature = "backend-remote")]
+    Paged(PagedSlabSet),
+}
+
+impl SlabServing {
+    /// The `[off, off + buf.len())` window of one drop's plaintext
+    /// (the trait's zero-copy ranged decode — see `drop_window`).
+    fn decoded_range_into(
+        &self,
+        drop_id: &[u8; 32],
+        off: u64,
+        buf: &mut [u8],
+    ) -> Option<Result<usize, CoreError>> {
+        match self {
+            SlabServing::Cached(store) => {
+                LimnifsSlabSource::decoded_range_into(store.as_ref(), drop_id, off, buf)
+            }
+            #[cfg(feature = "backend-remote")]
+            SlabServing::Paged(set) => {
+                LimnifsSlabSource::decoded_range_into(set, drop_id, off, buf)
+            }
+        }
+    }
+
+    /// Number of slabs (the info surface).
+    fn slab_count(&self) -> usize {
+        match self {
+            SlabServing::Cached(store) => store.slab_count(),
+            #[cfg(feature = "backend-remote")]
+            SlabServing::Paged(set) => set.slab_count(),
+        }
+    }
+
+    /// Number of unique drops indexed (the info surface).
+    fn drop_count(&self) -> usize {
+        match self {
+            SlabServing::Cached(store) => store.drop_count(),
+            #[cfg(feature = "backend-remote")]
+            SlabServing::Paged(set) => set.drop_count(),
+        }
+    }
+
+    /// The SIEVE cache counters (the tebako#464 regression tests) —
+    /// the resident engine only; a paged set has no drop cache of its
+    /// own (the byte source's block cache is the law there).
+    #[cfg(test)]
+    fn cache_stats(&self) -> Option<limnifs_core::slab_cache::CacheStats> {
+        match self {
+            SlabServing::Cached(store) => Some(store.cache_stats()),
+            #[cfg(feature = "backend-remote")]
+            SlabServing::Paged(_) => None,
+        }
+    }
+}
 
 /// A mounted LimniFS image.
 pub struct LimnifsBackend {
@@ -70,15 +147,13 @@ pub struct LimnifsBackend {
     paths: HashMap<String, u64>,
     /// The root directory's inode number.
     root: u64,
-    /// The appended slabs behind limnifs-core's `CachedSlabStore`
-    /// (limnifs#192): a SIEVE-evicted decoded-drop cache (64 MiB /
-    /// 1024 entries) plus a 32 MiB seekable-frame cache. A windowed
-    /// read of a seekable drop decodes only the covering 256 KiB
-    /// container frames; a monolithic drop decodes once and caches
-    /// whole. Replaces the pre-flip one-drop memo: tebako#464's 19.5
-    /// MiB shim-in-8-KiB-windows read went from ~48 GiB of lz4 work
-    /// (~19 s) to ~640 MiB worst case, cache hits thereafter.
-    store: CachedSlabStore,
+    /// The appended slabs behind the serving engine (see
+    /// [`SlabServing`]). A windowed read of a seekable drop on the
+    /// resident engine decodes only the covering 256 KiB container
+    /// frames; a monolithic drop decodes once and caches whole. On the
+    /// paged engine the covering GROUPS of the slab window are fetched
+    /// (digest-verified) and the drop decodes whole.
+    store: SlabServing,
     /// Section spans for `image_info_json` (`tfs info --backend-json`).
     sections: Vec<(&'static str, usize)>,
     /// Per-slab drop counts (the info surface).
@@ -145,86 +220,127 @@ fn normalize(path: &str) -> &str {
     path.trim_start_matches('/').trim_end_matches('/')
 }
 
+/// The manifest-prefix walk's yield: everything mount-open parses
+/// before the slab region (header → feature flags → metadata reference
+/// + inline blob → slab index → history — the self-delimiting walk,
+///   spec 20 §4), shared by the resident open ([`LimnifsBackend::from_image`])
+///   and the sourced open ([`LimnifsBackend::from_source`], spec 39 §2).
+struct PrefixWalk {
+    /// The parsed manifest header.
+    header: ManifestHeader,
+    /// The parsed metadata blob (inodes + directory nodes).
+    blob: MetadataBlob,
+    /// Path → inode number (Backend-convention keys).
+    paths: HashMap<String, u64>,
+    /// The root directory's inode number.
+    root: u64,
+    /// The parsed slab index.
+    slab_index: SlabIndex,
+    /// Section spans for `image_info_json`.
+    sections: Vec<(&'static str, usize)>,
+    /// The cursor position the slab region starts at (after history).
+    slabs_start: usize,
+}
+
+/// Run the self-delimiting manifest walk over `data` (resident or the
+/// fetched prefix): every structural failure maps per the module's
+/// error law (EINVAL/ENOTSUP), a `TooShort` included — on a RESIDENT
+/// buffer that is the final answer; the sourced open's growth loop
+/// treats it as "fetch more" until EOF makes it final.
+fn parse_manifest_prefix(data: &[u8]) -> Result<PrefixWalk, i32> {
+    let mut cursor = ManifestCursor::new(data);
+
+    let header = parse_manifest_header(&mut cursor).map_err(open_error)?;
+    let header_end = cursor.position();
+
+    let flags = parse_feature_flags_section(&mut cursor).map_err(open_error)?;
+    for entry in &flags.entries {
+        if entry.required {
+            return Err(unsupported(format!(
+                "required feature flag 0x{:04X}",
+                entry.flag_id
+            )));
+        }
+        // Optional flags are silently ignored (limnifs spec §18's
+        // unknown-flag policy).
+    }
+    let flags_end = cursor.position();
+
+    let meta_ref = parse_metadata_reference_with_ceilings(
+        &mut cursor,
+        DEFAULT_LOCATOR_MAX_URI_BYTES,
+        crate::LIMNIFS_INLINE_METADATA_MAX_BYTES,
+    )
+    .map_err(open_error)?;
+    let meta_ref_end = cursor.position();
+    let Some(blob_bytes) = meta_ref.inline_metadata.as_deref() else {
+        return Err(unsupported(
+            "external metadata locator (a self-contained tebako image inlines the metadata blob)"
+                .to_string(),
+        ));
+    };
+    // The reference's hash commits to the uncompressed blob: a
+    // checksum failure is Corrupt at mount-open → EINVAL (spec 20 §4).
+    if limnifs_core::hash_section(blob_bytes) != meta_ref.metadata_hash {
+        return Err(open_error(CoreError::Corrupt {
+            reason: "metadata blob does not match the metadata_reference hash".to_string(),
+        }));
+    }
+    let blob = parse_metadata_blob(&mut ManifestCursor::new(blob_bytes)).map_err(open_error)?;
+    let root = blob.root_inode_number().ok_or_else(|| {
+        open_error(CoreError::Corrupt {
+            reason: "no unique root directory inode".to_string(),
+        })
+    })?;
+
+    let mut paths: HashMap<String, u64> =
+        HashMap::with_capacity(blob.inodes.len().saturating_add(1));
+    paths.insert(String::new(), root);
+    for (path, number) in blob.build_path_index() {
+        // The limnifs index is absolute (`/a/b`); the Backend trait
+        // speaks relative paths (`a/b`, `""` for root).
+        paths.insert(normalize(&path).to_string(), number);
+    }
+
+    let slab_index = parse_slab_index(&mut cursor).map_err(open_error)?;
+    let slab_index_end = cursor.position();
+
+    // The writer always emits a history section after the slab
+    // index; parsing it lands the cursor exactly on the slab region.
+    let _history = parse_history(&mut cursor).map_err(open_error)?;
+    let history_end = cursor.position();
+
+    let sections: Vec<(&'static str, usize)> = vec![
+        ("MANIFEST_HEADER", header_end),
+        ("FEATURE_FLAGS", flags_end - header_end),
+        ("METADATA_REFERENCE", meta_ref_end - flags_end),
+        ("SLAB_INDEX", slab_index_end - meta_ref_end),
+        ("HISTORY", history_end - slab_index_end),
+    ];
+
+    Ok(PrefixWalk {
+        header,
+        blob,
+        paths,
+        root,
+        slab_index,
+        sections,
+        slabs_start: history_end,
+    })
+}
+
 impl LimnifsBackend {
     /// Open a self-contained limnifs image (module doc layout) held in
     /// memory. Every mount source (whole file, file region, memory) is
     /// read into one owned byte slice and funnels here — spec 11 §5's
     /// four mount-source kinds all serve one `&[u8]` core.
     pub fn from_image(data: Vec<u8>) -> Result<LimnifsBackend, i32> {
-        let mut cursor = ManifestCursor::new(&data);
+        let walk = parse_manifest_prefix(&data)?;
 
-        let header = parse_manifest_header(&mut cursor).map_err(open_error)?;
-        let header_end = cursor.position();
-
-        let flags = parse_feature_flags_section(&mut cursor).map_err(open_error)?;
-        for entry in &flags.entries {
-            if entry.required {
-                return Err(unsupported(format!(
-                    "required feature flag 0x{:04X}",
-                    entry.flag_id
-                )));
-            }
-            // Optional flags are silently ignored (limnifs spec §18's
-            // unknown-flag policy).
-        }
-        let flags_end = cursor.position();
-
-        let meta_ref = parse_metadata_reference_with_ceilings(
-            &mut cursor,
-            DEFAULT_LOCATOR_MAX_URI_BYTES,
-            crate::LIMNIFS_INLINE_METADATA_MAX_BYTES,
-        )
-        .map_err(open_error)?;
-        let meta_ref_end = cursor.position();
-        let Some(blob_bytes) = meta_ref.inline_metadata.as_deref() else {
-            return Err(unsupported(
-                "external metadata locator (a self-contained tebako image inlines the metadata blob)"
-                    .to_string(),
-            ));
-        };
-        // The reference's hash commits to the uncompressed blob: a
-        // checksum failure is Corrupt at mount-open → EINVAL (spec 20 §4).
-        if limnifs_core::hash_section(blob_bytes) != meta_ref.metadata_hash {
-            return Err(open_error(CoreError::Corrupt {
-                reason: "metadata blob does not match the metadata_reference hash".to_string(),
-            }));
-        }
-        let blob = parse_metadata_blob(&mut ManifestCursor::new(blob_bytes)).map_err(open_error)?;
-        let root = blob.root_inode_number().ok_or_else(|| {
-            open_error(CoreError::Corrupt {
-                reason: "no unique root directory inode".to_string(),
-            })
-        })?;
-
-        let mut paths: HashMap<String, u64> =
-            HashMap::with_capacity(blob.inodes.len().saturating_add(1));
-        paths.insert(String::new(), root);
-        for (path, number) in blob.build_path_index() {
-            // The limnifs index is absolute (`/a/b`); the Backend trait
-            // speaks relative paths (`a/b`, `""` for root).
-            paths.insert(normalize(&path).to_string(), number);
-        }
-
-        let slab_index = parse_slab_index(&mut cursor).map_err(open_error)?;
-        let slab_index_end = cursor.position();
-
-        // The writer always emits a history section after the slab
-        // index; parsing it lands the cursor exactly on the slab region.
-        let _history = parse_history(&mut cursor).map_err(open_error)?;
-        let history_end = cursor.position();
-
-        let sections: Vec<(&'static str, usize)> = vec![
-            ("MANIFEST_HEADER", header_end),
-            ("FEATURE_FLAGS", flags_end - header_end),
-            ("METADATA_REFERENCE", meta_ref_end - flags_end),
-            ("SLAB_INDEX", slab_index_end - meta_ref_end),
-            ("HISTORY", history_end - slab_index_end),
-        ];
-
-        let mut slab_drop_counts: Vec<usize> = Vec::with_capacity(slab_index.len());
-        let mut sources: Vec<SlabSource> = Vec::with_capacity(slab_index.len());
-        let mut pos = history_end;
-        if slab_index.is_empty() {
+        let mut slab_drop_counts: Vec<usize> = Vec::with_capacity(walk.slab_index.len());
+        let mut sources: Vec<SlabSource> = Vec::with_capacity(walk.slab_index.len());
+        let mut pos = walk.slabs_start;
+        if walk.slab_index.is_empty() {
             if pos != data.len() {
                 return Err(open_error(CoreError::Corrupt {
                     reason: format!(
@@ -234,7 +350,7 @@ impl LimnifsBackend {
                 }));
             }
         } else {
-            for entry in &slab_index.entries {
+            for entry in &walk.slab_index.entries {
                 if data.len() < pos.saturating_add(SLAB_HEADER_LEN)
                     || &data[pos..pos.saturating_add(4)] != SLAB_MAGIC
                 {
@@ -310,12 +426,157 @@ impl LimnifsBackend {
         );
 
         Ok(LimnifsBackend {
-            header,
-            blob,
-            paths,
-            root,
-            store,
-            sections,
+            header: walk.header,
+            blob: walk.blob,
+            paths: walk.paths,
+            root: walk.root,
+            store: SlabServing::Cached(Box::new(store)),
+            sections: walk.sections,
+            slab_drop_counts,
+            image_bytes,
+        })
+    }
+
+    /// Open a self-contained limnifs image served by a byte source
+    /// (spec 39 §2 — the sourced open beside [`LimnifsBackend::from_image`]):
+    /// mount-open fetches, THROUGH THE SOURCE (and therefore through
+    /// its digest verification), the manifest prefix — the same
+    /// self-delimiting walk [`parse_manifest_prefix`] performs,
+    /// re-driven over a growing fetched window — and each slab's
+    /// 56-byte header; the record tables parse eagerly over the paged
+    /// slab set; slab drop payload bytes arrive on demand at `pread`
+    /// time. The wire format is untouched (spec 39 §9): every limnifs
+    /// image ever published opens this way.
+    #[cfg(feature = "backend-remote")]
+    pub fn from_source(source: Arc<dyn ByteSource>) -> Result<LimnifsBackend, i32> {
+        /// The prefix growth quantum. One group (4 MiB) would make the
+        /// typical open one fetch; 1 MiB keeps a SMALL image's open
+        /// cheap while the remote source's group cache makes the extra
+        /// window reads free (cache hits inside a seeded group).
+        const PREFIX_CHUNK: usize = 1024 * 1024;
+
+        let source_error = |e: crate::source::SourceError| {
+            tebako_log::log!(
+                tebako_log::Level::Warn,
+                "tfs",
+                "limnifs: sourced mount-open failed: {e} (errno {})",
+                e.errno()
+            );
+            e.errno()
+        };
+
+        // The growth loop: fetch the prefix a chunk at a time, re-drive
+        // the walk after each growth; `TooShort` means "fetch more"
+        // until EOF makes it the final EINVAL (a truncated image).
+        let mut prefix: Vec<u8> = Vec::new();
+        let walk = loop {
+            let chunk = source
+                .read_at(prefix.len() as u64, PREFIX_CHUNK)
+                .map_err(source_error)?;
+            let eof = chunk.len() < PREFIX_CHUNK;
+            prefix.extend_from_slice(&chunk);
+            match parse_manifest_prefix(&prefix) {
+                Ok(walk) => break walk,
+                Err(errno) if !eof => {
+                    // Only a short buffer justifies another round; any
+                    // other failure is final on any prefix length.
+                    // (`TooShort` maps to EINVAL — the only errno the
+                    // walk's failure law produces for a shortfall.)
+                    if errno != libc::EINVAL {
+                        return Err(errno);
+                    }
+                    // EINVAL could equally be a genuine structural
+                    // failure visible early (bad magic): growth cannot
+                    // heal those, but it cannot change their answer
+                    // either — re-driving to EOF keeps ONE code path,
+                    // and the prefix is bounded by the image's own
+                    // size. The bad-magic case fails fast anyway: the
+                    // mount layer sniffs LMFS before calling here.
+                    if eof {
+                        return Err(errno);
+                    }
+                }
+                Err(errno) => return Err(errno),
+            }
+        };
+
+        // The slab region walk: each slab's header only (the record
+        // tables and payloads ride the paged set below).
+        let mut pos = walk.slabs_start as u64;
+        let mut readers: Vec<Arc<dyn PositionedReader>> = Vec::with_capacity(walk.slab_index.len());
+        if !walk.slab_index.is_empty() {
+            for entry in &walk.slab_index.entries {
+                let header_bytes =
+                    read_exact_at(source.as_ref(), pos, SLAB_HEADER_LEN).map_err(source_error)?;
+                if &header_bytes[..4] != SLAB_MAGIC {
+                    return Err(unsupported(format!(
+                        "slab ordinal {} is not appended to the image (external locator or unknown trailing section)",
+                        entry.slab_id.ordinal
+                    )));
+                }
+                let mut slab_cursor = ManifestCursor::new(&header_bytes);
+                let slab_header = parse_slab_header(&mut slab_cursor).map_err(open_error)?;
+                if slab_header.is_sealed() {
+                    return Err(unsupported(
+                        "AEAD-sealed slab (tebako-side encryption stays the ENC transform)"
+                            .to_string(),
+                    ));
+                }
+                if slab_header.slab_id != entry.slab_id {
+                    return Err(open_error(CoreError::Corrupt {
+                        reason: format!(
+                            "appended slab id (ordinal {}) does not match the slab_index entry (ordinal {})",
+                            slab_header.slab_id.ordinal, entry.slab_id.ordinal
+                        ),
+                    }));
+                }
+                let Some(end) = pos.checked_add(slab_header.total_length) else {
+                    return Err(libc::EINVAL);
+                };
+                // The closure adapter (spec 39 §2's design): one
+                // positioned reader per slab, offsets rebased to the
+                // slab's image span. The source's digest verification
+                // rides underneath — every byte the paged set fetches
+                // arrives verified.
+                let src = Arc::clone(&source);
+                readers.push(
+                    Arc::new(move |off: u64, len: usize| -> Result<Vec<u8>, CoreError> {
+                        src.read_at(pos + off, len).map_err(|e| CoreError::Corrupt {
+                            reason: format!("the lazy byte source: {e}"),
+                        })
+                    }) as Arc<dyn PositionedReader>,
+                );
+                pos = end;
+            }
+        }
+        // The trailing-garbage check (the resident open's `pos !=
+        // data.len()` law): one EOF probe at the region's end.
+        if !source.read_at(pos, 1).map_err(source_error)?.is_empty() {
+            return Err(open_error(CoreError::Corrupt {
+                reason: "trailing bytes after the last appended slab".to_string(),
+            }));
+        }
+
+        // The record tables parse EAGERLY over the paged set (the
+        // covering groups fetch through the source's verification);
+        // drop payloads arrive at pread time.
+        let set = PagedSlabSet::open(readers).map_err(open_error)?;
+        let slab_drop_counts: Vec<usize> = (0..set.slab_count())
+            .map(|ordinal| {
+                set.slab(ordinal)
+                    .map(|slab| slab.drop_records().len())
+                    .unwrap_or(0)
+            })
+            .collect();
+        let image_bytes = source.len().unwrap_or(pos) as usize;
+
+        Ok(LimnifsBackend {
+            header: walk.header,
+            blob: walk.blob,
+            paths: walk.paths,
+            root: walk.root,
+            store: SlabServing::Paged(set),
+            sections: walk.sections,
             slab_drop_counts,
             image_bytes,
         })
@@ -338,16 +599,22 @@ impl LimnifsBackend {
         })
     }
 
-    /// The `[start, start + len)` window of one drop's plaintext, served
-    /// by the cached slab store (limnifs#192): a seekable drop decodes
-    /// only the covering container frames; anything else decodes whole
-    /// once and caches. Decode-side refusals (AEAD/dict/multi-window
-    /// drops — the tebako writer path emits none of them) surface from
-    /// the store as `UnsupportedFeature` → ENOTSUP, the same named
-    /// refusal the pre-flip adapter made itself.
+    /// The `[start, start + len)` window of one drop's plaintext,
+    /// served by the slab engine: the resident store's seekable path
+    /// decodes only the covering container frames (limnifs#192); the
+    /// paged set fetches the covering GROUPS through the byte source
+    /// (digest-verified) and decodes the drop. Decode-side refusals
+    /// (AEAD/dict/multi-window drops — the tebako writer path emits
+    /// none of them) surface as `UnsupportedFeature` → ENOTSUP; a
+    /// short fill is a broken cross-reference → EIO.
     fn drop_window(&self, drop_id: &[u8; 32], start: usize, len: usize) -> Result<Vec<u8>, i32> {
-        self.store
-            .decoded_range(drop_id, start as u64, len)
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+        let mut buf = vec![0u8; len];
+        let filled = self
+            .store
+            .decoded_range_into(drop_id, start as u64, &mut buf)
             // A slice references a drop no slab carries: a broken
             // cross-reference, i.e. corruption while serving.
             .ok_or(libc::EIO)?
@@ -358,7 +625,16 @@ impl LimnifsBackend {
                     "limnifs: drop decode refused: {e}"
                 );
                 serve_error(e)
-            })
+            })?;
+        if filled != len {
+            tebako_log::log!(
+                tebako_log::Level::Trace,
+                "tfs",
+                "limnifs: drop window filled {filled} of {len} bytes (EIO)"
+            );
+            return Err(libc::EIO);
+        }
+        Ok(buf)
     }
 
     /// The byte length a stat reports for a regular file's content
@@ -892,7 +1168,10 @@ mod tests {
             .map(|s| *s.drop_id.as_bytes())
             .collect::<std::collections::BTreeSet<_>>()
             .len();
-        let stats = backend.store.cache_stats();
+        let stats = backend
+            .store
+            .cache_stats()
+            .expect("the resident engine caches");
         assert!(
             stats.misses as usize <= 2 * distinct,
             "bounded decode work: {} cache misses for {distinct} distinct drops — the regression class is one miss per 8 KiB window (25)",
@@ -906,7 +1185,10 @@ mod tests {
             assert!(n > 0, "forward progress at {offset}");
             offset += n as u64;
         }
-        let after = backend.store.cache_stats();
+        let after = backend
+            .store
+            .cache_stats()
+            .expect("the resident engine caches");
         assert_eq!(
             after.misses, stats.misses,
             "the second sweep is all cache hits (misses {} → {})",
