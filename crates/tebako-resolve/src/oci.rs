@@ -116,6 +116,22 @@ impl<T: Transport> Http for OciTransport<'_, T> {
             header.as_ref().map(|(k, v)| (*k, v.as_str())),
         )
     }
+
+    fn get_range(
+        &self,
+        url: &str,
+        range: tebako_http::ByteRange,
+        if_range: Option<&str>,
+        auth: tebako_oci::Auth<'_>,
+    ) -> Result<tebako_http::RawResponse, FetchError> {
+        let header = tebako_oci::authorization_header(auth);
+        self.0.get_range_raw(
+            url,
+            range,
+            if_range,
+            header.as_ref().map(|(k, v)| (*k, v.as_str())),
+        )
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -520,6 +536,82 @@ pub fn resolve_manifest_digest<T: Transport>(
         .resolve(&r, ShapeExpectation::Class(ArtifactClass::RegistryIndex))
         .map(|a| a.manifest_digest)
         .map_err(|e| named(alias, book.take_looked_for(), e))
+}
+
+/// The spec 39 §8 blksum sidecar over OCI: resolve the sibling
+/// digest-tag (`sha256-<image sha>.blksum.json` — spec 38 §3's rule)
+/// in `<host>/<repo>`, fetch the one layer (its digest IS the sidecar
+/// document's sha256 — the seed descriptor's `blksum_sha256` pin binds
+/// it with no second file), and parse the blksum document. Returns the
+/// document and the digest-pinned origin. `Ok(None)` is the spec 39 §3
+/// blksum-missing signal — the sibling tag names nothing, and the loud
+/// eager fallback is the CALLER's law, never an error here. A sidecar
+/// that pins a DIFFERENT image than the tag names is a torn publish:
+/// the named sha mismatch, never a silent serve.
+pub fn fetch_blksum_sidecar<T: Transport>(
+    transport: &T,
+    host: &str,
+    repo: &str,
+    image_blob_sha256: &str,
+    alias: Option<&str>,
+) -> Result<Option<(tpkg::lazy::Blksum, String)>, ResolveError> {
+    let book = OciBook::new(crate::credentials::book(), alias, host);
+    let oci_transport = OciTransport(transport);
+    let client = Client::new(&oci_transport, &book);
+    let tag = tebako_oci::blksum_tag(image_blob_sha256);
+    let r = repo_ref(host, repo, Some(&tag), None);
+    let mut throttles = 0;
+    loop {
+        match pull_blksum(&client, &r, image_blob_sha256) {
+            Ok(done) => return Ok(done),
+            Err(OciError::Transport(FetchError::Throttled { retry_after, .. })) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(ResolveError::DownloadFailed {
+                        origin: r.reference_string(),
+                        reason: format!(
+                            "still throttled after {} backoff rounds",
+                            tebako_http::THROTTLE_ROUNDS
+                        ),
+                    });
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
+            Err(e) => return Err(named(alias, book.take_looked_for(), e)),
+        }
+    }
+}
+
+/// One blksum sidecar pull attempt (the sibling-tag manifest + the one
+/// layer + the strict document checks).
+fn pull_blksum<H: Http, C: CredentialSource>(
+    client: &Client<'_, H, C>,
+    r: &RepoRef<'_>,
+    image_blob_sha256: &str,
+) -> Result<Option<(tpkg::lazy::Blksum, String)>, OciError> {
+    let artifact = match client.resolve(r, ShapeExpectation::Class(ArtifactClass::Blksum)) {
+        Ok(artifact) => artifact,
+        Err(OciError::ManifestNotFound { .. }) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let bytes = client.fetch_blob(r, &artifact.layer)?;
+    let text = String::from_utf8(bytes).map_err(|_| OciError::ArtifactMalformed {
+        origin: artifact.origin.clone(),
+        reason: "the blksum sidecar is not UTF-8".to_string(),
+    })?;
+    let blksum =
+        tpkg::lazy::Blksum::parse(&text).map_err(|e| OciError::ArtifactMalformed {
+            origin: artifact.origin.clone(),
+            reason: format!("the blksum sidecar document: {e}"),
+        })?;
+    if !blksum.sha256.eq_ignore_ascii_case(image_blob_sha256) {
+        return Err(OciError::Sha256Mismatch {
+            origin: artifact.origin,
+            expected: image_blob_sha256.to_string(),
+            actual: blksum.sha256,
+        });
+    }
+    Ok(Some((blksum, artifact.origin)))
 }
 
 /// The plan-pipeline pull (spec 38 §5.2): the payload artifact's one

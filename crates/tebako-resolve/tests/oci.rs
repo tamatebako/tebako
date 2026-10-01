@@ -423,3 +423,186 @@ fn the_store_records_match_a_file_install_byte_for_byte() {
     );
     let _ = fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------
+// The blksum sidecar over OCI (spec 39 §8)
+// ---------------------------------------------------------------------
+
+/// A mock registry serving the blksum sidecar sibling of `ns/tool`'s
+/// image blob: the sibling digest-tag manifest (blksum class) + the
+/// sidecar blob itself. Returns the mock, the image's hex digest, and
+/// the blksum document the sidecar carries.
+fn blksum_mock(image: &[u8]) -> (DistMock, String, tpkg::lazy::Blksum) {
+    let image_hex = sha256_hex(image);
+    let blksum = tpkg::lazy::Blksum::from_image_bytes(image);
+    let sidecar = blksum.render();
+    let (manifest, manifest_hex) = manifest_for(
+        ArtifactClass::Blksum,
+        &tebako_oci::blksum_tag(&image_hex),
+        sidecar.as_bytes(),
+    );
+    let sidecar_hex = sha256_hex(sidecar.as_bytes());
+    let mock = DistMock::new()
+        .ok(
+            &format!(
+                "https://reg.example/v2/ns/tool/manifests/{}",
+                tebako_oci::blksum_tag(&image_hex)
+            ),
+            &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+            &manifest,
+        )
+        .ok(
+            &format!("https://reg.example/v2/ns/tool/blobs/sha256:{sidecar_hex}"),
+            &[],
+            sidecar.as_bytes(),
+        );
+    (mock, image_hex, blksum)
+}
+
+#[test]
+fn the_blksum_sidecar_resolves_through_the_sibling_digest_tag() {
+    isolate_docker_config();
+    let image = b"the lazy env image bytes, more than one group would need";
+    let (mock, image_hex, published) = blksum_mock(image);
+    let mock = std::sync::Arc::new(mock);
+    let got = tebako_resolve::oci::fetch_blksum_sidecar(
+        &SharedMock(mock.clone()),
+        "reg.example",
+        "ns/tool",
+        &image_hex,
+        None,
+    )
+    .unwrap();
+    let Some((blksum, origin)) = got else {
+        panic!("the published sidecar must resolve")
+    };
+    assert_eq!(blksum.sha256, published.sha256);
+    assert_eq!(blksum.size_bytes, image.len() as u64);
+    assert_eq!(blksum.group_count(), published.group_count());
+    assert!(
+        origin.starts_with("tfs+oci://reg.example/ns/tool@sha256:"),
+        "{origin}"
+    );
+    assert!(mock.requested(&format!("/manifests/sha256-{image_hex}.blksum.json")));
+}
+
+#[test]
+fn a_missing_blksum_sidecar_is_the_loud_fallback_signal() {
+    isolate_docker_config();
+    let got = tebako_resolve::oci::fetch_blksum_sidecar(
+        &DistMock::new(),
+        "reg.example",
+        "ns/tool",
+        &"a".repeat(64),
+        None,
+    )
+    .unwrap();
+    assert!(
+        got.is_none(),
+        "blksum-missing is Ok(None) — the spec 39 §3 loud eager fallback is the caller's law"
+    );
+}
+
+#[test]
+fn a_blksum_tag_naming_a_non_blksum_artifact_is_malformed() {
+    isolate_docker_config();
+    let image_hex = "b".repeat(64);
+    let blob = b"not a blksum at all";
+    let (manifest, _) = manifest_for(ArtifactClass::Payload, "tool-1.0.tfs", blob);
+    let mock = DistMock::new().ok(
+        &format!(
+            "https://reg.example/v2/ns/tool/manifests/sha256-{image_hex}.blksum.json"
+        ),
+        &[],
+        &manifest,
+    );
+    let err = tebako_resolve::oci::fetch_blksum_sidecar(
+        &mock,
+        "reg.example",
+        "ns/tool",
+        &image_hex,
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_sidecar_pinning_a_different_image_is_the_named_mismatch() {
+    isolate_docker_config();
+    // The sidecar was published for image A but rides image B's sibling
+    // tag — a torn publish, never a silent serve.
+    let image_a = b"image A bytes";
+    let blksum_a = tpkg::lazy::Blksum::from_image_bytes(image_a);
+    let sidecar = blksum_a.render();
+    let image_b_hex = "c".repeat(64);
+    let (manifest, _) = manifest_for(
+        ArtifactClass::Blksum,
+        &tebako_oci::blksum_tag(&image_b_hex),
+        sidecar.as_bytes(),
+    );
+    let sidecar_hex = sha256_hex(sidecar.as_bytes());
+    let mock = DistMock::new()
+        .ok(
+            &format!(
+                "https://reg.example/v2/ns/tool/manifests/sha256-{image_b_hex}.blksum.json"
+            ),
+            &[],
+            &manifest,
+        )
+        .ok(
+            &format!("https://reg.example/v2/ns/tool/blobs/sha256:{sidecar_hex}"),
+            &[],
+            sidecar.as_bytes(),
+        );
+    let err = tebako_resolve::oci::fetch_blksum_sidecar(
+        &mock,
+        "reg.example",
+        "ns/tool",
+        &image_b_hex,
+        None,
+    )
+    .unwrap_err();
+    assert!(matches!(err, ResolveError::Sha256Mismatch { .. }), "{err}");
+}
+
+#[test]
+fn a_torn_sidecar_document_is_malformed_by_name() {
+    isolate_docker_config();
+    let image_hex = "d".repeat(64);
+    let sidecar = b"this is not a blksum document";
+    let (manifest, _) = manifest_for(
+        ArtifactClass::Blksum,
+        &tebako_oci::blksum_tag(&image_hex),
+        sidecar,
+    );
+    let sidecar_hex = sha256_hex(sidecar);
+    let mock = DistMock::new()
+        .ok(
+            &format!(
+                "https://reg.example/v2/ns/tool/manifests/sha256-{image_hex}.blksum.json"
+            ),
+            &[],
+            &manifest,
+        )
+        .ok(
+            &format!("https://reg.example/v2/ns/tool/blobs/sha256:{sidecar_hex}"),
+            &[],
+            sidecar,
+        );
+    let err = tebako_resolve::oci::fetch_blksum_sidecar(
+        &mock,
+        "reg.example",
+        "ns/tool",
+        &image_hex,
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+}
