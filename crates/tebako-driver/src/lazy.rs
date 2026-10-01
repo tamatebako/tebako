@@ -25,7 +25,7 @@ use tfs::source::{SourceError, SourceErrorKind};
 use tpkg::lazy::{Blksum, LazySeed, SealOutcome};
 
 use crate::driver::DriverError;
-use crate::{EX_TEBAKO_MANIFEST, EX_TEBAKO_UNAVAILABLE};
+use crate::{EX_TEBAKO_MANIFEST, EX_TEBAKO_SHA, EX_TEBAKO_UNAVAILABLE};
 
 /// The background seal's operator switch (spec 39 §5):
 /// `TEBAKO_LAZY_SEAL=0` disables the seal thread (seeding stays
@@ -41,6 +41,7 @@ const LAZY_SEAL: tpkg::settings::Setting = tpkg::settings::Setting {
 
 /// The handoff path's on-disk state (spec 39 §9: the path names the
 /// entry; the driver reads the state).
+#[derive(Debug)]
 pub(crate) enum EnvImageState {
     /// The sealed image file is present — today's whole-file mount.
     Sealed,
@@ -259,4 +260,194 @@ pub(crate) fn spawn_seal_thread(
             }
         }
     });
+}
+
+// ---------------------------------------------------------------------
+// the spec 39 §10 PR-4 e2e (the loader-side wire, file:// source)
+// ---------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The fixture image: a small tree plus ~5 MiB of incompressible
+    /// bytes (two 4 MiB groups) written as a limnifs image on disk,
+    /// with its blksum sidecar beside it (the tfs lazy_remote fixture's
+    /// shape, file://-served).
+    fn fixture_image() -> (tempfile::TempDir, PathBuf, Blksum) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("tree");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("hello.txt"), b"hello, lazy driver\n").unwrap();
+        let mut big = vec![0u8; 5 * 1024 * 1024];
+        let mut state = 0x9E3779B97F4A7C15u64;
+        for chunk in big.chunks_mut(8) {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            let bytes = state.wrapping_mul(0x2545F4914F6CDD1D).to_le_bytes();
+            chunk.copy_from_slice(&bytes[..chunk.len()]);
+        }
+        std::fs::write(root.join("big.bin"), &big).unwrap();
+        let mut config = limnifs_write::WriteConfig::default_v0_1();
+        config.dictionaries.enabled = false;
+        let artifact =
+            limnifs_write::write_directory_with_config(&root, &config).expect("write succeeds");
+        assert!(
+            artifact.metadata_sidecar.is_none(),
+            "the fixture tree must keep its metadata inline"
+        );
+        let mut image = artifact.bytes;
+        for slab in &artifact.slabs {
+            image.extend_from_slice(&slab.bytes);
+        }
+        let image_path = tmp.path().join("image.tfs");
+        std::fs::write(&image_path, &image).unwrap();
+        let blksum = Blksum::from_image_bytes(&image);
+        std::fs::write(
+            tmp.path().join("image.tfs.blksum.json"),
+            blksum.render(),
+        )
+        .unwrap();
+        (tmp, image_path, blksum)
+    }
+
+    /// The LAZY_SEEDING store entry around the fixture: the descriptor
+    /// present (file:// source), the image ABSENT.
+    fn seed_entry(image_path: &Path, blksum: &Blksum) -> (tempfile::TempDir, String, LazySeed) {
+        let entry = tempfile::tempdir().expect("entry");
+        let seed = LazySeed {
+            source: format!("file://{}", image_path.display()),
+            sha256: blksum.sha256.clone(),
+            blksum_sha256: tpkg::lazy::sha256_hex(blksum.render().as_bytes()),
+            size_bytes: blksum.size_bytes,
+            group_count: blksum.group_count(),
+        };
+        tpkg::lazy::write_descriptor(entry.path(), "image.tfs", &seed).unwrap();
+        (entry, "image.tfs".to_string(), seed)
+    }
+
+    fn light_seed() -> LazySeed {
+        LazySeed {
+            source: "file:///x.tfs".to_string(),
+            sha256: "a".repeat(64),
+            blksum_sha256: "b".repeat(64),
+            size_bytes: tpkg::lazy::LAZY_GROUP_SIZE,
+            group_count: 1,
+        }
+    }
+
+    #[test]
+    fn env_image_state_classifies_the_three_states_and_the_torn() {
+        let tmp = tempfile::tempdir().unwrap();
+        let image = tmp.path().join("img.tfs");
+        let image = image.to_str().unwrap();
+        // Absent: nothing on disk — the caller's ordinary error path.
+        assert!(matches!(
+            env_image_state(image).unwrap(),
+            EnvImageState::Absent
+        ));
+        // Seeding: a valid descriptor, the image absent.
+        let seed = light_seed();
+        tpkg::lazy::write_descriptor(tmp.path(), "img.tfs", &seed).unwrap();
+        match env_image_state(image).unwrap() {
+            EnvImageState::Seeding { seed: got, .. } => assert_eq!(got, seed),
+            _ => panic!("expected Seeding"),
+        }
+        // Sealed: the image present wins outright.
+        std::fs::write(image, b"x").unwrap();
+        assert!(matches!(
+            env_image_state(image).unwrap(),
+            EnvImageState::Sealed
+        ));
+        std::fs::remove_file(image).unwrap();
+        // Torn: a garbage descriptor is the named 65, never a guess.
+        std::fs::write(tmp.path().join("img.tfs.lazy.json"), b"not json").unwrap();
+        let err = env_image_state(image).unwrap_err();
+        assert_eq!(err.code, 65, "{err:?}");
+        assert!(err.message.contains("img.tfs"), "{err:?}");
+    }
+
+    #[test]
+    fn the_settings_arms_parse_and_name_the_malformed() {
+        assert!(!offline(None));
+        assert!(offline(Some("YES".to_string())));
+        assert!(!offline(Some("0".to_string())));
+        assert!(seal_enabled(None).unwrap());
+        assert!(!seal_enabled(Some("0".to_string())).unwrap());
+        let err = seal_enabled(Some("maybe".to_string())).unwrap_err();
+        assert_eq!(err.code, 65, "{err:?}");
+        assert!(err.message.contains("TEBAKO_LAZY_SEAL"), "{err:?}");
+    }
+
+    #[test]
+    fn the_lazy_wire_mounts_seeds_and_seals_the_entry() {
+        let (_t, image_path, blksum) = fixture_image();
+        let (entry, image_base, seed) = seed_entry(&image_path, &blksum);
+        let source = open_lazy_source(entry.path(), &image_base, &seed, false).expect("opens");
+        let byte_source: Arc<dyn tfs::source::ByteSource> = source.clone();
+        let mount_point = format!("/lazy-seal-{}", std::process::id());
+        let mount = tfs::mount::build_from_source(byte_source, &mount_point).expect("mounts");
+        // A touching read answers the golden bytes through the wire.
+        let mut buf = [0u8; 32];
+        let n = mount.backend.pread("hello.txt", &mut buf, 0).expect("read");
+        assert_eq!(&buf[..n], b"hello, lazy driver\n");
+        // The seal thread fills the remaining groups and commits; the
+        // entry flips SEALED (image + anchor, descriptor + blocks gone).
+        spawn_seal_thread(&source, entry.path().to_path_buf(), image_base.clone());
+        let sealed_image = entry.path().join(&image_base);
+        for _ in 0..200 {
+            if sealed_image.is_file() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            sealed_image.is_file(),
+            "the seal thread installs the image"
+        );
+        assert!(entry.path().join(format!("{image_base}.sha256")).is_file());
+        assert!(!tpkg::lazy::descriptor_path(entry.path(), &image_base).exists());
+        assert!(!tpkg::lazy::blocks_dir(entry.path(), &image_base).exists());
+        // The sealed bytes are byte-identical with the origin's.
+        assert_eq!(
+            tpkg::lazy::sha256_hex(&std::fs::read(&sealed_image).unwrap()),
+            seed.sha256
+        );
+        // The entry now state-detects SEALED — the lazy machinery is
+        // out of the loop entirely.
+        assert!(matches!(
+            env_image_state(sealed_image.to_str().unwrap()).unwrap(),
+            EnvImageState::Sealed
+        ));
+        drop(mount);
+    }
+
+    #[test]
+    fn the_offline_cache_only_open_serves_seeded_groups_and_names_the_miss() {
+        let (_t, image_path, blksum) = fixture_image();
+        let (entry, image_base, seed) = seed_entry(&image_path, &blksum);
+        // Seed group 0 ONLINE (the mount-open prefix), then go offline.
+        let online = open_lazy_source(entry.path(), &image_base, &seed, false).unwrap();
+        online.seed_group(0).expect("group 0 seeds");
+        drop(online);
+        let source = open_lazy_source(entry.path(), &image_base, &seed, true)
+            .expect("the cache-only open needs no network");
+        let byte_source: Arc<dyn tfs::source::ByteSource> = source.clone();
+        let mount_point = format!("/lazy-offline-{}", std::process::id());
+        let mount = tfs::mount::build_from_source(byte_source, &mount_point)
+            .expect("the offline mount opens from the cached prefix");
+        let mut buf = [0u8; 32];
+        let n = mount.backend.pread("hello.txt", &mut buf, 0).expect("cached read");
+        assert_eq!(&buf[..n], b"hello, lazy driver\n");
+        // An UNseeded group's touching read is EIO — never a fabricated
+        // zero-fill, never a silent short read (spec 39 §6).
+        let mut miss = vec![0u8; 8192];
+        let err = mount
+            .backend
+            .pread("big.bin", &mut miss, 4 * 1024 * 1024 + 10)
+            .expect_err("a miss offline is EIO");
+        assert_eq!(err, libc::EIO);
+        drop(mount);
+    }
 }
