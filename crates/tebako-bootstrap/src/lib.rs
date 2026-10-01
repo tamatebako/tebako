@@ -726,6 +726,57 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
     }
 }
 
+/// The blksum sidecar's fetch classes (spec 39 §7): a MISSING object
+/// (404 / no such file) is the loud eager fallback — the release simply
+/// does not serve the lazy wire; anything else past fetch_url's
+/// retry/throttle budget is the named fetch failure (exit 69). The
+/// classes stay apart: a missing sidecar is never an error, an error is
+/// never a fallback.
+enum SidecarFetch {
+    Fetched,
+    Missing,
+    Failed,
+}
+
+/// fetch_url with the Missing/Failed classes surfaced (same local/
+/// remote rules, same retry/throttle budget).
+fn fetch_sidecar(url: &str, local: bool, out: &Path) -> SidecarFetch {
+    if local {
+        return match copy_file(Path::new(url), out) {
+            Ok(()) => SidecarFetch::Fetched,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => SidecarFetch::Missing,
+            Err(_) => SidecarFetch::Failed,
+        };
+    }
+    let mut attempts = 0;
+    let mut throttles = 0;
+    loop {
+        match tebako_http::get(url) {
+            Ok(bytes) => {
+                return match std::fs::write(out, bytes) {
+                    Ok(()) => SidecarFetch::Fetched,
+                    Err(_) => SidecarFetch::Failed,
+                };
+            }
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => return SidecarFetch::Missing,
+            Err(tebako_http::FetchError::Throttled { retry_after, .. }) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return SidecarFetch::Failed;
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
+            Err(e) => {
+                attempts += 1;
+                if attempts >= 3 {
+                    eprintln!("tebako-bootstrap: download failed: {e}");
+                    return SidecarFetch::Failed;
+                }
+            }
+        }
+    }
+}
+
 /// fetch_url's in-memory sibling for the small index documents
 /// (manifest.json): the same local/remote rules and the same
 /// retry/throttle budget, no staging file.
@@ -1382,6 +1433,42 @@ pub fn manifest_entry_facet_filename(entry: &ManifestEntry, facet: &str) -> Opti
         .into_iter()
         .find(|(k, _)| *k == "filename")
         .map(|(_, v)| v.to_string())
+}
+
+/// spec 39 §3: the `image.blksum` row of a release-index entry — the
+/// sidecar asset's filename + its sha256 pin, the lazy wire's trust
+/// anchor. `Ok(None)` when the entry declares no `image` facet or no
+/// `blksum` key (every pre-2026 release — the loud-eager-fallback case
+/// when lazy was requested). A PRESENT but torn row (fields missing,
+/// empty, or a malformed pin) is `Err`: the index the fetch path
+/// already trusted is lying about a trust anchor — never a silent
+/// downgrade to eager (tpkg::runtime_store::entry_blksum owns the
+/// tebako_json twin; this is the bootstrap's hand-rolled parity).
+#[allow(clippy::result_unit_err)] // C-style -1 error by design
+pub fn manifest_entry_blksum(entry: &ManifestEntry) -> Result<Option<(String, String)>, ()> {
+    let Some(image) = depth1_object_body(entry.body, "image") else {
+        return Ok(None);
+    };
+    if !image.contains("\"blksum\"") {
+        return Ok(None);
+    }
+    let block = depth1_object_body(image, "blksum").ok_or(())?;
+    let fields = depth1_string_fields(block);
+    let get = |key: &str| {
+        fields
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| *v)
+            .filter(|s| !s.is_empty())
+    };
+    match (get("filename"), get("sha256")) {
+        (Some(filename), Some(sha256))
+            if sha256.len() == 64 && sha256.bytes().all(|b| b.is_ascii_hexdigit()) =>
+        {
+            Ok(Some((filename.to_string(), sha256.to_lowercase())))
+        }
+        _ => Err(()),
+    }
 }
 
 /// A shard entry's additive `bundle` block (spec 36 §3): the one
@@ -2478,6 +2565,25 @@ fn resolve_image(
         return Ok(image_path);
     }
 
+    // spec 39 §9: a LAZY_SEEDING entry (the seed descriptor present,
+    // the image absent) is installed-for-resolution — hand the (absent)
+    // image path to the driver, which state-detects it against the
+    // descriptor. A torn descriptor is the named error, never a silent
+    // re-download.
+    match tpkg::lazy::read_descriptor(entry_dir, &image_asset) {
+        Ok(Some(_)) => return Ok(image_path),
+        Ok(None) => {}
+        Err(e) => {
+            return fail(
+                e.exit_code() as u8,
+                format!(
+                    "cannot resolve runtime image \"{runtime_ref}\": {e}\n  cache entry: {}\n  remove the corrupt entry and re-run to reinstall it",
+                    entry_dir.display()
+                ),
+            );
+        }
+    }
+
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
     let manifest_url = format!("{base}/v{}/manifest.json", rr.abi);
@@ -2529,6 +2635,13 @@ fn resolve_image(
 
     // re-check under the lock
     if file_exists(&image_path) && file_exists(&marker) {
+        lock_release(lock);
+        return Ok(image_path);
+    }
+    if matches!(
+        tpkg::lazy::read_descriptor(entry_dir, &image_asset),
+        Ok(Some(_))
+    ) {
         lock_release(lock);
         return Ok(image_path);
     }
@@ -2614,29 +2727,24 @@ fn resolve_image(
                 lock_release(lock);
                 return Ok(image_path);
             }
+            if matches!(
+                tpkg::lazy::read_descriptor(entry_dir, &image_asset),
+                Ok(Some(_))
+            ) {
+                cleanup_tmp_entry(&tmp_dir, &image_asset);
+                lock_release(lock);
+                return Ok(image_path);
+            }
         }
     }
     let image_url = format!("{base}/v{}/{image_asset}", rr.abi);
     let tmp_image = tmp_dir.join(&image_asset);
 
-    if fetch_asset(&image_url, local, &tmp_image, &image_asset, &mut ux.prog).is_err() {
-        return Err(fail_image(
-            lock,
-            &image_asset,
-            BootError::new(
-                EX_TEBAKO_UNAVAILABLE,
-                format!(
-                    "cannot resolve runtime image \"{runtime_ref}\": download failed\n  url: {image_url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
-                ),
-            ),
-        ));
-    }
-
-    ux.prog.phase("verifying sha256");
-
     // expected checksum: the (already gated) manifest's `image` key
     // primary, SHA256SUMS line fallback (the same sources the
-    // executable's checksum uses).
+    // executable's checksum uses). Discovered BEFORE the download: the
+    // lazy arm (spec 39 §7) needs the pin to decide against streaming a
+    // single byte.
     const DIAG_NAMES: [&str; 5] = [
         "not tried",
         "download failed",
@@ -2678,6 +2786,195 @@ fn resolve_image(
             ),
         ));
     };
+    let expected = expected.to_lowercase();
+
+    // spec 39 §7: the LAZY_SEEDING arm. Opted in via
+    // TEBAKO_RUNTIME_LAZY and the release serves the lazy wire (the
+    // entry's image.blksum row + sidecar) → write the seed descriptor
+    // INSTEAD of downloading the image: the entry scans as installed,
+    // the driver mounts the remote source on demand and seals in the
+    // background. The wire is additive — a release without it is the
+    // loud eager fallback, never an error; a torn row, a failed
+    // sidecar fetch, or a pin mismatch is the named error (the index
+    // the fetch path already trusted is lying about a trust anchor).
+    let lazy_opt_in = match tpkg::settings::resolve_runtime_lazy(
+        std::env::var("TEBAKO_RUNTIME_LAZY").ok(),
+        None,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(fail_image(
+                lock,
+                &image_asset,
+                BootError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "cannot resolve runtime image \"{runtime_ref}\": {e}\n  TEBAKO_RUNTIME_LAZY accepts 1/true/yes or 0/false/no (spec 39 §7)"
+                    ),
+                ),
+            ));
+        }
+    };
+    if lazy_opt_in {
+        let blksum_row = match entry_match.as_ref().map(manifest_entry_blksum) {
+            None | Some(Ok(None)) => None,
+            Some(Ok(Some(row))) => Some(row),
+            Some(Err(())) => {
+                return Err(fail_image(
+                    lock,
+                    &image_asset,
+                    BootError::new(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "cannot resolve runtime image \"{runtime_ref}\": the release index's image.blksum row is torn\n  index: {card_url}\n  the row is present but lacks a usable filename/sha256 — re-publish the runtime, or unset TEBAKO_RUNTIME_LAZY for the eager install"
+                        ),
+                    ),
+                ));
+            }
+        };
+        if let Some((sidecar_asset, sidecar_pin)) = blksum_row {
+            let sidecar_url = format!("{base}/v{}/{sidecar_asset}", rr.abi);
+            let sidecar_tmp = tmp_dir.join(&sidecar_asset);
+            match fetch_sidecar(&sidecar_url, local, &sidecar_tmp) {
+                SidecarFetch::Missing => {}
+                SidecarFetch::Failed => {
+                    return Err(fail_image(
+                        lock,
+                        &image_asset,
+                        BootError::new(
+                            EX_TEBAKO_UNAVAILABLE,
+                            format!(
+                                "cannot resolve runtime image \"{runtime_ref}\": the blksum sidecar download failed\n  url: {sidecar_url}\n  the release declares the lazy wire but does not serve it — check the network, or unset TEBAKO_RUNTIME_LAZY for the eager install"
+                            ),
+                        ),
+                    ));
+                }
+                SidecarFetch::Fetched => {
+                    let sidecar_bytes = match std::fs::read(&sidecar_tmp) {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            return Err(fail_image(
+                                lock,
+                                &image_asset,
+                                BootError::new(
+                                    EX_TEBAKO_IO,
+                                    format!(
+                                        "cannot read the fetched blksum sidecar {}: {e}",
+                                        sidecar_tmp.display()
+                                    ),
+                                ),
+                            ));
+                        }
+                    };
+                    let actual_pin = tpkg::lazy::sha256_hex(&sidecar_bytes);
+                    if actual_pin != sidecar_pin {
+                        return Err(fail_image(
+                            lock,
+                            &image_asset,
+                            BootError::new(
+                                EX_TEBAKO_SHA,
+                                format!(
+                                    "SHA256 mismatch for the blksum sidecar {sidecar_asset} — refusing the lazy install\n  expected: {sidecar_pin} (from {card_url})\n  actual:   {actual_pin}\n  the cache was not touched"
+                                ),
+                            ),
+                        ));
+                    }
+                    let blksum = match std::str::from_utf8(&sidecar_bytes)
+                        .ok()
+                        .map(tpkg::lazy::Blksum::parse)
+                    {
+                        Some(Ok(parsed)) => parsed,
+                        Some(Err(e)) => {
+                            return Err(fail_image(
+                                lock,
+                                &image_asset,
+                                BootError::new(
+                                    e.exit_code() as u8,
+                                    format!(
+                                        "cannot resolve runtime image \"{runtime_ref}\": {e}\n  sidecar: {sidecar_url}"
+                                    ),
+                                ),
+                            ));
+                        }
+                        None => {
+                            return Err(fail_image(
+                                lock,
+                                &image_asset,
+                                BootError::new(
+                                    EX_TEBAKO_MANIFEST,
+                                    format!(
+                                        "cannot resolve runtime image \"{runtime_ref}\": the blksum sidecar is not UTF-8\n  sidecar: {sidecar_url}"
+                                    ),
+                                ),
+                            ));
+                        }
+                    };
+                    if blksum.sha256 != expected {
+                        return Err(fail_image(
+                            lock,
+                            &image_asset,
+                            BootError::new(
+                                EX_TEBAKO_SHA,
+                                format!(
+                                    "the blksum sidecar's whole-image sha256 disagrees with the release pin for {image_asset} — refusing the lazy install\n  sidecar: {} (from {sidecar_url})\n  release: {expected} (from {card_url})",
+                                    blksum.sha256
+                                ),
+                            ),
+                        ));
+                    }
+                    let seed = tpkg::lazy::LazySeed {
+                        source: image_url.clone(),
+                        sha256: expected.clone(),
+                        blksum_sha256: sidecar_pin,
+                        size_bytes: blksum.size_bytes,
+                        group_count: blksum.group_count(),
+                    };
+                    if let Err(e) = tpkg::lazy::write_descriptor(entry_dir, &image_asset, &seed) {
+                        return Err(fail_image(
+                            lock,
+                            &image_asset,
+                            BootError::new(
+                                e.exit_code() as u8,
+                                format!("cannot resolve runtime image \"{runtime_ref}\": {e}"),
+                            ),
+                        ));
+                    }
+                    cleanup_tmp_entry(&tmp_dir, &image_asset);
+                    lock_release(lock);
+                    ux.prog.line(&format!(
+                        "runtime env image {image_asset} ({}) — lazy: seeding on demand, sealing in background",
+                        tebako_term::human_bytes(blksum.size_bytes)
+                    ));
+                    return Ok(image_path);
+                }
+            }
+        }
+        // The loud eager fallback (spec 39 §7): the release does not
+        // serve the lazy wire — the run stays a run, eagerly, and the
+        // journal says why.
+        eprintln!(
+            "tebako-bootstrap: TEBAKO_RUNTIME_LAZY is set but this release does not serve the lazy wire (no image.blksum row/sidecar) — falling back to the eager download of {image_asset}"
+        );
+        journal(
+            root,
+            &format!("event=lazy-fallback runtime_ref={runtime_ref} reason=blksum-missing"),
+        );
+    }
+
+    if fetch_asset(&image_url, local, &tmp_image, &image_asset, &mut ux.prog).is_err() {
+        return Err(fail_image(
+            lock,
+            &image_asset,
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime image \"{runtime_ref}\": download failed\n  url: {image_url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
+                ),
+            ),
+        ));
+    }
+
+    ux.prog.phase("verifying sha256");
 
     let actual = match sha256_file_hex(&tmp_image) {
         Ok(a) => a,
@@ -2693,7 +2990,6 @@ fn resolve_image(
         }
     };
 
-    let expected = expected.to_lowercase();
     if expected != actual {
         return Err(fail_image(
             lock,
@@ -6249,6 +6545,64 @@ mod manifest_identity_tests {
                 "{text:?} must be no match"
             );
         }
+    }
+
+    #[test]
+    fn the_blksum_row_flows_and_torn_rows_are_named() {
+        // No image facet / no blksum key → Ok(None): the loud eager
+        // fallback (every pre-2026 release).
+        let no_image = ManifestEntry {
+            filename: "x".to_string(),
+            body: r#"{"filename": "x"}"#,
+        };
+        assert_eq!(manifest_entry_blksum(&no_image), Ok(None));
+        let no_row = ManifestEntry {
+            filename: "x".to_string(),
+            body: r#"{"image": {"filename": "x.tfs", "sha256": "aaaa"}}"#,
+        };
+        assert_eq!(manifest_entry_blksum(&no_row), Ok(None));
+        // The full row flows; the pin lowercases.
+        let row = ManifestEntry {
+            filename: "x".to_string(),
+            body: r#"{"image": {"filename": "x.tfs", "sha256": "bbbb", "blksum": {"filename": "x.tfs.blksum.json", "sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}}"#,
+        };
+        assert_eq!(
+            manifest_entry_blksum(&row),
+            Ok(Some(("x.tfs.blksum.json".to_string(), "a".repeat(64))))
+        );
+        // Present-but-torn is Err — never a silent downgrade to eager.
+        let torn = ManifestEntry {
+            filename: "x".to_string(),
+            body: r#"{"image": {"filename": "x.tfs", "blksum": {"filename": "x.tfs.blksum.json"}}}"#,
+        };
+        assert!(manifest_entry_blksum(&torn).is_err());
+        let not_a_map = ManifestEntry {
+            filename: "x".to_string(),
+            body: r#"{"image": {"filename": "x.tfs", "blksum": "yes"}}"#,
+        };
+        assert!(manifest_entry_blksum(&not_a_map).is_err());
+    }
+
+    #[test]
+    fn the_sidecar_fetch_keeps_missing_and_failed_apart() {
+        let dir = std::env::temp_dir().join(format!("tebako-boot-sidecar-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("out.json");
+        // Missing: no such source — the fallback class.
+        assert!(matches!(
+            fetch_sidecar(dir.join("nope").to_str().unwrap(), true, &out),
+            SidecarFetch::Missing
+        ));
+        assert!(!out.exists());
+        // Fetched: a local copy lands.
+        let src = dir.join("src.json");
+        std::fs::write(&src, "{}").unwrap();
+        assert!(matches!(
+            fetch_sidecar(src.to_str().unwrap(), true, &out),
+            SidecarFetch::Fetched
+        ));
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "{}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
