@@ -1289,6 +1289,11 @@ pub struct RuntimePair {
 /// `.tfs` env image. On Windows a sibling `.dll` rides along WHEN the
 /// factory ships one (ruby/python do, openjdk does not — its sidecar
 /// 404 is the absence proof, never a guess).
+///
+/// Since the spec 36 bundle era the factory ships ONE `<stem>.tar.gz`
+/// (the pair + a closing SHA256SUMS) instead of the bare pair; the
+/// bundle sidecar's existence selects the grammar (never a rename
+/// guess), and the bundle rides [`stage_bundle_pair`].
 pub fn acquire_runtime_pair(
     layout: &BenchLayout,
     triplet: &str,
@@ -1326,6 +1331,36 @@ pub fn acquire_runtime_pair(
             target_dir.display()
         ))
     })?;
+
+    // The spec 36 bundle era: `<stem>.tar.gz` carries the pair (+
+    // a closing SHA256SUMS) under one verified download. Its sidecar's
+    // existence selects the grammar — the bare-pair probes below never
+    // run against a bundle-era release.
+    match tebako_http::get(&format!("{base}/{stem}.tar.gz.sha256")) {
+        Ok(sidecar) => {
+            let expected =
+                parse_bare_hash(&String::from_utf8_lossy(&sidecar)).ok_or_else(|| {
+                    BenchError::operational(format!(
+                        "acquire: {base}/{stem}.tar.gz.sha256 is not a bare 64-hex sha256"
+                    ))
+                })?;
+            return stage_bundle_pair(
+                layout,
+                &base,
+                &stem,
+                &expected,
+                &target_dir,
+                tebako_version,
+                &rr.lang_version,
+            );
+        }
+        Err(tebako_http::FetchError::IndexUnavailable(_)) => {}
+        Err(e) => {
+            return Err(BenchError::operational(format!(
+                "acquire: cannot probe {base}/{stem}.tar.gz.sha256: {e}"
+            )))
+        }
+    }
 
     // One helper: download <name> + its bare-hash <name>.sha256 sidecar,
     // verify, stage under the target dir.
@@ -1412,8 +1447,193 @@ pub fn acquire_runtime_pair(
     })
 }
 
-/// A staged LAZY_SEEDING entry (runtime-exe-lazy targets, spec 27
-/// §10.5): the same verified pair as [`acquire_runtime_pair`], restaged
+/// The spec 36 bundle manifest's member declarations (the fields the
+/// staging reads — the rest of the manifest is the product's
+/// resolution surface, not the harness's).
+#[derive(serde::Deserialize)]
+struct BundleManifestMember {
+    filename: String,
+    sha256: String,
+}
+
+#[derive(serde::Deserialize)]
+struct BundleManifest {
+    filename: String,
+    sha256: String,
+    image: BundleManifestMember,
+    /// The windows dylib, when the factory ships one (same absence
+    /// rule as the bare era: the manifest not naming it is the proof).
+    dll: Option<BundleManifestMember>,
+}
+
+/// The bundle-era staging (spec 36 §2/§5): the release `.sha256`
+/// sidecar anchors the `<stem>.tar.gz` bytes; the manifest declares
+/// the member set + per-member pins; the unpack enforces the §2
+/// grammar (regular files, bare basenames, the closing SHA256SUMS
+/// last) and every member verifies against BOTH the manifest's pin
+/// and the SHA256SUMS entry. A disagreement is a named error — never
+/// a best-effort unpack.
+fn stage_bundle_pair(
+    layout: &BenchLayout,
+    base: &str,
+    stem: &str,
+    bundle_sha: &str,
+    target_dir: &Path,
+    tebako_version: String,
+    lang_version: &str,
+) -> Result<RuntimePair, BenchError> {
+    let manifest_body = get(&format!("{base}/{stem}.manifest.json"))?;
+    let manifest: BundleManifest = serde_json::from_slice(&manifest_body).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: {base}/{stem}.manifest.json does not parse: {e}"
+        ))
+    })?;
+    let mut members = vec![
+        (manifest.filename.clone(), manifest.sha256.clone()),
+        (
+            manifest.image.filename.clone(),
+            manifest.image.sha256.clone(),
+        ),
+    ];
+    if let Some(dll) = &manifest.dll {
+        members.push((dll.filename.clone(), dll.sha256.clone()));
+    }
+
+    let bundle_name = format!("{stem}.tar.gz");
+    let bundle = layout.assets.join(&bundle_name);
+    download_verified(&format!("{base}/{bundle_name}"), &bundle, bundle_sha)?;
+    let mut staged = unpack_runtime_bundle(&bundle, &bundle_name, &members, target_dir)?;
+
+    let take = |staged: &mut std::collections::BTreeMap<String, PathBuf>, name: &str| {
+        staged.remove(name).ok_or_else(|| {
+            BenchError::operational(format!(
+                "acquire: bundle {bundle_name} carries no member '{name}' (harness bug — the set was verified)"
+            ))
+        })
+    };
+    let exe = take(&mut staged, &manifest.filename)?;
+    chmod_0755(&exe)?;
+    let image = take(&mut staged, &manifest.image.filename)?;
+    Ok(RuntimePair {
+        exe,
+        image,
+        tebako_version,
+        lang_version: lang_version.to_string(),
+    })
+}
+
+/// Unpack a verified `<stem>.tar.gz` runtime bundle under the spec 36
+/// §2 grammar, returning the staged members by name. The member stream
+/// hashes as it writes; the set must be exactly `members` plus the
+/// closing SHA256SUMS, and every member's bytes must agree with its
+/// manifest pin AND its SHA256SUMS line.
+fn unpack_runtime_bundle(
+    bundle: &Path,
+    bundle_name: &str,
+    members: &[(String, String)],
+    target_dir: &Path,
+) -> Result<std::collections::BTreeMap<String, PathBuf>, BenchError> {
+    let invalid = |detail: String| {
+        BenchError::operational(format!(
+            "acquire: invalid release bundle {bundle_name}: {detail} — the release and the bundle disagree"
+        ))
+    };
+    let file = std::fs::File::open(bundle).map_err(|e| {
+        BenchError::operational(format!("acquire: cannot open {}: {e}", bundle.display()))
+    })?;
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(file));
+    let mut staged = std::collections::BTreeMap::new();
+    let mut digests: Vec<(String, String)> = Vec::new();
+    let mut sums: Option<String> = None;
+    let entries = archive
+        .entries()
+        .map_err(|e| invalid(format!("not a tar stream: {e}")))?;
+    for entry in entries {
+        let mut entry = entry.map_err(|e| invalid(format!("a member does not parse: {e}")))?;
+        if entry.header().entry_type() != tar::EntryType::Regular {
+            return Err(invalid(
+                "a non-regular member (the grammar is regular files only)".to_string(),
+            ));
+        }
+        let path = entry
+            .path()
+            .map_err(|e| invalid(format!("a member path does not parse: {e}")))?
+            .into_owned();
+        let name = match path.components().collect::<Vec<_>>().as_slice() {
+            [std::path::Component::Normal(s)] => s.to_string_lossy().into_owned(),
+            [std::path::Component::CurDir, std::path::Component::Normal(s)] => {
+                s.to_string_lossy().into_owned()
+            }
+            _ => {
+                return Err(invalid(format!(
+                    "member '{}' is not a bare basename",
+                    path.display()
+                )))
+            }
+        };
+        if name == "SHA256SUMS" {
+            let mut text = String::new();
+            entry
+                .take(1 << 20)
+                .read_to_string(&mut text)
+                .map_err(|e| invalid(format!("SHA256SUMS does not read: {e}")))?;
+            sums = Some(text);
+            continue;
+        }
+        if sums.is_some() {
+            return Err(invalid(format!(
+                "member '{name}' follows the closing SHA256SUMS"
+            )));
+        }
+        let dest = target_dir.join(&name);
+        let mut out = std::fs::File::create(&dest).map_err(|e| {
+            BenchError::operational(format!("acquire: cannot stage {}: {e}", dest.display()))
+        })?;
+        let mut hasher = sha2::Sha256::new();
+        let mut buf = [0u8; 65536];
+        loop {
+            let n = entry
+                .read(&mut buf)
+                .map_err(|e| invalid(format!("member '{name}' does not read: {e}")))?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            out.write_all(&buf[..n]).map_err(|e| {
+                BenchError::operational(format!("acquire: cannot write {}: {e}", dest.display()))
+            })?;
+        }
+        digests.push((name.clone(), format!("{:x}", hasher.finalize())));
+        staged.insert(name, dest);
+    }
+    let sums =
+        sums.ok_or_else(|| invalid("the closing SHA256SUMS member is absent".to_string()))?;
+    let declared: std::collections::BTreeMap<&str, &str> = members
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    if staged.len() != declared.len() || staged.keys().any(|n| !declared.contains_key(n.as_str())) {
+        return Err(invalid(
+            "the member set is not the manifest's declaration (never a skipped member, never an extra one)"
+                .to_string(),
+        ));
+    }
+    for (name, hex) in &digests {
+        if declared.get(name.as_str()) != Some(&hex.as_str()) {
+            return Err(invalid(format!(
+                "member '{name}' disagrees with the manifest's pin"
+            )));
+        }
+        if parse_sha256sums(&sums, name).as_deref() != Some(hex.as_str()) {
+            return Err(invalid(format!(
+                "member '{name}' disagrees with the closing SHA256SUMS"
+            )));
+        }
+    }
+    Ok(staged)
+}
+
+/// A staged LAZY_SEEDING entry (runtime-exe-lazy targets, spec 27/// §10.5): the same verified pair as [`acquire_runtime_pair`], restaged
 /// as a spec 39 §4 store entry — the exe present, the env image ABSENT,
 /// the seed descriptor's `source` naming the leg's loopback fixture.
 pub struct LazyPair {
@@ -1468,10 +1688,8 @@ pub fn acquire_lazy_runtime_pair(
         ))
     })?;
     let blksum = tpkg::lazy::Blksum::from_image_bytes(&image_bytes).render();
-    let server = crate::lazy_server::LazyServer::start(
-        pair.image.clone(),
-        blksum.clone().into_bytes(),
-    )?;
+    let server =
+        crate::lazy_server::LazyServer::start(pair.image.clone(), blksum.clone().into_bytes())?;
     let seed = tpkg::lazy::LazySeed {
         source: format!("http://127.0.0.1:{}/{image_base}", server.port),
         sha256: tpkg::lazy::sha256_hex(&image_bytes),
@@ -1481,10 +1699,7 @@ pub fn acquire_lazy_runtime_pair(
     };
     let entry = layout.targets.join(&target.id).join("entry");
     std::fs::create_dir_all(&entry).map_err(|e| {
-        BenchError::operational(format!(
-            "acquire: cannot create {}: {e}",
-            entry.display()
-        ))
+        BenchError::operational(format!("acquire: cannot create {}: {e}", entry.display()))
     })?;
     let exe = entry.join(&exe_name);
     std::fs::copy(&pair.exe, &exe).map_err(|e| {
@@ -1495,8 +1710,9 @@ pub fn acquire_lazy_runtime_pair(
         ))
     })?;
     chmod_0755(&exe)?;
-    tpkg::lazy::write_descriptor(&entry, &image_base, &seed)
-        .map_err(|e| BenchError::operational(format!("acquire: cannot write the seed descriptor: {e}")))?;
+    tpkg::lazy::write_descriptor(&entry, &image_base, &seed).map_err(|e| {
+        BenchError::operational(format!("acquire: cannot write the seed descriptor: {e}"))
+    })?;
     // The cold reseed's pristine copy: `pristine/<image>.lazy.json` —
     // the wipe restores it verbatim after removing the sealed state.
     let pristine = entry.join("pristine");
