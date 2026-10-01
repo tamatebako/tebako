@@ -65,7 +65,9 @@ sqfs-sys = { version = "2.0.0", path = "../sqfs-sys", optional = true }
 # walk/writer seams + the slice-map parse contract (0.3.43, security +
 # correctness), bounded-memory read paths (0.3.42), and the omnizip
 # 0.21.113 fleet (0.3.53); requires rustc 1.85 (the 0.3.54 MSRV bump).
-limnifs-core = { version = "0.3.56", optional = true }
+# 0.3.57: the paged slab source (PagedSlabSet / PositionedReader — the
+# reader-side half of spec 39's lazy mount).
+limnifs-core = { version = "0.3.57", optional = true }
 # The ENC stacking transform (spec 10, backends_enc): AES-256-GCM per-block
 # confidentiality with HKDF-SHA256 subtree keys, DEK grant envelopes via
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
@@ -98,11 +100,17 @@ getrandom = "0.2"
 # `backend-limnifs` (default): the LimniFS backend (spec 20) via the
 # pure-Rust limnifs-core — the first of the `backend-*` feature family;
 # the `vendored-*` features migrate to it as aliases per spec 20 §5.
+# `backend-remote` (OFF by default; tebako-driver and the toolchain
+# enable it explicitly, tebako-bootstrap never links tfs at all): the
+# remote-range mount-source kind (spec 39) — the caching remote byte
+# source and the limnifs sourced open. A lazy mount on a build without
+# it is the named ENOTSUP (the compiled-out rule, spec 39 §2).
 default = ["vendored-dwarfs", "vendored-squashfs", "enc", "backend-limnifs"]
 vendored-dwarfs = ["dep:dwarfs-t"]
 vendored-squashfs = ["dep:sqfs-sys"]
 enc = ["dep:tebako-signer"]
 backend-limnifs = ["dep:limnifs-core"]
+backend-remote = ["backend-limnifs"]
 
 [dev-dependencies]
 # Tempdir scaffolding for backend tests (large-archive RSS fixtures).
@@ -115,5 +123,11 @@ crc32fast = "1"
 # test-only, never linked into the shipped library. Floor: see the
 # limnifs-core pin above (post-flip line is >= 0.3.0; the 0.3.43/0.3.53
 # enforcement set rides 0.3.54).
-limnifs-write = "0.3.56"
+limnifs-write = "0.3.57"
+# The lazy byte source's property tier (arbitrary read patterns vs
+# whole-image reads — spec 39 §10's parity property).
+proptest = "1"
+# The lazy loopback e2e wires the REAL range transport (spec 39 PR 2's
+# get_range) into the byte source's fetch closure — test-only.
+tebako-http = { version = "2.0.0", path = "../tebako-http" }
 
