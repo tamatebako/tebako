@@ -371,8 +371,7 @@ fn compose_plan(
             }
             let (triples, args) = carry_mounts(state, args, carry, &[])?;
             let image = rt
-                .image
-                .as_ref()
+                .image_handoff_path()
                 .ok_or_else(|| {
                     format!(
                         "spawn '{name}': runtime {} {} resolved without its env image — an exe-only cache entry cannot boot",
@@ -477,8 +476,7 @@ fn compose_payload_plan(
     exclude.push("/".to_string());
     let (triples, args) = carry_mounts(state, args, carry, &exclude)?;
     let image = rt
-        .image
-        .as_ref()
+        .image_handoff_path()
         .ok_or_else(|| {
             format!(
                 "spawn '{command}': runtime {} {} resolved without its env image — an exe-only cache entry cannot boot",
@@ -1149,20 +1147,38 @@ fn runtime_facts(rt: &CachedRuntime, runtime_root: &str) -> Result<Arc<RuntimeFa
     if let Some(facts) = cache.get(&key) {
         return Ok(Arc::clone(facts));
     }
-    let image = rt.image.as_ref().ok_or_else(|| {
+    let image = rt.image_handoff_path().ok_or_else(|| {
         format!(
             "runtime {} {} has no cached env image — cannot read its spawn surface",
             rt.lang_version, rt.tebako_version
         )
     })?;
     let point = join_mount(runtime_root, SCRATCH_POINT);
-    let mount = tfs::mount::build_from_file(&image.to_string_lossy(), &point).map_err(|e| {
-        format!(
-            "cannot mount the env image '{}' for the spawn-surface read: {}",
-            image.display(),
-            crate::driver::errno_text(e)
-        )
-    })?;
+    let mount = match &rt.lazy {
+        // LAZY_SEEDING (spec 39 §4): scratch-mount the caching remote
+        // byte source — the manifest's groups seed on demand. NO seal
+        // thread: a scratch read owes the entry nothing.
+        Some(seeding) => {
+            let offline = crate::lazy::offline(std::env::var("TEBAKO_OFFLINE").ok());
+            let source = crate::lazy::open_lazy_source(&rt.dir, &seeding.image_base, &seeding.seed, offline)
+                .map_err(|e| e.message)?;
+            let byte_source: std::sync::Arc<dyn tfs::source::ByteSource> = source;
+            tfs::mount::build_from_source(byte_source, &point).map_err(|e| {
+                format!(
+                    "cannot mount the lazy env image '{}' for the spawn-surface read: {}",
+                    image.display(),
+                    crate::driver::errno_text(e)
+                )
+            })?
+        }
+        None => tfs::mount::build_from_file(&image.to_string_lossy(), &point).map_err(|e| {
+            format!(
+                "cannot mount the env image '{}' for the spawn-surface read: {}",
+                image.display(),
+                crate::driver::errno_text(e)
+            )
+        })?,
+    };
     let handle = context()
         .write()
         .unwrap()
