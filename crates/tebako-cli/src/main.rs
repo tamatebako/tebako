@@ -908,6 +908,9 @@ fn run_publish(args: &[String]) -> Result<(), CliExit> {
     for (artifact, sha) in &outcome.artifacts {
         println!("  {artifact}  sha256:{sha}");
     }
+    for (sidecar, sha) in &outcome.blksums {
+        println!("  {sidecar}  sha256:{sha}");
+    }
     if let Some(signer) = &outcome.signer {
         println!("  signed (keyid {signer}): {} .asc", outcome.ascs.len());
     }

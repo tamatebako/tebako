@@ -148,6 +148,23 @@ fn universal_signed_publish_end_to_end() {
     );
     assert!(mirror.join("app-1.0.tfs.asc").is_file());
 
+    // the blksum sidecar (spec 39 §3): staged beside the image in the
+    // same invocation, unsigned (its anchor is the registry row's pin —
+    // the ascs above carry the image's signature alone), and its
+    // digests verify against the image bytes
+    let sidecar = fs::read(mirror.join("app-1.0.tfs.blksum.json")).unwrap();
+    let sum = tpkg::lazy::Blksum::parse(std::str::from_utf8(&sidecar).unwrap()).unwrap();
+    let image_bytes = fs::read(fx.work.join("app-1.0.tfs")).unwrap();
+    assert_eq!(sum.size_bytes, image_bytes.len() as u64);
+    assert_eq!(sum.sha256, tebako_resolve::sha256_hex(&image_bytes));
+    assert_eq!(sum.group_count(), 1, "the fixture image is one group");
+    assert_eq!(sum.groups[0], sum.sha256);
+    let sidecar_sha = tebako_resolve::sha256_hex(&sidecar);
+    assert_eq!(
+        outcome.blksums,
+        vec![("app-1.0.tfs.blksum.json".to_string(), sidecar_sha.clone())]
+    );
+
     // the registry records the entry (universal, signature pin, the
     // github release ref — mirror mode does not leak into the ref)
     let registry = registry_at(&fx);
@@ -158,6 +175,10 @@ fn universal_signed_publish_end_to_end() {
         v.platforms,
         tebako_resolve::RegistryPlatforms::Universal
     ));
+    // the universal row's version-level pin anchors the sidecar's bytes
+    let pin = v.blksum.clone().unwrap();
+    assert_eq!(pin.filename, "app-1.0.tfs.blksum.json");
+    assert_eq!(pin.sha256, sidecar_sha);
     assert_eq!(v.release.r#ref, "tfs:github:acme/app:1.0");
     let sig = v.signature.clone().unwrap();
     assert_eq!(sig.keyid, keyid);
@@ -220,6 +241,26 @@ fn per_triplet_publish_and_idempotent_republish() {
         64,
         "sha pinned per triplet"
     );
+
+    // every per-triplet row pins its image's blksum sidecar in the
+    // platforms map entry (spec 39 §3); the version-level spelling
+    // stays empty (one location per form), and each sidecar's bytes
+    // land in the mirror under the pinned digest
+    assert!(v.blksum.is_none());
+    let mirror = fx.work.join("mirror/1.0");
+    assert_eq!(outcome.blksums.len(), 2);
+    for platform in [Platform::Aarch64Macos, Platform::X86_64LinuxGnu] {
+        let entry = &map[&platform];
+        let pin = entry.blksum.as_ref().unwrap();
+        assert_eq!(pin.filename, format!("{}.blksum.json", entry.artifact));
+        let sidecar = fs::read(mirror.join(&pin.filename)).unwrap();
+        assert_eq!(pin.sha256, tebako_resolve::sha256_hex(&sidecar));
+        let sum = tpkg::lazy::Blksum::parse(std::str::from_utf8(&sidecar).unwrap()).unwrap();
+        assert_eq!(sum.sha256, entry.sha256);
+        assert!(outcome
+            .blksums
+            .contains(&(pin.filename.clone(), pin.sha256.clone())));
+    }
 
     // re-publish: idempotent — one version entry, a "replaced" note
     let outcome2 = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
@@ -403,6 +444,19 @@ fn publish_errors_are_named() {
     });
     let err = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
     assert!(err.message.contains("--version"), "{err:?}");
+
+    // an empty payload is not a publishable .tfs (a 0-byte image has no
+    // blksum — the sidecar grammar's size_bytes >= 1, spec 39 §3)
+    let empty = fx.work.join("empty-1.0.tfs");
+    fs::write(&empty, b"").unwrap();
+    let mut opts = base_opts(&fx, "app");
+    opts.version = Some("1.0".to_string());
+    opts.payloads.push(PayloadInput {
+        triplet: None,
+        path: empty,
+    });
+    let err = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("is empty"), "{err:?}");
 
     // an unknown --sign=<keyid> is a named error
     let mut opts = base_opts(&fx, "app");
