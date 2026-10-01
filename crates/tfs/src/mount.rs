@@ -343,6 +343,80 @@ pub fn build_from_memory_with_mode(
 }
 
 // ---------------------------------------------------------------------
+// the fifth mount-source kind: remote-range (spec 39 §2)
+// ---------------------------------------------------------------------
+
+/// Mount an image served by a byte source (spec 39 §2's fifth
+/// mount-source kind: remote-range). Only LimniFS has a sourced open —
+/// the format backend is selected by the same magic sniff as every
+/// other kind (one small range read at open); every other detected
+/// format is the named ENOTSUP (dwarfs over range is recorded, NOT
+/// committed — spec 39 §11.6), never a fake and never a re-download.
+#[cfg(feature = "backend-remote")]
+pub fn build_from_source(
+    source: std::sync::Arc<dyn crate::source::ByteSource>,
+    mount_point: &str,
+) -> Result<Mount, i32> {
+    build_from_source_with_mode(source, mount_point, MountMode::ReadOnly, None)
+}
+
+/// [`build_from_source`] with an explicit mount mode (spec 11 §3): COW
+/// stacks ABOVE the format backend exactly as over a resident image
+/// (the transforms law — the overlay writes to its HostDir store and
+/// never touches the network).
+#[cfg(feature = "backend-remote")]
+pub fn build_from_source_with_mode(
+    source: std::sync::Arc<dyn crate::source::ByteSource>,
+    mount_point: &str,
+    mode: MountMode,
+    overlay: Option<&Overlay>,
+) -> Result<Mount, i32> {
+    let magic = source.read_at(0, SNIFF_LEN).map_err(|e| {
+        tebako_log::log!(
+            tebako_log::Level::Warn,
+            "tfs",
+            "the byte source's sniff read failed: {e}"
+        );
+        e.errno()
+    })?;
+    if magic.is_empty() {
+        return Err(libc::EINVAL);
+    }
+    let format = detect_format(&magic[..magic.len().min(SNIFF_LEN)]);
+    let backend: Box<dyn Backend> = match format {
+        ImageFormat::Limnifs => Box::new(LimnifsBackend::from_source(source)?),
+        ImageFormat::Unknown => return Err(libc::EINVAL),
+        _ => return Err(libc::ENOTSUP),
+    };
+    let backend = apply_mode(backend, mode, overlay)?;
+    Ok(make_mount(mount_point, None, backend, mode))
+}
+
+/// The compiled-out rule (spec 39 §2): a lazy mount attempted on a
+/// build without `backend-remote` fails with the NAMED ENOTSUP —
+/// never a silent fallback to a whole-file download.
+#[cfg(not(feature = "backend-remote"))]
+pub fn build_from_source(
+    source: std::sync::Arc<dyn crate::source::ByteSource>,
+    mount_point: &str,
+) -> Result<Mount, i32> {
+    let _ = (source, mount_point);
+    Err(libc::ENOTSUP)
+}
+
+/// The compiled-out twin of [`build_from_source_with_mode`].
+#[cfg(not(feature = "backend-remote"))]
+pub fn build_from_source_with_mode(
+    source: std::sync::Arc<dyn crate::source::ByteSource>,
+    mount_point: &str,
+    mode: MountMode,
+    overlay: Option<&Overlay>,
+) -> Result<Mount, i32> {
+    let _ = (source, mount_point, mode, overlay);
+    Err(libc::ENOTSUP)
+}
+
+// ---------------------------------------------------------------------
 // tests
 // ---------------------------------------------------------------------
 
