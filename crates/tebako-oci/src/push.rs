@@ -90,7 +90,9 @@ fn retry_push<T>(mut op: impl FnMut() -> Result<T, OciError>) -> Result<T, OciEr
     loop {
         match op() {
             Err(OciError::Transport(FetchError::Throttled {
-                retry_after, status, ..
+                retry_after,
+                status,
+                ..
             })) => {
                 throttles += 1;
                 if throttles >= tebako_http::THROTTLE_ROUNDS {
@@ -212,7 +214,17 @@ pub fn push_artifact<H: Http, C: CredentialSource>(
     let hex = layer
         .digest_hex()
         .expect("the layer digest was built as sha256:<hex>");
-    retry_push(|| push_blob(client, &r, host, repo, &scope, &format!("sha256:{hex}"), bytes))?;
+    retry_push(|| {
+        push_blob(
+            client,
+            &r,
+            host,
+            repo,
+            &scope,
+            &format!("sha256:{hex}"),
+            bytes,
+        )
+    })?;
 
     // ---- 3. the manifest placement --------------------------------------
     let (resp, _) = retry_push(|| {
@@ -886,7 +898,12 @@ mod tests {
         http.push_put("/blobs/uploads/session-1?digest=sha256:", 201, &[], b"");
         // Retry-After: 0 keeps the test off the clock while the backoff
         // law still runs (the hint is honored exactly)
-        http.push_put("/manifests/1.0", 429, &[("Retry-After", "0".to_string())], b"");
+        http.push_put(
+            "/manifests/1.0",
+            429,
+            &[("Retry-After", "0".to_string())],
+            b"",
+        );
         http.push_put("/manifests/1.0", 201, &[], b"");
         let creds = MockCreds::anonymous();
         let client = Client::new(&http, &creds);
