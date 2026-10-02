@@ -1390,6 +1390,56 @@ fn depth1_object_body<'a>(body: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
+/// The depth-1 `"key": true|false` bool field of a JSON object body —
+/// the bare-token twin of depth1_string_fields (string, object, and
+/// deeper-nested values read as None: a torn bool is no bool).
+fn depth1_bool_field(body: &str, key: &str) -> Option<bool> {
+    let b = body.as_bytes();
+    let mut depth = 0usize;
+    let mut i = 0usize;
+    while i < b.len() {
+        match b[i] {
+            b'"' => {
+                let end = json_string_end(b, i)?;
+                if depth == 0 && &body[i + 1..end] == key {
+                    let mut j = end + 1;
+                    while j < b.len() && b[j].is_ascii_whitespace() {
+                        j += 1;
+                    }
+                    if j < b.len() && b[j] == b':' {
+                        j += 1;
+                        while j < b.len() && b[j].is_ascii_whitespace() {
+                            j += 1;
+                        }
+                        for (token, value) in [("true", true), ("false", false)] {
+                            if body[j..].starts_with(token) {
+                                let after = body[j + token.len()..].chars().next();
+                                if after.is_none_or(|c| {
+                                    c == ',' || c == '}' || c == ']' || c.is_ascii_whitespace()
+                                }) {
+                                    return Some(value);
+                                }
+                            }
+                        }
+                        return None;
+                    }
+                }
+                i = end + 1;
+            }
+            b'{' | b'[' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' | b']' => {
+                depth = depth.saturating_sub(1);
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
 /// spec 05 §2 (SSOT, tebako#456): the release-index entry is matched by
 /// the identity triple (`tebako_version`, `<type>_version`, `platform`)
 /// — never by a synthesized asset name. The matched entry's `filename`
@@ -1521,6 +1571,38 @@ fn manifest_entry_bundle(entry: &ManifestEntry) -> Option<BundleDecl> {
         sha256: sha256.to_lowercase(),
         signature,
     })
+}
+
+/// spec 36 §3's co-publish witness (runtime-manifest MINOR 2): the
+/// shard's TOP-LEVEL `per_file_assets` bool — `true` declares the release
+/// serves the per-file assets (the bare exe, `<stem>.tfs`, the windows
+/// dll) as standalone assets BESIDE the bundle, the lazy arm's serving
+/// requirement (spec 39 §7). The shard normalizes to the one-entry array
+/// shape at the fetch boundary, so the schema's document-top-level key
+/// reads as the matched entry's top-level key here. Absent reads false
+/// (the additive rule); present but not a bool reads false too — the
+/// `manifest_entry_bundle` facet doctrine (a torn facet is no facet): a
+/// torn witness never ARMS the lazy gate, the bundle fetch stays the
+/// eager default. (tpkg::runtime_store::entry_per_file_assets owns the
+/// tebako_json twin; this is the bootstrap's hand-rolled parity.)
+pub fn manifest_entry_per_file_assets(entry: &ManifestEntry) -> bool {
+    depth1_bool_field(entry.body, "per_file_assets") == Some(true)
+}
+
+/// The spec 39 §7 bundle-era gate's decision — evaluated BEFORE the spec
+/// 36 §4 era branch: the bundle fetch is SKIPPED exactly when the shard
+/// declares a bundle, the lazy opt-in is on, AND the shard carries the
+/// co-publish witness. The per-file exe fetch and resolve_image's lazy
+/// seed then install the entry; the bundle is never fetched. Any other
+/// combination takes the era branch exactly as before (a bundle-declaring
+/// shard without the witness stays eager by construction — its one tar
+/// fetch IS the runtime).
+fn lazy_arm_skips_bundle(
+    bundle: Option<&BundleDecl>,
+    lazy_opt_in: bool,
+    per_file_assets: bool,
+) -> bool {
+    bundle.is_some() && lazy_opt_in && per_file_assets
 }
 
 // ---------------------------------------------------------------------
@@ -2416,23 +2498,56 @@ fn download_executable(
     // every member pinned — landing the whole entry in one tmp+rename.
     // A shard without `bundle` takes the per-file path below, forever
     // (keep-forever, spec 13 §8).
-    if let Some(bundle) = id
-        .entry(&manifest_text)
-        .and_then(|e| manifest_entry_bundle(&e))
-    {
-        return download_bundle(
-            runtime_ref,
-            rr,
-            layout,
-            ux,
-            base_raw,
-            &manifest_text,
-            ins,
-            &asset,
-            &exe_path,
-            &id,
-            bundle,
-        );
+    //
+    // spec 39 §7's bundle-era gate evaluates BEFORE the era branch: on a
+    // bundle-declaring shard the lazy arm engages ONLY with the opt-in
+    // (TEBAKO_RUNTIME_LAZY — the bootstrap reads env only; the config
+    // tier is the managed shim's — a malformed value is the named 65)
+    // AND the shard's co-publish witness (`per_file_assets: true`,
+    // spec 36 §3, runtime-manifest MINOR 2 — the exe/image/dll are then
+    // served standalone by construction). The engaged arm SKIPS the
+    // bundle: the per-file fetch below installs the exe by its
+    // standalone pin and resolve_image seeds the image — the bundle is
+    // never fetched. A bundle-declaring shard without the witness (or
+    // the opt-in off) stays eager by construction: its one tar fetch IS
+    // the runtime.
+    let shard_entry = id.entry(&manifest_text);
+    if let Some(bundle) = shard_entry.as_ref().and_then(manifest_entry_bundle) {
+        let lazy_opt_in = match tpkg::settings::resolve_runtime_lazy(
+            std::env::var("TEBAKO_RUNTIME_LAZY").ok(),
+            None,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                cleanup_tmp_entry(&ins.tmp_dir, &asset);
+                lock_release(ins.lock);
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "cannot resolve runtime \"{runtime_ref}\": {e}\n  TEBAKO_RUNTIME_LAZY accepts 1/true/yes or 0/false/no (spec 39 §7)"
+                    ),
+                );
+            }
+        };
+        let witness = shard_entry
+            .as_ref()
+            .map(manifest_entry_per_file_assets)
+            .unwrap_or(false);
+        if !lazy_arm_skips_bundle(Some(&bundle), lazy_opt_in, witness) {
+            return download_bundle(
+                runtime_ref,
+                rr,
+                layout,
+                ux,
+                base_raw,
+                &manifest_text,
+                ins,
+                &asset,
+                &exe_path,
+                &id,
+                bundle,
+            );
+        }
     }
 
     if fetch_asset(&asset_url, local, &ins.tmp_asset, &asset, &mut ux.prog).is_err() {
@@ -2951,14 +3066,38 @@ fn resolve_image(
         }
         // The loud eager fallback (spec 39 §7): the release does not
         // serve the lazy wire — the run stays a run, eagerly, and the
-        // journal says why.
+        // journal says why. On a BUNDLE-era line the eager default stays
+        // the bundle fetch (spec 39 §7 / spec 36 §4): the image lands as
+        // the bundle's pinned member, never the standalone asset.
+        let bundle = entry_match.as_ref().and_then(manifest_entry_bundle);
+        let eager = match &bundle {
+            Some(b) => format!("the release bundle {}", b.filename),
+            None => format!("the eager download of {image_asset}"),
+        };
         eprintln!(
-            "tebako-bootstrap: TEBAKO_RUNTIME_LAZY is set but this release does not serve the lazy wire (no image.blksum row/sidecar) — falling back to the eager download of {image_asset}"
+            "tebako-bootstrap: TEBAKO_RUNTIME_LAZY is set but this release does not serve the lazy wire (no image.blksum row/sidecar) — falling back to {eager}"
         );
         journal(
             root,
             &format!("event=lazy-fallback runtime_ref={runtime_ref} reason=blksum-missing"),
         );
+        if let Some(bundle) = bundle {
+            return install_image_from_bundle(
+                runtime_ref,
+                rr,
+                layout,
+                ux,
+                base_raw,
+                &manifest_text,
+                &tmp_dir,
+                &gate_asset,
+                &image_asset,
+                &image_path,
+                &id,
+                &bundle,
+                lock,
+            );
+        }
     }
 
     if fetch_asset(&image_url, local, &tmp_image, &image_asset, &mut ux.prog).is_err() {
@@ -3501,36 +3640,43 @@ fn abort_bundle_install(ins: EntryInstall, e: BootError) -> BootError {
     e
 }
 
-/// The spec 36 §4 bundle fetch (the era branch INSIDE the shard case —
-/// a shard carrying the additive `bundle` block): download the bundle
-/// (+ its `.sha256` sidecar, + the `.asc` when `bundle.signature`
-/// declares one), verify the detached signature FIRST when declared
-/// (spec 09 §4's runtime-fetch point — always strict when this
-/// bootstrap carries OpenPGP verification; unverified-first otherwise:
-/// loud warning + journal, sha256 integrity enforced, exit 71 under
-/// TEBAKO_REQUIRE_SIGNED=1 naming the missing capability), verify the
-/// bundle sha256 against the sidecar AND the shard pin, unpack
-/// in-process with the §2 member-grammar validation, verify EVERY
-/// member against the shard's per-member pins, then write the spec 05
-/// §3 store layout exactly as the per-file path (exe 0755 + entry
-/// markers; image 0444, the dll AS `install_as`, trusted markers from
-/// the member pins) — one tmp-dir rename, so a partial install stays
-/// invisible.
+/// The verified, unpacked bundle (spec 36 §4's fetch half — the shared
+/// front of the era branch's install (download_bundle) and the lazy
+/// arm's bundle-line fallback (spec 39 §7)): the members staged under
+/// the caller's tmp dir as `(member name, verified sha256)` — the
+/// shard's per-member pins — plus the exe's manifest pin (lowercased)
+/// and the dll member's declared PE install spelling when the shard
+/// declares a dll. The bundle archive itself is dropped after the
+/// unpack.
+struct UnpackedBundle {
+    members: Vec<(String, String)>,
+    exe_sha: String,
+    dll: Option<(String, String)>,
+}
+
+/// The spec 36 §4 bundle fetch's front half: download the bundle (+ its
+/// `.sha256` sidecar, + the `.asc` when `bundle.signature` declares
+/// one), verify the detached signature FIRST when declared (spec 09 §4's
+/// runtime-fetch point — always strict when this bootstrap carries
+/// OpenPGP verification; the REQUIRE_SIGNED gate fires BEFORE the
+/// download otherwise), verify the bundle sha256 against the sidecar
+/// AND the shard pin, unpack in-process with the §2 member-grammar
+/// validation, verify EVERY member against the shard's per-member pins.
+/// The caller owns its tmp dir and the entry lock on EVERY path — an
+/// Err returns uncleaned.
 #[allow(clippy::too_many_arguments)]
-fn download_bundle(
+fn fetch_unpack_bundle(
     runtime_ref: &str,
     rr: &RuntimeRef,
     layout: &CacheLayout,
     ux: &mut BootUx,
     base_raw: &str,
     manifest_text: &str,
-    ins: EntryInstall,
+    tmp_dir: &Path,
     asset: &str,
-    exe_path: &Path,
     id: &ReleaseIdentity,
-    bundle: BundleDecl,
-) -> Result<PathBuf, BootError> {
-    let entry_dir = &layout.entry_dir;
+    bundle: &BundleDecl,
+) -> Result<UnpackedBundle, BootError> {
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
     let bundle_url = format!("{base}/v{}/{}", rr.abi, bundle.filename);
@@ -3542,13 +3688,10 @@ fn download_bundle(
     let sidecar = match fetch_text(&sidecar_url, local) {
         Ok(body) => body,
         Err(()) => {
-            return Err(abort_bundle_install(
-                ins,
-                BootError::new(
-                    EX_TEBAKO_UNAVAILABLE,
-                    format!(
-                        "cannot resolve runtime \"{runtime_ref}\": the bundle's checksum sidecar did not fetch\n  url: {sidecar_url}\n  the shard declares a bundle but the release does not carry its sidecar — an invalid publish; nothing was installed"
-                    ),
+            return Err(BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime \"{runtime_ref}\": the bundle's checksum sidecar did not fetch\n  url: {sidecar_url}\n  the shard declares a bundle but the release does not carry its sidecar — an invalid publish; nothing was installed"
                 ),
             ));
         }
@@ -3556,27 +3699,21 @@ fn download_bundle(
     let sidecar_pin = match sha_from_sums(&sidecar, &bundle.filename) {
         Ok(pin) => pin,
         Err(()) => {
-            return Err(abort_bundle_install(
-                ins,
-                BootError::new(
-                    EX_TEBAKO_UNAVAILABLE,
-                    format!(
-                        "cannot resolve runtime \"{runtime_ref}\": no checksum for {} in {sidecar_url}\n  the release is incomplete; nothing was installed",
-                        bundle.filename
-                    ),
+            return Err(BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime \"{runtime_ref}\": no checksum for {} in {sidecar_url}\n  the release is incomplete; nothing was installed",
+                    bundle.filename
                 ),
             ));
         }
     };
     if !sidecar_pin.eq_ignore_ascii_case(&bundle.sha256) {
-        return Err(abort_bundle_install(
-            ins,
-            BootError::new(
-                EX_TEBAKO_SHA,
-                format!(
-                    "SHA256 mismatch for runtime bundle {} — the sidecar pins {sidecar_pin} but the shard declares {}\n  the release is inconsistent — refusing to install or execute; nothing was installed",
-                    bundle.filename, bundle.sha256
-                ),
+        return Err(BootError::new(
+            EX_TEBAKO_SHA,
+            format!(
+                "SHA256 mismatch for runtime bundle {} — the sidecar pins {sidecar_pin} but the shard declares {}\n  the release is inconsistent — refusing to install or execute; nothing was installed",
+                bundle.filename, bundle.sha256
             ),
         ));
     }
@@ -3587,20 +3724,17 @@ fn download_bundle(
     #[cfg(not(feature = "openpgp-verify"))]
     if let Some(sig) = &bundle.signature {
         if require_signed_mode() {
-            return Err(abort_bundle_install(
-                ins,
-                BootError::new(
-                    EX_TEBAKO_SIGNATURE,
-                    format!(
-                        "the runtime bundle {} declares a signature (keyid {}), but this tebako-bootstrap was built WITHOUT OpenPGP verification (unverified-first) and cannot honor TEBAKO_REQUIRE_SIGNED=1\n  run a verification-enabled bootstrap, or unset TEBAKO_REQUIRE_SIGNED to proceed unverified",
-                        bundle.filename, sig.keyid
-                    ),
+            return Err(BootError::new(
+                EX_TEBAKO_SIGNATURE,
+                format!(
+                    "the runtime bundle {} declares a signature (keyid {}), but this tebako-bootstrap was built WITHOUT OpenPGP verification (unverified-first) and cannot honor TEBAKO_REQUIRE_SIGNED=1\n  run a verification-enabled bootstrap, or unset TEBAKO_REQUIRE_SIGNED to proceed unverified",
+                    bundle.filename, sig.keyid
                 ),
             ));
         }
     }
 
-    let tmp_bundle = ins.tmp_dir.join(&bundle.filename);
+    let tmp_bundle = tmp_dir.join(&bundle.filename);
     if fetch_asset(
         &bundle_url,
         local,
@@ -3610,13 +3744,10 @@ fn download_bundle(
     )
     .is_err()
     {
-        return Err(abort_bundle_install(
-            ins,
-            BootError::new(
-                EX_TEBAKO_UNAVAILABLE,
-                format!(
-                    "cannot resolve runtime \"{runtime_ref}\": download failed\n  url: {bundle_url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
-                ),
+        return Err(BootError::new(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "cannot resolve runtime \"{runtime_ref}\": download failed\n  url: {bundle_url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
             ),
         ));
     }
@@ -3624,43 +3755,35 @@ fn download_bundle(
     // The declared signature verifies FIRST (spec 09 §4), before the
     // sha256 check and before a byte is unpacked.
     if let Some(sig) = &bundle.signature {
-        if let Err(e) = verify_bundle_signature(
+        verify_bundle_signature(
             &layout.root,
             runtime_ref,
             &tmp_bundle,
-            &bundle,
+            bundle,
             sig,
             &base,
             rr,
             local,
-            &ins,
-        ) {
-            return Err(abort_bundle_install(ins, e));
-        }
+            tmp_dir,
+        )?;
     }
 
     ux.prog.phase("verifying sha256");
     let actual = match sha256_file_hex(&tmp_bundle) {
         Ok(a) => a,
         Err(e) => {
-            return Err(abort_bundle_install(
-                ins,
-                BootError::new(
-                    EX_TEBAKO_IO,
-                    format!("cannot hash downloaded file {}: {e}", tmp_bundle.display()),
-                ),
+            return Err(BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot hash downloaded file {}: {e}", tmp_bundle.display()),
             ));
         }
     };
     if actual != bundle.sha256 {
-        return Err(abort_bundle_install(
-            ins,
-            BootError::new(
-                EX_TEBAKO_SHA,
-                format!(
-                    "SHA256 mismatch for downloaded runtime bundle {} — refusing to install or execute\n  expected: {} (from {sidecar_url})\n  actual:   {actual}\n  the download was deleted; the cache was not touched",
-                    bundle.filename, bundle.sha256
-                ),
+        return Err(BootError::new(
+            EX_TEBAKO_SHA,
+            format!(
+                "SHA256 mismatch for downloaded runtime bundle {} — refusing to install or execute\n  expected: {} (from {sidecar_url})\n  actual:   {actual}\n  the download was deleted; the cache was not touched",
+                bundle.filename, bundle.sha256
             ),
         ));
     }
@@ -3671,26 +3794,20 @@ fn download_bundle(
     // must name its PE install spelling — the bundle carries the
     // member, the shard must be able to install it.
     let Some(entry) = id.entry(manifest_text) else {
-        return Err(abort_bundle_install(
-            ins,
-            BootError::new(
-                EX_TEBAKO_UNAVAILABLE,
-                format!(
-                    "cannot resolve runtime \"{runtime_ref}\": the release index no longer carries the identity triple\n  the release moved under the fetch; nothing was installed"
-                ),
+        return Err(BootError::new(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "cannot resolve runtime \"{runtime_ref}\": the release index no longer carries the identity triple\n  the release moved under the fetch; nothing was installed"
             ),
         ));
     };
     let exe_sha = match sha_from_manifest_json(manifest_text, asset) {
         Ok(sha) => sha,
         Err(()) => {
-            return Err(abort_bundle_install(
-                ins,
-                BootError::new(
-                    EX_TEBAKO_UNAVAILABLE,
-                    format!(
-                        "cannot resolve runtime \"{runtime_ref}\": no checksum for {asset} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
-                    ),
+            return Err(BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime \"{runtime_ref}\": no checksum for {asset} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
                 ),
             ));
         }
@@ -3704,13 +3821,10 @@ fn download_bundle(
         let sha = match sha_from_manifest_image(manifest_text, image) {
             Ok(sha) => sha,
             Err(()) => {
-                return Err(abort_bundle_install(
-                    ins,
-                    BootError::new(
-                        EX_TEBAKO_UNAVAILABLE,
-                        format!(
-                            "cannot resolve runtime \"{runtime_ref}\": no checksum for {image} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
-                        ),
+                return Err(BootError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "cannot resolve runtime \"{runtime_ref}\": no checksum for {image} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
                     ),
                 ));
             }
@@ -3726,38 +3840,29 @@ fn download_bundle(
         let install_as = match dll_install_as_from_manifest(manifest_text, dll) {
             Ok(name) => name,
             Err(()) => {
-                return Err(abort_bundle_install(
-                    ins,
-                    BootError::new(
-                        EX_TEBAKO_UNAVAILABLE,
-                        format!(
-                            "release manifest dll facet for {dll} carries no install_as — a bundle-era shard must declare the PE name — refusing to install or execute"
-                        ),
+                return Err(BootError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "release manifest dll facet for {dll} carries no install_as — a bundle-era shard must declare the PE name — refusing to install or execute"
                     ),
                 ));
             }
         };
         if install_as.contains('/') || install_as.contains('\\') {
-            return Err(abort_bundle_install(
-                ins,
-                BootError::new(
-                    EX_TEBAKO_UNAVAILABLE,
-                    format!(
-                        "release manifest dll facet for {dll} carries an unusable install_as (\"{install_as}\") — the PE name must be a bare file name — refusing to install or execute"
-                    ),
+            return Err(BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "release manifest dll facet for {dll} carries an unusable install_as (\"{install_as}\") — the PE name must be a bare file name — refusing to install or execute"
                 ),
             ));
         }
         let sha = match sha_from_manifest_image(manifest_text, dll) {
             Ok(sha) => sha,
             Err(()) => {
-                return Err(abort_bundle_install(
-                    ins,
-                    BootError::new(
-                        EX_TEBAKO_UNAVAILABLE,
-                        format!(
-                            "cannot resolve runtime \"{runtime_ref}\": no checksum for {dll} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
-                        ),
+                return Err(BootError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "cannot resolve runtime \"{runtime_ref}\": no checksum for {dll} in the release\n  the shard's per-member pins anchor the bundle's members; nothing was installed"
                     ),
                 ));
             }
@@ -3772,27 +3877,71 @@ fn download_bundle(
     // Unpack in-process: the §2 grammar, the exact member set, the
     // per-member pins, the closing SHA256SUMS cross-check. Any
     // disagreement is InvalidBundle and nothing was installed.
-    let unpacked =
-        match unpack_runtime_bundle(&tmp_bundle, &bundle.filename, &members, &ins.tmp_dir) {
-            Ok(u) => u,
-            Err(e) => return Err(abort_bundle_install(ins, e)),
-        };
+    let unpacked = match unpack_runtime_bundle(&tmp_bundle, &bundle.filename, &members, tmp_dir) {
+        Ok(u) => u,
+        Err(e) => return Err(e),
+    };
     let _ = remove_file(&tmp_bundle);
+    Ok(UnpackedBundle {
+        members: unpacked,
+        exe_sha: exe_sha.to_lowercase(),
+        dll: dll_name.zip(dll_install_as),
+    })
+}
+
+/// The spec 36 §4 bundle fetch (the era branch INSIDE the shard case —
+/// a shard carrying the additive `bundle` block): fetch_unpack_bundle's
+/// verified, in-process unpack, then the spec 05 §3 store layout written
+/// exactly as the per-file path (exe 0755 + entry markers; image 0444,
+/// the dll AS `install_as`, trusted markers from the member pins) — one
+/// tmp-dir rename, so a partial install stays invisible.
+#[allow(clippy::too_many_arguments)]
+fn download_bundle(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    layout: &CacheLayout,
+    ux: &mut BootUx,
+    base_raw: &str,
+    manifest_text: &str,
+    ins: EntryInstall,
+    asset: &str,
+    exe_path: &Path,
+    id: &ReleaseIdentity,
+    bundle: BundleDecl,
+) -> Result<PathBuf, BootError> {
+    let unpacked = match fetch_unpack_bundle(
+        runtime_ref,
+        rr,
+        layout,
+        ux,
+        base_raw,
+        manifest_text,
+        &ins.tmp_dir,
+        asset,
+        id,
+        &bundle,
+    ) {
+        Ok(u) => u,
+        Err(e) => return Err(abort_bundle_install(ins, e)),
+    };
+    let entry_dir = &layout.entry_dir;
+    let bundle_url = format!(
+        "{}/v{}/{}",
+        skip_file_scheme(base_raw),
+        rr.abi,
+        bundle.filename
+    );
 
     // Stage the store layout inside the tmp dir — the same bytes and
     // markers the per-file path lands (publish_entry's rename then
     // installs the whole entry atomically).
-    for (name, sha) in &unpacked {
+    for (name, sha) in &unpacked.members {
         if name == asset {
             continue; // the exe is publish_entry's payload
         }
-        let install_name = if Some(name) == dll_name.as_ref() {
-            match &dll_install_as {
-                Some(as_) => as_.clone(),
-                None => continue,
-            }
-        } else {
-            name.clone()
+        let install_name = match &unpacked.dll {
+            Some((dll_name, install_as)) if dll_name == name => install_as.clone(),
+            _ => name.clone(),
         };
         let staged_member = ins.tmp_dir.join(name);
         let install_path = ins.tmp_dir.join(&install_name);
@@ -3820,10 +3969,11 @@ fn download_bundle(
     }
 
     let exe_actual = unpacked
+        .members
         .iter()
         .find(|(name, _)| name == asset)
         .map(|(_, sha)| sha.clone())
-        .unwrap_or_else(|| exe_sha.to_lowercase());
+        .unwrap_or_else(|| unpacked.exe_sha.clone());
     let origin = format!("runtime_ref={runtime_ref}\nurl={bundle_url}\nsha256={exe_actual}\n");
     ux.prog.phase("installing (locked)");
     let installed = publish_entry(ins, entry_dir, exe_path, asset, &exe_actual, &origin)?;
@@ -3831,6 +3981,115 @@ fn download_bundle(
     ux.prog
         .line(&installed_line(&layout.entry, size, entry_dir));
     Ok(installed)
+}
+
+/// The spec 39 §7 loud eager fallback's landing on a BUNDLE-era line:
+/// the lazy wire is unserved but the shard declares the additive
+/// `bundle` block — the eager default on bundle-era lines stays the
+/// bundle fetch (never the standalone image asset). The bundle
+/// downloads and verifies exactly as the era branch's fetch
+/// (fetch_unpack_bundle: the declared signature FIRST when this
+/// bootstrap verifies, the sidecar + shard pins, the in-process unpack
+/// with EVERY member checked against the shard's per-member pins); the
+/// IMAGE member then installs read-only with trusted markers into the
+/// EXISTING entry — the exe already sits there from the per-file fetch
+/// that preceded this resolution (the member pins ARE the standalone
+/// pins, spec 36 §3) and the dll flows through resolve_dll as today.
+#[allow(clippy::too_many_arguments)]
+fn install_image_from_bundle(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    layout: &CacheLayout,
+    ux: &mut BootUx,
+    base_raw: &str,
+    manifest_text: &str,
+    tmp_dir: &Path,
+    asset: &str,
+    image_asset: &str,
+    image_path: &Path,
+    id: &ReleaseIdentity,
+    bundle: &BundleDecl,
+    lock: EntryLock,
+) -> Result<PathBuf, BootError> {
+    // The unpack staged the whole member set — more than
+    // cleanup_tmp_entry's fixed spelling list (abort_bundle_install's
+    // sweep shape).
+    let fail_bundle = |lock: EntryLock, e: BootError| -> BootError {
+        let _ = std::fs::remove_dir_all(tmp_dir);
+        lock_release(lock);
+        e
+    };
+    let unpacked = match fetch_unpack_bundle(
+        runtime_ref,
+        rr,
+        layout,
+        ux,
+        base_raw,
+        manifest_text,
+        tmp_dir,
+        asset,
+        id,
+        bundle,
+    ) {
+        Ok(u) => u,
+        Err(e) => return Err(fail_bundle(lock, e)),
+    };
+    let Some((_, sha)) = unpacked
+        .members
+        .iter()
+        .find(|(name, _)| name == image_asset)
+    else {
+        return Err(fail_bundle(
+            lock,
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime image \"{runtime_ref}\": the bundle {} carries no {image_asset} member\n  the shard's per-member pins anchor the bundle's members; nothing was installed",
+                    bundle.filename
+                ),
+            ),
+        ));
+    };
+    let sha = sha.clone();
+    let bundle_url = format!(
+        "{}/v{}/{}",
+        skip_file_scheme(base_raw),
+        rr.abi,
+        bundle.filename
+    );
+
+    // Install: the image is immutable (0444) with trusted markers — the
+    // same landing the per-file fetch performs.
+    ux.prog.phase("installing (locked)");
+    let staged = tmp_dir.join(image_asset);
+    make_readonly(&staged);
+    if let Err(e) = os_rename(&staged, image_path) {
+        return Err(fail_bundle(
+            lock,
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot install runtime image into the cache ({} -> {}): {e}",
+                    staged.display(),
+                    image_path.display()
+                ),
+            ),
+        ));
+    }
+    let entry_dir = &layout.entry_dir;
+    let _ = write_small_file(
+        &entry_dir.join(format!("{image_asset}.sha256")),
+        &format!("{sha}  {image_asset}\n"),
+    );
+    let _ = write_small_file(
+        &entry_dir.join(format!("{image_asset}.origin")),
+        &format!("runtime_ref={runtime_ref}\nurl={bundle_url}\nsha256={sha}\n"),
+    );
+    let _ = std::fs::remove_dir_all(tmp_dir);
+    lock_release(lock);
+    let size = std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0);
+    ux.prog.line(&installed_line(image_asset, size, entry_dir));
+    Ok(image_path.to_path_buf())
 }
 
 /// The bundle's declared detached signature (spec 09 §4's runtime-fetch
@@ -3853,7 +4112,7 @@ fn verify_bundle_signature(
     base: &str,
     rr: &RuntimeRef,
     local: bool,
-    ins: &EntryInstall,
+    tmp_dir: &Path,
 ) -> Result<(), BootError> {
     // The asc names a sibling asset of the same release — a separator
     // would escape it; refuse by name, never fetch.
@@ -3867,7 +4126,7 @@ fn verify_bundle_signature(
         ));
     }
     let asc_url = format!("{base}/v{}/{}", rr.abi, sig.asc);
-    let asc_tmp = ins.tmp_dir.join(&sig.asc);
+    let asc_tmp = tmp_dir.join(&sig.asc);
     if fetch_url(&asc_url, local, &asc_tmp).is_err() {
         return Err(BootError::new(
             EX_TEBAKO_SIGNATURE,
@@ -4071,7 +4330,7 @@ fn verify_bundle_signature(
     _base: &str,
     _rr: &RuntimeRef,
     _local: bool,
-    _ins: &EntryInstall,
+    _tmp_dir: &Path,
 ) -> Result<(), BootError> {
     eprintln!(
         "tebako-bootstrap: WARNING: the runtime bundle {} declares a signature (keyid {}) but is installed UNVERIFIED — this bootstrap was built without OpenPGP verification\n  — only run packages from sources you trust",
@@ -6439,6 +6698,160 @@ mod bundle_tests {
         assert!(!layout.entry_dir.join(image_name()).exists());
         let _ = std::fs::remove_dir_all(&home);
     }
+
+    /// A CO-PUBLISHED bundle-era mirror (spec 36 §3): the shard carries
+    /// the additive `per_file_assets: true` witness and the mirror
+    /// serves the per-file assets BESIDE the bundle. `with_bundle`
+    /// stages the bundle + its sidecar (omit them to prove the engaged
+    /// arm never fetches the bundle); `blksum` adds the image.blksum
+    /// row to the shard and serves the sidecar (the spec 39 §3 lazy
+    /// wire); `with_image_asset` serves the standalone image asset.
+    fn copublish_mirror(
+        tag: &str,
+        with_bundle: bool,
+        blksum: bool,
+        with_image_asset: bool,
+    ) -> (PathBuf, CacheLayout, RuntimeRef, String) {
+        let home = dir(tag);
+        let mirror = home.join("mirror").join(format!("v{TV}"));
+        std::fs::create_dir_all(&mirror).unwrap();
+        let asset = format!("{}{}", stem(), exe_suffix());
+        std::fs::write(mirror.join(&asset), EXE_BYTES).unwrap();
+        if with_image_asset {
+            std::fs::write(mirror.join(image_name()), IMAGE_BYTES).unwrap();
+        }
+        let exe_sha = sha256_hex(&sha2::Sha256::digest(EXE_BYTES));
+        let image_sha = sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES));
+        let mut bundle_block = String::new();
+        if with_bundle {
+            let raw_members = happy_members();
+            let members: Vec<(&str, &[u8])> =
+                raw_members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
+            let bundle_path = mirror.join(bundle_name());
+            build_bundle(&bundle_path, &members, None);
+            let bundle_sha = sha256_file_hex(&bundle_path).unwrap();
+            std::fs::write(
+                mirror.join(format!("{}.sha256", bundle_name())),
+                format!("{bundle_sha}  {}\n", bundle_name()),
+            )
+            .unwrap();
+            bundle_block = format!(
+                ",\"bundle\":{{\"filename\":\"{}\",\"sha256\":\"{bundle_sha}\",\"size_bytes\":100}}",
+                bundle_name()
+            );
+        }
+        let mut blksum_row = String::new();
+        if blksum {
+            let sidecar = tpkg::lazy::Blksum::from_image_bytes(IMAGE_BYTES).render();
+            let sidecar_name = format!("{}.blksum.json", image_name());
+            let sidecar_sha = sha256_hex(&sha2::Sha256::digest(sidecar.as_bytes()));
+            std::fs::write(mirror.join(&sidecar_name), &sidecar).unwrap();
+            blksum_row = format!(
+                ",\"blksum\":{{\"filename\":\"{sidecar_name}\",\"sha256\":\"{sidecar_sha}\"}}"
+            );
+        }
+        let shard = format!(
+            "{{\"tebako_version\":\"{TV}\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"/__tfs__\",\"ruby_version\":\"{RV}\",\"platform\":\"{}\",\"filename\":\"{}\",\"sha256\":\"{exe_sha}\",\"size_bytes\":17,\"per_file_assets\":true,\"image\":{{\"filename\":\"{}\",\"sha256\":\"{image_sha}\",\"size_bytes\":14{blksum_row}}}{bundle_block}}}\n",
+            platform_string(),
+            asset,
+            image_name(),
+        );
+        std::fs::write(mirror.join(format!("{}.manifest.json", stem())), shard).unwrap();
+        let (layout, rr) = bundle_layout(&home);
+        let base = format!("file://{}", home.join("mirror").display());
+        (home, layout, rr, base)
+    }
+
+    /// The spec 39 §7 bundle-era gate, end to end (the lazy arm
+    /// evaluates BEFORE the spec 36 §4 era branch): a witnessed bundle
+    /// line under the opt-in fetches the exe per-file and seeds the
+    /// image — the bundle is never fetched; the same opt-in WITHOUT the
+    /// witness takes the bundle fetch exactly as today; a witnessed
+    /// line whose lazy wire is unserved falls back LOUDLY onto the
+    /// bundle fetch (the eager default on bundle-era lines). The env
+    /// mutation shares one test so process-wide variables never race a
+    /// sibling.
+    #[test]
+    fn the_bundle_era_lazy_gate() {
+        std::env::set_var("TEBAKO_RUNTIME_LAZY", "1");
+
+        // bundle + witness + opt-in: the arm engages — the per-file exe
+        // install, the image SEEDED; the mirror serves no bundle at
+        // all, so any bundle fetch fails the test by name.
+        let (home, layout, rr, base) = copublish_mirror("lazygate-armed", false, true, true);
+        let mut ux = BootUx::new();
+        let exe = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), EXE_BYTES);
+        let origin = std::fs::read_to_string(layout.entry_dir.join("origin")).unwrap();
+        assert!(
+            origin.contains(&format!("/v{TV}/{}", layout.asset)),
+            "the per-file exe fetch is the origin: {origin}"
+        );
+        let mut ux = BootUx::new();
+        let image = resolve_image(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert!(!image.exists(), "the lazy install seeds, never fetches");
+        let seed = tpkg::lazy::read_descriptor(&layout.entry_dir, &image_name())
+            .unwrap()
+            .expect("the seed descriptor is the lazy install");
+        assert_eq!(seed.sha256, sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES)));
+        let _ = std::fs::remove_dir_all(&home);
+
+        // bundle WITHOUT the witness + opt-in: the era branch's bundle
+        // fetch, exactly as today (no per-file assets are served).
+        let raw_members = happy_members();
+        let members: Vec<(&str, &[u8])> =
+            raw_members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
+        let (home, layout, rr, base) =
+            bundle_mirror("lazygate-nowitness", &members, None, false, None, false, "");
+        let mut ux = BootUx::new();
+        download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        let origin = std::fs::read_to_string(layout.entry_dir.join("origin")).unwrap();
+        assert!(
+            origin.contains(&format!("/v{TV}/{}", bundle_name())),
+            "the bundle fetch is the origin: {origin}"
+        );
+        let mut ux = BootUx::new();
+        let image = resolve_image(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(
+            std::fs::read(&image).unwrap(),
+            IMAGE_BYTES,
+            "the bundle landed the image (a cache hit for resolve_image)"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+
+        // bundle + witness + opt-in, the lazy wire UNSERVED (no blksum
+        // row): the arm engaged (the exe fetched per-file), then the
+        // loud fallback lands on the BUNDLE fetch — the mirror serves
+        // no standalone image asset, so a per-file image fetch would
+        // fail by name.
+        let (home, layout, rr, base) = copublish_mirror("lazygate-fallback", true, false, false);
+        let mut ux = BootUx::new();
+        download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        let origin = std::fs::read_to_string(layout.entry_dir.join("origin")).unwrap();
+        assert!(
+            !origin.contains(&bundle_name()),
+            "the arm engaged: the exe fetched per-file: {origin}"
+        );
+        let mut ux = BootUx::new();
+        let image = resolve_image(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(
+            std::fs::read(&image).unwrap(),
+            IMAGE_BYTES,
+            "the fallback landed the image as the bundle's pinned member"
+        );
+        let image_origin =
+            std::fs::read_to_string(layout.entry_dir.join(format!("{}.origin", image_name())))
+                .unwrap();
+        assert!(
+            image_origin.contains(&bundle_name()),
+            "the bundle is the image's origin: {image_origin}"
+        );
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(journal.contains("event=lazy-fallback"), "{journal}");
+        let _ = std::fs::remove_dir_all(&home);
+
+        std::env::remove_var("TEBAKO_RUNTIME_LAZY");
+    }
 }
 
 #[cfg(test)]
@@ -6581,6 +6994,63 @@ mod manifest_identity_tests {
             body: r#""image": {"filename": "x.tfs", "blksum": "yes"}"#,
         };
         assert!(manifest_entry_blksum(&not_a_map).is_err());
+    }
+
+    #[test]
+    fn the_per_file_assets_witness_reads_document_top_level() {
+        fn entry(body: &str) -> ManifestEntry<'_> {
+            ManifestEntry {
+                filename: "x".to_string(),
+                body,
+            }
+        }
+        // The co-publish witness arms the lazy gate only as the
+        // document-top-level bool `true` (spec 36 §3, MINOR 2).
+        assert!(manifest_entry_per_file_assets(&entry(
+            r#""filename": "x", "per_file_assets": true, "bundle": {"filename": "b.tar.gz", "sha256": "cc"}"#
+        )));
+        // Explicit false and the absent key both read false (the
+        // additive rule — every pre-bundle card).
+        assert!(!manifest_entry_per_file_assets(&entry(
+            r#""filename": "x", "per_file_assets": false"#
+        )));
+        assert!(!manifest_entry_per_file_assets(&entry(
+            r#""filename": "x", "bundle": {"filename": "b.tar.gz", "sha256": "cc"}"#
+        )));
+        // Present-but-torn (a string, a number) reads false too — the
+        // facet rule (a torn facet is no facet): a torn witness never
+        // arms the gate.
+        assert!(!manifest_entry_per_file_assets(&entry(
+            r#""filename": "x", "per_file_assets": "yes""#
+        )));
+        assert!(!manifest_entry_per_file_assets(&entry(
+            r#""filename": "x", "per_file_assets": 1"#
+        )));
+        // A nested same-named key is NOT the witness; a `truex` token
+        // is torn, not true.
+        assert!(!manifest_entry_per_file_assets(&entry(
+            r#""filename": "x", "image": {"per_file_assets": true}"#
+        )));
+        assert!(!manifest_entry_per_file_assets(&entry(
+            r#""filename": "x", "per_file_assets": truex"#
+        )));
+    }
+
+    #[test]
+    fn the_bundle_era_gate_skips_the_bundle_only_witnessed_and_opted_in() {
+        let bundle = || BundleDecl {
+            filename: "b.tar.gz".to_string(),
+            sha256: "c".repeat(64),
+            signature: None,
+        };
+        // The four gate combinations (spec 39 §7): the bundle fetch is
+        // skipped EXACTLY on a bundle-declaring shard with the opt-in
+        // AND the co-publish witness.
+        assert!(lazy_arm_skips_bundle(Some(&bundle()), true, true));
+        assert!(!lazy_arm_skips_bundle(Some(&bundle()), true, false));
+        assert!(!lazy_arm_skips_bundle(Some(&bundle()), false, true));
+        assert!(!lazy_arm_skips_bundle(None, true, true));
+        assert!(!lazy_arm_skips_bundle(None, false, false));
     }
 
     #[test]
