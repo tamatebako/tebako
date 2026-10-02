@@ -27,14 +27,36 @@
 //! (no distribution-spec conditional write exists) — write-once is a
 //! publish-side policy, exactly like the git-host release leg's
 //! replace-before-upload.
+//!
+//! Transport resilience is [`retry_push`]'s, tebako-http's one retry
+//! law mirrored for the write wire: a throttled answer waits
+//! [`tebako_http::throttle_backoff`] (Retry-After honored exactly) for
+//! up to [`tebako_http::THROTTLE_ROUNDS`] rounds; a transport failure
+//! retries the operation from zero up to [`PUSH_ATTEMPTS`] times with
+//! [`PUSH_RETRY_DELAY`] between. Auth-rechallenging alone cannot absorb
+//! the broken-pipe class a long layer PUT takes (the first ghcr tag run
+//! lost a 200 MB upload to one); every operation the retry wraps is
+//! idempotent under it — the tag check and the manifest PUT name the
+//! same bytes, and a retried blob leg takes a FRESH upload session
+//! (the session a broken PUT stranded is never reused).
 
 use sha2::{Digest, Sha256};
+
+use tebako_http::FetchError;
 
 use crate::model::Manifest;
 use crate::{
     push_scope_for, scheme_for, url_host, Annotations, ArtifactClass, Client, CredentialSource,
     Descriptor, Endpoint, Http, OciError, RepoRef, Selector, MANIFEST_MT,
 };
+
+/// One publish operation's attempt budget — the range GET's own
+/// ([`tebako_http::RANGE_ATTEMPTS`]); the wire crate has one retry law
+/// and this is its publish half, not a second schedule.
+const PUSH_ATTEMPTS: u32 = tebako_http::RANGE_ATTEMPTS;
+/// The delay between publish attempts — [`tebako_http::RANGE_RETRY_DELAY`],
+/// same law.
+const PUSH_RETRY_DELAY: std::time::Duration = tebako_http::RANGE_RETRY_DELAY;
 
 /// What one [`push_artifact`] placed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +74,45 @@ pub struct PushOutcome {
     /// The tag already named exactly these bytes — the idempotent
     /// re-publish skip; nothing was uploaded.
     pub skipped: bool,
+}
+
+/// One publish operation under tebako-http's retry law (the range
+/// GET's, mirrored for the write wire — the module doc's law): a
+/// throttled answer waits [`tebako_http::throttle_backoff`] for up to
+/// [`tebako_http::THROTTLE_ROUNDS`] rounds; a transport failure retries
+/// THE OPERATION FROM ZERO up to [`PUSH_ATTEMPTS`] times with
+/// [`PUSH_RETRY_DELAY`] between. Everything else is terminal by the
+/// crate's one law — the named answers (TagConflict, CredentialRequired,
+/// the malformed-artifact class) never retry.
+fn retry_push<T>(mut op: impl FnMut() -> Result<T, OciError>) -> Result<T, OciError> {
+    let mut attempts = 0;
+    let mut throttles = 0;
+    loop {
+        match op() {
+            Err(OciError::Transport(FetchError::Throttled {
+                retry_after, status, ..
+            })) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(OciError::Transport(FetchError::DownloadFailed(format!(
+                        "still throttled after {} backoff rounds publishing ({status})",
+                        tebako_http::THROTTLE_ROUNDS
+                    ))));
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
+            Err(OciError::Transport(FetchError::DownloadFailed(msg))) => {
+                attempts += 1;
+                if attempts >= PUSH_ATTEMPTS {
+                    return Err(OciError::Transport(FetchError::DownloadFailed(format!(
+                        "the publish failed after {PUSH_ATTEMPTS} attempts: {msg}"
+                    ))));
+                }
+                std::thread::sleep(PUSH_RETRY_DELAY);
+            }
+            other => return other,
+        }
+    }
 }
 
 /// Push one §3 artifact (`bytes` are the served file's raw bytes — the
@@ -95,11 +156,18 @@ pub fn push_artifact<H: Http, C: CredentialSource>(
     );
 
     // ---- 1. write-once -------------------------------------------------
-    let (resp, _) = client.send_with_dance(&r, &scope, &|auth| {
-        client.http.get(&manifest_url, Some(MANIFEST_MT), auth)
+    let (resp, _) = retry_push(|| {
+        let (resp, class) = client.send_with_dance(&r, &scope, &|auth| {
+            client.http.get(&manifest_url, Some(MANIFEST_MT), auth)
+        })?;
+        match resp.status {
+            // fresh tag (an unknown repository is a 404 too — NAME_UNKNOWN),
+            // or the tag's standing manifest (the idempotence check below)
+            404 | 200 => Ok((resp, class)),
+            _ => Err(client.classify_error(&manifest_url, Endpoint::Manifest, &r, &resp)),
+        }
     })?;
     match resp.status {
-        // fresh tag (an unknown repository is a 404 too — NAME_UNKNOWN)
         404 => {}
         200 => {
             let existing = resp
@@ -122,43 +190,40 @@ pub fn push_artifact<H: Http, C: CredentialSource>(
                 attempted: format!("sha256:{manifest_digest}"),
             });
         }
-        _ => return Err(client.classify_error(&manifest_url, Endpoint::Manifest, &r, &resp)),
+        status => unreachable!("the retry classified every other status: {status}"),
     }
 
     // ---- 2. the blobs: the empty config first (registries validate the
     // manifest's config reference — zot 400s a manifest whose config
     // blob is absent), then the layer. Mount attempt, then the
-    // monolithic upload.
-    push_blob(
-        client,
-        &r,
-        host,
-        repo,
-        &scope,
-        crate::EMPTY_CONFIG_DIGEST,
-        b"{}",
-    )?;
+    // monolithic upload. A transport failure retries the WHOLE leg, so
+    // a broken PUT never re-rides its stranded session.
+    retry_push(|| {
+        push_blob(
+            client,
+            &r,
+            host,
+            repo,
+            &scope,
+            crate::EMPTY_CONFIG_DIGEST,
+            b"{}",
+        )
+    })?;
     let hex = layer
         .digest_hex()
         .expect("the layer digest was built as sha256:<hex>");
-    push_blob(
-        client,
-        &r,
-        host,
-        repo,
-        &scope,
-        &format!("sha256:{hex}"),
-        bytes,
-    )?;
+    retry_push(|| push_blob(client, &r, host, repo, &scope, &format!("sha256:{hex}"), bytes))?;
 
     // ---- 3. the manifest placement --------------------------------------
-    let (resp, _) = client.send_with_dance(&r, &scope, &|auth| {
-        client.http.put(&manifest_url, &manifest, MANIFEST_MT, auth)
+    let (resp, _) = retry_push(|| {
+        let (resp, class) = client.send_with_dance(&r, &scope, &|auth| {
+            client.http.put(&manifest_url, &manifest, MANIFEST_MT, auth)
+        })?;
+        match resp.status {
+            200..=202 => Ok((resp, class)),
+            _ => Err(client.classify_error(&manifest_url, Endpoint::Manifest, &r, &resp)),
+        }
     })?;
-    match resp.status {
-        200..=202 => {}
-        _ => return Err(client.classify_error(&manifest_url, Endpoint::Manifest, &r, &resp)),
-    }
     // The registry's own echo pins what it stored (the pull path's
     // discipline, mirrored): a served digest that disagrees with the
     // bytes we sent is the named mismatch, never a shrug.
@@ -250,11 +315,15 @@ fn resolve_location(host: &str, location: &str) -> Result<String, OciError> {
         if location_host.eq_ignore_ascii_case(host) {
             return Ok(location.to_string());
         }
-        return Err(OciError::Transport(tebako_http::FetchError::DownloadFailed(
-            format!(
-                "the registry's upload Location {location} names the foreign host {location_host} — the push credential never rides cross-host"
+        return Err(OciError::ArtifactMalformed {
+            origin: location.to_string(),
+            // a POLICY refusal, not a transport failure — the publish
+            // retry law must never re-fire it (the mount POST's answer
+            // was complete; the registry served a Location we refuse)
+            reason: format!(
+                "the registry's upload Location names the foreign host {location_host} — the push credential never rides cross-host"
             ),
-        )));
+        });
     }
     Err(OciError::ArtifactMalformed {
         origin: location.to_string(),
@@ -642,7 +711,7 @@ mod tests {
             BYTES,
         )
         .unwrap_err();
-        assert!(matches!(err, OciError::Transport(_)), "{err:?}");
+        assert!(matches!(err, OciError::ArtifactMalformed { .. }), "{err:?}");
         assert!(err.to_string().contains("cross-host"), "{err}");
         assert_eq!(http.writes().len(), 1, "only the mount POST went out");
     }
@@ -746,5 +815,156 @@ mod tests {
     #[test]
     fn the_push_scope_spelling_is_pull_push() {
         assert_eq!(push_scope_for("o/r"), "repository:o/r:pull,push");
+    }
+
+    // ---- the transport-retry law (the module doc's): a throttled answer
+    // waits the server's own schedule; a transport failure retries the
+    // operation from zero, a blob leg on a FRESH upload session.
+
+    #[test]
+    fn a_broken_layer_put_retries_the_leg_on_a_fresh_session() {
+        let _guard = token_guard();
+        let http = MockHttp::new();
+        http.push_get("/manifests/1.0", 404, &[], b"");
+        // the well-known empty config mounts (no PUT — the fail_next_put
+        // below then lands on the LAYER leg, the 200 MB class the retry
+        // law exists for)
+        http.push_post("/blobs/uploads/?mount=", 201, &[], b"");
+        http.push_post(
+            "/blobs/uploads/?mount=",
+            202,
+            &[("Location", format!("/v2/{REPO}/blobs/uploads/session-1"))],
+            b"",
+        );
+        http.fail_next_put(FetchError::DownloadFailed("broken pipe".to_string()));
+        // the retried leg takes a FRESH session — the PUT's stranded one
+        // is never re-ridden
+        http.push_post(
+            "/blobs/uploads/?mount=",
+            202,
+            &[("Location", format!("/v2/{REPO}/blobs/uploads/session-2"))],
+            b"",
+        );
+        http.push_put("/blobs/uploads/session-2?digest=sha256:", 201, &[], b"");
+        http.push_put("/manifests/1.0", 201, &[], b"");
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let outcome = push_artifact(
+            &client,
+            HOST,
+            REPO,
+            TAG,
+            ArtifactClass::Payload,
+            &annotations(),
+            BYTES,
+        )
+        .unwrap();
+        assert!(!outcome.skipped);
+        let writes = http.writes();
+        // the two mount probes, the broken PUT, the fresh mount, the
+        // layer, the manifest
+        assert_eq!(writes.len(), 6, "{writes:?}");
+        assert!(writes[2].0.contains("session-1"), "{}", writes[2].0);
+        assert_eq!(writes[2].1, BYTES);
+        assert!(writes[3].1.is_empty());
+        assert!(writes[4].0.contains("session-2"), "{}", writes[4].0);
+        assert_eq!(writes[4].1, BYTES);
+    }
+
+    #[test]
+    fn a_throttled_manifest_put_waits_the_servers_schedule_and_retries() {
+        let _guard = token_guard();
+        let http = MockHttp::new();
+        http.push_get("/manifests/1.0", 404, &[], b"");
+        http.push_post("/blobs/uploads/?mount=", 201, &[], b"");
+        http.push_post(
+            "/blobs/uploads/?mount=",
+            202,
+            &[("Location", format!("/v2/{REPO}/blobs/uploads/session-1"))],
+            b"",
+        );
+        http.push_put("/blobs/uploads/session-1?digest=sha256:", 201, &[], b"");
+        // Retry-After: 0 keeps the test off the clock while the backoff
+        // law still runs (the hint is honored exactly)
+        http.push_put("/manifests/1.0", 429, &[("Retry-After", "0".to_string())], b"");
+        http.push_put("/manifests/1.0", 201, &[], b"");
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let outcome = push_artifact(
+            &client,
+            HOST,
+            REPO,
+            TAG,
+            ArtifactClass::Payload,
+            &annotations(),
+            BYTES,
+        )
+        .unwrap();
+        assert!(!outcome.skipped);
+        let writes = http.writes();
+        assert_eq!(writes.len(), 5, "{writes:?}");
+        assert_eq!(writes[3].1, manifest_bytes());
+        assert_eq!(writes[4].1, manifest_bytes());
+    }
+
+    #[test]
+    fn a_transport_failure_exhausts_the_publish_attempts() {
+        let _guard = token_guard();
+        let http = MockHttp::new();
+        http.push_get("/manifests/1.0", 404, &[], b"");
+        http.push_post("/blobs/uploads/?mount=", 201, &[], b"");
+        for session in ["session-1", "session-2", "session-3"] {
+            http.push_post(
+                "/blobs/uploads/?mount=",
+                202,
+                &[("Location", format!("/v2/{REPO}/blobs/uploads/{session}"))],
+                b"",
+            );
+            http.fail_next_put(FetchError::DownloadFailed(format!(
+                "broken pipe on {session}"
+            )));
+        }
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let err = push_artifact(
+            &client,
+            HOST,
+            REPO,
+            TAG,
+            ArtifactClass::Payload,
+            &annotations(),
+            BYTES,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, OciError::Transport(FetchError::DownloadFailed(_))),
+            "{err:?}"
+        );
+        let msg = err.to_string();
+        assert!(msg.contains("after 3 attempts"), "{msg}");
+        // the LAST failure is the reported one
+        assert!(msg.contains("session-3"), "{msg}");
+    }
+
+    #[test]
+    fn the_tag_check_get_retries_a_transport_failure() {
+        let _guard = token_guard();
+        let http = MockHttp::new();
+        http.fail_next_get(FetchError::DownloadFailed("connection reset".to_string()));
+        script_monolithic(&http);
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let outcome = push_artifact(
+            &client,
+            HOST,
+            REPO,
+            TAG,
+            ArtifactClass::Payload,
+            &annotations(),
+            BYTES,
+        )
+        .unwrap();
+        assert!(!outcome.skipped);
+        assert_eq!(http.writes().len(), 5);
     }
 }

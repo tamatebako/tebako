@@ -988,6 +988,11 @@ pub(crate) mod tests {
         posts: Mutex<VecDeque<ScriptedWrite>>,
         puts: Mutex<VecDeque<ScriptedWrite>>,
         ranges: Mutex<VecDeque<ScriptedGet>>,
+        /// The retry tests' injection: a popped error REPLACES that
+        /// call's scripted answer (the log still records the call).
+        get_errors: Mutex<VecDeque<FetchError>>,
+        post_errors: Mutex<VecDeque<FetchError>>,
+        put_errors: Mutex<VecDeque<FetchError>>,
         /// (url, authorization-header-or-"anonymous")
         log: Mutex<Vec<(String, String)>>,
         /// (url, request body) of every POST/PUT, in order.
@@ -1002,6 +1007,9 @@ pub(crate) mod tests {
                 posts: Mutex::new(VecDeque::new()),
                 puts: Mutex::new(VecDeque::new()),
                 ranges: Mutex::new(VecDeque::new()),
+                get_errors: Mutex::new(VecDeque::new()),
+                post_errors: Mutex::new(VecDeque::new()),
+                put_errors: Mutex::new(VecDeque::new()),
                 log: Mutex::new(Vec::new()),
                 write_log: Mutex::new(Vec::new()),
             }
@@ -1079,6 +1087,17 @@ pub(crate) mod tests {
             });
         }
 
+        /// The next GET answers `err` instead of its scripted response
+        /// (a transport failure, a throttle — the retry tests' classes).
+        pub(crate) fn fail_next_get(&self, err: FetchError) {
+            self.get_errors.lock().unwrap().push_back(err);
+        }
+
+        /// The next PUT answers `err` (same law as [`Self::fail_next_get`]).
+        pub(crate) fn fail_next_put(&self, err: FetchError) {
+            self.put_errors.lock().unwrap().push_back(err);
+        }
+
         fn record(&self, url: &str, auth: Auth<'_>) {
             let presented = match authorization_header(auth) {
                 Some((_, v)) => v,
@@ -1105,6 +1124,7 @@ pub(crate) mod tests {
         fn write(
             &self,
             queue: &Mutex<VecDeque<ScriptedWrite>>,
+            errors: &Mutex<VecDeque<FetchError>>,
             verb: &str,
             url: &str,
             body: &[u8],
@@ -1112,6 +1132,9 @@ pub(crate) mod tests {
         ) -> Result<tebako_http::RawResponse, FetchError> {
             self.record(url, auth);
             self.record_write(url, body);
+            if let Some(err) = errors.lock().unwrap().pop_front() {
+                return Err(err);
+            }
             let next = queue
                 .lock()
                 .unwrap()
@@ -1138,6 +1161,9 @@ pub(crate) mod tests {
             auth: Auth<'_>,
         ) -> Result<tebako_http::RawResponse, FetchError> {
             self.record(url, auth);
+            if let Some(err) = self.get_errors.lock().unwrap().pop_front() {
+                return Err(err);
+            }
             let next = self
                 .gets
                 .lock()
@@ -1163,7 +1189,7 @@ pub(crate) mod tests {
             _content_type: Option<&str>,
             auth: Auth<'_>,
         ) -> Result<tebako_http::RawResponse, FetchError> {
-            self.write(&self.posts, "POST", url, body, auth)
+            self.write(&self.posts, &self.post_errors, "POST", url, body, auth)
         }
 
         fn put(
@@ -1173,7 +1199,7 @@ pub(crate) mod tests {
             _content_type: &str,
             auth: Auth<'_>,
         ) -> Result<tebako_http::RawResponse, FetchError> {
-            self.write(&self.puts, "PUT", url, body, auth)
+            self.write(&self.puts, &self.put_errors, "PUT", url, body, auth)
         }
 
         fn stream(
