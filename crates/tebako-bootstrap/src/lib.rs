@@ -3877,10 +3877,7 @@ fn fetch_unpack_bundle(
     // Unpack in-process: the §2 grammar, the exact member set, the
     // per-member pins, the closing SHA256SUMS cross-check. Any
     // disagreement is InvalidBundle and nothing was installed.
-    let unpacked = match unpack_runtime_bundle(&tmp_bundle, &bundle.filename, &members, tmp_dir) {
-        Ok(u) => u,
-        Err(e) => return Err(e),
-    };
+    let unpacked = unpack_runtime_bundle(&tmp_bundle, &bundle.filename, &members, tmp_dir)?;
     let _ = remove_file(&tmp_bundle);
     Ok(UnpackedBundle {
         members: unpacked,
