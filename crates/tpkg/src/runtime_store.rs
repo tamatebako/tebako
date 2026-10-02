@@ -364,6 +364,25 @@ pub fn entry_bundle(entry: &tebako_json::Value) -> Option<EntryBundle> {
     })
 }
 
+/// The entry's TOP-LEVEL `per_file_assets` bool (spec 36 §3's co-publish
+/// witness, runtime-manifest MINOR 2): `true` declares the release serves
+/// the per-file assets (the bare exe under its historical spelling,
+/// `<stem>.tfs`, the windows dll) as standalone assets BESIDE the bundle
+/// — the spec 39 §7 lazy arm's serving requirement on a bundle-declaring
+/// shard. The entry object IS the shard card: both loaders normalize a
+/// consumed shard to the one-entry array shape at the boundary, so the
+/// schema's document-top-level key reads as the matched entry's
+/// top-level key. Absent reads false (the additive rule); present but
+/// not a bool reads false too — `entry_bundle`'s facet doctrine (a torn
+/// facet is no facet): a torn witness never ARMS the lazy gate, the
+/// bundle fetch stays the eager default.
+pub fn entry_per_file_assets(entry: &tebako_json::Value) -> bool {
+    matches!(
+        entry.find("per_file_assets"),
+        Some(tebako_json::Value::Bool(true))
+    )
+}
+
 // ---------------------------------------------------------------------
 // the image blksum sidecar pin (spec 39 §3) — additive, mirror-only
 // ---------------------------------------------------------------------
@@ -2058,6 +2077,45 @@ mod tests {
         assert_eq!(entry_bundle(&entries[1]), None);
         assert_eq!(entry_bundle(&entries[2]), None);
         assert_eq!(entry_bundle(&entries[3]), None);
+    }
+
+    #[test]
+    fn entry_per_file_assets_reads_the_witness() {
+        let index = tebako_json::parse(
+            r#"[
+            {"filename": "exe-a", "per_file_assets": true,
+                "bundle": {"filename": "stem.tar.gz", "sha256": "cc"}},
+            {"filename": "exe-b", "per_file_assets": false,
+                "bundle": {"filename": "stem.tar.gz", "sha256": "cc"}},
+            {"filename": "exe-c", "per_file_assets": "yes",
+                "bundle": {"filename": "stem.tar.gz", "sha256": "cc"}},
+            {"filename": "exe-d",
+                "bundle": {"filename": "stem.tar.gz", "sha256": "cc"}},
+            {"filename": "exe-e"}
+        ]"#,
+        )
+        .unwrap();
+        let tebako_json::Value::Array(entries) = &index else {
+            panic!("the fixture is an array");
+        };
+        // The co-publish witness arms the lazy gate only as the
+        // document-top-level bool `true` (spec 36 §3, MINOR 2).
+        assert!(entry_per_file_assets(&entries[0]));
+        // Explicit false and the absent key both read false (the additive
+        // rule); a present-but-torn (non-bool) value reads false too —
+        // the facet rule: a torn witness never arms the gate.
+        assert!(!entry_per_file_assets(&entries[1]));
+        assert!(!entry_per_file_assets(&entries[2]));
+        assert!(!entry_per_file_assets(&entries[3]));
+        // The pre-bundle card shape carries no witness at all (its
+        // per-file enumeration is the only shape).
+        assert!(!entry_per_file_assets(&entries[4]));
+        // A nested same-named key is NOT the witness — the key is
+        // document-top-level.
+        let nested =
+            tebako_json::parse(r#"{"filename": "exe-f", "image": {"per_file_assets": true}}"#)
+                .unwrap();
+        assert!(!entry_per_file_assets(&nested));
     }
 
     // -----------------------------------------------------------------

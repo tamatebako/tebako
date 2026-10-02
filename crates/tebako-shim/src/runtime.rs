@@ -65,8 +65,8 @@ const LOCK_POLL_MS: u64 = 200;
 // resolution/download layers below build on these re-exports.
 use tpkg::runtime_store::{
     cached_lazy, entry_asset_names, entry_blksum, entry_bundle, entry_dll_from_index,
-    entry_filename, entry_matches, entry_meta, entry_signature, newest_compatible_any,
-    release_index_entry, EntryBundle, EntrySignature,
+    entry_filename, entry_matches, entry_meta, entry_per_file_assets, entry_signature,
+    newest_compatible_any, release_index_entry, EntryBundle, EntrySignature,
 };
 pub use tpkg::runtime_store::{
     exe_suffix, newest_compatible, platform_string, scan_all_cached, scan_cached, CachedRuntime,
@@ -2650,15 +2650,39 @@ fn fetch_sidecar(url: &str, local: bool) -> SidecarAnswer {
 
 /// The lazy install's plan decision.
 enum LazyPlan {
-    /// No lazy install (the opt-in is off, the bundle era carries the
-    /// bytes, or the release declares no image).
+    /// No lazy install (the opt-in is off, the release declares no
+    /// image, or the bundle era carries the bytes — a bundle-declaring
+    /// shard WITHOUT the co-publish witness `per_file_assets: true`
+    /// stays eager by construction, spec 39 §7 / spec 36 §3).
     Eager,
     /// The opt-in is on but the release cannot serve it — the LOUD
     /// eager fallback (spec 39 §7): the image item reverts to the
-    /// ordinary facet fetch; the journal carries the reason.
+    /// ordinary facet fetch — on a bundle-era line, to the BUNDLE fetch
+    /// (the eager default on bundle-era lines stays the bundle fetch);
+    /// the journal carries the reason.
     Fallback(&'static str),
     /// Install lazily: the plan item writes this seed descriptor.
     Lazy(Box<tpkg::lazy::LazySeed>),
+}
+
+impl LazyPlan {
+    /// The ENGAGED arm (spec 39 §7): the seed-descriptor install. Eager
+    /// and the loud Fallback both leave the era's default fetch in place
+    /// — on bundle-era lines that default IS the bundle fetch.
+    fn engaged(&self) -> bool {
+        matches!(self, LazyPlan::Lazy(_))
+    }
+}
+
+/// The bundle-era lazy gate (spec 39 §7, the co-publish witness of spec
+/// 36 §3 — runtime-manifest MINOR 2): the lazy arm evaluates BEFORE the
+/// spec 36 §4 era branch. The arm engages on the opt-in AND — on a
+/// bundle-declaring shard — ONLY when the shard also carries the witness
+/// (the exe/image/dll are then served standalone by construction); a
+/// bundle-declaring shard without the witness stays eager by
+/// construction (its one tar fetch IS the runtime).
+fn lazy_arm_engages(lazy_opt_in: bool, bundle_declared: bool, per_file_assets: bool) -> bool {
+    lazy_opt_in && (!bundle_declared || per_file_assets)
 }
 
 /// The LAZY_SEEDING plan item (spec 39 §7/§9): no bytes stream — the
@@ -3042,13 +3066,20 @@ fn download_runtime(
         let sink = RuntimePlanSink::default();
         // The LAZY_SEEDING install (spec 39 §7): the opt-in
         // (TEBAKO_RUNTIME_LAZY over config `runtime_lazy: true` — env
-        // wins per key, a malformed value is the named 65), the
-        // per-file path only (the bundle era's one tar fetch IS the
-        // runtime — eager by construction), the image declared, and
-        // the release index's additive `image.blksum` row field
-        // anchoring the sidecar. A missing row field or a missing
-        // sidecar is the LOUD eager fallback (stderr + the journal);
-        // a torn row field is the named error; a sidecar transport
+        // wins per key, a malformed value is the named 65), the lazy arm
+        // gated BEFORE the spec 36 §4 era branch — on a bundle-declaring
+        // shard the arm engages ONLY with the shard's co-publish witness
+        // (`per_file_assets: true`, spec 36 §3, runtime-manifest MINOR
+        // 2: the exe/image/dll are then served standalone by
+        // construction); a bundle-declaring shard without the witness
+        // stays eager by construction (its one tar fetch IS the
+        // runtime); the image declared, and the release index's
+        // additive `image.blksum` row field anchoring the sidecar. A
+        // missing row field or a missing sidecar is the LOUD eager
+        // fallback (stderr + the journal) — on a bundle-era line it
+        // lands on the BUNDLE fetch, never a per-file image fetch (the
+        // eager default on bundle-era lines stays the bundle fetch); a
+        // torn row field is the named error; a sidecar transport
         // failure is 69; a sidecar off its pin or off the image's
         // index sha is 70.
         let lazy_opt_in = tpkg::settings::resolve_runtime_lazy(
@@ -3061,7 +3092,8 @@ fn download_runtime(
             cfg.runtime_lazy,
         )
         .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
-        let lazy_plan = if bundle.is_none() && lazy_opt_in {
+        let per_file_assets = entry_match.map(entry_per_file_assets).unwrap_or(false);
+        let lazy_plan = if lazy_arm_engages(lazy_opt_in, bundle.is_some(), per_file_assets) {
             match &image.sha {
                 None => LazyPlan::Eager,
                 Some(image_expected) => {
@@ -3139,8 +3171,15 @@ fn download_runtime(
             LazyPlan::Eager
         };
         if let LazyPlan::Fallback(reason) = &lazy_plan {
+            // The eager default on bundle-era lines stays the bundle
+            // fetch (spec 39 §7) — the loud line names what streams.
+            let eager = if bundle.is_some() {
+                "fetching the release bundle whole"
+            } else {
+                "fetching the env image whole"
+            };
             eprintln!(
-                "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — the release carries no blksum sidecar; fetching the env image whole (the loud eager fallback, spec 39 §7)"
+                "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — the release carries no blksum sidecar; {eager} (the loud eager fallback, spec 39 §7)"
             );
             journal(
                 &ctx.home,
@@ -3149,7 +3188,16 @@ fn download_runtime(
         }
         let has_image =
             image.sha.is_some() && !matches!(lazy_plan, LazyPlan::Lazy(_));
-        let items = if let Some(bundle) = &bundle {
+        // The era branch DOWNSTREAM of the lazy gate (spec 36 §4 / spec
+        // 39 §7): the ONE bundle fetch proceeds exactly when the shard
+        // declares a bundle AND the lazy arm did not engage — Eager
+        // (the opt-in off, or the witness absent) or the loud Fallback
+        // (the eager default on bundle-era lines stays the bundle
+        // fetch). An ENGAGED arm takes the per-file path below on a
+        // witnessed bundle line: the exe (+ the windows dll) fetch by
+        // the shard's per-file pins and the image installs as the seed
+        // descriptor — the bundle is never fetched.
+        let items = if let Some(bundle) = bundle.as_ref().filter(|_| !lazy_plan.engaged()) {
             // The bundle era (spec 36 §4): ONE fetch — the
             // `<stem>.tar.gz` — carries the leg's bytes; its commit
             // verifies + unpacks + stages exactly the store layout the
@@ -4484,5 +4532,74 @@ payloads:
         assert_eq!(refusal.code, EX_TEBAKO_SHA, "{refusal:?}");
         assert!(refusal.message.contains("inconsistent"), "{refusal:?}");
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    // -----------------------------------------------------------------
+    // the bundle-era lazy gate (spec 39 §7, the witness of spec 36 §3)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn the_lazy_arm_gates_on_the_co_publish_witness() {
+        // The per-file era: the opt-in alone engages the arm (unchanged).
+        assert!(lazy_arm_engages(true, false, false));
+        assert!(lazy_arm_engages(true, false, true));
+        // A bundle-declaring shard engages the arm ONLY when it also
+        // carries the co-publish witness — without it the shard stays
+        // eager by construction (its one tar fetch IS the runtime).
+        assert!(lazy_arm_engages(true, true, true));
+        assert!(!lazy_arm_engages(true, true, false));
+        // The witness never substitutes for the opt-in.
+        assert!(!lazy_arm_engages(false, true, true));
+        assert!(!lazy_arm_engages(false, false, true));
+    }
+
+    #[test]
+    fn the_engaged_arm_alone_supersedes_the_bundle_fetch() {
+        // The plan-commit side of the gate: only the ENGAGED arm drops
+        // the bundle from the fetch plan; Eager and the loud Fallback
+        // both keep it (the eager default on bundle-era lines stays the
+        // bundle fetch, spec 39 §7).
+        let seed = LazyPlan::Lazy(Box::new(tpkg::lazy::LazySeed {
+            source: "file:///fixture/image.tfs".to_string(),
+            sha256: "a".repeat(64),
+            blksum_sha256: "b".repeat(64),
+            size_bytes: 14,
+            group_count: 1,
+        }));
+        assert!(seed.engaged());
+        assert!(!LazyPlan::Eager.engaged());
+        assert!(!LazyPlan::Fallback("blksum-missing").engaged());
+    }
+
+    #[test]
+    fn the_witness_scopes_to_the_matched_entry() {
+        // A multi-entry monolith: one leg's witness never arms another
+        // leg's gate — the witness is the SHARD's top-level key (spec 36
+        // §3), read off the identity-matched entry.
+        let index = tebako_json::parse(
+            r#"[
+            {"tebako_version": "0.17.0", "ruby_version": "4.0.7", "platform": "macos-arm64",
+                "filename": "exe-mac", "per_file_assets": true,
+                "bundle": {"filename": "mac.tar.gz", "sha256": "cc"}},
+            {"tebako_version": "0.17.0", "ruby_version": "4.0.7", "platform": "linux-x86_64",
+                "filename": "exe-linux",
+                "bundle": {"filename": "linux.tar.gz", "sha256": "dd"}}
+        ]"#,
+        )
+        .unwrap();
+        let mac = release_index_entry(&index, "ruby", "4.0.7", "0.17.0", "macos-arm64")
+            .expect("the macos entry matches");
+        let linux = release_index_entry(&index, "ruby", "4.0.7", "0.17.0", "linux-x86_64")
+            .expect("the linux entry matches");
+        assert!(lazy_arm_engages(
+            true,
+            entry_bundle(mac).is_some(),
+            entry_per_file_assets(mac)
+        ));
+        assert!(!lazy_arm_engages(
+            true,
+            entry_bundle(linux).is_some(),
+            entry_per_file_assets(linux)
+        ));
     }
 }
