@@ -117,6 +117,32 @@ The shard keeps today's identity anchors and gains ONE additive key:
   DLLs ride the bundle as members and install by the shard's declared
   spellings.
 
+**Co-publish (the lazy arm's serving requirement, spec 39 §7).** A
+bundle-era line whose consumers include a lazy-mount loader ALSO serves
+the per-file assets of spec 13 §2a's enumeration — the bare exe under
+its historical spelling, `<stem>.tfs`, `<stem>.dll` (windows) — each
+with its own `.sha256` sidecar, plus an `.asc` of each on
+signing-enabled lines. The shard's grammar is otherwise unchanged: the
+per-file blocks already pin exactly these bytes (the member pins ARE
+the standalone pins — one staged file, one digest, two serving forms);
+the shard gains ONE additive witness, top-level `"per_file_assets":
+true` (runtime-manifest MINOR 2), and declares the entry/facet
+`signature` blocks exactly as the per-file era does (the every-served-
+name rule covers the standalone set again). A shard carrying the
+witness without the assets on the release is the same invalid publish
+as a `bundle` block without its bundle — the leg fails before it ships
+and the audit names the gap. The bundle stays the ONE fetch of the
+default eager path (§4) — co-publish changes what the release SERVES,
+never what the bundle carries or how it verifies. The §4 compat window
+closes on co-published lines: a pre-bundle reader ignores `bundle` (the
+additive rule) and takes the per-file path against the same pinned
+bytes. Asset budget: the union is 9–11 assets per leg unsigned (18–22
+on signing-enabled lines); line tips (5 rubies × 7 platforms) stay far
+under the 1,000-asset ceiling, and catalog republications ride §6's
+line shards as always. The mode is the factory's declared policy (the
+release tooling's adapter seam), never an env knob — a factory opts in
+when its consumers include the lazy arm.
+
 ## 4. The resolver path (spec 05 §2 amendment)
 
 Preference order is unchanged (shard → derived monolith → line index);
@@ -137,12 +163,14 @@ the era branch happens INSIDE the shard case:
 - `bundle` absent ⇒ the per-file path, forever (keep-forever, spec 13
   §8). The era branch is per-release, never global.
 - **Old resolver, bundle-era release** (the compat window): the shard
-  matches, `filename` flows verbatim, and the exe asset does not exist
-  on the release — the fetch fails with the named not-found error
-  (exit-69 class) naming the identity triple and hinting that the line
-  requires a bundle-era tebako. Never an exec of wrong bytes, never a
-  silent fallback: old readers break LOUD, which the additive-key design
-  makes the ONLY failure mode.
+  matches, `filename` flows verbatim, and — on a bundle-only line — the
+  exe asset does not exist on the release, so the fetch fails with the
+  named not-found error (exit-69 class) naming the identity triple and
+  hinting that the line requires a bundle-era tebako. Never an exec of
+  wrong bytes, never a silent fallback: old readers break LOUD, which
+  the additive-key design makes the ONLY failure mode. On a CO-PUBLISHED
+  line (§3) the window closes: the per-file assets exist again and the
+  old reader's per-file path installs the same pinned bytes.
 - One fetch replaces three or more: the journal records the bundle base
   and channel exactly as today (spec 05 §2's per-engine chain applies
   unchanged — the bundle is just the asset the chain supplies).
@@ -154,7 +182,12 @@ A bundle-era runtime entry's platform rows name the BUNDLE:
 resolution mirror and audit pin; the runtime download itself flows the
 shard (§4). Per-file-era rows keep naming the exe — the registry is a
 faithful mirror of what the pinned release serves, era by era, and a
-`status: withdrawn` mark means the same thing on both.
+`status: withdrawn` mark means the same thing on both. A CO-PUBLISHED
+line's row is unchanged — it still names the bundle (the preferred
+eager fetch): the row's `blksum` pin (spec 39 §3) is the lazy wire's
+only registry mirror, and the standalone per-file asset names derive
+from the stem (spec 05 §2's spelling rule), so the row grammar carries
+nothing new.
 
 ## 6. The release-topology policy (spec 13 amendment, locked 2026-09-24)
 
