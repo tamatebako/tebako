@@ -320,6 +320,19 @@ SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics
   default flips to lazy-on only after §10's parity data lands; the flip
   is one line in the default resolution and a spec-00-style locked note
   here when it happens.
+- **The bundle-era gate (spec 36 §3's co-publish).** Both loaders (shim
+  and bootstrap) evaluate the lazy arm BEFORE the spec 36 §4 era branch.
+  On a shard declaring `bundle`, the arm engages ONLY when the shard
+  also carries the co-publish witness (`per_file_assets: true`,
+  runtime-manifest MINOR 2 — the exe/image/dll are then served
+  standalone by construction); a bundle-declaring shard without the
+  witness stays eager by construction (its one tar fetch IS the
+  runtime). When the arm engages on a bundle-declaring shard, the
+  install fetches the exe (+ the windows DLL) by the shard's per-file
+  pins and seeds the image; the bundle is never fetched. Every other
+  rule of this section is unchanged: a missing sidecar is the loud
+  eager fallback, a torn pin the named error, a mismatch exit 70. The
+  eager default on bundle-era lines stays the bundle fetch.
 - **Progress.** The loader's lazy first run renders through tebako-term
   (the spec 06 §5/§5a wiring rule — nothing else prints download
   progress): the exe's ordinary artifact bar, then one line —
