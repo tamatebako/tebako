@@ -395,14 +395,22 @@ mod tests {
         // entry flips SEALED (image + anchor, descriptor + blocks gone).
         spawn_seal_thread(&source, entry.path().to_path_buf(), image_base.clone());
         let sealed_image = entry.path().join(&image_base);
+        let sidecar = entry.path().join(format!("{image_base}.sha256"));
+        // Wait for the TERMINAL state, not the first write: the seal thread
+        // commits image → anchor → cleanup in order, and slow filesystems
+        // (windows-gnu under AV scan) expose the gap (#664).
         for _ in 0..200 {
-            if sealed_image.is_file() {
+            if sealed_image.is_file()
+                && sidecar.is_file()
+                && !tpkg::lazy::descriptor_path(entry.path(), &image_base).exists()
+                && !tpkg::lazy::blocks_dir(entry.path(), &image_base).exists()
+            {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert!(sealed_image.is_file(), "the seal thread installs the image");
-        assert!(entry.path().join(format!("{image_base}.sha256")).is_file());
+        assert!(sidecar.is_file(), "the seal thread installs the anchor");
         assert!(!tpkg::lazy::descriptor_path(entry.path(), &image_base).exists());
         assert!(!tpkg::lazy::blocks_dir(entry.path(), &image_base).exists());
         // The sealed bytes are byte-identical with the origin's.
