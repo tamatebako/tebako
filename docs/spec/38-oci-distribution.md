@@ -242,13 +242,50 @@ FetchPlan ITEM — the pipeline owns transport, integrity, scheduling:
    enter the cache. A partial pull is invisible by the same proof.
 4. **Runtime bundles.** A `kind: runtime` row whose `release.ref` is
    `tfs+oci:` resolves through spec 37 §8's chain: the locator
-   derivation (`release_download_locator`) gains the OCI arm — the
-   shard comes from the bundle manifest's `org.tebako.runtime.shard`
-   annotation, then spec 36 §4 runs VERBATIM (signature → bundle digest
-   → in-process unpack → per-member pins → the spec 05 §3 layout). OCI
-   runtime distribution is bundle-era only: per-file-era lines stay on
-   their git-host releases forever (keep-forever, spec 13 §8) and never
-   publish to OCI.
+   derivation (`release_download_locator`) gains the OCI arm, and the
+   fetch runs the bundle flow below. OCI runtime distribution is
+   bundle-era only: per-file-era lines stay on their git-host releases
+   forever (keep-forever, spec 13 §8) and never publish to OCI.
+   - **The fetch tag.** A selector-less locator tags the bundle STEM
+     (`tebako-runtime-<ver>-<lv>-<triplet>` — §3's tag rule, the
+     factory's spelling flowed verbatim); an authored `:tag` or
+     `@sha256:` selector rides exactly as written (spec 37 §8's
+     authored-selector law).
+   - **One manifest read replaces the shard fetch.** The per-package
+     shard comes from the bundle manifest's `org.tebako.runtime.shard`
+     annotation (§3) and is gated THREE ways before any blob streams:
+     the shard's identity triple (`<engine>_version` /
+     `tebako_version` / `platform`) must match the runtime being
+     resolved — a mismatch means the tag resolved another runtime's
+     publish (69); the shard MUST declare a `bundle` block — a
+     per-file-era shard over OCI is the named bundle-era-only refusal
+     (69), never a per-file fallback; and the layer descriptor
+     digest — which IS the bundle's `.sha256` sidecar (§3) — must
+     agree with the shard's bundle pin (a disagreement is 70, nothing
+     installed).
+   - **The plan re-resolves by digest.** The FetchPlan item re-reads
+     the ALREADY-RESOLVED manifest by its digest — the tag's
+     mutability never reaches the stream — and streams the one bundle
+     layer under the RuntimeBundle shape law; spec 36 §4 then runs
+     VERBATIM (the signature verified FIRST — the `.asc` sibling
+     digest-tag derived from the signed blob's digest, a
+     declared-but-unfetchable signature refused 71 exactly like the
+     git-host lane — then bundle digest → in-process unpack →
+     per-member pins → the spec 05 §3 layout). The staged store entry
+     is indistinguishable from a git-host bundle install, the origin
+     markers excepted (point 5's digest-pinned form).
+   - **The lazy opt-in degrades loud.** OCI serves the bundle whole —
+     there is no per-file arm and no blksum probe on this channel —
+     so the lazy-mount opt-in against an OCI source is the loud eager
+     fallback (`event=lazy-fallback reason=oci-bundle-era-only`) and
+     the install completes eager.
+   - **`channel: oci` covers runtime rows.** A book entry declaring
+     `channel: oci` (§11) routes the picked runtime row through its
+     per-triplet `oci:` mirror field — fail-closed exactly like the
+     payload lane: a universal row, a host-covered row lacking the
+     mirror, or an unparsable one is a named 65 error naming the
+     registry and the row; never a fallback to the primary
+     `release.ref`.
 5. **The origin marker** records the concrete digest-pinned form
    (`tfs+oci://<host>/<repo>@sha256:<manifest digest>`) even for tag
    pulls — spec 37 §7's origin binding and `tebako cache list` work

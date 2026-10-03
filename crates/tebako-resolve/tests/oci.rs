@@ -13,11 +13,14 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tebako_http::{FetchError, RawResponse};
-use tebako_oci::model::{ANNOTATION_TITLE, EMPTY_CONFIG_DIGEST, EMPTY_CONFIG_MT};
+use tebako_oci::model::{
+    ANNOTATION_RUNTIME_SHARD, ANNOTATION_SIGNATURE_KEYID, ANNOTATION_SIGNATURE_SUBJECT,
+    ANNOTATION_TITLE, EMPTY_CONFIG_DIGEST, EMPTY_CONFIG_MT,
+};
 use tebako_oci::{ArtifactClass, MANIFEST_MT};
 use tebako_resolve::{
-    sha256_hex, Fetcher, InstallStatus, PayloadCache, Reference, RegistryRef, ResolveError,
-    Transport,
+    execute_plan, sha256_hex, CommitReport, FetchItem, FetchPlan, Fetcher, InstallStatus, OciClass,
+    PayloadCache, Reference, RegistryRef, ResolveError, Transport,
 };
 
 fn scratch(tag: &str) -> PathBuf {
@@ -92,9 +95,17 @@ impl DistMock {
 
 impl Transport for DistMock {
     fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
-        Err(FetchError::IndexUnavailable(format!(
-            "{url} (the OCI contract mock serves get_raw only)"
-        )))
+        // The plan pipeline's OCI stream rides `stream_distribution`,
+        // whose Transport default buffers through `get` — serve the same
+        // map (200 answers only; the distribution classification lives
+        // on get_raw).
+        self.seen.lock().unwrap().push(url.to_string());
+        match self.answers.get(url) {
+            Some(a) if a.status == 200 => Ok(a.body.clone()),
+            _ => Err(FetchError::IndexUnavailable(format!(
+                "{url} (the OCI contract mock serves mapped 200 answers only)"
+            ))),
+        }
     }
 
     fn get_raw(
@@ -599,4 +610,395 @@ fn a_torn_sidecar_document_is_malformed_by_name() {
         matches!(err, ResolveError::OciArtifactMalformed { .. }),
         "{err}"
     );
+}
+
+// ---------------------------------------------------------------------
+// The runtime-bundle lane (spec 38 §5.4)
+// ---------------------------------------------------------------------
+
+/// JSON-string escape for annotation values embedded in a manifest body
+/// (the shard annotation is JSON-in-JSON).
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// [`manifest_for`] plus extra annotations (the spec 38 §5.4 shard ride,
+/// the §3 signature cross-checks).
+fn manifest_annotated(
+    class: ArtifactClass,
+    title: &str,
+    blob: &[u8],
+    extra: &[(&str, &str)],
+) -> (Vec<u8>, String) {
+    let layer_hex = sha256_hex(blob);
+    let extras = extra
+        .iter()
+        .map(|(k, v)| format!(r#", "{k}": "{}""#, json_escape(v)))
+        .collect::<String>();
+    let body = format!(
+        r#"{{"schemaVersion": 2, "mediaType": "{MANIFEST_MT}",
+  "artifactType": "{}",
+  "config": {{"mediaType": "{EMPTY_CONFIG_MT}", "digest": "{EMPTY_CONFIG_DIGEST}", "size": 2}},
+  "layers": [{{"mediaType": "{}", "digest": "sha256:{layer_hex}", "size": {}}}],
+  "annotations": {{"{ANNOTATION_TITLE}": "{title}"{extras}}}}}"#,
+        class.artifact_type(),
+        class.layer_media_type(),
+        blob.len(),
+    );
+    let hex = sha256_hex(body.as_bytes());
+    (body.into_bytes(), hex)
+}
+
+/// A spec 36 §3 shard (the annotation's payload is opaque to the OCI
+/// lane — the shim feeds it to spec 36 §4's chain verbatim).
+const SHARD_JSON: &str = concat!(
+    r#"{"schema_version":1,"name":"ruby","version":"3.3.9","tebako":"0.16.32","#,
+    r#""triplet":"aarch64-macos","bundle":{"filename":"#,
+    r#""tebako-runtime-0.16.32-ruby-3.3.9-aarch64-macos.tar.gz","sha256":""#,
+    r#""0000000000000000000000000000000000000000000000000000000000000000"}}"#
+);
+
+/// A mock registry serving `ns/runtime`'s runtime-bundle artifact: the
+/// manifest under the RuntimeBundle class with the required
+/// `org.tebako.runtime.shard` annotation, plus the bundle blob.
+fn bundle_mock(tag: &str, blob: &[u8], shard: &str) -> (DistMock, String) {
+    let (manifest, manifest_hex) = manifest_annotated(
+        ArtifactClass::RuntimeBundle,
+        "tebako-runtime-0.16.32-ruby-3.3.9-aarch64-macos.tar.gz",
+        blob,
+        &[(ANNOTATION_RUNTIME_SHARD, shard)],
+    );
+    let blob_hex = sha256_hex(blob);
+    let mock = DistMock::new()
+        .ok(
+            &format!("https://reg.example/v2/ns/runtime/manifests/{tag}"),
+            &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+            &manifest,
+        )
+        .ok(
+            &format!("https://reg.example/v2/ns/runtime/manifests/sha256:{manifest_hex}"),
+            &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+            &manifest,
+        )
+        .ok(
+            &format!("https://reg.example/v2/ns/runtime/blobs/sha256:{blob_hex}"),
+            &[],
+            blob,
+        );
+    (mock, manifest_hex)
+}
+
+#[test]
+fn the_runtime_bundle_card_replaces_the_shard_fetch() {
+    isolate_docker_config();
+    let blob = b"the runtime bundle tar.gz bytes";
+    let (mock, manifest_hex) = bundle_mock("3.3.9", blob, SHARD_JSON);
+    let reference = Reference::parse("tfs+oci://reg.example/ns/runtime:3.3.9").unwrap();
+    let card = tebako_resolve::oci::resolve_runtime_bundle(&mock, &reference, None).unwrap();
+    let blob_hex = sha256_hex(blob);
+    assert_eq!(card.shard, SHARD_JSON);
+    assert_eq!(card.layer_digest, format!("sha256:{blob_hex}"));
+    assert_eq!(card.layer_sha256, blob_hex);
+    assert_eq!(card.layer_size, blob.len() as u64);
+    assert_eq!(card.manifest_digest, manifest_hex);
+    // spec 38 §5.5: the origin is the digest-pinned form even for a tag
+    // pull — the plan re-resolves by it (the tag's mutability never
+    // reaches the stream).
+    assert_eq!(
+        card.origin,
+        format!("tfs+oci://reg.example/ns/runtime@sha256:{manifest_hex}")
+    );
+}
+
+#[test]
+fn a_bundle_manifest_without_the_shard_annotation_is_a_torn_publish() {
+    isolate_docker_config();
+    let blob = b"bundle bytes";
+    let reference = Reference::parse("tfs+oci://reg.example/ns/runtime:3.3.9").unwrap();
+
+    // The RuntimeBundle class without the shard annotation: no best-
+    // effort read, malformed by name.
+    let (manifest, manifest_hex) = manifest_for(
+        ArtifactClass::RuntimeBundle,
+        "tebako-runtime-0.16.32-ruby-3.3.9-aarch64-macos.tar.gz",
+        blob,
+    );
+    let mock = DistMock::new().ok(
+        "https://reg.example/v2/ns/runtime/manifests/3.3.9",
+        &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+        &manifest,
+    );
+    let err = tebako_resolve::oci::resolve_runtime_bundle(&mock, &reference, None).unwrap_err();
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+
+    // An annotation that is whitespace-only is no shard ride either.
+    let (manifest, manifest_hex) = manifest_annotated(
+        ArtifactClass::RuntimeBundle,
+        "tebako-runtime-0.16.32-ruby-3.3.9-aarch64-macos.tar.gz",
+        blob,
+        &[(ANNOTATION_RUNTIME_SHARD, "  ")],
+    );
+    let mock = DistMock::new().ok(
+        "https://reg.example/v2/ns/runtime/manifests/3.3.9",
+        &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+        &manifest,
+    );
+    let err = tebako_resolve::oci::resolve_runtime_bundle(&mock, &reference, None).unwrap_err();
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_payload_class_manifest_at_a_bundle_reference_is_malformed() {
+    isolate_docker_config();
+    let blob = b"payload bytes";
+    let (manifest, manifest_hex) = manifest_for(ArtifactClass::Payload, "tool-1.0.tfs", blob);
+    let mock = DistMock::new().ok(
+        "https://reg.example/v2/ns/runtime/manifests/3.3.9",
+        &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+        &manifest,
+    );
+    let reference = Reference::parse("tfs+oci://reg.example/ns/runtime:3.3.9").unwrap();
+    let err = tebako_resolve::oci::resolve_runtime_bundle(&mock, &reference, None).unwrap_err();
+    // §3's shape law per lane: a payload artifact is not a runtime
+    // bundle, malformed by name — never a class confusion.
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn the_bundle_byte_pin_mismatch_fails_before_any_blob_request() {
+    isolate_docker_config();
+    let blob = b"bundle bytes";
+    let (mock, _) = bundle_mock("3.3.9", blob, SHARD_JSON);
+    let mock = std::sync::Arc::new(mock);
+    let reference = Reference::parse(&format!(
+        "tfs+oci://reg.example/ns/runtime:3.3.9?sha256={}",
+        "f".repeat(64)
+    ))
+    .unwrap();
+    let err =
+        tebako_resolve::oci::resolve_runtime_bundle(&SharedMock(mock.clone()), &reference, None)
+            .unwrap_err();
+    assert!(matches!(err, ResolveError::Sha256Mismatch { .. }), "{err}");
+    assert!(mock.requested("/manifests/3.3.9"));
+    assert!(
+        !mock.requested("/blobs/"),
+        "the blob URL must not be hit on a pin mismatch"
+    );
+}
+
+#[test]
+fn a_non_sha256_layer_digest_is_malformed_by_name() {
+    isolate_docker_config();
+    let blob = b"bundle bytes";
+    let body = format!(
+        r#"{{"schemaVersion": 2, "mediaType": "{MANIFEST_MT}",
+  "artifactType": "{}",
+  "config": {{"mediaType": "{EMPTY_CONFIG_MT}", "digest": "{EMPTY_CONFIG_DIGEST}", "size": 2}},
+  "layers": [{{"mediaType": "{}", "digest": "sha512:{}", "size": {}}}],
+  "annotations": {{"{ANNOTATION_TITLE}": "bundle.tar.gz", "{ANNOTATION_RUNTIME_SHARD}": "{}"}}}}"#,
+        ArtifactClass::RuntimeBundle.artifact_type(),
+        ArtifactClass::RuntimeBundle.layer_media_type(),
+        "a".repeat(128),
+        blob.len(),
+        json_escape(SHARD_JSON),
+    );
+    let mock = DistMock::new().ok(
+        "https://reg.example/v2/ns/runtime/manifests/3.3.9",
+        &[],
+        body.as_bytes(),
+    );
+    let reference = Reference::parse("tfs+oci://reg.example/ns/runtime:3.3.9").unwrap();
+    let err = tebako_resolve::oci::resolve_runtime_bundle(&mock, &reference, None).unwrap_err();
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+}
+
+// ---------------------------------------------------------------------
+// The signature sibling over OCI (spec 38 §3)
+// ---------------------------------------------------------------------
+
+/// A mock registry serving the signature sibling of `ns/runtime`'s
+/// bundle blob: the deterministic digest-tag manifest (Signature class,
+/// the subject/keyid annotations) plus the `.asc` blob. `subject_hex`
+/// is what the manifest DECLARES; `tag_hex` is the blob the sibling tag
+/// names — a torn publish separates the two.
+fn signature_mock(subject_hex: &str, tag_hex: &str, keyid: Option<&str>, asc: &[u8]) -> DistMock {
+    let tag = tebako_oci::signature_tag(tag_hex);
+    let subject = format!("sha256:{subject_hex}");
+    let mut extra = vec![(ANNOTATION_SIGNATURE_SUBJECT, subject.as_str())];
+    if let Some(k) = keyid {
+        extra.push((ANNOTATION_SIGNATURE_KEYID, k));
+    }
+    let (manifest, manifest_hex) = manifest_annotated(ArtifactClass::Signature, &tag, asc, &extra);
+    let asc_hex = sha256_hex(asc);
+    DistMock::new()
+        .ok(
+            &format!("https://reg.example/v2/ns/runtime/manifests/{tag}"),
+            &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+            &manifest,
+        )
+        .ok(
+            &format!("https://reg.example/v2/ns/runtime/blobs/sha256:{asc_hex}"),
+            &[],
+            asc,
+        )
+}
+
+#[test]
+fn the_signature_sibling_resolves_by_its_digest_tag() {
+    isolate_docker_config();
+    let blob_hex = "b".repeat(64);
+    let asc = b"-----BEGIN PGP SIGNATURE-----\nmock armor\n";
+    let mock = signature_mock(&blob_hex, &blob_hex, Some("0123456789abcdef"), asc);
+    // The declared keyid matches case-insensitively (the release's
+    // spelling is lowercase, the annotation rides the publish).
+    let (bytes, origin) = tebako_resolve::oci::fetch_signature(
+        &mock,
+        "reg.example",
+        "ns/runtime",
+        &blob_hex,
+        Some("0123456789ABCDEF"),
+        None,
+    )
+    .unwrap();
+    assert_eq!(bytes, asc);
+    assert!(
+        origin.starts_with("tfs+oci://reg.example/ns/runtime@sha256:"),
+        "{origin}"
+    );
+}
+
+#[test]
+fn a_signature_naming_another_subject_is_a_torn_publish() {
+    isolate_docker_config();
+    let tag_hex = "b".repeat(64);
+    let other_hex = "c".repeat(64);
+    let mock = signature_mock(&other_hex, &tag_hex, None, b"asc bytes");
+    let err = tebako_resolve::oci::fetch_signature(
+        &mock,
+        "reg.example",
+        "ns/runtime",
+        &tag_hex,
+        None,
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_signature_keyid_disagreeing_with_the_declaration_is_a_torn_publish() {
+    isolate_docker_config();
+    let blob_hex = "b".repeat(64);
+    let mock = signature_mock(&blob_hex, &blob_hex, Some("ffffffffffffffff"), b"asc bytes");
+    let err = tebako_resolve::oci::fetch_signature(
+        &mock,
+        "reg.example",
+        "ns/runtime",
+        &blob_hex,
+        Some("0123456789abcdef"),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_declared_signature_sibling_that_names_nothing_is_manifest_not_found() {
+    isolate_docker_config();
+    let err = tebako_resolve::oci::fetch_signature(
+        &DistMock::new(),
+        "reg.example",
+        "ns/runtime",
+        &"b".repeat(64),
+        None,
+        None,
+    )
+    .unwrap_err();
+    // The caller maps a DECLARED signature that does not fetch to the
+    // 71 refusal (spec 09 §4) — the adapter surfaces the plain 404.
+    assert!(
+        matches!(err, ResolveError::OciManifestNotFound { .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn the_plan_streams_a_runtime_bundle_item_under_its_own_class_law() {
+    isolate_docker_config();
+    let blob = b"the runtime bundle tar.gz bytes, streamed through the plan";
+    let (mock, manifest_hex) = bundle_mock("3.3.9", blob, SHARD_JSON);
+    let dir = scratch("plan-bundle");
+    let dest = dir.join("bundle.tar.gz");
+    let dest2 = dest.clone();
+    let origin_note = dir.join("origin");
+    let origin_note2 = origin_note.clone();
+    // The plan item re-resolves by the card's manifest digest — the
+    // tag's mutability never reaches the stream (spec 38 §5.4).
+    let item = FetchItem {
+        display: "tebako-runtime-0.16.32-ruby-3.3.9-aarch64-macos.tar.gz".to_string(),
+        reference: Reference::parse(&format!(
+            "tfs+oci://reg.example/ns/runtime@sha256:{manifest_hex}"
+        ))
+        .unwrap(),
+        sha256_pin: Some(sha256_hex(blob)),
+        size_hint: Some(blob.len() as u64),
+        tmp_dir: dir.join("tmp"),
+        registry_alias: None,
+        oci_class: OciClass::RuntimeBundle,
+        lazy: false,
+        commit: Box::new(move |staged| {
+            fs::rename(staged.tmp, &dest2).unwrap();
+            fs::write(&origin_note2, staged.origin).unwrap();
+            Ok(CommitReport { line: None })
+        }),
+    };
+    execute_plan::<_, Vec<u8>>(&mock, FetchPlan::new("runtime test", vec![item]), 1, None).unwrap();
+    assert_eq!(fs::read(&dest).unwrap(), blob);
+    assert_eq!(
+        fs::read_to_string(&origin_note).unwrap(),
+        format!("tfs+oci://reg.example/ns/runtime@sha256:{manifest_hex}")
+    );
+
+    // The class law on the same arm: a PAYLOAD item pointed at the
+    // bundle-class manifest is malformed by name, and nothing lands.
+    let item = FetchItem {
+        display: "wrong-class.tfs".to_string(),
+        reference: Reference::parse(&format!(
+            "tfs+oci://reg.example/ns/runtime@sha256:{manifest_hex}"
+        ))
+        .unwrap(),
+        sha256_pin: None,
+        size_hint: None,
+        tmp_dir: dir.join("tmp"),
+        registry_alias: None,
+        oci_class: OciClass::Payload,
+        lazy: false,
+        commit: Box::new(|_| Ok(CommitReport { line: None })),
+    };
+    let err =
+        execute_plan::<_, Vec<u8>>(&mock, FetchPlan::new("runtime test", vec![item]), 1, None)
+            .unwrap_err();
+    assert!(
+        matches!(err, ResolveError::OciArtifactMalformed { .. }),
+        "{err}"
+    );
+    let _ = fs::remove_dir_all(&dir);
 }

@@ -34,7 +34,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use tebako_resolve::plan::{execute_plan, CommitReport, FetchItem, FetchPlan, StagedArtifact};
+use tebako_resolve::plan::{
+    execute_plan, CommitReport, FetchItem, FetchPlan, OciClass, StagedArtifact,
+};
 use tebako_resolve::registry::{
     PlatformSelection, RegistryPayload, RegistryRef, RegistryVersion, SignaturePin,
 };
@@ -1349,6 +1351,7 @@ fn finish_install<T: Transport + Sync>(
                 size_hint: None,
                 tmp_dir: cache.root().join("tmp"),
                 registry_alias: plan.registry_alias.clone(),
+                oci_class: OciClass::Payload,
                 lazy: false,
                 commit: Box::new(|staged: &StagedArtifact| {
                     match verify_signature_staged(home, fetcher, staged, &plan) {

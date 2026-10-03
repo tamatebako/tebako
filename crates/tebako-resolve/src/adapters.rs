@@ -42,9 +42,11 @@ use crate::reference::{Reference, Service};
 use crate::transport::Transport;
 
 /// The release-download coordinates a runtime registry row's `release.ref`
-/// derives (spec 37 §8 — the private-runtime chain): the base and tag the
-/// runtime fetch composes `{base}/{tag}{asset_infix}/<asset>` URLs from.
-/// This is the per-service PUBLIC download URL shape (never the API base):
+/// derives (spec 37 §8 — the private-runtime chain): either a git host's
+/// release-asset URL shape (the runtime fetch composes
+/// `{base}/{tag}{asset_infix}/<asset>` URLs from it) or — spec 38 §5.4 —
+/// an OCI-served runtime bundle's coordinates. The git-host shapes are
+/// the per-service PUBLIC download URL shape (never the API base):
 ///
 /// - GitHub — SaaS and explicit host alike (GHE serves the same shape as
 ///   github.com): `https://<host>/<owner>/<repo>/releases/download`, the
@@ -56,25 +58,53 @@ use crate::transport::Transport;
 ///   (the runtime's pref naming rides it — a munged tag poisons the
 ///   tebako-line derivation).
 ///
-/// `None` for the ref classes with no release-asset semantics to derive
-/// from (`tfs+git:`, `tfs+https:`, `file:`, Bitbucket) — the caller
-/// journals the skip, never guesses.
+/// `None` for the ref classes with no release semantics to derive from
+/// (`tfs+git:`, `tfs+https:`, `file:`, Bitbucket) — the caller journals
+/// the skip, never guesses.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReleaseDownloadLocator {
-    /// Everything before the tag in the asset URL.
-    pub base: String,
-    /// The release tag, verbatim from the reference.
-    pub tag: String,
-    /// The per-service infix between the tag and the asset name.
-    pub asset_infix: &'static str,
+pub enum ReleaseDownloadLocator {
+    /// A git host's release-asset directory: `{base}/{tag}{infix}`.
+    Release {
+        /// Everything before the tag in the asset URL.
+        base: String,
+        /// The release tag, verbatim from the reference.
+        tag: String,
+        /// The per-service infix between the tag and the asset name.
+        asset_infix: &'static str,
+    },
+    /// spec 38 §5.4: a `tfs+oci:` release ref — the runtime pair serves
+    /// as ONE spec-36 bundle artifact at these coordinates (the
+    /// reference's own host/repo and the authored selector verbatim; a
+    /// selector-less ref tags the bundle STEM at fetch time — spec 38
+    /// §3's runtime-bundle tag rule, the stem computed by the caller).
+    /// The shard rides the bundle manifest's
+    /// `org.tebako.runtime.shard` annotation and the layer digest IS the
+    /// bundle's `.sha256` sidecar equivalence — no asset directory, no
+    /// sidecar fetch, exists here.
+    Oci {
+        host: String,
+        repo: String,
+        tag: Option<String>,
+        digest: Option<String>,
+        sha256: Option<String>,
+    },
 }
 
 impl ReleaseDownloadLocator {
-    /// The asset-URL directory this locator spells: `{base}/{tag}{infix}`
-    /// — every release artifact (index cards, sidecars, the runtime
-    /// facets) composes below it.
-    pub fn dir_url(&self) -> String {
-        format!("{}/{}{}", self.base, self.tag, self.asset_infix)
+    /// The asset-URL directory the git-host arm spells:
+    /// `{base}/{tag}{infix}` — every release artifact (index cards,
+    /// sidecars, the runtime facets) composes below it. `None` on the
+    /// OCI arm: an OCI bundle has no asset directory (the manifest and
+    /// blob endpoints serve, spec 38 §5).
+    pub fn dir_url(&self) -> Option<String> {
+        match self {
+            ReleaseDownloadLocator::Release {
+                base,
+                tag,
+                asset_infix,
+            } => Some(format!("{}/{}{}", base, tag, asset_infix)),
+            ReleaseDownloadLocator::Oci { .. } => None,
+        }
     }
 }
 
@@ -90,7 +120,7 @@ pub fn release_download_locator(reference: &Reference) -> Option<ReleaseDownload
             repo,
             version,
             ..
-        } => Some(ReleaseDownloadLocator {
+        } => Some(ReleaseDownloadLocator::Release {
             base: format!(
                 "https://{}/{owner}/{repo}/releases/download",
                 host.as_deref().unwrap_or("github.com")
@@ -105,13 +135,26 @@ pub fn release_download_locator(reference: &Reference) -> Option<ReleaseDownload
             repo,
             version,
             ..
-        } => Some(ReleaseDownloadLocator {
+        } => Some(ReleaseDownloadLocator::Release {
             base: format!(
                 "https://{}/{owner}/{repo}/-/releases",
                 host.as_deref().unwrap_or("gitlab.com")
             ),
             tag: version.clone(),
             asset_infix: "/downloads",
+        }),
+        Reference::Oci {
+            host,
+            repo,
+            tag,
+            digest,
+            sha256,
+        } => Some(ReleaseDownloadLocator::Oci {
+            host: host.clone(),
+            repo: repo.clone(),
+            tag: tag.clone(),
+            digest: digest.clone(),
+            sha256: sha256.clone(),
         }),
         _ => None,
     }
@@ -1281,18 +1324,34 @@ mod tests {
         release_download_locator(&Reference::parse(input).expect("test ref parses"))
     }
 
+    /// The git-host arm of a parsed locator (the tests below all spell
+    /// service refs).
+    fn release_arm(input: &str) -> (String, String, &'static str) {
+        match locator(input) {
+            Some(ReleaseDownloadLocator::Release {
+                base,
+                tag,
+                asset_infix,
+            }) => (base, tag, asset_infix),
+            other => panic!("expected the Release arm, got {other:?}"),
+        }
+    }
+
     #[test]
     fn the_locator_derives_the_github_saas_shape() {
-        let loc = locator("tfs:github:acme/tebako-runtime-openjdk:v2.5.1").unwrap();
+        let (base, tag, infix) = release_arm("tfs:github:acme/tebako-runtime-openjdk:v2.5.1");
         assert_eq!(
-            loc.base,
+            base,
             "https://github.com/acme/tebako-runtime-openjdk/releases/download"
         );
-        assert_eq!(loc.tag, "v2.5.1");
-        assert_eq!(loc.asset_infix, "");
+        assert_eq!(tag, "v2.5.1");
+        assert_eq!(infix, "");
         assert_eq!(
-            loc.dir_url(),
-            "https://github.com/acme/tebako-runtime-openjdk/releases/download/v2.5.1"
+            locator("tfs:github:acme/tebako-runtime-openjdk:v2.5.1")
+                .unwrap()
+                .dir_url()
+                .as_deref(),
+            Some("https://github.com/acme/tebako-runtime-openjdk/releases/download/v2.5.1")
         );
     }
 
@@ -1300,30 +1359,33 @@ mod tests {
     fn the_locator_derives_the_ghe_shape_at_an_explicit_host() {
         // GHE serves the same URL shape as github.com — the host is the
         // only parameter (spec 37 §4's one-code-path rule).
-        let loc = locator("tfs+github://ghe.corp.internal:8443/acme/tebako-runtime-openjdk:v2.5.1")
-            .unwrap();
+        let (base, tag, infix) =
+            release_arm("tfs+github://ghe.corp.internal:8443/acme/tebako-runtime-openjdk:v2.5.1");
         assert_eq!(
-            loc.base,
+            base,
             "https://ghe.corp.internal:8443/acme/tebako-runtime-openjdk/releases/download"
         );
-        assert_eq!(loc.tag, "v2.5.1");
-        assert_eq!(loc.asset_infix, "");
+        assert_eq!(tag, "v2.5.1");
+        assert_eq!(infix, "");
     }
 
     #[test]
     fn the_locator_derives_the_gitlab_asset_shape() {
         // GitLab's release assets live under /-/releases/<tag>/downloads/
         // — the infix carries the difference, the tag stays verbatim.
-        let loc = locator("tfs:gitlab:acme/tebako-runtime-python:v0.3.0").unwrap();
+        let (base, tag, infix) = release_arm("tfs:gitlab:acme/tebako-runtime-python:v0.3.0");
         assert_eq!(
-            loc.base,
+            base,
             "https://gitlab.com/acme/tebako-runtime-python/-/releases"
         );
-        assert_eq!(loc.tag, "v0.3.0");
-        assert_eq!(loc.asset_infix, "/downloads");
+        assert_eq!(tag, "v0.3.0");
+        assert_eq!(infix, "/downloads");
         assert_eq!(
-            loc.dir_url(),
-            "https://gitlab.com/acme/tebako-runtime-python/-/releases/v0.3.0/downloads"
+            locator("tfs:gitlab:acme/tebako-runtime-python:v0.3.0")
+                .unwrap()
+                .dir_url()
+                .as_deref(),
+            Some("https://gitlab.com/acme/tebako-runtime-python/-/releases/v0.3.0/downloads")
         );
     }
 
@@ -1331,12 +1393,68 @@ mod tests {
     fn the_locator_derives_self_hosted_gitlab_with_nested_groups() {
         // Nested groups ride `owner`; the web download URL keeps the
         // slashes (only the API form percent-encodes them).
-        let loc =
-            locator("tfs+gitlab://gitlab.corp.internal/group/sub/tebako-runtime-python:v0.3.0")
-                .unwrap();
+        let (base, ..) =
+            release_arm("tfs+gitlab://gitlab.corp.internal/group/sub/tebako-runtime-python:v0.3.0");
         assert_eq!(
-            loc.dir_url(),
-            "https://gitlab.corp.internal/group/sub/tebako-runtime-python/-/releases/v0.3.0/downloads"
+            locator("tfs+gitlab://gitlab.corp.internal/group/sub/tebako-runtime-python:v0.3.0")
+                .unwrap()
+                .dir_url()
+                .as_deref(),
+            Some(
+                "https://gitlab.corp.internal/group/sub/tebako-runtime-python/-/releases/v0.3.0/downloads"
+            )
+        );
+        assert!(base.starts_with("https://gitlab.corp.internal/group/sub/"));
+    }
+
+    #[test]
+    fn the_locator_carries_an_oci_ref_verbatim() {
+        // spec 38 §5.4: a `tfs+oci:` release ref derives the OCI arm —
+        // the reference's own coordinates, the authored selector
+        // verbatim, and never an asset directory.
+        let bare = locator("tfs+oci://ghcr.io/acme/tebako-runtime-openjdk").unwrap();
+        assert_eq!(
+            bare,
+            ReleaseDownloadLocator::Oci {
+                host: "ghcr.io".to_string(),
+                repo: "acme/tebako-runtime-openjdk".to_string(),
+                tag: None,
+                digest: None,
+                sha256: None,
+            }
+        );
+        assert_eq!(bare.dir_url(), None);
+        // An authored tag rides verbatim (a `channel: oci` row's `oci:`
+        // mirror spells the full locator, the bundle-stem tag included).
+        let tagged = locator(
+            "tfs+oci://ghcr.io/acme/tebako-runtime-openjdk:tebako-runtime-2.5.1-21.0.12-x86_64-linux-gnu",
+        )
+        .unwrap();
+        assert_eq!(
+            tagged,
+            ReleaseDownloadLocator::Oci {
+                host: "ghcr.io".to_string(),
+                repo: "acme/tebako-runtime-openjdk".to_string(),
+                tag: Some("tebako-runtime-2.5.1-21.0.12-x86_64-linux-gnu".to_string()),
+                digest: None,
+                sha256: None,
+            }
+        );
+        // The digest pin and the `?sha256=` byte pin ride too.
+        let hex = "a".repeat(64);
+        let pinned = locator(&format!(
+            "tfs+oci://ghcr.io/acme/tebako-runtime-openjdk@sha256:{hex}?sha256={hex}"
+        ))
+        .unwrap();
+        assert_eq!(
+            pinned,
+            ReleaseDownloadLocator::Oci {
+                host: "ghcr.io".to_string(),
+                repo: "acme/tebako-runtime-openjdk".to_string(),
+                tag: None,
+                digest: Some(hex.clone()),
+                sha256: Some(hex),
+            }
         );
     }
 

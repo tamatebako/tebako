@@ -48,7 +48,7 @@ use sha2::Digest;
 
 use tebako_pkg::{json_parse, JsonValue};
 use tebako_resolve::plan::{
-    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass, StagedArtifact,
     FETCH_JOBS_ENV,
 };
 use tebako_resolve::{HttpTransport, Reference, ResolveError};
@@ -566,6 +566,7 @@ impl Resolver {
             size_hint: None,
             tmp_dir: self.cache_root.join(TMP_DIR),
             registry_alias: None,
+            oci_class: OciClass::Payload,
             lazy: false,
             commit: Box::new(commit),
         })
@@ -610,6 +611,7 @@ impl Resolver {
             size_hint: None,
             tmp_dir: self.cache_root.join(TMP_DIR),
             registry_alias: None,
+            oci_class: OciClass::Payload,
             lazy: false,
             commit: Box::new(commit),
         })
@@ -762,6 +764,7 @@ impl Resolver {
             size_hint,
             tmp_dir: self.cache_root.join(TMP_DIR),
             registry_alias: None,
+            oci_class: OciClass::Payload,
             lazy: false,
             commit: Box::new(commit),
         })

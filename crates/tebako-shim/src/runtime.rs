@@ -40,10 +40,10 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use tebako_resolve::plan::{
-    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass, StagedArtifact,
     FETCH_JOBS_ENV,
 };
-use tebako_resolve::{HttpTransport, Reference, ResolveError};
+use tebako_resolve::{HttpTransport, Reference, ResolveError, Transport};
 use tebako_term::set::ProgressSet;
 use tpkg::{RuntimeRequirement, RuntimeRequirements};
 
@@ -93,7 +93,14 @@ pub fn resolve_runtime(
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<RuntimeResolution, ShimError> {
-    resolve_runtime_scoped(requirement, None, min_runtime_tebako, allow_download, ctx)
+    resolve_runtime_scoped(
+        &HttpTransport,
+        requirement,
+        None,
+        min_runtime_tebako,
+        allow_download,
+        ctx,
+    )
 }
 
 /// [`resolve_runtime`] with the spec 37 §3 edge scope: `scope` is the
@@ -109,7 +116,12 @@ pub fn resolve_runtime(
 /// this payload — never picked (the download path runs instead) and
 /// named in the miss errors; a downloaded runtime below the floor is
 /// the named stale-runtime refusal.
-fn resolve_runtime_scoped(
+///
+/// The transport is the fetch seam: production rides [`HttpTransport`],
+/// the OCI-lane tests (spec 38 §5.4) answer with a mock distribution
+/// endpoint — the same discipline tebako-resolve keeps.
+fn resolve_runtime_scoped<T: Transport + Sync>(
+    transport: &T,
     requirement: Option<&RuntimeRequirements>,
     scope: Option<&str>,
     min_runtime_tebako: Option<&str>,
@@ -337,7 +349,7 @@ fn resolve_runtime_scoped(
             );
         }
     };
-    let rt = download_runtime(reqs.engine(), &target, &source, &cfg, ctx)?;
+    let rt = download_runtime(transport, reqs.engine(), &target, &source, &cfg, ctx)?;
     // The downloaded runtime's abi line must satisfy the payload too —
     // the release index carries it (abi: None is the compat window).
     // The single-entry native shape keeps its exact named error.
@@ -411,6 +423,32 @@ pub fn resolve_runtime_edge(
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<CachedRuntime, ShimError> {
+    resolve_runtime_edge_with(
+        &HttpTransport,
+        engine,
+        implementation,
+        constraint,
+        registry_scope,
+        min_runtime_tebako,
+        allow_download,
+        ctx,
+    )
+}
+
+/// [`resolve_runtime_edge`] with the fetch seam explicit (production
+/// rides [`HttpTransport`]; the OCI-lane tests answer with a mock
+/// distribution endpoint).
+#[allow(clippy::too_many_arguments)]
+fn resolve_runtime_edge_with<T: Transport + Sync>(
+    transport: &T,
+    engine: &str,
+    implementation: Option<&str>,
+    constraint: &tpkg::Constraint,
+    registry_scope: Option<&str>,
+    min_runtime_tebako: Option<&str>,
+    allow_download: bool,
+    ctx: &Ctx,
+) -> Result<CachedRuntime, ShimError> {
     let evaluable = versions::from_validated(constraint);
     if let Some(hit) =
         tpkg::runtime_store::resolve_spawned(&ctx.home, engine, implementation, &evaluable)
@@ -470,6 +508,7 @@ pub fn resolve_runtime_edge(
         abi: None,
     };
     let RuntimeResolution::Ready(rt) = resolve_runtime_scoped(
+        transport,
         Some(&RuntimeRequirements::one(req)),
         registry_scope,
         min_runtime_tebako,
@@ -658,6 +697,13 @@ fn index_selected_target(
     if let Some(pick) = registry_selected_target(reqs, source, ctx)? {
         return Ok(Some(pick));
     }
+    if source.oci.is_some() {
+        // spec 38 §5.4: an OCI source's target refinement IS the
+        // registry walk above — the bundle manifest's shard annotation
+        // is the only index form over OCI; there is no release-index
+        // HTTP probe to run.
+        return Ok(None);
+    }
     let platform = platform_string();
     let base = skip_file_scheme(&source.base).to_string();
     let local = base_is_local(&source.base);
@@ -826,6 +872,151 @@ fn row_download_locator(
     }
 }
 
+/// A picked runtime row's resolved fetch coordinates: the git-host
+/// release shape or the spec 38 §5.4 OCI bundle coordinates.
+#[derive(Debug, Clone)]
+enum RowLocator {
+    Release {
+        base: String,
+        tag: String,
+        asset_infix: &'static str,
+    },
+    Oci(OciRuntimeSource),
+}
+
+impl From<tebako_resolve::ReleaseDownloadLocator> for RowLocator {
+    fn from(locator: tebako_resolve::ReleaseDownloadLocator) -> RowLocator {
+        match locator {
+            tebako_resolve::ReleaseDownloadLocator::Release {
+                base,
+                tag,
+                asset_infix,
+            } => RowLocator::Release {
+                base,
+                tag,
+                asset_infix,
+            },
+            tebako_resolve::ReleaseDownloadLocator::Oci {
+                host,
+                repo,
+                tag,
+                digest,
+                sha256,
+            } => RowLocator::Oci(OciRuntimeSource {
+                host,
+                repo,
+                tag,
+                digest,
+                sha256,
+            }),
+        }
+    }
+}
+
+/// The picked row's RuntimeSource: the locator's own coordinates, the
+/// channel-3 bookkeeping, the row's signature pin, and the book entry's
+/// require_signed policy. On the OCI arm `base` is the locator's
+/// display spelling (journal/error text only — the fetch rides `oci`).
+fn picked_row_source(
+    locator: RowLocator,
+    channel: &'static str,
+    booked: Option<RegistryBooked>,
+    signer_pin: Option<String>,
+    require_signed: Option<String>,
+) -> RuntimeSource {
+    match locator {
+        RowLocator::Release {
+            base,
+            tag,
+            asset_infix,
+        } => RuntimeSource {
+            base,
+            tag: Some(tag),
+            asset_infix,
+            channel,
+            signer_pin,
+            require_signed,
+            registry: booked,
+            oci: None,
+        },
+        RowLocator::Oci(oci) => RuntimeSource {
+            base: format!("tfs+oci://{}/{}", oci.host, oci.repo),
+            tag: None,
+            asset_infix: "",
+            channel,
+            signer_pin,
+            require_signed,
+            registry: booked,
+            oci: Some(oci),
+        },
+    }
+}
+
+/// spec 38 §11's runtime-row arm: under a `channel: oci` book entry the
+/// row's per-triplet `oci:` mirror field is THE locator — resolved
+/// fail-closed exactly like the payload lane (a universal row, a
+/// host-covered row lacking the mirror, or an unparsable one is a named
+/// error naming the registry and the row; never a fallback to the
+/// primary `release.ref`). `Ok(None)` = the row is not published for
+/// the host triplet (the caller skips it; the availability error's
+/// listing names it downstream).
+fn row_oci_mirror_locator(
+    reg_ref: &str,
+    entry_name: &str,
+    version: &tebako_resolve::RegistryVersion,
+    host: tpkg::Platform,
+) -> Result<Option<OciRuntimeSource>, ShimError> {
+    let Some(selection) = version.select(host) else {
+        return Ok(None);
+    };
+    let row = &version.version;
+    match selection {
+        tebako_resolve::PlatformSelection::Universal => fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "registry {reg_ref} declares channel: oci but its row for {entry_name} {row} is universal — the `oci:` mirror exists per-triplet only (spec 38 §7); the channel declaration cannot resolve this row"
+            ),
+        ),
+        tebako_resolve::PlatformSelection::Selected { oci, .. } => {
+            let Some(locator) = oci else {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "registry {reg_ref} declares channel: oci but its row for {entry_name} {row} [{host}] carries no `oci:` locator (spec 38 §11) — publish the row's mirror field or drop the channel declaration; never a silent fallback to release.ref"
+                    ),
+                );
+            };
+            match tebako_resolve::Reference::parse(locator) {
+                Ok(tebako_resolve::Reference::Oci {
+                    host,
+                    repo,
+                    tag,
+                    digest,
+                    sha256,
+                }) => Ok(Some(OciRuntimeSource {
+                    host,
+                    repo,
+                    tag,
+                    digest,
+                    sha256,
+                })),
+                Ok(_) => fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "registry {reg_ref}'s row for {entry_name} {row} carries an `oci:` locator that is not a tfs+oci: reference"
+                    ),
+                ),
+                Err(e) => fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "registry {reg_ref}'s row for {entry_name} {row} carries an `oci:` locator that does not parse: {e}"
+                    ),
+                ),
+            }
+        }
+    }
+}
+
 /// The spec 37 §2.2 policy refusal for the runtime chain (§8): the row
 /// that would supply the runtime is unsigned (no `signature:` block) but
 /// the resolving book entry carries `require_signed: true` — the named
@@ -923,11 +1114,19 @@ fn registry_selected_target(
     source: &RuntimeSource,
     ctx: &Ctx,
 ) -> Result<Option<(RuntimePref, RuntimeSource)>, ShimError> {
-    let Some((owner, repo)) = github_owner_repo(&source.base) else {
-        return Ok(None);
+    // The registry the row refinement walks: the in-repo L3 of the
+    // project the download base names (spec 05 §2) when the base names
+    // one; an OCI-served row names no download base — the supplying
+    // book entry's own reference (channel 3's bookkeeping) names the
+    // registry its rows came from.
+    let reg_ref = match github_owner_repo(&source.base) {
+        Some((owner, repo)) => format!("tfs:github:{owner}/{repo}"),
+        None => match &source.registry {
+            Some(booked) => booked.reg_ref.clone(),
+            None => return Ok(None),
+        },
     };
     let engine = reqs.engine();
-    let reg_ref = format!("tfs:github:{owner}/{repo}");
     let registry = match crate::regcache::registry_for(&ctx.home, &reg_ref, ctx) {
         Ok(r) => r,
         Err(e) => {
@@ -950,14 +1149,19 @@ fn registry_selected_target(
     }
     let host = tpkg::Platform::host();
     let platform = platform_string();
+    // spec 38 §11: the book entry's declared channel rides the source —
+    // rows resolve through their per-triplet `oci:` mirror field,
+    // fail-closed.
+    let channel_oci = source.registry.as_ref().is_some_and(|b| b.channel_oci);
     /// One host-covered, constraint-satisfying registry row.
     struct Candidate {
         payload: String,
         lang_version: String,
         tebako: String,
-        base: String,
-        tag: String,
-        asset_infix: &'static str,
+        /// The row's resolved fetch coordinates — None only on a
+        /// withdrawn row (the pick's WithdrawnPayload refusal fires
+        /// before any use).
+        locator: Option<RowLocator>,
         signer_pin: Option<String>,
         withdrawn: bool,
         /// The registry's own version key (the composite line id when
@@ -982,53 +1186,93 @@ fn registry_selected_target(
             if !satisfied {
                 continue;
             }
-            // The row's release.ref names where THIS version lives —
-            // spec 37 §8's federated derivation (github.com, GHE, GitLab
-            // SaaS/self-hosted); any other class is journaled and
-            // skipped, never guessed.
-            let Some(locator) = row_download_locator(
-                &ctx.home,
-                "runtime-index-registry-skip",
-                engine,
-                &reg_ref,
-                &entry.name,
-                &row.version,
-                &row.release.r#ref,
-            ) else {
-                continue;
+            // The row's fetch coordinates. The primary path derives
+            // them from the row's release.ref — spec 37 §8's federated
+            // derivation (github.com, GHE, GitLab SaaS/self-hosted, and
+            // spec 38 §5.4's OCI arm); classes with no release semantics
+            // are journaled and skipped, never guessed. A `channel:
+            // oci` book declaration routes the row through its
+            // per-triplet `oci:` mirror instead — fail-closed (spec 38
+            // §11). A withdrawn row carries none: the pick's
+            // WithdrawnPayload refusal fires before any use, and a
+            // non-selected withdrawn row must never fail the walk.
+            let locator: Option<RowLocator> = if row.is_withdrawn() {
+                None
+            } else if channel_oci {
+                row_oci_mirror_locator(&reg_ref, &entry.name, row, host)?.map(RowLocator::Oci)
+            } else {
+                row_download_locator(
+                    &ctx.home,
+                    "runtime-index-registry-skip",
+                    engine,
+                    &reg_ref,
+                    &entry.name,
+                    &row.version,
+                    &row.release.r#ref,
+                )
+                .map(RowLocator::from)
             };
-            let (base, tag, asset_infix) = (locator.base, locator.tag, locator.asset_infix);
+            // A healthy row whose coordinates don't resolve is out of the
+            // competition (journaled upstream). A withdrawn row stays in
+            // with no locator — spec 04 §2's named refusal fires at the
+            // pick, before any use; skipping it here would silently drop
+            // the selection to an older row.
+            if locator.is_none() && !row.is_withdrawn() {
+                continue;
+            }
             // The row's tebako line: the declared artifact's stem (the
             // openjdk v2.5.1 shape — tag v2.5.1, rows riding tebako
             // 2.5.0), else the tag minus its 'v' (the factory convention
-            // `v<tebako>`). A COMPOSITE row version (`<lang>-<tebako>`,
-            // the ruby factory's collision-free key) splits against the
-            // artifact witness first — the pick's pref names the bare
-            // language version or every downstream spelling double-
-            // suffixes (`tebako-runtime-0.16.23-4.0.6-0.16.23-…`).
-            let from_tag = tag.strip_prefix('v').unwrap_or(&tag).to_string();
-            let (lang_version, tebako) = match &selection {
+            // `v<tebako>`; an OCI locator carries it only when the ref
+            // was authored with a tag). A COMPOSITE row version
+            // (`<lang>-<tebako>`, the ruby factory's collision-free key)
+            // splits against the artifact witness first — the pick's
+            // pref names the bare language version or every downstream
+            // spelling double-suffixes
+            // (`tebako-runtime-0.16.23-4.0.6-0.16.23-…`). A row whose
+            // line no spelling carries is journaled and skipped (an OCI
+            // selector-less universal row has no line witness at all; a
+            // withdrawn row derives from its artifact witness alone) —
+            // never a guessed line.
+            let from_tag = match &locator {
+                Some(RowLocator::Release { tag, .. }) => {
+                    Some(tag.strip_prefix('v').unwrap_or(tag).to_string())
+                }
+                Some(RowLocator::Oci(oci)) => oci
+                    .tag
+                    .as_deref()
+                    .map(|t| t.strip_prefix('v').unwrap_or(t).to_string()),
+                None => None,
+            };
+            let line_pair = match &selection {
                 tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
                     match split_line_id(artifact, &row.version, host) {
-                        Some((lang, line)) => (lang, line),
-                        None => (
-                            row.version.clone(),
-                            tebako_line_from_artifact(artifact, &row.version, host)
-                                .unwrap_or(from_tag),
-                        ),
+                        Some((lang, line)) => Some((lang, line)),
+                        None => match tebako_line_from_artifact(artifact, &row.version, host) {
+                            Some(line) => Some((row.version.clone(), line)),
+                            None => from_tag.map(|line| (row.version.clone(), line)),
+                        },
                     }
                 }
                 tebako_resolve::registry::PlatformSelection::Universal => {
-                    (row.version.clone(), from_tag)
+                    from_tag.map(|line| (row.version.clone(), line))
                 }
+            };
+            let Some((lang_version, tebako)) = line_pair else {
+                journal(
+                    &ctx.home,
+                    &format!(
+                        "event=runtime-index-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=tebako-line-underivable",
+                        entry.name, row.version
+                    ),
+                );
+                continue;
             };
             candidates.push(Candidate {
                 payload: entry.name.clone(),
                 lang_version,
                 tebako,
-                base,
-                tag,
-                asset_infix,
+                locator,
                 signer_pin: row.signature.as_ref().map(|s| s.keyid.clone()),
                 withdrawn: row.is_withdrawn(),
                 row_version: row.version.clone(),
@@ -1089,20 +1333,22 @@ fn registry_selected_target(
             ));
         }
     }
+    let locator = pick
+        .locator
+        .expect("a non-withdrawn candidate carries its resolved locator");
     Ok(Some((
         RuntimePref {
             version: pick.lang_version,
             tebako: pick.tebako,
             source: None,
         },
-        RuntimeSource {
-            base: pick.base,
-            tag: Some(pick.tag),
-            asset_infix: pick.asset_infix,
-            channel: source.channel,
-            signer_pin: pick.signer_pin,
-            require_signed: source.require_signed.clone(),
-        },
+        picked_row_source(
+            locator,
+            source.channel,
+            source.registry.clone(),
+            pick.signer_pin,
+            source.require_signed.clone(),
+        ),
     )))
 }
 
@@ -1123,7 +1369,9 @@ pub(crate) fn offline_mode(ctx: &Ctx) -> bool {
 #[derive(Debug, Clone)]
 struct RuntimeSource {
     /// The release download base (`{base}/{tag}{asset_infix}/<asset>`
-    /// URLs).
+    /// URLs). On an OCI source it is the locator's display spelling
+    /// (`tfs+oci://<host>/<repo>`) — journal and error text only; the
+    /// fetch rides `oci`.
     base: String,
     /// The pinned release tag. `None` = `v<tebako>` of the line being
     /// read (the factory convention: the probed line for the index, the
@@ -1152,6 +1400,52 @@ struct RuntimeSource {
     /// is the name the policy errors render (the alias when the entry
     /// has one, else the reference).
     require_signed: Option<String>,
+    /// Channel 3's supplying book entry: the registry reference (the
+    /// per-row target refinement re-walks it when the download base
+    /// names no in-repo registry — spec 37 §8's OCI rows), the computed
+    /// alias (the OCI credential chain's tier-1 key, spec 38 §6), and
+    /// the declared resolution channel (spec 38 §11). None on channels
+    /// 1/2/4.
+    registry: Option<RegistryBooked>,
+    /// spec 38 §5.4: the picked row resolves to an OCI-served runtime
+    /// bundle — the fetch coordinates (the authored selector verbatim;
+    /// `tag: None` tags the bundle STEM at fetch time, spec 38 §3's
+    /// rule). Channel 3 only (a `tfs+oci:` release.ref, or the row's
+    /// `oci:` mirror under a `channel: oci` book entry); `base`/`tag`/
+    /// `asset_infix` are display-only then.
+    oci: Option<OciRuntimeSource>,
+}
+
+/// The channel-3 book bookkeeping a source carries (see
+/// [`RuntimeSource::registry`]).
+#[derive(Debug, Clone)]
+struct RegistryBooked {
+    /// The book entry's registry reference (any location form — the OCI
+    /// rows' supplying registry names no download base to re-derive one
+    /// from, so the row refinement rides this ref verbatim).
+    reg_ref: String,
+    /// The book entry's computed alias — the OCI credential chain's
+    /// tier-1 confinement key (spec 38 §6).
+    alias: Option<String>,
+    /// The book entry declares `channel: oci` (spec 38 §11): rows
+    /// resolve through their per-triplet `oci:` mirror field —
+    /// fail-closed, never a fallback to the primary `release.ref`.
+    channel_oci: bool,
+}
+
+/// The OCI fetch coordinates of a picked runtime row (spec 38 §5.4).
+#[derive(Debug, Clone)]
+struct OciRuntimeSource {
+    host: String,
+    repo: String,
+    /// The authored tag. None = the bundle STEM tags at fetch time
+    /// (spec 38 §3's runtime-bundle tag rule).
+    tag: Option<String>,
+    /// The authored manifest-digest pin (the 64-hex half).
+    digest: Option<String>,
+    /// The authored `?sha256=` byte pin (the layer digest — checked
+    /// fail-fast against the descriptor before a byte streams).
+    sha256: Option<String>,
 }
 
 impl RuntimeSource {
@@ -1238,6 +1532,8 @@ fn runtime_source(
             channel: "config-source",
             signer_pin: None,
             require_signed: None,
+            registry: None,
+            oci: None,
         });
     }
     // Channel 2: the operator's global mirror.
@@ -1249,6 +1545,8 @@ fn runtime_source(
             channel: "mirror-env",
             signer_pin: None,
             require_signed: None,
+            registry: None,
+            oci: None,
         });
     }
     // Channel 3: the registered registries (the zero-config path).
@@ -1264,6 +1562,8 @@ fn runtime_source(
             channel: "default",
             signer_pin: None,
             require_signed: None,
+            registry: None,
+            oci: None,
         });
     }
     let scoped_note = match scope {
@@ -1288,11 +1588,15 @@ fn runtime_source(
 /// implementation when named) with a version satisfying the requirement
 /// answers — the base + tag + per-service asset infix derive from that
 /// version's `release.ref` through spec 37 §8's federated locator
-/// (github.com, GHE, GitLab SaaS/self-hosted); ref classes with no
-/// release-asset semantics skip with a journal note. A registry that
-/// does not resolve is journaled and skipped — it cannot answer, and a
-/// later channel still can (the failure is named in the no-channel
-/// error's enumeration).
+/// (github.com, GHE, GitLab SaaS/self-hosted, and spec 38 §5.4's OCI
+/// arm: a `tfs+oci:` ref derives the bundle's coordinates, the authored
+/// selector verbatim); ref classes with no release semantics skip with
+/// a journal note. A book entry declaring `channel: oci` (spec 38 §11)
+/// routes the picked row through its per-triplet `oci:` mirror field
+/// instead — fail-closed, exactly like the payload lane. A registry
+/// that does not resolve is journaled and skipped — it cannot answer,
+/// and a later channel still can (the failure is named in the
+/// no-channel error's enumeration).
 /// spec 04 §2: the pick is status-blind — a SELECTED withdrawn row is
 /// the named WithdrawnPayload refusal, never a silent skip.
 /// spec 37 §2.2 (§8's runtime widening): the supplying book entry's
@@ -1354,16 +1658,49 @@ fn registry_derived_source(
                     .to_string(),
                 );
             }
-            let Some(locator) = row_download_locator(
-                &ctx.home,
-                "runtime-source-registry-skip",
-                engine,
-                reg_ref,
-                &entry.name,
-                &version.version,
-                &version.release.r#ref,
-            ) else {
-                continue;
+            let channel_oci = matches!(row.entry.channel, Some(config::BookChannel::Oci));
+            let booked = RegistryBooked {
+                reg_ref: reg_ref.to_string(),
+                alias: row.alias.clone(),
+                channel_oci,
+            };
+            let locator = if channel_oci {
+                // spec 38 §11's runtime arm: the row's per-triplet
+                // `oci:` mirror is THE locator — fail-closed; a row
+                // this host is not published for skips with a journal
+                // note (another version or channel may answer).
+                match row_oci_mirror_locator(reg_ref, &entry.name, version, tpkg::Platform::host())?
+                {
+                    Some(oci) => RowLocator::Oci(oci),
+                    None => {
+                        journal(
+                            &ctx.home,
+                            &format!(
+                                "event=runtime-source-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=not-published-for-host-triplet",
+                                entry.name, version.version
+                            ),
+                        );
+                        continue;
+                    }
+                }
+            } else {
+                // The row's release.ref names where THIS version lives —
+                // spec 37 §8's federated derivation (github.com, GHE,
+                // GitLab SaaS/self-hosted, and spec 38 §5.4's OCI arm);
+                // classes with no release semantics are journaled and
+                // skipped, never guessed.
+                match row_download_locator(
+                    &ctx.home,
+                    "runtime-source-registry-skip",
+                    engine,
+                    reg_ref,
+                    &entry.name,
+                    &version.version,
+                    &version.release.r#ref,
+                ) {
+                    Some(locator) => RowLocator::from(locator),
+                    None => continue,
+                }
             };
             // §2.2 fail-closed at the fetch boundary: the locator
             // answered, so this row WOULD supply the runtime — an
@@ -1379,14 +1716,13 @@ fn registry_derived_source(
                     ));
                 }
             }
-            return Ok(Some(RuntimeSource {
-                base: locator.base,
-                tag: Some(locator.tag),
-                asset_infix: locator.asset_infix,
-                channel: "registry",
-                signer_pin: version.signature.as_ref().map(|s| s.keyid.clone()),
-                require_signed: require_signed.clone(),
-            }));
+            return Ok(Some(picked_row_source(
+                locator,
+                "registry",
+                Some(booked),
+                version.signature.as_ref().map(|s| s.keyid.clone()),
+                require_signed.clone(),
+            )));
         }
     }
     Ok(None)
@@ -2393,6 +2729,7 @@ fn runtime_facet_item<'p>(
         size_hint: None,
         tmp_dir: tmp_dir.to_path_buf(),
         registry_alias: None,
+        oci_class: OciClass::Payload,
         lazy: false,
         commit: Box::new(commit),
     })
@@ -2513,60 +2850,21 @@ fn runtime_bundle_item<'p>(
             }
             _ => {}
         }
-        // 3. The bundle's own sha256 compares here (AFTER the signature —
-        //    spec 09 §4's order; the item carries no pipeline pin).
-        if expected != staged.sha256 {
-            return Err(sink.fail(ShimError::new(
-                EX_TEBAKO_SHA,
-                format!(
-                    "SHA256 mismatch for downloaded runtime {bundle_name} — refusing to install or execute\n  expected: {expected} (from the release index)\n  actual:   {}\n  the download was deleted; the cache was not touched",
-                    staged.sha256
-                ),
-            )));
-        }
-        // 4. Unpack in-process: the §2 grammar + the exact member set +
-        //    the per-member pins + the closing SHA256SUMS cross-check.
-        let unpacked =
-            match runtime_bundle::unpack_bundle(staged.tmp, &bundle_name, &members, &staging) {
-                Ok(u) => u,
-                Err(e) => return Err(sink.fail(e)),
-            };
-        // 5. Stage the verified members exactly as the per-file path
-        //    does (the same permissions, the same trust markers).
-        for (member_name, install_name, executable, entry_markers) in &placements {
-            let Some(member) = unpacked.iter().find(|m| &m.name == member_name) else {
-                continue;
-            };
-            let dest = staging.join(install_name);
-            if let Err(e) = std::fs::rename(&member.path, &dest) {
-                return Err(sink.fail(ShimError::new(
-                    EX_TEBAKO_IO,
-                    format!("cannot stage {}: {e}", dest.display()),
-                )));
-            }
-            if *executable {
-                make_executable(&dest);
-            } else {
-                make_readonly(&dest);
-            }
-            let (sha_marker, origin_marker) = if *entry_markers {
-                (staging.join("sha256"), staging.join("origin"))
-            } else {
-                (
-                    staging.join(format!("{install_name}.sha256")),
-                    staging.join(format!("{install_name}.origin")),
-                )
-            };
-            let _ = std::fs::write(sha_marker, format!("{}  {install_name}\n", member.sha256));
-            let _ = std::fs::write(
-                origin_marker,
-                format!(
-                    "runtime_ref={runtime_ref}\nurl={url}\nsha256={}\n",
-                    member.sha256
-                ),
-            );
-        }
-        Ok(CommitReport { line: None })
+        // 3. The bundle's own sha256 compares, the unpack runs, and the
+        //    members stage — the shared tail (the sha AFTER the
+        //    signature, spec 09 §4's order; the item carries no
+        //    pipeline pin).
+        commit_bundle_tail(
+            staged,
+            &bundle_name,
+            &expected,
+            &members,
+            &placements,
+            &url,
+            &runtime_ref,
+            &staging,
+            sink,
+        )
     };
     Ok(FetchItem {
         display,
@@ -2578,6 +2876,298 @@ fn runtime_bundle_item<'p>(
         size_hint,
         tmp_dir: tmp_dir.to_path_buf(),
         registry_alias: None,
+        oci_class: OciClass::Payload,
+        lazy: false,
+        commit: Box::new(commit),
+    })
+}
+
+/// The bundle commit's shared tail (spec 36 §4 — the git-host lane and
+/// the spec 38 §5.4 OCI lane publish the same store entry): the
+/// bundle's own sha256 against the shard pin (AFTER the signature —
+/// spec 09 §4's order; the item carries no pipeline pin), the
+/// in-process unpack under the §2 member grammar (the exact member set,
+/// the per-member pins, the closing SHA256SUMS cross-check), and the
+/// exact store staging the per-file path produces — exe 0755 + the
+/// entry-level `sha256`/`origin` markers, image/dll 0444 + their own
+/// facet markers. `origin_url` is the marker's `url=` line: the
+/// composed asset URL on the git-host lane, the digest-pinned OCI
+/// origin on the spec 38 §5.4 lane.
+#[allow(clippy::too_many_arguments)]
+fn commit_bundle_tail(
+    staged: &StagedArtifact,
+    bundle_name: &str,
+    expected: &str,
+    members: &[runtime_bundle::ExpectedMember],
+    placements: &[(String, String, bool, bool)],
+    origin_url: &str,
+    runtime_ref: &str,
+    staging: &Path,
+    sink: &RuntimePlanSink,
+) -> Result<CommitReport, ResolveError> {
+    if expected != staged.sha256 {
+        return Err(sink.fail(ShimError::new(
+            EX_TEBAKO_SHA,
+            format!(
+                "SHA256 mismatch for downloaded runtime {bundle_name} — refusing to install or execute\n  expected: {expected} (from the release index)\n  actual:   {}\n  the download was deleted; the cache was not touched",
+                staged.sha256
+            ),
+        )));
+    }
+    let unpacked = match runtime_bundle::unpack_bundle(staged.tmp, bundle_name, members, staging) {
+        Ok(u) => u,
+        Err(e) => return Err(sink.fail(e)),
+    };
+    for (member_name, install_name, executable, entry_markers) in placements {
+        let Some(member) = unpacked.iter().find(|m| &m.name == member_name) else {
+            continue;
+        };
+        let dest = staging.join(install_name);
+        if let Err(e) = std::fs::rename(&member.path, &dest) {
+            return Err(sink.fail(ShimError::new(
+                EX_TEBAKO_IO,
+                format!("cannot stage {}: {e}", dest.display()),
+            )));
+        }
+        if *executable {
+            make_executable(&dest);
+        } else {
+            make_readonly(&dest);
+        }
+        let (sha_marker, origin_marker) = if *entry_markers {
+            (staging.join("sha256"), staging.join("origin"))
+        } else {
+            (
+                staging.join(format!("{install_name}.sha256")),
+                staging.join(format!("{install_name}.origin")),
+            )
+        };
+        let _ = std::fs::write(sha_marker, format!("{}  {install_name}\n", member.sha256));
+        let _ = std::fs::write(
+            origin_marker,
+            format!(
+                "runtime_ref={runtime_ref}\nurl={origin_url}\nsha256={}\n",
+                member.sha256
+            ),
+        );
+    }
+    Ok(CommitReport { line: None })
+}
+
+/// The OCI lane's index acquisition (spec 38 §5.4): the per-package
+/// shard rides the bundle manifest's `org.tebako.runtime.shard`
+/// annotation — one manifest read replaces the shard fetch of spec 36
+/// §4 (a selector-less locator tags the bundle STEM, spec 38 §3's
+/// rule). The consumed card normalizes to the one-entry array shape
+/// every card reader speaks; the trust verdict is UNVERIFIED — no
+/// index FORM signs over OCI: the bundle's declared signature (verified
+/// against the staged bytes at commit) is the trust anchor, and the
+/// unsigned rule (loud + journaled; refused under
+/// `TEBAKO_REQUIRE_SIGNED=1`) applies verbatim. Two spec 38 §8
+/// equivalences gate here, before a byte streams: the card must name
+/// the requested identity triple and declare the bundle block (OCI
+/// runtime distribution is bundle-era only — named, never a per-file
+/// fallback), and the layer descriptor digest — which IS the bundle's
+/// `.sha256` sidecar, spec 38 §3 — must agree with the shard's bundle
+/// pin (70-class on a disagreement).
+/// Returns the card readers' view plus the resolved bundle card (the
+/// plan item's digest pin, size hint, and signature-sibling key).
+#[allow(clippy::too_many_arguments)]
+fn acquire_index_oci<T: Transport>(
+    transport: &T,
+    oci: &OciRuntimeSource,
+    stem: &str,
+    engine: &str,
+    lang_version: &str,
+    tebako_version: &str,
+    platform: &str,
+    runtime_ref: &str,
+    alias: Option<&str>,
+) -> Result<(AcquiredIndex, tebako_resolve::oci::RuntimeBundleCard), ShimError> {
+    let tag = oci.tag.clone().unwrap_or_else(|| stem.to_string());
+    let reference = Reference::Oci {
+        host: oci.host.clone(),
+        repo: oci.repo.clone(),
+        tag: Some(tag),
+        digest: oci.digest.clone(),
+        sha256: oci.sha256.clone(),
+    };
+    let card = tebako_resolve::oci::resolve_runtime_bundle(transport, &reference, alias)
+        .map_err(map_runtime_plan)?;
+    let text = format!("[{}]", card.shard.trim_end());
+    let parsed = tebako_json::parse(&text).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "runtime \"{runtime_ref}\": the OCI bundle manifest's shard annotation at {} is not JSON: {e}",
+                card.origin
+            ),
+        )
+    })?;
+    let Some(entry) = release_index_entry(&parsed, engine, lang_version, tebako_version, platform)
+    else {
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "runtime \"{runtime_ref}\": the OCI bundle at {} names a different identity triple (need {engine}_version={lang_version} tebako_version={tebako_version} platform={platform}) — the tag resolved another runtime's publish",
+                card.origin
+            ),
+        );
+    };
+    let bundle = entry_bundle(entry).ok_or_else(|| {
+        ShimError::new(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "runtime \"{runtime_ref}\": the OCI-served shard at {} declares no bundle block — OCI runtime distribution is bundle-era only (spec 38 §5.4); per-file-era lines stay on their git-host releases",
+                card.origin
+            ),
+        )
+    })?;
+    if !card.layer_sha256.eq_ignore_ascii_case(&bundle.sha256) {
+        return fail(
+            EX_TEBAKO_SHA,
+            format!(
+                "{}: the OCI layer descriptor pins {} but the shard declares {} — the release is inconsistent; nothing was installed",
+                bundle.filename,
+                card.layer_sha256,
+                bundle.sha256
+            ),
+        );
+    }
+    Ok((
+        AcquiredIndex {
+            text,
+            trust: IndexTrust::Unverified,
+            from_shard: true,
+        },
+        card,
+    ))
+}
+
+/// The OCI signature fetch's failure as the shim's named codes: a
+/// DECLARED signature whose sibling tag resolves nothing is refused 71
+/// (spec 09 §4's declared-but-unfetchable rule — the git-host lane's,
+/// verbatim); everything else keeps the fetch path's own mapping.
+fn oci_signature_failure(bundle_name: &str, e: ResolveError) -> ShimError {
+    match e {
+        ResolveError::OciManifestNotFound { origin } => ShimError::new(
+            EX_TEBAKO_SIGNATURE,
+            format!(
+                "the release index declares a signature for {bundle_name} but its OCI sibling tag did not resolve ({origin}) — a declared signature that does not fetch is refused"
+            ),
+        ),
+        other => map_runtime_plan(other),
+    }
+}
+
+/// The plan item for an OCI-served bundle (spec 38 §5.4): ONE stream —
+/// the bundle layer — with the plan re-resolving the ALREADY-RESOLVED
+/// manifest by digest (the tag's mutability never reaches the stream)
+/// under the RuntimeBundle shape law. The commit verifies the declared
+/// signature FIRST (spec 09 §4's order — the asc locator DERIVES from
+/// the signed blob's digest, the `sha256-<hex>.asc` sibling tag of
+/// spec 38 §3, its subject/keyid annotations cross-checked by the
+/// adapter; a declared-but-unfetchable signature is refused 71 exactly
+/// like the git-host lane), then rides the shared bundle tail — the
+/// store entry it stages is indistinguishable from a git-host bundle
+/// install, the origin markers excepted (they name the digest-pinned
+/// OCI origin, spec 38 §5.5). The `.sha256` sidecar step of the
+/// git-host commit has no OCI counterpart: the layer descriptor digest
+/// IS the sidecar, cross-checked against the shard pin in
+/// [`acquire_index_oci`] before the stream started.
+#[allow(clippy::too_many_arguments)]
+fn runtime_bundle_item_oci<'p, T: Transport + Sync>(
+    transport: &'p T,
+    oci: &OciRuntimeSource,
+    card: &tebako_resolve::oci::RuntimeBundleCard,
+    bundle: &EntryBundle,
+    members: Vec<runtime_bundle::ExpectedMember>,
+    placements: Vec<(String, String, bool, bool)>,
+    signature: Option<&'p EntrySignature>,
+    trust: &'p FetchTrust,
+    sink: &'p RuntimePlanSink,
+    ctx: &'p Ctx,
+    tmp_dir: &Path,
+    runtime_ref: &str,
+    alias: Option<&'p str>,
+) -> Result<FetchItem<'p>, ShimError> {
+    let reference = Reference::Oci {
+        host: oci.host.clone(),
+        repo: oci.repo.clone(),
+        tag: None,
+        digest: Some(card.manifest_digest.clone()),
+        sha256: None,
+    };
+    let expected = bundle.sha256.to_lowercase();
+    let bundle_name = bundle.filename.clone();
+    let display = bundle_name.clone();
+    let size_hint = Some(card.layer_size);
+    let staging = tmp_dir.to_path_buf();
+    let runtime_ref = runtime_ref.to_string();
+    let host = oci.host.clone();
+    let repo = oci.repo.clone();
+    let layer_hex = card.layer_sha256.clone();
+    let commit = move |staged: &StagedArtifact| {
+        // 1. The declared signature verifies FIRST (spec 09 §4's order).
+        if let Some(declared) = signature {
+            match tebako_resolve::oci::fetch_signature(
+                transport,
+                &host,
+                &repo,
+                &layer_hex,
+                Some(&declared.keyid),
+                alias,
+            ) {
+                Ok((asc, _sig_origin)) => {
+                    let bytes = match std::fs::read(staged.tmp) {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            return Err(sink.fail(ShimError::new(
+                                EX_TEBAKO_IO,
+                                format!("cannot read the downloaded {}: {e}", staged.tmp.display()),
+                            )))
+                        }
+                    };
+                    match trust.verify_detached(
+                        ctx,
+                        &bundle_name,
+                        &bytes,
+                        &asc,
+                        Some(&declared.keyid),
+                    ) {
+                        Ok(signer) => sink.add_signer(signer),
+                        Err(e) => return Err(sink.fail(e)),
+                    }
+                }
+                Err(e) => return Err(sink.fail(oci_signature_failure(&bundle_name, e))),
+            }
+        }
+        // 2. The sidecar equivalence ran before the stream (the layer
+        //    descriptor digest IS the `.sha256` sidecar, spec 38 §3);
+        //    the shared tail compares, unpacks, and stages.
+        commit_bundle_tail(
+            staged,
+            &bundle_name,
+            &expected,
+            &members,
+            &placements,
+            staged.origin,
+            &runtime_ref,
+            &staging,
+            sink,
+        )
+    };
+    Ok(FetchItem {
+        display,
+        reference,
+        // The sha compare rides the commit (AFTER the signature, spec
+        // 09 §4's order) on the inline-computed digest — no item carries
+        // the pipeline's pin.
+        sha256_pin: None,
+        size_hint,
+        tmp_dir: tmp_dir.to_path_buf(),
+        registry_alias: alias.map(str::to_string),
+        oci_class: OciClass::RuntimeBundle,
         lazy: false,
         commit: Box::new(commit),
     })
@@ -2722,6 +3312,7 @@ fn runtime_lazy_image_item(
         size_hint: Some(seed.size_bytes),
         tmp_dir: tmp_dir.to_path_buf(),
         registry_alias: None,
+        oci_class: OciClass::Payload,
         lazy: true,
         commit: Box::new(commit),
     }
@@ -2730,8 +3321,11 @@ fn runtime_lazy_image_item(
 /// Download the preferred runtime into the shared cache with the
 /// bootstrap's install discipline: per-entry flock (120 s), re-check
 /// under the lock, tmp staging, sha256-verified, tmp + rename publish,
-/// trust markers, read-only image.
-fn download_runtime(
+/// trust markers, read-only image. The transport is the fetch seam (the
+/// OCI lane's manifest/blob GETs ride it; the git-host lane's buffered
+/// reads stay tebako-http's, unchanged).
+fn download_runtime<T: Transport + Sync>(
+    transport: &T,
     engine: &str,
     pref: &RuntimePref,
     source: &RuntimeSource,
@@ -2771,15 +3365,24 @@ fn download_runtime(
     }
 
     let base = skip_file_scheme(&source.base).to_string();
-    let local = base_is_local(&source.base);
+    // An OCI source never rides the local-file fast paths (its display
+    // base carries no http prefix by construction — the guard is what
+    // keeps that truthful).
+    let local = source.oci.is_none() && base_is_local(&source.base);
     // The release tag every fetch of this download rides (spec 05 §2):
     // channel 3 pins the registry-named tag; the other channels ride the
     // pick's own tebako line (the factory's `v<tebako>` convention).
     let tag = source.tag_for(&pref.tebako);
     // The asset-URL directory (spec 37 §8): the per-service infix rides
     // the source — GitLab's `/-/releases/<tag>/downloads/<asset>` shape
-    // composes exactly here, never by string-munging base or tag.
-    let dir_url = release_dir_url(&base, &tag, source.asset_infix);
+    // composes exactly here, never by string-munging base or tag. An
+    // OCI source names no asset directory — the locator's display
+    // spelling stands in for the diagnostics that compose below it
+    // (the OCI fetch rides the manifest/blob endpoints, never this).
+    let dir_url = match &source.oci {
+        Some(oci) => format!("tfs+oci://{}/{}", oci.host, oci.repo),
+        None => release_dir_url(&base, &tag, source.asset_infix),
+    };
 
     if offline_mode(ctx) {
         return fail(
@@ -2865,19 +3468,43 @@ fn download_runtime(
         // naming every URL tried.
         let stem = format!("tebako-runtime-{}-{}-{platform}", pref.tebako, pref.version);
         let trust = FetchTrust::build(source, ctx)?;
-        let acquired = acquire_index(
-            &trust,
-            ctx,
-            &dir_url,
-            local,
-            &stem,
-            engine,
-            &pref.version,
-            &pref.tebako,
-            platform,
-            &runtime_ref,
-            &tmp_dir,
-        )?;
+        // spec 38 §5.4: an OCI source's index is the bundle manifest's
+        // shard annotation — one manifest read (gated by the identity
+        // triple, the bundle-era rule, and the sidecar-equivalence)
+        // replaces the shard/sidecar fetches; everything downstream of
+        // the card rides spec 36 §4 VERBATIM.
+        let (acquired, oci_card) = match &source.oci {
+            Some(oci) => {
+                let (acquired, card) = acquire_index_oci(
+                    transport,
+                    oci,
+                    &stem,
+                    engine,
+                    &pref.version,
+                    &pref.tebako,
+                    platform,
+                    &runtime_ref,
+                    source.registry.as_ref().and_then(|b| b.alias.as_deref()),
+                )?;
+                (acquired, Some(card))
+            }
+            None => (
+                acquire_index(
+                    &trust,
+                    ctx,
+                    &dir_url,
+                    local,
+                    &stem,
+                    engine,
+                    &pref.version,
+                    &pref.tebako,
+                    platform,
+                    &runtime_ref,
+                    &tmp_dir,
+                )?,
+                None,
+            ),
+        };
         let from_shard = acquired.from_shard;
         let index_trust = acquired.trust;
         let manifest_text = acquired.text;
@@ -3093,7 +3720,18 @@ fn download_runtime(
         )
         .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
         let per_file_assets = entry_match.map(entry_per_file_assets).unwrap_or(false);
-        let lazy_plan = if lazy_arm_engages(lazy_opt_in, bundle.is_some(), per_file_assets) {
+        let lazy_plan = if source.oci.is_some() {
+            // spec 38 §5.4 is bundle-era only: OCI never serves the
+            // per-file assets the lazy arm seeds from (no blksum
+            // sidecar, no standalone image) — an opt-in falls back
+            // loud, landing on the bundle fetch, exactly like a
+            // blksum-less release (spec 39 §7).
+            if lazy_opt_in {
+                LazyPlan::Fallback("oci-bundle-era-only")
+            } else {
+                LazyPlan::Eager
+            }
+        } else if lazy_arm_engages(lazy_opt_in, bundle.is_some(), per_file_assets) {
             match &image.sha {
                 None => LazyPlan::Eager,
                 Some(image_expected) => {
@@ -3173,14 +3811,20 @@ fn download_runtime(
         if let LazyPlan::Fallback(reason) = &lazy_plan {
             // The eager default on bundle-era lines stays the bundle
             // fetch (spec 39 §7) — the loud line names what streams.
-            let eager = if bundle.is_some() {
-                "fetching the release bundle whole"
+            if source.oci.is_some() {
+                eprintln!(
+                    "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — OCI runtime distribution serves the bundle whole (spec 38 §5.4); fetching the release bundle whole (the loud eager fallback)"
+                );
             } else {
-                "fetching the env image whole"
-            };
-            eprintln!(
-                "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — the release carries no blksum sidecar; {eager} (the loud eager fallback, spec 39 §7)"
-            );
+                let eager = if bundle.is_some() {
+                    "fetching the release bundle whole"
+                } else {
+                    "fetching the env image whole"
+                };
+                eprintln!(
+                    "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — the release carries no blksum sidecar; {eager} (the loud eager fallback, spec 39 §7)"
+                );
+            }
             journal(
                 &ctx.home,
                 &format!("event=lazy-fallback runtime_ref={runtime_ref} reason={reason}"),
@@ -3224,19 +3868,36 @@ fn download_runtime(
                 });
                 placements.push((facet.filename.clone(), facet.install_as.clone(), false, false));
             }
-            vec![runtime_bundle_item(
-                &dir_url,
-                local,
-                bundle,
-                members,
-                placements,
-                bundle_sig.as_ref(),
-                &trust,
-                &sink,
-                ctx,
-                &tmp_dir,
-                &runtime_ref,
-            )?]
+            vec![match (&source.oci, &oci_card) {
+                (Some(oci), Some(card)) => runtime_bundle_item_oci(
+                    transport,
+                    oci,
+                    card,
+                    bundle,
+                    members,
+                    placements,
+                    bundle_sig.as_ref(),
+                    &trust,
+                    &sink,
+                    ctx,
+                    &tmp_dir,
+                    &runtime_ref,
+                    source.registry.as_ref().and_then(|b| b.alias.as_deref()),
+                )?,
+                _ => runtime_bundle_item(
+                    &dir_url,
+                    local,
+                    bundle,
+                    members,
+                    placements,
+                    bundle_sig.as_ref(),
+                    &trust,
+                    &sink,
+                    ctx,
+                    &tmp_dir,
+                    &runtime_ref,
+                )?,
+            }]
         } else {
             let mut items = vec![runtime_facet_item(
                 &dir_url,
@@ -3301,10 +3962,9 @@ fn download_runtime(
             cfg.fetch_jobs,
         )
         .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
-        let transport = HttpTransport;
         let progress = ProgressSet::stderr();
         let plan = execute_plan(
-            &transport,
+            transport,
             FetchPlan::new(format!("runtime {runtime_ref}"), items),
             jobs,
             Some(&progress),
@@ -3898,6 +4558,8 @@ payloads:
             signer_pin: None,
             asset_infix: "",
             require_signed: None,
+            registry: None,
+            oci: None,
         };
         assert_eq!(unpinned.tag_for("0.16.22"), "v0.16.22");
         let pinned = RuntimeSource {
@@ -3907,6 +4569,8 @@ payloads:
             signer_pin: None,
             asset_infix: "",
             require_signed: None,
+            registry: None,
+            oci: None,
         };
         assert_eq!(pinned.tag_for("2.5.0"), "v2.5.1");
     }
@@ -3945,6 +4609,8 @@ payloads:
             signer_pin: None,
             asset_infix: "",
             require_signed: None,
+            registry: None,
+            oci: None,
         }
     }
 
@@ -4103,6 +4769,8 @@ payloads:
             signer_pin: None,
             asset_infix: "",
             require_signed: None,
+            registry: None,
+            oci: None,
         };
         let (pref, source) =
             registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
@@ -4146,6 +4814,8 @@ payloads:
             signer_pin: None,
             asset_infix: "",
             require_signed: None,
+            registry: None,
+            oci: None,
         };
         let (pref, source) =
             registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
@@ -4176,6 +4846,8 @@ payloads:
             signer_pin: None,
             asset_infix: "",
             require_signed: None,
+            registry: None,
+            oci: None,
         };
         let (pref, _) = registry_selected_target(&reqs("ruby", ">= 4.0"), &source, &ctx)
             .unwrap()
@@ -4283,6 +4955,8 @@ payloads:
             signer_pin: None,
             asset_infix: "",
             require_signed: None,
+            registry: None,
+            oci: None,
         };
         assert!(
             registry_selected_target(&reqs("java", ">= 21"), &source, &ctx)
@@ -4416,6 +5090,8 @@ payloads:
             signer_pin: None,
             asset_infix: "",
             require_signed: None,
+            registry: None,
+            oci: None,
         };
         let trust = FetchTrust::build(&source, ctx).unwrap();
         let sink = RuntimePlanSink::default();
@@ -4601,5 +5277,677 @@ payloads:
             entry_bundle(linux).is_some(),
             entry_per_file_assets(linux)
         ));
+    }
+
+    // -----------------------------------------------------------------
+    // the OCI runtime lane (spec 38 §5.4)
+    // -----------------------------------------------------------------
+
+    /// The OCI credential chain's tier 3 reads `$DOCKER_CONFIG/config.json`
+    /// (else `~/.docker/…`) — the developer machine's own config must not
+    /// leak into these tests. One shared empty dir, so the parallel set
+    /// is benign (tebako-resolve's OCI tests keep the same discipline).
+    fn isolate_docker_config() {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-shim-oci-docker-config-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("DOCKER_CONFIG", &dir);
+    }
+
+    /// One canned distribution answer.
+    #[derive(Clone)]
+    struct OciAnswer {
+        status: u16,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    }
+
+    /// The mock distribution endpoint: URL-keyed answers, every request
+    /// logged (the never-fetch assertions read the log). Unknown URLs
+    /// answer 404 with a distribution error body — the same
+    /// classification input a real registry serves.
+    struct OciDistMock {
+        answers: std::collections::HashMap<String, OciAnswer>,
+        seen: Mutex<Vec<String>>,
+    }
+
+    impl OciDistMock {
+        fn new() -> Self {
+            OciDistMock {
+                answers: std::collections::HashMap::new(),
+                seen: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn ok(mut self, url: &str, headers: &[(&str, String)], body: &[u8]) -> Self {
+            self.answers.insert(
+                url.to_string(),
+                OciAnswer {
+                    status: 200,
+                    headers: headers
+                        .iter()
+                        .map(|(k, v)| (k.to_string(), v.clone()))
+                        .collect(),
+                    body: body.to_vec(),
+                },
+            );
+            self
+        }
+
+        fn requested(&self, needle: &str) -> bool {
+            self.seen.lock().unwrap().iter().any(|u| u.contains(needle))
+        }
+    }
+
+    impl Transport for OciDistMock {
+        fn get(&self, url: &str) -> Result<Vec<u8>, tebako_http::FetchError> {
+            // The plan pipeline's OCI stream rides `stream_distribution`,
+            // whose Transport default buffers through `get`.
+            self.seen.lock().unwrap().push(url.to_string());
+            match self.answers.get(url) {
+                Some(a) if a.status == 200 => Ok(a.body.clone()),
+                _ => Err(tebako_http::FetchError::IndexUnavailable(format!(
+                    "{url} (the OCI mock serves mapped 200 answers only)"
+                ))),
+            }
+        }
+
+        fn get_raw(
+            &self,
+            url: &str,
+            _accept: Option<&str>,
+            _header: Option<(&str, &str)>,
+        ) -> Result<tebako_http::RawResponse, tebako_http::FetchError> {
+            self.seen.lock().unwrap().push(url.to_string());
+            match self.answers.get(url) {
+                Some(a) => Ok(tebako_http::RawResponse::new(
+                    a.status,
+                    a.headers.clone(),
+                    a.body.clone(),
+                )),
+                None => Ok(tebako_http::RawResponse::new(
+                    404,
+                    Vec::new(),
+                    br#"{"errors":[{"code":"MANIFEST_UNKNOWN","message":"mock: unknown url"}]}"#
+                        .to_vec(),
+                )),
+            }
+        }
+    }
+
+    /// The OCI wire constants (spec 38 §3 — the fixtures pin the exact
+    /// wire shape the adapter parses).
+    const OCI_MANIFEST_MT: &str = "application/vnd.oci.image.manifest.v1+json";
+    const OCI_EMPTY_CONFIG_MT: &str = "application/vnd.oci.empty.v1+json";
+    const OCI_EMPTY_CONFIG_DIGEST: &str =
+        "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
+    const OCI_ANNOTATION_TITLE: &str = "org.opencontainers.image.title";
+    const OCI_ANNOTATION_SHARD: &str = "org.tebako.runtime.shard";
+    const OCI_ANNOTATION_SIG_SUBJECT: &str = "org.tebako.signature.subject";
+    const OCI_ANNOTATION_SIG_KEYID: &str = "org.tebako.signature.keyid";
+
+    fn oci_json_escape(s: &str) -> String {
+        s.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+
+    /// One OCI manifest body (spec 38 §3's shape): the canonical empty
+    /// config, exactly one layer, the title + extra annotations.
+    fn oci_manifest(
+        class: tebako_resolve::ArtifactClass,
+        title: &str,
+        blob: &[u8],
+        extra: &[(&str, &str)],
+    ) -> (Vec<u8>, String) {
+        let layer_hex = sha256_hex(blob);
+        let extras = extra
+            .iter()
+            .map(|(k, v)| format!(r#", "{k}": "{}""#, oci_json_escape(v)))
+            .collect::<String>();
+        let body = format!(
+            r#"{{"schemaVersion": 2, "mediaType": "{OCI_MANIFEST_MT}",
+  "artifactType": "{}",
+  "config": {{"mediaType": "{OCI_EMPTY_CONFIG_MT}", "digest": "{OCI_EMPTY_CONFIG_DIGEST}", "size": 2}},
+  "layers": [{{"mediaType": "{}", "digest": "sha256:{layer_hex}", "size": {}}}],
+  "annotations": {{"{OCI_ANNOTATION_TITLE}": "{title}"{extras}}}}}"#,
+            class.artifact_type(),
+            class.layer_media_type(),
+            blob.len(),
+        );
+        let hex = sha256_hex(body.as_bytes());
+        (body.into_bytes(), hex)
+    }
+
+    /// A spec 38 §5.4 publish over the mock distribution endpoint.
+    struct OciPublish {
+        mock: OciDistMock,
+        stem: String,
+        manifest_hex: String,
+        bundle_hex: String,
+        exe: Vec<u8>,
+        image: Vec<u8>,
+    }
+
+    /// Build the bundle bytes (exe + image members) and serve the whole
+    /// publish: the stem-tag RuntimeBundle manifest (its shard annotation
+    /// carrying the spec 36 §3 shard), the digest re-resolve, the blob —
+    /// and, when `sign` names a key, the shard's declared bundle
+    /// signature plus (when `serve_signature`) the signature sibling
+    /// publish. `shard_bundle_pin` tampers the shard's bundle pin away
+    /// from the layer digest (the 70-class leg).
+    fn oci_publish(
+        tag: &str,
+        sign: Option<&tebako_signer::PressKey>,
+        serve_signature: bool,
+        shard_bundle_pin: Option<String>,
+    ) -> OciPublish {
+        let stem = format!("tebako-runtime-2.5.0-21.0.12-{}", platform_string());
+        let bundle_name = format!("{stem}.tar.gz");
+        let image_name = format!("{stem}.tfs");
+        let exe = b"the OCI interpreter\n".to_vec();
+        let image = b"the OCI env image\n".to_vec();
+        let scratch = temp_home(tag);
+        let bundle_path = scratch.join(&bundle_name);
+        write_bundle(
+            &bundle_path,
+            &[
+                (stem.as_str(), exe.as_slice(), 0o755),
+                (image_name.as_str(), image.as_slice(), 0o444),
+            ],
+            None,
+        );
+        let bundle = std::fs::read(&bundle_path).unwrap();
+        let _ = std::fs::remove_dir_all(&scratch);
+        let bundle_hex = sha256_hex(&bundle);
+        // The shard the manifest's annotation carries (spec 36 §3): the
+        // identity triple, the per-member pins, the bundle block — the
+        // declared signature inside the bundle block (tpkg's facet
+        // grammar), its asc naming the derived sibling tag.
+        let sig_block = sign
+            .map(|k| {
+                format!(
+                    r#", "signature": {{"keyid": "{}", "asc": "{}"}}"#,
+                    k.keyid_hex(),
+                    tebako_resolve::signature_tag(&bundle_hex)
+                )
+            })
+            .unwrap_or_default();
+        let shard = format!(
+            r#"{{"tebako_version": "2.5.0", "contract_era": 2, "contract_version": 2, "mount_root": "/__tfs__", "implementation": "temurin", "java_version": "21.0.12", "platform": "{}", "filename": "{stem}", "sha256": "{}", "image": {{"filename": "{image_name}", "sha256": "{}"}}, "bundle": {{"filename": "{bundle_name}", "sha256": "{}"{sig_block}}}}}"#,
+            platform_string(),
+            sha256_hex(&exe),
+            sha256_hex(&image),
+            shard_bundle_pin.unwrap_or_else(|| bundle_hex.clone()),
+        );
+        let (manifest, manifest_hex) = oci_manifest(
+            tebako_resolve::ArtifactClass::RuntimeBundle,
+            &bundle_name,
+            &bundle,
+            &[(OCI_ANNOTATION_SHARD, &shard)],
+        );
+        let mut mock = OciDistMock::new()
+            .ok(
+                &format!("https://reg.example/v2/runtimes/openjdk/manifests/{stem}"),
+                &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+                &manifest,
+            )
+            .ok(
+                &format!("https://reg.example/v2/runtimes/openjdk/manifests/sha256:{manifest_hex}"),
+                &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+                &manifest,
+            )
+            .ok(
+                &format!("https://reg.example/v2/runtimes/openjdk/blobs/sha256:{bundle_hex}"),
+                &[],
+                &bundle,
+            );
+        if let (Some(key), true) = (sign, serve_signature) {
+            let asc = tebako_signer::sign_detached(&bundle, &key.secret_key, &key.fingerprint)
+                .expect("sign the fixture bundle");
+            let asc_hex = sha256_hex(&asc);
+            let sig_tag = tebako_resolve::signature_tag(&bundle_hex);
+            let subject = format!("sha256:{bundle_hex}");
+            let keyid = key.keyid_hex();
+            let (sig_manifest, sig_hex) = oci_manifest(
+                tebako_resolve::ArtifactClass::Signature,
+                &sig_tag,
+                &asc,
+                &[
+                    (OCI_ANNOTATION_SIG_SUBJECT, subject.as_str()),
+                    (OCI_ANNOTATION_SIG_KEYID, keyid.as_str()),
+                ],
+            );
+            mock = mock
+                .ok(
+                    &format!("https://reg.example/v2/runtimes/openjdk/manifests/{sig_tag}"),
+                    &[("Docker-Content-Digest", format!("sha256:{sig_hex}"))],
+                    &sig_manifest,
+                )
+                .ok(
+                    &format!("https://reg.example/v2/runtimes/openjdk/blobs/sha256:{asc_hex}"),
+                    &[],
+                    &asc,
+                );
+        }
+        OciPublish {
+            mock,
+            stem,
+            manifest_hex,
+            bundle_hex,
+            exe,
+            image,
+        }
+    }
+
+    /// The OCI-rows registry (the §5.4 shape): per-triplet bundle-era
+    /// rows riding a SELECTOR-LESS `tfs+oci:` release.ref (the bundle
+    /// stem tags at fetch time); `signed_row` pins the newer row's
+    /// signature keyid (asc-less — derived over OCI, spec 38 §3).
+    fn oci_release_ref_registry(signed_row: bool) -> String {
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        let signature = if signed_row {
+            "        signature: {keyid: 'efc3c250f7862a48'}\n"
+        } else {
+            ""
+        };
+        format!(
+            "schema_version: 1\npayloads:\n  - name: tebako-runtime-openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - version: '21.0.11'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-21.0.11-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs+oci://reg.example/runtimes/openjdk'}}\n      - version: '21.0.12'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-21.0.12-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs+oci://reg.example/runtimes/openjdk'}}\n{signature}",
+            sha64('a'),
+            sha64('b'),
+        )
+    }
+
+    /// The temp home wired for an OCI edge: the registry file plus
+    /// config.yaml's book entry, the credential chain isolated from the
+    /// developer machine's docker config.
+    fn oci_edge_home(tag: &str, registry_yaml: &str) -> (PathBuf, Ctx) {
+        isolate_docker_config();
+        let home = temp_home(tag);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", registry_yaml);
+        std::fs::write(
+            home.join("config.yaml"),
+            format!("registries:\n  - '{reg}'\n"),
+        )
+        .unwrap();
+        let ctx = test_ctx(&home);
+        (home, ctx)
+    }
+
+    /// The full dispatch-time edge against the mock distribution
+    /// endpoint (production rides HttpTransport — this is its seam).
+    fn resolve_oci_edge(mock: &OciDistMock, ctx: &Ctx) -> Result<CachedRuntime, ShimError> {
+        resolve_runtime_edge_with(
+            mock,
+            "java",
+            Some("temurin"),
+            &tpkg::Constraint::new(">= 21").unwrap(),
+            None,
+            None,
+            true,
+            ctx,
+        )
+    }
+
+    #[test]
+    fn channel_3_answers_an_oci_release_ref_row() {
+        let home = temp_home("chain-oci-ref");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", &oci_release_ref_registry(true));
+        let cfg = UserConfig {
+            registries: vec![crate::config::RegistryBookEntry::bare(reg.clone())],
+            ..UserConfig::default()
+        };
+        let source = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap();
+        assert_eq!(source.channel, "registry");
+        // The display base is the locator's spelling (journal/error text
+        // only — the fetch rides `oci`).
+        assert_eq!(source.base, "tfs+oci://reg.example/runtimes/openjdk");
+        assert_eq!(source.tag, None);
+        assert_eq!(source.asset_infix, "");
+        let oci = source.oci.as_ref().expect("the OCI arm answered");
+        assert_eq!(oci.host, "reg.example");
+        assert_eq!(oci.repo, "runtimes/openjdk");
+        assert_eq!(oci.tag, None, "selector-less: the stem tags at fetch time");
+        assert_eq!(oci.digest, None);
+        assert_eq!(oci.sha256, None);
+        // the picked row's signature pin + the channel-3 bookkeeping
+        assert_eq!(source.signer_pin.as_deref(), Some("efc3c250f7862a48"));
+        let booked = source.registry.as_ref().expect("channel-3 bookkeeping");
+        assert!(!booked.channel_oci);
+        assert_eq!(booked.reg_ref, reg);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The `channel: oci` book fixture: the rows ride a normal git-host
+    /// release.ref; the per-triplet `oci:` mirror carries the full OCI
+    /// locator (`with_mirror` = false drops the field for the
+    /// fail-closed leg).
+    fn channel_oci_registry(with_mirror: bool) -> String {
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        let mirror = if with_mirror {
+            format!(
+                ", oci: 'tfs+oci://ghcr.io/acme/openjdk-runtime:21.0.12-{triplet}?sha256={}'",
+                sha64('c')
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "schema_version: 1\npayloads:\n  - name: tebako-runtime-openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - version: '21.0.12'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-21.0.12-{asset}.tar.gz, sha256: '{}'{mirror}}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-openjdk:v2.5.1'}}\n        signature: {{keyid: 'efc3c250f7862a48', asc: 'tebako-runtime-2.5.0-21.0.12-{asset}.tar.gz.asc'}}\n",
+            sha64('b'),
+        )
+    }
+
+    fn channel_oci_book(reference: String) -> UserConfig {
+        UserConfig {
+            registries: vec![crate::config::RegistryBookEntry {
+                reference,
+                name: Some("corp".to_string()),
+                default: false,
+                require_signed: false,
+                channel: Some(crate::config::BookChannel::Oci),
+            }],
+            ..UserConfig::default()
+        }
+    }
+
+    #[test]
+    fn channel_oci_routes_the_row_through_its_mirror_field() {
+        let home = temp_home("chain-oci-book");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", &channel_oci_registry(true));
+        let cfg = channel_oci_book(reg);
+        let source = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap();
+        assert_eq!(source.channel, "registry");
+        let oci = source.oci.as_ref().expect("the mirror field answered");
+        assert_eq!(oci.host, "ghcr.io");
+        assert_eq!(oci.repo, "acme/openjdk-runtime");
+        // The mirror carries the full locator — used verbatim, never
+        // re-derived (spec 38 §11).
+        let triplet = tpkg::Platform::host().as_triplet();
+        assert_eq!(
+            oci.tag.as_deref(),
+            Some(format!("21.0.12-{triplet}").as_str())
+        );
+        assert_eq!(oci.sha256.as_deref(), Some(sha64('c').as_str()));
+        let booked = source.registry.as_ref().unwrap();
+        assert!(booked.channel_oci);
+        assert_eq!(booked.alias.as_deref(), Some("corp"));
+        assert_eq!(source.signer_pin.as_deref(), Some("efc3c250f7862a48"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn channel_oci_refuses_a_row_lacking_the_mirror_by_name() {
+        let home = temp_home("chain-oci-no-mirror");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", &channel_oci_registry(false));
+        let cfg = channel_oci_book(reg);
+        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST);
+        assert!(err.message.contains("carries no `oci:` locator"), "{err:?}");
+        assert!(err.message.contains("never a silent fallback"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn channel_oci_refuses_a_universal_row_by_name() {
+        let home = temp_home("chain-oci-universal");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-openjdk
+    kind: runtime
+    engine: java
+    implementation: temurin
+    versions:
+      - version: '21.0.12'
+        platforms: universal
+        release: {ref: 'tfs:github:acme/tebako-runtime-openjdk:v2.5.1'}
+"#,
+        );
+        let cfg = channel_oci_book(reg);
+        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST);
+        assert!(err.message.contains("is universal"), "{err:?}");
+        assert!(err.message.contains("per-triplet only"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_refines_an_oci_row_to_its_pref() {
+        let home = temp_home("regfacet-oci");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            &oci_release_ref_registry(false),
+        );
+        let cfg = UserConfig {
+            registries: vec![crate::config::RegistryBookEntry::bare(reg)],
+            ..UserConfig::default()
+        };
+        let source = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx, None).unwrap();
+        let (pref, source) = registry_selected_target(&reqs("java", ">= 21"), &source, &ctx)
+            .unwrap()
+            .expect("an informative registry picks");
+        assert_eq!(pref.version, "21.0.12");
+        assert_eq!(pref.tebako, "2.5.0", "the artifact stem witnesses the line");
+        let oci = source
+            .oci
+            .as_ref()
+            .expect("the OCI arm survives the refinement");
+        assert_eq!(oci.tag, None);
+        assert_eq!(source.channel, "registry");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_oci_lane_installs_the_store_entry_the_git_host_lane_stages() {
+        let publish = oci_publish("oci-e2e-publish", None, false, None);
+        let (home, ctx) = oci_edge_home("oci-e2e", &oci_release_ref_registry(false));
+        let rt = resolve_oci_edge(&publish.mock, &ctx).unwrap();
+        assert_eq!(rt.lang_version, "21.0.12");
+        assert_eq!(rt.tebako_version, "2.5.0");
+        let entry = home
+            .join("runtimes")
+            .join(format!("java-21.0.12-2.5.0-{}", platform_string()));
+        assert_eq!(rt.dir, entry);
+        // The spec 05 §3 store layout — indistinguishable from a git-host
+        // bundle install (the shared commit tail): exe 0755 + the
+        // entry-level markers, image 0444 + its facet markers, the
+        // cached one-entry card.
+        let exe = entry.join(&publish.stem);
+        assert_eq!(std::fs::read(&exe).unwrap(), publish.exe);
+        let image = entry.join(format!("{}.tfs", publish.stem));
+        assert_eq!(std::fs::read(&image).unwrap(), publish.image);
+        assert_eq!(rt.image.as_deref(), Some(image.as_path()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(
+                std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777,
+                0o755
+            );
+            assert_eq!(
+                std::fs::metadata(&image).unwrap().permissions().mode() & 0o777,
+                0o444
+            );
+        }
+        let sha_marker = std::fs::read_to_string(entry.join("sha256")).unwrap();
+        assert_eq!(
+            sha_marker,
+            format!("{}  {}\n", sha256_hex(&publish.exe), publish.stem)
+        );
+        // The origin markers are the one divergence — the digest-pinned
+        // OCI origin (spec 38 §5.5).
+        let origin = std::fs::read_to_string(entry.join("origin")).unwrap();
+        assert!(
+            origin.contains(&format!(
+                "url=tfs+oci://reg.example/runtimes/openjdk@sha256:{}",
+                publish.manifest_hex
+            )),
+            "{origin}"
+        );
+        let facet_origin =
+            std::fs::read_to_string(entry.join(format!("{}.tfs.origin", publish.stem))).unwrap();
+        assert!(facet_origin.contains("url=tfs+oci://"), "{facet_origin}");
+        let card = std::fs::read_to_string(entry.join("manifest.json")).unwrap();
+        assert!(card.starts_with('['), "{card}");
+        assert!(card.contains(r#""tebako_version": "2.5.0""#), "{card}");
+        // The wire: the stem tag, the digest re-resolve, the one blob.
+        assert!(publish
+            .mock
+            .requested(&format!("/manifests/{}", publish.stem)));
+        assert!(publish
+            .mock
+            .requested(&format!("/manifests/sha256:{}", publish.manifest_hex)));
+        assert!(publish
+            .mock
+            .requested(&format!("/blobs/sha256:{}", publish.bundle_hex)));
+        // The unsigned rule (loud + journaled) applies verbatim — the OCI
+        // display base named.
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(
+            journal.contains("event=unsigned-runtime-fetch"),
+            "{journal}"
+        );
+        assert!(
+            journal.contains("base=tfs+oci://reg.example/runtimes/openjdk"),
+            "{journal}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn an_oci_layer_disagreeing_with_the_shard_pin_is_refused_70() {
+        let publish = oci_publish("oci-tamper-publish", None, false, Some(sha64('f')));
+        let (home, ctx) = oci_edge_home("oci-tamper", &oci_release_ref_registry(false));
+        let err = resolve_oci_edge(&publish.mock, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_SHA, "{err:?}");
+        assert!(
+            err.message
+                .contains("the release is inconsistent; nothing was installed"),
+            "{err:?}"
+        );
+        let entry = home
+            .join("runtimes")
+            .join(format!("java-21.0.12-2.5.0-{}", platform_string()));
+        assert!(!entry.exists(), "nothing was installed");
+        // The equivalence gated before a byte of the bundle streamed.
+        assert!(
+            !publish.mock.requested("/blobs/"),
+            "the blob URL must not be hit on the pin disagreement"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_declared_oci_signature_that_does_not_fetch_is_refused_71() {
+        let key_home = temp_home("oci-71-key");
+        let key = tebako_signer::press_local_key(&key_home).unwrap();
+        // The shard declares the bundle signature but the sibling tag
+        // names nothing — spec 09 §4's refusal, the git-host lane's rule
+        // verbatim.
+        let publish = oci_publish("oci-71-publish", Some(&key), false, None);
+        let (home, ctx) = oci_edge_home("oci-71", &oci_release_ref_registry(false));
+        let err = resolve_oci_edge(&publish.mock, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_SIGNATURE, "{err:?}");
+        assert!(
+            err.message
+                .contains("a declared signature that does not fetch is refused"),
+            "{err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&key_home);
+    }
+
+    #[test]
+    fn the_signed_oci_bundle_verifies_at_commit_like_the_git_host_lane() {
+        let (home, ctx) = oci_edge_home("oci-signed", &oci_release_ref_registry(false));
+        let key = tebako_signer::press_local_key(&home).unwrap();
+        tebako_signer::register_trusted(&home, &key.public_key).unwrap();
+        let publish = oci_publish("oci-signed-publish", Some(&key), true, None);
+        let rt = resolve_oci_edge(&publish.mock, &ctx).unwrap();
+        assert_eq!(rt.lang_version, "21.0.12");
+        // spec 09 §4's order held at the commit: the signature verified
+        // BEFORE the sha compare, the signer journaled; the unsigned
+        // rule stayed silent.
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(
+            journal.contains("event=runtime-fetch-verified"),
+            "{journal}"
+        );
+        assert!(
+            journal.contains(&format!("signer={}", key.keyid_hex())),
+            "{journal}"
+        );
+        assert!(
+            !journal.contains("event=unsigned-runtime-fetch"),
+            "{journal}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_lazy_opt_in_over_oci_is_the_loud_eager_fallback() {
+        let publish = oci_publish("oci-lazy-publish", None, false, None);
+        let (home, mut ctx) = oci_edge_home("oci-lazy", &oci_release_ref_registry(false));
+        ctx.env
+            .insert("TEBAKO_RUNTIME_LAZY".to_string(), "1".to_string());
+        let rt = resolve_oci_edge(&publish.mock, &ctx).unwrap();
+        // OCI runtime distribution serves the bundle whole (spec 38
+        // §5.4) — never a per-file arm, never a blksum probe; the opt-in
+        // degrades to the loud eager fallback and the install completes.
+        assert!(rt.image.is_some());
+        assert!(publish
+            .mock
+            .requested(&format!("/blobs/sha256:{}", publish.bundle_hex)));
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(journal.contains("event=lazy-fallback"), "{journal}");
+        assert!(journal.contains("reason=oci-bundle-era-only"), "{journal}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_oci_lane_is_cache_or_named_error_offline() {
+        let publish = oci_publish("oci-offline-publish", None, false, None);
+        isolate_docker_config();
+        let home = temp_home("oci-offline");
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            &oci_release_ref_registry(false),
+        );
+        // The pinned preference walks the resolution to the download
+        // gate — a prefless offline edge fails earlier at the
+        // lane-agnostic no-preference error (the git-host lane's shape).
+        std::fs::write(
+            home.join("config.yaml"),
+            format!(
+                "registries:\n  - '{reg}'\nruntimes:\n  java:\n    version: '21.0.12'\n    tebako: '2.5.0'\n"
+            ),
+        )
+        .unwrap();
+        let mut ctx = test_ctx(&home);
+        ctx.env
+            .insert("TEBAKO_OFFLINE".to_string(), "1".to_string());
+        let err = resolve_oci_edge(&publish.mock, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE, "{err:?}");
+        assert!(err.message.contains("TEBAKO_OFFLINE"), "{err:?}");
+        assert!(
+            !publish.mock.requested("/v2/"),
+            "offline: the distribution endpoint was never touched"
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 }
