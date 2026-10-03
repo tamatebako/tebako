@@ -2,11 +2,14 @@ name: benchmark
 
 # Spec 27: benchmarks run on manual dispatch and on release publishes ONLY —
 # never per-PR (shared-runner noise + cost, and the harness never sits on
-# the merge critical path). Two suites run per leg: the metanorma v1-vs-v2
-# suite (musl legs inside the pinned alpine container) and the
+# the merge critical path). Three suites run per leg: the metanorma v1-vs-v2
+# suite (musl legs inside the pinned alpine container), the
 # on-system-vs-tebako runtime comparison suite (on the HOST of every leg —
-# the static musl runtime exes execute on the gnu host unchanged). The
-# fan-in publishes both suites to the bench-history branch (per-run entry +
+# the static musl runtime exes execute on the gnu host unchanged), and the
+# lazy-vs-eager suite (spec 39 §10's default-flip data — also on the host;
+# its lazy arm streams from the harness's in-process loopback Range
+# fixture, so WAN variance stays out of the machinery measurement). The
+# fan-in publishes all suites to the bench-history branch (per-run entry +
 # latest/ mirrors + the trend feed) and wakes tebako.org. The matrix is
 # GENERATED from benchmarks/platforms.yaml by lib/bench-matrix.rb — no
 # triplet, runner, or container is named in this file (the YAML documents
@@ -155,6 +158,39 @@ jobs:
           # deliverable / 2 harness fault).
           if [ "$rc" -eq 2 ]; then exit 2; fi
           echo "tebako-bench runtime-suite exit $rc (0 ok / 1 red-matrix deliverable)"
+      # The lazy-vs-eager suite (spec 39 §10): the SAME runtime pair twice —
+      # whole-image mount vs LAZY_SEEDING first boot against the harness's
+      # in-process loopback Range fixture. Host-run like the runtime suite
+      # (the musl harness binary executes on the gnu host unchanged).
+      - name: Run the lazy-vs-eager leg
+        shell: bash
+        working-directory: tebako-rs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          args=(--suite benchmarks/suite-lazy.yaml
+                --platforms benchmarks/platforms.yaml
+                --triplet "${{ matrix.triplet }}"
+                --out out-lazy
+                --repo-root .)
+          if [ "${{ github.event_name }}" = "release" ]; then
+            args+=(--tebako-release "${{ github.event.release.tag_name }}")
+          fi
+          if [ -n "${{ matrix.container }}" ]; then
+            target="$(rustc -vV | sed -n 's/^host: //p' | sed 's/-gnu/-musl/')"
+            bin="./target/$target/debug/tebako-bench"
+          else
+            bin="./target/debug/tebako-bench"
+            [ -f "$bin.exe" ] && bin="$bin.exe"
+          fi
+          set +e
+          "$bin" run "${args[@]}"
+          rc=$?
+          set -e
+          # Same exit contract as the other legs (0 ok / 1 red-matrix
+          # deliverable / 2 harness fault).
+          if [ "$rc" -eq 2 ]; then exit 2; fi
+          echo "tebako-bench lazy-suite exit $rc (0 ok / 1 red-matrix deliverable)"
       - name: Upload the leg's results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -168,6 +204,13 @@ jobs:
         with:
           name: bench-runtime-${{ matrix.triplet }}
           path: tebako-rs/out-runtime/
+          if-no-files-found: warn
+      - name: Upload the lazy leg's results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-lazy-${{ matrix.triplet }}
+          path: tebako-rs/out-lazy/
           if-no-files-found: warn
 
   report:
@@ -209,7 +252,7 @@ jobs:
           # merges separate.
           legs=()
           for d in legs/bench-*/; do
-            case "$d" in legs/bench-runtime-*) continue;; esac
+            case "$d" in legs/bench-runtime-* | legs/bench-lazy-*) continue;; esac
             legs+=("${d}results.json")
           done
           tebako-rs/target/debug/tebako-bench report "${legs[@]}" \
@@ -224,9 +267,18 @@ jobs:
             rc_rt=0
             echo "no runtime-suite legs uploaded — skipping the runtime report"
           fi
+          lz_legs=(legs/bench-lazy-*/results.json)
+          if [ -e "${lz_legs[0]}" ]; then
+            tebako-rs/target/debug/tebako-bench report "${lz_legs[@]}" \
+              --md report-lazy.md --json dashboard-lazy.json
+            rc_lz=$?
+          else
+            rc_lz=0
+            echo "no lazy-suite legs uploaded — skipping the lazy report"
+          fi
           set -e
-          if [ "$rc" -eq 2 ] || [ "$rc_rt" -eq 2 ]; then exit 2; fi
-          echo "tebako-bench report exit $rc, runtime report exit $rc_rt"
+          if [ "$rc" -eq 2 ] || [ "$rc_rt" -eq 2 ] || [ "$rc_lz" -eq 2 ]; then exit 2; fi
+          echo "tebako-bench report exit $rc, runtime report exit $rc_rt, lazy report exit $rc_lz"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bench-report
@@ -235,6 +287,8 @@ jobs:
             dashboard.json
             report-runtime.md
             dashboard-runtime.json
+            report-lazy.md
+            dashboard-lazy.json
           if-no-files-found: error
       - name: Append to the bench-history branch
         if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
@@ -265,6 +319,11 @@ jobs:
             cp ../report-runtime.md ../dashboard-runtime.json "$dest/"
             cp ../report-runtime.md ../dashboard-runtime.json .bench-history/latest/
             dashboards+=(--dashboard ../dashboard-runtime.json)
+          fi
+          if [ -f ../dashboard-lazy.json ]; then
+            cp ../report-lazy.md ../dashboard-lazy.json "$dest/"
+            cp ../report-lazy.md ../dashboard-lazy.json .bench-history/latest/
+            dashboards+=(--dashboard ../dashboard-lazy.json)
           fi
           # The release-over-release trend feed: the harness appends this
           # run's cells over the previous latest/trend.json (dedupe per full
