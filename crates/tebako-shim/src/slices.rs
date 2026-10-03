@@ -33,8 +33,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use tebako_resolve::plan::{
-    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
-    FETCH_JOBS_ENV,
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass,
+    StagedArtifact, FETCH_JOBS_ENV,
 };
 use tebako_resolve::registry::{PlatformSelection, SignaturePin};
 use tebako_resolve::{FetchedPayload, Fetcher, HttpTransport, Reference, ResolveError, Transport};
@@ -653,6 +653,7 @@ fn fetch_slice(
         size_hint: None,
         tmp_dir: home.join("tmp"),
         registry_alias: None,
+        oci_class: OciClass::Payload,
         lazy: false,
         commit: Box::new(|staged: &StagedArtifact| {
             if let Err(e) = verify_slice_signature_staged(

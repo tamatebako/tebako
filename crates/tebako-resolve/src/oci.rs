@@ -613,18 +613,21 @@ fn pull_blksum<H: Http, C: CredentialSource>(
     Ok(Some((blksum, artifact.origin)))
 }
 
-/// The plan-pipeline pull (spec 38 §5.2): the payload artifact's one
-/// layer streams through the pipeline's HashWriter — the client
-/// verifies the stream against the layer digest inline, the pipeline
-/// verifies any byte pin against its own hash, and the commit closure
-/// owns install semantics exactly as every other class. Transport
-/// answers surface as [`ItemFail::Transport`] (the executor's
-/// retry/throttle discipline owns them); everything else is the named
-/// error.
+/// The plan-pipeline pull (spec 38 §5.2): the artifact's one layer
+/// streams through the pipeline's HashWriter — the client verifies the
+/// stream against the layer digest inline, the pipeline verifies any
+/// byte pin against its own hash, and the commit closure owns install
+/// semantics exactly as every other class. `expect` is the lane's shape
+/// law (spec 38 §3): `Class(Payload)` on the payload lane,
+/// `Class(RuntimeBundle)` on the spec 38 §5.4 runtime lane — a manifest
+/// of any other class is malformed by name. Transport answers surface
+/// as [`ItemFail::Transport`] (the executor's retry/throttle discipline
+/// owns them); everything else is the named error.
 pub(crate) fn stream_artifact<T: Transport>(
     transport: &T,
     reference: &Reference,
     alias: Option<&str>,
+    expect: ShapeExpectation,
     writer: &mut dyn std::io::Write,
     tick: &mut dyn FnMut(u64, Option<u64>) -> bool,
 ) -> Result<(u64, String), ItemFail> {
@@ -649,14 +652,217 @@ pub(crate) fn stream_artifact<T: Transport>(
         OciError::Transport(f) => ItemFail::Transport(f),
         other => ItemFail::Named(named(alias, book.take_looked_for(), other)),
     };
-    let artifact = client
-        .resolve(&r, ShapeExpectation::Class(ArtifactClass::Payload))
-        .map_err(map)?;
+    let artifact = client.resolve(&r, expect).map_err(map)?;
     check_byte_pin(&r, sha256.as_deref(), &artifact.layer).map_err(map)?;
     let n = client
         .stream_blob(&r, &artifact.layer, writer, Some(tick))
         .map_err(map)?;
     Ok((n, artifact.origin))
+}
+
+// ---------------------------------------------------------------------
+// The runtime-bundle lane (spec 38 §5.4)
+// ---------------------------------------------------------------------
+
+/// The spec 38 §5.4 runtime-bundle card: one manifest read replaces the
+/// shard fetch of spec 36 §4. The caller feeds the shard into spec 36
+/// §4's chain VERBATIM (signature → bundle digest → in-process unpack →
+/// per-member pins → the spec 05 §3 layout); the layer digest IS the
+/// bundle's `.sha256` sidecar equivalence (spec 38 §3 — cross-checked
+/// against the shard's bundle pin by the caller before a byte streams).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeBundleCard {
+    /// The per-package shard JSON (spec 36 §3) from the required
+    /// `org.tebako.runtime.shard` annotation, verbatim.
+    pub shard: String,
+    /// The bundle layer's full digest (`sha256:<64 hex>`).
+    pub layer_digest: String,
+    /// The 64-hex half of [`RuntimeBundleCard::layer_digest`] — the
+    /// sidecar-equivalence pin and the signature sibling tag's key.
+    pub layer_sha256: String,
+    /// The bundle layer's served size (the plan's size hint).
+    pub layer_size: u64,
+    /// The 64-hex sha256 of the manifest bytes as served — the plan
+    /// re-resolve's immutable selector (the tag's mutability never
+    /// reaches the stream).
+    pub manifest_digest: String,
+    /// `tfs+oci://<host>/<repo>@sha256:<manifest-digest>` (spec 38
+    /// §5.5's digest-pinned origin).
+    pub origin: String,
+}
+
+/// Resolve a runtime-bundle reference to its card (spec 38 §5.4): the
+/// manifest read under the RuntimeBundle shape law, the `?sha256=` byte
+/// pin fail-fast against the layer descriptor (never a wasted pull), the
+/// required shard annotation surfaced verbatim. A manifest without the
+/// annotation is a torn publish — `OciArtifactMalformed`, never a
+/// best-effort read. Throttled answers ride tebako-http's backoff
+/// schedule, unchanged.
+pub fn resolve_runtime_bundle<T: Transport>(
+    transport: &T,
+    reference: &Reference,
+    alias: Option<&str>,
+) -> Result<RuntimeBundleCard, ResolveError> {
+    let Reference::Oci {
+        host,
+        repo,
+        tag,
+        digest,
+        sha256,
+    } = reference
+    else {
+        return Err(ResolveError::DownloadFailed {
+            origin: reference.to_string(),
+            reason: "the OCI adapter serves tfs+oci: references only".to_string(),
+        });
+    };
+    let book = OciBook::new(crate::credentials::book(), alias, host);
+    let oci_transport = OciTransport(transport);
+    let client = Client::new(&oci_transport, &book);
+    let r = repo_ref(host, repo, tag.as_deref(), digest.as_deref());
+    let mut throttles = 0;
+    loop {
+        match pull_runtime_bundle_card(&client, &r, sha256.as_deref()) {
+            Ok(card) => return Ok(card),
+            Err(OciError::Transport(FetchError::Throttled { retry_after, .. })) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(ResolveError::DownloadFailed {
+                        origin: r.reference_string(),
+                        reason: format!(
+                            "still throttled after {} backoff rounds",
+                            tebako_http::THROTTLE_ROUNDS
+                        ),
+                    });
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
+            Err(e) => return Err(named(alias, book.take_looked_for(), e)),
+        }
+    }
+}
+
+/// One bundle-card read attempt (the manifest + the §5 fail-fast).
+fn pull_runtime_bundle_card<H: Http, C: CredentialSource>(
+    client: &Client<'_, H, C>,
+    r: &RepoRef<'_>,
+    byte_pin: Option<&str>,
+) -> Result<RuntimeBundleCard, OciError> {
+    let artifact = client.resolve(r, ShapeExpectation::Class(ArtifactClass::RuntimeBundle))?;
+    check_byte_pin(r, byte_pin, &artifact.layer)?;
+    let shard = artifact
+        .annotations
+        .runtime_shard
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| OciError::ArtifactMalformed {
+            origin: artifact.origin.clone(),
+            reason: "the runtime-bundle manifest carries no org.tebako.runtime.shard annotation — the shard ride is required (spec 38 §5.4); a torn publish".to_string(),
+        })?;
+    let Some(layer_sha256) = artifact.layer.digest_hex().map(str::to_string) else {
+        return Err(OciError::ArtifactMalformed {
+            origin: artifact.origin.clone(),
+            reason: format!(
+                "the bundle layer digest \"{}\" is not a sha256 digest",
+                artifact.layer.digest
+            ),
+        });
+    };
+    Ok(RuntimeBundleCard {
+        shard,
+        layer_digest: artifact.layer.digest.clone(),
+        layer_sha256,
+        layer_size: artifact.layer.size,
+        manifest_digest: artifact.manifest_digest,
+        origin: artifact.origin,
+    })
+}
+
+/// The spec 38 §3 signature sibling of a signed blob, resolved by its
+/// deterministic digest tag (`sha256-<64 hex of the signed blob>.asc` —
+/// no listing, no guessing): the manifest resolves under the Signature
+/// shape law, its annotations cross-checked —
+/// `org.tebako.signature.subject` must name the signed blob's digest,
+/// and `org.tebako.signature.keyid`, when the caller declares one, must
+/// agree — a disagreement is a torn publish, malformed by name. The one
+/// layer (the `.asc` bytes) comes back verified against its own digest.
+/// Returns the bytes and the digest-pinned origin. A sibling tag naming
+/// nothing is `OciManifestNotFound` — the caller maps a DECLARED
+/// signature that does not fetch to the 71 refusal (spec 09 §4).
+/// Throttled answers ride tebako-http's backoff schedule, unchanged.
+pub fn fetch_signature<T: Transport>(
+    transport: &T,
+    host: &str,
+    repo: &str,
+    signed_blob_sha256: &str,
+    declared_keyid: Option<&str>,
+    alias: Option<&str>,
+) -> Result<(Vec<u8>, String), ResolveError> {
+    let book = OciBook::new(crate::credentials::book(), alias, host);
+    let oci_transport = OciTransport(transport);
+    let client = Client::new(&oci_transport, &book);
+    let tag = tebako_oci::signature_tag(signed_blob_sha256);
+    let r = repo_ref(host, repo, Some(&tag), None);
+    let mut throttles = 0;
+    loop {
+        match pull_signature(&client, &r, signed_blob_sha256, declared_keyid) {
+            Ok(done) => return Ok(done),
+            Err(OciError::Transport(FetchError::Throttled { retry_after, .. })) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(ResolveError::DownloadFailed {
+                        origin: r.reference_string(),
+                        reason: format!(
+                            "still throttled after {} backoff rounds",
+                            tebako_http::THROTTLE_ROUNDS
+                        ),
+                    });
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
+            Err(e) => return Err(named(alias, book.take_looked_for(), e)),
+        }
+    }
+}
+
+/// One signature pull attempt (the sibling-tag manifest + the
+/// annotation cross-checks + the one layer).
+fn pull_signature<H: Http, C: CredentialSource>(
+    client: &Client<'_, H, C>,
+    r: &RepoRef<'_>,
+    signed_blob_sha256: &str,
+    declared_keyid: Option<&str>,
+) -> Result<(Vec<u8>, String), OciError> {
+    let artifact = client.resolve(r, ShapeExpectation::Class(ArtifactClass::Signature))?;
+    // The subject annotation must name the blob the caller asked the
+    // signature of — a sibling tag carrying a signature for something
+    // else is a torn publish.
+    let want_subject = format!("sha256:{signed_blob_sha256}");
+    let subject = artifact.annotations.signature_subject.as_deref();
+    if !subject.is_some_and(|s| s.eq_ignore_ascii_case(&want_subject)) {
+        return Err(OciError::ArtifactMalformed {
+            origin: artifact.origin.clone(),
+            reason: format!(
+                "the signature's org.tebako.signature.subject is {} but the sibling tag names {want_subject} — a torn publish (spec 38 §3)",
+                subject.unwrap_or("absent")
+            ),
+        });
+    }
+    if let Some(declared) = declared_keyid {
+        let want = declared.to_lowercase();
+        let keyid = artifact.annotations.signature_keyid.as_deref();
+        if !keyid.is_some_and(|k| k.eq_ignore_ascii_case(&want)) {
+            return Err(OciError::ArtifactMalformed {
+                origin: artifact.origin.clone(),
+                reason: format!(
+                    "the signature's org.tebako.signature.keyid is {} but the release declares {want} — a torn publish (spec 38 §3)",
+                    keyid.unwrap_or("absent")
+                ),
+            });
+        }
+    }
+    let bytes = client.fetch_blob(r, &artifact.layer)?;
+    Ok((bytes, artifact.origin))
 }
 
 #[cfg(test)]

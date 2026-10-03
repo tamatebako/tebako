@@ -72,6 +72,23 @@ pub fn resolve_fetch_jobs(env: Option<String>, config: Option<u32>) -> Result<us
 pub type CommitClosure<'plan> =
     Box<dyn FnOnce(&StagedArtifact<'_>) -> Result<CommitReport, ResolveError> + Send + 'plan>;
 
+/// The OCI artifact class a `Reference::Oci` plan item's manifest must
+/// resolve as (spec 38 §3's shape law): the payload lane serves payload
+/// artifacts, the runtime lane (spec 38 §5.4) serves spec-36 runtime
+/// bundles. This is the plan's feature-ungated dispatch hint — the
+/// mapping onto tebako-oci's class vocabulary lives at the ONE stream
+/// site in `stream_once`, so the bootstrap build (oci off) compiles the
+/// same item shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OciClass {
+    /// A payload image (`ArtifactClass::Payload` — the payload lane).
+    #[default]
+    Payload,
+    /// A spec-36 runtime bundle (`ArtifactClass::RuntimeBundle` — spec
+    /// 38 §5.4's runtime lane).
+    RuntimeBundle,
+}
+
 pub struct FetchItem<'plan> {
     /// The asset name, for progress lines and errors.
     pub display: String,
@@ -90,6 +107,11 @@ pub struct FetchItem<'plan> {
     /// §5's tier-1 credential key); None for the anonymous scope
     /// (runtime fetches, direct references).
     pub registry_alias: Option<String>,
+    /// The OCI class a `Reference::Oci` item's manifest must resolve as
+    /// (spec 38 §3's shape law) — Payload everywhere but the spec 38
+    /// §5.4 runtime lane, whose one item is the runtime bundle. Inert
+    /// for every non-OCI reference.
+    pub oci_class: OciClass,
     /// The LAZY_SEEDING arm (spec 39 §7/§9): when true the item streams
     /// NOTHING — no tmp file, no inline pin pass. The commit closure
     /// runs immediately on a synthesized [`StagedArtifact`] whose `tmp`
@@ -370,10 +392,23 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
         Reference::Oci { .. } => {
             #[cfg(feature = "oci")]
             {
+                // spec 38 §3's shape law, per lane: the item's class
+                // hint maps onto tebako-oci's vocabulary here — the ONE
+                // mapping site (a payload item refuses a bundle-class
+                // manifest and vice versa, malformed by name).
+                let expect = match item.oci_class {
+                    OciClass::Payload => {
+                        tebako_oci::ShapeExpectation::Class(tebako_oci::ArtifactClass::Payload)
+                    }
+                    OciClass::RuntimeBundle => tebako_oci::ShapeExpectation::Class(
+                        tebako_oci::ArtifactClass::RuntimeBundle,
+                    ),
+                };
                 match crate::oci::stream_artifact(
                     transport,
                     &item.reference,
                     item.registry_alias.as_deref(),
+                    expect,
                     &mut out,
                     &mut tick,
                 ) {
@@ -722,6 +757,7 @@ mod tests {
                 size_hint: Some(bytes.len() as u64),
                 tmp_dir: dir.join("tmp"),
                 registry_alias: None,
+                oci_class: OciClass::Payload,
                 lazy: false,
                 commit: Box::new(move |staged| {
                     std::fs::rename(staged.tmp, &dest2).unwrap();
@@ -853,6 +889,7 @@ mod tests {
             size_hint: None,
             tmp_dir: dir.join("tmp"),
             registry_alias: None,
+            oci_class: OciClass::Payload,
             lazy: false,
             commit: Box::new(move |staged| {
                 std::fs::rename(staged.tmp, &dest).unwrap();
@@ -1021,6 +1058,7 @@ mod tests {
                 size_hint: Some(4_194_304),
                 tmp_dir: dir.join("tmp"),
                 registry_alias: None,
+                oci_class: OciClass::Payload,
                 lazy: true,
                 commit: Box::new(move |staged| {
                     // The synthesized artifact: the pin, the size, a tmp

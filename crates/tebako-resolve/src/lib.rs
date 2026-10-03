@@ -48,8 +48,8 @@ pub use credentials::{CredentialBook, CredentialEntry, Decision, Tier1Entry};
 pub use error::{ReferenceError, RegistryError, ResolveError};
 pub use fetch::{sha256_hex, CredTransport, FetchedPayload, Fetcher};
 pub use plan::{
-    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, StagedArtifact,
-    DEFAULT_FETCH_JOBS, FETCH_JOBS_ENV,
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass,
+    StagedArtifact, DEFAULT_FETCH_JOBS, FETCH_JOBS_ENV,
 };
 pub use reference::{Reference, Service};
 pub use registry::{

@@ -87,7 +87,9 @@ grammar:
               dispatcher reads platforms[host].artifact — never
               adapter-side guessing. The additive `oci` field (spec 38,
               MINOR 3) mirrors the artifact's OCI locator
-              (`tfs+oci://<host>/<repo>:<version>-<triplet>`); readers
+              (`tfs+oci://<host>/<repo>:<tag>` — the tag derives per
+              artifact class, spec 38 §3: `<version>-<triplet>` for
+              payloads, the bundle stem for runtime bundles); readers
               ignore it unless the registry book declares `channel: oci`,
               and pre-OCI readers skip it as an unknown key. The
               additive `blksum` field (spec 39 §3, MINOR 4) pins the
