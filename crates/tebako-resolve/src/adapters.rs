@@ -1374,7 +1374,10 @@ mod tests {
         // GitLab's release assets live under /-/releases/<tag>/downloads/
         // — the infix carries the difference, the tag stays verbatim.
         let (base, tag, infix) = release_arm("tfs:gitlab:acme/tebako-runtime-python:v0.3.0");
-        assert_eq!(base, "https://gitlab.com/acme/tebako-runtime-python/-/releases");
+        assert_eq!(
+            base,
+            "https://gitlab.com/acme/tebako-runtime-python/-/releases"
+        );
         assert_eq!(tag, "v0.3.0");
         assert_eq!(infix, "/downloads");
         assert_eq!(
@@ -1382,9 +1385,7 @@ mod tests {
                 .unwrap()
                 .dir_url()
                 .as_deref(),
-            Some(
-                "https://gitlab.com/acme/tebako-runtime-python/-/releases/v0.3.0/downloads"
-            )
+            Some("https://gitlab.com/acme/tebako-runtime-python/-/releases/v0.3.0/downloads")
         );
     }
 
@@ -1441,9 +1442,10 @@ mod tests {
         );
         // The digest pin and the `?sha256=` byte pin ride too.
         let hex = "a".repeat(64);
-        let pinned =
-            locator(&format!("tfs+oci://ghcr.io/acme/tebako-runtime-openjdk@sha256:{hex}?sha256={hex}"))
-                .unwrap();
+        let pinned = locator(&format!(
+            "tfs+oci://ghcr.io/acme/tebako-runtime-openjdk@sha256:{hex}?sha256={hex}"
+        ))
+        .unwrap();
         assert_eq!(
             pinned,
             ReleaseDownloadLocator::Oci {

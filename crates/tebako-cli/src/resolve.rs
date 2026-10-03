@@ -48,8 +48,8 @@ use sha2::Digest;
 
 use tebako_pkg::{json_parse, JsonValue};
 use tebako_resolve::plan::{
-    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass,
-    StagedArtifact, FETCH_JOBS_ENV,
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass, StagedArtifact,
+    FETCH_JOBS_ENV,
 };
 use tebako_resolve::{HttpTransport, Reference, ResolveError};
 use tebako_term::set::ProgressSet;

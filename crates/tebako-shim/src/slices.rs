@@ -33,8 +33,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use tebako_resolve::plan::{
-    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass,
-    StagedArtifact, FETCH_JOBS_ENV,
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass, StagedArtifact,
+    FETCH_JOBS_ENV,
 };
 use tebako_resolve::registry::{PlatformSelection, SignaturePin};
 use tebako_resolve::{FetchedPayload, Fetcher, HttpTransport, Reference, ResolveError, Transport};

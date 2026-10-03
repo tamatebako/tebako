@@ -40,8 +40,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use tebako_resolve::plan::{
-    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass,
-    StagedArtifact, FETCH_JOBS_ENV,
+    execute_plan, resolve_fetch_jobs, CommitReport, FetchItem, FetchPlan, OciClass, StagedArtifact,
+    FETCH_JOBS_ENV,
 };
 use tebako_resolve::{HttpTransport, Reference, ResolveError, Transport};
 use tebako_term::set::ProgressSet;
@@ -93,7 +93,14 @@ pub fn resolve_runtime(
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<RuntimeResolution, ShimError> {
-    resolve_runtime_scoped(&HttpTransport, requirement, None, min_runtime_tebako, allow_download, ctx)
+    resolve_runtime_scoped(
+        &HttpTransport,
+        requirement,
+        None,
+        min_runtime_tebako,
+        allow_download,
+        ctx,
+    )
 }
 
 /// [`resolve_runtime`] with the spec 37 §3 edge scope: `scope` is the
@@ -3117,10 +3124,7 @@ fn runtime_bundle_item_oci<'p, T: Transport + Sync>(
                         Err(e) => {
                             return Err(sink.fail(ShimError::new(
                                 EX_TEBAKO_IO,
-                                format!(
-                                    "cannot read the downloaded {}: {e}",
-                                    staged.tmp.display()
-                                ),
+                                format!("cannot read the downloaded {}: {e}", staged.tmp.display()),
                             )))
                         }
                     };
@@ -5563,7 +5567,11 @@ payloads:
         isolate_docker_config();
         let home = temp_home(tag);
         let reg = registry_ref(&home, "tpkg-registry.yaml", registry_yaml);
-        std::fs::write(home.join("config.yaml"), format!("registries:\n  - '{reg}'\n")).unwrap();
+        std::fs::write(
+            home.join("config.yaml"),
+            format!("registries:\n  - '{reg}'\n"),
+        )
+        .unwrap();
         let ctx = test_ctx(&home);
         (home, ctx)
     }
@@ -5662,7 +5670,10 @@ payloads:
         // The mirror carries the full locator — used verbatim, never
         // re-derived (spec 38 §11).
         let triplet = tpkg::Platform::host().as_triplet();
-        assert_eq!(oci.tag.as_deref(), Some(format!("21.0.12-{triplet}").as_str()));
+        assert_eq!(
+            oci.tag.as_deref(),
+            Some(format!("21.0.12-{triplet}").as_str())
+        );
         assert_eq!(oci.sha256.as_deref(), Some(sha64('c').as_str()));
         let booked = source.registry.as_ref().unwrap();
         assert!(booked.channel_oci);
@@ -5716,7 +5727,11 @@ payloads:
     fn the_registry_facet_refines_an_oci_row_to_its_pref() {
         let home = temp_home("regfacet-oci");
         let ctx = test_ctx(&home);
-        let reg = registry_ref(&home, "tpkg-registry.yaml", &oci_release_ref_registry(false));
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            &oci_release_ref_registry(false),
+        );
         let cfg = UserConfig {
             registries: vec![crate::config::RegistryBookEntry::bare(reg)],
             ..UserConfig::default()
@@ -5727,7 +5742,10 @@ payloads:
             .expect("an informative registry picks");
         assert_eq!(pref.version, "21.0.12");
         assert_eq!(pref.tebako, "2.5.0", "the artifact stem witnesses the line");
-        let oci = source.oci.as_ref().expect("the OCI arm survives the refinement");
+        let oci = source
+            .oci
+            .as_ref()
+            .expect("the OCI arm survives the refinement");
         assert_eq!(oci.tag, None);
         assert_eq!(source.channel, "registry");
         let _ = std::fs::remove_dir_all(&home);
@@ -5740,10 +5758,9 @@ payloads:
         let rt = resolve_oci_edge(&publish.mock, &ctx).unwrap();
         assert_eq!(rt.lang_version, "21.0.12");
         assert_eq!(rt.tebako_version, "2.5.0");
-        let entry = home.join("runtimes").join(format!(
-            "java-21.0.12-2.5.0-{}",
-            platform_string()
-        ));
+        let entry = home
+            .join("runtimes")
+            .join(format!("java-21.0.12-2.5.0-{}", platform_string()));
         assert_eq!(rt.dir, entry);
         // The spec 05 §3 store layout — indistinguishable from a git-host
         // bundle install (the shared commit tail): exe 0755 + the
@@ -5788,7 +5805,9 @@ payloads:
         assert!(card.starts_with('['), "{card}");
         assert!(card.contains(r#""tebako_version": "2.5.0""#), "{card}");
         // The wire: the stem tag, the digest re-resolve, the one blob.
-        assert!(publish.mock.requested(&format!("/manifests/{}", publish.stem)));
+        assert!(publish
+            .mock
+            .requested(&format!("/manifests/{}", publish.stem)));
         assert!(publish
             .mock
             .requested(&format!("/manifests/sha256:{}", publish.manifest_hex)));
@@ -5798,7 +5817,10 @@ payloads:
         // The unsigned rule (loud + journaled) applies verbatim — the OCI
         // display base named.
         let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
-        assert!(journal.contains("event=unsigned-runtime-fetch"), "{journal}");
+        assert!(
+            journal.contains("event=unsigned-runtime-fetch"),
+            "{journal}"
+        );
         assert!(
             journal.contains("base=tfs+oci://reg.example/runtimes/openjdk"),
             "{journal}"
@@ -5817,10 +5839,9 @@ payloads:
                 .contains("the release is inconsistent; nothing was installed"),
             "{err:?}"
         );
-        let entry = home.join("runtimes").join(format!(
-            "java-21.0.12-2.5.0-{}",
-            platform_string()
-        ));
+        let entry = home
+            .join("runtimes")
+            .join(format!("java-21.0.12-2.5.0-{}", platform_string()));
         assert!(!entry.exists(), "nothing was installed");
         // The equivalence gated before a byte of the bundle streamed.
         assert!(
@@ -5862,12 +5883,18 @@ payloads:
         // BEFORE the sha compare, the signer journaled; the unsigned
         // rule stayed silent.
         let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
-        assert!(journal.contains("event=runtime-fetch-verified"), "{journal}");
+        assert!(
+            journal.contains("event=runtime-fetch-verified"),
+            "{journal}"
+        );
         assert!(
             journal.contains(&format!("signer={}", key.keyid_hex())),
             "{journal}"
         );
-        assert!(!journal.contains("event=unsigned-runtime-fetch"), "{journal}");
+        assert!(
+            !journal.contains("event=unsigned-runtime-fetch"),
+            "{journal}"
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -5896,7 +5923,11 @@ payloads:
         let publish = oci_publish("oci-offline-publish", None, false, None);
         isolate_docker_config();
         let home = temp_home("oci-offline");
-        let reg = registry_ref(&home, "tpkg-registry.yaml", &oci_release_ref_registry(false));
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            &oci_release_ref_registry(false),
+        );
         // The pinned preference walks the resolution to the download
         // gate — a prefless offline edge fails earlier at the
         // lane-agnostic no-preference error (the git-host lane's shape).
@@ -5908,7 +5939,8 @@ payloads:
         )
         .unwrap();
         let mut ctx = test_ctx(&home);
-        ctx.env.insert("TEBAKO_OFFLINE".to_string(), "1".to_string());
+        ctx.env
+            .insert("TEBAKO_OFFLINE".to_string(), "1".to_string());
         let err = resolve_oci_edge(&publish.mock, &ctx).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE, "{err:?}");
         assert!(err.message.contains("TEBAKO_OFFLINE"), "{err:?}");
