@@ -105,7 +105,7 @@ targets:
   # fetched sha256-verified from the factory releases and booted bare.
   - id: tebako-ruby
     kind: runtime-exe
-    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.25, lang_version: "3.3.12" }
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.32, lang_version: "3.3.12" }
   - id: tebako-python
     kind: runtime-exe
     runtime: { repo: tamatebako/tebako-runtime-python, tag: v0.2.0, lang_version: "3.14.7" }
