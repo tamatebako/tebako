@@ -16,7 +16,9 @@
 //! contract refusal; tebako-resolve::contract owns the reader),
 //! spec 05 §2's shard-first index order (the per-package
 //! `<stem>.manifest.json` shard, then the manifest.json monolith, then
-//! the SHA256SUMS line index — the fallbacks stay forever, invariant 7),
+//! the SHA256SUMS line index — the fallbacks stay forever, invariant 7;
+//! the shard's stem probes dual-era, new-era spelling first — tebako#716's
+//! era law rule 3),
 //! `TEBAKO_RUNTIME_MIRROR` / `TEBAKO_OFFLINE` — reimplemented
 //! here rather than linked from the bootstrap crate.
 //!
@@ -923,6 +925,7 @@ fn picked_row_source(
     booked: Option<RegistryBooked>,
     signer_pin: Option<String>,
     require_signed: Option<String>,
+    artifact_stem: Option<String>,
 ) -> RuntimeSource {
     match locator {
         RowLocator::Release {
@@ -938,6 +941,7 @@ fn picked_row_source(
             require_signed,
             registry: booked,
             oci: None,
+            artifact_stem,
         },
         RowLocator::Oci(oci) => RuntimeSource {
             base: format!("tfs+oci://{}/{}", oci.host, oci.repo),
@@ -948,6 +952,7 @@ fn picked_row_source(
             require_signed,
             registry: booked,
             oci: Some(oci),
+            artifact_stem,
         },
     }
 }
@@ -1043,22 +1048,36 @@ fn registry_artifact_stem(artifact: &str) -> &str {
 }
 
 /// The row's tebako line from its declared artifact's stem (spec 05 §2
-/// SSOT — the factory's `tebako-runtime-<tebako>-<lang>-<platform>`
-/// spelling is flowed, never re-derived elsewhere): strip the
-/// `tebako-runtime-` prefix, the era suffix, and the
-/// `-<lang>-<release-asset-platform>` tail; what remains is the line.
-/// `None` when the artifact does not carry the spelling (the caller
-/// falls back to the release tag).
+/// SSOT — the factory's asset spelling is flowed, never re-derived
+/// elsewhere): strip the `tebako-runtime-` prefix, the era suffix, and
+/// the language/platform tail; what remains is the line. The tail is
+/// dual-era (tebako#716's era law): the new-era
+/// `-<lang-segment>-<lang>-<release-asset-platform>` strip is tried
+/// first, then the immutable old-era `-<lang>-<release-asset-platform>`
+/// (the ≤ v0.16.32 lines keep the segment-less spelling forever). The
+/// new-era segment is the runtime's DISTRIBUTION IDENTITY — the row's
+/// `implementation` when the factory ships flavors (openjdk's
+/// temurin/graalvm), else the engine; the caller computes it per row.
+/// The stripped line is accepted only when non-empty AND dash-free — the
+/// pollution guard: a tebako line never carries '-', so a wrong-identity
+/// new-era stem the old-era strip would reduce to garbage
+/// (`0.16.33-ruby`) is no line at all. `None` when the artifact does
+/// not carry the spelling (the caller falls back to the release tag).
 fn tebako_line_from_artifact(
     artifact: &str,
+    lang_seg: &str,
     lang_version: &str,
     host: tpkg::Platform,
 ) -> Option<String> {
     let stem = registry_artifact_stem(artifact);
     let rest = stem.strip_prefix("tebako-runtime-")?;
-    let suffix = format!("-{lang_version}-{}", host.release_asset_name());
-    let line = rest.strip_suffix(&suffix)?;
-    (!line.is_empty()).then(|| line.to_string())
+    let platform = host.release_asset_name();
+    let new_era = format!("-{lang_seg}-{lang_version}-{platform}");
+    let old_era = format!("-{lang_version}-{platform}");
+    let line = rest
+        .strip_suffix(&new_era)
+        .or_else(|| rest.strip_suffix(&old_era))?;
+    (!line.is_empty() && !line.contains('-')).then(|| line.to_string())
 }
 
 /// A composite line-id row's split into (lang_version, tebako line),
@@ -1069,13 +1088,18 @@ fn tebako_line_from_artifact(
 /// several tebako lines, and registry versions are unique per payload,
 /// so the line id is the only collision-free key). The artifact stem is
 /// the SSOT witness (spec 05 §2): the row parses as a composite exactly
-/// when ONE dash-split of the row version spells the stem
-/// `tebako-runtime-<tebako>-<lang>-<platform>` — zero matching splits
-/// (a bare-version row) or several (a genuinely ambiguous id) are both
+/// when ONE dash-split of the row version spells the stem — EITHER the
+/// old-era `tebako-runtime-<tebako>-<lang>-<platform>` OR the new-era
+/// `tebako-runtime-<tebako>-<lang-segment>-<lang>-<platform>`
+/// (tebako#716's dual-era grammar — both eras witness identically; the
+/// segment is the row's distribution identity, `lang_seg`). Zero
+/// matching splits (a bare-version row) or several (a genuinely
+/// ambiguous id, counted across the union of both spellings) are both
 /// `None`, and the caller keeps the bare-row behavior.
 fn split_line_id(
     artifact: &str,
     row_version: &str,
+    lang_seg: &str,
     host: tpkg::Platform,
 ) -> Option<(String, String)> {
     let stem = registry_artifact_stem(artifact);
@@ -1086,7 +1110,9 @@ fn split_line_id(
         if lang.is_empty() || tebako.is_empty() {
             continue;
         }
-        if stem == format!("tebako-runtime-{tebako}-{lang}-{platform}") {
+        if stem == format!("tebako-runtime-{tebako}-{lang_seg}-{lang}-{platform}")
+            || stem == format!("tebako-runtime-{tebako}-{lang}-{platform}")
+        {
             if found.is_some() {
                 return None;
             }
@@ -1168,6 +1194,12 @@ fn registry_selected_target(
         /// the row is one) — the withdrawn refusal names what the
         /// registry shows, not the split-down pref.
         row_version: String,
+        /// The row's declared artifact reduced to its stem — the shard /
+        /// OCI-tag probe's SSOT witness, flowed to the download verbatim
+        /// (tebako#716: the name segment is the factory's distribution
+        /// identity; consumers never recompose it). None for universal
+        /// rows (no artifact string to flow).
+        artifact_stem: Option<String>,
     }
     let mut candidates: Vec<Candidate> = Vec::new();
     // Every host-covered row, satisfying or not — the availability
@@ -1244,14 +1276,25 @@ fn registry_selected_target(
                     .map(|t| t.strip_prefix('v').unwrap_or(t).to_string()),
                 None => None,
             };
+            // tebako#716: the new-era name segment is the runtime's
+            // distribution identity — the implementation when the factory
+            // ships flavors (openjdk's temurin/graalvm), else the engine.
+            let lang_seg = entry
+                .implementation
+                .as_deref()
+                .or(row.implementation.as_deref())
+                .unwrap_or(engine);
             let line_pair = match &selection {
                 tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
-                    match split_line_id(artifact, &row.version, host) {
+                    match split_line_id(artifact, &row.version, lang_seg, host) {
                         Some((lang, line)) => Some((lang, line)),
-                        None => match tebako_line_from_artifact(artifact, &row.version, host) {
-                            Some(line) => Some((row.version.clone(), line)),
-                            None => from_tag.map(|line| (row.version.clone(), line)),
-                        },
+                        None => {
+                            match tebako_line_from_artifact(artifact, lang_seg, &row.version, host)
+                            {
+                                Some(line) => Some((row.version.clone(), line)),
+                                None => from_tag.map(|line| (row.version.clone(), line)),
+                            }
+                        }
                     }
                 }
                 tebako_resolve::registry::PlatformSelection::Universal => {
@@ -1276,6 +1319,12 @@ fn registry_selected_target(
                 signer_pin: row.signature.as_ref().map(|s| s.keyid.clone()),
                 withdrawn: row.is_withdrawn(),
                 row_version: row.version.clone(),
+                artifact_stem: match &selection {
+                    tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
+                        Some(registry_artifact_stem(artifact).to_string())
+                    }
+                    tebako_resolve::registry::PlatformSelection::Universal => None,
+                },
             });
         }
     }
@@ -1348,6 +1397,7 @@ fn registry_selected_target(
             source.registry.clone(),
             pick.signer_pin,
             source.require_signed.clone(),
+            pick.artifact_stem,
         ),
     )))
 }
@@ -1414,6 +1464,14 @@ struct RuntimeSource {
     /// `oci:` mirror under a `channel: oci` book entry); `base`/`tag`/
     /// `asset_infix` are display-only then.
     oci: Option<OciRuntimeSource>,
+    /// Channel 3's flowed name witness (tebako#716): the picked row's
+    /// declared artifact reduced to its stem — the shard / OCI-tag probe
+    /// uses it VERBATIM (the new-era name segment is the factory's
+    /// distribution identity — the row's `implementation` when the
+    /// factory ships flavors, else the engine — which a consumer never
+    /// recomposes). None on channels 1/2/4, where the probe synthesizes
+    /// dual-era with the engine segment instead (era law rule 3).
+    artifact_stem: Option<String>,
 }
 
 /// The channel-3 book bookkeeping a source carries (see
@@ -1534,6 +1592,7 @@ fn runtime_source(
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         });
     }
     // Channel 2: the operator's global mirror.
@@ -1547,6 +1606,7 @@ fn runtime_source(
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         });
     }
     // Channel 3: the registered registries (the zero-config path).
@@ -1564,6 +1624,7 @@ fn runtime_source(
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         });
     }
     let scoped_note = match scope {
@@ -1716,12 +1777,24 @@ fn registry_derived_source(
                     ));
                 }
             }
+            // tebako#716: the shard/OCI-tag probe flows the row's
+            // declared artifact stem verbatim — the factory's
+            // distribution identity is never recomposed consumer-side.
+            let artifact_stem = version.select(tpkg::Platform::host()).and_then(|sel| {
+                match sel {
+                    tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
+                        Some(registry_artifact_stem(&artifact).to_string())
+                    }
+                    tebako_resolve::registry::PlatformSelection::Universal => None,
+                }
+            });
             return Ok(Some(picked_row_source(
                 locator,
                 "registry",
                 Some(booked),
                 version.signature.as_ref().map(|s| s.keyid.clone()),
                 require_signed.clone(),
+                artifact_stem,
             )));
         }
     }
@@ -2398,14 +2471,18 @@ struct AcquiredIndex {
 
 /// The index-trust resolution + acquisition (spec 09 §4 + spec 05 §2's
 /// shard-first order): the trust scan probes each form's detached `.asc`
-/// in preference order — `<stem>.manifest.json` → `manifest.json` →
-/// `SHA256SUMS.txt` — and the FIRST form whose asc verifies over its
-/// served bytes is the consumed form, its digests alone trusted from
-/// that point (strict: Invalid → 71, an untrusted signer → 72). An asc
-/// whose own body does not fetch skips the form; a verified but
+/// in preference order — `<stem>.manifest.json` (per stem, new-era
+/// first) → `manifest.json` → `SHA256SUMS.txt` — and the FIRST form
+/// whose asc verifies over its served bytes is the consumed form, its
+/// digests alone trusted from that point (strict: Invalid → 71, an
+/// untrusted signer → 72). The shard's stem is dual-era (tebako#716's
+/// era law, rule 3): the remote release's grammar era is unknowable
+/// before the card is read, so `stems` carries the new-era spelling
+/// first and the immutable old-era spelling second, each probed in turn.
+/// An asc whose own body does not fetch skips the form; a verified but
 /// triple-mismatched shard falls through to the next form with its URL
 /// recorded for the failure message. With no verifiable form the
-/// unsigned chain consumes the shard when it reads AND names the
+/// unsigned chain consumes a shard when it reads AND names the
 /// requested identity triple, else the monolith; no readable card form
 /// at all is the spec 18 C2 pre-era refusal (75) naming every URL tried.
 #[allow(clippy::too_many_arguments)]
@@ -2414,7 +2491,7 @@ fn acquire_index(
     ctx: &Ctx,
     dir_url: &str,
     local: bool,
-    stem: &str,
+    stems: &[String],
     engine: &str,
     lang_version: &str,
     tebako_version: &str,
@@ -2422,8 +2499,6 @@ fn acquire_index(
     runtime_ref: &str,
     tmp_dir: &Path,
 ) -> Result<AcquiredIndex, ShimError> {
-    let shard_name = format!("{stem}.manifest.json");
-    let shard_url = format!("{dir_url}/{shard_name}");
     let manifest_url = format!("{dir_url}/manifest.json");
     let fetch_opt = |name: &str| -> Option<Vec<u8>> {
         let tmp = tmp_dir.join(name);
@@ -2440,33 +2515,44 @@ fn acquire_index(
         release_index_entry(&parsed, engine, lang_version, tebako_version, platform)?;
         Some(card)
     };
-    // Why the shard was not consumed (recorded for the failure message).
-    let mut shard_note: Option<String> = None;
+    // Why each stem's shard was not consumed (recorded for the failure
+    // message), per stem: a shard whose own asc proved it is not this
+    // package's card is not reconsidered in the unsigned arm.
+    let mut shard_notes: Vec<(String, String)> = Vec::new();
 
-    // The trust scan — the first TRUSTED form wins.
-    if let Some(asc) = fetch_opt(&format!("{shard_name}.asc")) {
-        match fetch_opt(&shard_name) {
-            Some(body) => {
-                let signer = trust.verify_detached(ctx, &shard_name, &body, &asc, None)?;
-                match shard_card(&body) {
-                    Some(card) => {
-                        return Ok(AcquiredIndex {
-                            text: card,
-                            trust: IndexTrust::VerifiedManifest(signer),
-                            from_shard: true,
-                        });
-                    }
-                    None => {
-                        shard_note = Some(format!(
-                            "the shard {shard_url} verified but names another identity triple"
-                        ));
+    // The trust scan — the first TRUSTED form wins. The per-package shard
+    // is probed under both era spellings, new-era first (tebako#716).
+    for stem in stems {
+        let shard_name = format!("{stem}.manifest.json");
+        let shard_url = format!("{dir_url}/{shard_name}");
+        if let Some(asc) = fetch_opt(&format!("{shard_name}.asc")) {
+            match fetch_opt(&shard_name) {
+                Some(body) => {
+                    let signer = trust.verify_detached(ctx, &shard_name, &body, &asc, None)?;
+                    match shard_card(&body) {
+                        Some(card) => {
+                            return Ok(AcquiredIndex {
+                                text: card,
+                                trust: IndexTrust::VerifiedManifest(signer),
+                                from_shard: true,
+                            });
+                        }
+                        None => {
+                            shard_notes.push((
+                                shard_url.clone(),
+                                format!(
+                                    "the shard {shard_url} verified but names another identity triple"
+                                ),
+                            ));
+                        }
                     }
                 }
-            }
-            None => {
-                shard_note = Some(format!(
-                    "the shard's signature fetched but {shard_url} did not"
-                ));
+                None => {
+                    shard_notes.push((
+                        shard_url.clone(),
+                        format!("the shard's signature fetched but {shard_url} did not"),
+                    ));
+                }
             }
         }
     }
@@ -2500,10 +2586,16 @@ fn acquire_index(
         }
     }
 
-    // The unsigned chain (the pre-signing keep-forever line): shard
-    // first, the monolith next — a skipped shard (its own asc proved it
-    // is not this package's card) is not reconsidered here.
-    if shard_note.is_none() {
+    // The unsigned chain (the pre-signing keep-forever line): each
+    // stem's shard first (new-era before old-era), the monolith next — a
+    // skipped shard (its own asc proved it is not this package's card)
+    // is not reconsidered here.
+    for stem in stems {
+        let shard_name = format!("{stem}.manifest.json");
+        let shard_url = format!("{dir_url}/{shard_name}");
+        if shard_notes.iter().any(|(url, _)| url == &shard_url) {
+            continue;
+        }
         if let Some(body) = fetch_opt(&shard_name) {
             match shard_card(&body) {
                 Some(card) => {
@@ -2514,8 +2606,11 @@ fn acquire_index(
                     });
                 }
                 None => {
-                    shard_note = Some(format!(
-                        "the shard {shard_url} does not name the requested identity triple ({engine}_version={lang_version} tebako_version={tebako_version} platform={platform})"
+                    shard_notes.push((
+                        shard_url.clone(),
+                        format!(
+                            "the shard {shard_url} does not name the requested identity triple ({engine}_version={lang_version} tebako_version={tebako_version} platform={platform})"
+                        ),
                     ));
                 }
             }
@@ -2530,10 +2625,15 @@ fn acquire_index(
             });
         }
     }
+    let shard_urls = stems
+        .iter()
+        .map(|stem| format!("{dir_url}/{stem}.manifest.json"))
+        .collect::<Vec<_>>()
+        .join("\n         ");
     let mut msg = format!(
-        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
+        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_urls}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
     );
-    if let Some(note) = &shard_note {
+    for (_, note) in &shard_notes {
         msg.push_str(&format!("\n  shard: {note}"));
     }
     fail(EX_TEBAKO_CONTRACT, msg)
@@ -3465,20 +3565,43 @@ fn download_runtime<T: Transport + Sync>(
         // manifest.json monolith — the trust scan (G1, spec 09 §4)
         // verifies each form's detached asc BEFORE its bytes are
         // consumed, and no readable card form is the pre-era signal (75)
-        // naming every URL tried.
-        let stem = format!("tebako-runtime-{}-{}-{platform}", pref.tebako, pref.version);
+        // stem: a registry pick FLOWS the row's declared artifact stem
+        // verbatim (tebako#716 — the name segment is the factory's
+        // distribution identity: its `implementation` when it ships
+        // flavors, else the engine; consumers never recompose it, so the
+        // probe is exact in either era). The registry-less channels
+        // synthesize dual-era (era law rule 3): the remote release's
+        // grammar era is unknowable before the card is read, so the
+        // new-era spelling probes first and the immutable old-era
+        // spelling follows; the segment is the engine there — right by
+        // construction on the ruby default base, and the loud tried-URLs
+        // error diagnoses a non-ruby engine pinned registry-less.
+        let stems: Vec<String> = match source
+            .artifact_stem
+            .as_ref()
+            .filter(|s| s.starts_with("tebako-runtime-"))
+        {
+            Some(stem) => vec![stem.clone()],
+            None => vec![
+                format!("tebako-runtime-{}-{engine}-{}-{platform}", pref.tebako, pref.version),
+                format!("tebako-runtime-{}-{}-{platform}", pref.tebako, pref.version),
+            ],
+        };
         let trust = FetchTrust::build(source, ctx)?;
         // spec 38 §5.4: an OCI source's index is the bundle manifest's
         // shard annotation — one manifest read (gated by the identity
         // triple, the bundle-era rule, and the sidecar-equivalence)
         // replaces the shard/sidecar fetches; everything downstream of
-        // the card rides spec 36 §4 VERBATIM.
+        // the card rides spec 36 §4 VERBATIM. The OCI lane opened after
+        // the tebako#716 grammar change (spec 38 §7: pre-#716 lines never
+        // publish to OCI) — the selector-less default tag composes the
+        // NEW-era stem only.
         let (acquired, oci_card) = match &source.oci {
             Some(oci) => {
                 let (acquired, card) = acquire_index_oci(
                     transport,
                     oci,
-                    &stem,
+                    &stems[0],
                     engine,
                     &pref.version,
                     &pref.tebako,
@@ -3494,7 +3617,7 @@ fn download_runtime<T: Transport + Sync>(
                     ctx,
                     &dir_url,
                     local,
-                    &stem,
+                    &stems,
                     engine,
                     &pref.version,
                     &pref.tebako,
@@ -3514,7 +3637,9 @@ fn download_runtime<T: Transport + Sync>(
             // contract re-reads parse manifest.json as an array); the
             // raw shard file is not part of the store entry.
             let _ = std::fs::write(tmp_dir.join("manifest.json"), &manifest_text);
-            let _ = std::fs::remove_file(tmp_dir.join(format!("{stem}.manifest.json")));
+            for stem in &stems {
+                let _ = std::fs::remove_file(tmp_dir.join(format!("{stem}.manifest.json")));
+            }
         }
         // The entry's `filename` is the ONLY authoritative asset
         // spelling (spec 05 §2 SSOT; tebako#456): match the identity
@@ -3629,11 +3754,18 @@ fn download_runtime<T: Transport + Sync>(
             "ok",
         ];
         let expected = exe.sha.ok_or_else(|| {
+            // The shard diagnostic names BOTH era spellings (tebako#716 —
+            // the acquisition probed new-era first, then old-era).
+            let shard_tried = stems
+                .iter()
+                .map(|stem| format!("{dir_url}/{stem}.manifest.json ({})", DIAG[diag_sh]))
+                .collect::<Vec<_>>()
+                .join("\n         ");
             ShimError::new(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
-                    "no checksum for {asset} in the release\n  tried: {dir_url}/{stem}.manifest.json ({})\n         {dir_url}/manifest.json ({})\n         {dir_url}/SHA256SUMS.txt ({})",
-                    DIAG[diag_sh], DIAG[diag_m], DIAG[diag_s]
+                    "no checksum for {asset} in the release\n  tried: {shard_tried}\n         {dir_url}/manifest.json ({})\n         {dir_url}/SHA256SUMS.txt ({})",
+                    DIAG[diag_m], DIAG[diag_s]
                 ),
             )
         })?;
@@ -4560,6 +4692,7 @@ payloads:
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         };
         assert_eq!(unpinned.tag_for("0.16.22"), "v0.16.22");
         let pinned = RuntimeSource {
@@ -4571,6 +4704,7 @@ payloads:
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         };
         assert_eq!(pinned.tag_for("2.5.0"), "v2.5.1");
     }
@@ -4611,6 +4745,7 @@ payloads:
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         }
     }
 
@@ -4636,6 +4771,7 @@ payloads:
         assert_eq!(
             tebako_line_from_artifact(
                 &format!("tebako-runtime-2.5.0-21.0.12-{asset}.tfs"),
+                "openjdk",
                 "21.0.12",
                 host
             ),
@@ -4643,7 +4779,7 @@ payloads:
         );
         // a non-factory spelling carries no line
         assert_eq!(
-            tebako_line_from_artifact("openjdk-21.tar.gz", "21.0.12", host),
+            tebako_line_from_artifact("openjdk-21.tar.gz", "openjdk", "21.0.12", host),
             None
         );
         // the bundle-era spelling (spec 36 §5: the row names the bundle)
@@ -4651,10 +4787,76 @@ payloads:
         assert_eq!(
             tebako_line_from_artifact(
                 &format!("tebako-runtime-0.16.29-3.3.12-{asset}.tar.gz"),
+                "ruby",
                 "3.3.12",
                 host
             ),
             Some("0.16.29".to_string())
+        );
+        // tebako#716: the new-era stem (the engine segment in place)
+        // parses the same line
+        assert_eq!(
+            tebako_line_from_artifact(
+                &format!("tebako-runtime-0.16.33-ruby-4.0.7-{asset}.tfs"),
+                "ruby",
+                "4.0.7",
+                host
+            ),
+            Some("0.16.33".to_string())
+        );
+        // the new-era bundle spelling witnesses identically
+        assert_eq!(
+            tebako_line_from_artifact(
+                &format!("tebako-runtime-0.16.33-ruby-4.0.7-{asset}.tar.gz"),
+                "ruby",
+                "4.0.7",
+                host
+            ),
+            Some("0.16.33".to_string())
+        );
+        // tebako#716's identity law: a flavored factory's segment is the
+        // IMPLEMENTATION, not the engine — openjdk's temurin row spells
+        // `-temurin-` where the engine is `java`
+        assert_eq!(
+            tebako_line_from_artifact(
+                &format!("tebako-runtime-2.9.0-temurin-21.0.12-{asset}.tfs"),
+                "temurin",
+                "21.0.12",
+                host
+            ),
+            Some("2.9.0".to_string())
+        );
+        // the same stem witnessed against the ENGINE is pollution — the
+        // old-era strip would reduce it to the dashed `2.9.0-temurin`
+        assert_eq!(
+            tebako_line_from_artifact(
+                &format!("tebako-runtime-2.9.0-temurin-21.0.12-{asset}.tfs"),
+                "java",
+                "21.0.12",
+                host
+            ),
+            None
+        );
+        // the pollution guard: a wrong-engine new-era stem would strip
+        // old-era to a dashed garbage remainder (`0.16.33-ruby`) — a
+        // tebako line never carries '-', so this is no line at all
+        assert_eq!(
+            tebako_line_from_artifact(
+                &format!("tebako-runtime-0.16.33-ruby-4.0.7-{asset}.tfs"),
+                "openjdk",
+                "4.0.7",
+                host
+            ),
+            None
+        );
+        assert_eq!(
+            tebako_line_from_artifact(
+                &format!("tebako-runtime-0.16.33-ruby-4.0.7-{asset}"),
+                "python",
+                "4.0.7",
+                host
+            ),
+            None
         );
     }
 
@@ -4662,6 +4864,7 @@ payloads:
     fn the_registry_facet_picks_the_newest_satisfying_row() {
         let home = temp_home("regfacet-pick");
         let ctx = test_ctx(&home);
+        let asset = tpkg::Platform::host().release_asset_name();
         crate::regcache::prime(
             &home,
             "tfs:github:acme/tebako-runtime-openjdk",
@@ -4683,6 +4886,12 @@ payloads:
         assert_eq!(source.tag.as_deref(), Some("v2.5.1"));
         assert_eq!(source.signer_pin.as_deref(), Some("efc3c250f7862a48"));
         assert_eq!(source.channel, "registry");
+        // tebako#716: the pick FLOWS the row's declared artifact stem —
+        // the shard probe's exact, era-agnostic witness
+        assert_eq!(
+            source.artifact_stem.as_deref(),
+            Some(format!("tebako-runtime-2.5.0-21.0.12-{asset}").as_str())
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -4696,6 +4905,7 @@ payloads:
             split_line_id(
                 &format!("tebako-runtime-0.16.23-4.0.6-{asset}.tfs"),
                 "4.0.6-0.16.23",
+                "ruby",
                 host
             ),
             Some(("4.0.6".to_string(), "0.16.23".to_string()))
@@ -4705,6 +4915,7 @@ payloads:
             split_line_id(
                 &format!("tebako-runtime-2.5.0-21.0.12-{asset}.tfs"),
                 "21.0.12",
+                "openjdk",
                 host
             ),
             None
@@ -4714,13 +4925,19 @@ payloads:
             split_line_id(
                 &format!("tebako-runtime-0.16.23-4.0.6-{asset}.tfs"),
                 "4.0.6-0.16.22",
+                "ruby",
                 host
             ),
             None
         );
         // a single-dash version splits uniquely when the stem witnesses it
         assert_eq!(
-            split_line_id(&format!("tebako-runtime-2-1-{asset}.tfs"), "1-2", host),
+            split_line_id(
+                &format!("tebako-runtime-2-1-{asset}.tfs"),
+                "1-2",
+                "ruby",
+                host
+            ),
             Some(("1".to_string(), "2".to_string()))
         );
         // the bundle-era spelling (spec 36 §5: the row names the bundle)
@@ -4731,9 +4948,52 @@ payloads:
             split_line_id(
                 &format!("tebako-runtime-0.16.29-3.3.12-{asset}.tar.gz"),
                 "3.3.12-0.16.29",
+                "ruby",
                 host
             ),
             Some(("3.3.12".to_string(), "0.16.29".to_string()))
+        );
+        // tebako#716: the new-era stem witnesses the composite the same
+        // way (the engine segment rides between the line and the lv)
+        assert_eq!(
+            split_line_id(
+                &format!("tebako-runtime-0.16.33-ruby-4.0.7-{asset}.tfs"),
+                "4.0.7-0.16.33",
+                "ruby",
+                host
+            ),
+            Some(("4.0.7".to_string(), "0.16.33".to_string()))
+        );
+        // the wrong engine witnesses nothing (the new-era stem's engine
+        // segment must BE the row's engine)
+        assert_eq!(
+            split_line_id(
+                &format!("tebako-runtime-0.16.33-ruby-4.0.7-{asset}.tfs"),
+                "4.0.7-0.16.33",
+                "openjdk",
+                host
+            ),
+            None
+        );
+        // the identity law at the split: a temurin-witnessed composite
+        // splits under the implementation segment, never under the engine
+        assert_eq!(
+            split_line_id(
+                &format!("tebako-runtime-2.9.0-temurin-21.0.12-{asset}.tfs"),
+                "21.0.12-2.9.0",
+                "temurin",
+                host
+            ),
+            Some(("21.0.12".to_string(), "2.9.0".to_string()))
+        );
+        assert_eq!(
+            split_line_id(
+                &format!("tebako-runtime-2.9.0-temurin-21.0.12-{asset}.tfs"),
+                "21.0.12-2.9.0",
+                "java",
+                host
+            ),
+            None
         );
     }
 
@@ -4771,6 +5031,7 @@ payloads:
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         };
         let (pref, source) =
             registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
@@ -4816,6 +5077,7 @@ payloads:
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         };
         let (pref, source) =
             registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
@@ -4848,6 +5110,7 @@ payloads:
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         };
         let (pref, _) = registry_selected_target(&reqs("ruby", ">= 4.0"), &source, &ctx)
             .unwrap()
@@ -4957,6 +5220,7 @@ payloads:
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         };
         assert!(
             registry_selected_target(&reqs("java", ">= 21"), &source, &ctx)
@@ -5092,6 +5356,7 @@ payloads:
             require_signed: None,
             registry: None,
             oci: None,
+            artifact_stem: None,
         };
         let trust = FetchTrust::build(&source, ctx).unwrap();
         let sink = RuntimePlanSink::default();
@@ -5436,13 +5701,17 @@ payloads:
     /// signature plus (when `serve_signature`) the signature sibling
     /// publish. `shard_bundle_pin` tampers the shard's bundle pin away
     /// from the layer digest (the 70-class leg).
+    /// The stem spells the NEW-era grammar (tebako#716, era law rule 6):
+    /// the OCI lane opened after the grammar change, so the selector-less
+    /// default tag composes `tebako-runtime-<ver>-<engine>-<lv>-<platform>`
+    /// only — pre-#716 lines never publish to OCI (spec 38 §7).
     fn oci_publish(
         tag: &str,
         sign: Option<&tebako_signer::PressKey>,
         serve_signature: bool,
         shard_bundle_pin: Option<String>,
     ) -> OciPublish {
-        let stem = format!("tebako-runtime-2.5.0-21.0.12-{}", platform_string());
+        let stem = format!("tebako-runtime-2.5.0-temurin-21.0.12-{}", platform_string());
         let bundle_name = format!("{stem}.tar.gz");
         let image_name = format!("{stem}.tfs");
         let exe = b"the OCI interpreter\n".to_vec();
@@ -5543,7 +5812,10 @@ payloads:
     /// The OCI-rows registry (the §5.4 shape): per-triplet bundle-era
     /// rows riding a SELECTOR-LESS `tfs+oci:` release.ref (the bundle
     /// stem tags at fetch time); `signed_row` pins the newer row's
-    /// signature keyid (asc-less — derived over OCI, spec 38 §3).
+    /// signature keyid (asc-less — derived over OCI, spec 38 §3). The
+    /// artifact spellings are the NEW-era grammar (tebako#716, era law
+    /// rule 6 — pre-#716 lines never publish to OCI), witnessing the
+    /// tebako line with the engine segment in place.
     fn oci_release_ref_registry(signed_row: bool) -> String {
         let host = tpkg::Platform::host();
         let triplet = host.as_triplet();
@@ -5554,7 +5826,7 @@ payloads:
             ""
         };
         format!(
-            "schema_version: 1\npayloads:\n  - name: tebako-runtime-openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - version: '21.0.11'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-21.0.11-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs+oci://reg.example/runtimes/openjdk'}}\n      - version: '21.0.12'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-21.0.12-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs+oci://reg.example/runtimes/openjdk'}}\n{signature}",
+            "schema_version: 1\npayloads:\n  - name: tebako-runtime-openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - version: '21.0.11'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-temurin-21.0.11-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs+oci://reg.example/runtimes/openjdk'}}\n      - version: '21.0.12'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-temurin-21.0.12-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs+oci://reg.example/runtimes/openjdk'}}\n{signature}",
             sha64('a'),
             sha64('b'),
         )

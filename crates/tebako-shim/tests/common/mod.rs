@@ -126,7 +126,12 @@ pub fn platform() -> &'static str {
 /// A cached runtime entry
 /// `runtimes/ruby-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>[.exe]`
 /// — the resolver looks the asset up by its platform name, suffix
-/// included (spec: `exe_suffix()` on Windows).
+/// included (spec: `exe_suffix()` on Windows). The fixture stages the
+/// pre-tebako#716 (engine-less) spelling deliberately: that is the
+/// immutable old-era shape every ≤ v0.16.32 line keeps forever, and the
+/// install path under test flows asset names from index entries,
+/// era-agnostic (tebako#716's era law — a new-era entry's
+/// `<ver>-<engine>-<lv>` spelling rides the exact same code).
 pub fn write_runtime(home: &Path, lv: &str, ver: &str, with_image: bool) -> PathBuf {
     write_runtime_engine(home, "ruby", lv, ver, with_image)
 }
@@ -146,6 +151,8 @@ pub fn write_runtime_engine(
         .join("runtimes")
         .join(format!("{engine}-{lv}-{ver}-{platform}"));
     std::fs::create_dir_all(&dir).expect("runtime dir");
+    // The pre-tebako#716 (old-era) asset spelling — deliberate: see
+    // `write_runtime`'s doc comment (the era law's era-agnostic flow).
     let exe = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}{suffix}"));
     let exe_bytes = b"fake runtime exe\n";
     std::fs::write(&exe, exe_bytes).expect("exe");

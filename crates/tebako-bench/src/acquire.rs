@@ -960,17 +960,23 @@ fn read_runtime_entry(
     // The store's exe spelling follows the factory's asset spelling
     // (spec 27 §10.1): openjdk's windows exe is `.exe`-suffixed, the
     // ruby/python factories' is bare — probe both, never assume.
-    let stem = format!("tebako-runtime-{tebako_version}-{lang_version}-{triplet}");
+    // tebako#716's dual-era grammar (era law rule 5): the new-era
+    // engine-carrying stem probes first, the immutable old-era
+    // (≤ v0.16.32) stem follows — by file existence.
+    let stem_new = format!("tebako-runtime-{tebako_version}-{engine}-{lang_version}-{triplet}");
+    let stem_old = format!("tebako-runtime-{tebako_version}-{lang_version}-{triplet}");
     let exe = [
-        format!("{stem}{}", exe_suffix(triplet)),
-        stem,
+        format!("{stem_new}{}", exe_suffix(triplet)),
+        stem_new,
+        format!("{stem_old}{}", exe_suffix(triplet)),
+        stem_old,
     ]
     .into_iter()
     .map(|name| entry_dir.join(name))
     .find(|p| p.is_file())
     .ok_or_else(|| {
         BenchError::operational(format!(
-            "acquire: the runtime cache entry {} has no interpreter exe (neither the suffixed nor the bare spelling)",
+            "acquire: the runtime cache entry {} has no interpreter exe (neither era's spelling was found, suffixed or bare)",
             entry_dir.display()
         ))
     })?;
@@ -1284,11 +1290,19 @@ pub struct RuntimePair {
 }
 
 /// Download + verify + stage the runtime pair named by the target's
-/// `runtime` ref. The asset grammar is the factories':
-/// `tebako-runtime-<tebako-ver>-<lang-ver>-<triplet>[.exe]` plus the
-/// `.tfs` env image. On Windows a sibling `.dll` rides along WHEN the
+/// `runtime` ref. The asset grammar is the factories', dual-era
+/// (tebako#716): the new era spells
+/// `tebako-runtime-<tebako-ver>-<engine>-<lang-ver>-<triplet>[.exe]`,
+/// the immutable ≤ v0.16.32 lines keep the engine-less
+/// `tebako-runtime-<tebako-ver>-<lang-ver>-<triplet>` — plus the `.tfs`
+/// env image. On Windows a sibling `.dll` rides along WHEN the
 /// factory ships one (ruby/python do, openjdk does not — its sidecar
-/// 404 is the absence proof, never a guess).
+/// 404 is the absence proof, never a guess). The release's grammar era
+/// is unknowable before a sidecar answers: when the ref's repo parses
+/// as a first-party factory (`<owner>/tebako-runtime-<engine>`) the
+/// new-era stem probes FIRST and the old-era stem follows (one extra
+/// sidecar probe round, era law rule 3); any other repo name keeps the
+/// old-era-only behavior.
 ///
 /// Since the spec 36 bundle era the factory ships ONE `<stem>.tar.gz`
 /// (the pair + a closing SHA256SUMS) instead of the bare pair; the
@@ -1319,10 +1333,28 @@ pub fn acquire_runtime_pair(
         "https://github.com/{}/releases/download/{}",
         rr.repo, rr.tag
     );
-    let stem = format!(
-        "tebako-runtime-{tebako_version}-{}-{triplet}",
-        rr.lang_version
-    );
+    // tebako#716: the engine derives from the factory repo's basename
+    // (`tamatebako/tebako-runtime-<engine>`); a repo name that does not
+    // parse as a factory keeps the old-era-only stem list.
+    let engine = rr
+        .repo
+        .rsplit('/')
+        .next()
+        .and_then(|basename| basename.strip_prefix("tebako-runtime-"))
+        .filter(|e| !e.is_empty());
+    let stems: Vec<String> = match engine {
+        Some(engine) => vec![
+            format!(
+                "tebako-runtime-{tebako_version}-{engine}-{}-{triplet}",
+                rr.lang_version
+            ),
+            format!("tebako-runtime-{tebako_version}-{}-{triplet}", rr.lang_version),
+        ],
+        None => vec![format!(
+            "tebako-runtime-{tebako_version}-{}-{triplet}",
+            rr.lang_version
+        )],
+    };
     let suffix = exe_suffix(triplet);
     let target_dir = layout.targets.join(&target.id);
     std::fs::create_dir_all(&target_dir).map_err(|e| {
@@ -1335,30 +1367,33 @@ pub fn acquire_runtime_pair(
     // The spec 36 bundle era: `<stem>.tar.gz` carries the pair (+
     // a closing SHA256SUMS) under one verified download. Its sidecar's
     // existence selects the grammar — the bare-pair probes below never
-    // run against a bundle-era release.
-    match tebako_http::get(&format!("{base}/{stem}.tar.gz.sha256")) {
-        Ok(sidecar) => {
-            let expected =
-                parse_bare_hash(&String::from_utf8_lossy(&sidecar)).ok_or_else(|| {
-                    BenchError::operational(format!(
-                        "acquire: {base}/{stem}.tar.gz.sha256 is not a bare 64-hex sha256"
-                    ))
-                })?;
-            return stage_bundle_pair(
-                layout,
-                &base,
-                &stem,
-                &expected,
-                &target_dir,
-                tebako_version,
-                &rr.lang_version,
-            );
-        }
-        Err(tebako_http::FetchError::IndexUnavailable(_)) => {}
-        Err(e) => {
-            return Err(BenchError::operational(format!(
-                "acquire: cannot probe {base}/{stem}.tar.gz.sha256: {e}"
-            )))
+    // run against a bundle-era release. The stems probe in era order
+    // (tebako#716: new-era first).
+    for stem in &stems {
+        match tebako_http::get(&format!("{base}/{stem}.tar.gz.sha256")) {
+            Ok(sidecar) => {
+                let expected =
+                    parse_bare_hash(&String::from_utf8_lossy(&sidecar)).ok_or_else(|| {
+                        BenchError::operational(format!(
+                            "acquire: {base}/{stem}.tar.gz.sha256 is not a bare 64-hex sha256"
+                        ))
+                    })?;
+                return stage_bundle_pair(
+                    layout,
+                    &base,
+                    stem,
+                    &expected,
+                    &target_dir,
+                    tebako_version,
+                    &rr.lang_version,
+                );
+            }
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => {}
+            Err(e) => {
+                return Err(BenchError::operational(format!(
+                    "acquire: cannot probe {base}/{stem}.tar.gz.sha256: {e}"
+                )))
+            }
         }
     }
 
@@ -1390,22 +1425,45 @@ pub fn acquire_runtime_pair(
     // The factories disagree on the windows interpreter's spelling
     // (spec 27 §10.1): openjdk ships `<stem>.exe`, the ruby/python
     // factories ship the bare `<stem>` beside their `.dll`. The sidecar
-    // that EXISTS names the asset — probe the suffixed sidecar, and its
-    // 404 (IndexUnavailable) selects the bare spelling. Never a rename
-    // guess.
-    let exe_name = if suffix.is_empty() {
-        stem.clone()
-    } else {
-        match tebako_http::get(&format!("{base}/{stem}{suffix}.sha256")) {
-            Ok(_) => format!("{stem}{suffix}"),
-            Err(tebako_http::FetchError::IndexUnavailable(_)) => stem.clone(),
+    // that EXISTS names the asset — probe each era's stem in order
+    // (tebako#716: new-era first), the suffixed sidecar before the bare
+    // one; a 404 (IndexUnavailable) moves to the next spelling. Never a
+    // rename guess.
+    let mut selected: Option<(String, String)> = None;
+    for stem in &stems {
+        if !suffix.is_empty() {
+            match tebako_http::get(&format!("{base}/{stem}{suffix}.sha256")) {
+                Ok(_) => {
+                    selected = Some((stem.clone(), format!("{stem}{suffix}")));
+                    break;
+                }
+                Err(tebako_http::FetchError::IndexUnavailable(_)) => {}
+                Err(e) => {
+                    return Err(BenchError::operational(format!(
+                        "acquire: cannot probe {base}/{stem}{suffix}.sha256: {e}"
+                    )))
+                }
+            }
+        }
+        match tebako_http::get(&format!("{base}/{stem}.sha256")) {
+            Ok(_) => {
+                selected = Some((stem.clone(), stem.clone()));
+                break;
+            }
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => {}
             Err(e) => {
                 return Err(BenchError::operational(format!(
-                    "acquire: cannot probe {base}/{stem}{suffix}.sha256: {e}"
+                    "acquire: cannot probe {base}/{stem}.sha256: {e}"
                 )))
             }
         }
-    };
+    }
+    let (stem, exe_name) = selected.ok_or_else(|| {
+        BenchError::operational(format!(
+            "acquire: {base} serves no interpreter exe sidecar for {tebako_version}-{}-{triplet} under either era's spelling",
+            rr.lang_version
+        ))
+    })?;
     let exe = stage(&exe_name, true)?;
     let image = stage(&format!("{stem}.tfs"), false)?;
     // The windows runtimes that need a sibling dylib ship one; probe its

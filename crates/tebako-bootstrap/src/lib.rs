@@ -2309,7 +2309,11 @@ pub fn verify_chain_with_home(
 /// exe spelling flows from the entry's cached release index when one
 /// exists — the identity-matched entry's `filename` — and falls back to
 /// the synthesized `<asset_base><exe_suffix>` otherwise (a fat/carried
-/// install never fetched an index).
+/// install never fetched an index). `asset_base` deliberately composes
+/// the PRE-tebako#716 (engine-less) spelling — era law rule 4: the
+/// synthesis exists only for index-less entries (all pre-#716-shaped by
+/// construction) and as the old-era leg of download_executable's
+/// dual-era shard probe; flowed names are era-agnostic.
 fn cache_layout(rr: &RuntimeRef) -> Result<CacheLayout, BootError> {
     let platform = platform_string();
     let id = ReleaseIdentity::of(rr, platform);
@@ -2434,24 +2438,43 @@ fn download_executable(
     // mirror read): the spelling decides the staging and cache paths.
     // Read shard-first (roadmap 85): the per-identity `<stem>.manifest.json`
     // card is the primary form, the release-wide monolith the forever
-    // fallback (spec 00 invariant 7). A shard serves only when it declares
-    // THIS identity (a rebuilt release's different triple never shadows);
+    // fallback (spec 00 invariant 7). The stem probes dual-era
+    // (tebako#716's era law, rule 3): the release's grammar era is
+    // unknowable before the card is read, so the new-era spelling
+    // (`tebako-runtime-<tebako>-<engine>-<lv>-<platform>`) is tried
+    // first and the immutable old-era one (asset_base) follows. A shard
+    // serves only when it declares THIS identity (a rebuilt release's
+    // different triple never shadows);
     // it is then normalized to the one-element array shape the cached card
     // carries. No readable index at all is the pre-era signal (spec 18 C2;
     // the SHA256SUMS fallback covers checksums only, never the gate).
     let id = ReleaseIdentity::of(rr, platform_string());
-    let shard_url = format!("{base}/v{}/{}.manifest.json", rr.abi, layout.asset_base);
-    let (manifest_text, card_url) = match fetch_text(&shard_url, local) {
-        Ok(shard) if id.entry(&shard).is_some() => {
-            (format!("[{}]", shard.trim_end()), shard_url.clone())
+    let shard_urls = [
+        format!(
+            "{base}/v{}/tebako-runtime-{}-{}-{}-{}.manifest.json",
+            rr.abi, rr.abi, rr.r#type, rr.version, id.platform
+        ),
+        format!("{base}/v{}/{}.manifest.json", rr.abi, layout.asset_base),
+    ];
+    let mut shard_card = None;
+    for shard_url in &shard_urls {
+        if let Ok(shard) = fetch_text(shard_url, local) {
+            if id.entry(&shard).is_some() {
+                shard_card = Some((format!("[{}]", shard.trim_end()), shard_url.clone()));
+                break;
+            }
         }
-        _ => match fetch_text(&manifest_url, local) {
+    }
+    let (manifest_text, card_url) = match shard_card {
+        Some(card) => card,
+        None => match fetch_text(&manifest_url, local) {
             Ok(text) => (text, manifest_url.clone()),
             Err(()) => {
                 return fail(
                     EX_TEBAKO_CONTRACT,
                     format!(
-                        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
+                        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract",
+                        shard_urls.join("\n         ")
                     ),
                 );
             }
@@ -6193,8 +6216,17 @@ mod bundle_tests {
         dir
     }
 
+    /// The old-era (pre-tebako#716, engine-less) asset stem — deliberate:
+    /// these fixtures model the immutable ≤ v0.16.32 release era, which
+    /// keeps this spelling forever (tebako#716's era law, rule 2).
     fn stem() -> String {
         format!("tebako-runtime-{TV}-{RV}-{}", platform_string())
+    }
+
+    /// The new-era stem (tebako#716: the engine segment between the
+    /// tebako line and the language version).
+    fn stem_new_era() -> String {
+        format!("tebako-runtime-{TV}-ruby-{RV}-{}", platform_string())
     }
 
     fn entry_name() -> String {
@@ -6448,6 +6480,53 @@ mod bundle_tests {
         assert!(resolve_dll(&runtime_ref(), &rr, &layout, &mut ux, &base)
             .unwrap()
             .is_none());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_dual_era_probe_serves_a_new_era_shard() {
+        // tebako#716 (era law rule 3): the release ships its shard under
+        // the NEW-era spelling only — the probe's new-era-first order
+        // consumes it, and the shard's flowed spellings (exe / image /
+        // bundle, all new-era) land verbatim in the store entry.
+        let home = dir("new-era");
+        let mirror = home.join("mirror").join(format!("v{TV}"));
+        std::fs::create_dir_all(&mirror).unwrap();
+        let stem_n = stem_new_era();
+        let exe_member = format!("{stem_n}{}", exe_suffix());
+        let image_member = format!("{stem_n}.tfs");
+        let bundle_member = format!("{stem_n}.tar.gz");
+        let members: Vec<(&str, &[u8])> = vec![
+            (exe_member.as_str(), EXE_BYTES),
+            (image_member.as_str(), IMAGE_BYTES),
+        ];
+        let bundle_path = mirror.join(&bundle_member);
+        build_bundle(&bundle_path, &members, None);
+        let bundle_sha = sha256_file_hex(&bundle_path).unwrap();
+        std::fs::write(
+            mirror.join(format!("{bundle_member}.sha256")),
+            format!("{bundle_sha}  {bundle_member}\n"),
+        )
+        .unwrap();
+        let exe_sha = sha256_hex(&sha2::Sha256::digest(EXE_BYTES));
+        let image_sha = sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES));
+        let shard = format!(
+            "{{\"tebako_version\":\"{TV}\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"/__tfs__\",\"ruby_version\":\"{RV}\",\"platform\":\"{}\",\"filename\":\"{exe_member}\",\"sha256\":\"{exe_sha}\",\"size_bytes\":17,\"image\":{{\"filename\":\"{image_member}\",\"sha256\":\"{image_sha}\",\"size_bytes\":14}},\"bundle\":{{\"filename\":\"{bundle_member}\",\"sha256\":\"{bundle_sha}\",\"size_bytes\":100}}}}\n",
+            platform_string(),
+        );
+        std::fs::write(mirror.join(format!("{stem_n}.manifest.json")), shard).unwrap();
+        let (layout, rr) = bundle_layout(&home);
+        let base = format!("file://{}", home.join("mirror").display());
+        let mut ux = BootUx::new();
+        let exe = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(
+            exe.file_name().unwrap().to_string_lossy(),
+            exe_member,
+            "the new-era exe spelling flowed verbatim from the shard"
+        );
+        assert_eq!(std::fs::read(&exe).unwrap(), EXE_BYTES);
+        assert!(layout.entry_dir.join(&image_member).is_file());
+        assert!(layout.entry_dir.join("manifest.json").is_file());
         let _ = std::fs::remove_dir_all(&home);
     }
 

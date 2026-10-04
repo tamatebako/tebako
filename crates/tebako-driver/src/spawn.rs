@@ -1559,7 +1559,11 @@ mod tests {
     }
 
     /// A store entry: exe + image pair + trust sidecar (the spawned
-    /// resolution's eligibility rule — image required).
+    /// resolution's eligibility rule — image required). The fixture
+    /// stages the pre-tebako#716 (engine-less) asset spelling — the
+    /// valid old-era shape every ≤ v0.16.32 entry keeps forever
+    /// (tebako#716's era law); the scan under test flows names from the
+    /// entry's cached index, era-agnostic.
     fn store_entry(home: &Path, engine: &str, lv: &str, ver: &str, manifest: &str) {
         let platform = tpkg::runtime_store::platform_string();
         let dir = home

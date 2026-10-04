@@ -205,6 +205,13 @@ mod tests {
 
     const ASSET: &str = "tebako-runtime-0.16.1-3.4.2-macos-arm64";
 
+    /// The new-era (tebako#716) spelling beside the old-era ASSET: the
+    /// grammar change inserts the engine segment. The gate matches an
+    /// entry by its flowed `filename` (and the identity fields the
+    /// caller already matched), never by a name parse — so both eras
+    /// gate identically.
+    const ASSET_NEW_ERA: &str = "tebako-runtime-0.16.33-ruby-4.0.7-macos-arm64";
+
     fn manifest(entry_body: &str) -> String {
         format!("[{{\n{entry_body}\n}}]\n")
     }
@@ -215,9 +222,32 @@ mod tests {
         )
     }
 
+    fn full_entry_new_era() -> String {
+        format!(
+            "    \"tebako_version\": \"0.16.33\",\n    \"contract_era\": 2,\n    \"contract_version\": 2,\n    \"mount_root\": \"/__tfs__\",\n    \"ruby_version\": \"4.0.7\",\n    \"platform\": \"macos-arm64\",\n    \"filename\": \"{ASSET_NEW_ERA}\",\n    \"sha256\": \"604e87a1b1d74a6868b35ecdbb11c4e3db01b23286cea9f078636fdf246172b8\""
+        )
+    }
+
     #[test]
     fn a_fully_declared_entry_is_accepted() {
         let set = gate(&manifest(&full_entry()), ASSET).unwrap().unwrap();
+        assert_eq!(
+            set,
+            ContractSet {
+                era: 2,
+                contract_version: 2,
+                mount_root: "/__tfs__".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_fully_declared_new_era_entry_is_accepted_identically() {
+        // tebako#716: the filename's era (engine segment present or not)
+        // is opaque to the gate — the flowed name matches verbatim.
+        let set = gate(&manifest(&full_entry_new_era()), ASSET_NEW_ERA)
+            .unwrap()
+            .unwrap();
         assert_eq!(
             set,
             ContractSet {
