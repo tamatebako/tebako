@@ -1784,7 +1784,7 @@ fn registry_derived_source(
                 .select(tpkg::Platform::host())
                 .and_then(|sel| match sel {
                     tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
-                        Some(registry_artifact_stem(&artifact).to_string())
+                        Some(registry_artifact_stem(artifact).to_string())
                     }
                     tebako_resolve::registry::PlatformSelection::Universal => None,
                 });
