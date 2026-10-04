@@ -146,8 +146,11 @@ section):**
   triplet (tebako version/triplet characters are a subset of the OCI
   tag grammar by construction).
 - runtime bundle: the bundle STEM verbatim
-  (`tebako-runtime-<ver>-<lv>-<triplet>` — spec 36 §2's spelling; the
-  factory declares it, consumers flow it).
+  (`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — spec 36 §2's spelling;
+  the factory declares it, consumers flow it). The OCI lane opened with
+  the post-tebako#716 grammar: pre-#716 (per-file-era) lines never
+  publish to OCI, so a selector-less locator composes the new-era
+  spelling only.
 - registry index: `latest` by convention; publishers MAY add version
   tags; operators pin with the `@sha256:` form.
 - signature: `sha256-<64 hex of the SIGNED BLOB's digest>.asc` — keyed
@@ -247,9 +250,10 @@ FetchPlan ITEM — the pipeline owns transport, integrity, scheduling:
    bundle-era only: per-file-era lines stay on their git-host releases
    forever (keep-forever, spec 13 §8) and never publish to OCI.
    - **The fetch tag.** A selector-less locator tags the bundle STEM
-     (`tebako-runtime-<ver>-<lv>-<triplet>` — §3's tag rule, the
-     factory's spelling flowed verbatim); an authored `:tag` or
-     `@sha256:` selector rides exactly as written (spec 37 §8's
+     (`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — §3's tag rule, the
+     factory's spelling flowed verbatim; the OCI lane is post-tebako#716,
+     so only the language-carrying spelling exists here); an authored
+     `:tag` or `@sha256:` selector rides exactly as written (spec 37 §8's
      authored-selector law).
    - **One manifest read replaces the shard fetch.** The per-package
      shard comes from the bundle manifest's `org.tebako.runtime.shard`

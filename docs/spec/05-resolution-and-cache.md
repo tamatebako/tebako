@@ -36,8 +36,9 @@ monolith.
 
 - `<stem>.manifest.json` — the **per-package shard**, the sidecar-era
   authority. The stem is the exe asset's own name
-  (`tebako-runtime-<ver>-<lv>-<triplet>` — suffix-less, §2's spelling
-  rule below, on windows too). The shard is ONE manifest-entry object
+  (`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — suffix-less, §2's
+  spelling rule below, on windows too). The shard is ONE manifest-entry
+  object
   (the same fields the monolith's array items carry: the identity
   triple, `filename`, `sha256`, the additive `image` / `dll` /
   contract-set keys). The resolver derives the stem from the requested
@@ -54,7 +55,7 @@ monolith.
   never by a synthesized name — and flows `filename` /
   `image.filename` / `dll.filename`+`install_as` verbatim into the
   download URL, the cache layout, and the pre-download contract gate.
-  The `tebako-runtime-<ver>-<lv>-<triplet>[.exe]` grammar is the
+  The `tebako-runtime-<ver>-<lang>-<lv>-<triplet>[.exe]` grammar is the
   factory's to declare, not the consumer's to derive (the factory
   publishes the windows exe SUFFIX-LESS). When no entry matches the
   identity triple (a pre-identity index), the synthesized spelling
@@ -62,6 +63,33 @@ monolith.
   missing-entry refusal names the identity triple — the mis-lookup is
   diagnosed as what it is, never as a contract refusal of a
   hand-invented name.
+- **The grammar carries the language segment** (tebako#716):
+  `tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — `<ver>` the tebako
+  line, `<lv>` the language version, and `<lang>` the runtime's
+  **distribution identity**: the registry row's `implementation` when
+  the factory ships several flavors of one engine (openjdk publishes
+  `temurin` and `graalvm` rows side by side in the same release), else
+  the engine name (`ruby`, `python`, …). The segment is dash-free
+  `[a-z0-9]+` — a tebako line never carries `-`, so the dash is the
+  unambiguous field separator. A flat directory holding several
+  languages' runtimes is self-describing, and a cross-language version
+  overlap can never collide byte-for-byte. **Era law:** assets
+  published before this amendment (the ≤ v0.16.32 line) spell
+  `tebako-runtime-<ver>-<lv>-<triplet>` — immutable, sha256-pinned by
+  live registries and shipped packages, keep-forever (invariant 7).
+  The identity-triple match + verbatim `filename` flow means consumers
+  never branch on era for FLOWED names; a registry pick likewise flows
+  the row's declared artifact stem into the shard probe verbatim, so
+  the probe is exact in either era and never recomposes the identity.
+  The few places a consumer synthesizes a name behave as follows: a
+  REMOTE probe whose target's era is unknowable (the shard fetch on a
+  registry-less channel, a bundle-sidecar existence probe) tries the
+  new-era spelling first and falls back to the old-era, journaling
+  both; the OCI lane (spec 38) opened after this
+  amendment, so its selector-less default tag composes the new-era
+  spelling only; the INDEX-LESS cache fallback (fat/carried installs,
+  pre-identity manifests — all pre-#716-shaped by construction)
+  composes the old-era spelling permanently.
 - `SHA256SUMS.txt` — line-index fallback (`<sha>  <file>`), carries the
   `<asset>.tfs` lines in the image era.
 - Every payload asset also carries its own `<asset>.sha256` sidecar
@@ -114,11 +142,11 @@ monolith.
 
 ```
 runtimes/<lang>-<lv>-<ver>-<triplet>/
-  tebako-runtime-<ver>-<lv>-<triplet>[.exe]   # interpreter (0755)
-  sha256 / origin                             # executable markers
-  tebako-runtime-<ver>-<lv>-<triplet>.tfs     # image-era runtime (0444)
-  <image>.sha256                              # trust anchor ("<sha>  <file>\n")
-  <image>.origin                              # source URL
+  tebako-runtime-<ver>-<lang>-<lv>-<triplet>[.exe]   # interpreter (0755)
+  sha256 / origin                                    # executable markers
+  tebako-runtime-<ver>-<lang>-<lv>-<triplet>.tfs     # image-era runtime (0444)
+  <image>.sha256                                     # trust anchor ("<sha>  <file>\n")
+  <image>.origin                                     # source URL
 payloads/<name>/<version>.tfs                 # registry payloads (0444)
 payloads/<name>/<version>.tfs.sha256          # trust anchor
 payloads/<name>/<version>.manifest.yaml       # manifest mirror (embedded wins; else synthesized LOUDLY)
@@ -131,7 +159,11 @@ keys/                                         # press-local signing keys (spec 0
 The interpreter/image file names in a cache entry keep the index entry's
 `filename` / `image.filename` spellings verbatim (§2 — on windows the exe
 is suffix-less; the loader execs by full path and CreateProcess needs no
-`.exe`). The `[.exe]` diagram notation marks the synthesized fallback
+`.exe`). The diagram shows the post-tebako#716 spelling; entries installed
+from the immutable ≤ v0.16.32 lines keep their `<ver>-<lv>-<triplet>`
+spellings forever — the two eras coexist in one store, and the directory
+name (`<lang>-<lv>-<ver>-<triplet>`) is era-free. The `[.exe]` diagram
+notation marks the synthesized fallback
 spelling, used only when no index entry is available (fat-payload
 installs, pre-identity manifests).
 

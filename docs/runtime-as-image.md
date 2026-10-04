@@ -9,13 +9,18 @@ change" below).
 
 The prebuilt runtime becomes TWO artifacts (30a produces both):
 
-- the **interpreter** — `tebako-runtime-<ver>-<ruby>-<platform>[.exe]`,
-  the existing runtime executable (unchanged resolution, unchanged
-  handoff);
-- the **runtime image** — `tebako-runtime-<ver>-<ruby>-<platform>.tfs`,
-  the runtime's files (lib/ruby, gems, /local/stub.rb; /bin empty) as one
-  dwarfs-t-native (FlatBuffers) image. Immutable, sha256-verified,
-  mounted — never extracted into the cache.
+- the **interpreter** —
+  `tebako-runtime-<ver>-<lang>-<lv>-<platform>[.exe]`, the existing
+  runtime executable (unchanged resolution, unchanged handoff);
+- the **runtime image** —
+  `tebako-runtime-<ver>-<lang>-<lv>-<platform>.tfs`, the runtime's files
+  (lib/ruby, gems, /local/stub.rb; /bin empty) as one dwarfs-t-native
+  (FlatBuffers) image. Immutable, sha256-verified, mounted — never
+  extracted into the cache.
+
+(Asset-name grammar: the post-tebako#716 language-carrying spelling is
+shown; the immutable ≤ v0.16.32 lines spell `<ver>-<lv>-<platform>` —
+spec 05 §2's era law.)
 
 ## runtime_ref: the `;image` flag
 
@@ -44,11 +49,11 @@ carries an image entry for the runtime; otherwise the ref is the v1 form
 
 ```
 runtimes/ruby-<rv>-<ver>-<platform>/
-  tebako-runtime-<ver>-<rv>-<platform>[.exe]   # interpreter (0755)
-  sha256 / origin                              # executable metadata
-  tebako-runtime-<ver>-<rv>-<platform>.tfs     # runtime image (0444, immutable)
-  tebako-runtime-<...>.tfs.sha256              # trusted marker: "<sha>  <file>\n"
-  tebako-runtime-<...>.tfs.origin              # the URL it was fetched from
+  tebako-runtime-<ver>-ruby-<rv>-<platform>[.exe]   # interpreter (0755)
+  sha256 / origin                                   # executable metadata
+  tebako-runtime-<ver>-ruby-<rv>-<platform>.tfs     # runtime image (0444, immutable)
+  tebako-runtime-<...>.tfs.sha256                   # trusted marker: "<sha>  <file>\n"
+  tebako-runtime-<...>.tfs.origin                   # the URL it was fetched from
 ```
 
 The `.tfs.sha256` marker IS the trust anchor: presence means the image

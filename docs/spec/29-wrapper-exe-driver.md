@@ -32,8 +32,8 @@ reference it, nothing re-authors it.
 
 A runtime whose exe artifact is tebako-owned: a small Rust binary
 embedding `crates/tebako-driver` in STANDALONE mode. The store pair is
-unchanged (spec 05 §3): `tebako-runtime-<ver>-<lang>-<triplet>[.exe]` is
-the wrapper (0755); the env image holds the real interpreter (`bin/java`,
+unchanged (spec 05 §3): `tebako-runtime-<ver>-<lang>-<lv>-<triplet>[.exe]`
+is the wrapper (0755); the env image holds the real interpreter (`bin/java`,
 the truffleruby home, …).
 
 The wrapper receives the EXACT spec-17 wire:
