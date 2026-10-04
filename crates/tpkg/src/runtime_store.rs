@@ -5,11 +5,17 @@
 //! cache-only through it, tebako-cli installs through the shim).
 //!
 //! The store entry is
-//! `runtimes/<engine>-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>[.exe]`
+//! `runtimes/<engine>-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-[<engine>-]<lv>-<triplet>[.exe]`
 //! plus the image-era env image and the trust markers; the grammar and
 //! the asset-name flow (the cached release index's verbatim `filename`
 //! spellings — spec 05 §2, tebako#456's suffix-less windows exes — else
-//! the synthesized fallback) live here and nowhere else.
+//! the synthesized fallback) live here and nowhere else. tebako#716's
+//! era law: flowed names are era-agnostic (the new era inserts the
+//! engine segment; the immutable ≤ v0.16.32 lines keep the engine-less
+//! spelling forever); the SYNTHESIZED fallback below deliberately
+//! composes the pre-#716 spelling only — it fires solely for index-less
+//! entries (fat/carried installs, pre-identity releases), all
+//! pre-#716-shaped by construction.
 //!
 //! Download, the release-index consultation, the contract gate and the
 //! trust markers' WRITE side stay in tebako-shim's `runtime` module —
@@ -39,7 +45,10 @@ pub fn exe_suffix() -> &'static str {
 // ---------------------------------------------------------------------
 
 /// A cached runtime entry
-/// `runtimes/<lang>-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>[.exe]`.
+/// `runtimes/<lang>-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-[<lang>-]<lv>-<triplet>[.exe]`
+/// (tebako#716's dual-era spelling: the exe/image names flow from the
+/// cached release index verbatim, era-agnostic — the new era inserts
+/// the engine segment, ≤ v0.16.32 entries keep the engine-less one).
 #[derive(Debug, Clone)]
 pub struct CachedRuntime {
     pub engine: String,
@@ -128,11 +137,18 @@ fn parse_entry_name(name: &str, platform: &str) -> Option<(String, String, Strin
     Some((engine.to_string(), lv.to_string(), ver.to_string()))
 }
 
+/// Synthesized exe name (spec 05 §3's fallback spelling) — deliberately
+/// the PRE-tebako#716 (engine-less) spelling, era law rule 4: the
+/// fallback fires only for entries with no cached release index
+/// (fat/carried installs, pre-identity releases), all pre-#716-shaped by
+/// construction. An index-carrying entry flows `filename` verbatim.
 fn entry_exe_name(lv: &str, ver: &str, platform: &str) -> String {
     format!("tebako-runtime-{ver}-{lv}-{platform}{}", exe_suffix())
 }
 
-/// Synthesized env-image name (spec 05 §3's fallback spelling).
+/// Synthesized env-image name (spec 05 §3's fallback spelling) — the
+/// same deliberate pre-tebako#716 spelling as [`entry_exe_name`] (era
+/// law rule 4: index-less entries only).
 fn synthesized_image_base(lv: &str, ver: &str, platform: &str) -> String {
     format!("tebako-runtime-{ver}-{lv}-{platform}.tfs")
 }

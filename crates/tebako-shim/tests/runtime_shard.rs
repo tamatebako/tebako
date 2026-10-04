@@ -2,7 +2,9 @@
 //! post-85 release lines ship per-package shards and no monoliths; the
 //! shim's download path consumes the shard (signed or unsigned), and a
 //! missing / triple-mismatched shard falls through to the immutable
-//! monolith forms (invariant 7). Everything runs against file:// mirrors
+//! monolith forms (invariant 7). The shard's stem probes dual-era
+//! (tebako#716's era law: new-era spelling first, then the immutable
+//! old-era one). Everything runs against file:// mirrors
 //! and temp TEBAKO_HOMEs — no network.
 
 mod common;
@@ -192,4 +194,67 @@ fn a_triple_mismatched_shard_falls_through_to_the_monolith() {
         "the monolith served the download, not the mismatched shard"
     );
     assert!(rt.exe.is_file());
+}
+
+#[test]
+fn a_new_era_shard_only_release_resolves_through_the_dual_era_probe() {
+    // tebako#716 (era law rule 3): the remote release's grammar era is
+    // unknowable before the card is read — the shard probe spells the
+    // NEW-era stem first (`tebako-runtime-<ver>-<engine>-<lv>-<triplet>`),
+    // then the immutable old-era one. A release carrying ONLY the
+    // new-era shard resolves, and the asset spellings flow verbatim from
+    // its `filename` (era law rule 1).
+    let tmp = TempDir::new("shard-new-era");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    let platform = platform();
+    let dir = mirror.join("v0.16.33");
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    let stem = format!("tebako-runtime-0.16.33-ruby-4.0.7-{platform}");
+    let exe_name = format!("{stem}{}", tebako_shim::runtime::exe_suffix());
+    let image_name = format!("{stem}.tfs");
+    let exe_bytes = b"new-era runtime exe\n";
+    let image_bytes = b"new-era runtime image\n";
+    std::fs::write(dir.join(&exe_name), exe_bytes).expect("exe");
+    std::fs::write(dir.join(&image_name), image_bytes).expect("image");
+    std::fs::write(
+        dir.join(format!("{exe_name}.sha256")),
+        format!("{}  {exe_name}\n", sha256_hex(exe_bytes)),
+    )
+    .expect("exe sidecar");
+    std::fs::write(
+        dir.join(format!("{image_name}.sha256")),
+        format!("{}  {image_name}\n", sha256_hex(image_bytes)),
+    )
+    .expect("image sidecar");
+    std::fs::write(
+        dir.join(format!("{stem}.manifest.json")),
+        format!(
+            "{{\"tebako_version\": \"0.16.33\", \"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"ruby_version\": \"4.0.7\", \"platform\": \"{platform}\", \"filename\": \"{exe_name}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{}\"}}}}\n",
+            sha256_hex(exe_bytes),
+            sha256_hex(image_bytes),
+        ),
+    )
+    .expect("shard");
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 4.0.7\n    tebako: 0.16.33\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req_engine("ruby", ">= 3.3")), None, true, &ctx).unwrap(),
+    );
+    assert_eq!(rt.lang_version, "4.0.7");
+    assert_eq!(rt.tebako_version, "0.16.33");
+    assert_eq!(
+        rt.exe.file_name().unwrap().to_string_lossy(),
+        exe_name,
+        "the new-era spelling flowed verbatim from the shard's filename"
+    );
+    assert!(rt.exe.is_file());
+    assert!(rt.image.is_some());
 }

@@ -8,6 +8,16 @@
 //!     sha256    -- digest the installed file was verified against
 //!     origin    -- URL the package was downloaded from
 //!
+//! tebako#716's era law: the exe/image spellings inside an entry are
+//! whatever the release index's `filename` / `image.filename` declared,
+//! flowed verbatim — era-agnostic (the post-#716 grammar inserts the
+//! engine: `tebako-runtime-<tebakoabi>-ruby-<ruby-version>-<platform>`;
+//! the immutable ≤ v0.16.32 lines keep the engine-less spelling forever).
+//! Only the index-LESS fallback synthesis (a fat/carried install never
+//! fetched an index) composes a spelling itself, and it deliberately
+//! stays the pre-#716 one — every entry it serves is pre-#716-shaped by
+//! construction.
+//!
 //! Installs are serialized per entry with a flock'd lockfile; packages are
 //! downloaded to tmp/, SHA256-verified against the release index and moved
 //! into place with an atomic rename, so partial downloads never poison the
@@ -397,7 +407,10 @@ impl Resolver {
     }
 
     /// The image's expected filename in a cache entry
-    /// (`<asset-minus-exe-suffix>.tfs`).
+    /// (`<asset-minus-exe-suffix>.tfs`). Rides `filename()`'s
+    /// deliberately pre-tebako#716 spelling (era law rule 4): this is
+    /// the synthesized fallback for index-less cache entries, all of
+    /// which predate the grammar change by construction.
     fn image_filename(&self, ruby_version: &str, platform: &str, tebako_version: &str) -> String {
         let asset = self.filename(ruby_version, platform, tebako_version);
         let base = asset.strip_suffix(".exe").unwrap_or(&asset);
@@ -912,6 +925,12 @@ impl Resolver {
             .join(format!("ruby-{ruby_version}-{tebako_version}-{platform}"))
     }
 
+    /// The exe's expected filename in a cache entry — the SYNTHESIZED
+    /// fallback spelling, deliberately pre-tebako#716 (engine-less; era
+    /// law rule 4): it fires only for entries with no cached release
+    /// index (fat/carried installs, pre-identity releases), all
+    /// pre-#716-shaped by construction. An entry WITH a cached index
+    /// flows the index's declared `filename` verbatim, era-agnostic.
     fn filename(&self, ruby_version: &str, platform: &str, tebako_version: &str) -> String {
         let suffix = if platform.starts_with("windows") {
             ".exe"
@@ -1182,7 +1201,10 @@ impl Resolver {
     /// per-package shard, then INDEX_FILES); the FIRST form whose
     /// signature verifies TRUSTED against the keyring is the consumed
     /// form — entries AND the contract card come from those verified
-    /// bytes. A present `.asc` that does not verify is a hard 71 (the
+    /// bytes. The shard's stem is dual-era (tebako#716's era law): the
+    /// release's grammar era is unknowable before the card is read, so
+    /// the new-era spelling probes first and the immutable old-era one
+    /// follows. A present `.asc` that does not verify is a hard 71 (the
     /// signed bytes are corrupt or tampered); one whose signer is not
     /// in the keyring first runs the spec 09 §10 retrieval ceremony
     /// (the trust-anchor channel, root-chain admission, never TOFU) and
@@ -1196,9 +1218,13 @@ impl Resolver {
         tebako_version: &str,
         tried: &mut Vec<String>,
     ) -> Result<Option<FetchedIndex>, TebakoError> {
-        let shard =
-            format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}.manifest.json");
-        let mut forms: Vec<&str> = vec![shard.as_str()];
+        // tebako#716: the new-era shard spelling first, then the
+        // immutable old-era one.
+        let shards = [
+            format!("tebako-runtime-{tebako_version}-ruby-{ruby_version}-{platform}.manifest.json"),
+            format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}.manifest.json"),
+        ];
+        let mut forms: Vec<&str> = shards.iter().map(String::as_str).collect();
         forms.extend(INDEX_FILES);
         let mut keyring: Option<Vec<u8>> = None;
         for name in forms {
@@ -1230,13 +1256,14 @@ impl Resolver {
                 Err(e) => return Err(packaging_error(122, Some(&e.to_string()))),
             };
             let signer = self.verify_index_form(&mut keyring, name, tebako_version, &body, &asc)?;
-            let parsed: Result<IndexAndCard, ParseFail> = if name == shard.as_str() {
-                self.parse_shard(&body, ruby_version, platform, tebako_version)
-                    .map(|entry| (vec![entry], Some(format!("[{body}]"))))
-            } else {
-                self.parse_index(name, &body, tebako_version)
-                    .map(|entries| (entries, (name == "manifest.json").then_some(body)))
-            };
+            let parsed: Result<IndexAndCard, ParseFail> =
+                if shards.iter().any(|s| s.as_str() == name) {
+                    self.parse_shard(&body, ruby_version, platform, tebako_version)
+                        .map(|entry| (vec![entry], Some(format!("[{body}]"))))
+                } else {
+                    self.parse_index(name, &body, tebako_version)
+                        .map(|entries| (entries, (name == "manifest.json").then_some(body)))
+                };
             match parsed {
                 Ok((entries, card)) => {
                     crate::install::journal(
@@ -1384,11 +1411,15 @@ impl Resolver {
 
     /// Preference 1 of the sidecar era (tebako#493): the per-package
     /// shard `<stem>.manifest.json`, the stem being the exe asset name
-    /// (`tebako-runtime-<tv>-<rv>-<platform>` — suffix-less, the factory
-    /// spelling locked by tebako#456, on windows too). `Ok(None)` when
+    /// — dual-era (tebako#716's era law): the new-era
+    /// `tebako-runtime-<tv>-ruby-<rv>-<platform>` spelling probes first,
+    /// then the immutable old-era `tebako-runtime-<tv>-<rv>-<platform>`
+    /// (suffix-less, the factory spelling locked by tebako#456, on
+    /// windows too); the remote release's grammar era is unknowable
+    /// before the card is read. `Ok(None)` when
     /// the release carries no usable shard for the triple (a pre-shard
     /// release, or a shard that cannot serve it) — the caller falls
-    /// through to the monoliths with the shard URL recorded in `tried`.
+    /// through to the monoliths with the shard URLs recorded in `tried`.
     fn fetch_shard(
         &self,
         ruby_version: &str,
@@ -1396,40 +1427,51 @@ impl Resolver {
         tebako_version: &str,
         tried: &mut Vec<String>,
     ) -> Result<Option<IndexAndCard>, TebakoError> {
-        let stem = format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}");
-        let url = self.index_url(&format!("{stem}.manifest.json"), tebako_version);
-        let body = match fetch_text(&url) {
-            Ok(body) => body,
-            Err(FetchError::IndexUnavailable(_)) => {
-                tried.push(url);
-                return Ok(None);
+        // tebako#716: the new-era spelling first, then the immutable
+        // old-era one.
+        let stems = [
+            format!("tebako-runtime-{tebako_version}-ruby-{ruby_version}-{platform}"),
+            format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}"),
+        ];
+        for stem in &stems {
+            let url = self.index_url(&format!("{stem}.manifest.json"), tebako_version);
+            let body = match fetch_text(&url) {
+                Ok(body) => body,
+                Err(FetchError::IndexUnavailable(_)) => {
+                    tried.push(url);
+                    continue;
+                }
+                Err(e @ FetchError::Throttled { .. }) => {
+                    return Err(packaging_error(122, Some(&e.to_string())));
+                }
+                Err(FetchError::DownloadFailed(msg)) => {
+                    return Err(packaging_error(122, Some(&msg)));
+                }
+                Err(e) => {
+                    return Err(packaging_error(122, Some(&e.to_string())));
+                }
+            };
+            match self.parse_shard(&body, ruby_version, platform, tebako_version) {
+                Ok(entry) => {
+                    // The card the contract gate reads: the shard normalized
+                    // to the manifest.json array shape — tebako-resolve owns
+                    // the release-card reader semantics and expects the
+                    // array (spec 05 §2: the shard is the same entry, served
+                    // standalone).
+                    let card = format!("[{body}]");
+                    return Ok(Some((vec![entry], Some(card))));
+                }
+                // A shard that cannot serve this triple is not this
+                // package's card under EITHER era's spelling — the next
+                // spelling (then the monoliths) is still probed.
+                Err(ParseFail::Unavailable(msg)) => {
+                    tried.push(format!("{url} ({msg})"));
+                    continue;
+                }
+                Err(ParseFail::Torn(msg)) => return Err(TebakoError::new(msg, 65)),
             }
-            Err(e @ FetchError::Throttled { .. }) => {
-                return Err(packaging_error(122, Some(&e.to_string())));
-            }
-            Err(FetchError::DownloadFailed(msg)) => {
-                return Err(packaging_error(122, Some(&msg)));
-            }
-            Err(e) => {
-                return Err(packaging_error(122, Some(&e.to_string())));
-            }
-        };
-        match self.parse_shard(&body, ruby_version, platform, tebako_version) {
-            Ok(entry) => {
-                // The card the contract gate reads: the shard normalized
-                // to the manifest.json array shape — tebako-resolve owns
-                // the release-card reader semantics and expects the
-                // array (spec 05 §2: the shard is the same entry, served
-                // standalone).
-                let card = format!("[{body}]");
-                Ok(Some((vec![entry], Some(card))))
-            }
-            Err(ParseFail::Unavailable(msg)) => {
-                tried.push(format!("{url} ({msg})"));
-                Ok(None)
-            }
-            Err(ParseFail::Torn(msg)) => Err(TebakoError::new(msg, 65)),
         }
+        Ok(None)
     }
 
     /// A per-package shard is ONE manifest-entry object (the owning
@@ -3345,6 +3387,75 @@ mod tests {
         let _ = fs::remove_dir_all(cache.parent().unwrap());
     }
 
+    /// The new-era (tebako#716 grammar) sibling of `shard_mirror`: the
+    /// release carries ONLY the shard spelled
+    /// `tebako-runtime-<tv>-ruby-<rv>-<platform>.manifest.json`, with the
+    /// assets under the same new-era grammar — no old-era form exists at
+    /// all, so the dual-era probe's new-era-first order is what serves.
+    fn shard_mirror_new_era(tag: &str) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-resolve-shard-new-era-{tag}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = dir.join("home");
+        let release = dir.join("mirror").join("v0.16.17");
+        fs::create_dir_all(&release).unwrap();
+        let exe = "tebako-runtime-0.16.17-ruby-3.3.12-windows-ucrt64";
+        let image = "tebako-runtime-0.16.17-ruby-3.3.12-windows-ucrt64.tfs";
+        fs::write(release.join(exe), b"fake runtime exe\n").unwrap();
+        fs::write(release.join(image), b"fake env image\n").unwrap();
+        let shard = format!(
+            "{{\"tebako_version\":\"0.16.17\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"A:/t\",\"ruby_version\":\"3.3.12\",\"platform\":\"windows-ucrt64\",\"filename\":\"{exe}\",\"sha256\":\"{}\",\"image\":{{\"filename\":\"{image}\",\"sha256\":\"{}\"}}}}\n",
+            sha256_file_hex(&release.join(exe)).unwrap(),
+            sha256_file_hex(&release.join(image)).unwrap(),
+        );
+        fs::write(release.join(format!("{exe}.manifest.json")), shard).unwrap();
+        (cache, dir.join("mirror"))
+    }
+
+    #[test]
+    fn resolve_runtime_installs_from_the_new_era_shard() {
+        // tebako#716 (era law rule 3): the release ships ONLY the new-era
+        // shard spelling — the probe serves it, and the flowed asset
+        // spellings land verbatim in the cache entry.
+        let (cache, mirror) = shard_mirror_new_era("only");
+        let r = dll_resolver(&cache, &mirror);
+        let exe = "tebako-runtime-0.16.17-ruby-3.3.12-windows-ucrt64";
+        let resolved = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        assert_eq!(
+            resolved.executable.file_name().unwrap().to_string_lossy(),
+            exe,
+            "the new-era exe spelling flowed verbatim from the shard"
+        );
+        let dir = shard_entry_dir(&cache);
+        assert!(dir.join(format!("{exe}.tfs")).is_file());
+        // a cache hit needs no mirror at all (a run is a run)
+        fs::remove_dir_all(&mirror).unwrap();
+        r.resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_the_old_era_shard_serves_when_no_new_era_exists() {
+        // era law rule 3's fallback leg: a release carrying ONLY the
+        // immutable old-era shard spelling (every ≤ v0.16.32 line) still
+        // resolves — the new-era probe misses, the old-era one serves.
+        let (cache, mirror) = shard_mirror("old-era-only", false);
+        let r = dll_resolver(&cache, &mirror);
+        let resolved = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        assert_eq!(
+            resolved.executable.file_name().unwrap().to_string_lossy(),
+            "tebako-runtime-0.16.17-3.3.12-windows-ucrt64"
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
     #[test]
     fn resolve_runtime_without_any_index_names_every_tried_url() {
         let (cache, mirror) = shard_mirror("noindex", false);
@@ -3356,11 +3467,16 @@ mod tests {
             .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
             .unwrap_err();
         assert_eq!(err.code, 124);
-        // the shard URL is named first, then the monoliths
+        // the dual-era shard URLs are named first — the new-era spelling
+        // (tebako#716) before the immutable old-era one — then the
+        // monoliths
+        let new_era = "tebako-runtime-0.16.17-ruby-3.3.12-windows-ucrt64.manifest.json";
+        let old_era = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64.manifest.json";
+        assert!(err.message.contains(new_era), "{}", err.message);
+        assert!(err.message.contains(old_era), "{}", err.message);
         assert!(
-            err.message
-                .contains("tebako-runtime-0.16.17-3.3.12-windows-ucrt64.manifest.json"),
-            "{}",
+            err.message.find(new_era).unwrap() < err.message.find(old_era).unwrap(),
+            "the new-era spelling probes first: {}",
             err.message
         );
         assert!(err.message.contains("manifest.json"), "{}", err.message);
@@ -4122,8 +4238,17 @@ mod tests {
     const G1_RUBY: &str = "3.3.12";
     const G1_PLATFORM: &str = "macos-arm64";
 
+    /// The old-era (pre-tebako#716, engine-less) exe spelling — the
+    /// immutable shape every ≤ v0.16.32 release line keeps forever (era
+    /// law rule 2); the G1 fixtures stage it deliberately.
     fn g1_exe() -> String {
         format!("tebako-runtime-{G1_TAG}-{G1_RUBY}-{G1_PLATFORM}")
+    }
+
+    /// The new-era spelling beside it (tebako#716: the engine segment
+    /// rides between the tebako line and the language version).
+    fn g1_exe_new_era() -> String {
+        format!("tebako-runtime-{G1_TAG}-ruby-{G1_RUBY}-{G1_PLATFORM}")
     }
 
     fn g1_image() -> String {
@@ -4230,6 +4355,47 @@ mod tests {
         // a cache hit re-resolves without the mirror (a run is a run)
         fs::remove_dir_all(&mirror).unwrap();
         r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap();
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_a_signed_new_era_shard_is_the_consumed_form() {
+        // tebako#716 (era law rule 3): the trust scan probes the shard's
+        // NEW-era spelling first — a release carrying ONLY the signed
+        // new-era shard (no monoliths, no old-era shard) verifies through
+        // it, and the flowed new-era asset spellings land verbatim.
+        let (cache, mirror, key) = g1_mirror("new-era-shard");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        let exe = g1_exe_new_era();
+        let image = format!("{exe}.tfs");
+        fs::rename(release.join(g1_exe()), release.join(&exe)).unwrap();
+        fs::rename(release.join(g1_image()), release.join(&image)).unwrap();
+        let shard = format!(
+            r#"{{"tebako_version":"{G1_TAG}","contract_era":2,"contract_version":2,"mount_root":"/__tfs__","ruby_version":"{G1_RUBY}","platform":"{G1_PLATFORM}","filename":"{exe}","sha256":"{}","image":{{"filename":"{image}","sha256":"{}"}}}}"#,
+            sha256_file_hex(&release.join(&exe)).unwrap(),
+            sha256_file_hex(&release.join(&image)).unwrap(),
+        );
+        let shard_name = format!("{exe}.manifest.json");
+        fs::write(release.join(&shard_name), &shard).unwrap();
+        g1_sign_file(&release, &key, &shard_name);
+        tebako_signer::register_trusted(&cache, &key.public_key).unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        let resolved = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap();
+        assert_eq!(
+            resolved.executable.file_name().unwrap().to_string_lossy(),
+            exe,
+            "the new-era exe spelling flowed verbatim from the shard"
+        );
+        assert!(g1_entry_dir(&cache).join(&image).is_file());
+        let journal = g1_journal(&cache);
+        let keyid = hex_lower(&key.keyid);
+        assert!(
+            journal.contains(&format!(
+                "event=runtime-index-verified form={shard_name} signer={keyid}"
+            )),
+            "{journal}"
+        );
+        assert!(!journal.contains("unsigned-runtime-fetch"), "{journal}");
         let _ = fs::remove_dir_all(cache.parent().unwrap());
     }
 

@@ -19,7 +19,8 @@ SOURCE FACTORY: tamatebako/ruby
    ▼
 RUNTIME FACTORY: tebako-runtime-ruby
    pin-bump PR (DEFAULT_RELEASE) → matrix build per (version × triplet) →
-   release: tebako-runtime-<ver>-<lang>-<triplet>[.exe] + .tfs (image era)
+   release: tebako-runtime-<ver>-<lang>-<lv>-<triplet>[.exe] + .tfs (image era;
+            grammar + era law in spec 05 §2)
             + per-asset <asset>.sha256 sidecars + per-package
               <stem>.manifest.json shards (the sidecar-era authority,
               spec 05 §2)
@@ -108,15 +109,15 @@ withdrawal bounds growth.
 
 ```json
 {
-  "tebako_version": "0.16.0",
+  "tebako_version": "0.17.0",
   "contract_version": 2,
-  "ruby_version": "3.3.7",
+  "ruby_version": "4.0.7",
   "platform": "macos-arm64",
-  "filename": "tebako-runtime-0.16.0-3.3.7-macos-arm64",
+  "filename": "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64",
   "sha256": "…", "size_bytes": 38683544,
   "abi": "arm64-darwin-23",
   "signature": {"keyid": "efc3c250f7862a48",
-                "asc": "tebako-runtime-0.16.0-3.3.7-macos-arm64.asc"},
+                "asc": "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64.asc"},
   "image": {"filename": "….tfs", "sha256": "…", "size_bytes": 7658081,
             "signature": {"keyid": "efc3c250f7862a48", "asc": "….tfs.asc"}}
 }

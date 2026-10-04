@@ -181,12 +181,12 @@ state only):
 
 ```
 runtimes/<lang>-<lv>-<ver>-<triplet>/
-  tebako-runtime-<ver>-<lv>-<triplet>[.exe]      # exe — always whole, always verified (0755)
-  sha256 / origin                                 # exe markers, unchanged
-  <image>.lazy.json                               # the seed descriptor — present ⇔ LAZY_SEEDING
-  <image>.blocks/<NNNNNN>.blk                     # verified group payloads (0444)
-  <image>.tfs                                     # appears ONLY at seal (0444)
-  <image>.tfs.sha256 / <image>.tfs.origin         # written at seal — today's shapes, unchanged
+  tebako-runtime-<ver>-<lang>-<lv>-<triplet>[.exe]  # exe — always whole, always verified (0755)
+  sha256 / origin                                   # exe markers, unchanged
+  <image>.lazy.json                                 # the seed descriptor — present ⇔ LAZY_SEEDING
+  <image>.blocks/<NNNNNN>.blk                       # verified group payloads (0444)
+  <image>.tfs                                       # appears ONLY at seal (0444)
+  <image>.tfs.sha256 / <image>.tfs.origin           # written at seal — today's shapes, unchanged
 ```
 
 - **The seed descriptor** (`<image>.lazy.json`, versioned JSON, the

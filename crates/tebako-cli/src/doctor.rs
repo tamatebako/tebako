@@ -238,8 +238,12 @@ fn store_section(home: &Path) -> Section {
             if let Ok(files) = std::fs::read_dir(&dir) {
                 for f in files.flatten() {
                     let name = f.file_name().to_string_lossy().into_owned();
-                    // The exe is `tebako-runtime-<ver>-<lang>-<triplet>[.exe]`
-                    // (the version carries dots — no naive `contains('.')`);
+                    // The exe is
+                    // `tebako-runtime-<ver>-[<lang>-]<lv>-<triplet>[.exe]`
+                    // (tebako#716's dual-era grammar: the new era inserts
+                    // the engine segment, ≤ v0.16.32 entries keep the
+                    // engine-less spelling; the version carries dots — no
+                    // naive `contains('.')`);
                     // images and sidecars ride known suffixes. The signing
                     // feature added `.asc` signatures and `manifest.json`
                     // records — markers, never exes: checking them against

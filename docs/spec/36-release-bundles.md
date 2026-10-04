@@ -45,9 +45,9 @@ routine.
 ## 2. The bundle (wire format)
 
 `<stem>.tar.gz` where `<stem>` is the package stem
-(`tebako-runtime-<ver>-<lv>-<triplet>` — suffix-less, spec 05 §2's
-spelling rule, on windows too). A gzipped tar whose members are named
-by their served spellings, in this fixed order (deterministic bytes —
+(`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — suffix-less, spec 05 §2's
+spelling rule and era law, on windows too). A gzipped tar whose members are
+named by their served spellings, in this fixed order (deterministic bytes —
 a re-run of identical inputs yields a digest-identical bundle, so the
 write-once digest-match skip stays cheap):
 
@@ -93,11 +93,11 @@ The shard keeps today's identity anchors and gains ONE additive key:
 {
   "tebako_version": "0.17.0", "contract_version": 2,
   "ruby_version": "4.0.7", "platform": "macos-arm64",
-  "filename": "tebako-runtime-0.17.0-4.0.7-macos-arm64",
+  "filename": "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64",
   "sha256": "…", "size_bytes": 38683544,
   "abi": "arm64-darwin-23",
   "image": {"filename": "….tfs", "sha256": "…", "size_bytes": 7658081},
-  "bundle": {"filename": "tebako-runtime-0.17.0-4.0.7-macos-arm64.tar.gz",
+  "bundle": {"filename": "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64.tar.gz",
              "sha256": "…", "size_bytes": 46012377,
              "signature": {"keyid": "efc3c250f7862a48", "asc": "….tar.gz.asc"}}
 }
