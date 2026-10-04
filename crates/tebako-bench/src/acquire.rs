@@ -1348,7 +1348,10 @@ pub fn acquire_runtime_pair(
                 "tebako-runtime-{tebako_version}-{engine}-{}-{triplet}",
                 rr.lang_version
             ),
-            format!("tebako-runtime-{tebako_version}-{}-{triplet}", rr.lang_version),
+            format!(
+                "tebako-runtime-{tebako_version}-{}-{triplet}",
+                rr.lang_version
+            ),
         ],
         None => vec![format!(
             "tebako-runtime-{tebako_version}-{}-{triplet}",

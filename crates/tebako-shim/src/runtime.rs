@@ -1780,14 +1780,14 @@ fn registry_derived_source(
             // tebako#716: the shard/OCI-tag probe flows the row's
             // declared artifact stem verbatim — the factory's
             // distribution identity is never recomposed consumer-side.
-            let artifact_stem = version.select(tpkg::Platform::host()).and_then(|sel| {
-                match sel {
+            let artifact_stem = version
+                .select(tpkg::Platform::host())
+                .and_then(|sel| match sel {
                     tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
                         Some(registry_artifact_stem(&artifact).to_string())
                     }
                     tebako_resolve::registry::PlatformSelection::Universal => None,
-                }
-            });
+                });
             return Ok(Some(picked_row_source(
                 locator,
                 "registry",

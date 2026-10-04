@@ -1221,9 +1221,7 @@ impl Resolver {
         // tebako#716: the new-era shard spelling first, then the
         // immutable old-era one.
         let shards = [
-            format!(
-                "tebako-runtime-{tebako_version}-ruby-{ruby_version}-{platform}.manifest.json"
-            ),
+            format!("tebako-runtime-{tebako_version}-ruby-{ruby_version}-{platform}.manifest.json"),
             format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}.manifest.json"),
         ];
         let mut forms: Vec<&str> = shards.iter().map(String::as_str).collect();
