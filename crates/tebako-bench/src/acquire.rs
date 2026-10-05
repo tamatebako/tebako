@@ -1309,7 +1309,15 @@ fn tag_tebako_version(tag: &str) -> &str {
                     .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
         )
     };
-    for lang in ["ruby", "python", "java", "jruby", "truffleruby", "node", "bun"] {
+    for lang in [
+        "ruby",
+        "python",
+        "java",
+        "jruby",
+        "truffleruby",
+        "node",
+        "bun",
+    ] {
         if let Some((head, tail)) = bare.split_once(&format!("-{lang}")) {
             if semver(head) && tail.bytes().next().is_some_and(|b| b.is_ascii_digit()) {
                 return head;
