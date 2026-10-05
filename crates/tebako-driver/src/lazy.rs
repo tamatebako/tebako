@@ -391,6 +391,14 @@ mod tests {
         let mut buf = [0u8; 32];
         let n = mount.backend.pread("hello.txt", &mut buf, 0).expect("read");
         assert_eq!(&buf[..n], b"hello, lazy driver\n");
+        // The probe window: big.bin's tail MiB (its second group — the
+        // bytes the post-commit read must still answer).
+        let mut probe = vec![0u8; 1024 * 1024];
+        let n = mount
+            .backend
+            .pread("big.bin", &mut probe, 4 * 1024 * 1024)
+            .expect("the probe read seeds the tail group");
+        assert_eq!(n, probe.len());
         // The seal thread fills the remaining groups and commits; the
         // entry flips SEALED (image + anchor, descriptor + blocks gone).
         spawn_seal_thread(&source, entry.path().to_path_buf(), image_base.clone());
@@ -424,6 +432,33 @@ mod tests {
             env_image_state(sealed_image.to_str().unwrap()).unwrap(),
             EnvImageState::Sealed
         ));
+        // The LIVE mount still serves after the commit retired its
+        // block files: reads switch to the sealed image (the bench's
+        // lazy cold-boot race — the preload shim's materialization
+        // died on the retired blocks with EIO before the fix).
+        let mut after = vec![0u8; 1024 * 1024];
+        let n = mount
+            .backend
+            .pread("big.bin", &mut after, 4 * 1024 * 1024)
+            .expect("the live mount serves past the seal commit");
+        assert_eq!(n, after.len());
+        assert_eq!(after, probe, "the post-commit bytes are the golden ones");
+        // The regression guard bypasses the backend's read cache: a
+        // DIRECT source read, so the bytes must come from the block
+        // cache or — post-commit — the sealed image. The unfixed
+        // source re-fetched the retired group into the removed block
+        // directory and the read died EIO; the fix serves the span
+        // from the sealed image.
+        use tfs::source::ByteSource;
+        let golden = std::fs::read(&image_path).unwrap();
+        let span = source
+            .read_at(2 * 1024 * 1024, 4096)
+            .expect("the live source serves past the seal commit");
+        assert_eq!(
+            &golden[2 * 1024 * 1024..2 * 1024 * 1024 + 4096],
+            &span[..],
+            "the direct source read answers the golden bytes"
+        );
         drop(mount);
     }
 

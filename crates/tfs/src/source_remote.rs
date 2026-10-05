@@ -121,6 +121,18 @@ pub struct RemoteByteSource {
     /// it. v1's scheduling law (on-demand preempts the seal) is the
     /// driver's, one layer up.
     install_lock: Mutex<()>,
+    /// The sealed image path (`<image>.blocks` → `<image>`,
+    /// `tpkg::lazy::sealed_image_for_blocks`). The seal commit renames
+    /// the assembled, hash-verified image into place BEFORE retiring
+    /// the block files — a live mount whose blocks vanish mid-run
+    /// switches to serving from it (equal trust: the same bytes the
+    /// sidecar pinned), never a refetch, never an EIO.
+    sealed_path: Option<PathBuf>,
+    /// The sealed image's handle, opened once on first use.
+    sealed_file: Mutex<Option<std::fs::File>>,
+    /// Set once the seal commit is observed (the sealed image serves
+    /// from then on — the cheap gate for the read hot path).
+    seal_seen: std::sync::atomic::AtomicBool,
 }
 
 impl RemoteByteSource {
@@ -168,6 +180,9 @@ impl RemoteByteSource {
             origin,
             etag: Mutex::new(None),
             install_lock: Mutex::new(()),
+            sealed_path: tpkg::lazy::sealed_image_for_blocks(blocks),
+            sealed_file: Mutex::new(None),
+            seal_seen: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -298,6 +313,63 @@ impl RemoteByteSource {
         sha256_hex(bytes) == blksum.groups[index as usize]
     }
 
+    /// True once the seal commit is observed: the sealed image file is
+    /// in place (its rename precedes the block retirement, and the
+    /// image it names was assembled from every group and hash-verified
+    /// against the whole-image pin before the rename — serving from it
+    /// is the same trust as serving from the blocks).
+    fn seal_committed(&self) -> bool {
+        if self.seal_seen.load(std::sync::atomic::Ordering::Relaxed) {
+            return true;
+        }
+        let committed = self.sealed_path.as_ref().is_some_and(|p| p.is_file());
+        if committed {
+            self.seal_seen.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        committed
+    }
+
+    /// Serve `[offset, end)` from the sealed image (opened once): the
+    /// live mount's answer after the seal commit retired the blocks
+    /// under it. A short read is the named truncated-object failure,
+    /// never a zero-fill.
+    fn read_sealed(&self, offset: u64, end: u64) -> Result<Vec<u8>, SourceError> {
+        let Some(path) = self.sealed_path.as_ref() else {
+            return Err(SourceError::io(
+                "the seal committed but the sealed image path is unknown".to_string(),
+            ));
+        };
+        let mut guard = self.sealed_file.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_none() {
+            *guard = Some(std::fs::File::open(path).map_err(|e| {
+                SourceError::io(format!("open the sealed {}: {e}", path.display()))
+            })?);
+        }
+        let file = guard.as_ref().expect("the sealed image opened above");
+        let mut out = vec![0u8; (end - offset) as usize];
+        let mut filled = 0usize;
+        while filled < out.len() {
+            match pread_at(file, offset + filled as u64, &mut out[filled..]) {
+                Ok(0) => {
+                    return Err(SourceError::io(format!(
+                        "the sealed {} ended at {} of {} bytes requested (a truncated image)",
+                        path.display(),
+                        offset + filled as u64,
+                        end
+                    )))
+                }
+                Ok(n) => filled += n,
+                Err(e) => {
+                    return Err(SourceError::io(format!(
+                        "read the sealed {}: {e}",
+                        path.display()
+                    )))
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Ensure group `index` is seeded: serve from the cache when
     /// present (NO re-verification — the per-run law), else fetch →
     /// verify → install. A digest mismatch drops the bytes and
@@ -319,6 +391,12 @@ impl RemoteByteSource {
         if self.group_cached(index) {
             return Ok(());
         }
+        // The seal committed while we waited: the block files retired
+        // — the read switches to the sealed image, never a refetch of
+        // bytes the commit already proved.
+        if self.seal_committed() {
+            return Ok(());
+        }
         let (Some(fetch), Some(blksum)) = (&self.fetch, &self.blksum) else {
             let err = SourceError::fetch(format!(
                 "group {index} of {} is not cached and this source is cache-only (offline at group granularity, spec 39 §6)",
@@ -334,7 +412,23 @@ impl RemoteByteSource {
                 return Err(err);
             }
         };
-        self.seed_from_answer(fetch.as_ref(), blksum, index, answer)
+        match self.seed_from_answer(fetch.as_ref(), blksum, index, answer) {
+            Ok(()) => Ok(()),
+            // A mid-fetch seal commit retired the block directory under
+            // the install — the sealed image serves from here; the
+            // error (its home vanished) is the commit's shadow, not a
+            // fetch/integrity fact.
+            Err(e) if self.seal_committed() => {
+                tebako_log::log!(
+                    tebako_log::Level::Debug,
+                    "tfs",
+                    "lazy: group {index} of {} raced the seal commit — serving from the sealed image ({e})",
+                    self.origin
+                );
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Seed group `index` from one fetch answer: a `Partial` window
@@ -451,20 +545,39 @@ impl ByteSource for RemoteByteSource {
             return Ok(Vec::new());
         }
         let end = (offset + len as u64).min(size);
+        // The seal committed under this live mount: the block files are
+        // retired — serve from the sealed image (the commit's image
+        // rename precedes the retirement, so the bytes are final).
+        if self.seal_seen.load(std::sync::atomic::Ordering::Relaxed) {
+            return self.read_sealed(offset, end);
+        }
         let first = offset / tpkg::lazy::LAZY_GROUP_SIZE;
         let last = (end - 1) / tpkg::lazy::LAZY_GROUP_SIZE;
         for index in first..=last {
             self.ensure_group(index)?;
+            if self.seal_seen.load(std::sync::atomic::Ordering::Relaxed) {
+                return self.read_sealed(offset, end);
+            }
         }
         let mut out = Vec::with_capacity((end - offset) as usize);
         for index in first..=last {
             let group_offset = index * tpkg::lazy::LAZY_GROUP_SIZE;
-            let file = std::fs::read(self.block_path(index)).map_err(|e| {
-                SourceError::io(format!(
-                    "read the seeded {}: {e}",
-                    self.block_path(index).display()
-                ))
-            })?;
+            let file = match std::fs::read(self.block_path(index)) {
+                Ok(file) => file,
+                // The seal committed between the ensure and the read —
+                // same switch, one level down.
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::NotFound && self.seal_committed() =>
+                {
+                    return self.read_sealed(offset, end);
+                }
+                Err(e) => {
+                    return Err(SourceError::io(format!(
+                        "read the seeded {}: {e}",
+                        self.block_path(index).display()
+                    )))
+                }
+            };
             let lo = (offset.max(group_offset) - group_offset) as usize;
             let hi = (end.min(group_offset + tpkg::lazy::LAZY_GROUP_SIZE) - group_offset) as usize;
             if hi > file.len() {
@@ -488,6 +601,20 @@ impl ByteSource for RemoteByteSource {
 // ---------------------------------------------------------------------
 // tests
 // ---------------------------------------------------------------------
+
+/// One positioned read on the sealed image (the platform's pread).
+#[cfg(unix)]
+fn pread_at(file: &std::fs::File, offset: u64, buf: &mut [u8]) -> std::io::Result<usize> {
+    use std::os::unix::fs::FileExt as _;
+    file.read_at(buf, offset)
+}
+
+/// One positioned read on the sealed image (the platform's pread).
+#[cfg(windows)]
+fn pread_at(file: &std::fs::File, offset: u64, buf: &mut [u8]) -> std::io::Result<usize> {
+    use std::os::windows::fs::FileExt as _;
+    file.seek_read(buf, offset)
+}
 
 #[cfg(test)]
 mod tests {
@@ -604,6 +731,42 @@ mod tests {
         let got = src.read_at(100, 4096).unwrap();
         assert_eq!(got, &mock.bytes[100..4196]);
         assert_eq!(mock.request_count(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_seal_commit_under_a_live_mount_serves_from_the_sealed_image() {
+        // The seal thread's commit (tpkg::lazy::seal_entry) retires the
+        // block files while THIS source still serves the mount — reads
+        // switch to the sealed image, never a refetch, never an EIO
+        // (the bench's lazy cold-boot defect: the preload shim's
+        // materialization raced the commit and died on the retired
+        // blocks).
+        let dir = scratch("seal-live");
+        let entry = dir.join("entry");
+        std::fs::create_dir_all(&entry).unwrap();
+        let blocks = entry.join("image.tfs.blocks");
+        let mock = Arc::new(Mock::new(image_bytes()));
+        let src = source(Arc::clone(&mock), &blocks);
+        // Touch groups 0 and 1 (two fetches), leaving group 2 cold.
+        let _ = src.read_at(0, 10).unwrap();
+        let _ = src.read_at(tpkg::lazy::LAZY_GROUP_SIZE, 10).unwrap();
+        assert_eq!(mock.request_count(), 2);
+        // The seal commits: the assembled image lands, the blocks
+        // retire (seal_entry's exact order: image rename first).
+        std::fs::write(entry.join("image.tfs"), &mock.bytes).unwrap();
+        std::fs::remove_dir_all(&blocks).unwrap();
+        // Every window serves the original bytes — the cold group too.
+        let got = src.read_at(100, 4096).unwrap();
+        assert_eq!(got, &mock.bytes[100..4196]);
+        let start = tpkg::lazy::LAZY_GROUP_SIZE - 10;
+        let got = src.read_at(start, (SIZE - start) as usize).unwrap();
+        assert_eq!(got, &mock.bytes[start as usize..]);
+        let tail = src.read_at(SIZE - 5, 10).unwrap();
+        assert_eq!(tail, &mock.bytes[(SIZE - 5) as usize..]);
+        // Not one refetch: the commit's bytes are the trust, already
+        // paid for.
+        assert_eq!(mock.request_count(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

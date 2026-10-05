@@ -546,6 +546,19 @@ pub fn blocks_dir(entry_dir: &Path, image_base: &str) -> PathBuf {
     entry_dir.join(blocks_dir_name(image_base))
 }
 
+/// The sealed image path for a block directory (`<image>.blocks` →
+/// `<image>`) — the inverse of `blocks_dir_name`'s naming, owned here
+/// so the `.blocks` suffix has exactly one author. A live byte source
+/// consults it when the seal commit retires its block files mid-run.
+pub fn sealed_image_for_blocks(blocks: &Path) -> Option<PathBuf> {
+    let name = blocks.file_name()?.to_str()?;
+    let image = name.strip_suffix(".blocks")?;
+    if image.is_empty() {
+        return None;
+    }
+    Some(blocks.parent()?.join(image))
+}
+
 /// The entry's descriptor path (`<entry>/<image>.lazy.json`).
 pub fn descriptor_path(entry_dir: &Path, image_base: &str) -> PathBuf {
     entry_dir.join(descriptor_name(image_base))
