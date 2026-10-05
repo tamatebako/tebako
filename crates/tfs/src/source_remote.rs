@@ -324,7 +324,8 @@ impl RemoteByteSource {
         }
         let committed = self.sealed_path.as_ref().is_some_and(|p| p.is_file());
         if committed {
-            self.seal_seen.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.seal_seen
+                .store(true, std::sync::atomic::Ordering::Relaxed);
         }
         committed
     }
@@ -566,9 +567,7 @@ impl ByteSource for RemoteByteSource {
                 Ok(file) => file,
                 // The seal committed between the ensure and the read —
                 // same switch, one level down.
-                Err(e)
-                    if e.kind() == std::io::ErrorKind::NotFound && self.seal_committed() =>
-                {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound && self.seal_committed() => {
                     return self.read_sealed(offset, end);
                 }
                 Err(e) => {
