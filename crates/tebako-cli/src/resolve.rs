@@ -3575,6 +3575,10 @@ mod tests {
         let exe = "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64";
         let resolved = r.resolve_runtime("4.0.7", "macos-arm64", "0.17.0").unwrap();
         assert!(resolved.executable.is_file());
+        assert_eq!(
+            resolved.executable.file_name().unwrap().to_string_lossy(),
+            exe
+        );
         let dir = cache.join("runtimes").join("ruby-4.0.7-0.17.0-macos-arm64");
         let origin = fs::read_to_string(dir.join(ORIGIN_FILE)).unwrap();
         assert!(
