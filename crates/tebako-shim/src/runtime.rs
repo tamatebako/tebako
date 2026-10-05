@@ -1279,24 +1279,33 @@ fn registry_selected_target(
             // tebako#716: the new-era name segment is the runtime's
             // distribution identity — the implementation when the factory
             // ships flavors (openjdk's temurin/graalvm), else the engine.
-            let lang_seg = entry
+            // A factory may DECLARE `implementation:` truthfully (ruby's
+            // `mri`) yet spell the ENGINE segment in its artifact names —
+            // the witnesses probe the implementation first, then the
+            // engine, or a declaring entry's whole ≥ 0.17 era degrades to
+            // unsplit composites (prereleases) and silently loses every
+            // pick to the older line.
+            let mut lang_segs: Vec<&str> = Vec::new();
+            if let Some(implementation) = entry
                 .implementation
                 .as_deref()
                 .or(row.implementation.as_deref())
-                .unwrap_or(engine);
+            {
+                lang_segs.push(implementation);
+            }
+            if !lang_segs.contains(&engine) {
+                lang_segs.push(engine);
+            }
             let line_pair = match &selection {
-                tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
-                    match split_line_id(artifact, &row.version, lang_seg, host) {
-                        Some((lang, line)) => Some((lang, line)),
-                        None => {
-                            match tebako_line_from_artifact(artifact, lang_seg, &row.version, host)
-                            {
-                                Some(line) => Some((row.version.clone(), line)),
-                                None => from_tag.map(|line| (row.version.clone(), line)),
-                            }
-                        }
-                    }
-                }
+                tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => lang_segs
+                    .iter()
+                    .find_map(|seg| {
+                        split_line_id(artifact, &row.version, seg, host).or_else(|| {
+                            tebako_line_from_artifact(artifact, seg, &row.version, host)
+                                .map(|line| (row.version.clone(), line))
+                        })
+                    })
+                    .or_else(|| from_tag.map(|line| (row.version.clone(), line))),
                 tebako_resolve::registry::PlatformSelection::Universal => {
                     from_tag.map(|line| (row.version.clone(), line))
                 }
@@ -5086,6 +5095,52 @@ payloads:
         assert_eq!(pref.version, "3.3.12");
         assert_eq!(pref.tebako, "0.16.29");
         assert_eq!(source.tag.as_deref(), Some("v0.16.29"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_splits_a_new_era_row_spelling_the_engine_segment() {
+        // The live ruby factory's shape: the entry DECLARES
+        // `implementation: mri` while its ≥ 0.17 artifacts spell the
+        // ENGINE segment (`-ruby-`). The implementation witness misses;
+        // without the engine retry the row degrades to the unsplit
+        // composite (a prerelease of the language version) and the OLD
+        // line silently wins every pick — the registry's newest era
+        // never dispatches (the managed path kept serving 0.16.32).
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        let registry = format!(
+            "schema_version: 1\npayloads:\n  - name: ruby\n    kind: runtime\n    engine: ruby\n    versions:\n      - version: '4.0.7-0.16.32'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.16.32-4.0.7-{asset}, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.16.32'}}\n      - version: '4.0.7-0.17.0'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.17.0-ruby-4.0.7-{asset}, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.17.0-ruby4.0'}}\n    implementation: mri\n",
+            sha64('a'),
+            sha64('b'),
+        );
+        let home = temp_home("regfacet-engine-segment");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-ruby",
+            registry.as_bytes(),
+        )
+        .unwrap();
+        let source = RuntimeSource {
+            base: "https://github.com/acme/tebako-runtime-ruby/releases/download".to_string(),
+            tag: None,
+            channel: "default",
+            signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
+            registry: None,
+            oci: None,
+            artifact_stem: None,
+        };
+        let (pref, source) =
+            registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
+                .unwrap()
+                .expect("the new-era row competes with its true split");
+        assert_eq!(pref.version, "4.0.7");
+        assert_eq!(pref.tebako, "0.17.0");
+        assert_eq!(source.tag.as_deref(), Some("v0.17.0-ruby4.0"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
