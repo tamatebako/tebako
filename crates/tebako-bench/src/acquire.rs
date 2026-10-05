@@ -1282,11 +1282,41 @@ pub fn fetch_tfs_tool(
 pub struct RuntimePair {
     pub exe: PathBuf,
     pub image: PathBuf,
-    /// The factory's tebako version (the tag sans `v`).
+    /// The factory's tebako version (the tag's version segment: the
+    /// monolithic tag sans `v`, or the leading semver of a spec 36 §6
+    /// per-line tag — see [`tag_tebako_version`]).
     pub tebako_version: String,
     /// The interpreter version (the authored pin — the parity PROBE, not
     /// this field, is the fair-comparison assertion).
     pub lang_version: String,
+}
+
+/// The tag's tebako-version segment. The monolithic convention spells
+/// `v<tb>` (v0.16.32 → `0.16.32`); the spec 36 §6 per-line shards spell
+/// `v<tb>-<lang><line>(-<platform>)?` (v0.17.0-ruby3.3-macos → `0.17.0`)
+/// — the line/platform suffix never joins the asset stems. A suffix
+/// that is no factory line spelling (a prerelease ride like `-rc1`)
+/// stays part of the version — exactly the pre-shard behavior.
+fn tag_tebako_version(tag: &str) -> &str {
+    let bare = tag.strip_prefix('v').unwrap_or(tag);
+    let semver = |head: &str| {
+        let mut parts = head.split('.');
+        matches!(
+            (parts.next(), parts.next(), parts.next(), parts.next()),
+            (Some(a), Some(b), Some(c), None)
+                if [a, b, c]
+                    .iter()
+                    .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        )
+    };
+    for lang in ["ruby", "python", "java", "jruby", "truffleruby", "node", "bun"] {
+        if let Some((head, tail)) = bare.split_once(&format!("-{lang}")) {
+            if semver(head) && tail.bytes().next().is_some_and(|b| b.is_ascii_digit()) {
+                return head;
+            }
+        }
+    }
+    bare
 }
 
 /// Download + verify + stage the runtime pair named by the target's
@@ -1319,16 +1349,16 @@ pub fn acquire_runtime_pair(
             target.id
         ))
     })?;
-    let tebako_version = rr
-        .tag
-        .strip_prefix('v')
-        .ok_or_else(|| {
-            BenchError::operational(format!(
-                "acquire: runtime tag '{}' is not v-prefixed",
-                rr.tag
-            ))
-        })?
-        .to_string();
+    // The version segment of the tag (monolithic v<tb>, or the spec 36
+    // §6 per-line v<tb>-<lang><line>(-<platform>)?) — it alone joins the
+    // asset stems; the v-prefix stays an authored-pin validation.
+    if !rr.tag.starts_with('v') {
+        return Err(BenchError::operational(format!(
+            "acquire: runtime tag '{}' is not v-prefixed",
+            rr.tag
+        )));
+    }
+    let tebako_version = tag_tebako_version(&rr.tag).to_string();
     let base = format!(
         "https://github.com/{}/releases/download/{}",
         rr.repo, rr.tag
@@ -2223,4 +2253,32 @@ fn rfc3339_now() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tag_tebako_version;
+
+    #[test]
+    fn monolithic_tags_keep_the_bare_version() {
+        assert_eq!(tag_tebako_version("v0.16.32"), "0.16.32");
+        assert_eq!(tag_tebako_version("v0.2.0"), "0.2.0");
+    }
+
+    #[test]
+    fn per_line_tags_yield_the_leading_semver() {
+        assert_eq!(tag_tebako_version("v0.17.0-ruby3.3"), "0.17.0");
+        assert_eq!(tag_tebako_version("v0.17.0-ruby3.3-macos"), "0.17.0");
+        assert_eq!(tag_tebako_version("v0.17.0-java21"), "0.17.0");
+        assert_eq!(tag_tebako_version("v0.17.0-jruby10.0.2"), "0.17.0");
+        assert_eq!(tag_tebako_version("v0.17.0-truffleruby33"), "0.17.0");
+        assert_eq!(tag_tebako_version("v0.17.0-node22"), "0.17.0");
+        assert_eq!(tag_tebako_version("v0.17.0-bun1"), "0.17.0");
+    }
+
+    #[test]
+    fn non_line_suffixes_stay_part_of_the_version() {
+        assert_eq!(tag_tebako_version("v0.17.0-rc1"), "0.17.0-rc1");
+        assert_eq!(tag_tebako_version("0.17.0"), "0.17.0");
+    }
 }
