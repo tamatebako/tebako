@@ -537,6 +537,50 @@ fn skip_file_scheme(base: &str) -> &str {
     tebako_http::file_path_from_url(base.strip_prefix("file://").unwrap_or(base))
 }
 
+/// The release-tag candidates, era-ordered (tebako#716, spec 36 §6): the
+/// ≥ 0.17 era publishes under `v<tebako>-<engine><line>`; the ≤ 0.16
+/// era's monolithic `v<tebako>` tags are immutable. Both grammars are
+/// always probed — a `file://` runtime mirror keeps the flat layout for
+/// every era; the order only saves the doomed requests.
+fn release_bases(base: &str, rr: &RuntimeRef) -> [String; 2] {
+    let sharded = format!(
+        "{base}/v{}-{}{}",
+        rr.abi,
+        rr.r#type,
+        version_line(&rr.version)
+    );
+    let monolithic = format!("{base}/v{}", rr.abi);
+    if sharded_era_first(&rr.abi) {
+        [sharded, monolithic]
+    } else {
+        [monolithic, sharded]
+    }
+}
+
+/// The distribution line of a version request — `4.0.7` → `4.0`,
+/// `3.3.12` → `3.3`: the `<line>` segment of the spec 36 §6 tag.
+fn version_line(version: &str) -> &str {
+    let mut parts = version.splitn(3, '.');
+    let major = parts.next().unwrap_or(version);
+    match parts.next() {
+        Some(minor) => &version[..major.len() + 1 + minor.len()],
+        None => major,
+    }
+}
+
+/// Which tag grammar probes first: the sharded era is ≥ 0.17 (a
+/// pre-release suffix rides its numeric line — `0.17.0-rc1` is sharded).
+fn sharded_era_first(abi: &str) -> bool {
+    let numeric = abi.split('-').next().unwrap_or(abi);
+    let mut parts = numeric.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    let triple = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    triple >= (0, 17, 0)
+}
+
 // ---------------------------------------------------------------------
 // per-entry install (lock + tmp staging + atomic publish)
 // ---------------------------------------------------------------------
@@ -2414,16 +2458,18 @@ fn download_executable(
 
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
-    let manifest_url = format!("{base}/v{}/manifest.json", rr.abi);
-    let sums_url = format!("{base}/v{}/SHA256SUMS.txt", rr.abi);
+    // tebako#716 (spec 36 §6): the release tag probes dual-era — the
+    // ≥ 0.17 sharded tag and the immutable monolithic one, era-ordered.
+    // Every index form and asset download below rides the winning base.
+    let bases = release_bases(&base, rr);
 
     if offline_mode() {
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "cannot resolve runtime \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {base}/v{}/{}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
+                "cannot resolve runtime \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {}/{}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
                 entry_dir.display(),
-                rr.abi,
+                bases[0],
                 layout.asset
             ),
         );
@@ -2449,43 +2495,51 @@ fn download_executable(
     // carries. No readable index at all is the pre-era signal (spec 18 C2;
     // the SHA256SUMS fallback covers checksums only, never the gate).
     let id = ReleaseIdentity::of(rr, platform_string());
-    let shard_urls = [
+    let shard_stems = [
         format!(
-            "{base}/v{}/tebako-runtime-{}-{}-{}-{}.manifest.json",
-            rr.abi, rr.abi, rr.r#type, rr.version, id.platform
+            "tebako-runtime-{}-{}-{}-{}.manifest.json",
+            rr.abi, rr.r#type, rr.version, id.platform
         ),
-        format!("{base}/v{}/{}.manifest.json", rr.abi, layout.asset_base),
+        format!("{}.manifest.json", layout.asset_base),
     ];
-    let mut shard_card = None;
-    for shard_url in &shard_urls {
-        if let Ok(shard) = fetch_text(shard_url, local) {
-            if id.entry(&shard).is_some() {
-                shard_card = Some((format!("[{}]", shard.trim_end()), shard_url.clone()));
-                break;
+    let mut index: Option<(String, String, String)> = None;
+    let mut tried: Vec<String> = Vec::new();
+    'bases: for b in &bases {
+        for stem in &shard_stems {
+            let url = format!("{b}/{stem}");
+            if let Ok(shard) = fetch_text(&url, local) {
+                if id.entry(&shard).is_some() {
+                    index = Some((format!("[{}]", shard.trim_end()), url, b.clone()));
+                    break 'bases;
+                }
             }
+            tried.push(url);
+        }
+        let url = format!("{b}/manifest.json");
+        match fetch_text(&url, local) {
+            Ok(text) => {
+                index = Some((text, url, b.clone()));
+                break 'bases;
+            }
+            Err(()) => tried.push(url),
         }
     }
-    let (manifest_text, card_url) = match shard_card {
-        Some(card) => card,
-        None => match fetch_text(&manifest_url, local) {
-            Ok(text) => (text, manifest_url.clone()),
-            Err(()) => {
-                return fail(
-                    EX_TEBAKO_CONTRACT,
-                    format!(
-                        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract",
-                        shard_urls.join("\n         ")
-                    ),
-                );
-            }
-        },
+    let Some((manifest_text, card_url, winning_base)) = index else {
+        return fail(
+            EX_TEBAKO_CONTRACT,
+            format!(
+                "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract",
+                tried.join("\n         ")
+            ),
+        );
     };
+    let sums_url = format!("{winning_base}/SHA256SUMS.txt");
     let asset = id
         .entry(&manifest_text)
         .map(|e| e.filename)
         .unwrap_or_else(|| layout.asset.clone());
     let exe_path = entry_dir.join(&asset);
-    let asset_url = format!("{base}/v{}/{asset}", rr.abi);
+    let asset_url = format!("{winning_base}/{asset}");
 
     let Some(ins) = begin_entry_install(root, entry, &exe_path, &asset, runtime_ref)? else {
         ux.cached(rr);
@@ -2562,7 +2616,7 @@ fn download_executable(
                 rr,
                 layout,
                 ux,
-                base_raw,
+                &winning_base,
                 &manifest_text,
                 ins,
                 &asset,
@@ -2724,16 +2778,18 @@ fn resolve_image(
 
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
-    let manifest_url = format!("{base}/v{}/manifest.json", rr.abi);
-    let sums_url = format!("{base}/v{}/SHA256SUMS.txt", rr.abi);
+    // tebako#716 (spec 36 §6): the release tag probes dual-era — the
+    // ≥ 0.17 sharded tag and the immutable monolithic one, era-ordered.
+    // Every index form and asset download below rides the winning base.
+    let bases = release_bases(&base, rr);
 
     if offline_mode() {
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "cannot resolve runtime image \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {base}/v{}/{image_asset}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
+                "cannot resolve runtime image \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {}/{image_asset}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
                 entry_dir.display(),
-                rr.abi
+                bases[0]
             ),
         );
     }
@@ -2809,35 +2865,58 @@ fn resolve_image(
     // pre-era signal. Read shard-first (roadmap 85): the per-identity
     // `<stem>.manifest.json` primary, the release-wide monolith the
     // forever fallback (spec 00 invariant 7); a shard serves only when it
-    // declares THIS identity, then normalizes to the array shape.
+    // declares THIS identity, then normalizes to the array shape. The
+    // stem and tag probe dual-era (tebako#716's era law, rule 3): the
+    // release's grammar era is unknowable before the card is read, so the
+    // new-era spelling is tried first and the immutable old-era one
+    // follows, each under both era-ordered tag bases.
     let manifest_tmp = tmp_dir.join("manifest.json");
-    let shard_url = format!("{base}/v{}/{}.manifest.json", rr.abi, layout.asset_base);
-    let shard = fetch_url(&shard_url, local, &manifest_tmp)
-        .ok()
-        .and_then(|()| std::fs::read_to_string(&manifest_tmp).ok())
-        .filter(|text| id.entry(text).is_some());
-    let (manifest_text, card_url) = match shard {
-        Some(text) => (format!("[{}]", text.trim_end()), shard_url.clone()),
-        None => {
-            let monolith = fetch_url(&manifest_url, local, &manifest_tmp)
-                .ok()
-                .and_then(|()| std::fs::read_to_string(&manifest_tmp).ok());
-            match monolith {
-                Some(text) => (text, manifest_url.clone()),
-                None => {
-                    return Err(fail_image(
-                        lock,
-                        &image_asset,
-                        BootError::new(
-                            EX_TEBAKO_CONTRACT,
-                            format!(
-                                "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract"
-                            ),
-                        ),
-                    ));
+    let shard_stems = [
+        format!(
+            "tebako-runtime-{}-{}-{}-{}.manifest.json",
+            rr.abi, rr.r#type, rr.version, id.platform
+        ),
+        format!("{}.manifest.json", layout.asset_base),
+    ];
+    let mut index: Option<(String, String, String)> = None;
+    let mut tried: Vec<String> = Vec::new();
+    'bases: for b in &bases {
+        for stem in &shard_stems {
+            let url = format!("{b}/{stem}");
+            if fetch_url(&url, local, &manifest_tmp).is_ok() {
+                if let Ok(text) = std::fs::read_to_string(&manifest_tmp) {
+                    if id.entry(&text).is_some() {
+                        index = Some((format!("[{}]", text.trim_end()), url, b.clone()));
+                        break 'bases;
+                    }
                 }
             }
+            tried.push(url);
         }
+        let url = format!("{b}/manifest.json");
+        match fetch_url(&url, local, &manifest_tmp)
+            .ok()
+            .and_then(|()| std::fs::read_to_string(&manifest_tmp).ok())
+        {
+            Some(text) => {
+                index = Some((text, url, b.clone()));
+                break 'bases;
+            }
+            None => tried.push(url),
+        }
+    }
+    let Some((manifest_text, card_url, winning_base)) = index else {
+        return Err(fail_image(
+            lock,
+            &image_asset,
+            BootError::new(
+                EX_TEBAKO_CONTRACT,
+                format!(
+                    "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby, or pin a runtime that declares its contract",
+                    tried.join("\n         ")
+                ),
+            ),
+        ));
     };
 
     // spec 05 §2: the identity-matched entry anchors the gate by ITS
@@ -2875,7 +2954,8 @@ fn resolve_image(
             }
         }
     }
-    let image_url = format!("{base}/v{}/{image_asset}", rr.abi);
+    let image_url = format!("{winning_base}/{image_asset}");
+    let sums_url = format!("{winning_base}/SHA256SUMS.txt");
     let tmp_image = tmp_dir.join(&image_asset);
 
     // expected checksum: the (already gated) manifest's `image` key
@@ -2971,7 +3051,7 @@ fn resolve_image(
             }
         };
         if let Some((sidecar_asset, sidecar_pin)) = blksum_row {
-            let sidecar_url = format!("{base}/v{}/{sidecar_asset}", rr.abi);
+            let sidecar_url = format!("{winning_base}/{sidecar_asset}");
             let sidecar_tmp = tmp_dir.join(&sidecar_asset);
             match fetch_sidecar(&sidecar_url, local, &sidecar_tmp) {
                 SidecarFetch::Missing => {}
@@ -3110,7 +3190,7 @@ fn resolve_image(
                 rr,
                 layout,
                 ux,
-                base_raw,
+                &winning_base,
                 &manifest_text,
                 &tmp_dir,
                 &gate_asset,
@@ -3258,14 +3338,17 @@ fn resolve_dll(
 
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
-    let dll_url = format!("{base}/v{}/{dll_asset}", rr.abi);
+    // tebako#716 (spec 36 §6): the dll rides the same dual-era tag probe
+    // as the executable/image — era-ordered, first success wins.
+    let bases = release_bases(&base, rr);
 
     if offline_mode() {
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "cannot resolve runtime dll \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {dll_url}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
-                entry_dir.display()
+                "cannot resolve runtime dll \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {}/{dll_asset}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
+                entry_dir.display(),
+                bases[0]
             ),
         );
     }
@@ -3328,7 +3411,16 @@ fn resolve_dll(
         e
     };
 
-    if fetch_asset(&dll_url, local, &tmp_dll, &dll_asset, &mut ux.prog).is_err() {
+    let mut dll_url = String::new();
+    let mut fetched = false;
+    for b in &bases {
+        dll_url = format!("{b}/{dll_asset}");
+        if fetch_asset(&dll_url, local, &tmp_dll, &dll_asset, &mut ux.prog).is_ok() {
+            fetched = true;
+            break;
+        }
+    }
+    if !fetched {
         return Err(fail_dll(
             lock,
             BootError::new(
@@ -3702,7 +3794,9 @@ fn fetch_unpack_bundle(
 ) -> Result<UnpackedBundle, BootError> {
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
-    let bundle_url = format!("{base}/v{}/{}", rr.abi, bundle.filename);
+    // base_raw is the winning release base (the tag segment already
+    // carried, tebako#716) — assets compose flat beneath it.
+    let bundle_url = format!("{base}/{}", bundle.filename);
     let sidecar_url = format!("{bundle_url}.sha256");
 
     // The per-asset sidecar pins the bundle (spec 36 §3): fetched with
@@ -3945,12 +4039,9 @@ fn download_bundle(
         Err(e) => return Err(abort_bundle_install(ins, e)),
     };
     let entry_dir = &layout.entry_dir;
-    let bundle_url = format!(
-        "{}/v{}/{}",
-        skip_file_scheme(base_raw),
-        rr.abi,
-        bundle.filename
-    );
+    // base_raw is the winning release base (tebako#716) — the origin
+    // markers compose flat beneath it.
+    let bundle_url = format!("{}/{}", skip_file_scheme(base_raw), bundle.filename);
 
     // Stage the store layout inside the tmp dir — the same bytes and
     // markers the per-file path lands (publish_entry's rename then
@@ -4071,12 +4162,9 @@ fn install_image_from_bundle(
         ));
     };
     let sha = sha.clone();
-    let bundle_url = format!(
-        "{}/v{}/{}",
-        skip_file_scheme(base_raw),
-        rr.abi,
-        bundle.filename
-    );
+    // base_raw is the winning release base (tebako#716) — the origin
+    // markers compose flat beneath it.
+    let bundle_url = format!("{}/{}", skip_file_scheme(base_raw), bundle.filename);
 
     // Install: the image is immutable (0444) with trusted markers — the
     // same landing the per-file fetch performs.
@@ -4130,7 +4218,7 @@ fn verify_bundle_signature(
     bundle: &BundleDecl,
     sig: &BundleSignature,
     base: &str,
-    rr: &RuntimeRef,
+    _rr: &RuntimeRef,
     local: bool,
     tmp_dir: &Path,
 ) -> Result<(), BootError> {
@@ -4145,7 +4233,8 @@ fn verify_bundle_signature(
             ),
         ));
     }
-    let asc_url = format!("{base}/v{}/{}", rr.abi, sig.asc);
+    // base carries the release tag segment already (tebako#716).
+    let asc_url = format!("{base}/{}", sig.asc);
     let asc_tmp = tmp_dir.join(&sig.asc);
     if fetch_url(&asc_url, local, &asc_tmp).is_err() {
         return Err(BootError::new(
@@ -5926,6 +6015,12 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
 }
 
 #[cfg(test)]
+/// Serializes the env-mutating tests: TEBAKO_OFFLINE /
+/// TEBAKO_RUNTIME_LAZY are process-wide, and a sibling's fetch window
+/// must never observe another test's mutation.
+static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
 mod store_layout_tests {
     use super::*;
 
@@ -6140,12 +6235,14 @@ mod dll_tests {
         // a declared-but-missing dll under TEBAKO_OFFLINE is the named error
         std::fs::remove_file(&dll_path).unwrap();
         std::fs::remove_file(layout.entry_dir.join(format!("{INSTALL_AS}.sha256"))).unwrap();
+        let _env = ENV_TEST_LOCK.lock().unwrap();
         std::env::set_var("TEBAKO_OFFLINE", "1");
         let mut ux = BootUx::new();
         let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux, &base).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         assert!(err.message.contains("TEBAKO_OFFLINE"), "{}", err.message);
         std::env::remove_var("TEBAKO_OFFLINE");
+        drop(_env);
 
         // a wrong declared sha is exit 70; the download is deleted
         std::fs::create_dir_all(&mirror).unwrap();
@@ -6530,6 +6627,74 @@ mod bundle_tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    #[test]
+    fn the_sharded_release_tag_serves_the_new_era() {
+        // tebako#716 (spec 36 §6): the ≥ 0.17 era publishes under
+        // `v<tebako>-<engine><line>` — the era-ordered probe finds the
+        // shard there and the winning base rides EVERY asset download
+        // (the exe's origin marker, the image's). The env lock is held
+        // for the fetch body (a sibling's env mutation must never be
+        // observed mid-probe).
+        let _env = ENV_TEST_LOCK.lock().unwrap();
+        let home = dir("sharded-tag");
+        let mirror = home.join("mirror").join(format!("v{TV}-ruby3.4"));
+        std::fs::create_dir_all(&mirror).unwrap();
+        let stem_n = stem_new_era();
+        let exe_asset = format!("{stem_n}{}", exe_suffix());
+        let image_asset = format!("{stem_n}.tfs");
+        std::fs::write(mirror.join(&exe_asset), EXE_BYTES).unwrap();
+        std::fs::write(mirror.join(&image_asset), IMAGE_BYTES).unwrap();
+        let exe_sha = sha256_hex(&sha2::Sha256::digest(EXE_BYTES));
+        let image_sha = sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES));
+        let shard = format!(
+            "{{\"tebako_version\":\"{TV}\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"/__tfs__\",\"ruby_version\":\"{RV}\",\"platform\":\"{}\",\"filename\":\"{exe_asset}\",\"sha256\":\"{exe_sha}\",\"size_bytes\":17,\"per_file_assets\":true,\"image\":{{\"filename\":\"{image_asset}\",\"sha256\":\"{image_sha}\",\"size_bytes\":14}}}}\n",
+            platform_string(),
+        );
+        std::fs::write(mirror.join(format!("{stem_n}.manifest.json")), shard).unwrap();
+        let (layout, rr) = bundle_layout(&home);
+        let base = format!("file://{}", home.join("mirror").display());
+        let mut ux = BootUx::new();
+        let exe = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), EXE_BYTES);
+        let origin = std::fs::read_to_string(layout.entry_dir.join("origin")).unwrap();
+        assert!(
+            origin.contains(&format!("/v{TV}-ruby3.4/{exe_asset}")),
+            "the sharded tag is the exe fetch's origin: {origin}"
+        );
+        let mut ux = BootUx::new();
+        let image = resolve_image(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
+        assert_eq!(std::fs::read(&image).unwrap(), IMAGE_BYTES);
+        let origin =
+            std::fs::read_to_string(layout.entry_dir.join(format!("{image_asset}.origin")))
+                .unwrap();
+        assert!(
+            origin.contains(&format!("/v{TV}-ruby3.4/{image_asset}")),
+            "the sharded tag rides the image fetch: {origin}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn release_bases_orders_the_eras_and_spells_the_line() {
+        let rr = |abi: &str| RuntimeRef {
+            r#type: "ruby".to_string(),
+            version: RV.to_string(),
+            abi: abi.to_string(),
+        };
+        // ≥ 0.17 (a pre-release suffix rides its numeric line): the
+        // sharded tag probes first, the monolith stays the forever
+        // fallback (file:// mirrors keep the flat layout for every era).
+        let [first, second] = release_bases("https://x/download", &rr("0.17.0"));
+        assert_eq!(first, "https://x/download/v0.17.0-ruby3.4");
+        assert_eq!(second, "https://x/download/v0.17.0");
+        let [first, _] = release_bases("https://x/download", &rr("0.17.0-rc1"));
+        assert_eq!(first, "https://x/download/v0.17.0-rc1-ruby3.4");
+        // ≤ 0.16: the immutable monolithic tag probes first.
+        let [first, second] = release_bases("https://x/download", &rr("0.16.32"));
+        assert_eq!(first, "https://x/download/v0.16.32");
+        assert_eq!(second, "https://x/download/v0.16.32-ruby3.4");
+    }
+
     /// Every spec 36 §7 violation is the named InvalidBundle (exit 70's
     /// integrity class) naming the member — and nothing was installed.
     #[test]
@@ -6849,6 +7014,7 @@ mod bundle_tests {
     /// sibling.
     #[test]
     fn the_bundle_era_lazy_gate() {
+        let _env = ENV_TEST_LOCK.lock().unwrap();
         std::env::set_var("TEBAKO_RUNTIME_LAZY", "1");
 
         // bundle + witness + opt-in: the arm engages — the per-file exe
