@@ -186,13 +186,44 @@ impl IndexTrust {
     }
 }
 
+/// The ruby distribution line of a version request — `4.0.7` → `4.0`,
+/// `3.3.12` → `3.3`: the `<lang><line>` segment of the spec 36 §6
+/// sharded release tag (`v0.17.0-ruby4.0`).
+fn ruby_line(ruby_version: &str) -> &str {
+    let mut parts = ruby_version.splitn(3, '.');
+    let major = parts.next().unwrap_or(ruby_version);
+    match parts.next() {
+        Some(minor) => &ruby_version[..major.len() + 1 + minor.len()],
+        None => major,
+    }
+}
+
+/// Which release-tag grammar probes first (tebako#716): the ≥ 0.17 era
+/// publishes per-line shards under `v<tebako>-ruby<line>`; the ≤ 0.16
+/// era's monolithic `v<tebako>` tags are immutable. Both grammars are
+/// always probed — this only saves the doomed requests. A pre-release
+/// suffix rides its numeric line (`0.17.0-rc1` is the sharded era).
+fn sharded_era_first(tebako_version: &str) -> bool {
+    let numeric = tebako_version.split('-').next().unwrap_or(tebako_version);
+    let mut parts = numeric.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    let triple = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    triple >= (0, 17, 0)
+}
+
 /// The fetched release index: the entries, the raw card when the form
-/// was a JSON card (the contract gate reads it), and the form's trust
-/// outcome (G1).
+/// was a JSON card (the contract gate reads it), the form's trust
+/// outcome (G1), and the release base the winning form came from (the
+/// asset downloads ride the same base — spec 36 §6's sharded tags and
+/// the immutable monolithic ones differ).
 struct FetchedIndex {
     entries: Vec<IndexEntry>,
     card: Option<String>,
     trust: IndexTrust,
+    release: String,
 }
 
 /// One release-index form's parse outcome: the form cannot serve the
@@ -307,7 +338,7 @@ impl Resolver {
             // wipe): backfill the image from the release index so the
             // entry is complete again.
             if image_marker().is_none() {
-                self.offline_check(&entry_ref, tebako_version)?;
+                self.offline_check(&entry_ref, ruby_version, tebako_version)?;
                 let fetched = self.fetch_index(ruby_version, platform, tebako_version)?;
                 let entry =
                     self.find_entry(&fetched.entries, ruby_version, platform, tebako_version)?;
@@ -339,14 +370,14 @@ impl Resolver {
                 // assets — the ONE bundle fetch restores the whole
                 // entry (the exe re-lands pin-identical).
                 let items = if let Some(bundle) = &entry.bundle {
-                    vec![self.bundle_item(&dir, entry, bundle, tebako_version, &sink)?]
+                    vec![self.bundle_item(&dir, entry, bundle, &fetched.release, &sink)?]
                 } else {
                     let mut items = Vec::new();
                     if let Some(image) = &entry.image {
-                        items.extend(self.image_item(&dir, image, tebako_version, &sink)?);
+                        items.extend(self.image_item(&dir, image, &fetched.release, &sink)?);
                     }
                     if let Some(dll) = &entry.dll {
-                        items.extend(self.dll_item(&dir, dll, tebako_version, &sink)?);
+                        items.extend(self.dll_item(&dir, dll, &fetched.release, &sink)?);
                     }
                     items
                 };
@@ -456,7 +487,7 @@ impl Resolver {
         &'a self,
         dir: &Path,
         image: &ImageRef,
-        tebako_version: &str,
+        release: &str,
         sink: &'a CommitSink,
     ) -> Result<Option<FetchItem<'a>>, TebakoError> {
         let image_path = dir.join(&image.filename);
@@ -464,7 +495,7 @@ impl Resolver {
         if image_path.is_file() && marker.is_file() {
             return Ok(None);
         }
-        let url = self.package_url(&image.filename, tebako_version);
+        let url = Self::package_url_at(release, &image.filename);
         Ok(Some(self.facet_item(
             dir,
             &image.filename,
@@ -472,7 +503,7 @@ impl Resolver {
             &image.sha256,
             image.signature.clone(),
             &url,
-            tebako_version,
+            release,
             sink,
         )?))
     }
@@ -489,7 +520,7 @@ impl Resolver {
         &'a self,
         dir: &Path,
         dll: &DllRef,
-        tebako_version: &str,
+        release: &str,
         sink: &'a CommitSink,
     ) -> Result<Option<FetchItem<'a>>, TebakoError> {
         let Some(install_as) = dll.install_as.as_deref() else {
@@ -511,7 +542,7 @@ impl Resolver {
         if dll_path.is_file() && marker.is_file() {
             return Ok(None);
         }
-        let url = self.package_url(&dll.filename, tebako_version);
+        let url = Self::package_url_at(release, &dll.filename);
         Ok(Some(self.facet_item(
             dir,
             &dll.filename,
@@ -519,7 +550,7 @@ impl Resolver {
             &dll.sha256,
             dll.signature.clone(),
             &url,
-            tebako_version,
+            release,
             sink,
         )?))
     }
@@ -536,7 +567,7 @@ impl Resolver {
         sha256: &str,
         signature: Option<EntrySignature>,
         url: &str,
-        tebako_version: &str,
+        release: &str,
         sink: &'a CommitSink,
     ) -> Result<FetchItem<'a>, TebakoError> {
         let reference =
@@ -546,12 +577,12 @@ impl Resolver {
         let install_as = install_as.to_string();
         let display = display.to_string();
         let expected = sha256.to_ascii_lowercase();
-        let version = tebako_version.to_string();
+        let release = release.to_string();
         let commit_display = display.clone();
         let commit_expected = expected.clone();
         let commit = move |staged: &StagedArtifact| {
             if let Some(sig) = &signature {
-                match self.verify_declared_file(staged.tmp, &commit_display, sig, &version) {
+                match self.verify_declared_file(staged.tmp, &commit_display, sig, &release) {
                     Ok(signer) => sink.add_signer(signer),
                     Err(e) => return Err(sink.fail(e)),
                 }
@@ -592,21 +623,21 @@ impl Resolver {
         &'a self,
         dir: &Path,
         entry: &IndexEntry,
-        tebako_version: &str,
+        release: &str,
         sink: &'a CommitSink,
     ) -> Result<FetchItem<'a>, TebakoError> {
-        let url = self.package_url(&entry.filename, tebako_version);
+        let url = Self::package_url_at(release, &entry.filename);
         let reference =
             Reference::parse(&url).map_err(|e| packaging_error(122, Some(&e.to_string())))?;
         let signed = entry.signature.is_some();
         let entry = entry.clone();
         let dir = dir.to_path_buf();
-        let version = tebako_version.to_string();
+        let release = release.to_string();
         let filename = entry.filename.clone();
         let sha256 = entry.sha256.clone();
         let commit = move |staged: &StagedArtifact| {
             if let Some(sig) = &entry.signature {
-                match self.verify_declared_file(staged.tmp, &entry.filename, sig, &version) {
+                match self.verify_declared_file(staged.tmp, &entry.filename, sig, &release) {
                     Ok(signer) => sink.add_signer(signer),
                     Err(e) => return Err(sink.fail(e)),
                 }
@@ -644,10 +675,10 @@ impl Resolver {
         dir: &Path,
         entry: &IndexEntry,
         bundle: &BundleRef,
-        tebako_version: &str,
+        release: &str,
         sink: &'a CommitSink,
     ) -> Result<FetchItem<'a>, TebakoError> {
-        let url = self.package_url(&bundle.filename, tebako_version);
+        let url = Self::package_url_at(release, &bundle.filename);
         let reference =
             Reference::parse(&url).map_err(|e| packaging_error(122, Some(&e.to_string())))?;
         let signed = bundle.signature.is_some();
@@ -698,7 +729,7 @@ impl Resolver {
         let entry = entry.clone();
         let bundle = bundle.clone();
         let dir = dir.to_path_buf();
-        let version = tebako_version.to_string();
+        let release = release.to_string();
         let sidecar_url = format!("{url}.sha256");
         let display = bundle.filename.clone();
         let pin = bundle.sha256.clone();
@@ -706,7 +737,7 @@ impl Resolver {
         let commit = move |staged: &StagedArtifact| {
             // 1. The declared signature verifies FIRST (spec 09 §4).
             if let Some(sig) = &bundle.signature {
-                match self.verify_declared_file(staged.tmp, &bundle.filename, sig, &version) {
+                match self.verify_declared_file(staged.tmp, &bundle.filename, sig, &release) {
                     Ok(signer) => sink.add_signer(signer),
                     Err(e) => return Err(sink.fail(e)),
                 }
@@ -1006,7 +1037,7 @@ impl Resolver {
         tebako_version: &str,
     ) -> Result<(IndexEntry, IndexTrust, Vec<String>), TebakoError> {
         let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
-        self.offline_check(&entry_ref, tebako_version)?;
+        self.offline_check(&entry_ref, ruby_version, tebako_version)?;
         let fetched = self.fetch_index(ruby_version, platform, tebako_version)?;
         let entry = self
             .find_entry(&fetched.entries, ruby_version, platform, tebako_version)?
@@ -1046,14 +1077,14 @@ impl Resolver {
         // forever.
         let sink = CommitSink::default();
         let items = if let Some(bundle) = &entry.bundle {
-            vec![self.bundle_item(dir, &entry, bundle, tebako_version, &sink)?]
+            vec![self.bundle_item(dir, &entry, bundle, &fetched.release, &sink)?]
         } else {
-            let mut items = vec![self.exe_item(dir, &entry, tebako_version, &sink)?];
+            let mut items = vec![self.exe_item(dir, &entry, &fetched.release, &sink)?];
             if let Some(image) = &entry.image {
-                items.extend(self.image_item(dir, image, tebako_version, &sink)?);
+                items.extend(self.image_item(dir, image, &fetched.release, &sink)?);
             }
             if let Some(dll) = &entry.dll {
-                items.extend(self.dll_item(dir, dll, tebako_version, &sink)?);
+                items.extend(self.dll_item(dir, dll, &fetched.release, &sink)?);
             }
             items
         };
@@ -1073,7 +1104,12 @@ impl Resolver {
         offline_env()
     }
 
-    fn offline_check(&self, entry_ref: &str, tebako_version: &str) -> Result<(), TebakoError> {
+    fn offline_check(
+        &self,
+        entry_ref: &str,
+        ruby_version: &str,
+        tebako_version: &str,
+    ) -> Result<(), TebakoError> {
         if !self.offline() {
             return Ok(());
         }
@@ -1082,7 +1118,7 @@ impl Resolver {
             Some(&format!(
                 "{} is not cached and downloads are disabled (release index: {}; {}={})",
                 entry_ref,
-                self.index_urls(tebako_version).join(", "),
+                self.release_urls(ruby_version, tebako_version).join(", "),
                 MIRROR_ENV_VAR,
                 self.mirror
             )),
@@ -1146,43 +1182,53 @@ impl Resolver {
         tebako_version: &str,
     ) -> Result<FetchedIndex, TebakoError> {
         let mut tried: Vec<String> = Vec::new();
-        if let Some(verified) =
-            self.fetch_verified_index(ruby_version, platform, tebako_version, &mut tried)?
-        {
-            return Ok(verified);
-        }
-        if let Some((entries, card)) =
-            self.fetch_shard(ruby_version, platform, tebako_version, &mut tried)?
-        {
-            return Ok(FetchedIndex {
-                entries,
-                card,
-                trust: IndexTrust::Unverified,
-            });
-        }
-        for name in INDEX_FILES {
-            let url = self.index_url(name, tebako_version);
-            match fetch_text(&url) {
-                Ok(body) => match self.parse_index(name, &body, tebako_version) {
-                    Ok(entries) => {
-                        let card = (*name == "manifest.json").then_some(body);
-                        return Ok(FetchedIndex {
-                            entries,
-                            card,
-                            trust: IndexTrust::Unverified,
-                        });
+        // tebako#716: the ≥ 0.17 era's sharded tag and the immutable
+        // monolithic one are both probed (era-ordered) — the form chain
+        // runs per base, the first base serving a usable form wins, and
+        // the asset downloads ride that same base.
+        for release in self.release_urls(ruby_version, tebako_version) {
+            if let Some(verified) =
+                self.fetch_verified_index(&release, ruby_version, platform, tebako_version, &mut tried)?
+            {
+                return Ok(verified);
+            }
+            if let Some((entries, card)) =
+                self.fetch_shard(&release, ruby_version, platform, tebako_version, &mut tried)?
+            {
+                return Ok(FetchedIndex {
+                    entries,
+                    card,
+                    trust: IndexTrust::Unverified,
+                    release,
+                });
+            }
+            for name in INDEX_FILES {
+                let url = Self::index_url_at(&release, name);
+                match fetch_text(&url) {
+                    Ok(body) => match self.parse_index(name, &body, tebako_version) {
+                        Ok(entries) => {
+                            let card = (*name == "manifest.json").then_some(body);
+                            return Ok(FetchedIndex {
+                                entries,
+                                card,
+                                trust: IndexTrust::Unverified,
+                                release,
+                            });
+                        }
+                        Err(ParseFail::Unavailable(msg)) => {
+                            tried.push(format!("{url} ({msg})"))
+                        }
+                        Err(ParseFail::Torn(msg)) => return Err(TebakoError::new(msg, 65)),
+                    },
+                    Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                    Err(e @ FetchError::Throttled { .. }) => {
+                        return Err(packaging_error(122, Some(&e.to_string())));
                     }
-                    Err(ParseFail::Unavailable(msg)) => tried.push(format!("{url} ({msg})")),
-                    Err(ParseFail::Torn(msg)) => return Err(TebakoError::new(msg, 65)),
-                },
-                Err(FetchError::IndexUnavailable(_)) => tried.push(url),
-                Err(e @ FetchError::Throttled { .. }) => {
-                    return Err(packaging_error(122, Some(&e.to_string())));
+                    Err(FetchError::DownloadFailed(msg)) => {
+                        return Err(packaging_error(122, Some(&msg)))
+                    }
+                    Err(e) => return Err(packaging_error(122, Some(&e.to_string()))),
                 }
-                Err(FetchError::DownloadFailed(msg)) => {
-                    return Err(packaging_error(122, Some(&msg)))
-                }
-                Err(e) => return Err(packaging_error(122, Some(&e.to_string()))),
             }
         }
         Err(packaging_error(
@@ -1213,6 +1259,7 @@ impl Resolver {
     /// for the legacy chain. `Ok(None)` = nothing verifiable.
     fn fetch_verified_index(
         &self,
+        release: &str,
         ruby_version: &str,
         platform: &str,
         tebako_version: &str,
@@ -1228,7 +1275,7 @@ impl Resolver {
         forms.extend(INDEX_FILES);
         let mut keyring: Option<Vec<u8>> = None;
         for name in forms {
-            let asc_url = self.index_url(&format!("{name}.asc"), tebako_version);
+            let asc_url = Self::index_url_at(release, &format!("{name}.asc"));
             let asc = match fetch_bytes(&asc_url) {
                 Ok(bytes) => bytes,
                 Err(FetchError::IndexUnavailable(_)) => continue,
@@ -1240,7 +1287,7 @@ impl Resolver {
                 }
                 Err(e) => return Err(packaging_error(122, Some(&e.to_string()))),
             };
-            let url = self.index_url(name, tebako_version);
+            let url = Self::index_url_at(release, name);
             let body = match fetch_text(&url) {
                 Ok(body) => body,
                 Err(FetchError::IndexUnavailable(_)) => {
@@ -1274,6 +1321,7 @@ impl Resolver {
                         entries,
                         card,
                         trust: IndexTrust::Verified { signer },
+                        release: release.to_string(),
                     }));
                 }
                 // A verified form that cannot serve this request (the
@@ -1422,6 +1470,7 @@ impl Resolver {
     /// through to the monoliths with the shard URLs recorded in `tried`.
     fn fetch_shard(
         &self,
+        release: &str,
         ruby_version: &str,
         platform: &str,
         tebako_version: &str,
@@ -1434,7 +1483,7 @@ impl Resolver {
             format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}"),
         ];
         for stem in &stems {
-            let url = self.index_url(&format!("{stem}.manifest.json"), tebako_version);
+            let url = Self::index_url_at(release, &format!("{stem}.manifest.json"));
             let body = match fetch_text(&url) {
                 Ok(body) => body,
                 Err(FetchError::IndexUnavailable(_)) => {
@@ -1622,7 +1671,7 @@ impl Resolver {
         tmp: &Path,
         asset: &str,
         sig: &EntrySignature,
-        tebako_version: &str,
+        release: &str,
     ) -> Result<String, TebakoError> {
         let bytes = fs::read(tmp).map_err(|e| {
             TebakoError::new(
@@ -1633,7 +1682,7 @@ impl Resolver {
                 74,
             )
         })?;
-        self.verify_declared(&bytes, asset, sig, tebako_version)
+        self.verify_declared(&bytes, asset, sig, release)
     }
 
     /// Verify one artifact's declared `signature:` block (spec 13 §2a)
@@ -1650,7 +1699,7 @@ impl Resolver {
         bytes: &[u8],
         asset: &str,
         sig: &EntrySignature,
-        tebako_version: &str,
+        release: &str,
     ) -> Result<String, TebakoError> {
         // The asc names a sibling asset of the same release — a
         // separator would escape it; refuse by name, never fetch.
@@ -1663,7 +1712,7 @@ impl Resolver {
                 65,
             ));
         }
-        let asc_url = self.package_url(&sig.asc, tebako_version);
+        let asc_url = Self::package_url_at(release, &sig.asc);
         let asc = fetch_bytes(&asc_url).map_err(|e| {
             TebakoError::new(
                 format!("{asset} declares a signature but {asc_url} did not fetch: {e}"),
@@ -1832,27 +1881,30 @@ impl Resolver {
 
     // ---- urls ------------------------------------------------------------
 
-    fn release_url(&self, tebako_version: &str) -> String {
-        format!(
-            "{}/v{}",
-            self.mirror,
-            tebako_version.strip_prefix('v').unwrap_or(tebako_version)
-        )
+    /// The release-base candidates, era-ordered (tebako#716, spec 36 §6):
+    /// the ≥ 0.17 era publishes per-line shards under
+    /// `v<tebako>-ruby<line>` tags; the ≤ 0.16 era's monolithic `v<tebako>`
+    /// tags are immutable. Both are always probed — the order only decides
+    /// which probe lands first (a `file://` runtime mirror keeps the flat
+    /// `v<tebako>` layout for every era, so the monolithic candidate must
+    /// never disappear).
+    fn release_urls(&self, ruby_version: &str, tebako_version: &str) -> Vec<String> {
+        let version = tebako_version.strip_prefix('v').unwrap_or(tebako_version);
+        let sharded = format!("{}/v{version}-ruby{}", self.mirror, ruby_line(ruby_version));
+        let monolithic = format!("{}/v{version}", self.mirror);
+        if sharded_era_first(version) {
+            vec![sharded, monolithic]
+        } else {
+            vec![monolithic, sharded]
+        }
     }
 
-    fn index_url(&self, name: &str, tebako_version: &str) -> String {
-        format!("{}/{name}", self.release_url(tebako_version))
+    fn index_url_at(release: &str, name: &str) -> String {
+        format!("{release}/{name}")
     }
 
-    fn index_urls(&self, tebako_version: &str) -> Vec<String> {
-        INDEX_FILES
-            .iter()
-            .map(|n| self.index_url(n, tebako_version))
-            .collect()
-    }
-
-    fn package_url(&self, filename: &str, tebako_version: &str) -> String {
-        format!("{}/{filename}", self.release_url(tebako_version))
+    fn package_url_at(release: &str, filename: &str) -> String {
+        format!("{release}/{filename}")
     }
 }
 
@@ -3454,6 +3506,112 @@ mod tests {
             "tebako-runtime-0.16.17-3.3.12-windows-ucrt64"
         );
         let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    /// The spec 36 §6 sharded-tag mirror: the ≥ 0.17 era's GitHub release
+    /// serves its assets under `v<tebako>-ruby<line>/` — NOT the flat
+    /// `v<tebako>/` layout a `file://` runtime mirror stages
+    /// (stage_runtime's product). `tag_dir` picks the layout the fixture
+    /// serves.
+    fn sharded_tag_mirror(tag: &str, tag_dir: &str) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-resolve-sharded-tag-{tag}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = dir.join("home");
+        let release = dir.join("mirror").join(tag_dir);
+        fs::create_dir_all(&release).unwrap();
+        let exe = "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64";
+        let image = "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64.tfs";
+        fs::write(release.join(exe), b"fake runtime exe\n").unwrap();
+        fs::write(release.join(image), b"fake env image\n").unwrap();
+        let shard = format!(
+            "{{\"tebako_version\":\"0.17.0\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"/__tfs__\",\"ruby_version\":\"4.0.7\",\"platform\":\"macos-arm64\",\"filename\":\"{exe}\",\"sha256\":\"{}\",\"image\":{{\"filename\":\"{image}\",\"sha256\":\"{}\"}}}}\n",
+            sha256_file_hex(&release.join(exe)).unwrap(),
+            sha256_file_hex(&release.join(image)).unwrap(),
+        );
+        fs::write(release.join(format!("{exe}.manifest.json")), shard).unwrap();
+        (cache, dir.join("mirror"))
+    }
+
+    #[test]
+    fn resolve_runtime_installs_from_the_sharded_release_tag() {
+        // tebako#716's tag grammar (spec 36 §6): the ≥ 0.17 era publishes
+        // under `v<tebako>-ruby<line>` — the press-time resolver probes
+        // the sharded tag first and the asset downloads ride the same
+        // base (the release only serves the sharded layout).
+        let (cache, mirror) = sharded_tag_mirror("sharded", "v0.17.0-ruby4.0");
+        let r = dll_resolver(&cache, &mirror);
+        let exe = "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64";
+        let resolved = r
+            .resolve_runtime("4.0.7", "macos-arm64", "0.17.0")
+            .unwrap();
+        assert_eq!(
+            resolved.executable.file_name().unwrap().to_string_lossy(),
+            exe,
+            "the new-era exe spelling flowed verbatim from the shard"
+        );
+        let dir = cache
+            .join("runtimes")
+            .join("ruby-4.0.7-0.17.0-macos-arm64");
+        assert!(dir.join(format!("{exe}.tfs")).is_file());
+        let origin = fs::read_to_string(dir.join(ORIGIN_FILE)).unwrap();
+        assert!(
+            origin.contains("/v0.17.0-ruby4.0/"),
+            "every fetched artifact rode the sharded tag: {origin}"
+        );
+        // a cache hit needs no mirror at all (a run is a run)
+        fs::remove_dir_all(&mirror).unwrap();
+        r.resolve_runtime("4.0.7", "macos-arm64", "0.17.0").unwrap();
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_the_flat_mirror_layout_still_serves_the_new_era() {
+        // A `file://` runtime mirror keeps the flat `v<tebako>/` layout
+        // for every era — the sharded-tag probe misses (ENOENT → try the
+        // next candidate), the monolithic candidate serves.
+        let (cache, mirror) = sharded_tag_mirror("flat", "v0.17.0");
+        let r = dll_resolver(&cache, &mirror);
+        let exe = "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64";
+        let resolved = r
+            .resolve_runtime("4.0.7", "macos-arm64", "0.17.0")
+            .unwrap();
+        assert!(resolved.executable.is_file());
+        let dir = cache
+            .join("runtimes")
+            .join("ruby-4.0.7-0.17.0-macos-arm64");
+        let origin = fs::read_to_string(dir.join(ORIGIN_FILE)).unwrap();
+        assert!(
+            origin.contains("/v0.17.0/"),
+            "the flat mirror served the new-era runtime: {origin}"
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn release_urls_order_the_eras_and_spell_the_line() {
+        let r = dll_resolver(Path::new("/unused"), Path::new("/m"));
+        // the ≥ 0.17 era probes the sharded tag first
+        let urls = r.release_urls("4.0.7", "0.17.0");
+        assert_eq!(urls.len(), 2);
+        assert!(urls[0].ends_with("/v0.17.0-ruby4.0"), "{}", urls[0]);
+        assert!(urls[1].ends_with("/v0.17.0"), "{}", urls[1]);
+        // a pre-release suffix rides its numeric line
+        let urls = r.release_urls("3.3.12", "0.17.0-rc1");
+        assert!(urls[0].ends_with("/v0.17.0-rc1-ruby3.3"), "{}", urls[0]);
+        // the ≤ 0.16 era probes the immutable monolithic tag first
+        let urls = r.release_urls("3.3.12", "0.16.32");
+        assert!(urls[0].ends_with("/v0.16.32"), "{}", urls[0]);
+        assert!(urls[1].ends_with("/v0.16.32-ruby3.3"), "{}", urls[1]);
+        // the ruby line grammar
+        assert_eq!(ruby_line("4.0.7"), "4.0");
+        assert_eq!(ruby_line("3.3.12"), "3.3");
+        assert_eq!(ruby_line("4.0"), "4.0");
+        assert!(sharded_era_first("0.17.0"));
+        assert!(sharded_era_first("0.17.0-rc1"));
+        assert!(!sharded_era_first("0.16.32"));
     }
 
     #[test]
