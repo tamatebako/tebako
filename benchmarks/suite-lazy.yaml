@@ -42,17 +42,21 @@ workloads:
     timeout_s: 600
 
 targets:
+  # The pin: the new-era per-line tag serves the complete per-file set
+  # (exe + image + blksum sidecar) for 3.3.12 on every triplet. The
+  # v0.16.32 monolith was cap-trimmed and serves no 3.3.12 assets at
+  # all — pinning it leaves every arm unavailable.
   # The eager arm: the runtime pair booted bare (the whole staged env
   # image mounts at boot).
   - id: eager-ruby
     kind: runtime-exe
-    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.32, lang_version: "3.3.12" }
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.17.0-ruby3.3, lang_version: "3.3.12" }
   # The lazy arm: the same pair staged as a LAZY_SEEDING entry — the
   # image absent, the seed descriptor naming the leg's loopback Range
   # fixture; the driver state-detects the entry, no opt-in env rides
   # the run.
   - id: lazy-ruby
     kind: runtime-exe-lazy
-    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.32, lang_version: "3.3.12" }
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.17.0-ruby3.3, lang_version: "3.3.12" }
 
 run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 3, interleave: true }
