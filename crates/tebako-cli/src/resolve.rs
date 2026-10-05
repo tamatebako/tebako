@@ -1187,9 +1187,13 @@ impl Resolver {
         // runs per base, the first base serving a usable form wins, and
         // the asset downloads ride that same base.
         for release in self.release_urls(ruby_version, tebako_version) {
-            if let Some(verified) =
-                self.fetch_verified_index(&release, ruby_version, platform, tebako_version, &mut tried)?
-            {
+            if let Some(verified) = self.fetch_verified_index(
+                &release,
+                ruby_version,
+                platform,
+                tebako_version,
+                &mut tried,
+            )? {
                 return Ok(verified);
             }
             if let Some((entries, card)) =
@@ -1215,9 +1219,7 @@ impl Resolver {
                                 release,
                             });
                         }
-                        Err(ParseFail::Unavailable(msg)) => {
-                            tried.push(format!("{url} ({msg})"))
-                        }
+                        Err(ParseFail::Unavailable(msg)) => tried.push(format!("{url} ({msg})")),
                         Err(ParseFail::Torn(msg)) => return Err(TebakoError::new(msg, 65)),
                     },
                     Err(FetchError::IndexUnavailable(_)) => tried.push(url),
@@ -3544,17 +3546,13 @@ mod tests {
         let (cache, mirror) = sharded_tag_mirror("sharded", "v0.17.0-ruby4.0");
         let r = dll_resolver(&cache, &mirror);
         let exe = "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64";
-        let resolved = r
-            .resolve_runtime("4.0.7", "macos-arm64", "0.17.0")
-            .unwrap();
+        let resolved = r.resolve_runtime("4.0.7", "macos-arm64", "0.17.0").unwrap();
         assert_eq!(
             resolved.executable.file_name().unwrap().to_string_lossy(),
             exe,
             "the new-era exe spelling flowed verbatim from the shard"
         );
-        let dir = cache
-            .join("runtimes")
-            .join("ruby-4.0.7-0.17.0-macos-arm64");
+        let dir = cache.join("runtimes").join("ruby-4.0.7-0.17.0-macos-arm64");
         assert!(dir.join(format!("{exe}.tfs")).is_file());
         let origin = fs::read_to_string(dir.join(ORIGIN_FILE)).unwrap();
         assert!(
@@ -3575,13 +3573,9 @@ mod tests {
         let (cache, mirror) = sharded_tag_mirror("flat", "v0.17.0");
         let r = dll_resolver(&cache, &mirror);
         let exe = "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64";
-        let resolved = r
-            .resolve_runtime("4.0.7", "macos-arm64", "0.17.0")
-            .unwrap();
+        let resolved = r.resolve_runtime("4.0.7", "macos-arm64", "0.17.0").unwrap();
         assert!(resolved.executable.is_file());
-        let dir = cache
-            .join("runtimes")
-            .join("ruby-4.0.7-0.17.0-macos-arm64");
+        let dir = cache.join("runtimes").join("ruby-4.0.7-0.17.0-macos-arm64");
         let origin = fs::read_to_string(dir.join(ORIGIN_FILE)).unwrap();
         assert!(
             origin.contains("/v0.17.0/"),
