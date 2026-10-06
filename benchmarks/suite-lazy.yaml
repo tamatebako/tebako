@@ -50,13 +50,13 @@ targets:
   # image mounts at boot).
   - id: eager-ruby
     kind: runtime-exe
-    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.17.0-ruby3.3, lang_version: "3.3.12" }
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.17.1-ruby3.3, lang_version: "3.3.12" }
   # The lazy arm: the same pair staged as a LAZY_SEEDING entry — the
   # image absent, the seed descriptor naming the leg's loopback Range
   # fixture; the driver state-detects the entry, no opt-in env rides
   # the run.
   - id: lazy-ruby
     kind: runtime-exe-lazy
-    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.17.0-ruby3.3, lang_version: "3.3.12" }
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.17.1-ruby3.3, lang_version: "3.3.12" }
 
 run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 3, interleave: true }
