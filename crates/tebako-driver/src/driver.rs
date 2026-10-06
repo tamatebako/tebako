@@ -898,14 +898,11 @@ pub(crate) fn join_mount(mount_point: &str, entry: &str) -> String {
 }
 
 /// The VFS drive of a runtime root: `A:/t` → `Some("A:")`;
-/// `/__tfs__` → `None` (POSIX — no drive qualification).
+/// `/__tfs__` → `None` (POSIX — no drive qualification). The rule's
+/// owner is tpkg (spec 17 §1 — every consumer flows it, never
+/// re-authors it).
 pub(crate) fn vfs_drive(runtime_root: &str) -> Option<&str> {
-    let b = runtime_root.as_bytes();
-    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
-        Some(&runtime_root[..2])
-    } else {
-        None
-    }
+    tpkg::vfs_drive(runtime_root)
 }
 
 /// Windows (spec 17 §1): a declared mount is a POSIX absolute path in
@@ -920,12 +917,9 @@ pub(crate) fn vfs_drive(runtime_root: &str) -> Option<&str> {
 /// drive: the mount is used as declared. A relative mount (the grammar
 /// admits it) is never qualified. pub(crate): the spec-29 wrapper
 /// (`crate::wrapper`) qualifies the app payload's mount for its manifest
-/// read by the same rule.
+/// read by the same rule. Owner: tpkg.
 pub(crate) fn qualify_mount(mount: &str, runtime_root: &str) -> String {
-    match vfs_drive(runtime_root) {
-        Some(drive) if mount.starts_with('/') => format!("{drive}{mount}"),
-        _ => mount.to_string(),
-    }
+    tpkg::qualify_mount(mount, runtime_root)
 }
 
 /// The mechanical slug of a declared mount (spec 22 §6; v2-1/20): the

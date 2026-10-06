@@ -86,6 +86,7 @@ fn ready(id: &str, kind: TargetKind) -> PreparedTarget {
             program: child_path(),
             image: None,
             runtime_dir: None,
+            mount_root: None,
         },
     }
 }

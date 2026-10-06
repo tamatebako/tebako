@@ -65,6 +65,9 @@ pub enum Prepared {
         /// v2 arms: the resolved runtime's cache entry dir — the v2-press
         /// cold wipe's scoped target (spec 27 §5).
         runtime_dir: Option<PathBuf>,
+        /// runtime-exe arms: the baked runtime root (the `{fixture}`
+        /// qualification's input — spec 17 §1's drive rule).
+        mount_root: Option<String>,
     },
     Unavailable {
         reason: String,
@@ -243,6 +246,7 @@ fn prepare_targets(
                             program: exe,
                             image: None,
                             runtime_dir: None,
+                            mount_root: None,
                         }
                     }
                     Err(e) => Prepared::Unavailable {
@@ -271,6 +275,7 @@ fn prepare_targets(
                                 program: staged.program,
                                 image: None,
                                 runtime_dir: Some(staged.runtime_dir),
+                                mount_root: None,
                             }
                         }
                         Err(e) => Prepared::Unavailable {
@@ -286,6 +291,7 @@ fn prepare_targets(
                     program: PathBuf::from(target.program.as_deref().unwrap_or_default()),
                     image: None,
                     runtime_dir: None,
+                    mount_root: None,
                 }
             }
             TargetKind::RuntimeExe => {
@@ -294,6 +300,7 @@ fn prepare_targets(
                         program: pair.exe,
                         image: Some(pair.image),
                         runtime_dir: None,
+                        mount_root: pair.mount_root,
                     },
                     Err(e) => Prepared::Unavailable {
                         reason: format!("runtime acquisition failed: {e}"),
@@ -308,6 +315,7 @@ fn prepare_targets(
                             program: pair.exe,
                             image: Some(pair.image),
                             runtime_dir: Some(pair.entry_dir),
+                            mount_root: pair.mount_root,
                         }
                     }
                     Err(e) => Prepared::Unavailable {
@@ -909,7 +917,13 @@ fn run_once(
     warmup: bool,
 ) -> Result<(Sample, PathBuf), BenchError> {
     let target = &pt.target;
-    let Prepared::Ready { program, image, .. } = &pt.state else {
+    let Prepared::Ready {
+        program,
+        image,
+        mount_root,
+        ..
+    } = &pt.state
+    else {
         return Err(BenchError::operational(format!(
             "engine: run_once called for the unavailable target '{}' (harness bug)",
             target.id
@@ -1007,7 +1021,7 @@ fn run_once(
             })?,
             "{fixture}" => match target.kind {
                 TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy => {
-                    acquire::FIXTURE_VFS_PATH.to_string()
+                    acquire::fixture_vfs_path(mount_root.as_deref())
                 }
                 _ => ctx
                     .fixture_host
