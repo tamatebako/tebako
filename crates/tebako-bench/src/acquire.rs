@@ -1401,7 +1401,8 @@ fn select_base(bases: &[String], stems: &[String], suffix: &str) -> Result<Strin
 /// `tebako-runtime-<tebako-ver>-<lang-ver>-<triplet>` — plus the `.tfs`
 /// env image. On Windows a sibling `.dll` rides along WHEN the
 /// factory ships one (ruby/python do, openjdk does not — its sidecar
-/// 404 is the absence proof, never a guess). The release's grammar era
+/// 404 is the absence proof, never a guess), staged under the
+/// manifest's `dll.install_as` name — the exe's PE import name. The release's grammar era
 /// is unknowable before a sidecar answers: when the ref's repo parses
 /// as a first-party factory (`<owner>/tebako-runtime-<engine>`) the
 /// new-era stem probes FIRST and the old-era stem follows (one extra
@@ -1584,6 +1585,11 @@ pub fn acquire_runtime_pair(
     let image = stage(&format!("{stem}.tfs"), false)?;
     // The windows runtimes that need a sibling dylib ship one; probe its
     // sidecar — 404 (IndexUnavailable) is the factory saying "no dll".
+    // The staged name is the manifest's dll.install_as, not the download
+    // name: the exe imports THAT PE name, so a download-named staging
+    // leaves the loader to resolve a same-named plain-build dll off PATH
+    // (the 0xC0000139 shadow). Never a rename guess — the manifest
+    // declares it.
     if cfg!(windows) {
         let dll = format!("{stem}.dll");
         match tebako_http::get(&format!("{base}/{dll}.sha256")) {
@@ -1594,9 +1600,10 @@ pub fn acquire_runtime_pair(
                             "acquire: {base}/{dll}.sha256 is not a bare 64-hex sha256"
                         ))
                     })?;
+                let install_as = dll_install_as(&base, &stem, &dll)?;
                 let asset = layout.assets.join(&dll);
                 download_verified(&format!("{base}/{dll}"), &asset, &expected)?;
-                let staged = target_dir.join(&dll);
+                let staged = target_dir.join(&install_as);
                 std::fs::copy(&asset, &staged).map_err(|e| {
                     BenchError::operational(format!(
                         "acquire: cannot stage {} as {}: {e}",
@@ -1628,6 +1635,10 @@ pub fn acquire_runtime_pair(
 struct BundleManifestMember {
     filename: String,
     sha256: String,
+    /// The windows dylib's on-disk name beside the exe — the PE import
+    /// name (the factory's RubyVersion#msys_dll_name). Declared on the
+    /// dll member only; mandatory there (tpkg's EntryDll contract).
+    install_as: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -1638,6 +1649,52 @@ struct BundleManifest {
     /// The windows dylib, when the factory ships one (same absence
     /// rule as the bare era: the manifest not naming it is the proof).
     dll: Option<BundleManifestMember>,
+}
+
+/// The bare-era manifest peek: only the dll facet matters (the exe and
+/// image ride their sidecars). Narrow on purpose — an old-era manifest
+/// missing an unrelated key must not fail the windows staging.
+#[derive(serde::Deserialize)]
+struct DllFacetPeek {
+    dll: Option<BundleManifestMember>,
+}
+
+/// Validate the manifest's `install_as` declaration for a shipped dll:
+/// present (never a rename guess) and a bare basename (it stages beside
+/// the exe — separators would walk the target dir).
+fn valid_install_as<'m>(
+    install_as: Option<&'m str>,
+    dll_filename: &str,
+) -> Result<&'m str, BenchError> {
+    let name = install_as.ok_or_else(|| {
+        BenchError::operational(format!(
+            "acquire: the manifest's dll facet for {dll_filename} declares no install_as — the exe's import name is unknowable"
+        ))
+    })?;
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+        return Err(BenchError::operational(format!(
+            "acquire: dll install_as '{name}' is not a bare basename"
+        )));
+    }
+    Ok(name)
+}
+
+/// The bare-era dll's staged name: fetch `<stem>.manifest.json`, read
+/// the dll facet's `install_as`. A dll-carrying release whose manifest
+/// is absent, unparseable, or facet-less is the named error.
+fn dll_install_as(base: &str, stem: &str, dll: &str) -> Result<String, BenchError> {
+    let body = get(&format!("{base}/{stem}.manifest.json"))?;
+    let peek: DllFacetPeek = serde_json::from_slice(&body).map_err(|e| {
+        BenchError::operational(format!(
+            "acquire: {base}/{stem}.manifest.json does not parse: {e}"
+        ))
+    })?;
+    let member = peek.dll.as_ref().ok_or_else(|| {
+        BenchError::operational(format!(
+            "acquire: the release ships {dll} but {stem}.manifest.json declares no dll facet — the exe's import name is unknowable"
+        ))
+    })?;
+    valid_install_as(member.install_as.as_deref(), &member.filename).map(str::to_string)
 }
 
 /// The bundle-era staging (spec 36 §2/§5): the release `.sha256`
@@ -1688,6 +1745,20 @@ fn stage_bundle_pair(
     let exe = take(&mut staged, &manifest.filename)?;
     chmod_0755(&exe)?;
     let image = take(&mut staged, &manifest.image.filename)?;
+    if let Some(dll) = &manifest.dll {
+        let staged_dll = take(&mut staged, &dll.filename)?;
+        let install_as = valid_install_as(dll.install_as.as_deref(), &dll.filename)?;
+        if install_as != dll.filename {
+            let dest = target_dir.join(install_as);
+            std::fs::rename(&staged_dll, &dest).map_err(|e| {
+                BenchError::operational(format!(
+                    "acquire: cannot stage {} as {}: {e}",
+                    staged_dll.display(),
+                    dest.display()
+                ))
+            })?;
+        }
+    }
     Ok(RuntimePair {
         exe,
         image,
@@ -2340,7 +2411,7 @@ fn rfc3339_now() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{candidate_bases, tag_tebako_version};
+    use super::{candidate_bases, tag_tebako_version, valid_install_as};
 
     #[test]
     fn monolithic_tags_keep_the_bare_version() {
@@ -2467,5 +2538,26 @@ mod tests {
                 .contains("cannot derive the per-platform shard"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn the_dll_stages_under_the_manifests_install_as() {
+        assert_eq!(
+            valid_install_as(Some("x64-ucrt-ruby330.dll"), "tebako-runtime-x.dll").unwrap(),
+            "x64-ucrt-ruby330.dll"
+        );
+    }
+
+    #[test]
+    fn a_dll_without_install_as_is_the_named_error() {
+        let err = valid_install_as(None, "tebako-runtime-x.dll").unwrap_err();
+        assert!(err.to_string().contains("install_as"), "{err}");
+    }
+
+    #[test]
+    fn a_pathful_install_as_is_the_named_error() {
+        for bad in ["bin/x64.dll", "..\\x64.dll", "", ".", ".."] {
+            assert!(valid_install_as(Some(bad), "d.dll").is_err(), "{bad}");
+        }
     }
 }
