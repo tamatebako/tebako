@@ -1671,12 +1671,7 @@ fn valid_install_as<'m>(
             "acquire: the manifest's dll facet for {dll_filename} declares no install_as — the exe's import name is unknowable"
         ))
     })?;
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.contains('\\')
-    {
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') {
         return Err(BenchError::operational(format!(
             "acquire: dll install_as '{name}' is not a bare basename"
         )));
