@@ -193,6 +193,9 @@ pub use manifest::{
     RuntimeRequirements, Sbom, Signing, SigningMechanism, SigningState, Source, ToolkitExecutable,
     ToolkitLibrary, ToolkitProvides, WindowsBoot, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
+pub use manifest::{
+    shard_tag_append, shard_tag_segment_of, shard_tag_substitute, SHARD_TAG_SEGMENTS,
+};
 pub use merkle::{
     render_tree_hash, tree_digest, Child, FileHasher, MerkleDigest, NodeKind, TreeWalk,
 };

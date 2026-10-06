@@ -538,22 +538,25 @@ fn skip_file_scheme(base: &str) -> &str {
 }
 
 /// The release-tag candidates, era-ordered (tebako#716, spec 36 §6): the
-/// ≥ 0.17 era publishes under `v<tebako>-<engine><line>`; the ≤ 0.16
-/// era's monolithic `v<tebako>` tags are immutable. Both grammars are
-/// always probed — a `file://` runtime mirror keeps the flat layout for
-/// every era; the order only saves the doomed requests.
-fn release_bases(base: &str, rr: &RuntimeRef) -> [String; 2] {
-    let sharded = format!(
+/// ≥ 0.17 era publishes per-line shards under `v<tebako>-<engine><line>`,
+/// from 0.17.1 as per-platform shards
+/// `v<tebako>-<engine><line>-<platform>`; the ≤ 0.16 era's monolithic
+/// `v<tebako>` tags are immutable. All grammars are always probed — a
+/// `file://` runtime mirror keeps the flat layout for every era; the
+/// order only saves the doomed requests.
+fn release_bases(base: &str, rr: &RuntimeRef) -> Vec<String> {
+    let line = format!(
         "{base}/v{}-{}{}",
         rr.abi,
         rr.r#type,
         version_line(&rr.version)
     );
     let monolithic = format!("{base}/v{}", rr.abi);
-    if sharded_era_first(&rr.abi) {
-        [sharded, monolithic]
+    if tpkg::versions::sharded_release_era(&rr.abi) {
+        let shard = tpkg::shard_tag_append(&line, tpkg::Platform::host());
+        vec![shard, line, monolithic]
     } else {
-        [monolithic, sharded]
+        vec![monolithic, line]
     }
 }
 
@@ -566,19 +569,6 @@ fn version_line(version: &str) -> &str {
         Some(minor) => &version[..major.len() + 1 + minor.len()],
         None => major,
     }
-}
-
-/// Which tag grammar probes first: the sharded era is ≥ 0.17 (a
-/// pre-release suffix rides its numeric line — `0.17.0-rc1` is sharded).
-fn sharded_era_first(abi: &str) -> bool {
-    let numeric = abi.split('-').next().unwrap_or(abi);
-    let mut parts = numeric.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
-    let triple = (
-        parts.next().unwrap_or(0),
-        parts.next().unwrap_or(0),
-        parts.next().unwrap_or(0),
-    );
-    triple >= (0, 17, 0)
 }
 
 // ---------------------------------------------------------------------
@@ -2458,8 +2448,9 @@ fn download_executable(
 
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
-    // tebako#716 (spec 36 §6): the release tag probes dual-era — the
-    // ≥ 0.17 sharded tag and the immutable monolithic one, era-ordered.
+    // tebako#716 (spec 36 §6): the release tag probes era-ordered — the
+    // ≥ 0.17.1 per-platform shard tag, the ≥ 0.17 per-line tag, and the
+    // immutable monolithic one.
     // Every index form and asset download below rides the winning base.
     let bases = release_bases(&base, rr);
 
@@ -2778,8 +2769,9 @@ fn resolve_image(
 
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
-    // tebako#716 (spec 36 §6): the release tag probes dual-era — the
-    // ≥ 0.17 sharded tag and the immutable monolithic one, era-ordered.
+    // tebako#716 (spec 36 §6): the release tag probes era-ordered — the
+    // ≥ 0.17.1 per-platform shard tag, the ≥ 0.17 per-line tag, and the
+    // immutable monolithic one.
     // Every index form and asset download below rides the winning base.
     let bases = release_bases(&base, rr);
 
@@ -3338,8 +3330,8 @@ fn resolve_dll(
 
     let base = skip_file_scheme(base_raw).to_string();
     let local = base_is_local(base_raw);
-    // tebako#716 (spec 36 §6): the dll rides the same dual-era tag probe
-    // as the executable/image — era-ordered, first success wins.
+    // tebako#716 (spec 36 §6): the dll rides the same era-ordered tag
+    // probe as the executable/image — first success wins.
     let bases = release_bases(&base, rr);
 
     if offline_mode() {
@@ -6682,17 +6674,28 @@ mod bundle_tests {
             abi: abi.to_string(),
         };
         // ≥ 0.17 (a pre-release suffix rides its numeric line): the
-        // sharded tag probes first, the monolith stays the forever
-        // fallback (file:// mirrors keep the flat layout for every era).
-        let [first, second] = release_bases("https://x/download", &rr("0.17.0"));
-        assert_eq!(first, "https://x/download/v0.17.0-ruby3.4");
-        assert_eq!(second, "https://x/download/v0.17.0");
-        let [first, _] = release_bases("https://x/download", &rr("0.17.0-rc1"));
-        assert_eq!(first, "https://x/download/v0.17.0-rc1-ruby3.4");
-        // ≤ 0.16: the immutable monolithic tag probes first.
-        let [first, second] = release_bases("https://x/download", &rr("0.16.32"));
-        assert_eq!(first, "https://x/download/v0.16.32");
-        assert_eq!(second, "https://x/download/v0.16.32-ruby3.4");
+        // per-platform shard tag probes first, the per-line shard next,
+        // the monolith stays the forever fallback (file:// mirrors keep
+        // the flat layout for every era).
+        let host_segment = tpkg::Platform::host().shard_tag_segment();
+        let bases = release_bases("https://x/download", &rr("0.17.0"));
+        assert_eq!(
+            bases[0],
+            format!("https://x/download/v0.17.0-ruby3.4-{host_segment}")
+        );
+        assert_eq!(bases[1], "https://x/download/v0.17.0-ruby3.4");
+        assert_eq!(bases[2], "https://x/download/v0.17.0");
+        let bases = release_bases("https://x/download", &rr("0.17.0-rc1"));
+        assert_eq!(
+            bases[0],
+            format!("https://x/download/v0.17.0-rc1-ruby3.4-{host_segment}")
+        );
+        // ≤ 0.16: the immutable monolithic tag probes first, and no
+        // per-platform shard exists to name.
+        let bases = release_bases("https://x/download", &rr("0.16.32"));
+        assert_eq!(bases[0], "https://x/download/v0.16.32");
+        assert_eq!(bases[1], "https://x/download/v0.16.32-ruby3.4");
+        assert_eq!(bases.len(), 2);
     }
 
     /// Every spec 36 §7 violation is the named InvalidBundle (exit 70's

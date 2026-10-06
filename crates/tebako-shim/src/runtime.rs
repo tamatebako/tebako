@@ -934,7 +934,12 @@ fn picked_row_source(
             asset_infix,
         } => RuntimeSource {
             base,
-            tag: Some(tag),
+            // spec 36 §6: the registry's version-level ref names any one
+            // published shard of the version (`…-<platform>`) — the
+            // host's own platform segment substitutes. A tag outside the
+            // shard vocabulary (opaque, line-level, monolithic) rides
+            // verbatim.
+            tag: Some(tpkg::shard_tag_substitute(&tag, tpkg::Platform::host()).unwrap_or(tag)),
             asset_infix,
             channel,
             signer_pin,
@@ -4716,6 +4721,40 @@ payloads:
             artifact_stem: None,
         };
         assert_eq!(pinned.tag_for("2.5.0"), "v2.5.1");
+    }
+
+    #[test]
+    fn a_picked_rows_shard_tag_substitutes_the_host_platform() {
+        // spec 36 §6: the registry's version-level ref names any one
+        // published shard of the version — the host's segment replaces
+        // the publishing platform's.
+        let locator = RowLocator::Release {
+            base: "https://x/download".to_string(),
+            tag: "v0.17.1-ruby3.3-windows".to_string(),
+            asset_infix: "",
+        };
+        let source = picked_row_source(locator, "registry", None, None, None, None);
+        let want = format!(
+            "v0.17.1-ruby3.3-{}",
+            tpkg::Platform::host().shard_tag_segment()
+        );
+        assert_eq!(source.tag.as_deref(), Some(want.as_str()));
+        // the two-segment linux forms substitute whole
+        let locator = RowLocator::Release {
+            base: "https://x/download".to_string(),
+            tag: "v0.17.1-ruby3.3-linux-musl".to_string(),
+            asset_infix: "",
+        };
+        let source = picked_row_source(locator, "registry", None, None, None, None);
+        assert_eq!(source.tag.as_deref(), Some(want.as_str()));
+        // a tag outside the shard vocabulary rides verbatim
+        let locator = RowLocator::Release {
+            base: "https://x/download".to_string(),
+            tag: "v2.5.1".to_string(),
+            asset_infix: "",
+        };
+        let source = picked_row_source(locator, "registry", None, None, None, None);
+        assert_eq!(source.tag.as_deref(), Some("v2.5.1"));
     }
 
     // ---- the registry facet of the index selection (spec 05 §2, roadmap 85) ----

@@ -1327,6 +1327,72 @@ fn tag_tebako_version(tag: &str) -> &str {
     bare
 }
 
+/// The candidate download bases of a runtime pin, shard-era aware
+/// (spec 36 §6; tpkg owns the tag grammar):
+/// - a pin already carrying a platform segment (`…-windows`) substitutes
+///   the leg's segment, verbatim as the fallback;
+/// - a shard-era LINE pin (`v0.17.1-ruby3.3`) appends the leg's segment
+///   — an unparsable leg triplet is the named error, never a guess;
+/// - anything else (a monolithic pin, a ≤ 0.16 line tag) rides verbatim.
+fn candidate_bases(
+    repo: &str,
+    tag: &str,
+    tebako_version: &str,
+    line_pin: bool,
+    leg: Option<tpkg::Platform>,
+) -> Result<Vec<String>, BenchError> {
+    let raw_base = |tag: &str| format!("https://github.com/{repo}/releases/download/{tag}");
+    Ok(match tpkg::shard_tag_segment_of(tag) {
+        Some(_) => match leg.and_then(|p| tpkg::shard_tag_substitute(tag, p)) {
+            Some(sub) if sub != tag => vec![raw_base(&sub), raw_base(tag)],
+            _ => vec![raw_base(tag)],
+        },
+        None if line_pin && tpkg::versions::sharded_release_era(tebako_version) => {
+            let platform = leg.ok_or_else(|| {
+                BenchError::operational(format!(
+                    "acquire: cannot derive the per-platform shard of '{tag}' for the leg's triplet — the leg names no known platform"
+                ))
+            })?;
+            vec![
+                raw_base(&tpkg::shard_tag_append(tag, platform)),
+                raw_base(tag),
+            ]
+        }
+        None => vec![raw_base(tag)],
+    })
+}
+
+/// The candidate base whose first sidecar probe answers — the spec 36
+/// §6 per-platform derivation is probe-verified, never assumed. Per
+/// candidate in order: each stem's bundle sidecar and exe sidecar
+/// spellings. A 404 (IndexUnavailable) moves on; any other failure is
+/// named. When no candidate answers, the FIRST candidate stands — the
+/// downstream flow's named error then names the base the era most
+/// expects.
+fn select_base(bases: &[String], stems: &[String], suffix: &str) -> Result<String, BenchError> {
+    for base in bases {
+        for stem in stems {
+            let mut probes = vec![format!("{stem}.tar.gz.sha256")];
+            if !suffix.is_empty() {
+                probes.push(format!("{stem}{suffix}.sha256"));
+            }
+            probes.push(format!("{stem}.sha256"));
+            for name in probes {
+                match tebako_http::get(&format!("{base}/{name}")) {
+                    Ok(_) => return Ok(base.clone()),
+                    Err(tebako_http::FetchError::IndexUnavailable(_)) => {}
+                    Err(e) => {
+                        return Err(BenchError::operational(format!(
+                            "acquire: cannot probe {base}/{name}: {e}"
+                        )))
+                    }
+                }
+            }
+        }
+    }
+    Ok(bases[0].clone())
+}
+
 /// Download + verify + stage the runtime pair named by the target's
 /// `runtime` ref. The asset grammar is the factories', dual-era
 /// (tebako#716): the new era spells
@@ -1345,7 +1411,10 @@ fn tag_tebako_version(tag: &str) -> &str {
 /// Since the spec 36 bundle era the factory ships ONE `<stem>.tar.gz`
 /// (the pair + a closing SHA256SUMS) instead of the bare pair; the
 /// bundle sidecar's existence selects the grammar (never a rename
-/// guess), and the bundle rides [`stage_bundle_pair`].
+/// guess), and the bundle rides [`stage_bundle_pair`]. The tag the
+/// URLs ride derives per leg when the pin is a shard-era line pin
+/// (spec 36 §6's per-platform grammar, tpkg-owned): the derived shard
+/// base probes first, the authored tag verbatim second.
 pub fn acquire_runtime_pair(
     layout: &BenchLayout,
     triplet: &str,
@@ -1357,9 +1426,10 @@ pub fn acquire_runtime_pair(
             target.id
         ))
     })?;
-    // The version segment of the tag (monolithic v<tb>, or the spec 36
-    // §6 per-line v<tb>-<lang><line>(-<platform>)?) — it alone joins the
-    // asset stems; the v-prefix stays an authored-pin validation.
+    // The version segment of the tag (monolithic v<tb>, the spec 36 §6
+    // per-line v<tb>-<lang><line>, or the 0.17.1-era per-platform shard
+    // v<tb>-<lang><line>-<platform>) — it alone joins the asset stems;
+    // the v-prefix stays an authored-pin validation.
     if !rr.tag.starts_with('v') {
         return Err(BenchError::operational(format!(
             "acquire: runtime tag '{}' is not v-prefixed",
@@ -1367,10 +1437,6 @@ pub fn acquire_runtime_pair(
         )));
     }
     let tebako_version = tag_tebako_version(&rr.tag).to_string();
-    let base = format!(
-        "https://github.com/{}/releases/download/{}",
-        rr.repo, rr.tag
-    );
     // tebako#716: the engine derives from the factory repo's basename
     // (`tamatebako/tebako-runtime-<engine>`); a repo name that does not
     // parse as a factory keeps the old-era-only stem list.
@@ -1397,6 +1463,15 @@ pub fn acquire_runtime_pair(
         )],
     };
     let suffix = exe_suffix(triplet);
+    // The 0.17.1-era per-platform shards (spec 36 §6): an authored pin
+    // names a line (`v<tb>-<engine><line>`) or one published platform's
+    // shard (`…-<platform>`) — the leg's own shard base DERIVES (tpkg
+    // owns the grammar) and probes first, the authored tag verbatim
+    // second (era law rule 3: never a rename guess without a probe).
+    let leg = tpkg::Platform::from_release_asset_name(triplet);
+    let line_pin = tag_tebako_version(&rr.tag) != rr.tag.strip_prefix('v').unwrap_or(&rr.tag);
+    let bases = candidate_bases(&rr.repo, &rr.tag, &tebako_version, line_pin, leg)?;
+    let base = select_base(&bases, &stems, suffix)?;
     let target_dir = layout.targets.join(&target.id);
     std::fs::create_dir_all(&target_dir).map_err(|e| {
         BenchError::operational(format!(
@@ -2265,7 +2340,7 @@ fn rfc3339_now() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::tag_tebako_version;
+    use super::{candidate_bases, tag_tebako_version};
 
     #[test]
     fn monolithic_tags_keep_the_bare_version() {
@@ -2288,5 +2363,109 @@ mod tests {
     fn non_line_suffixes_stay_part_of_the_version() {
         assert_eq!(tag_tebako_version("v0.17.0-rc1"), "0.17.0-rc1");
         assert_eq!(tag_tebako_version("0.17.0"), "0.17.0");
+    }
+
+    fn bases(repo: &str, tag: &str, triplet: &str) -> Vec<String> {
+        let tebako_version = tag_tebako_version(tag).to_string();
+        let line_pin = tebako_version != tag.strip_prefix('v').unwrap_or(tag);
+        let leg = tpkg::Platform::from_release_asset_name(triplet);
+        candidate_bases(repo, tag, &tebako_version, line_pin, leg).unwrap()
+    }
+
+    #[test]
+    fn a_shard_era_line_pin_derives_the_legs_shard_first() {
+        let b = bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.17.1-ruby3.3",
+            "linux-gnu-x86_64",
+        );
+        assert_eq!(
+            b,
+            vec![
+                "https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu",
+                "https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3",
+            ]
+        );
+        let b = bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.17.1-ruby3.3",
+            "macos-arm64",
+        );
+        assert!(b[0].ends_with("/v0.17.1-ruby3.3-macos"), "{}", b[0]);
+        let b = bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.17.1-ruby3.3",
+            "windows-ucrt64",
+        );
+        assert!(b[0].ends_with("/v0.17.1-ruby3.3-windows"), "{}", b[0]);
+        // the two-segment musl form
+        let b = bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.17.1-ruby3.3",
+            "linux-musl-arm64",
+        );
+        assert!(b[0].ends_with("/v0.17.1-ruby3.3-linux-musl"), "{}", b[0]);
+    }
+
+    #[test]
+    fn a_suffixed_pin_substitutes_the_legs_segment() {
+        let b = bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.17.1-ruby3.3-windows",
+            "macos-x86_64",
+        );
+        assert_eq!(
+            b,
+            vec![
+                "https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos",
+                "https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-windows",
+            ]
+        );
+        // already the leg's own shard: verbatim only
+        let b = bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.17.1-ruby3.3-macos",
+            "macos-arm64",
+        );
+        assert_eq!(b.len(), 1);
+        assert!(b[0].ends_with("/v0.17.1-ruby3.3-macos"));
+    }
+
+    #[test]
+    fn pre_shard_era_pins_ride_verbatim() {
+        // a ≤ 0.16 line pin (the v0.16.28 recovery shape): no shard exists
+        let b = bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.16.28-ruby3.4",
+            "macos-arm64",
+        );
+        assert_eq!(b.len(), 1);
+        assert!(b[0].ends_with("/v0.16.28-ruby3.4"));
+        // a monolithic pin
+        let b = bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.16.32",
+            "linux-gnu-x86_64",
+        );
+        assert_eq!(b.len(), 1);
+        assert!(b[0].ends_with("/v0.16.32"));
+    }
+
+    #[test]
+    fn a_shard_era_line_pin_on_an_unknown_leg_is_the_named_error() {
+        let tebako_version = "0.17.1".to_string();
+        let err = candidate_bases(
+            "tamatebako/tebako-runtime-ruby",
+            "v0.17.1-ruby3.3",
+            &tebako_version,
+            true,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot derive the per-platform shard"),
+            "{err}"
+        );
     }
 }

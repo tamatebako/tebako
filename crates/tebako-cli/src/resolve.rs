@@ -198,22 +198,6 @@ fn ruby_line(ruby_version: &str) -> &str {
     }
 }
 
-/// Which release-tag grammar probes first (tebako#716): the ≥ 0.17 era
-/// publishes per-line shards under `v<tebako>-ruby<line>`; the ≤ 0.16
-/// era's monolithic `v<tebako>` tags are immutable. Both grammars are
-/// always probed — this only saves the doomed requests. A pre-release
-/// suffix rides its numeric line (`0.17.0-rc1` is the sharded era).
-fn sharded_era_first(tebako_version: &str) -> bool {
-    let numeric = tebako_version.split('-').next().unwrap_or(tebako_version);
-    let mut parts = numeric.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
-    let triple = (
-        parts.next().unwrap_or(0),
-        parts.next().unwrap_or(0),
-        parts.next().unwrap_or(0),
-    );
-    triple >= (0, 17, 0)
-}
-
 /// The fetched release index: the entries, the raw card when the form
 /// was a JSON card (the contract gate reads it), the form's trust
 /// outcome (G1), and the release base the winning form came from (the
@@ -1182,10 +1166,10 @@ impl Resolver {
         tebako_version: &str,
     ) -> Result<FetchedIndex, TebakoError> {
         let mut tried: Vec<String> = Vec::new();
-        // tebako#716: the ≥ 0.17 era's sharded tag and the immutable
-        // monolithic one are both probed (era-ordered) — the form chain
-        // runs per base, the first base serving a usable form wins, and
-        // the asset downloads ride that same base.
+        // tebako#716: the era-ordered tag candidates (per-platform
+        // shard, per-line shard, the immutable monolith) are all probed
+        // — the form chain runs per base, the first base serving a
+        // usable form wins, and the asset downloads ride that same base.
         for release in self.release_urls(ruby_version, tebako_version) {
             if let Some(verified) = self.fetch_verified_index(
                 &release,
@@ -1885,17 +1869,19 @@ impl Resolver {
 
     /// The release-base candidates, era-ordered (tebako#716, spec 36 §6):
     /// the ≥ 0.17 era publishes per-line shards under
-    /// `v<tebako>-ruby<line>` tags; the ≤ 0.16 era's monolithic `v<tebako>`
-    /// tags are immutable. Both are always probed — the order only decides
-    /// which probe lands first (a `file://` runtime mirror keeps the flat
-    /// `v<tebako>` layout for every era, so the monolithic candidate must
-    /// never disappear).
+    /// `v<tebako>-ruby<line>` tags, from 0.17.1 as per-platform shards
+    /// `v<tebako>-ruby<line>-<platform>`; the ≤ 0.16 era's monolithic
+    /// `v<tebako>` tags are immutable. All are always probed — the order
+    /// only decides which probe lands first (a `file://` runtime mirror
+    /// keeps the flat `v<tebako>` layout for every era, so the monolithic
+    /// candidate must never disappear).
     fn release_urls(&self, ruby_version: &str, tebako_version: &str) -> Vec<String> {
         let version = tebako_version.strip_prefix('v').unwrap_or(tebako_version);
         let sharded = format!("{}/v{version}-ruby{}", self.mirror, ruby_line(ruby_version));
         let monolithic = format!("{}/v{version}", self.mirror);
-        if sharded_era_first(version) {
-            vec![sharded, monolithic]
+        if tpkg::versions::sharded_release_era(version) {
+            let shard = tpkg::shard_tag_append(&sharded, tpkg::Platform::host());
+            vec![shard, sharded, monolithic]
         } else {
             vec![monolithic, sharded]
         }
@@ -3591,25 +3577,38 @@ mod tests {
     #[test]
     fn release_urls_order_the_eras_and_spell_the_line() {
         let r = dll_resolver(Path::new("/unused"), Path::new("/m"));
-        // the ≥ 0.17 era probes the sharded tag first
+        // the ≥ 0.17 era probes the per-platform shard tag first, the
+        // per-line tag next, the monolith last
+        let host_segment = tpkg::Platform::host().shard_tag_segment();
         let urls = r.release_urls("4.0.7", "0.17.0");
-        assert_eq!(urls.len(), 2);
-        assert!(urls[0].ends_with("/v0.17.0-ruby4.0"), "{}", urls[0]);
-        assert!(urls[1].ends_with("/v0.17.0"), "{}", urls[1]);
+        assert_eq!(urls.len(), 3);
+        assert!(
+            urls[0].ends_with(&format!("/v0.17.0-ruby4.0-{host_segment}")),
+            "{}",
+            urls[0]
+        );
+        assert!(urls[1].ends_with("/v0.17.0-ruby4.0"), "{}", urls[1]);
+        assert!(urls[2].ends_with("/v0.17.0"), "{}", urls[2]);
         // a pre-release suffix rides its numeric line
         let urls = r.release_urls("3.3.12", "0.17.0-rc1");
-        assert!(urls[0].ends_with("/v0.17.0-rc1-ruby3.3"), "{}", urls[0]);
+        assert!(
+            urls[0].ends_with(&format!("/v0.17.0-rc1-ruby3.3-{host_segment}")),
+            "{}",
+            urls[0]
+        );
+        assert!(urls[1].ends_with("/v0.17.0-rc1-ruby3.3"), "{}", urls[1]);
         // the ≤ 0.16 era probes the immutable monolithic tag first
         let urls = r.release_urls("3.3.12", "0.16.32");
         assert!(urls[0].ends_with("/v0.16.32"), "{}", urls[0]);
         assert!(urls[1].ends_with("/v0.16.32-ruby3.3"), "{}", urls[1]);
+        assert_eq!(urls.len(), 2);
         // the ruby line grammar
         assert_eq!(ruby_line("4.0.7"), "4.0");
         assert_eq!(ruby_line("3.3.12"), "3.3");
         assert_eq!(ruby_line("4.0"), "4.0");
-        assert!(sharded_era_first("0.17.0"));
-        assert!(sharded_era_first("0.17.0-rc1"));
-        assert!(!sharded_era_first("0.16.32"));
+        assert!(tpkg::versions::sharded_release_era("0.17.0"));
+        assert!(tpkg::versions::sharded_release_era("0.17.0-rc1"));
+        assert!(!tpkg::versions::sharded_release_era("0.16.32"));
     }
 
     #[test]

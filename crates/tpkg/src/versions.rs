@@ -103,6 +103,24 @@ pub fn below_floor(tebako_version: &str, floor: &str) -> bool {
     compare(tebako_version, floor) == Ordering::Less
 }
 
+/// The sharded release-tag era (spec 36 §6): tebako ≥ 0.17 publishes
+/// per-line shard tags (`v<tebako>-<engine><line>`) — from 0.17.1
+/// per-platform (`v<tebako>-<engine><line>-<platform>`); the ≤ 0.16
+/// era's monolithic `v<tebako>` tags are immutable. A pre-release
+/// suffix rides its numeric line (`0.17.0-rc1` is the sharded era). ONE
+/// owner (spec 00 §10): every tag-probe order derives from here.
+pub fn sharded_release_era(tebako_version: &str) -> bool {
+    let bare = tebako_version.strip_prefix('v').unwrap_or(tebako_version);
+    let numeric = bare.split('-').next().unwrap_or(bare);
+    let mut parts = numeric.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    let triple = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    triple >= (0, 17, 0)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Op {
     Eq,
@@ -257,6 +275,20 @@ mod tests {
         assert!(!below_floor("2.9.0", "2.8.8"));
         assert!(!below_floor("2.8.8", "2.8"));
         assert!(below_floor("2.7", "2.8"));
+    }
+
+    #[test]
+    fn sharded_release_era_is_the_locked_boundary() {
+        // spec 36 §6: ≥ 0.17 shards; a pre-release suffix rides its
+        // numeric line; a leading `v` is spelling, not data.
+        assert!(sharded_release_era("0.17.0"));
+        assert!(sharded_release_era("0.17.1"));
+        assert!(sharded_release_era("0.17.0-rc1"));
+        assert!(sharded_release_era("v0.17.1"));
+        assert!(sharded_release_era("2.0.0"));
+        assert!(!sharded_release_era("0.16.32"));
+        assert!(!sharded_release_era("0.16.99-rc2"));
+        assert!(!sharded_release_era("v0.16.28"));
     }
 
     #[test]
