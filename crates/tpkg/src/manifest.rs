@@ -1206,6 +1206,36 @@ pub struct MountSemantics {
     pub suggested: String,
 }
 
+/// The VFS drive of a runtime root: `A:/t` → `Some("A:")`;
+/// `/__tfs__` → `None` (POSIX — no drive qualification). Spec 17 §1.
+pub fn vfs_drive(runtime_root: &str) -> Option<&str> {
+    let b = runtime_root.as_bytes();
+    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+        Some(&runtime_root[..2])
+    } else {
+        None
+    }
+}
+
+/// Windows (spec 17 §1): a declared mount is a POSIX absolute path in
+/// the VFS namespace (`/`, `/t`, `/opt/x`); on windows the namespace
+/// presents on its own drive — the drive of the runtime root (`A:/t`,
+/// short by owner decision: MAX_PATH headroom on every in-image path).
+/// The driver therefore mounts every declared point at `<drive><mount>`,
+/// and every consumer spelling an in-VFS path qualifies it by the same
+/// rule. Ruby's C-level path expansion re-roots drive-relative paths
+/// (`/...`) onto the process cwd drive; only drive-qualified paths are
+/// stable across expansion, so qualifying is what keeps payload paths
+/// inside the VFS. POSIX roots carry no drive: the mount is used as
+/// declared. A relative mount (the grammar admits it) is never
+/// qualified.
+pub fn qualify_mount(mount: &str, runtime_root: &str) -> String {
+    match vfs_drive(runtime_root) {
+        Some(drive) if mount.starts_with('/') => format!("{drive}{mount}"),
+        _ => mount.to_string(),
+    }
+}
+
 /// PROVIDES of kind `data`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DataProvides {
@@ -2754,6 +2784,32 @@ mod tests {
         (0..64)
             .map(|i| b"0123456789abcdef"[((c + i as u8) % 16) as usize] as char)
             .collect()
+    }
+
+    #[test]
+    fn vfs_drive_reads_the_root_drive() {
+        assert_eq!(vfs_drive("A:/t"), Some("A:"));
+        assert_eq!(vfs_drive("a:/t"), Some("a:"));
+        assert_eq!(vfs_drive("A:"), Some("A:"));
+        assert_eq!(vfs_drive("/__tfs__"), None);
+        assert_eq!(vfs_drive("//share/x"), None);
+        assert_eq!(vfs_drive("1:/x"), None);
+        assert_eq!(vfs_drive(""), None);
+    }
+
+    #[test]
+    fn qualify_mount_qualifies_posix_absolute_mounts_onto_the_drive() {
+        assert_eq!(qualify_mount("/bench-fixture", "A:/t"), "A:/bench-fixture");
+        assert_eq!(qualify_mount("/", "A:/t"), "A:/");
+        // POSIX roots carry no drive: the declared mount, unchanged
+        assert_eq!(
+            qualify_mount("/bench-fixture", "/__tfs__"),
+            "/bench-fixture"
+        );
+        // a relative mount is never qualified
+        assert_eq!(qualify_mount("rel/x", "A:/t"), "rel/x");
+        // already drive-qualified: unchanged
+        assert_eq!(qualify_mount("A:/x", "A:/t"), "A:/x");
     }
 
     #[test]

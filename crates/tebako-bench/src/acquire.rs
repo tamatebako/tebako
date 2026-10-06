@@ -1282,6 +1282,14 @@ pub fn fetch_tfs_tool(
 pub struct RuntimePair {
     pub exe: PathBuf,
     pub image: PathBuf,
+    /// The windows dylib staged under its `install_as` name beside the
+    /// exe, when the factory ships one — the lazy arm's entry restage
+    /// copies it in beside the exe (the exe's PE import name).
+    pub dll: Option<PathBuf>,
+    /// The baked runtime root from the factory manifest (windows) — the
+    /// drive the VFS presents on; the `{fixture}` spelling qualifies
+    /// against it (spec 17 §1).
+    pub mount_root: Option<String>,
     /// The factory's tebako version (the tag's version segment: the
     /// monolithic tag sans `v`, or the leading semver of a spec 36 §6
     /// per-line tag — see [`tag_tebako_version`]).
@@ -1590,6 +1598,8 @@ pub fn acquire_runtime_pair(
     // leaves the loader to resolve a same-named plain-build dll off PATH
     // (the 0xC0000139 shadow). Never a rename guess — the manifest
     // declares it.
+    let mut staged_dll: Option<PathBuf> = None;
+    let mut staged_root: Option<String> = None;
     if cfg!(windows) {
         let dll = format!("{stem}.dll");
         match tebako_http::get(&format!("{base}/{dll}.sha256")) {
@@ -1600,7 +1610,7 @@ pub fn acquire_runtime_pair(
                             "acquire: {base}/{dll}.sha256 is not a bare 64-hex sha256"
                         ))
                     })?;
-                let install_as = dll_install_as(&base, &stem, &dll)?;
+                let (install_as, mount_root) = windows_manifest_peek(&base, &stem, &dll)?;
                 let asset = layout.assets.join(&dll);
                 download_verified(&format!("{base}/{dll}"), &asset, &expected)?;
                 let staged = target_dir.join(&install_as);
@@ -1611,6 +1621,8 @@ pub fn acquire_runtime_pair(
                         staged.display()
                     ))
                 })?;
+                staged_dll = Some(staged);
+                staged_root = mount_root;
             }
             Err(tebako_http::FetchError::IndexUnavailable(_)) => {}
             Err(e) => {
@@ -1623,6 +1635,8 @@ pub fn acquire_runtime_pair(
     Ok(RuntimePair {
         exe,
         image,
+        dll: staged_dll,
+        mount_root: staged_root,
         tebako_version,
         lang_version: rr.lang_version.clone(),
     })
@@ -1649,14 +1663,20 @@ struct BundleManifest {
     /// The windows dylib, when the factory ships one (same absence
     /// rule as the bare era: the manifest not naming it is the proof).
     dll: Option<BundleManifestMember>,
+    /// The baked runtime root — the drive the windows VFS presents on
+    /// (spec 17 §1; the `{fixture}` spelling qualifies against it).
+    mount_root: Option<String>,
 }
 
-/// The bare-era manifest peek: only the dll facet matters (the exe and
-/// image ride their sidecars). Narrow on purpose — an old-era manifest
-/// missing an unrelated key must not fail the windows staging.
+/// The bare-era manifest peek: only the dll facet and the baked root
+/// matter (the exe and image ride their sidecars). Narrow on purpose —
+/// an old-era manifest missing an unrelated key must not fail the
+/// windows staging.
 #[derive(serde::Deserialize)]
 struct DllFacetPeek {
     dll: Option<BundleManifestMember>,
+    /// The baked runtime root (same role as the bundle manifest's).
+    mount_root: Option<String>,
 }
 
 /// Validate the manifest's `install_as` declaration for a shipped dll:
@@ -1679,10 +1699,16 @@ fn valid_install_as<'m>(
     Ok(name)
 }
 
-/// The bare-era dll's staged name: fetch `<stem>.manifest.json`, read
-/// the dll facet's `install_as`. A dll-carrying release whose manifest
-/// is absent, unparseable, or facet-less is the named error.
-fn dll_install_as(base: &str, stem: &str, dll: &str) -> Result<String, BenchError> {
+/// The bare-era windows manifest peek: fetch `<stem>.manifest.json`,
+/// returning the dll facet's `install_as` (the staged name) and the
+/// baked `mount_root` (the drive the VFS presents on — the `{fixture}`
+/// qualification's input). A dll-carrying release whose manifest is
+/// absent, unparseable, or facet-less is the named error.
+fn windows_manifest_peek(
+    base: &str,
+    stem: &str,
+    dll: &str,
+) -> Result<(String, Option<String>), BenchError> {
     let body = get(&format!("{base}/{stem}.manifest.json"))?;
     let peek: DllFacetPeek = serde_json::from_slice(&body).map_err(|e| {
         BenchError::operational(format!(
@@ -1694,7 +1720,8 @@ fn dll_install_as(base: &str, stem: &str, dll: &str) -> Result<String, BenchErro
             "acquire: the release ships {dll} but {stem}.manifest.json declares no dll facet — the exe's import name is unknowable"
         ))
     })?;
-    valid_install_as(member.install_as.as_deref(), &member.filename).map(str::to_string)
+    let install_as = valid_install_as(member.install_as.as_deref(), &member.filename)?;
+    Ok((install_as.to_string(), peek.mount_root))
 }
 
 /// The bundle-era staging (spec 36 §2/§5): the release `.sha256`
@@ -1745,10 +1772,11 @@ fn stage_bundle_pair(
     let exe = take(&mut staged, &manifest.filename)?;
     chmod_0755(&exe)?;
     let image = take(&mut staged, &manifest.image.filename)?;
+    let mut dll_path: Option<PathBuf> = None;
     if let Some(dll) = &manifest.dll {
         let staged_dll = take(&mut staged, &dll.filename)?;
         let install_as = valid_install_as(dll.install_as.as_deref(), &dll.filename)?;
-        if install_as != dll.filename {
+        let final_dll = if install_as != dll.filename {
             let dest = target_dir.join(install_as);
             std::fs::rename(&staged_dll, &dest).map_err(|e| {
                 BenchError::operational(format!(
@@ -1757,11 +1785,17 @@ fn stage_bundle_pair(
                     dest.display()
                 ))
             })?;
-        }
+            dest
+        } else {
+            staged_dll
+        };
+        dll_path = Some(final_dll);
     }
     Ok(RuntimePair {
         exe,
         image,
+        dll: dll_path,
+        mount_root: manifest.mount_root.clone(),
         tebako_version,
         lang_version: lang_version.to_string(),
     })
@@ -1889,12 +1923,17 @@ pub struct LazyPair {
     pub image: PathBuf,
     /// The entry dir — the cold wipe's reseed target.
     pub entry_dir: PathBuf,
+    /// The baked runtime root (the `{fixture}` qualification's input).
+    pub mount_root: Option<String>,
     /// The serving loopback fixture (lives for the whole leg).
     pub server: crate::lazy_server::LazyServer,
 }
 
-/// Acquire the pair, then build the seeding entry: the exe copied in,
-/// the blksum sidecar authored in-process from the verified image bytes
+/// Acquire the pair, then build the seeding entry: the exe copied in
+/// (its windows dylib riding beside it — the import name resolves
+/// against the EXE'S directory, so a dll left in the target dir is
+/// invisible here), the blksum sidecar authored in-process from the
+/// verified image bytes
 /// (spec 39 §3's publisher rule — the harness IS this fixture's
 /// publisher), the descriptor written against the fixture's port, and a
 /// pristine descriptor copy kept for the cold reseed.
@@ -1955,6 +1994,26 @@ pub fn acquire_lazy_runtime_pair(
         ))
     })?;
     chmod_0755(&exe)?;
+    if let Some(dll) = &pair.dll {
+        let dll_name = dll
+            .file_name()
+            .ok_or_else(|| {
+                BenchError::operational(format!(
+                    "acquire: the staged dll {} has no file name",
+                    dll.display()
+                ))
+            })?
+            .to_string_lossy()
+            .into_owned();
+        let entry_dll = entry.join(&dll_name);
+        std::fs::copy(dll, &entry_dll).map_err(|e| {
+            BenchError::operational(format!(
+                "acquire: cannot stage {} as {}: {e}",
+                dll.display(),
+                entry_dll.display()
+            ))
+        })?;
+    }
     tpkg::lazy::write_descriptor(&entry, &image_base, &seed).map_err(|e| {
         BenchError::operational(format!("acquire: cannot write the seed descriptor: {e}"))
     })?;
@@ -1980,6 +2039,7 @@ pub fn acquire_lazy_runtime_pair(
         exe,
         image: entry.join(&image_base),
         entry_dir: entry,
+        mount_root: pair.mount_root,
         server,
     })
 }
@@ -2085,6 +2145,18 @@ pub const FIXTURE_LEN: u64 = 64 * 1024 * 1024;
 
 /// The fixture's in-image path under the harness's fixed mount point.
 pub const FIXTURE_VFS_PATH: &str = "/bench-fixture/fixture.bin";
+
+/// The `{fixture}` substitution for runtime-exe arms: the in-image
+/// path, drive-qualified against the baked runtime root on windows
+/// (spec 17 §1 — tpkg owns the rule; the root flows from the factory
+/// manifest, never a guess). POSIX legs spell the declared path
+/// verbatim.
+pub fn fixture_vfs_path(mount_root: Option<&str>) -> String {
+    match mount_root {
+        Some(root) => tpkg::qualify_mount(FIXTURE_VFS_PATH, root),
+        None => FIXTURE_VFS_PATH.to_string(),
+    }
+}
 
 pub fn generate_fixture(dest: &Path) -> Result<(), BenchError> {
     let mut f = std::fs::File::create(dest).map_err(|e| {
@@ -2411,7 +2483,7 @@ fn rfc3339_now() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{candidate_bases, tag_tebako_version, valid_install_as};
+    use super::{candidate_bases, fixture_vfs_path, tag_tebako_version, valid_install_as};
 
     #[test]
     fn monolithic_tags_keep_the_bare_version() {
@@ -2559,5 +2631,18 @@ mod tests {
         for bad in ["bin/x64.dll", "..\\x64.dll", "", ".", ".."] {
             assert!(valid_install_as(Some(bad), "d.dll").is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_fixture_path_qualifies_against_the_runtime_root() {
+        assert_eq!(
+            fixture_vfs_path(Some("A:/t")),
+            "A:/bench-fixture/fixture.bin"
+        );
+        assert_eq!(fixture_vfs_path(None), "/bench-fixture/fixture.bin");
+        assert_eq!(
+            fixture_vfs_path(Some("/__tfs__")),
+            "/bench-fixture/fixture.bin"
+        );
     }
 }
