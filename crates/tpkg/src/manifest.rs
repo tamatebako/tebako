@@ -155,6 +155,19 @@ impl Platform {
             .find(|p| p.release_asset_name() == name)
     }
 
+    /// The per-platform shard-tag segment (spec 36 §6): the trailing
+    /// segment of a `v<tebako>-<engine><line>-<segment>` shard release
+    /// tag. One shard release carries every arch leg of its platform
+    /// group (`macos` serves x86_64 + arm64 alike).
+    pub fn shard_tag_segment(self) -> &'static str {
+        match self {
+            Platform::X86_64LinuxGnu | Platform::Aarch64LinuxGnu => "linux-gnu",
+            Platform::X86_64LinuxMusl | Platform::Aarch64LinuxMusl => "linux-musl",
+            Platform::Aarch64Macos | Platform::X86_64Macos => "macos",
+            Platform::X86_64WindowsUcrt | Platform::Aarch64WindowsUcrt => "windows",
+        }
+    }
+
     /// The Platform of the compile target — the single owner of host
     /// detection. Every "what platform am I" question (bootstrap, shim,
     /// cli) delegates here; unsupported targets fail to compile.
@@ -187,6 +200,42 @@ impl Platform {
         )))]
         compile_error!("unsupported platform (outside the supported platform-triplet axis)");
     }
+}
+
+/// The per-platform shard-tag vocabulary (spec 36 §6): the trailing
+/// segment set of a `v<tebako>-<engine><line>-<segment>` shard release
+/// tag. ONE owner — the factories publish under it, the loaders derive
+/// from it; never a second spelling anywhere.
+pub const SHARD_TAG_SEGMENTS: [&str; 4] = ["linux-gnu", "linux-musl", "macos", "windows"];
+
+/// The shard segment a release tag carries (`v0.17.1-ruby3.3-windows`
+/// → `windows`), `None` when the tag ends outside the vocabulary — an
+/// opaque tag (`v2.5.1`), a line shard (`v0.17.0-ruby3.4`), or a
+/// monolith (`v0.16.28`) is never rewritten.
+pub fn shard_tag_segment_of(tag: &str) -> Option<&'static str> {
+    SHARD_TAG_SEGMENTS
+        .iter()
+        .copied()
+        .find(|s| tag.strip_suffix(s).is_some_and(|head| head.ends_with('-')))
+}
+
+/// The tag with its shard segment substituted for `host`'s:
+/// `v0.17.1-ruby3.3-windows` on a macOS host → `v0.17.1-ruby3.3-macos`.
+/// A registry's version-level `release.ref` names any one published
+/// shard of the version (spec 36 §6); the reader's own platform segment
+/// replaces it. `None` when the tag carries no shard segment — verbatim
+/// is correct.
+pub fn shard_tag_substitute(tag: &str, host: Platform) -> Option<String> {
+    let segment = shard_tag_segment_of(tag)?;
+    let head = &tag[..tag.len() - segment.len()];
+    Some(format!("{head}{}", host.shard_tag_segment()))
+}
+
+/// The per-platform shard tag of a line-level pin (`v0.17.1-ruby3.3` +
+/// a macOS host → `v0.17.1-ruby3.3-macos`). Caller-gated on the ≥ 0.17
+/// era — a ≤ 0.16 monolithic tag has no shard to name.
+pub fn shard_tag_append(tag: &str, host: Platform) -> String {
+    format!("{tag}-{}", host.shard_tag_segment())
 }
 
 impl fmt::Display for Platform {
@@ -2776,6 +2825,76 @@ mod tests {
     fn platform_host_is_on_the_axis() {
         let h = Platform::host();
         assert!(Platform::ALL.contains(&h));
+    }
+
+    #[test]
+    fn shard_tag_segment_covers_the_axis() {
+        assert_eq!(Platform::X86_64LinuxGnu.shard_tag_segment(), "linux-gnu");
+        assert_eq!(Platform::Aarch64LinuxGnu.shard_tag_segment(), "linux-gnu");
+        assert_eq!(Platform::X86_64LinuxMusl.shard_tag_segment(), "linux-musl");
+        assert_eq!(Platform::Aarch64LinuxMusl.shard_tag_segment(), "linux-musl");
+        assert_eq!(Platform::Aarch64Macos.shard_tag_segment(), "macos");
+        assert_eq!(Platform::X86_64Macos.shard_tag_segment(), "macos");
+        assert_eq!(Platform::X86_64WindowsUcrt.shard_tag_segment(), "windows");
+        assert_eq!(Platform::Aarch64WindowsUcrt.shard_tag_segment(), "windows");
+        for p in Platform::ALL {
+            assert!(SHARD_TAG_SEGMENTS.contains(&p.shard_tag_segment()));
+        }
+    }
+
+    #[test]
+    fn shard_tag_segment_of_reads_only_the_vocabulary() {
+        assert_eq!(
+            shard_tag_segment_of("v0.17.1-ruby3.3-windows"),
+            Some("windows")
+        );
+        assert_eq!(
+            shard_tag_segment_of("v0.17.1-ruby3.3-linux-gnu"),
+            Some("linux-gnu")
+        );
+        assert_eq!(
+            shard_tag_segment_of("v0.17.1-python3.12-linux-musl"),
+            Some("linux-musl")
+        );
+        assert_eq!(shard_tag_segment_of("v0.17.1-jruby10-macos"), Some("macos"));
+        // line shards, monoliths, and opaque tags carry no segment
+        assert_eq!(shard_tag_segment_of("v0.17.0-ruby3.3"), None);
+        assert_eq!(shard_tag_segment_of("v0.16.28"), None);
+        assert_eq!(shard_tag_segment_of("v2.5.1"), None);
+        // a bare suffix without the '-' join is not a segment
+        assert_eq!(shard_tag_segment_of("windows"), None);
+    }
+
+    #[test]
+    fn shard_tag_substitute_rewrites_the_segment_for_the_host() {
+        assert_eq!(
+            shard_tag_substitute("v0.17.1-ruby3.3-windows", Platform::Aarch64Macos),
+            Some("v0.17.1-ruby3.3-macos".to_string())
+        );
+        assert_eq!(
+            shard_tag_substitute("v0.17.1-ruby3.3-linux-gnu", Platform::X86_64WindowsUcrt),
+            Some("v0.17.1-ruby3.3-windows".to_string())
+        );
+        // the two-segment linux forms substitute whole
+        assert_eq!(
+            shard_tag_substitute("v0.17.1-ruby3.3-linux-musl", Platform::X86_64LinuxGnu),
+            Some("v0.17.1-ruby3.3-linux-gnu".to_string())
+        );
+        // already the host's shard: no rewrite (the caller keeps verbatim)
+        assert_eq!(
+            shard_tag_substitute("v0.17.1-ruby3.3-macos", Platform::X86_64Macos),
+            Some("v0.17.1-ruby3.3-macos".to_string())
+        );
+        // no segment → no opinion
+        assert_eq!(shard_tag_substitute("v2.5.1", Platform::Aarch64Macos), None);
+    }
+
+    #[test]
+    fn shard_tag_append_names_the_host_shard() {
+        assert_eq!(
+            shard_tag_append("v0.17.1-ruby3.3", Platform::Aarch64LinuxMusl),
+            "v0.17.1-ruby3.3-linux-musl"
+        );
     }
 
     #[test]

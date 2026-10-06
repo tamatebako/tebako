@@ -195,10 +195,23 @@ nothing new.
   set (line tips: 5 rubies × 7 platforms ≈ 385 per-file assets, ≈ 175
   bundle assets) — comfortably under the ceiling on either shape.
 - **Catalog republication is for migrations only** (a format switch
-  like dwarfs→limnifs), and a catalog run DERIVES its per-line shard
-  tags itself: `v<ver>-ruby<line>` per ruby line in the matrix
-  vocabulary, no operator input (the v0.16.28 manual
-  `TEBAKO_RELEASE_TAG` input remains as the override). The AUDIT rides
+  like dwarfs→limnifs), and a catalog run DERIVES its shard tags itself:
+  `v<ver>-<engine><line>-<platform>` per (ruby line × platform group) —
+  the platform group's vocabulary is `linux-gnu` / `linux-musl` /
+  `macos` / `windows` (one shard serves both arch legs of its group) —
+  no operator input (the v0.16.28 manual `TEBAKO_RELEASE_TAG` input
+  remains as the override). A per-platform shard tag is the publish
+  unit because concurrent platform legs never share one release object
+  (the ghost-release race); a version's line-level tag MAY also exist
+  (the 0.17.0 shape) but is never required. **Consumers derive:** a
+  registry's version-level `release.ref` names any one published shard
+  of the version; a reader substitutes its own platform group's segment
+  (`v0.17.1-ruby3.3-windows` read on macOS → `v0.17.1-ruby3.3-macos`),
+  and a line-level pin probes its per-platform shard first, the line
+  tag second, the monolith last. The grammar's ONE code owner is tpkg
+  (`Platform::shard_tag_segment`, `shard_tag_substitute`,
+  `shard_tag_append`); a tag outside the vocabulary is opaque and never
+  rewritten. The AUDIT rides
   the tail of each (platform × shard) run — the duty is per-platform by
   construction, and the platform run owns the matrix truth (its own
   compute outputs; never a recomputation, never a cross-run stale read);

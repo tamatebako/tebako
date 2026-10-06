@@ -104,7 +104,7 @@ keeps its per-member pins. The asset budget this buys: a signed catalog
 publish drops from ~1,800 assets (over GitHub's 1,000-asset release
 ceiling — the v0.16.28 wedge) to ~805, and a routine tips release to
 ~175. Release topology follows spec 36 §6: tips by default, catalog
-runs are for migrations and derive their own per-line shard tags,
+runs are for migrations and derive their own per-platform shard tags,
 withdrawal bounds growth.
 
 ```json
