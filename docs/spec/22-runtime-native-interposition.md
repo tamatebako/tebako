@@ -555,7 +555,12 @@ host tier use: a home-annotated mount's executable execs from its
 materialized whole-tree home, never the closure mirror — the mirror
 strands a self-locating prefix (a materialized JVM's `java.home` without
 `conf/` dies at JCE boot listing `conf/security/policy`; the packed-mn
-ISO leg, 2026-08-28).
+ISO leg, 2026-08-28). The tree answers only what it HOLDS: a path the
+home mount covers but its tree never carried (a payload mounted at `/`
+covers `/bin/sh`, which no payload image ships) falls through to the
+host answer — the exec/spawn surface applies the jail check and returns
+ENOENT, and the consumer execs the host binary, never a twin that was
+never extracted (#553).
 
 **The windows host tier** (armed unconditionally on windows — there is
 no preload shim to deliver and no injection var to re-arm, so the tier
