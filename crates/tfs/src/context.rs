@@ -2015,6 +2015,57 @@ impl FsContext {
             }
             return result;
         };
+        // Covered but not held (the materialize path's discipline): the
+        // home mount COVERS rel but its tree never held it — a payload
+        // mounted at / covering /bin/sh is exactly the case that broke
+        // every spawn on the truffleruby runtime (#553). Check BEFORE
+        // extracting the tree: the host check, then ENOENT, so the
+        // consumer execs the host answer and never a twin that does not
+        // exist.
+        if !rel.is_empty() {
+            let stat = match self.mounts.get(&handle) {
+                Some(mount) => mount.backend.stat(&rel),
+                None => {
+                    if let Some(start) = trace_start {
+                        trace::emit(
+                            trace::Event::new(op, &normalized, format!("error:{}", libc::ENODEV))
+                                .with_errno(libc::ENODEV)
+                                .dur(start),
+                        );
+                    }
+                    return Err(libc::ENODEV);
+                }
+            };
+            match stat {
+                Ok(_) => {}
+                Err(e) if e == libc::ENOENT => {
+                    if let Err(e) = self.host_check(path, HostAccess::Ro) {
+                        if let Some(start) = trace_start {
+                            trace::emit(
+                                trace::Event::new(op, &normalized, format!("error:{e}"))
+                                    .with_errno(e)
+                                    .dur(start),
+                            );
+                        }
+                        return Err(e);
+                    }
+                    if let Some(start) = trace_start {
+                        trace::emit(trace::Event::new(op, &normalized, "host").dur(start));
+                    }
+                    return Err(libc::ENOENT);
+                }
+                Err(e) => {
+                    if let Some(start) = trace_start {
+                        trace::emit(
+                            trace::Event::new(op, &normalized, format!("error:{e}"))
+                                .with_errno(e)
+                                .dur(start),
+                        );
+                    }
+                    return Err(e);
+                }
+            }
+        }
         let root = match self.home_tree_root(handle) {
             Ok(root) => root,
             Err(e) => {
@@ -4022,6 +4073,35 @@ mod tests {
         // Idempotent within the process: the tree extracts once.
         let again = ctx.exec_materialize("/tfs").unwrap();
         assert_eq!(again, answer);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exec_materialize_falls_to_the_host_for_a_covered_not_held_path() {
+        // #553: a home mount COVERS paths its tree never held (a
+        // payload mounted at / covers /bin/sh) — the answer is the
+        // host-fallback ENOENT (the consumer execs the host binary),
+        // never an extracted twin path that does not exist.
+        let dir = std::env::temp_dir().join(format!("tfs-home-notheld-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_home_zip(&dir, Some("java_home"));
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        // The fixture holds bin/tool and lib/modules — never bin/sh.
+        let answer = ctx.exec_materialize("/tfs/bin/sh");
+        assert!(
+            matches!(answer, Err(e) if e == libc::ENOENT),
+            "a covered-not-held path answers the host-fallback ENOENT, not a twin: {answer:?}"
+        );
+
+        // The held sibling still answers the extracted twin.
+        let held = ctx.exec_materialize("/tfs/bin/tool").unwrap();
+        let twin = std::path::PathBuf::from(held.to_string_lossy().into_owned());
+        assert_eq!(std::fs::read(twin).unwrap(), b"#!/bin/fake\n");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
