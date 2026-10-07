@@ -14,6 +14,7 @@
 //!   tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]
 //!   tebako list-registries
 //!   tebako update-registries
+//!   tebako registry retire <registry-file> <name>@<version> [--force]
 //!   tebako install <ref | name[@version]>
 //!   tebako uninstall <name>
 //!   tebako check <name | image.tfs | package | tebako.yaml>
@@ -78,6 +79,7 @@ pub mod install;
 pub mod options;
 pub mod packager;
 pub mod publish;
+pub mod registry;
 pub mod resolve;
 pub mod run;
 pub mod runner;

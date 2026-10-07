@@ -235,3 +235,63 @@ fn add_registry_then_install_resolves_the_requires_closure_no_refresh() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------
+// tebako registry retire (tebako#675)
+// ---------------------------------------------------------------------
+
+const TWO_ROW_REGISTRY: &str = "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:1.0}\n        runtime_requirement: {engine: ruby, constraint: \">= 3.1\"}\n        entrypoints: [app]\n      - version: 2.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:2.0}\n        runtime_requirement: {engine: ruby, constraint: \">= 3.1\"}\n        entrypoints: [app]\n    default: 2.0\n";
+
+#[test]
+fn registry_retire_removes_a_row_and_refuses_a_dangling_default() {
+    let dir = scratch("retire");
+    let home = dir.join("home");
+    let shim = dir.join("tebako-shim");
+    fs::write(&shim, b"#!/bin/sh\n").unwrap();
+    let registry = dir.join("tpkg-registry.yaml");
+    fs::write(&registry, TWO_ROW_REGISTRY).unwrap();
+    let path = registry.to_str().unwrap();
+
+    // … the default's row refuses without --force (65, named) — while a
+    // second row survives, so only the dangling-default class fires …
+    let (code, text) = run(&home, &shim, &["registry", "retire", path, "app@2.0"]);
+    assert_eq!(code, 65, "{text}");
+    assert!(text.contains("RegistryDefaultWouldDangle"), "{text}");
+    assert!(fs::read_to_string(&registry)
+        .unwrap()
+        .contains("version: 2.0"));
+
+    // … then the plain (non-default) row retires clean …
+    let (code, text) = run(&home, &shim, &["registry", "retire", path, "app@1.0"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("retired app@1.0"), "{text}");
+    let after = tebako_resolve::Registry::from_yaml(&fs::read_to_string(&registry).unwrap())
+        .expect("the rewritten registry parses");
+    assert_eq!(
+        after
+            .payload("app")
+            .unwrap()
+            .versions
+            .iter()
+            .map(|v| v.version.as_str())
+            .collect::<Vec<_>>(),
+        vec!["2.0"],
+        "only 2.0 remains"
+    );
+    assert!(
+        fs::read_to_string(home.join("journal.log"))
+            .unwrap()
+            .contains("event=registry-row-retired"),
+        "the retirement journaled"
+    );
+
+    // … and usage errors are usage (1), never a verdict code.
+    let (code, text) = run(&home, &shim, &["registry", "retire", path]);
+    assert_eq!(code, 1, "{text}");
+    assert!(text.contains("usage: tebako registry retire"), "{text}");
+    let (code, text) = run(&home, &shim, &["registry", "bogusverb"]);
+    assert_eq!(code, 1, "{text}");
+    assert!(text.contains("unknown registry verb"), "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}

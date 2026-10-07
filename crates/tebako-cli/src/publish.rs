@@ -1590,7 +1590,7 @@ fn upsert_registry(
     }
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), TebakoError> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), TebakoError> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| {
         err(

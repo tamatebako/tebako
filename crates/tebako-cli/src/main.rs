@@ -52,6 +52,12 @@ const USAGE: &str = "Usage:
   tebako add-registry <ref>            register a tpkg-registry.yaml
   tebako list-registries               list the registered registries
   tebako update-registries             refresh the dispatch-time registry cache
+  tebako registry retire <registry-file> <name>@<version> [--force]
+                                       remove one version row from a LOCAL registry
+                                       file; refuses while an in-registry runtime
+                                       edge strands, the default would dangle, or
+                                       the row is the payload's last (--force
+                                       overrides, loudly)
   tebako setup                         seed the official registry into the config
                                        (installer flow; idempotent, user-removable)
   tebako keys import <file>            register a public key into the trusted keyring
@@ -205,6 +211,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "add-registry" => run_add_registry(rest),
         "list-registries" => run_list_registries(rest),
         "update-registries" => run_update_registries(rest),
+        "registry" => run_registry(rest),
         "keys" => run_keys(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
@@ -447,6 +454,56 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
         }
     }
     Ok(())
+}
+
+/// `tebako registry <verb>` — the registry-file maintenance surface:
+/// `retire` (tebako#675: the journaled local row removal).
+fn run_registry(args: &[String]) -> Result<(), CliExit> {
+    let Some(verb) = args.first() else {
+        return Err(CliExit::Usage(
+            "usage: tebako registry retire …".to_string(),
+        ));
+    };
+    match verb.as_str() {
+        "retire" => {
+            const FORM: &str =
+                "usage: tebako registry retire <registry-file> <name>@<version> [--force]";
+            let mut positional: Vec<&str> = Vec::new();
+            let mut force = false;
+            for arg in &args[1..] {
+                match arg.as_str() {
+                    "--force" => force = true,
+                    other if !other.starts_with('-') => positional.push(other),
+                    _ => return Err(CliExit::Usage(FORM.to_string())),
+                }
+            }
+            let [path, target] = positional.as_slice() else {
+                return Err(CliExit::Usage(FORM.to_string()));
+            };
+            let (name, version) = target.split_once('@').ok_or_else(|| {
+                CliExit::Usage(format!(
+                    "invalid target '{target}' — the form is <name>@<version>"
+                ))
+            })?;
+            if name.is_empty() || version.is_empty() {
+                return Err(CliExit::Usage(format!(
+                    "invalid target '{target}' — the form is <name>@<version>"
+                )));
+            }
+            let report = tebako_cli::registry::retire(
+                &tebako_home()?,
+                std::path::Path::new(path),
+                name,
+                version,
+                force,
+            )?;
+            print!("{report}");
+            Ok(())
+        }
+        other => Err(CliExit::Usage(format!(
+            "unknown registry verb '{other}' — usage: tebako registry retire …"
+        ))),
+    }
 }
 
 /// `tebako setup` (spec 37 §6): seed the official registry entry — the

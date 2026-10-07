@@ -92,6 +92,20 @@ several per-platform shard tags, the row carries its own `release.ref`
 (registry schema MINOR 6) naming the tag that serves its bytes; readers
 prefer it over the version-level ref, and older readers ignore it.
 
+## Maintaining a registry
+
+`tebako registry retire <registry-file> <name>@<version> [--force]`
+removes one version row from a local registry file — the auditable
+path for retiring superseded rows (a re-cut, a line flip). It refuses
+while the retirement would strand another payload's runtime edge in
+the same registry, while the row is the payload's `default:` (the
+dangling-default class), or while it is the payload's last row;
+`--force` overrides, repointing a dangling default to the newest
+remaining row and spelling every overridden refusal in the output and
+the journal. It writes nothing but the named file, rewrites through
+the publish flow's own discipline — parse, mutate, re-validate, atomic
+rename — and journals the removal as `event=registry-row-retired`.
+
 A registry's runtime rows are not installable payloads: `tebako install
 <name>` on a `kind: runtime` entry refuses before any download
 (`RuntimeKindNotInstallable`, exit 65) — install the app that needs the
