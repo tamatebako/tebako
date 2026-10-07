@@ -1171,6 +1171,7 @@ pub(crate) fn plan_from_registry_entry(
             artifact,
             sha256,
             oci,
+            release: row_release,
         }) => {
             if hit.channel_oci {
                 // spec 38 §11: the channel is DECLARED, never probed —
@@ -1192,7 +1193,17 @@ pub(crate) fn plan_from_registry_entry(
                     .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
                 (reference, Some(sha256.to_string()))
             } else {
-                let mut reference = reference;
+                // tebako#711 (registry MINOR 6): the row's additive
+                // `release.ref` names the shard tag carrying THIS row's
+                // bytes when a version line unions per-platform shard
+                // releases — it wins over the version-level ref (the asc
+                // derivation rides plan.reference, so shard-local
+                // signatures follow automatically).
+                let mut reference = match row_release {
+                    Some(row_ref) => Reference::parse(row_ref)
+                        .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?,
+                    None => reference,
+                };
                 match &mut reference {
                     Reference::Service { artifact: slot, .. } => {
                         *slot = Some(artifact.to_string());

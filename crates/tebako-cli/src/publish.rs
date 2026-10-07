@@ -1307,6 +1307,11 @@ pub fn publish_full_with_oci_sink(
                                 )
                             }),
                             blksum: Some(pin),
+                            // tebako#711's per-row shard ref (MINOR 6) is
+                            // a factory-side authoring concern — `tebako
+                            // publish` writes one release per version, so
+                            // the version-level ref already names the tag.
+                            release: None,
                         },
                     )
                 })

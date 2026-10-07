@@ -87,7 +87,10 @@ Runtime discovery is federated (spec 37 §8): a registry's runtime rows
 resolve their downloads from GitHub, GitHub Enterprise, and GitLab
 (SaaS or self-hosted) release references alike — the per-service
 download-URL shape derives from the row's `release.ref`, never from a
-hand-configured mirror.
+hand-configured mirror. When a version line unions rows published under
+several per-platform shard tags, the row carries its own `release.ref`
+(registry schema MINOR 6) naming the tag that serves its bytes; readers
+prefer it over the version-level ref, and older readers ignore it.
 
 Once a payload is installed, the store remembers WHICH registry
 resolved it (spec 37 §7's origin binding — a `.tfs.registry` marker

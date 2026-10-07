@@ -121,7 +121,11 @@ monolith.
      a `kind: runtime` entry whose `engine:` (+ `implementation:` when
      the edge names one) matches, with a version satisfying the
      edge's constraint: the base derives from that version's
-     `release.ref`. This is the zero-config path — a third-party
+     `release.ref` — or, when the host's row carries the additive
+     per-row `release.ref` (registry schema MINOR 6, tebako#711), from
+     THAT ref: a version line unioning rows from several per-platform
+     shard tags cannot name the serving tag at the version level, so
+     the row carries it. This is the zero-config path — a third-party
      runtime becomes resolvable from `tebako add-registry <its
      feedstock>` alone, no authored config required.
   4. The product default base

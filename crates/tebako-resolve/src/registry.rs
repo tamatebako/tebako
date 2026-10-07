@@ -156,6 +156,11 @@ pub enum RegistryPlatforms {
 /// pre-OCI readers ignore the field (spec 37 §2's forward-compat
 /// leniency for unknown registry keys). The additive `blksum:` field
 /// (spec 39 §3, MINOR 4) pins the artifact's lazy-mount digest sidecar.
+/// The additive `release:` field (spec 04 §2, MINOR 6; tebako#711) names
+/// the shard release carrying THIS row's bytes when a version line unions
+/// rows from several per-platform shard tags (the version-level
+/// `release.ref` cannot name the tag serving a given row); MINOR readers
+/// prefer the row's ref, pre-MINOR readers ignore it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlatformArtifact {
     pub artifact: String,
@@ -164,6 +169,8 @@ pub struct PlatformArtifact {
     pub oci: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blksum: Option<BlksumPin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release: Option<ReleaseRef>,
 }
 
 /// `blksum: {filename, sha256}` (spec 39 §3, additive — MINOR 4): the
@@ -604,6 +611,52 @@ impl RegistryVersion {
                         blksum,
                     )?;
                 }
+                // The additive per-row shard release ref (spec 04 §2,
+                // MINOR 6; tebako#711): the same grammar discipline as the
+                // version-level ref under per-triplet platforms — no
+                // `#artifact` (artifact selection belongs to THIS map
+                // entry), no `?sha256=` pin (the row's `sha256` key is the
+                // digest channel), and a class whose releases carry named
+                // artifacts (a shard tag names a service release; OCI rows
+                // keep the derived <version>-<triplet> tag on the
+                // version-level ref).
+                if let Some(row_release) = &entry.release {
+                    match Reference::parse(&row_release.r#ref) {
+                        Ok(Reference::Service {
+                            artifact: None,
+                            sha256: None,
+                            ..
+                        }) => {}
+                        Ok(Reference::Service {
+                            artifact: Some(_), ..
+                        }) => {
+                            return Err(invalid_entry(format!(
+                                "payload '{}' {} platforms[{platform}].release.ref carries an #artifact — artifact selection belongs to the platforms map entry",
+                                payload.name, self.version
+                            )));
+                        }
+                        Ok(Reference::Service {
+                            sha256: Some(_), ..
+                        }) => {
+                            return Err(invalid_entry(format!(
+                                "payload '{}' {} platforms[{platform}].release.ref carries a ?sha256= pin — the row's sha256 key is the digest channel",
+                                payload.name, self.version
+                            )));
+                        }
+                        Ok(_) => {
+                            return Err(invalid_entry(format!(
+                                "payload '{}' {} platforms[{platform}].release.ref is not a service release — artifact names only exist on tfs:<service>: releases",
+                                payload.name, self.version
+                            )));
+                        }
+                        Err(e) => {
+                            return Err(invalid_entry(format!(
+                                "payload '{}' {} platforms[{platform}].release.ref does not parse: {e}",
+                                payload.name, self.version
+                            )));
+                        }
+                    }
+                }
             }
         }
         if let Some(sig) = &self.signature {
@@ -692,6 +745,7 @@ impl RegistryVersion {
                     artifact: e.artifact.as_str(),
                     sha256: e.sha256.as_str(),
                     oci: e.oci.as_deref(),
+                    release: e.release.as_ref().map(|r| r.r#ref.as_str()),
                 })
             }
         }
@@ -724,11 +778,15 @@ pub enum PlatformSelection<'a> {
     /// The host triplet's declared artifact + sha256 pin. `oci` mirrors
     /// the artifact's `tfs+oci:` locator (spec 38 §7) — read only when
     /// the book declares `channel: oci`; the sha256 pin binds both
-    /// channels.
+    /// channels. `release` is the row's additive shard release ref
+    /// (MINOR 6; tebako#711): when spelled it names the shard tag
+    /// carrying THIS row's bytes, winning over the version-level
+    /// `release.ref`.
     Selected {
         artifact: &'a str,
         sha256: &'a str,
         oci: Option<&'a str>,
+        release: Option<&'a str>,
     },
 }
 
@@ -1204,6 +1262,7 @@ payloads:
                 artifact: "metanorma-1.2.3-macos-arm64.tfs",
                 sha256: &"b".repeat(64),
                 oci: None,
+                release: None,
             })
         );
         assert_eq!(
@@ -1212,6 +1271,7 @@ payloads:
                 artifact: "metanorma-1.2.3-linux-gnu-x86_64.tfs",
                 sha256: &"a".repeat(64),
                 oci: None,
+                release: None,
             })
         );
         // a triplet the registry does not publish → None (the caller's
@@ -1313,6 +1373,80 @@ payloads:
                 .contains("per-triplet pins live in platforms[<triplet>].blksum"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn the_per_row_shard_release_ref_round_trips_and_torn_refs_are_named() {
+        // spec 04 §2 (MINOR 6; tebako#711): a version line unioning rows
+        // from several per-platform shard tags carries the serving tag on
+        // the ROW — the version-level ref cannot name the tag a given
+        // row's bytes come from.
+        let whole = "a".repeat(64);
+        let yaml = format!(
+            "schema_version: 1\npayloads:\n  - name: ruby\n    kind: runtime\n    engine: ruby\n    versions:\n      - version: 4.0.7-0.17.1\n        platforms:\n          aarch64-macos:\n            artifact: tebako-runtime-0.17.1-ruby-4.0-aarch64-macos.tfs\n            sha256: \"{whole}\"\n            release: {{ref: tfs:github:o/ruby:v0.17.1-ruby4.0-macos}}\n          x86_64-linux-gnu:\n            artifact: tebako-runtime-0.17.1-ruby-4.0-x86_64-linux-gnu.tfs\n            sha256: \"{whole}\"\n        release: {{ref: tfs:github:o/ruby:v0.17.1}}\n"
+        );
+        let registry = Registry::from_yaml(&yaml).unwrap();
+        let v = registry
+            .payload("ruby")
+            .unwrap()
+            .version("4.0.7-0.17.1")
+            .unwrap();
+        // the shard row flows its own ref …
+        assert_eq!(
+            v.select(Platform::Aarch64Macos),
+            Some(PlatformSelection::Selected {
+                artifact: "tebako-runtime-0.17.1-ruby-4.0-aarch64-macos.tfs",
+                sha256: &whole,
+                oci: None,
+                release: Some("tfs:github:o/ruby:v0.17.1-ruby4.0-macos"),
+            })
+        );
+        // … and the unsharded row flows None (the version-level ref
+        // serves it).
+        assert_eq!(
+            v.select(Platform::X86_64LinuxGnu),
+            Some(PlatformSelection::Selected {
+                artifact: "tebako-runtime-0.17.1-ruby-4.0-x86_64-linux-gnu.tfs",
+                sha256: &whole,
+                oci: None,
+                release: None,
+            })
+        );
+        // round-trip identity with the field present
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+
+        // Torn spellings are named errors, never silently ignored.
+        for (mutated, needle) in [
+            (
+                yaml.replace("tfs:github:o/ruby:v0.17.1-ruby4.0-macos", "bogus"),
+                "platforms[aarch64-macos].release.ref does not parse",
+            ),
+            (
+                yaml.replace(
+                    "tfs:github:o/ruby:v0.17.1-ruby4.0-macos",
+                    "tfs:github:o/ruby:v0.17.1-ruby4.0-macos#a.tfs",
+                ),
+                "carries an #artifact",
+            ),
+            (
+                yaml.replace(
+                    "tfs:github:o/ruby:v0.17.1-ruby4.0-macos",
+                    &format!("tfs:github:o/ruby:v0.17.1-ruby4.0-macos?sha256={whole}"),
+                ),
+                "carries a ?sha256= pin",
+            ),
+            (
+                yaml.replace("tfs:github:o/ruby:v0.17.1-ruby4.0-macos", "file:///m/a.tfs"),
+                "not a service release",
+            ),
+        ] {
+            let err = Registry::from_yaml(&mutated).unwrap_err();
+            assert!(
+                err.to_string().contains(needle),
+                "expected '{needle}' in: {err}"
+            );
+        }
     }
 
     #[test]

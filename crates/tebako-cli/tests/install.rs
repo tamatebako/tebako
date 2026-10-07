@@ -835,6 +835,70 @@ fn universal_selection_uses_the_single_tfs_rule() {
     assert_eq!(fs::read(&out.path).unwrap(), b"tool-bytes");
 }
 
+#[test]
+fn a_rows_own_release_ref_names_the_shard_tag_serving_it() {
+    // tebako#711 (registry MINOR 6): when a version line unions rows from
+    // several per-platform shard tags, the row's additive `release.ref`
+    // wins over the version-level ref. Here the macos row rides the
+    // `1.0-macos-shard` tag (the version-level tag's asset list does not
+    // even carry the mac artifact — success proves the shard tag was
+    // fetched), while the linux row carries none and resolves through
+    // the version-level tag.
+    let fx = Fixture::new("rowref");
+    let mac_bytes = b"mac-shard-payload";
+    let linux_bytes = b"linux-payload";
+    let registry_path = fx.mirror.join("tpkg-registry.yaml");
+    fs::write(
+        &registry_path,
+        format!(
+            "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos:\n            artifact: app-1.0-macos.tfs\n            sha256: {}\n            release: {{ref: tfs:github:acme/app:1.0-macos-shard}}\n          x86_64-linux-gnu:\n            artifact: app-1.0-linux.tfs\n            sha256: {}\n        release: {{ref: tfs:github:acme/app:1.0}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
+            sha256_hex(mac_bytes),
+            sha256_hex(linux_bytes)
+        ),
+    )
+    .unwrap();
+    let shard_api = "https://api.github.com/repos/acme/app/releases/tags/1.0-macos-shard";
+    let shard_release = r#"{"assets":[
+        {"name":"app-1.0-macos.tfs","browser_download_url":"https://dl/shard/app-1.0-macos.tfs"}]}"#;
+    let version_api = "https://api.github.com/repos/acme/app/releases/tags/1.0";
+    let version_release = r#"{"assets":[
+        {"name":"app-1.0-linux.tfs","browser_download_url":"https://dl/app-1.0-linux.tfs"}]}"#;
+    let t = MockTransport::new()
+        .with_file(registry_path.to_str().unwrap())
+        .with(shard_api, shard_release.as_bytes())
+        .with("https://dl/shard/app-1.0-macos.tfs", mac_bytes)
+        .with(version_api, version_release.as_bytes())
+        .with("https://dl/app-1.0-linux.tfs", linux_bytes);
+    let fetcher = Fetcher::with_transport(t);
+    let reg_ref = tebako_http::file_url(&registry_path);
+
+    // The store's version key is host-implicit (one host per machine),
+    // so each host leg gets its own home; the registry fixture is shared.
+    let mac = Fixture::new("rowref-mac");
+    install::add_registry_with(&mac.home, &reg_ref, &fetcher).unwrap();
+    let out = install::install_with(
+        &mac.home,
+        "app",
+        Some(Platform::Aarch64Macos),
+        Some(&mac.shim_binary),
+        &fetcher,
+    )
+    .unwrap();
+    assert_eq!(fs::read(&out.path).unwrap(), b"mac-shard-payload");
+
+    let lin = Fixture::new("rowref-lin");
+    install::add_registry_with(&lin.home, &reg_ref, &fetcher).unwrap();
+    let out = install::install_with(
+        &lin.home,
+        "app",
+        Some(Platform::X86_64LinuxGnu),
+        Some(&lin.shim_binary),
+        &fetcher,
+    )
+    .unwrap();
+    assert_eq!(fs::read(&out.path).unwrap(), b"linux-payload");
+}
+
 // ---------------------------------------------------------------------
 // the ref form
 // ---------------------------------------------------------------------
