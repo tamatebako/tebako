@@ -88,6 +88,43 @@ fn image_era_fetches_report_per_artifact() {
     let entry_dir = home.join("runtimes").join(&h.entry);
     let exe_size = std::fs::metadata(h.cache_exe(&home)).unwrap().len();
     let image_size = std::fs::metadata(h.cache_image(&home)).unwrap().len();
+    // The default lazy mode on the sidecar-less fixture: the LOUD
+    // eager fallback line stands between the exe's install and the
+    // image's fetch (the release does not serve the lazy wire).
+    let fallback = format!(
+        "tebako-bootstrap: the lazy mount mode is on (the default) but this release does not serve the lazy wire (no image.blksum row/sidecar) — falling back to the eager download of {}\n",
+        h.image_asset
+    );
+    let image_lines = format!(
+        "downloading {} ({})\ninstalled {} ({}) — cached at {} and shared by every tebako app on this machine\n",
+        h.image_asset,
+        tebako_term::human_bytes(image_size),
+        h.image_asset,
+        tebako_term::human_bytes(image_size),
+        entry_dir.display()
+    );
+    let expected = format!(
+        "{}{}{}",
+        expected_fetch_lines(&h, &home, exe_size),
+        fallback,
+        image_lines
+    );
+    assert_eq!(err, expected, "{err}");
+}
+
+#[test]
+fn image_era_lazy_opt_out_reports_the_plain_fetch() {
+    // TEBAKO_RUNTIME_LAZY=0: the eager transcript with no fallback line.
+    let h = h();
+    let pkg = h.lean_pkg_image("imgapp");
+    let home = h.home("home");
+    let (rc, _, err) = h.run_raw(&pkg, &home, &[("TEBAKO_RUNTIME_LAZY", "0")], &[]);
+    assert_eq!(rc, 0, "{err}");
+    let err = clean(err);
+
+    let entry_dir = home.join("runtimes").join(&h.entry);
+    let exe_size = std::fs::metadata(h.cache_exe(&home)).unwrap().len();
+    let image_size = std::fs::metadata(h.cache_image(&home)).unwrap().len();
     let image_lines = format!(
         "downloading {} ({})\ninstalled {} ({}) — cached at {} and shared by every tebako app on this machine\n",
         h.image_asset,

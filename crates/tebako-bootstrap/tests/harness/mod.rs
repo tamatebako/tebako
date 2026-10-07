@@ -319,7 +319,11 @@ impl Harness {
         args: &[&str],
     ) -> (i32, String, String) {
         let (rc, out, err) = self.run_raw(pkg, home, extra_env, args);
-        (rc, out, strip_progress(strip_legacy_warning(err)))
+        (
+            rc,
+            out,
+            strip_lazy_fallback(strip_progress(strip_legacy_warning(err))),
+        )
     }
 
     /// The raw run: stderr exactly as the bootstrap emitted it. The spec
@@ -402,6 +406,25 @@ pub fn strip_legacy_warning(stderr: String) -> String {
             && line.contains("unsigned v1 (legacy) tpkg trailer")
         {
             skip_next = true;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// The lazy fallback's loud line: the fixtures predate the lazy wire BY
+/// DESIGN (no image.blksum row), so with the mount mode default-on every
+/// image-era fixture install emits it. Strip it for output comparison —
+/// the verbatim transcript (and the opt-out's silence) is pinned in
+/// tests/progress.rs.
+fn strip_lazy_fallback(stderr: String) -> String {
+    let mut out = String::new();
+    for line in stderr.lines() {
+        if line.starts_with(
+            "tebako-bootstrap: the lazy mount mode is on (the default) but this release does not serve the lazy wire",
+        ) {
             continue;
         }
         out.push_str(line);

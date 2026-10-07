@@ -36,7 +36,8 @@ const LAZY_SEAL: tpkg::settings::Setting = tpkg::settings::Setting {
     config: None,
     env: Some("TEBAKO_LAZY_SEAL"),
     cli: None,
-    doc: "disable the lazy env image's background seal thread (spec 39)",
+    doc: "disable the lazy env image's background seal thread",
+    default: true,
 };
 
 /// The handoff path's on-disk state (spec 39 §9: the path names the
@@ -96,11 +97,11 @@ pub(crate) fn offline(value: Option<String>) -> bool {
         .unwrap_or(false)
 }
 
-/// The background-seal resolution: default ON, `TEBAKO_LAZY_SEAL`
-/// overrides per key, a malformed value is the named 65 (fail-closed,
-/// never a silent clamp).
+/// The background-seal resolution: default ON (the setting's declared
+/// default), `TEBAKO_LAZY_SEAL` overrides per key, a malformed value is
+/// the named 65 (fail-closed, never a silent clamp).
 pub(crate) fn seal_enabled(value: Option<String>) -> Result<bool, DriverError> {
-    tpkg::settings::resolve_bool(&LAZY_SEAL, None, value, Some(true))
+    tpkg::settings::resolve_bool(&LAZY_SEAL, None, value, None)
         .map_err(|e| DriverError::new(EX_TEBAKO_MANIFEST, e.to_string()))
 }
 
@@ -143,11 +144,29 @@ fn get_document(url: &str) -> Result<Vec<u8>, DriverError> {
 /// BEFORE any range read — the sidecar pin (70), the strict parse (65),
 /// the whole-image cross-check (70) are tpkg::lazy::verify_blksum's
 /// single ownership; this is the driver's transport call into it.
-fn fetch_blksum(seed: &LazySeed) -> Result<Blksum, DriverError> {
+///
+/// The cached-blksum arm (§3): the install-time prefetch
+/// (`<entry>/<image>.blksum.json`) is consulted FIRST — a verified hit
+/// makes the mount-open zero-network. A miss fetches and writes through
+/// (best-effort: the verified blksum is already in hand, so a cache
+/// write failure never fails the mount); a present-but-off-pin cache is
+/// the named error, never a silent drop-and-refetch.
+fn fetch_blksum(
+    entry_dir: &Path,
+    image_base: &str,
+    seed: &LazySeed,
+) -> Result<Blksum, DriverError> {
+    if let Some(sum) = tpkg::lazy::read_blksum_cache(entry_dir, image_base, seed)
+        .map_err(|e| DriverError::new(e.exit_code(), format!("the blksum cache: {e}")))?
+    {
+        return Ok(sum);
+    }
     let url = format!("{}.blksum.json", seed.source);
     let body = get_document(&url)?;
-    tpkg::lazy::verify_blksum(seed, &body)
-        .map_err(|e| DriverError::new(e.exit_code(), format!("{url}: {e}")))
+    let sum = tpkg::lazy::verify_blksum(seed, &body)
+        .map_err(|e| DriverError::new(e.exit_code(), format!("{url}: {e}")))?;
+    let _ = tpkg::lazy::write_blksum_cache(entry_dir, image_base, &body);
+    Ok(sum)
 }
 
 /// Open the lazy mount's byte source. Offline (TEBAKO_OFFLINE=1): the
@@ -172,7 +191,7 @@ pub(crate) fn open_lazy_source(
         .map(Arc::new)
         .map_err(source_error);
     }
-    let blksum = fetch_blksum(seed)?;
+    let blksum = fetch_blksum(entry_dir, image_base, seed)?;
     let url = seed.source.clone();
     let fetch = move |offset: u64, len: usize, if_range: Option<&str>| {
         let range = tebako_http::ByteRange {
@@ -412,6 +431,7 @@ mod tests {
                 && sidecar.is_file()
                 && !tpkg::lazy::descriptor_path(entry.path(), &image_base).exists()
                 && !tpkg::lazy::blocks_dir(entry.path(), &image_base).exists()
+                && !tpkg::lazy::blksum_cache_path(entry.path(), &image_base).exists()
             {
                 break;
             }
@@ -421,6 +441,10 @@ mod tests {
         assert!(sidecar.is_file(), "the seal thread installs the anchor");
         assert!(!tpkg::lazy::descriptor_path(entry.path(), &image_base).exists());
         assert!(!tpkg::lazy::blocks_dir(entry.path(), &image_base).exists());
+        assert!(
+            !tpkg::lazy::blksum_cache_path(entry.path(), &image_base).exists(),
+            "the seal retires the LAZY_SEEDING-state cache too"
+        );
         // The sealed bytes are byte-identical with the origin's.
         assert_eq!(
             tpkg::lazy::sha256_hex(&std::fs::read(&sealed_image).unwrap()),
@@ -491,5 +515,54 @@ mod tests {
             .expect_err("a miss offline is EIO");
         assert_eq!(err, libc::EIO);
         drop(mount);
+    }
+
+    #[test]
+    fn a_blksum_cache_miss_fetches_and_writes_through() {
+        let (_t, image_path, blksum) = fixture_image();
+        let (entry, image_base, seed) = seed_entry(&image_path, &blksum);
+        // No install-time prefetch: the cache is absent…
+        let cache = tpkg::lazy::blksum_cache_path(entry.path(), &image_base);
+        assert!(!cache.exists());
+        // …the mount-open fetches (the file:// fixture) and writes through.
+        let source = open_lazy_source(entry.path(), &image_base, &seed, false).expect("opens");
+        assert!(cache.is_file(), "the write-through landed");
+        let cached = tpkg::lazy::read_blksum_cache(entry.path(), &image_base, &seed).unwrap();
+        assert_eq!(cached, Some(blksum));
+        drop(source);
+        // The origin sidecar going away changes nothing now: the
+        // re-open rides the write-through cache.
+        std::fs::remove_file(format!("{}.blksum.json", image_path.display())).unwrap();
+        open_lazy_source(entry.path(), &image_base, &seed, false)
+            .expect("the write-through cache serves the re-open");
+    }
+
+    #[test]
+    fn the_prefetched_blksum_cache_makes_the_mount_open_zero_network() {
+        let (_t, image_path, blksum) = fixture_image();
+        let (entry, image_base, seed) = seed_entry(&image_path, &blksum);
+        // The install's prefetch (the shim's plan commit and the
+        // bootstrap's seed both write it).
+        tpkg::lazy::write_blksum_cache(entry.path(), &image_base, blksum.render().as_bytes())
+            .unwrap();
+        // The origin sidecar is gone: a mount-open that owed the wire a
+        // sidecar GET would fail here (the group reads still ride the
+        // origin image — the cache claim covers the BLKSUM only).
+        std::fs::remove_file(format!("{}.blksum.json", image_path.display())).unwrap();
+        let source = open_lazy_source(entry.path(), &image_base, &seed, false)
+            .expect("the cached blksum needs no sidecar fetch");
+        let byte_source: Arc<dyn tfs::source::ByteSource> = source.clone();
+        let mount_point = format!("/lazy-cache-{}", std::process::id());
+        let mount = tfs::mount::build_from_source(byte_source, &mount_point).expect("mounts");
+        let mut buf = [0u8; 32];
+        let n = mount.backend.pread("hello.txt", &mut buf, 0).expect("read");
+        assert_eq!(&buf[..n], b"hello, lazy driver\n");
+        drop(mount);
+        // A cached file off the descriptor's pin is the named 70,
+        // consulted BEFORE any fetch — never a silent drop-and-refetch.
+        let mut repin = seed.clone();
+        repin.blksum_sha256 = "f".repeat(64);
+        let err = fetch_blksum(entry.path(), &image_base, &repin).unwrap_err();
+        assert_eq!(err.code, 70, "{err:?}");
     }
 }

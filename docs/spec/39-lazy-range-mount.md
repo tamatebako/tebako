@@ -1,21 +1,21 @@
 # Spec 39 — Lazy range-fetch mounting of runtime images
 
-Status: **PARTIAL** (locked direction 2026-09-30, tebako#696 — spec-first
-per spec 14). PRs 1–6 SHIPPED: the spec + schemas, the Range transport
+Status: **SHIPPED** (locked direction 2026-09-30, tebako#696 — spec-first
+per spec 14). PRs 1–6 shipped the spec + schemas, the Range transport
 (tebako-http), the byte-source seam + caching remote source + lazy
 store record (tfs/tpkg), the loader + driver wire (resolve plan
-lazy arm, shim/bootstrap opt-in, the state-detecting env-image mount,
+lazy arm, shim/bootstrap wire, the state-detecting env-image mount,
 the background seal thread, `tebako cache seal` + the listing/doctor
 surfaces), the publish path (in-process blksum generation + the
 additive `image.blksum` index field), and the OCI range arm + the
-bench arms (§8, spec 27 §10.5). Remaining downstream, outside the
-product repo: the factory release legs, the first lazy-capable runtime
-release (the bench lazy arm's numbers gate), and the default flip per
-§10's rule — until then the default stays eager. Nothing here changes
-what a shipped loader, driver, or resolver does with a store that
-carries none of the new artifacts — the feature is opt-in
-(`TEBAKO_RUNTIME_LAZY=1`, §7) and every published image remains runnable
-exactly as today.
+bench arms (§8, spec 27 §10.5). Since then the downstream legs have
+landed: the lazy-capable runtime releases, the §10 parity data, the
+**default flip** (§7 — lazy-on by default, locked), and the
+**cached-blksum arm** (§3 — the install-time sidecar prefetch that
+keeps the mount-open zero-network). Nothing here changes what a
+shipped loader, driver, or resolver does with a store that carries
+none of the new artifacts: a sidecar-less release takes the loud eager
+fallback and every published image remains runnable exactly as today.
 
 Normative specification of **lazy mounting**: the runtime env image is
 mounted over HTTPS with HTTP Range reads, the machine cache is seeded
@@ -173,6 +173,21 @@ whose ids match its own evil metadata.)
   artifact. Never a hard error — every published image must stay
   runnable — and never silent (invariant 9; the spec 05 §4 stale-serve
   precedent for loud degradation).
+- **The cached-blksum arm (locked, with the §7 flip).** The loader
+  fetches and pin-verifies the sidecar at INSTALL time regardless — the
+  seed decision needs it — so the install also writes it into the entry
+  (`<image>.blksum.json`, tmp+rename, BEFORE the descriptor's commit
+  rename). The mount-open consults the cache FIRST: a verified hit is a
+  zero-network open (nothing the exec phase owes the wire); a miss
+  fetches as before and writes through (best-effort — the verified
+  blksum is already in hand, so a cache-write failure never fails the
+  mount); a cached file off its pin or torn is the named
+  `Sha256Mismatch` (70) / `BlksumInvalid` (65), never a silent
+  drop-and-refetch — the cache is a publisher-anchored document's copy.
+  Two consequences the flip needs: the offline refusal for a FRESH seed
+  fires at the install/pull phase (pre-exec) instead of surfacing as a
+  mount-open 69 mid-exec, and the mount-open of every entry seeded
+  after this arm performs no sidecar GET at all.
 
 ## 4. Cache design and the store-state amendment
 
@@ -184,6 +199,7 @@ runtimes/<lang>-<lv>-<ver>-<triplet>/
   tebako-runtime-<ver>-<lang>-<lv>-<triplet>[.exe]  # exe — always whole, always verified (0755)
   sha256 / origin                                   # exe markers, unchanged
   <image>.lazy.json                                 # the seed descriptor — present ⇔ LAZY_SEEDING
+  <image>.blksum.json                               # the install-time sidecar cache (§3's cached-blksum arm)
   <image>.blocks/<NNNNNN>.blk                       # verified group payloads (0444)
   <image>.tfs                                       # appears ONLY at seal (0444)
   <image>.tfs.sha256 / <image>.tfs.origin           # written at seal — today's shapes, unchanged
@@ -228,7 +244,8 @@ runtimes/<lang>-<lv>-<ver>-<triplet>/
 ```
 EMPTY → (loader: exe install + descriptor rename) → LAZY_SEEDING
 LAZY_SEEDING → (seal: all groups present → assemble → whole-sha ok
-                → .tfs + .sha256 rename → blocks + descriptor removed) → SEALED
+                → .tfs + .sha256 rename → blocks + descriptor + blksum
+                cache removed) → SEALED
 SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics
 ```
 
@@ -297,6 +314,7 @@ SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics
   | descriptor invalid, lazy config malformed, non-HTTPS source | 65 usage |
   | mount-open fetch failure; offline miss; server unusable | 69 unavailable |
   | sidecar pin mismatch; group digest mismatch (2nd); whole-sha mismatch at seal | 70 integrity |
+  | cached blksum torn (65) / off its pin (70) — the §3 cache arm | 65 / 70 |
   | store IO (lock, block write, assemble, rename) | 74 IO |
 
   spec 09's 71/72 bind the sidecar's signed-index chain exactly as they
@@ -311,15 +329,26 @@ SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics
   no second client, and the credential book confines range requests
   exactly like whole-file GETs.
 
-## 7. UX: opt-in, progress, doctor
+## 7. UX: mount mode, progress, doctor
 
-- **`TEBAKO_RUNTIME_LAZY=1`** (env opt-in) over config
-  `runtime_lazy: true` in `~/.tebako/config.yaml` — env wins per key
-  (the `TEBAKO_FETCH_JOBS` / spec 04 §4 precedence rule). An
-  unparseable value is a NAMED error (65), never a silent clamp. The
-  default flips to lazy-on only after §10's parity data lands; the flip
-  is one line in the default resolution and a spec-00-style locked note
-  here when it happens.
+- **The mount-mode chain (the flip LOCKED 2026-10-07, spec-00-style
+  note).** The default is **lazy-on**: a runtime install on a release
+  serving the lazy wire seeds the env image instead of fetching it
+  whole. Resolution: `TEBAKO_RUNTIME_LAZY` (env) over `runtime_lazy` in
+  `~/.tebako/config.yaml` over the product default ON — env wins per
+  key (the `TEBAKO_FETCH_JOBS` / spec 04 §4 precedence rule), an
+  unparseable value is a NAMED error (65), never a silent clamp. Eager
+  stays first-class as the opt-out (`TEBAKO_RUNTIME_LAZY=0`,
+  `runtime_lazy: false`). The division of authority is locked: the
+  PUBLISHER controls enablement only — it ships the blksum sidecar or
+  not (§3; there is no publisher forcing knob and never will be,
+  because correctness is mode-independent); the USER/MACHINE controls
+  the effective mode through the chain above. Hard rules outrank every
+  tier, unchanged: `TEBAKO_OFFLINE=1` is cache-or-named-error (a fresh
+  seed refuses at the pull phase, §3's cached-blksum arm); fat packages
+  never fetch; a sidecar-less release takes the loud eager fallback.
+  The flip's gate was §10's parity data; the landed numbers are
+  recorded there.
 - **The bundle-era gate (spec 36 §3's co-publish).** Both loaders (shim
   and bootstrap) evaluate the lazy arm BEFORE the spec 36 §4 era branch.
   On a shard declaring `bundle`, the arm engages ONLY when the shard
@@ -453,14 +482,18 @@ shape only.
   recorded — never worse than eager × (1 + ε)); the blksum-missing
   image takes the loud eager fallback; `TEBAKO_REQUIRE_SIGNED=1`
   pass/fail legs per spec 09.
-- **Parity data for the default flip (spec 27):** the tebako-bench
-  harness gains the lazy arm — cold first-run latency lazy-vs-eager per
-  suite/platform, warm second-run latency, and the pathology arm —
-  recorded as versioned result documents (spec 27's schemas). The flip
-  decision rule (locked here): flip when the bench shows first-run
-  latency improved on every tier-1 platform with no regression class in
-  warm-run or pathology arms, and the e2e legs have run green for one
-  full release cycle. Until then the default stays eager (§7).
+- **Parity data for the default flip (spec 27) — LANDED.** The
+  tebako-bench harness's lazy arm ran the full 7-leg platform matrix
+  green (bench run 37517037555, zero failed runs): warm second-run
+  parity 1.00× everywhere; cold one-time streaming overhead bounded at
+  +0.56 s (windows) to +5.5 s (linux-musl-x86_64) on the loopback
+  fixture — the ε of the pathology law (total fetched bytes ≤ eager
+  bytes + one sidecar + per-group request overhead), and the number a
+  real network inverts, since first run fetches only the touched
+  groups; lazy cold RSS below eager's (e.g. 25 vs 34 MiB at boot). No
+  regression class in the warm or pathology arms. On this data the §7
+  flip shipped (locked 2026-10-07): the default is lazy-on, the eager
+  opt-out is `TEBAKO_RUNTIME_LAZY=0` / `runtime_lazy: false`.
 
 ## 11. Open questions (each with this spec's recommendation)
 

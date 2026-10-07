@@ -44,6 +44,8 @@ pub struct Setting {
     pub cli: Option<&'static str>,
     /// The one doc line every surface renders (--help, schema, docs).
     pub doc: &'static str,
+    /// The value when every channel is absent.
+    pub default: bool,
 }
 
 impl Setting {
@@ -68,6 +70,7 @@ pub const QUIET_NOTICES: Setting = Setting {
     cli: Some("--quiet-notices"),
     doc: "suppress the unsigned-legacy-trailer warning and the progress \
           lines for every run of the package (baked as trailer flag bit 3)",
+    default: false,
 };
 
 /// `sign` — the package's signing declaration (spec 09 §9, tebako#400
@@ -88,6 +91,7 @@ pub const SIGN: Setting = Setting {
     doc: "sign the package trailer at press (TPKG_FLAG_SIGNED_V2 + the v2 \
           chain-of-trust extension); unsigned v1 stays the default, \
           an opt-out overriding a lower channel is loud",
+    default: false,
 };
 
 /// Every registered setting (help/schema/docs render from this table).
@@ -100,19 +104,27 @@ pub const SETTINGS: &[Setting] = &[QUIET_NOTICES, SIGN];
 /// `~/.tebako/config.yaml`, not the compose document, so the compose
 /// schema and the press `--help` must never render it. Consumers
 /// resolve through [`resolve_runtime_lazy`].
+///
+/// Default ON (spec 39 §10's locked flip, parity data at §10): a
+/// release serving the lazy wire seeds; a sidecar-less release takes
+/// the LOUD eager fallback. Eager stays first-class through the
+/// opt-out (`TEBAKO_RUNTIME_LAZY=0`, `runtime_lazy: false`).
 pub const RUNTIME_LAZY: Setting = Setting {
     config: Some("runtime_lazy"),
     env: Some("TEBAKO_RUNTIME_LAZY"),
     cli: None,
     doc: "install the runtime env image lazily — seed 4 MiB groups on \
-          demand and seal in the background (spec 39)",
+          demand and seal in the background (spec 39; default on, \
+          opt out with 0/false)",
+    default: true,
 };
 
 /// Resolve the lazy-install policy across the channels its consumers
-/// carry (spec 39 §7): environment → store config → default (eager).
-/// The bootstrap passes `None` for `config` (it opens no config file —
-/// the TEBAKO_FETCH_JOBS precedent); the shim passes its UserConfig
-/// `runtime_lazy` key. A malformed env value is the caller's named 65.
+/// carry (spec 39 §7): environment → store config → default (lazy,
+/// §10's flip). The bootstrap passes `None` for `config` (it opens no
+/// config file — the TEBAKO_FETCH_JOBS precedent); the shim passes its
+/// UserConfig `runtime_lazy` key. A malformed env value is the caller's
+/// named 65.
 pub fn resolve_runtime_lazy(
     env: Option<String>,
     config: Option<bool>,
@@ -153,9 +165,10 @@ fn parse_env_bool(setting: &Setting, raw: &str) -> Result<bool, SettingsError> {
 }
 
 /// Resolve a boolean setting across the three channels. Precedence:
-/// CLI → environment → compose document → default (`false`). Each
-/// channel contributes `Some(v)` when present (explicit true OR false)
-/// or `None` when absent; a malformed env value is a named error.
+/// CLI → environment → compose document → the setting's declared
+/// [`Setting::default`]. Each channel contributes `Some(v)` when
+/// present (explicit true OR false) or `None` when absent; a malformed
+/// env value is a named error.
 pub fn resolve_bool(
     setting: &Setting,
     cli: Option<bool>,
@@ -171,7 +184,7 @@ pub fn resolve_bool(
     if let Some(v) = config {
         return Ok(v);
     }
-    Ok(false)
+    Ok(setting.default)
 }
 
 /// The `sign` setting's CLI channel contribution (spec 09 §9): bare
@@ -350,9 +363,9 @@ mod tests {
 
     #[test]
     fn runtime_lazy_env_beats_config_beats_default() {
-        // Default: eager.
-        assert!(!resolve_runtime_lazy(None, None).unwrap());
-        // The store-config key.
+        // Default: lazy (spec 39 §10's locked flip).
+        assert!(resolve_runtime_lazy(None, None).unwrap());
+        // The store-config key, both ways.
         assert!(resolve_runtime_lazy(None, Some(true)).unwrap());
         assert!(!resolve_runtime_lazy(None, Some(false)).unwrap());
         // The env wins per key (the TEBAKO_FETCH_JOBS rule), both ways.

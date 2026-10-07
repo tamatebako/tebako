@@ -564,6 +564,63 @@ pub fn descriptor_path(entry_dir: &Path, image_base: &str) -> PathBuf {
     entry_dir.join(descriptor_name(image_base))
 }
 
+/// The blksum cache's file name inside the entry: `<image>.blksum.json`
+/// — the install-time prefetch of the sidecar the mount-open would
+/// otherwise GET inside the exec (spec 39 §3's cached-blksum arm).
+pub fn blksum_cache_name(image_base: &str) -> String {
+    format!("{image_base}.blksum.json")
+}
+
+/// The entry's blksum cache path (`<entry>/<image>.blksum.json`).
+pub fn blksum_cache_path(entry_dir: &Path, image_base: &str) -> PathBuf {
+    entry_dir.join(blksum_cache_name(image_base))
+}
+
+/// Write the blksum cache — tmp+rename, the store's crash law (the
+/// `write_descriptor` precedent). The entry's flock is the caller's;
+/// the driver's mount-open write-through races only itself (same bytes
+/// from the same pinned sidecar — a rename over a present identical
+/// file is a no-op in effect).
+pub fn write_blksum_cache(
+    entry_dir: &Path,
+    image_base: &str,
+    body: &[u8],
+) -> Result<(), LazyError> {
+    let final_path = blksum_cache_path(entry_dir, image_base);
+    let part_path = entry_dir.join(format!("{}.part", blksum_cache_name(image_base)));
+    let io = |what: &str, e: std::io::Error| {
+        LazyError::LazyStoreIo(format!("{what} {}: {e}", final_path.display()))
+    };
+    std::fs::write(&part_path, body).map_err(|e| io("write", e))?;
+    std::fs::rename(&part_path, &final_path).map_err(|e| io("rename", e))?;
+    Ok(())
+}
+
+/// Read the cached blksum: `Ok(None)` when absent (the mount-open
+/// fetches then), the verified [`Blksum`] when present. A cached file
+/// that fails the seed's pins is the named
+/// [`LazyError::Sha256Mismatch`]/[`LazyError::BlksumInvalid`] — the
+/// cache is a publisher-anchored document's copy, never silently
+/// dropped and refetched (invariant 9).
+pub fn read_blksum_cache(
+    entry_dir: &Path,
+    image_base: &str,
+    seed: &LazySeed,
+) -> Result<Option<Blksum>, LazyError> {
+    let path = blksum_cache_path(entry_dir, image_base);
+    let body = match std::fs::read(&path) {
+        Ok(body) => body,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(LazyError::LazyStoreIo(format!(
+                "read {}: {e}",
+                path.display()
+            )))
+        }
+    };
+    verify_blksum(seed, &body).map(Some)
+}
+
 // ---------------------------------------------------------------------
 // the seed state and the seal pass (spec 39 §5)
 // ---------------------------------------------------------------------
@@ -766,8 +823,10 @@ pub fn seal_entry(entry_dir: &Path, image_base: &str) -> Result<SealOutcome, Laz
     let origin_part = entry_dir.join(format!("{image_base}.{}.origin.part", std::process::id()));
     std::fs::write(&origin_part, origin).map_err(|e| io("write", &origin_part, e))?;
     std::fs::rename(&origin_part, &origin_path).map_err(|e| io("rename", &origin_path, e))?;
-    // Committed: the blocks and the descriptor retire (a concurrent
-    // sealer's already-gone answers are fine).
+    // Committed: the blocks, the descriptor, and the blksum cache
+    // retire (a concurrent sealer's already-gone answers are fine) —
+    // the sealed entry is byte-identical in layout with an eagerly
+    // installed one (§5), no LAZY_SEEDING-state debris.
     match std::fs::remove_dir_all(&blocks) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -778,6 +837,12 @@ pub fn seal_entry(entry_dir: &Path, image_base: &str) -> Result<SealOutcome, Laz
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(io("remove", &descriptor, e)),
+    }
+    let blksum_cache = blksum_cache_path(entry_dir, image_base);
+    match std::fs::remove_file(&blksum_cache) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io("remove", &blksum_cache, e)),
     }
     Ok(SealOutcome::Sealed {
         bytes: state.seed.size_bytes,
@@ -1041,6 +1106,41 @@ mod tests {
     }
 
     #[test]
+    fn blksum_cache_write_read_absent_and_torn() {
+        let dir = scratch("blksum-cache");
+        let image = "tebako-runtime-0.16.6-4.0.6-aarch64-macos.tfs";
+        // Absent: Ok(None) — the mount-open fetches then.
+        assert_eq!(read_blksum_cache(&dir, image, &seed()).unwrap(), None);
+        // A valid sidecar, pinned into the seed.
+        let body = blksum_doc(LAZY_GROUP_SIZE + 1, &[HEX, HEX2]);
+        let mut pinned = seed();
+        pinned.blksum_sha256 = sha256_hex(body.as_bytes());
+        write_blksum_cache(&dir, image, body.as_bytes()).unwrap();
+        // The commit landed; no tmp debris.
+        assert!(blksum_cache_path(&dir, image).is_file());
+        assert!(!dir
+            .join(format!("{}.part", blksum_cache_name(image)))
+            .exists());
+        let cached = read_blksum_cache(&dir, image, &pinned).unwrap();
+        assert_eq!(cached, Some(Blksum::parse(&body).unwrap()));
+        // A cached file that fails the seed's pins is the named 70,
+        // never a silent drop-and-refetch.
+        let err = read_blksum_cache(&dir, image, &seed()).unwrap_err();
+        assert!(matches!(err, LazyError::Sha256Mismatch(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 70);
+        // Torn bytes pinned in (the publisher-side fault): the named
+        // 65 class, not a silent refetch.
+        let torn = b"\xff\xfe";
+        let mut torn_pinned = seed();
+        torn_pinned.blksum_sha256 = sha256_hex(torn);
+        std::fs::write(blksum_cache_path(&dir, image), torn).unwrap();
+        let err = read_blksum_cache(&dir, image, &torn_pinned).unwrap_err();
+        assert!(matches!(err, LazyError::BlksumInvalid(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 65);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn scan_blocks_is_the_block_map() {
         let dir = scratch("blocks");
         let blocks = dir.join("img.tfs.blocks");
@@ -1145,7 +1245,7 @@ mod tests {
         let dir = scratch("seal");
         let image = "img.tfs";
         let bytes = fixture_image(2, 7); // 3 groups
-        let (seed, _sum) = seed_for(&bytes);
+        let (seed, sum) = seed_for(&bytes);
         // The exe's entry-level origin marker carries the runtime_ref
         // the image's marker flows.
         std::fs::write(
@@ -1154,6 +1254,8 @@ mod tests {
         )
         .unwrap();
         write_descriptor(&dir, image, &seed).unwrap();
+        // The install-time sidecar cache rides the LAZY_SEEDING state…
+        write_blksum_cache(&dir, image, sum.render().as_bytes()).unwrap();
         for index in 0..seed.group_count {
             write_block(&dir, image, &bytes, index);
         }
@@ -1184,9 +1286,11 @@ mod tests {
                 seed.source, seed.sha256
             )
         );
-        // The blocks and the descriptor retired; no tmp debris.
+        // The blocks, the descriptor, and the blksum cache retired; no
+        // tmp debris (the sealed layout is the eager one's exactly).
         assert!(!blocks_dir(&dir, image).exists());
         assert!(!descriptor_path(&dir, image).exists());
+        assert!(!blksum_cache_path(&dir, image).exists());
         assert_eq!(
             std::fs::read_dir(&dir)
                 .unwrap()

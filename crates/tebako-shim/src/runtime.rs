@@ -3354,19 +3354,22 @@ fn fetch_sidecar(url: &str, local: bool) -> SidecarAnswer {
 
 /// The lazy install's plan decision.
 enum LazyPlan {
-    /// No lazy install (the opt-in is off, the release declares no
+    /// No lazy install (the lazy mode is off, the release declares no
     /// image, or the bundle era carries the bytes — a bundle-declaring
     /// shard WITHOUT the co-publish witness `per_file_assets: true`
     /// stays eager by construction, spec 39 §7 / spec 36 §3).
     Eager,
-    /// The opt-in is on but the release cannot serve it — the LOUD
+    /// The lazy mode is on but the release cannot serve it — the LOUD
     /// eager fallback (spec 39 §7): the image item reverts to the
     /// ordinary facet fetch — on a bundle-era line, to the BUNDLE fetch
     /// (the eager default on bundle-era lines stays the bundle fetch);
     /// the journal carries the reason.
     Fallback(&'static str),
-    /// Install lazily: the plan item writes this seed descriptor.
-    Lazy(Box<tpkg::lazy::LazySeed>),
+    /// Install lazily: the plan item writes this seed descriptor and
+    /// the already-fetched, already-pinned blksum sidecar (the cache
+    /// the mount-open would otherwise GET inside the exec — spec 39
+    /// §3's cached-blksum arm).
+    Lazy(Box<tpkg::lazy::LazySeed>, Vec<u8>),
 }
 
 impl LazyPlan {
@@ -3374,7 +3377,7 @@ impl LazyPlan {
     /// and the loud Fallback both leave the era's default fetch in place
     /// — on bundle-era lines that default IS the bundle fetch.
     fn engaged(&self) -> bool {
-        matches!(self, LazyPlan::Lazy(_))
+        matches!(self, LazyPlan::Lazy(..))
     }
 }
 
@@ -3389,14 +3392,17 @@ fn lazy_arm_engages(lazy_opt_in: bool, bundle_declared: bool, per_file_assets: b
     lazy_opt_in && (!bundle_declared || per_file_assets)
 }
 
-/// The LAZY_SEEDING plan item (spec 39 §7/§9): no bytes stream — the
-/// commit writes the seed descriptor into the staging dir (the
-/// descriptor's rename into the entry is the lazy install's commit
-/// point, the exe install's flock covering it). The progress line is
-/// spec 39 §7's verbatim.
+/// The LAZY_SEEDING plan item (spec 39 §7/§9): no image bytes stream —
+/// the commit writes the prefetched, pin-verified blksum sidecar cache
+/// and then the seed descriptor (the descriptor's rename into the entry
+/// is the lazy install's commit point, the exe install's flock covering
+/// it — the cache lands FIRST so the commit point never names a seed
+/// whose sidecar is missing). The progress line is spec 39 §7's
+/// verbatim.
 fn runtime_lazy_image_item(
     image_asset: &str,
     seed: &tpkg::lazy::LazySeed,
+    sidecar: &[u8],
     tmp_dir: &Path,
 ) -> FetchItem<'static> {
     let staging = tmp_dir.to_path_buf();
@@ -3407,11 +3413,17 @@ fn runtime_lazy_image_item(
         tebako_term::human_bytes(seed.size_bytes)
     );
     let descriptor = seed.clone();
+    let blksum = sidecar.to_vec();
     let reference = Reference::parse(&seed.source).unwrap_or_else(|_| Reference::File {
         path: seed.source.clone(),
         sha256: None,
     });
     let commit = move |_staged: &StagedArtifact| {
+        tpkg::lazy::write_blksum_cache(&staging, &image_base, &blksum).map_err(|e| {
+            ResolveError::Commit {
+                reason: format!("cannot stage the blksum cache for {image_base}: {e}"),
+            }
+        })?;
         tpkg::lazy::write_descriptor(&staging, &image_base, &descriptor).map_err(|e| {
             ResolveError::Commit {
                 reason: format!("cannot stage the lazy seed descriptor for {image_base}: {e}"),
@@ -3837,9 +3849,10 @@ fn download_runtime<T: Transport + Sync>(
         // the plan; the caller drops the staging dir — a partial install
         // never publishes.
         let sink = RuntimePlanSink::default();
-        // The LAZY_SEEDING install (spec 39 §7): the opt-in
-        // (TEBAKO_RUNTIME_LAZY over config `runtime_lazy: true` — env
-        // wins per key, a malformed value is the named 65), the lazy arm
+        // The LAZY_SEEDING install (spec 39 §7): the mount-mode
+        // resolution (TEBAKO_RUNTIME_LAZY over config `runtime_lazy` —
+        // env wins per key, a malformed value is the named 65, the
+        // default ON since §10's flip), the lazy arm
         // gated BEFORE the spec 36 §4 era branch — on a bundle-declaring
         // shard the arm engages ONLY with the shard's co-publish witness
         // (`per_file_assets: true`, spec 36 §3, runtime-manifest MINOR
@@ -3916,13 +3929,13 @@ fn download_runtime<T: Transport + Sync>(
                                             ),
                                         );
                                     }
-                                    let text = String::from_utf8(bytes).map_err(|_| {
+                                    let text = std::str::from_utf8(&bytes).map_err(|_| {
                                         ShimError::new(
                                             EX_TEBAKO_MANIFEST,
                                             format!("{sidecar_url}: the blksum sidecar is not UTF-8"),
                                         )
                                     })?;
-                                    let sum = tpkg::lazy::Blksum::parse(&text).map_err(|e| {
+                                    let sum = tpkg::lazy::Blksum::parse(text).map_err(|e| {
                                         ShimError::new(
                                             e.exit_code() as u8,
                                             format!("{sidecar_url}: {e}"),
@@ -3938,13 +3951,16 @@ fn download_runtime<T: Transport + Sync>(
                                             ),
                                         );
                                     }
-                                    LazyPlan::Lazy(Box::new(tpkg::lazy::LazySeed {
-                                        source: format!("{dir_url}/{image_asset}"),
-                                        sha256: sum.sha256.clone(),
-                                        blksum_sha256: pinned,
-                                        size_bytes: sum.size_bytes,
-                                        group_count: sum.group_count(),
-                                    }))
+                                    LazyPlan::Lazy(
+                                        Box::new(tpkg::lazy::LazySeed {
+                                            source: format!("{dir_url}/{image_asset}"),
+                                            sha256: sum.sha256.clone(),
+                                            blksum_sha256: pinned,
+                                            size_bytes: sum.size_bytes,
+                                            group_count: sum.group_count(),
+                                        }),
+                                        bytes,
+                                    )
                                 }
                             }
                         }
@@ -3959,7 +3975,7 @@ fn download_runtime<T: Transport + Sync>(
             // fetch (spec 39 §7) — the loud line names what streams.
             if source.oci.is_some() {
                 eprintln!(
-                    "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — OCI runtime distribution serves the bundle whole (spec 38 §5.4); fetching the release bundle whole (the loud eager fallback)"
+                    "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — OCI runtime distribution serves the bundle whole; fetching the release bundle whole (the loud eager fallback)"
                 );
             } else {
                 let eager = if bundle.is_some() {
@@ -3968,7 +3984,7 @@ fn download_runtime<T: Transport + Sync>(
                     "fetching the env image whole"
                 };
                 eprintln!(
-                    "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — the release carries no blksum sidecar; {eager} (the loud eager fallback, spec 39 §7)"
+                    "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — the release carries no blksum sidecar; {eager} (the loud eager fallback)"
                 );
             }
             journal(
@@ -3977,7 +3993,7 @@ fn download_runtime<T: Transport + Sync>(
             );
         }
         let has_image =
-            image.sha.is_some() && !matches!(lazy_plan, LazyPlan::Lazy(_));
+            image.sha.is_some() && !matches!(lazy_plan, LazyPlan::Lazy(..));
         // The era branch DOWNSTREAM of the lazy gate (spec 36 §4 / spec
         // 39 §7): the ONE bundle fetch proceeds exactly when the shard
         // declares a bundle AND the lazy arm did not engage — Eager
@@ -4062,11 +4078,15 @@ fn download_runtime<T: Transport + Sync>(
             )?];
             if let Some(image_expected) = &image.sha {
                 match &lazy_plan {
-                    // The LAZY_SEEDING item: no bytes stream — the
-                    // commit writes the seed descriptor (spec 39 §7).
-                    LazyPlan::Lazy(seed) => {
-                        items.push(runtime_lazy_image_item(&image_asset, seed, &tmp_dir))
-                    }
+                    // The LAZY_SEEDING item: no image bytes stream —
+                    // the commit writes the prefetched blksum cache and
+                    // the seed descriptor (spec 39 §7).
+                    LazyPlan::Lazy(seed, sidecar) => items.push(runtime_lazy_image_item(
+                        &image_asset,
+                        seed,
+                        sidecar,
+                        &tmp_dir,
+                    )),
                     _ => items.push(runtime_facet_item(
                         &dir_url,
                         local,
@@ -5589,18 +5609,62 @@ payloads:
     }
 
     #[test]
-    fn the_engaged_arm_alone_supersedes_the_bundle_fetch() {
-        // The plan-commit side of the gate: only the ENGAGED arm drops
-        // the bundle from the fetch plan; Eager and the loud Fallback
-        // both keep it (the eager default on bundle-era lines stays the
-        // bundle fetch, spec 39 §7).
-        let seed = LazyPlan::Lazy(Box::new(tpkg::lazy::LazySeed {
+    fn the_lazy_item_commit_writes_the_cache_then_the_descriptor() {
+        let dir = temp_home("lazy-item");
+        let seed = tpkg::lazy::LazySeed {
             source: "file:///fixture/image.tfs".to_string(),
             sha256: "a".repeat(64),
             blksum_sha256: "b".repeat(64),
             size_bytes: 14,
             group_count: 1,
-        }));
+        };
+        let sidecar = b"{\"schema_version\":1}".to_vec();
+        let item = runtime_lazy_image_item("image.tfs", &seed, &sidecar, &dir);
+        // The executor's lazy arm hands the commit a synthesized staged
+        // artifact whose tmp never exists — the commit must not touch it.
+        let reference = Reference::parse(&seed.source).unwrap();
+        let tmp = dir.join("never-created.bin");
+        let sha = seed.sha256.clone();
+        let origin = seed.source.clone();
+        let staged = StagedArtifact {
+            display: "image.tfs",
+            reference: &reference,
+            tmp: &tmp,
+            sha256: &sha,
+            origin: &origin,
+            size: 14,
+        };
+        (item.commit)(&staged).expect("the commit lands");
+        // The sidecar cache landed byte-for-byte…
+        assert_eq!(
+            std::fs::read(tpkg::lazy::blksum_cache_path(&dir, "image.tfs")).unwrap(),
+            sidecar
+        );
+        // …and the descriptor commit point names the seed.
+        assert_eq!(
+            tpkg::lazy::read_descriptor(&dir, "image.tfs").unwrap(),
+            Some(seed)
+        );
+        assert!(!tmp.exists(), "the synthesized tmp stays untouched");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_engaged_arm_alone_supersedes_the_bundle_fetch() {
+        // The plan-commit side of the gate: only the ENGAGED arm drops
+        // the bundle from the fetch plan; Eager and the loud Fallback
+        // both keep it (the eager default on bundle-era lines stays the
+        // bundle fetch, spec 39 §7).
+        let seed = LazyPlan::Lazy(
+            Box::new(tpkg::lazy::LazySeed {
+                source: "file:///fixture/image.tfs".to_string(),
+                sha256: "a".repeat(64),
+                blksum_sha256: "b".repeat(64),
+                size_bytes: 14,
+                group_count: 1,
+            }),
+            b"{}".to_vec(),
+        );
         assert!(seed.engaged());
         assert!(!LazyPlan::Eager.engaged());
         assert!(!LazyPlan::Fallback("blksum-missing").engaged());
