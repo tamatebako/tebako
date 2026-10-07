@@ -327,6 +327,9 @@ mod tests {
         std::fs::write(dir.join("DEADBEEF.pub"), b"not a key\n").unwrap();
         let err = pinned_public_keys(&home).unwrap_err();
         assert!(err.to_string().contains("does not parse"), "{err}");
+        // The scan fails on the first bad entry in readdir order —
+        // clear the corrupt pin so the misname leg decides on its own.
+        std::fs::remove_file(dir.join("DEADBEEF.pub")).unwrap();
         // A well-formed key under another fingerprint's name.
         let (public, fp) = make_key("misnamed@example");
         let other = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
