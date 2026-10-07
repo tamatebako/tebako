@@ -14,6 +14,7 @@
 //!   tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]
 //!   tebako list-registries
 //!   tebako update-registries
+//!   tebako registry validate <path-or-url> [--json]
 //!   tebako registry retire <registry-file> <name>@<version> [--force]
 //!   tebako install <ref | name[@version]>
 //!   tebako uninstall <name>

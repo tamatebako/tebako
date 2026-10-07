@@ -1,17 +1,25 @@
 //! `tebako registry <verb>` — the registry-file maintenance surface:
 //!
+//!   tebako registry validate <path-or-url> [--json]
 //!   tebako registry retire <registry-file> <name>@<version> [--force]
 //!
-//! `retire` (tebako#675) removes one version row from a LOCAL registry
-//! file through the publish flow's own discipline (spec 18 C12: parse →
-//! mutate → re-validate → atomic write), refusing while the retirement
-//! would strand an in-registry runtime edge, dangle the payload's
-//! default, or remove the payload's last row — `--force` overrides, with
-//! every overridden refusal spelled in the report and the journal.
+//! `validate` (tebako#680) runs the EXACT client-side parse
+//! ([`Registry::from_yaml`] — the fail-closed reader every install and
+//! dispatch path runs, default-names-a-listed-version included) plus the
+//! strict extras a CI gate wants collected in one report, so a
+//! registry-touching change fails on ITS OWN check instead of breaking
+//! every reader at merge. `retire` (tebako#675) removes one version row
+//! from a LOCAL registry file through the publish flow's own discipline
+//! (spec 18 C12: parse → mutate → re-validate → atomic write), refusing
+//! while the retirement would strand an in-registry runtime edge, dangle
+//! the payload's default, or remove the payload's last row — `--force`
+//! overrides, with every overridden refusal spelled in the report and
+//! the journal.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use tebako_resolve::registry::Registry;
+use tebako_resolve::registry::{Registry, RegistryRef};
+use tebako_resolve::Fetcher;
 
 use crate::error::TebakoError;
 
@@ -230,4 +238,160 @@ pub fn retire(
         report.push_str(&format!("note: {note}\n"));
     }
     Ok(report)
+}
+
+// ---------------------------------------------------------------------
+// validate (tebako#680)
+// ---------------------------------------------------------------------
+
+/// One collected violation; `payload`/`version` are absent when the
+/// document never parsed far enough to name a row.
+struct Violation {
+    payload: Option<String>,
+    version: Option<String>,
+    message: String,
+}
+
+/// `tebako registry validate <path-or-url> [--json]`: the client-side
+/// registry parse as a scriptable gate. Returns the report text and the
+/// verdict code — 0 when the registry is valid, EX_TEBAKO_MANIFEST (65)
+/// on any violation; the INPUT being unreadable/unfetchable is an error
+/// (74 / the resolve mapping), never a verdict. The human form prints
+/// one line per violation; the `--json` form is a
+/// `registry_validate_schema: 1` document on stdout (the banner moves to
+/// stderr in main, so scripts read stdout alone).
+pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
+    let bytes = read_registry_bytes(input)?;
+    let text = String::from_utf8(bytes).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!("{input}: {e} decoding the registry file"),
+        )
+    })?;
+
+    let mut violations: Vec<Violation> = Vec::new();
+    let mut payloads = 0usize;
+    let mut rows = 0usize;
+    match Registry::from_yaml(&text) {
+        // The exact client-side refusal, verbatim — the whole point of
+        // the gate is that THIS message is what every reader would hit.
+        Err(e) => violations.push(Violation {
+            payload: None,
+            version: None,
+            message: e.to_string(),
+        }),
+        Ok(registry) => {
+            payloads = registry.payloads.len();
+            rows = registry.payloads.iter().map(|p| p.versions.len()).sum();
+            // The strict extras from_yaml deliberately does not enforce
+            // (reader leniency is a compat surface — pre-MINOR readers
+            // ignore additive keys); the gate collects them all in one
+            // report so a registry PR fails its own CI leg.
+            for p in &registry.payloads {
+                for v in &p.versions {
+                    if let Some(req) = &v.runtime_requirement {
+                        if let Err(e) = tpkg::versions::parse_constraint(&req.constraint) {
+                            violations.push(Violation {
+                                payload: Some(p.name.clone()),
+                                version: Some(v.version.clone()),
+                                message: format!(
+                                    "runtime_requirement.constraint does not parse: {e}"
+                                ),
+                            });
+                        }
+                        if req.abi.is_some()
+                            && req.implementation.is_none()
+                            && p.implementation().is_none()
+                        {
+                            violations.push(Violation {
+                                payload: Some(p.name.clone()),
+                                version: Some(v.version.clone()),
+                                message: "runtime_requirement.abi is spelled with no implementation axis anywhere (spec 28 §8 — an abi is per-implementation by construction)"
+                                    .to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let ok = violations.is_empty();
+    let code = if ok { 0 } else { EX_TEBAKO_MANIFEST };
+    let text = if json {
+        validate_json(input, ok, payloads, rows, &violations)
+    } else if ok {
+        format!("{input}: OK ({payloads} payload(s), {rows} version row(s))\n")
+    } else {
+        let mut out = String::new();
+        for v in &violations {
+            match (&v.payload, &v.version) {
+                (Some(p), Some(ver)) => {
+                    out.push_str(&format!("{input}: {p} {ver}: {}\n", v.message))
+                }
+                _ => out.push_str(&format!("{input}: {}\n", v.message)),
+            }
+        }
+        out
+    };
+    Ok((text, code))
+}
+
+/// The input's bytes: an existing local path reads directly; anything
+/// else parses as a spec 04 §2 registry reference (`file://` mirrors,
+/// `tfs:<svc>:owner/repo`, the release-artifact/git/https/oci forms) and
+/// fetches through the in-process fetcher — never a shell-out.
+fn read_registry_bytes(input: &str) -> Result<Vec<u8>, TebakoError> {
+    let path = PathBuf::from(input);
+    if path.is_file() {
+        return std::fs::read(&path)
+            .map_err(|e| err(EX_TEBAKO_IO, format!("cannot read {input}: {e}")));
+    }
+    let reference = RegistryRef::parse(input).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "'{input}' is not an existing file and does not parse as a registry reference: {e}"
+            ),
+        )
+    })?;
+    Fetcher::new()
+        .fetch_registry(&reference)
+        .map_err(crate::install::map_resolve)
+}
+
+fn validate_json(
+    input: &str,
+    ok: bool,
+    payloads: usize,
+    rows: usize,
+    violations: &[Violation],
+) -> String {
+    use tebako_pkg::{json_to_string, JsonValue as J};
+
+    let s = |v: &str| J::String(v.to_string());
+    let n = |v: u64| J::Number(v.to_string());
+    let errors: Vec<J> = violations
+        .iter()
+        .map(|v| {
+            let mut obj = Vec::new();
+            if let Some(p) = &v.payload {
+                obj.push(("payload".to_string(), s(p)));
+            }
+            if let Some(ver) = &v.version {
+                obj.push(("version".to_string(), s(ver)));
+            }
+            obj.push(("message".to_string(), s(&v.message)));
+            J::Object(obj)
+        })
+        .collect();
+    let doc = J::Object(vec![
+        ("registry_validate_schema".to_string(), n(1)),
+        ("registry".to_string(), s(input)),
+        ("ok".to_string(), J::Bool(ok)),
+        ("payloads".to_string(), n(payloads as u64)),
+        ("versions".to_string(), n(rows as u64)),
+        ("errors".to_string(), J::Array(errors)),
+    ]);
+    format!("{}\n", json_to_string(&doc))
 }

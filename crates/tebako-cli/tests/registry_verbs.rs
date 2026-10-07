@@ -1,6 +1,7 @@
-//! `tebako registry retire` tests (tebako#675): the library surface end
-//! to end against temp files — the DEPENDS gate, the dangling-default
-//! guard, the last-row rule, and the read-back discipline.
+//! `tebako registry <verb>` tests (tebako#675 retire, tebako#680
+//! validate): the library surface end to end against temp files — the
+//! DEPENDS gate, the dangling-default guard, the last-row rule, the
+//! read-back discipline, and the validate verdicts (human + --json).
 
 use std::fs;
 use std::path::PathBuf;
@@ -171,6 +172,162 @@ fn retire_names_the_unknown_payload_and_version() {
     assert_eq!(err.code, 65, "{err:?}");
     assert!(
         err.message.contains("cannot parse the registry yaml"),
+        "{err:?}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------
+// validate
+// ---------------------------------------------------------------------
+
+#[test]
+fn validate_accepts_a_sound_registry_and_counts_it() {
+    let dir = scratch("vok");
+    let registry = dir.join("tpkg-registry.yaml");
+    fs::write(&registry, runtime_registry(">= 3.3")).unwrap();
+
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains("OK (2 payload(s), 3 version row(s))"),
+        "{text}"
+    );
+
+    // the file:// spelling of the same document validates identically
+    let url = tebako_http::file_url(&registry);
+    let (text, code) = tebako_cli::registry::validate(&url, false).unwrap();
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains("OK (2 payload(s), 3 version row(s))"),
+        "{text}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn validate_catches_the_dangling_default_class_verbatim() {
+    // tebako#680's motivating break: a row pruned by hand leaving
+    // `default:` dangling — the client parse rejects the whole registry,
+    // and the gate reports THAT message.
+    let dir = scratch("vdangle");
+    let registry = dir.join("tpkg-registry.yaml");
+    fs::write(
+        &registry,
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:1.0}\n        entrypoints: [app]\n    default: 9.9\n",
+    )
+    .unwrap();
+
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 65, "{text}");
+    assert!(
+        text.contains("default '9.9' names no listed version"),
+        "{text}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn validate_collects_the_strict_extras_per_row() {
+    let dir = scratch("vextras");
+    let registry = dir.join("tpkg-registry.yaml");
+    // Both extras ride rows the lenient reader accepts: a constraint the
+    // version grammar rejects (a trailing comma's empty clause) and an
+    // abi spelled with no implementation axis anywhere.
+    fs::write(
+        &registry,
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:1.0}\n        runtime_requirement: {engine: ruby, constraint: \">= 3.3,\"}\n        entrypoints: [app]\n      - version: 2.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:2.0}\n        runtime_requirement: {engine: ruby, constraint: \">= 3.3\", abi: aarch64-macos}\n        entrypoints: [app]\n    default: 2.0\n",
+    )
+    .unwrap();
+
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 65, "{text}");
+    assert!(
+        text.contains("app 1.0: runtime_requirement.constraint does not parse"),
+        "{text}"
+    );
+    assert!(
+        text.contains("app 2.0: runtime_requirement.abi is spelled with no implementation axis"),
+        "{text}"
+    );
+
+    // an implementation axis ANYWHERE (here: the payload-level key)
+    // clears the abi row
+    let with_impl = fs::read_to_string(&registry).unwrap().replace(
+        "  - name: app\n    kind: app\n",
+        "  - name: app\n    kind: app\n    implementation: mri\n",
+    );
+    fs::write(&registry, with_impl).unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 65, "{text}");
+    assert!(!text.contains("abi"), "{text}");
+    assert!(text.contains("constraint does not parse"), "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn validate_json_is_a_machine_document() {
+    let dir = scratch("vjson");
+    let registry = dir.join("tpkg-registry.yaml");
+    fs::write(
+        &registry,
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:1.0}\n        entrypoints: [app]\n    default: 9.9\n",
+    )
+    .unwrap();
+
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), true).unwrap();
+    assert_eq!(code, 65, "{text}");
+    let doc = tebako_pkg::json_parse(&text).unwrap();
+    assert_eq!(
+        doc.find("registry_validate_schema")
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert!(matches!(
+        doc.find("ok"),
+        Some(tebako_pkg::JsonValue::Bool(false))
+    ));
+    let errors = match doc.find("errors") {
+        Some(tebako_pkg::JsonValue::Array(items)) => items,
+        other => panic!("errors is not an array: {other:?}"),
+    };
+    assert_eq!(errors.len(), 1, "{text}");
+    assert!(
+        errors[0]
+            .find("message")
+            .and_then(|v| v.as_string())
+            .unwrap()
+            .contains("default '9.9'"),
+        "{text}"
+    );
+
+    // the sound document's json verdict
+    fs::write(&registry, runtime_registry(">= 3.3")).unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), true).unwrap();
+    assert_eq!(code, 0, "{text}");
+    let doc = tebako_pkg::json_parse(&text).unwrap();
+    assert!(matches!(
+        doc.find("ok"),
+        Some(tebako_pkg::JsonValue::Bool(true))
+    ));
+    assert_eq!(doc.find("payloads").and_then(|v| v.as_u64()), Some(2));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn validate_names_an_input_that_is_neither_file_nor_reference() {
+    let dir = scratch("vnoinput");
+    let missing = dir.join("nope.yaml");
+    let err = tebako_cli::registry::validate(missing.to_str().unwrap(), false).unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(
+        err.message
+            .contains("is not an existing file and does not parse as a registry reference"),
         "{err:?}"
     );
 

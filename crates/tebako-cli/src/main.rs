@@ -52,6 +52,10 @@ const USAGE: &str = "Usage:
   tebako add-registry <ref>            register a tpkg-registry.yaml
   tebako list-registries               list the registered registries
   tebako update-registries             refresh the dispatch-time registry cache
+  tebako registry validate <path-or-url> [--json]
+                                       the client-side registry parse as a CI gate
+                                       (exit 0 valid / 65 invalid; --json is a
+                                       registry_validate_schema document on stdout)
   tebako registry retire <registry-file> <name>@<version> [--force]
                                        remove one version row from a LOCAL registry
                                        file; refuses while an in-registry runtime
@@ -158,7 +162,8 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     // stdout is the converted retrace JSON document (spec 25 §6.2); and
     // `trace explain`'s stdout is the diagnosis report alone (§5).
     // `doctor --json` is a machine contract too (spec 35 §4's
-    // doctor_schema document).
+    // doctor_schema document). `registry validate --json` joins them:
+    // its stdout is the registry_validate_schema document alone.
     let machine_stdout = (subcommand == "cache"
         && rest.first().map(|a| a.as_str()) == Some("list")
         && rest.iter().any(|a| a == "--json"))
@@ -167,7 +172,10 @@ fn run(args: &[String]) -> Result<(), CliExit> {
                 rest.first().map(|a| a.as_str()),
                 Some("cover" | "import" | "explain")
             ))
-        || (subcommand == "doctor" && rest.iter().any(|a| a == "--json"));
+        || (subcommand == "doctor" && rest.iter().any(|a| a == "--json"))
+        || (subcommand == "registry"
+            && rest.first().map(|a| a.as_str()) == Some("validate")
+            && rest.iter().any(|a| a == "--json"));
     if machine_stdout {
         eprintln!("{VERSION_BANNER}");
     } else {
@@ -457,14 +465,42 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
 }
 
 /// `tebako registry <verb>` — the registry-file maintenance surface:
-/// `retire` (tebako#675: the journaled local row removal).
+/// `validate` (tebako#680: the client-side parse as a CI gate, the exit
+/// code IS the verdict — run_doctor's pattern) and `retire` (tebako#675:
+/// the journaled local row removal).
 fn run_registry(args: &[String]) -> Result<(), CliExit> {
     let Some(verb) = args.first() else {
         return Err(CliExit::Usage(
-            "usage: tebako registry retire …".to_string(),
+            "usage: tebako registry <validate|retire> …".to_string(),
         ));
     };
     match verb.as_str() {
+        "validate" => {
+            let mut input: Option<&str> = None;
+            let mut json = false;
+            for arg in &args[1..] {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    other if input.is_none() && !other.starts_with('-') => input = Some(other),
+                    _ => {
+                        return Err(CliExit::Usage(
+                            "usage: tebako registry validate <path-or-url> [--json]".to_string(),
+                        ))
+                    }
+                }
+            }
+            let Some(input) = input else {
+                return Err(CliExit::Usage(
+                    "usage: tebako registry validate <path-or-url> [--json]".to_string(),
+                ));
+            };
+            let (out, code) = tebako_cli::registry::validate(input, json)?;
+            print!("{out}");
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
         "retire" => {
             const FORM: &str =
                 "usage: tebako registry retire <registry-file> <name>@<version> [--force]";
@@ -501,7 +537,7 @@ fn run_registry(args: &[String]) -> Result<(), CliExit> {
             Ok(())
         }
         other => Err(CliExit::Usage(format!(
-            "unknown registry verb '{other}' — usage: tebako registry retire …"
+            "unknown registry verb '{other}' — usage: tebako registry <validate|retire> …"
         ))),
     }
 }
