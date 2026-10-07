@@ -96,6 +96,17 @@ fn write_limnifs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
     config.defaults.binary_codec = "lz4".to_string();
     config.defaults.shared_inline = false;
     config.tournament.codecs = vec!["store".to_string(), "lz4".to_string()];
+    // Deterministic imaging (#718): a rebuilt tree must emit
+    // byte-identical bytes or a publish rerun dies on the write-once
+    // asset name. Ownership/permission bits always canonicalize;
+    // recorded mtimes pin to the epoch unless the operator set
+    // SOURCE_DATE_EPOCH, which the writer then resolves and validates
+    // (malformed = its named error).
+    config.source_date_epoch = match std::env::var_os("SOURCE_DATE_EPOCH") {
+        Some(_) => None,
+        None => Some(0),
+    };
+    config.normalize_metadata = true;
     let artifact = limnifs_write::write_directory_with_config(source, &config).map_err(|e| {
         plain_error(format!(
             "limnifs writer: scanning {}: {e}",
@@ -186,6 +197,40 @@ mod tests {
         let mut buf = [0u8; 2];
         let n = mount.backend.pread("local/hello.txt", &mut buf, 0).unwrap();
         assert_eq!(&buf[..n], b"hi");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Deterministic imaging (#718) on the press path: two presses of
+    /// an unchanged tree emit byte-identical images even when host
+    /// mtimes move between the runs.
+    #[test]
+    fn limnifs_press_is_byte_reproducible() {
+        let (dir, src) = fixture_tree("limnifs-repro");
+        let out_a = dir.join("a.tfs");
+        let out_b = dir.join("b.tfs");
+        let file = src.join("local").join("hello.txt");
+
+        let perturb = |epoch_secs: u64| {
+            let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(epoch_secs);
+            std::fs::File::options()
+                .write(true)
+                .open(&file)
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+        };
+
+        perturb(1_700_000_000);
+        build_image(&out_a, &src, PressImageFormat::Limnifs).unwrap();
+        // Without the epoch pin this press would record the new host
+        // mtime and diverge byte-wise.
+        perturb(1_700_100_000);
+        build_image(&out_b, &src, PressImageFormat::Limnifs).unwrap();
+        assert_eq!(
+            std::fs::read(&out_a).unwrap(),
+            std::fs::read(&out_b).unwrap(),
+            "an unchanged tree must press byte-identically regardless of host mtimes (#718)"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

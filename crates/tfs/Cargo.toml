@@ -67,7 +67,7 @@ sqfs-sys = { version = "2.0.0", path = "../sqfs-sys", optional = true }
 # 0.21.113 fleet (0.3.53); requires rustc 1.85 (the 0.3.54 MSRV bump).
 # 0.3.57: the paged slab source (PagedSlabSet / PositionedReader — the
 # reader-side half of spec 39's lazy mount).
-limnifs-core = { version = "0.3.57", optional = true }
+limnifs-core = { version = "0.3.58", optional = true }
 # The ENC stacking transform (spec 10, backends_enc): AES-256-GCM per-block
 # confidentiality with HKDF-SHA256 subtree keys, DEK grant envelopes via
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
@@ -123,7 +123,7 @@ crc32fast = "1"
 # test-only, never linked into the shipped library. Floor: see the
 # limnifs-core pin above (post-flip line is >= 0.3.0; the 0.3.43/0.3.53
 # enforcement set rides 0.3.54).
-limnifs-write = "0.3.57"
+limnifs-write = "0.3.58"
 # The lazy byte source's property tier (arbitrary read patterns vs
 # whole-image reads — spec 39 §10's parity property).
 proptest = "1"
