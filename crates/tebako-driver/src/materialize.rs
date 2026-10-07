@@ -73,6 +73,23 @@
 //! there is no verify-off spelling. With no verdict conveyed nothing
 //! changes: the bare cert's bytes and the exported path are the
 //! pre-bridge ones exactly.
+//!
+//! ## The operator CA store arm (tebako#541 — spec 22 §4 Rule R4)
+//!
+//! The machine-wide store `$TEBAKO_HOME/trust/ca/*.pem` (written only by
+//! `tebako trust add|remove`) rides the same machinery without needing a
+//! conveyed verdict: a declared cert merges the store PEMs into its
+//! bundle (union with a verdict's inputs when both exist); NO declared
+//! cert (the POSIX case — today's POSIX runtime images declare none)
+//! with a non-empty store builds the whole bundle from the enumerated
+//! platform store (the base bundle's owner — rendered to PEM at boot,
+//! never a snapshot) plus the store, content-keyed under the fixed
+//! `resources/store-trust/` namespace with the same record discipline,
+//! and exports it per the cert_env precedence (the user's own host-path
+//! `SSL_CERT_FILE` still wins). An empty or absent store is the
+//! pre-store behavior bit for bit; a corrupt store file or an
+//! unenumerable platform store on the arm's path is the named 65 — the
+//! operator's declared CAs never silently drop out of a bundle.
 
 use std::path::{Path, PathBuf};
 
@@ -145,9 +162,17 @@ pub fn extract(images: &[ImageSpec], env: &dyn Env, runtime_root: &str) -> Resul
         };
         cert = cert.or(extract_image(&cache, &host, &spec.mount)?);
     }
+    // tebako#541 (spec 22 §4's store arm): the operator CA store rides
+    // every cert decision — merged into an image bundle when one exists,
+    // or forming the whole bundle (with the platform store as the base)
+    // when none does. Empty store = the pre-store behavior bit for bit.
+    let store = trust_store_pems(env)?;
     if let Some(hit) = cert {
-        let cert = bridge_cert(env, &hit, enumerate_platform_roots)?;
+        let cert = bridge_cert(env, &hit, &store, enumerate_platform_roots)?;
         export_cert(env, runtime_root, &cert);
+    } else if !store.is_empty() {
+        let bundle = store_trust_bundle(env, &cache, &store, enumerate_platform_roots)?;
+        export_cert(env, runtime_root, &bundle);
     } else if trust_mode(env)?.is_some() {
         // The POSIX no-op case (no image declares a cert): the verdict
         // has nothing to merge into — the runtime's TLS stacks read the
@@ -170,17 +195,19 @@ struct CertHit {
     dir: PathBuf,
 }
 
-/// The spec 17 §2.3 hook on the winning cert: with a conveyed verdict,
-/// the merged bundle's host path; without one, the bare cert's
-/// (byte-identical pre-bridge behavior).
+/// The spec 17 §2.3 hook on the winning cert: with a conveyed verdict
+/// or a non-empty operator store (tebako#541), the merged bundle's host
+/// path; with neither, the bare cert's (byte-identical pre-bridge
+/// behavior).
 fn bridge_cert(
     env: &dyn Env,
     hit: &CertHit,
+    store: &[PathBuf],
     enumerate_platform: fn() -> Result<Vec<Vec<u8>>, DriverError>,
 ) -> Result<PathBuf, DriverError> {
-    match trust_mode(env)? {
-        Some(mode) => merge_bundle(hit, &mode, enumerate_platform),
-        None => Ok(hit.host.clone()),
+    match (trust_mode(env)?, store.is_empty()) {
+        (None, true) => Ok(hit.host.clone()),
+        (mode, _) => merge_bundle(hit, mode.as_ref(), store, enumerate_platform),
     }
 }
 
@@ -306,17 +333,20 @@ fn trust_mode(env: &dyn Env) -> Result<Option<TrustMode>, DriverError> {
 }
 
 /// The merged bundle (spec 17 §2.3): the image's bare cert + the
-/// conveyed trust material, written as ONE PEM file beside the bare
-/// copy, content-keyed by the merge inputs
-/// (`cert-merged-<sha256(mode ‖ bare bytes ‖ inputs)>.pem`) so a changed
-/// verdict never reads a stale merge. An earlier boot's bundle is served
-/// only after it re-hashes to its recorded digest (the write-once
-/// discipline of every extraction). Fail closed: a malformed or
-/// unreadable `extra_ca` PEM, an unenumerable or empty platform store,
-/// is a named 65 — never the image bundle alone.
+/// conveyed trust material + the operator store's CAs (tebako#541 —
+/// absent verdict and absent store never reach here), written as ONE PEM
+/// file beside the bare copy, content-keyed by the merge inputs
+/// (`cert-merged-<sha256(mode ‖ store ‖ bare bytes ‖ inputs)>.pem`) so a
+/// changed verdict or store never reads a stale merge. An earlier
+/// boot's bundle is served only after it re-hashes to its recorded
+/// digest (the write-once discipline of every extraction). Fail closed:
+/// a malformed or unreadable `extra_ca` PEM, an unenumerable or empty
+/// platform store, a corrupt store file, is a named 65 — never the
+/// image bundle alone.
 fn merge_bundle(
     hit: &CertHit,
-    mode: &TrustMode,
+    mode: Option<&TrustMode>,
+    store: &[PathBuf],
     enumerate_platform: fn() -> Result<Vec<Vec<u8>>, DriverError>,
 ) -> Result<PathBuf, DriverError> {
     // The bare copy is the verified, read-only materialization — reading
@@ -331,20 +361,29 @@ fn merge_bundle(
     let mut key = sha2::Sha256::new();
     let mut extras: Vec<Vec<u8>> = Vec::new();
     match mode {
-        TrustMode::Platform => {
+        Some(TrustMode::Platform) => {
             key.update(b"platform\n");
             for der in enumerate_platform()? {
                 key.update(&der);
                 extras.push(pem_block(&der));
             }
         }
-        TrustMode::ExtraCa(paths) => {
+        Some(TrustMode::ExtraCa(paths)) => {
             key.update(b"extra-ca\n");
             for path in paths {
                 let bytes = read_extra_ca(path)?;
                 key.update(&bytes);
                 extras.push(bytes);
             }
+        }
+        None => {}
+    }
+    if !store.is_empty() {
+        key.update(b"store\n");
+        for path in store {
+            let bytes = read_store_ca(path)?;
+            key.update(&bytes);
+            extras.push(bytes);
         }
     }
     key.update(&image_pem);
@@ -474,6 +513,153 @@ fn read_extra_ca(path: &Path) -> Result<Vec<u8>, DriverError> {
         )));
     }
     Ok(bytes)
+}
+
+// ---------------------------------------------------------------------
+// The operator CA store (tebako#541 — spec 22 §4's store arm)
+// ---------------------------------------------------------------------
+
+/// The operator CA store's PEM files (`<home>/trust/ca/*.pem`), sorted
+/// by path for a deterministic merge key. An absent dir declares
+/// nothing; an undiscoverable home declares nothing (debug-noted — boot
+/// never fails because the operator store cannot be located); an
+/// UNREADABLE existing dir is the named 65 (fail closed — the
+/// operator's declared CAs must never silently drop out of the
+/// bundle).
+fn trust_store_pems(env: &dyn Env) -> Result<Vec<PathBuf>, DriverError> {
+    let home = match tpkg::runtime_store::tebako_home(|k| env_var(env, k)) {
+        Ok(home) => home,
+        Err(e) => {
+            tebako_log::log!(
+                tebako_log::Level::Debug,
+                "driver",
+                "tebako home undiscoverable ({e}) — no trust store arm"
+            );
+            return Ok(Vec::new());
+        }
+    };
+    let dir = tpkg::runtime_store::trust_ca_dir(&home);
+    let read = match std::fs::read_dir(&dir) {
+        Ok(read) => read,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(manifest(format!(
+                "cannot read the CA trust store '{}': {e} — refusing to boot without the operator's declared CAs",
+                dir.display()
+            )))
+        }
+    };
+    let mut pems = Vec::new();
+    for entry in read {
+        let entry = entry.map_err(|e| {
+            manifest(format!(
+                "cannot enumerate the CA trust store '{}': {e}",
+                dir.display()
+            ))
+        })?;
+        let path = entry.path();
+        // Direct *.pem files only — a stray .DS_Store or subdirectory is
+        // not the operator's declaration.
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "pem") {
+            pems.push(path);
+        }
+    }
+    pems.sort();
+    Ok(pems)
+}
+
+/// Read + validate one trust-store CA file — the conveyed extra_ca's
+/// parse rule at the store's own wording (every block parses, at least
+/// one exists; the merged bundle carries the file's own spelling). A
+/// corrupt store file is a named 65 (fail closed) naming the removal
+/// verb.
+fn read_store_ca(path: &Path) -> Result<Vec<u8>, DriverError> {
+    let bytes = std::fs::read(path).map_err(|e| {
+        manifest(format!(
+            "cannot read the trust store CA '{}': {e}",
+            path.display()
+        ))
+    })?;
+    let mut count = 0usize;
+    let mut cursor = std::io::Cursor::new(&bytes);
+    for item in rustls_pemfile::certs(&mut cursor) {
+        item.map_err(|e| {
+            manifest(format!(
+                "the trust store CA '{}' does not parse: {e} — expected PEM (-----BEGIN CERTIFICATE-----); fix the file or remove it with `tebako trust remove <name>`",
+                path.display()
+            ))
+        })?;
+        count += 1;
+    }
+    if count == 0 {
+        return Err(manifest(format!(
+            "no certificate block parses from the trust store CA '{}' — expected PEM (-----BEGIN CERTIFICATE-----); fix the file or remove it with `tebako trust remove <name>`",
+            path.display()
+        )));
+    }
+    Ok(bytes)
+}
+
+/// The no-declared-cert arm (tebako#541 — the POSIX case: today's POSIX
+/// runtime images declare no `ssl/cert.pem`): the bundle IS the
+/// enumerated platform store (the base bundle's owner — rendered to PEM
+/// at boot, never a snapshot) plus a conveyed extra_ca list plus the
+/// operator store, content-keyed under the fixed `store-trust`
+/// resources namespace with the same write-once record discipline as an
+/// extraction. Platform enumeration fails closed exactly as the
+/// platform-verdict merge does.
+fn store_trust_bundle(
+    env: &dyn Env,
+    cache: &str,
+    store: &[PathBuf],
+    enumerate_platform: fn() -> Result<Vec<Vec<u8>>, DriverError>,
+) -> Result<PathBuf, DriverError> {
+    use sha2::Digest as _;
+    let mut key = sha2::Sha256::new();
+    key.update(b"store-trust\n");
+    let mut blocks: Vec<Vec<u8>> = Vec::new();
+    for der in enumerate_platform()? {
+        key.update(&der);
+        blocks.push(pem_block(&der));
+    }
+    // A conveyed extra_ca verdict merges too (a platform verdict IS the
+    // base; no verdict adds nothing).
+    if let Some(TrustMode::ExtraCa(paths)) = trust_mode(env)? {
+        for path in paths {
+            let bytes = read_extra_ca(&path)?;
+            key.update(&bytes);
+            blocks.push(bytes);
+        }
+    }
+    for path in store {
+        let bytes = read_store_ca(path)?;
+        key.update(&bytes);
+        blocks.push(bytes);
+    }
+    let key = crate::exec_cache::hex(&key.finalize());
+    let dir = Path::new(cache).join("resources").join("store-trust");
+    let target = dir.join(format!("cert-merged-{key}.pem"));
+    let label = "the trust store bundle";
+    if target.exists() {
+        verify_recorded(&target, &dir, label)?;
+        return Ok(target);
+    }
+    let mut merged = Vec::new();
+    for block in &blocks {
+        merged.extend_from_slice(block);
+        if !merged.ends_with(b"\n") {
+            merged.push(b'\n');
+        }
+    }
+    install_synthesized(&target, &merged, label)?;
+    tebako_log::log!(
+        tebako_log::Level::Debug,
+        "driver",
+        "trust store bundle: {} block(s) into {}",
+        blocks.len(),
+        target.display()
+    );
+    Ok(target)
 }
 
 /// Install synthesized bytes under the same write-once discipline as an
@@ -838,10 +1024,12 @@ mod tests {
     #[test]
     fn extract_without_declarations_creates_nothing() {
         let dir = temp("no-decl");
-        let env = MapEnv(RefCell::new(HashMap::from([(
-            crate::exec_cache::VAR.to_string(),
-            dir.to_string_lossy().into_owned(),
-        )])));
+        let env = env_with(&[
+            (crate::exec_cache::VAR, dir.to_str().unwrap()),
+            // Pin the operator store to an absent dir (tebako#541's arm
+            // is the separate surface).
+            ("TEBAKO_HOME", dir.join("home").to_str().unwrap()),
+        ]);
         // No env image, no payload images: nothing to consult, nothing
         // created — and no cert declared, so the env stays untouched
         // (the POSIX no-op).
@@ -969,6 +1157,211 @@ mod tests {
         panic!("extra_ca mode never enumerates the platform store")
     }
 
+    /// The pre-store spelling of the merge call (the store leg's own
+    /// tests pass real paths).
+    fn merge_bundle_no_store(
+        hit: &CertHit,
+        mode: &TrustMode,
+        enumerate_platform: fn() -> Result<Vec<Vec<u8>>, DriverError>,
+    ) -> Result<PathBuf, DriverError> {
+        merge_bundle(hit, Some(mode), &[], enumerate_platform)
+    }
+
+    /// A temp home whose trust store carries the given (stem, der)
+    /// CAs; answers the home and the store paths (sorted, the
+    /// enumeration's own order).
+    fn store_home(tag: &str, cas: &[(&str, &[u8])]) -> (PathBuf, Vec<PathBuf>) {
+        let home = temp(tag);
+        let ca_dir = tpkg::runtime_store::trust_ca_dir(&home);
+        std::fs::create_dir_all(&ca_dir).unwrap();
+        let mut paths = Vec::new();
+        for (stem, der) in cas {
+            let path = ca_dir.join(format!("{stem}.pem"));
+            std::fs::write(&path, pem_block(der)).unwrap();
+            paths.push(path);
+        }
+        paths.sort();
+        (home, paths)
+    }
+
+    // -------------------------------------------------------------
+    // The operator CA store arm (tebako#541)
+    // -------------------------------------------------------------
+
+    #[test]
+    fn the_store_leg_enumerates_only_pem_files_sorted() {
+        let (home, paths) = store_home("store-enum", &[("b", b"der-b"), ("a", b"der-a")]);
+        let ca_dir = tpkg::runtime_store::trust_ca_dir(&home);
+        // Not the operator's declaration: a stray note and a subdir.
+        std::fs::write(ca_dir.join("notes.txt"), b"hi\n").unwrap();
+        std::fs::create_dir_all(ca_dir.join("nested")).unwrap();
+        let env = env_with(&[("TEBAKO_HOME", home.to_str().unwrap())]);
+        assert_eq!(trust_store_pems(&env).unwrap(), paths);
+        // An absent dir declares nothing.
+        let empty = temp("store-enum-empty");
+        let env = env_with(&[("TEBAKO_HOME", empty.to_str().unwrap())]);
+        assert!(trust_store_pems(&env).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn the_store_leg_merges_into_the_image_bundle_without_a_verdict() {
+        let (dir, hit) = cert_hit("store-merge");
+        let (home, store) = store_home("store-merge", &[("corp", b"corp-der-root")]);
+        let env = env_with(&[]);
+        let merged = bridge_cert(&env, &hit, &store, never_enumerate).unwrap();
+        let want = [pem_block(b"image-der-root"), pem_block(b"corp-der-root")].concat();
+        assert_eq!(std::fs::read(&merged).unwrap(), want);
+        assert!(std::fs::metadata(&merged).unwrap().permissions().readonly());
+        assert!(record_path(&merged).is_file());
+        // Same inputs reuse the same content-keyed path.
+        let again = bridge_cert(&env, &hit, &store, never_enumerate).unwrap();
+        assert_eq!(again, merged);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_store_leg_unions_with_a_conveyed_verdict() {
+        let (dir, hit) = cert_hit("store-union");
+        let (_home, store) = store_home("store-union", &[("corp", b"corp-der-root")]);
+        fn one_root() -> Result<Vec<Vec<u8>>, DriverError> {
+            Ok(vec![b"platform-der".to_vec()])
+        }
+        let env = env_with(&[(TRUST_PLATFORM_ENV, "1")]);
+        let merged = bridge_cert(&env, &hit, &store, one_root).unwrap();
+        // Image roots, then the platform store, then the operator store.
+        let want = [
+            pem_block(b"image-der-root"),
+            pem_block(b"platform-der"),
+            pem_block(b"corp-der-root"),
+        ]
+        .concat();
+        assert_eq!(std::fs::read(&merged).unwrap(), want);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&_home);
+    }
+
+    #[test]
+    fn the_store_leg_fails_closed_on_a_corrupt_store_file() {
+        let (dir, hit) = cert_hit("store-corrupt");
+        let (home, _) = store_home("store-corrupt", &[("good", b"good-der")]);
+        let junk = tpkg::runtime_store::trust_ca_dir(&home).join("junk.pem");
+        std::fs::write(&junk, b"not a pem\n").unwrap();
+        let store =
+            trust_store_pems(&env_with(&[("TEBAKO_HOME", home.to_str().unwrap())])).unwrap();
+        let err = bridge_cert(&env_with(&[]), &hit, &store, never_enumerate).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{}", err.message);
+        assert!(err.message.contains("junk.pem"), "{}", err.message);
+        assert!(
+            err.message.contains("tebako trust remove"),
+            "{}",
+            err.message
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_posix_arm_builds_the_store_bundle_on_the_platform_base() {
+        let dir = temp("store-posix");
+        let cache = dir.join("cache");
+        let cache_s = cache.to_string_lossy().into_owned();
+        let (home, store) = store_home("store-posix", &[("corp", b"corp-der-root")]);
+        fn one_root() -> Result<Vec<Vec<u8>>, DriverError> {
+            Ok(vec![b"platform-der".to_vec()])
+        }
+        let env = env_with(&[("TEBAKO_HOME", home.to_str().unwrap())]);
+        let bundle = store_trust_bundle(&env, &cache_s, &store, one_root).unwrap();
+        // The fixed namespace under the exec cache's resources tree.
+        assert_eq!(
+            bundle.parent().unwrap(),
+            cache.join("resources").join("store-trust")
+        );
+        let want = [pem_block(b"platform-der"), pem_block(b"corp-der-root")].concat();
+        assert_eq!(std::fs::read(&bundle).unwrap(), want);
+        assert!(record_path(&bundle).is_file());
+        // Reuse rehashes to the same path.
+        let again = store_trust_bundle(&env, &cache_s, &store, one_root).unwrap();
+        assert_eq!(again, bundle);
+        // A conveyed extra_ca verdict joins the union.
+        let ca = dir.join("extra.pem");
+        std::fs::write(&ca, pem_block(b"extra-der")).unwrap();
+        let env = env_with(&[
+            ("TEBAKO_HOME", home.to_str().unwrap()),
+            (TRUST_EXTRA_CA_ENV, ca.to_str().unwrap()),
+        ]);
+        let with_extra = store_trust_bundle(&env, &cache_s, &store, one_root).unwrap();
+        assert_ne!(with_extra, bundle);
+        let want = [
+            pem_block(b"platform-der"),
+            pem_block(b"extra-der"),
+            pem_block(b"corp-der-root"),
+        ]
+        .concat();
+        assert_eq!(std::fs::read(&with_extra).unwrap(), want);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_posix_arm_fails_closed_when_the_platform_store_wont_enumerate() {
+        let dir = temp("store-posix-broken");
+        let cache = dir.to_string_lossy().into_owned();
+        let (_home, store) = store_home("store-posix-broken", &[("corp", b"corp-der-root")]);
+        fn broken() -> Result<Vec<Vec<u8>>, DriverError> {
+            Err(manifest("the store is a maze of twisty passages"))
+        }
+        let env = env_with(&[]);
+        let err = store_trust_bundle(&env, &cache, &store, broken).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{}", err.message);
+        assert!(err.message.contains("twisty passages"), "{}", err.message);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&_home);
+    }
+
+    #[test]
+    fn extract_with_a_store_but_no_declared_cert_exports_the_posix_arm() {
+        // No image declares a cert (today's POSIX runtime images) and
+        // the operator store is non-empty: SSL_CERT_FILE gains the
+        // store-trust bundle — the boot's only TLS trust input.
+        let dir = temp("extract-store");
+        let cache = dir.join("cache");
+        let (home, _store) = store_home("extract-store", &[("corp", b"corp-der-root")]);
+        let env = env_with(&[
+            (crate::exec_cache::VAR, cache.to_str().unwrap()),
+            ("TEBAKO_HOME", home.to_str().unwrap()),
+        ]);
+        extract(&[], &env, "/__tfs__").unwrap();
+        let exported = env.0.borrow().get(CERT_ENV).cloned();
+        let exported = exported.expect("SSL_CERT_FILE exported");
+        let bundle = PathBuf::from(&exported);
+        assert_eq!(
+            bundle.parent().unwrap(),
+            cache.join("resources").join("store-trust")
+        );
+        // The real platform store enumerated (this host has one).
+        let text = std::fs::read(&bundle).unwrap();
+        let count = rustls_pemfile::certs(&mut std::io::Cursor::new(&text)).count();
+        assert!(count >= 2, "platform roots + the store CA: {count}");
+        // A user-set host-path SSL_CERT_FILE wins over the arm.
+        let dir2 = temp("extract-store-user");
+        let env = env_with(&[
+            (crate::exec_cache::VAR, dir2.to_str().unwrap()),
+            ("TEBAKO_HOME", home.to_str().unwrap()),
+            (CERT_ENV, "/etc/ssl/user-bundle.pem"),
+        ]);
+        extract(&[], &env, "/__tfs__").unwrap();
+        assert_eq!(
+            env.0.borrow().get(CERT_ENV).map(String::as_str),
+            Some("/etc/ssl/user-bundle.pem")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     #[test]
     fn the_trust_mode_read_mirrors_netconfig() {
         // Neither var → no verdict.
@@ -1047,7 +1440,7 @@ mod tests {
         let ca_bytes = pem_block(b"corp-der-root");
         std::fs::write(&ca, &ca_bytes).unwrap();
         let mode = TrustMode::ExtraCa(vec![ca]);
-        let merged = merge_bundle(&hit, &mode, never_enumerate).unwrap();
+        let merged = merge_bundle_no_store(&hit, &mode, never_enumerate).unwrap();
         // Content-keyed name beside the bare copy.
         let name = merged.file_name().unwrap().to_string_lossy().into_owned();
         assert!(
@@ -1062,7 +1455,7 @@ mod tests {
         assert!(std::fs::metadata(&merged).unwrap().permissions().readonly());
         assert!(record_path(&merged).is_file());
         // Reuse: same inputs → the same path, served after rehash.
-        let again = merge_bundle(&hit, &mode, never_enumerate).unwrap();
+        let again = merge_bundle_no_store(&hit, &mode, never_enumerate).unwrap();
         assert_eq!(again, merged);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1074,22 +1467,23 @@ mod tests {
         let ca_b = dir.join("b.pem");
         std::fs::write(&ca_a, pem_block(b"corp-a")).unwrap();
         std::fs::write(&ca_b, pem_block(b"corp-b")).unwrap();
-        let first = merge_bundle(
+        let first = merge_bundle_no_store(
             &hit,
             &TrustMode::ExtraCa(vec![ca_a.clone()]),
             never_enumerate,
         )
         .unwrap();
-        let second = merge_bundle(&hit, &TrustMode::ExtraCa(vec![ca_b]), never_enumerate).unwrap();
+        let second =
+            merge_bundle_no_store(&hit, &TrustMode::ExtraCa(vec![ca_b]), never_enumerate).unwrap();
         assert_ne!(first, second);
         // Order is an input too.
-        let ab = merge_bundle(
+        let ab = merge_bundle_no_store(
             &hit,
             &TrustMode::ExtraCa(vec![ca_a.clone(), dir.join("b.pem")]),
             never_enumerate,
         )
         .unwrap();
-        let ba = merge_bundle(
+        let ba = merge_bundle_no_store(
             &hit,
             &TrustMode::ExtraCa(vec![dir.join("b.pem"), ca_a]),
             never_enumerate,
@@ -1101,7 +1495,7 @@ mod tests {
         fn one_root() -> Result<Vec<Vec<u8>>, DriverError> {
             Ok(vec![b"corp-a".to_vec()])
         }
-        let platform = merge_bundle(&hit, &TrustMode::Platform, one_root).unwrap();
+        let platform = merge_bundle_no_store(&hit, &TrustMode::Platform, one_root).unwrap();
         assert_ne!(platform, first);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1112,7 +1506,7 @@ mod tests {
         fn two_roots() -> Result<Vec<Vec<u8>>, DriverError> {
             Ok(vec![b"der-root-a".to_vec(), b"der-root-b".to_vec()])
         }
-        let merged = merge_bundle(&hit, &TrustMode::Platform, two_roots).unwrap();
+        let merged = merge_bundle_no_store(&hit, &TrustMode::Platform, two_roots).unwrap();
         let want = [
             pem_block(b"image-der-root"),
             pem_block(b"der-root-a"),
@@ -1132,7 +1526,7 @@ mod tests {
         let (dir, hit) = cert_hit("merge-badca");
         // Unreadable → 65, naming the file and the var.
         let missing = dir.join("missing.pem");
-        let err = merge_bundle(
+        let err = merge_bundle_no_store(
             &hit,
             &TrustMode::ExtraCa(vec![missing.clone()]),
             never_enumerate,
@@ -1144,7 +1538,8 @@ mod tests {
         // No parseable certificate block → 65.
         let junk = dir.join("junk.pem");
         std::fs::write(&junk, b"not a pem\n").unwrap();
-        let err = merge_bundle(&hit, &TrustMode::ExtraCa(vec![junk]), never_enumerate).unwrap_err();
+        let err = merge_bundle_no_store(&hit, &TrustMode::ExtraCa(vec![junk]), never_enumerate)
+            .unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{}", err.message);
         assert!(
             err.message.contains("no certificate block"),
@@ -1169,7 +1564,7 @@ mod tests {
         fn broken() -> Result<Vec<Vec<u8>>, DriverError> {
             Err(manifest("the store is a maze of twisty passages"))
         }
-        let err = merge_bundle(&hit, &TrustMode::Platform, broken).unwrap_err();
+        let err = merge_bundle_no_store(&hit, &TrustMode::Platform, broken).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{}", err.message);
         assert!(err.message.contains("twisty passages"), "{}", err.message);
         let _ = std::fs::remove_dir_all(&dir);
@@ -1181,7 +1576,7 @@ mod tests {
         let ca = dir.join("corp.pem");
         std::fs::write(&ca, pem_block(b"corp-der-root")).unwrap();
         let mode = TrustMode::ExtraCa(vec![ca]);
-        let merged = merge_bundle(&hit, &mode, never_enumerate).unwrap();
+        let merged = merge_bundle_no_store(&hit, &mode, never_enumerate).unwrap();
         let mut perms = std::fs::metadata(&merged).unwrap().permissions();
         // Deliberate: the tamper case needs the read-only bundle
         // writable again (the same allow as boot.rs's tamper test).
@@ -1189,7 +1584,7 @@ mod tests {
         perms.set_readonly(false);
         std::fs::set_permissions(&merged, perms).unwrap();
         std::fs::write(&merged, b"FORGED\n").unwrap();
-        let err = merge_bundle(&hit, &mode, never_enumerate).unwrap_err();
+        let err = merge_bundle_no_store(&hit, &mode, never_enumerate).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_SHA, "{}", err.message);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1198,7 +1593,7 @@ mod tests {
     fn bridge_cert_defers_without_a_verdict() {
         let (dir, hit) = cert_hit("bridge-none");
         let env = env_with(&[]);
-        let got = bridge_cert(&env, &hit, never_enumerate).unwrap();
+        let got = bridge_cert(&env, &hit, &[], never_enumerate).unwrap();
         assert_eq!(got, hit.host);
         // No merged bundle materialized.
         assert!(!hit.host.parent().unwrap().read_dir().unwrap().any(|e| e
@@ -1213,14 +1608,17 @@ mod tests {
     fn extract_with_a_verdict_but_no_declared_cert_is_a_noop() {
         // The POSIX case: no image declares a cert, so the verdict has
         // nothing to merge into — no export, no error (noted at debug).
+        // TEBAKO_HOME pins the operator store to an absent dir (the
+        // store arm is tebako#541's separate surface).
         let dir = temp("verdict-no-cert");
-        let cache = dir.to_string_lossy().into_owned();
+        let cache = dir.join("cache");
         let env = env_with(&[
-            (crate::exec_cache::VAR, cache.as_str()),
+            (crate::exec_cache::VAR, cache.to_str().unwrap()),
             (TRUST_PLATFORM_ENV, "1"),
+            ("TEBAKO_HOME", dir.join("home").to_str().unwrap()),
         ]);
         extract(&[], &env, "/__tfs__").unwrap();
-        assert!(!dir.join("resources").exists());
+        assert!(!cache.join("resources").exists());
         assert!(!env.0.borrow().contains_key(CERT_ENV));
         let _ = std::fs::remove_dir_all(&dir);
     }

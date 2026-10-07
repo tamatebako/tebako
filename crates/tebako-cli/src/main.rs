@@ -73,6 +73,9 @@ const USAGE: &str = "Usage:
   tebako keys import <file>            register a public key into the trusted keyring
   tebako keys list                     the trusted signing keys (root, keyring, pins)
   tebako keys remove <fingerprint>     drop a key from the keyring and the pin store
+  tebako trust add <file.pem>          add a CA certificate to the TLS trust store
+  tebako trust list                    list the TLS trust store's CA certificates
+  tebako trust remove <name>           remove a CA certificate from the trust store
   tebako install <ref | [alias/]name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
   tebako bundle <name[@ver]> --output <dir> [--also <name[@ver]>]...
@@ -229,6 +232,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "update-registries" => run_update_registries(rest),
         "registry" => run_registry(rest),
         "keys" => run_keys(rest),
+        "trust" => run_trust(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
         "bundle" => run_bundle(rest),
@@ -674,6 +678,75 @@ fn run_keys(args: &[String]) -> Result<(), CliExit> {
         }
         other => Err(CliExit::Usage(format!(
             "unknown keys subcommand '{other}' (usage: tebako keys <import <file> | list | remove <fingerprint>>)"
+        ))),
+    }
+}
+
+/// `tebako trust <verb>` — the operator CA certificate store
+/// (tebako#541): the boot merges a non-empty store into the runtime's
+/// TLS trust input; these verbs are the store's write/read surface.
+fn run_trust(args: &[String]) -> Result<(), CliExit> {
+    let Some(verb) = args.first() else {
+        return Err(CliExit::Usage(
+            "trust subcommand expected: add <file.pem> | list | remove <name>".to_string(),
+        ));
+    };
+    match verb.as_str() {
+        "add" => {
+            let [file] = &args[1..] else {
+                return Err(CliExit::Usage("usage: tebako trust add <file.pem>".to_string()));
+            };
+            match tebako_cli::trust::add(&tebako_home()?, std::path::Path::new(file))? {
+                tebako_cli::trust::TrustAddOutcome::Added(name) => println!(
+                    "added {name} to the CA trust store — boots merge it into the runtime's TLS trust"
+                ),
+                tebako_cli::trust::TrustAddOutcome::AlreadyPresent(name) => {
+                    println!("{name} is already in the CA trust store (identical content)")
+                }
+            }
+            Ok(())
+        }
+        "list" => {
+            if args.len() != 1 {
+                return Err(CliExit::Usage("usage: tebako trust list".to_string()));
+            }
+            let home = tebako_home()?;
+            let rows = tebako_cli::trust::list(&home)?;
+            if rows.is_empty() {
+                println!("no CA certificates in the trust store — tebako trust add <file.pem> adds one");
+            } else {
+                for row in &rows {
+                    match row.certs {
+                        Some(n) => println!(
+                            "{}  ({} certificate(s), sha256 {}…)",
+                            row.name,
+                            n,
+                            &row.sha256[..12]
+                        ),
+                        None => println!(
+                            "{}  (CORRUPT — does not parse; remove it with `tebako trust remove {0}`)",
+                            row.name
+                        ),
+                    }
+                }
+            }
+            if tebako_cli::trust::signing_keys_present(&home) {
+                println!("(signing keys are a separate store — see `tebako keys list`)");
+            }
+            Ok(())
+        }
+        "remove" => {
+            let [name] = &args[1..] else {
+                return Err(CliExit::Usage(
+                    "usage: tebako trust remove <name>".to_string(),
+                ));
+            };
+            let removed = tebako_cli::trust::remove(&tebako_home()?, name)?;
+            println!("removed {removed} from the CA trust store");
+            Ok(())
+        }
+        other => Err(CliExit::Usage(format!(
+            "unknown trust subcommand '{other}' (usage: tebako trust <add <file.pem> | list | remove <name>>)"
         ))),
     }
 }

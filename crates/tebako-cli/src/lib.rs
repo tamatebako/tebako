@@ -20,6 +20,8 @@
 //!   tebako registry retire <registry-file> <name>@<version> [--force]
 //!   tebako keys import <file> | list | remove <fingerprint>
 //!                (the signing-key trust inputs — keyring + pins)
+//!   tebako trust add <file.pem> | list | remove <name>
+//!                (the operator CA store, spec 22 §4 Rule R4)
 //!   tebako install <ref | name[@version]>
 //!   tebako uninstall <name>
 //!   tebako check <name | image.tfs | package | tebako.yaml>
@@ -96,6 +98,7 @@ pub mod spawn;
 pub mod strip;
 pub mod suite;
 pub mod trace;
+pub mod trust;
 
 use std::fs;
 use std::path::{Path, PathBuf};

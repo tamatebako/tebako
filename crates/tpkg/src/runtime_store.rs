@@ -1076,9 +1076,19 @@ pub fn tebako_home_with(
 
 /// The trust-store root (`<home>/trust`): pinned third-party signing
 /// keys (`<FINGERPRINT>.pub` — the add-registry TOFU pin layout, spec 09
-/// §9.1, written by tebako-signer). The single owner of the spelling.
+/// §9.1, written by tebako-signer) and the operator CA bundle's `ca/`
+/// subdirectory (spec 22 §4's store arm). The single owner of both
+/// spellings: tebako-signer flows [`trust_dir`], tebako-cli's trust
+/// verbs and tebako-driver's cert arm flow [`trust_ca_dir`].
 pub fn trust_dir(home: &Path) -> PathBuf {
     home.join("trust")
+}
+
+/// The operator CA certificate store (`<home>/trust/ca`): one validated
+/// PEM per file, merged into the boot's cert bundle when non-empty
+/// (spec 22 §4's store arm).
+pub fn trust_ca_dir(home: &Path) -> PathBuf {
+    trust_dir(home).join("ca")
 }
 
 #[cfg(test)]
@@ -1090,6 +1100,7 @@ mod tests {
     fn the_trust_store_spellings() {
         let home = Path::new("/h");
         assert_eq!(trust_dir(home), PathBuf::from("/h/trust"));
+        assert_eq!(trust_ca_dir(home), PathBuf::from("/h/trust/ca"));
     }
 
     #[test]

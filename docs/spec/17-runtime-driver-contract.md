@@ -162,7 +162,7 @@ learns which pattern a runtime uses.
 | `TEBAKO_MOUNT_<SLUG>` | spec 22 §6 + v2-1/20: per co-mounted payload image, its physical mount point (drive-qualified on windows). SLUG is the mount's mechanical uppercase form: `/tools/inkscape` → `TEBAKO_MOUNT_TOOLS_INKSCAPE`; two mounts slugging alike is a named boot error (65). The root mount `/` exports nothing — `TEBAKO_MOUNT_ROOT` stays the mount-root override (§1). Under the §7 materialize tier the value is the extracted HOST dir, never the VFS point |
 | `TEBAKO_MATERIALIZE_BOOT` | spec 17 §7 (windows only): the materialize tier's respawn marker, exported together with the rewired `TEBAKO_MOUNT_ROOT`; a boot finding it scrubs both before §1's override is read and re-derives the tier from the env image's grant |
 | `PATH` | spec 22 §3.2: led by the launcher dir (`<exec-cache-leaf>/wrap-bin/`) when the env image delivers the preload shim — every declared dependency executable materialized as a self-injecting wrapper (unix; the SIP-strip answer) — then every co-mounted DEPENDENCY image's declared bin dirs (the dirname of each `provides.entrypoints[].path` / `provides.executables[].path` in the image's own `/__tpkg__/manifest.yaml`, joined under its mount, in triple order). The first triple (the app payload) never contributes; an image without a readable manifest declares no bins; a corrupt manifest or an unmaterializable declared executable is a named 65. On windows the boot-materialized library-alias directories complete the same lead (spec 22 §2.1's bare-name rule) — every co-mounted image contributing, the env image and the app payload included; the lead order is locked: launcher dir → dependency bin dirs → alias dirs → the inherited `PATH`. Under the §7 materialize tier the dependency bin dirs name the extracted HOST trees (`<trees>/<key>/<bin>` — the same mount→host map the `TEBAKO_MOUNT_<SLUG>` export consumes), never the VFS points: the host loader's `PATH` search cannot resolve the VFS spelling |
-| `SSL_CERT_FILE` | spec 22 §4 (the cert convention's env surface — driver-owned, the driver being the single owner of the materialized host path): when a mounted image declares a `materialize:` entry ending `ssl/cert.pem`, the driver exports the cert's materialized HOST path at boot, in both boot shapes. An unset/empty value is set; a value lexically under the effective runtime mount root (a stale in-VFS spelling — `A:/t/ssl/cert.pem` — resolved by the patched IO but unreadable by libcrypto's native CRT IO) is rewritten; a real host path is the user's own configuration and always wins. No declared cert → nothing is set (the POSIX no-op). When the trust bridge (§2.3) is in force the exported path names the MERGED bundle, content-keyed by the merge inputs |
+| `SSL_CERT_FILE` | spec 22 §4 (the cert convention's env surface — driver-owned, the driver being the single owner of the materialized host path): when a mounted image declares a `materialize:` entry ending `ssl/cert.pem`, the driver exports the cert's materialized HOST path at boot, in both boot shapes. An unset/empty value is set; a value lexically under the effective runtime mount root (a stale in-VFS spelling — `A:/t/ssl/cert.pem` — resolved by the patched IO but unreadable by libcrypto's native CRT IO) is rewritten; a real host path is the user's own configuration and always wins. No declared cert → nothing is set (the POSIX no-op) UNLESS the operator CA store is non-empty (tebako#541, spec 22 §4 Rule R4): then the bundle is the enumerated platform store plus the store PEMs under the exec cache's `resources/store-trust/` namespace, and this var names it. When the trust bridge (§2.3) is in force the exported path names the MERGED bundle, content-keyed by the merge inputs |
 
 ### 2.1 The `TEBAKO_TFS_MOUNTS` grammar (the preload re-mount wire form)
 
@@ -271,6 +271,15 @@ time, never a per-org rebuild).
   `SSL_CERT_FILE` always wins; the stale in-VFS spelling is still
   rewritten. Platform + additive simultaneously is the netconfig
   layer's named error, never the driver's.
+- **The operator CA store (tebako#541; spec 22 §4's Rule R4 owns the
+  mechanics).** The machine-wide `$TEBAKO_HOME/trust/ca/*.pem` store
+  merges into the same bundle WITHOUT a conveyed verdict too — an image
+  cert + the store merges when no verdict exists; no image cert (the
+  POSIX case) + a non-empty store builds the bundle from the enumerated
+  platform store plus the store PEMs. The wire is unchanged (the driver
+  reads the store itself — it is not size-gated; the loader plane
+  conveys nothing new). The same fail-closed rule covers a corrupt
+  store file.
 - **The java plane.** The JVM is a spawned child (spec 30), not a
   driver boot — its bridge rides the §2.2 interp_env chain on the
   dispatcher side: in platform mode on windows the chain additively

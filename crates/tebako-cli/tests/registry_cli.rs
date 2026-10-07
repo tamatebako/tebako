@@ -357,3 +357,104 @@ fn registry_retire_removes_a_row_and_refuses_a_dangling_default() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------
+// tebako#617 + tebako#541 — the trust surface at the binary level:
+// add-registry's TOFU gate (unattended refusal, the --expect-fingerprint
+// mismatch/match), keys list/remove, trust add/list/remove.
+// ---------------------------------------------------------------------
+
+#[test]
+fn trust_and_keys_verbs_smoke() {
+    let dir = scratch("trustkeys");
+    let home = dir.join("home");
+    let mirror = dir.join("mirror");
+    fs::create_dir_all(&mirror).unwrap();
+    let shim = dir.join("tebako-shim");
+    fs::write(&shim, b"#!/bin/sh\n").unwrap();
+
+    // a registry carrying a spec 09 §9.1 signing block
+    let donor = dir.join("donor");
+    fs::create_dir_all(&donor).unwrap();
+    let key = tebako_signer::press_local_key(&donor).unwrap();
+    let fp = key.fingerprint.to_uppercase();
+    let armored = String::from_utf8(key.public_key.clone()).unwrap();
+    let indented = armored
+        .lines()
+        .map(|l| format!("    {l}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(mirror.join("app-1.0.tfs"), b"app-bytes").unwrap();
+    let app_url = tebako_http::file_url(&mirror.join("app-1.0.tfs"));
+    fs::write(
+        mirror.join("tpkg-registry.yaml"),
+        format!(
+            "schema_version: 1\nsigning:\n  key: |\n{indented}\n  fingerprint: {fp}\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {app_url}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
+        ),
+    )
+    .unwrap();
+    let reg_ref = tebako_http::file_url(&mirror.join("tpkg-registry.yaml"));
+
+    // piped stdin is not a terminal: the unattended refusal names the
+    // out-of-band channel
+    let (code, text) = run(&home, &shim, &["add-registry", &reg_ref]);
+    assert_eq!(code, 65, "{text}");
+    assert!(text.contains("--expect-fingerprint"), "{text}");
+    assert!(text.contains(&fp), "{text}");
+
+    // a wrong expectation is the trust class, printing both
+    let wrong = "F".repeat(40);
+    let (code, text) = run(
+        &home,
+        &shim,
+        &["add-registry", &reg_ref, "--expect-fingerprint", &wrong],
+    );
+    assert_eq!(code, 72, "{text}");
+    assert!(text.contains(&fp) && text.contains(&wrong), "{text}");
+
+    // the matching expectation pins and registers
+    let (code, text) = run(
+        &home,
+        &shim,
+        &["add-registry", &reg_ref, "--expect-fingerprint", &fp],
+    );
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("registered registry"), "{text}");
+    assert!(home.join(format!("trust/{fp}.pub")).is_file(), "{text}");
+
+    // keys list shows the pin with its registry binding; remove drops it
+    let (code, text) = run(&home, &shim, &["keys", "list"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains(tebako_signer::ROOT_FINGERPRINT), "{text}");
+    assert!(text.contains(&fp), "{text}");
+    assert!(text.contains("pin"), "{text}");
+    let (code, text) = run(&home, &shim, &["keys", "remove", &fp]);
+    assert_eq!(code, 0, "{text}");
+    let (code, text) = run(&home, &shim, &["keys", "list"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(!text.contains(&fp), "{text}");
+    let (code, text) = run(&home, &shim, &["keys", "remove", &fp]);
+    assert_eq!(code, 72, "{text}");
+
+    // the CA store verbs
+    let pem = dir.join("corp.pem");
+    fs::write(
+        &pem,
+        "-----BEGIN CERTIFICATE-----\nAAEB\n-----END CERTIFICATE-----\n",
+    )
+    .unwrap();
+    let (code, text) = run(&home, &shim, &["trust", "add", pem.to_str().unwrap()]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("added corp"), "{text}");
+    assert!(home.join("trust/ca/corp.pem").is_file());
+    let (code, text) = run(&home, &shim, &["trust", "list"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("corp  (1 certificate(s)"), "{text}");
+    let (code, text) = run(&home, &shim, &["trust", "remove", "corp"]);
+    assert_eq!(code, 0, "{text}");
+    let (code, text) = run(&home, &shim, &["trust", "list"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("no CA certificates"), "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}

@@ -160,6 +160,7 @@ config.yaml                                   # spec 07 (YAML — never JSON)
 keys/                                         # press-local signing keys (spec 09)
 keyring/trusted.pgp                           # the trusted signer keyring (`tebako keys import`; spec 09 §2)
 trust/<FINGERPRINT>.pub                       # add-registry TOFU pins, read-only (spec 09 §9.1)
+trust/ca/<name>.pem                           # the operator CA store, read-only (spec 22 §4 Rule R4)
 ```
 
 The interpreter/image file names in a cache entry keep the index entry's
