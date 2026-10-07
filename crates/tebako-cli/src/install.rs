@@ -1132,6 +1132,24 @@ pub(crate) fn plan_from_registry_entry(
         })?,
     };
 
+    // tebako#672: a `kind: runtime` entry is never payload-store
+    // installable — runtimes resolve through the runtime cache (an app's
+    // runtime_requirement, or an explicit `tebako use --runtime`), never
+    // through `tebako install`. Refuse BEFORE any download, naming the
+    // remedy.
+    if payload.kind == tpkg::PayloadKind::Runtime {
+        let use_form = match payload.engine.as_deref() {
+            Some(engine) => format!("tebako use --runtime {engine}@<langver>[:<tebako>]"),
+            None => "tebako use --runtime <engine>@<langver>[:<tebako>]".to_string(),
+        };
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "'{name}' is a runtime (kind: runtime) — runtimes resolve via the runtime cache, not the payload store (RuntimeKindNotInstallable): install the app that needs it (`tebako install <app>` — its runtime_requirement resolves the runtime), or pin the runtime with `{use_form}`"
+            ),
+        ));
+    }
+
     // spec 04 §2: the SELECTED row's `status: withdrawn` is a named
     // refusal — never a silent skip, never a fallback to it. Non-selected
     // withdrawn rows are inert (selection is status-blind).

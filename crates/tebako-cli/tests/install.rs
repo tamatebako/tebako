@@ -836,6 +836,43 @@ fn universal_selection_uses_the_single_tfs_rule() {
 }
 
 #[test]
+fn installing_a_runtime_kind_entry_refuses_before_any_download() {
+    // tebako#672: a `kind: runtime` registry entry is not payload-store
+    // installable — the refusal names the remedy and fires BEFORE any
+    // fetch (the mock transport answers NOTHING beyond the registry file,
+    // so any download attempt would surface as a fetch error instead).
+    let fx = Fixture::new("runtimekind");
+    let registry_path = fx.mirror.join("tpkg-registry.yaml");
+    fs::write(
+        &registry_path,
+        "schema_version: 1\npayloads:\n  - name: ruby\n    kind: runtime\n    engine: ruby\n    versions:\n      - version: 4.0.7-0.17.1\n        platforms: universal\n        release: {ref: tfs:github:acme/ruby:4.0.7-0.17.1}\n    default: 4.0.7-0.17.1\n",
+    )
+    .unwrap();
+    let t = MockTransport::new().with_file(registry_path.to_str().unwrap());
+    let fetcher = Fetcher::with_transport(t);
+    install::add_registry_with(&fx.home, &tebako_http::file_url(&registry_path), &fetcher).unwrap();
+
+    let err = install::install_with(
+        &fx.home,
+        "ruby",
+        Some(Platform::Aarch64Macos),
+        Some(&fx.shim_binary),
+        &fetcher,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(err.message.contains("RuntimeKindNotInstallable"), "{err:?}");
+    assert!(err.message.contains("kind: runtime"), "{err:?}");
+    assert!(err.message.contains("tebako install <app>"), "{err:?}");
+    assert!(
+        err.message.contains("tebako use --runtime ruby@"),
+        "{err:?}"
+    );
+    // nothing entered the payload store
+    assert!(!fx.payloads_dir().join("ruby").exists());
+}
+
+#[test]
 fn a_rows_own_release_ref_names_the_shard_tag_serving_it() {
     // tebako#711 (registry MINOR 6): when a version line unions rows from
     // several per-platform shard tags, the row's additive `release.ref`

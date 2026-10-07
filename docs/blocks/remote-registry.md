@@ -92,6 +92,12 @@ several per-platform shard tags, the row carries its own `release.ref`
 (registry schema MINOR 6) naming the tag that serves its bytes; readers
 prefer it over the version-level ref, and older readers ignore it.
 
+A registry's runtime rows are not installable payloads: `tebako install
+<name>` on a `kind: runtime` entry refuses before any download
+(`RuntimeKindNotInstallable`, exit 65) — install the app that needs the
+runtime (its requirement resolves it), or pin the runtime with
+`tebako use --runtime <engine>@<langver>[:<tebako>]`.
+
 Once a payload is installed, the store remembers WHICH registry
 resolved it (spec 37 §7's origin binding — a `.tfs.registry` marker
 next to the artifact, holding the registry's canonical reference). From

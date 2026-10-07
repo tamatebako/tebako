@@ -153,7 +153,13 @@ payloads:
 - Install = resolve the registry → select the host entry → download →
   verify (sha256 and/or OpenPGP signature, spec 09) → content-addressed
   cache (`~/.tebako/payloads/<name>/<version>.tfs`) → register shims
-  (spec 07).
+  (spec 07). An install whose selected entry is `kind: runtime` refuses
+  BEFORE any download (2026-10-07, tebako#672): the named
+  `RuntimeKindNotInstallable` error (exit 65) points at the working
+  paths — `tebako install <the app that needs it>` (its
+  runtime_requirement resolves the runtime) or `tebako use --runtime
+  <engine>@<langver>[:<tebako>]`. Runtimes flow through the runtime
+  cache, never the payload store.
 - A developer's release flow: press → sign → upload payloads → commit
   `tpkg-registry.yaml` (a `tebako publish` helper later; manual first).
 
