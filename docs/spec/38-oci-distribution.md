@@ -278,9 +278,9 @@ FetchPlan ITEM — the pipeline owns transport, integrity, scheduling:
      per-member pins → the spec 05 §3 layout). The staged store entry
      is indistinguishable from a git-host bundle install, the origin
      markers excepted (point 5's digest-pinned form).
-   - **The lazy opt-in degrades loud.** OCI serves the bundle whole —
+   - **The lazy mode degrades loud.** OCI serves the bundle whole —
      there is no per-file arm and no blksum probe on this channel —
-     so the lazy-mount opt-in against an OCI source is the loud eager
+     so the lazy mount mode against an OCI source is the loud eager
      fallback (`event=lazy-fallback reason=oci-bundle-era-only`) and
      the install completes eager.
    - **`channel: oci` covers runtime rows.** A book entry declaring

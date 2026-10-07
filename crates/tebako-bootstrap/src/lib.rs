@@ -1625,12 +1625,12 @@ pub fn manifest_entry_per_file_assets(entry: &ManifestEntry) -> bool {
 
 /// The spec 39 §7 bundle-era gate's decision — evaluated BEFORE the spec
 /// 36 §4 era branch: the bundle fetch is SKIPPED exactly when the shard
-/// declares a bundle, the lazy opt-in is on, AND the shard carries the
-/// co-publish witness. The per-file exe fetch and resolve_image's lazy
-/// seed then install the entry; the bundle is never fetched. Any other
-/// combination takes the era branch exactly as before (a bundle-declaring
-/// shard without the witness stays eager by construction — its one tar
-/// fetch IS the runtime).
+/// declares a bundle, the lazy mode is on (the default since §10's
+/// flip), AND the shard carries the co-publish witness. The per-file exe
+/// fetch and resolve_image's lazy seed then install the entry; the
+/// bundle is never fetched. Any other combination takes the era branch
+/// exactly as before (a bundle-declaring shard without the witness
+/// stays eager by construction — its one tar fetch IS the runtime).
 fn lazy_arm_skips_bundle(
     bundle: Option<&BundleDecl>,
     lazy_opt_in: bool,
@@ -2568,9 +2568,10 @@ fn download_executable(
     // (keep-forever, spec 13 §8).
     //
     // spec 39 §7's bundle-era gate evaluates BEFORE the era branch: on a
-    // bundle-declaring shard the lazy arm engages ONLY with the opt-in
-    // (TEBAKO_RUNTIME_LAZY — the bootstrap reads env only; the config
-    // tier is the managed shim's — a malformed value is the named 65)
+    // bundle-declaring shard the lazy arm engages ONLY with the lazy
+    // mode on (TEBAKO_RUNTIME_LAZY — default on since §10's flip; the
+    // bootstrap reads env only; the config tier is the managed shim's —
+    // a malformed value is the named 65)
     // AND the shard's co-publish witness (`per_file_assets: true`,
     // spec 36 §3, runtime-manifest MINOR 2 — the exe/image/dll are then
     // served standalone by construction). The engaged arm SKIPS the
@@ -2592,7 +2593,7 @@ fn download_executable(
                 return fail(
                     EX_TEBAKO_MANIFEST,
                     format!(
-                        "cannot resolve runtime \"{runtime_ref}\": {e}\n  TEBAKO_RUNTIME_LAZY accepts 1/true/yes or 0/false/no (spec 39 §7)"
+                        "cannot resolve runtime \"{runtime_ref}\": {e}\n  TEBAKO_RUNTIME_LAZY accepts 1/true/yes or 0/false/no"
                     ),
                 );
             }
@@ -2998,10 +2999,12 @@ fn resolve_image(
     };
     let expected = expected.to_lowercase();
 
-    // spec 39 §7: the LAZY_SEEDING arm. Opted in via
-    // TEBAKO_RUNTIME_LAZY and the release serves the lazy wire (the
-    // entry's image.blksum row + sidecar) → write the seed descriptor
-    // INSTEAD of downloading the image: the entry scans as installed,
+    // spec 39 §7: the LAZY_SEEDING arm. On by default since §10's flip
+    // (TEBAKO_RUNTIME_LAZY=0 opts out); when the mode is on and the
+    // release serves the lazy wire (the
+    // entry's image.blksum row + sidecar) → write the blksum cache and
+    // the seed descriptor INSTEAD of downloading the image: the entry
+    // scans as installed,
     // the driver mounts the remote source on demand and seals in the
     // background. The wire is additive — a release without it is the
     // loud eager fallback, never an error; a torn row, a failed
@@ -3019,7 +3022,7 @@ fn resolve_image(
                 BootError::new(
                     EX_TEBAKO_MANIFEST,
                     format!(
-                        "cannot resolve runtime image \"{runtime_ref}\": {e}\n  TEBAKO_RUNTIME_LAZY accepts 1/true/yes or 0/false/no (spec 39 §7)"
+                        "cannot resolve runtime image \"{runtime_ref}\": {e}\n  TEBAKO_RUNTIME_LAZY accepts 1/true/yes or 0/false/no"
                     ),
                 ),
             ));
@@ -3036,7 +3039,7 @@ fn resolve_image(
                     BootError::new(
                         EX_TEBAKO_MANIFEST,
                         format!(
-                            "cannot resolve runtime image \"{runtime_ref}\": the release index's image.blksum row is torn\n  index: {card_url}\n  the row is present but lacks a usable filename/sha256 — re-publish the runtime, or unset TEBAKO_RUNTIME_LAZY for the eager install"
+                            "cannot resolve runtime image \"{runtime_ref}\": the release index's image.blksum row is torn\n  index: {card_url}\n  the row is present but lacks a usable filename/sha256 — re-publish the runtime, or set TEBAKO_RUNTIME_LAZY=0 for the eager install"
                         ),
                     ),
                 ));
@@ -3054,7 +3057,7 @@ fn resolve_image(
                         BootError::new(
                             EX_TEBAKO_UNAVAILABLE,
                             format!(
-                                "cannot resolve runtime image \"{runtime_ref}\": the blksum sidecar download failed\n  url: {sidecar_url}\n  the release declares the lazy wire but does not serve it — check the network, or unset TEBAKO_RUNTIME_LAZY for the eager install"
+                                "cannot resolve runtime image \"{runtime_ref}\": the blksum sidecar download failed\n  url: {sidecar_url}\n  the release declares the lazy wire but does not serve it — check the network, or set TEBAKO_RUNTIME_LAZY=0 for the eager install"
                             ),
                         ),
                     ));
@@ -3139,6 +3142,22 @@ fn resolve_image(
                         size_bytes: blksum.size_bytes,
                         group_count: blksum.group_count(),
                     };
+                    // The sidecar cache lands BEFORE the descriptor (the
+                    // commit point): a LAZY_SEEDING entry never names a
+                    // seed whose mount-open would owe the network a
+                    // sidecar GET (spec 39 §3's cached-blksum arm).
+                    if let Err(e) =
+                        tpkg::lazy::write_blksum_cache(entry_dir, &image_asset, &sidecar_bytes)
+                    {
+                        return Err(fail_image(
+                            lock,
+                            &image_asset,
+                            BootError::new(
+                                e.exit_code() as u8,
+                                format!("cannot resolve runtime image \"{runtime_ref}\": {e}"),
+                            ),
+                        ));
+                    }
                     if let Err(e) = tpkg::lazy::write_descriptor(entry_dir, &image_asset, &seed) {
                         return Err(fail_image(
                             lock,
@@ -3170,7 +3189,7 @@ fn resolve_image(
             None => format!("the eager download of {image_asset}"),
         };
         eprintln!(
-            "tebako-bootstrap: TEBAKO_RUNTIME_LAZY is set but this release does not serve the lazy wire (no image.blksum row/sidecar) — falling back to {eager}"
+            "tebako-bootstrap: the lazy mount mode is on (the default) but this release does not serve the lazy wire (no image.blksum row/sidecar) — falling back to {eager}"
         );
         journal(
             root,
@@ -7039,6 +7058,15 @@ mod bundle_tests {
             .unwrap()
             .expect("the seed descriptor is the lazy install");
         assert_eq!(seed.sha256, sha256_hex(&sha2::Sha256::digest(IMAGE_BYTES)));
+        // The cached-blksum arm (spec 39 §3): the sidecar cache lands
+        // BEFORE the descriptor, pinned byte-for-byte — the mount-open
+        // owes the wire no sidecar GET.
+        let cached = std::fs::read(tpkg::lazy::blksum_cache_path(
+            &layout.entry_dir,
+            &image_name(),
+        ))
+        .expect("the blksum cache lands with the seed");
+        assert_eq!(tpkg::lazy::sha256_hex(&cached), seed.blksum_sha256);
         let _ = std::fs::remove_dir_all(&home);
 
         // bundle WITHOUT the witness + opt-in: the era branch's bundle
@@ -7064,7 +7092,7 @@ mod bundle_tests {
         );
         let _ = std::fs::remove_dir_all(&home);
 
-        // bundle + witness + opt-in, the lazy wire UNSERVED (no blksum
+        // bundle + witness + the lazy mode on, the lazy wire UNSERVED (no blksum
         // row): the arm engaged (the exe fetched per-file), then the
         // loud fallback lands on the BUNDLE fetch — the mirror serves
         // no standalone image asset, so a per-file image fetch would

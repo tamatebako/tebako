@@ -1306,8 +1306,20 @@ fn seal_one(
     let source = if offline {
         tfs::source_remote::RemoteByteSource::new_cache_only(seed.size_bytes, &blocks, &seed.source)
     } else {
-        let body = get_sidecar(&format!("{}.blksum.json", seed.source))?;
-        let blksum = tpkg::lazy::verify_blksum(seed, &body).map_err(seal_lazy_error)?;
+        // The §3 cached-blksum arm, exactly as the driver's mount-open:
+        // the install-time prefetch serves first; a miss fetches and
+        // writes through (best-effort).
+        let blksum = match tpkg::lazy::read_blksum_cache(&rt.dir, &lazy.image_base, seed)
+            .map_err(seal_lazy_error)?
+        {
+            Some(sum) => sum,
+            None => {
+                let body = get_sidecar(&format!("{}.blksum.json", seed.source))?;
+                let sum = tpkg::lazy::verify_blksum(seed, &body).map_err(seal_lazy_error)?;
+                let _ = tpkg::lazy::write_blksum_cache(&rt.dir, &lazy.image_base, &body);
+                sum
+            }
+        };
         let url = seed.source.clone();
         // The spec 39 §8 closure shape: the byte source stays
         // transport-free; tebako-http's retry law rides inside

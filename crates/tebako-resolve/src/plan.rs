@@ -119,9 +119,11 @@ pub struct FetchItem<'plan> {
     /// it), whose `sha256` carries the item's pin (a lazy item MUST set
     /// `sha256_pin` — it is the descriptor's whole-image pin), whose
     /// `origin` is the reference's concrete spelling, and whose `size`
-    /// is the size hint. The closure's one job: write the seed
-    /// descriptor into the staging dir. The plan's offline gate applies
-    /// verbatim (the descriptor records a fetch the run would owe).
+    /// is the size hint. The closure's job: write the entry's seed
+    /// record (the prefetched blksum cache, then the seed descriptor —
+    /// §3's cached-blksum arm) into the staging dir. The plan's offline
+    /// gate applies verbatim (the descriptor records a fetch the run
+    /// would owe).
     pub lazy: bool,
     /// Install the verified staged bytes; runs on the worker right after
     /// THIS artifact's download (overlapped with the other streams).
