@@ -1412,9 +1412,7 @@ pub fn publish_full_with_oci_sink(
     // ---- 6b. the pin verification pass (always — the module doc's step
     // 7; --skip-verify skips only the install proof) --------------------
     let pin_rows_checked = {
-        let fetch_asset: Box<dyn Fn(&str) -> Result<Option<Vec<u8>>, TebakoError>> = match &opts
-            .upload_mirror
-        {
+        let fetch_asset: Box<FetchAsset> = match &opts.upload_mirror {
             Some(mirror) => {
                 let dir = mirror.join(&tag);
                 Box::new(move |name: &str| match std::fs::read(dir.join(name)) {
@@ -1624,6 +1622,11 @@ struct PinRow {
     blksum: Option<BlksumPin>,
 }
 
+/// The verification pass's read arm: one release asset's bytes by name
+/// (`None` = the release does not carry it), boxed at the call site so
+/// the mirror and live-release fetchers share one shape.
+type FetchAsset = dyn Fn(&str) -> Result<Option<Vec<u8>>, TebakoError>;
+
 /// The pin verification pass: for every row the registry write just
 /// pinned, what the release ACTUALLY serves must match — the artifact's
 /// `.sha256` sidecar (read back from the live download URL, or the
@@ -1633,10 +1636,7 @@ struct PinRow {
 /// every publish, --skip-verify or not. `fetch_asset` answers one
 /// release asset's bytes by name (`None` = the release does not carry
 /// it). Every desync lands in one named error; returns the row count.
-fn verify_release_pins(
-    rows: &[PinRow],
-    fetch_asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>, TebakoError>,
-) -> Result<usize, TebakoError> {
+fn verify_release_pins(rows: &[PinRow], fetch_asset: &FetchAsset) -> Result<usize, TebakoError> {
     let mut desyncs: Vec<String> = Vec::new();
     for row in rows {
         let sidecar_name = format!("{}.sha256", row.artifact);
