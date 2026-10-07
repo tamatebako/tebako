@@ -1106,7 +1106,13 @@ pub fn publish_full_with_oci_sink(
     // otherwise catches at run time.
     for (name, sha, _) in &artifacts {
         let sidecar = format!("{sha}  {name}\n");
-        store.upload_asset(&owner, &repo, &tag, &format!("{name}.sha256"), sidecar.as_bytes())?;
+        store.upload_asset(
+            &owner,
+            &repo,
+            &tag,
+            &format!("{name}.sha256"),
+            sidecar.as_bytes(),
+        )?;
     }
     // The blksum sidecars publish beside their images in the same
     // staging invocation (spec 39 §3). They carry no .asc of their own:
@@ -1406,47 +1412,48 @@ pub fn publish_full_with_oci_sink(
     // ---- 6b. the pin verification pass (always — the module doc's step
     // 7; --skip-verify skips only the install proof) --------------------
     let pin_rows_checked = {
-        let fetch_asset: Box<dyn Fn(&str) -> Result<Option<Vec<u8>>, TebakoError>> =
-            match &opts.upload_mirror {
-                Some(mirror) => {
-                    let dir = mirror.join(&tag);
-                    Box::new(move |name: &str| match std::fs::read(dir.join(name)) {
-                        Ok(bytes) => Ok(Some(bytes)),
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                        Err(e) => Err(err(
-                            EX_TEBAKO_IO,
-                            format!("cannot read {}: {e}", dir.join(name).display()),
-                        )),
-                    })
-                }
-                None => {
-                    let reference = tebako_resolve::Reference::parse(&release_ref).map_err(|e| {
+        let fetch_asset: Box<dyn Fn(&str) -> Result<Option<Vec<u8>>, TebakoError>> = match &opts
+            .upload_mirror
+        {
+            Some(mirror) => {
+                let dir = mirror.join(&tag);
+                Box::new(move |name: &str| match std::fs::read(dir.join(name)) {
+                    Ok(bytes) => Ok(Some(bytes)),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(e) => Err(err(
+                        EX_TEBAKO_IO,
+                        format!("cannot read {}: {e}", dir.join(name).display()),
+                    )),
+                })
+            }
+            None => {
+                let reference = tebako_resolve::Reference::parse(&release_ref).map_err(|e| {
+                    err(
+                        EX_TEBAKO_MANIFEST,
+                        format!("the release ref does not parse: {e}"),
+                    )
+                })?;
+                let dir_url = tebako_resolve::release_download_locator(&reference)
+                    .and_then(|l| l.dir_url())
+                    .ok_or_else(|| {
                         err(
                             EX_TEBAKO_MANIFEST,
-                            format!("the release ref does not parse: {e}"),
+                            format!("the release ref '{release_ref}' derives no download URL"),
                         )
                     })?;
-                    let dir_url = tebako_resolve::release_download_locator(&reference)
-                        .and_then(|l| l.dir_url())
-                        .ok_or_else(|| {
-                            err(
-                                EX_TEBAKO_MANIFEST,
-                                format!("the release ref '{release_ref}' derives no download URL"),
-                            )
-                        })?;
-                    Box::new(move |name: &str| {
-                        let url = format!("{dir_url}/{name}");
-                        match tebako_http::get(&url) {
-                            Ok(bytes) => Ok(Some(bytes)),
-                            Err(tebako_http::FetchError::IndexUnavailable(_)) => Ok(None),
-                            Err(e) => Err(err(
-                                EX_TEBAKO_UNAVAILABLE,
-                                format!("cannot fetch {url}: {e}"),
-                            )),
-                        }
-                    })
-                }
-            };
+                Box::new(move |name: &str| {
+                    let url = format!("{dir_url}/{name}");
+                    match tebako_http::get(&url) {
+                        Ok(bytes) => Ok(Some(bytes)),
+                        Err(tebako_http::FetchError::IndexUnavailable(_)) => Ok(None),
+                        Err(e) => Err(err(
+                            EX_TEBAKO_UNAVAILABLE,
+                            format!("cannot fetch {url}: {e}"),
+                        )),
+                    }
+                })
+            }
+        };
         verify_release_pins(&pin_rows, &fetch_asset)?
     };
     notes.push(format!(
@@ -1644,9 +1651,7 @@ fn verify_release_pins(
                     "{}: the registry pins {}, the release's {sidecar_name} serves {served}",
                     row.artifact, row.sha256
                 )),
-                Err(reason) => {
-                    desyncs.push(format!("{}: {sidecar_name}: {reason}", row.artifact))
-                }
+                Err(reason) => desyncs.push(format!("{}: {sidecar_name}: {reason}", row.artifact)),
             },
         }
         if let Some(pin) = &row.blksum {
@@ -2033,8 +2038,8 @@ mod tests {
     #[test]
     fn pin_sidecar_parsing_is_the_two_column_line_naming_its_artifact() {
         let sha = sha_of('a');
-        let ok = parse_pin_sidecar(format!("{sha}  app-1.0.tfs\n").as_bytes(), "app-1.0.tfs")
-            .unwrap();
+        let ok =
+            parse_pin_sidecar(format!("{sha}  app-1.0.tfs\n").as_bytes(), "app-1.0.tfs").unwrap();
         assert_eq!(ok, sha);
         // a foreign artifact's sidecar is not a pass
         let err = parse_pin_sidecar(
@@ -2049,7 +2054,10 @@ mod tests {
             (&format!("{sha}\n"), "carries no filename"),
         ] {
             let err = parse_pin_sidecar(bad.as_bytes(), "app-1.0.tfs").unwrap_err();
-            assert!(err.contains(needle), "{bad:?}: expected '{needle}' in {err}");
+            assert!(
+                err.contains(needle),
+                "{bad:?}: expected '{needle}' in {err}"
+            );
         }
     }
 
@@ -2129,8 +2137,16 @@ mod tests {
         let e = verify_release_pins(&rows, &scripted_fetch(assets)).unwrap_err();
         assert_eq!(e.code, EX_TEBAKO_UNAVAILABLE);
         assert!(e.message.contains("3 desynced row(s)"), "{}", e.message);
-        assert!(e.message.contains(&format!("pins {sha_a}")), "{}", e.message);
-        assert!(e.message.contains(&format!("serves {rotated}")), "{}", e.message);
+        assert!(
+            e.message.contains(&format!("pins {sha_a}")),
+            "{}",
+            e.message
+        );
+        assert!(
+            e.message.contains(&format!("serves {rotated}")),
+            "{}",
+            e.message
+        );
         assert!(
             e.message
                 .contains("app-1.0-linux-gnu-x86_64.tfs: the release carries no"),

@@ -496,7 +496,8 @@ fn per_triplet_requirement_disagreement_is_a_named_error() {
     let e = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
     assert_eq!(e.code, 65, "{e:?}");
     assert!(
-        e.message.contains("must agree on engine/constraint/implementation"),
+        e.message
+            .contains("must agree on engine/constraint/implementation"),
         "{}",
         e.message
     );
