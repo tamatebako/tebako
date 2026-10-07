@@ -211,7 +211,11 @@ pub struct SignaturePin {
 /// line and the platform line (spec 05 §5); absent means pure-language
 /// (the version line alone). `implementation` (spec 28 §8) mirrors the
 /// L1 entry's implementation axis — REQUIRED in the mirror when `abi`
-/// is present (an abi is per-implementation by construction).
+/// is present (an abi is per-implementation by construction). The abi is
+/// per-triplet by construction, so the mirror carries it only when one
+/// value holds for the whole entry (a `universal` or single-platform
+/// row); a multi-platform per-triplet entry omits it — the authoritative
+/// per-platform abi lives in each slice's embedded manifest (tebako#440).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistryRuntimeRequirement {
     pub engine: String,

@@ -279,6 +279,36 @@ fn runtime_requirement_json(req: &RegistryRuntimeRequirement) -> String {
     out
 }
 
+/// The L3 mirror of one manifest's runtime requirement (spec 28 §8's
+/// single-map form): the first entrypoint's requirement — an `any_of`
+/// list mirrors its FIRST entry, the full set rides the embedded
+/// manifest. Returns the requirement and whether an `any_of` list was
+/// truncated (the caller notes once).
+fn mirrored_requirement(provides: &tpkg::Provides) -> (Option<RegistryRuntimeRequirement>, bool) {
+    let tpkg::Provides::App(app) = provides else {
+        return (None, false);
+    };
+    match app
+        .entrypoints
+        .first()
+        .and_then(|e| e.runtime_requirement.as_ref())
+    {
+        Some(reqs) => {
+            let r = &reqs.entries()[0];
+            (
+                Some(RegistryRuntimeRequirement {
+                    engine: r.engine.clone(),
+                    constraint: r.constraint.as_str().to_string(),
+                    implementation: r.implementation.clone(),
+                    abi: r.abi.clone(),
+                }),
+                reqs.entries().len() > 1,
+            )
+        }
+        None => (None, false),
+    }
+}
+
 /// A standalone binary's upload name (no `.tfs` — the tap formula's urls).
 fn standalone_artifact_name(name: &str, version: &str, triplet: Platform) -> String {
     format!("{name}-{version}-{}", triplet.release_asset_name())
@@ -915,31 +945,19 @@ pub fn publish_full_with_oci_sink(
     // flow (spec 13), never through `tebako publish`.
     let (entrypoints, runtime_requirement): (Vec<String>, Option<RegistryRuntimeRequirement>) =
         match &embedded.provides {
-            tpkg::Provides::App(app) => (
-                app.entrypoints.iter().map(|e| e.name.clone()).collect(),
-                app.entrypoints
-                    .first()
-                    .and_then(|e| e.runtime_requirement.as_ref())
-                    .map(|reqs| {
-                        // The L3 mirror stays the single-map form (spec 28
-                        // §8: the list is L1 grammar only): an `any_of`
-                        // list mirrors its FIRST entry; the full set rides
-                        // the embedded manifest.
-                        let r = &reqs.entries()[0];
-                        if reqs.entries().len() > 1 {
-                            notes.push(format!(
-                                "{}: the runtime_requirement any_of list mirrors its first entry in the registry; the full set rides the embedded manifest",
-                                embedded.identity.name
-                            ));
-                        }
-                        RegistryRuntimeRequirement {
-                            engine: r.engine.clone(),
-                            constraint: r.constraint.as_str().to_string(),
-                            implementation: r.implementation.clone(),
-                            abi: r.abi.clone(),
-                        }
-                    }),
-            ),
+            tpkg::Provides::App(app) => {
+                let (req, truncated) = mirrored_requirement(&embedded.provides);
+                if truncated {
+                    notes.push(format!(
+                        "{}: the runtime_requirement any_of list mirrors its first entry in the registry; the full set rides the embedded manifest",
+                        embedded.identity.name
+                    ));
+                }
+                (
+                    app.entrypoints.iter().map(|e| e.name.clone()).collect(),
+                    req,
+                )
+            }
             tpkg::Provides::Toolkit(toolkit) => (
                 toolkit.executables.iter().map(|e| e.name.clone()).collect(),
                 None,
@@ -955,6 +973,11 @@ pub fn publish_full_with_oci_sink(
                 ));
             }
         };
+    // Every payload's OWN mirrored requirement: the per-triplet OCI
+    // annotations mirror each slice's own (a slice's abi is that slice's
+    // truth), and the multi-platform agreement check below rides these.
+    let mut payload_requirements: Vec<Option<RegistryRuntimeRequirement>> =
+        vec![runtime_requirement.clone()];
     for input in opts.payloads.iter().skip(1) {
         // every triplet's manifest must agree (the registry mirrors ONE set)
         if let Some(text) = image_manifest::read_embedded_manifest(&input.path)? {
@@ -983,8 +1006,58 @@ pub fn publish_full_with_oci_sink(
                     ),
                 ));
             }
+            payload_requirements.push(mirrored_requirement(&other.provides).0);
+        } else {
+            payload_requirements.push(None);
         }
     }
+    // tebako#440: the abi is per-triplet by construction — every variant
+    // must agree on engine/constraint/implementation (the registry row
+    // mirrors ONE value; a disagreement is an authoring error, never a
+    // silent first-wins), while abi itself is exempt: a multi-platform
+    // per-triplet entry's mirror OMITS it (one platform's abi on the
+    // whole entry is wrong for every other platform — each slice's
+    // embedded manifest owns the authoritative per-platform value). A
+    // universal or single-platform entry keeps it: one value holds.
+    let multi_platform = !universal && opts.payloads.len() > 1;
+    if multi_platform {
+        let reference = &payload_requirements[0];
+        for (input, req) in opts
+            .payloads
+            .iter()
+            .skip(1)
+            .zip(payload_requirements.iter().skip(1))
+        {
+            let agrees = match (reference, req) {
+                (None, None) => true,
+                (Some(a), Some(b)) => {
+                    a.engine == b.engine
+                        && a.constraint == b.constraint
+                        && a.implementation == b.implementation
+                }
+                _ => false,
+            };
+            if !agrees {
+                return Err(err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "{} declares a different runtime requirement than the first payload — per-triplet variants of one payload must agree on engine/constraint/implementation (the abi is per-triplet and stays in each slice's manifest)",
+                        input.path.display()
+                    ),
+                ));
+            }
+        }
+    }
+    let runtime_requirement = runtime_requirement.map(|mut r| {
+        if multi_platform && r.abi.is_some() {
+            notes.push(format!(
+                "{}: the multi-platform registry mirror omits abi — every platform's slice manifest carries its own",
+                opts.name
+            ));
+            r.abi = None;
+        }
+        r
+    });
 
     // ---- 3. standalones ---------------------------------------------
     let mut standalone_uploads: Vec<(String, String, Vec<u8>)> = Vec::new();
@@ -1083,7 +1156,7 @@ pub fn publish_full_with_oci_sink(
                 embedded.identity.kind,
                 input.triplet,
                 &entrypoints,
-                runtime_requirement.as_ref(),
+                payload_requirements[i].as_ref(),
             );
             let pushed = oci_sink(&OciPushRequest {
                 host: oci_host.clone(),

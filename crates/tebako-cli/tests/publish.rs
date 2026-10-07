@@ -355,6 +355,153 @@ fn pin_verification_runs_even_under_skip_verify() {
     );
 }
 
+/// An app manifest whose entrypoint carries a native-extension runtime
+/// requirement (engine + constraint + implementation + abi — an abi in
+/// force requires the implementation axis).
+fn app_manifest_native(name: &str, version: &str, constraint: &str, abi: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /app/bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \"{constraint}\", implementation: mri, abi: \"{abi}\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        sha(b'a'),
+        sha(b'b')
+    )
+}
+
+#[test]
+fn multi_platform_entry_omits_abi_from_the_registry_mirror() {
+    // tebako#440: the abi is per-triplet by construction — the mirror of
+    // a multi-platform per-triplet entry keeps engine/constraint/
+    // implementation (identical on every leg) and omits abi (each
+    // slice's embedded manifest owns the authoritative value).
+    let fx = Fixture::new("abimulti");
+    let mac = write_payload(
+        &fx,
+        "app-1.0-macos-arm64.tfs",
+        &app_manifest_native("app", "1.0", "~> 3.3.0", "arm64-darwin-23"),
+    );
+    let linux = write_payload(
+        &fx,
+        "app-1.0-linux-gnu-x86_64.tfs",
+        &app_manifest_native("app", "1.0", "~> 3.3.0", "x86_64-linux-gnu"),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.payloads = vec![
+        PayloadInput {
+            triplet: Some(Platform::Aarch64Macos),
+            path: mac,
+        },
+        PayloadInput {
+            triplet: Some(Platform::X86_64LinuxGnu),
+            path: linux,
+        },
+    ];
+
+    let outcome = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
+    let registry = registry_at(&fx);
+    let req = registry
+        .payload("app")
+        .unwrap()
+        .version("1.0")
+        .unwrap()
+        .runtime_requirement
+        .clone()
+        .unwrap();
+    assert_eq!(req.engine, "ruby");
+    assert_eq!(req.constraint, "~> 3.3.0");
+    assert_eq!(req.implementation.as_deref(), Some("mri"));
+    assert_eq!(req.abi, None, "the multi-platform mirror omits abi");
+    assert!(
+        outcome.notes.iter().any(|n| n.contains("omits abi")),
+        "{:?}",
+        outcome.notes
+    );
+}
+
+#[test]
+fn single_platform_and_universal_entries_keep_abi_in_the_mirror() {
+    // one value actually holds on a single-platform per-triplet row
+    let fx = Fixture::new("abisingle");
+    let mac = write_payload(
+        &fx,
+        "app-1.0-macos-arm64.tfs",
+        &app_manifest_native("app", "1.0", "~> 3.3.0", "arm64-darwin-23"),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.payloads = vec![PayloadInput {
+        triplet: Some(Platform::Aarch64Macos),
+        path: mac,
+    }];
+    publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
+    let req = registry_at(&fx)
+        .payload("app")
+        .unwrap()
+        .version("1.0")
+        .unwrap()
+        .runtime_requirement
+        .clone()
+        .unwrap();
+    assert_eq!(req.abi.as_deref(), Some("arm64-darwin-23"));
+
+    // …and on a universal row
+    let fx = Fixture::new("abiuniversal");
+    let payload = write_payload(
+        &fx,
+        "app-2.0.tfs",
+        &app_manifest_native("app", "2.0", "~> 3.3.0", "universal-darwin"),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.release = "tfs:github:acme/app:2.0".to_string();
+    opts.payloads = vec![PayloadInput {
+        triplet: None,
+        path: payload,
+    }];
+    publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
+    let req = registry_at(&fx)
+        .payload("app")
+        .unwrap()
+        .version("2.0")
+        .unwrap()
+        .runtime_requirement
+        .clone()
+        .unwrap();
+    assert_eq!(req.abi.as_deref(), Some("universal-darwin"));
+}
+
+#[test]
+fn per_triplet_requirement_disagreement_is_a_named_error() {
+    // engine/constraint/implementation must agree across the variants —
+    // the registry mirrors one value, so a disagreement is an authoring
+    // error (abi is exempt: per-triplet by construction).
+    let fx = Fixture::new("abidisagree");
+    let mac = write_payload(
+        &fx,
+        "app-1.0-macos-arm64.tfs",
+        &app_manifest_native("app", "1.0", "~> 3.3.0", "arm64-darwin-23"),
+    );
+    let linux = write_payload(
+        &fx,
+        "app-1.0-linux-gnu-x86_64.tfs",
+        &app_manifest_native("app", "1.0", "~> 4.0.0", "x86_64-linux-gnu"),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.payloads = vec![
+        PayloadInput {
+            triplet: Some(Platform::Aarch64Macos),
+            path: mac,
+        },
+        PayloadInput {
+            triplet: Some(Platform::X86_64LinuxGnu),
+            path: linux,
+        },
+    ];
+    let e = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(e.code, 65, "{e:?}");
+    assert!(
+        e.message.contains("must agree on engine/constraint/implementation"),
+        "{}",
+        e.message
+    );
+}
+
 #[test]
 fn tap_formula_renders_from_the_standalones() {
     let fx = Fixture::new("tap");
