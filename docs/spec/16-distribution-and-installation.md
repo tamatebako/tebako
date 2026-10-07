@@ -326,6 +326,17 @@ remains the escape for writable-state needs.
   (spec 30: the install pre-stages `kind: runtime` edges; a pref-less
   edge on a non-default engine line can never resolve). The
   GitLab/Bitbucket write legs are their adapters' milestone.
+  **(Additive, 2026-10-07, tebako#711):** publish also uploads a
+  per-artifact `.sha256` sidecar (the `"<sha256>  <name>"` line — the
+  sidecar-era convention) beside every payload artifact, and closes
+  with a per-row pin verification pass: every row the registry write
+  just pinned is read back from the release's derived download URL (or
+  the `--upload-mirror` directory) — the served `.sha256` sidecar must
+  name the row's pin and a pinned blksum sidecar's served bytes must
+  hash to the pin. The pass runs even under `--skip-verify` (tiny
+  sidecar reads, never the artifacts); a desync fails the publish with
+  a named error (exit 69) listing every desynced row, so a release ↔
+  registry desync never ships silently.
 - `tamatebako/homebrew-tap` formula + the app-tap template (the template
   is vendored and rendered by `tebako publish --tap`; the tap repos
   themselves stay manual).

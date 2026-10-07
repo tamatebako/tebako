@@ -148,6 +148,22 @@ fn universal_signed_publish_end_to_end() {
     );
     assert!(mirror.join("app-1.0.tfs.asc").is_file());
 
+    // the per-artifact .sha256 sidecar (the pin verification pass's
+    // read-back source): one "<sha256>  <name>" line naming the artifact
+    let image_sha = tebako_resolve::sha256_hex(&fs::read(fx.work.join("app-1.0.tfs")).unwrap());
+    assert_eq!(
+        fs::read_to_string(mirror.join("app-1.0.tfs.sha256")).unwrap(),
+        format!("{image_sha}  app-1.0.tfs\n")
+    );
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("pin verification: 1 row(s)")),
+        "the pin pass reports its rows: {:?}",
+        outcome.notes
+    );
+
     // the blksum sidecar (spec 39 §3): staged beside the image in the
     // same invocation, unsigned (its anchor is the registry row's pin —
     // the ascs above carry the image's signature alone), and its
@@ -260,7 +276,20 @@ fn per_triplet_publish_and_idempotent_republish() {
         assert!(outcome
             .blksums
             .contains(&(pin.filename.clone(), pin.sha256.clone())));
+        // the per-artifact .sha256 sidecar names the row's pin
+        assert_eq!(
+            fs::read_to_string(mirror.join(format!("{}.sha256", entry.artifact))).unwrap(),
+            format!("{}  {}\n", entry.sha256, entry.artifact)
+        );
     }
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("pin verification: 2 row(s)")),
+        "the pin pass reports its rows: {:?}",
+        outcome.notes
+    );
 
     // re-publish: idempotent — one version entry, a "replaced" note
     let outcome2 = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
@@ -285,6 +314,45 @@ fn per_triplet_publish_and_idempotent_republish() {
     let app = registry.payload("app").unwrap();
     assert_eq!(app.versions.len(), 2);
     assert_eq!(app.default.as_deref(), Some("1.0"));
+}
+
+#[test]
+fn pin_verification_runs_even_under_skip_verify() {
+    // --skip-verify skips only the clean-cache install proof; the pin
+    // verification pass (cheap sidecar reads) runs on every publish.
+    let fx = Fixture::new("skippin");
+    let payload = write_payload(
+        &fx,
+        "app-2.0.tfs",
+        &app_manifest_yaml("app", "2.0", &["app"]),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.release = "tfs:github:acme/app:2.0".to_string();
+    opts.payloads.push(PayloadInput {
+        triplet: None,
+        path: payload,
+    });
+    opts.skip_verify = true;
+
+    let outcome = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
+    assert!(
+        outcome.verified.is_none(),
+        "the install proof stayed skipped"
+    );
+    assert!(
+        outcome
+            .notes
+            .iter()
+            .any(|n| n.contains("pin verification: 1 row(s)")),
+        "the pin pass ran anyway: {:?}",
+        outcome.notes
+    );
+    let mirror = fx.work.join("mirror/2.0");
+    let sha = tebako_resolve::sha256_hex(&fs::read(fx.work.join("app-2.0.tfs")).unwrap());
+    assert_eq!(
+        fs::read_to_string(mirror.join("app-2.0.tfs.sha256")).unwrap(),
+        format!("{sha}  app-2.0.tfs\n")
+    );
 }
 
 #[test]
