@@ -15,7 +15,7 @@
 
 schema: tpkg-registry
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 6 # MINOR — additive changes only (1: engine/implementation on kind:runtime entries, 2: the version-level implementation compat read documented + the runtime_requirement mirror's implementation key, 3: the per-triplet oci mirror (spec 38 §7), 4: the blksum sidecar pins (spec 39 §3), 5: the runtime_requirement mirror's abi rule — carried only when one value holds for the whole entry (tebako#440), 6: the per-row release.ref — a platforms[<triplet>] entry names the shard tag serving its bytes when a version line unions per-platform shard releases (tebako#711))
+schema_minor: 7 # MINOR — additive changes only (1: engine/implementation on kind:runtime entries, 2: the version-level implementation compat read documented + the runtime_requirement mirror's implementation key, 3: the per-triplet oci mirror (spec 38 §7), 4: the blksum sidecar pins (spec 39 §3), 5: the runtime_requirement mirror's abi rule — carried only when one value holds for the whole entry (tebako#440), 6: the per-row release.ref — a platforms[<triplet>] entry names the shard tag serving its bytes when a version line unions per-platform shard releases (tebako#711), 7: the head signing: block — the registry's self-description of its signing key for the add-registry TOFU pin (spec 09 §9.1, tebako#617))
 status: normative
 owner: crates/tebako-resolve (the model) in tamatebako/tebako
 edge: C8 (loader → registry), C12 (everything → registries)
@@ -61,6 +61,7 @@ declaration:
 
 grammar:
   schema_version: {type: int, required: true, notes: this schema's MAJOR (1)}
+  signing: {type: map, required: false, notes: "MINOR 7 (spec 09 §9.1) — the registry's signing-key self-description: key (armored OpenPGP public key, block scalar), fingerprint (the key's OWN primary fingerprint, 40 hex — the add-registry gate refuses a mismatch as the registry's malformation), url (optional https cross-check location). Pre-MINOR-7 readers ignore the block (additive); the TOFU consent and pin are tebako add-registry's"}
   payloads:
     type: list
     required: false

@@ -823,6 +823,35 @@ The mechanics (locked):
   regular file, is a named 65 (the manifest lied), never a skipped
   entry.
 
+**Rule R4 (the operator CA store arm — locked 2026-10-07,
+tebako#541).** The machine-wide CA store `$TEBAKO_HOME/trust/ca/*.pem`
+(the `tebako trust add|list|remove` verbs are its only write path —
+validated PEM at intake, per-store flock, tmp+rename, read-only,
+journaled) joins the cert convention at boot:
+
+- A declared `ssl/cert.pem` merges the store into its bundle (with or
+  without a conveyed netconfig verdict — the union of all three input
+  kinds when all are present), content-keyed over the store's bytes like
+  any other merge input.
+- No image declares a cert (today's POSIX runtime images) and the store
+  is non-empty: the driver builds the whole TLS bundle — the enumerated
+  OS store PLUS the store PEMs (plus a conveyed `TEBAKO_EXTRA_CA` list)
+  — content-keyed under the exec cache's fixed `resources/store-trust/`
+  namespace with R3's write-once / per-boot-rehash discipline, and
+  exports it as `SSL_CERT_FILE` (the user's own host-path
+  `SSL_CERT_FILE` still wins, per spec 17 §2's table).
+- **The POSIX base bundle's owner (the SSOT decision):** the base is
+  the enumerated OS trust store via rustls-native-certs, rendered to
+  PEM at boot — never a bundled webpki snapshot (a snapshot duplicates
+  the OS's own curation and goes stale) and never a factory-shipped
+  `cert.pem` in POSIX images (the same staleness at image scale; the
+  factories keep declaring no cert on POSIX).
+- An EMPTY or absent store changes nothing (byte-identical pre-R4
+  behavior). A corrupt store file, or an unenumerable platform store
+  when the store arm needs it, fails the boot closed with a named 65 —
+  the operator's declared CAs never silently drop out of a bundle; the
+  error names `tebako trust remove <name>` as the remedy.
+
 ## 5. Error model
 
 All three classes keep the established exit-code discipline (spec 06):

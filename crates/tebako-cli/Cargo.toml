@@ -63,6 +63,9 @@ tempfile = "3"
 # model); the check engine compiles it at run time (pure Rust, no system
 # deps).
 regex = "1"
+# `tebako trust add` validates CA PEMs at the store boundary (tebako#541)
+# — the same parser the driver merges with (no new family in the tree).
+rustls-pemfile = "2"
 
 # The runtime image is extracted in-process through the tfs C ABI
 # (item 30b layout seeding); install reads the embedded payload manifest

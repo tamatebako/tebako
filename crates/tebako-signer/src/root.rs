@@ -322,10 +322,16 @@ MCwzAhsMAAoJEO/DwlD3hipIW04A/303fBIF0M+48T9tzzTz/hXyqpzPgNxZV1JJ
 
 /// The keyring a payload-signature verification runs against (spec 09
 /// §9's zero-interaction rule for first-party artifacts): the user's
-/// trusted keyring, the embedded root public key, and the
-/// `TEBAKO_TRUSTED_ROOT` dev override's bundled key when it names a file.
+/// trusted keyring, the pinned-key trust store (`trust/<FINGERPRINT>.pub`
+/// — the add-registry TOFU pins, spec 09 §9.1), the embedded root public
+/// key, and the `TEBAKO_TRUSTED_ROOT` dev override's bundled key when it
+/// names a file. The SINGLE owner of the verification input — the CLI's
+/// install leg and the shim's dispatch fetches both flow through here.
 pub fn verification_keyring(home: &std::path::Path) -> Result<Vec<u8>, SignerError> {
     let mut ring = crate::keyring::trusted_keyring_bytes(home)?;
+    for (_, bytes) in crate::trust::pinned_public_keys(home)? {
+        ring.extend_from_slice(&bytes);
+    }
     // The embedded const is ours and the tests prove it dearmors; a
     // failure here can only be memory corruption — skip defensively,
     // never fail an install over it.

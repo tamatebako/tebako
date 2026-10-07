@@ -12,10 +12,16 @@
 //!   tebako cache list
 //!   tebako cache prune [--runtimes] [--payloads] [--all] [--older-than Nd]
 //!   tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]
+//!                [--channel oci] [--expect-fingerprint <hex>]
+//!                (the head signing: block's TOFU pin — spec 09 §9.1)
 //!   tebako list-registries
 //!   tebako update-registries
 //!   tebako registry validate <path-or-url> [--json]
 //!   tebako registry retire <registry-file> <name>@<version> [--force]
+//!   tebako keys import <file> | list | remove <fingerprint>
+//!                (the signing-key trust inputs — keyring + pins)
+//!   tebako trust add <file.pem> | list | remove <name>
+//!                (the operator CA store, spec 22 §4 Rule R4)
 //!   tebako install <ref | name[@version]>
 //!   tebako uninstall <name>
 //!   tebako check <name | image.tfs | package | tebako.yaml>
@@ -77,6 +83,7 @@ pub mod image_manifest;
 pub mod info;
 pub mod inspect;
 pub mod install;
+pub mod keys;
 pub mod options;
 pub mod packager;
 pub mod publish;
@@ -91,6 +98,7 @@ pub mod spawn;
 pub mod strip;
 pub mod suite;
 pub mod trace;
+pub mod trust;
 
 use std::fs;
 use std::path::{Path, PathBuf};

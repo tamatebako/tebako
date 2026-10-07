@@ -126,6 +126,8 @@ pub(crate) fn map_shim(e: ShimError) -> TebakoError {
 /// `tebako add-registry <ref>` (spec 04 §2): validate the reference,
 /// fetch + parse the registry once, then register the canonical ref.
 /// Returns the outcome and the fetched registry (for the summary line).
+/// Library callers get the unattended consent class — a not-yet-trusted
+/// `signing:` block is the named error (tebako#617).
 pub fn add_registry(
     home: &Path,
     registry_ref: &str,
@@ -134,13 +136,16 @@ pub fn add_registry(
 }
 
 /// `tebako add-registry <ref> [--name <alias>] [--require-signed]
-/// [--default]` (spec 37 §2): the book-keys form of [`add_registry`].
+/// [--default]` (spec 37 §2): the book-keys form of [`add_registry`],
+/// with the `signing:`-block consent channel the CLI resolved from
+/// `--expect-fingerprint` and the terminal probe (tebako#617).
 pub fn add_registry_opts(
     home: &Path,
     registry_ref: &str,
     opts: &tebako_shim::config::AddRegistryOptions,
+    consent: SigningConsent,
 ) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
-    add_registry_full(home, registry_ref, opts, &Fetcher::new())
+    add_registry_full(home, registry_ref, opts, consent, &Fetcher::new())
 }
 
 /// The transport-injected half of [`add_registry`] (tests).
@@ -153,8 +158,26 @@ pub fn add_registry_with<T: Transport>(
         home,
         registry_ref,
         &tebako_shim::config::AddRegistryOptions::default(),
+        SigningConsent::Unattended,
         fetcher,
     )
+}
+
+/// How `tebako add-registry` obtains consent for pinning a registry
+/// head `signing:` key (spec 09 §9.1, tebako#617): ask the operator on
+/// a terminal, check against an out-of-band expected fingerprint, or
+/// refuse unattended (pipes and scripts get the named error naming the
+/// flag).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SigningConsent {
+    /// Interactive: display the presented fingerprint and ask y/N.
+    Prompt,
+    /// Non-interactive: consent exactly when the presented fingerprint
+    /// matches (case-insensitive; the pin is stored uppercase).
+    Expect(String),
+    /// No consent channel: a signing block from a not-yet-trusted key
+    /// aborts with the named error.
+    Unattended,
 }
 
 /// The transport-injected half of [`add_registry_opts`] (tests).
@@ -162,14 +185,15 @@ pub fn add_registry_full<T: Transport>(
     home: &Path,
     registry_ref: &str,
     opts: &tebako_shim::config::AddRegistryOptions,
+    consent: SigningConsent,
     fetcher: &Fetcher<T>,
 ) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
     let r = RegistryRef::parse(registry_ref).map_err(|e| err(EX_USAGE, e.to_string()))?;
     // spec 06 §5a's wiring rule: the network read renders through
     // tebako-term — a one-shot quiet-gated line (an index read, not an
     // artifact stream — no bar).
-    tebako_term::set::ProgressSet::stderr()
-        .line(&format!("fetching registry {}", r.as_canonical_string()));
+    let canonical = r.as_canonical_string();
+    tebako_term::set::ProgressSet::stderr().line(&format!("fetching registry {canonical}"));
     let (bytes, oci_manifest) = fetcher
         .fetch_registry_with_oci_digest(&r)
         .map_err(map_resolve)?;
@@ -185,7 +209,18 @@ pub fn add_registry_full<T: Transport>(
             format!("cannot parse the registry: {e}"),
         )
     })?;
-    let outcome = config::add_registry(home, &r.as_canonical_string(), opts).map_err(map_shim)?;
+    // tebako#617 (spec 09 §9.1): the head `signing:` block gates the
+    // book write — the key must be consistent with its declared
+    // fingerprint and either already trusted (embedded root / keyring /
+    // an earlier pin) or consented + pinned. The fingerprint rides the
+    // book entry so re-adds short-circuit and `tebako keys list` can
+    // show the binding. No block → the pre-signing flow unchanged.
+    let mut opts = opts.clone();
+    opts.signing_fingerprint = match &registry.signing {
+        Some(signing) => Some(tofu_signing(home, &canonical, signing, &consent)?),
+        None => None,
+    };
+    let outcome = config::add_registry(home, &canonical, &opts).map_err(map_shim)?;
     // Prime the dispatch-time registry cache with the bytes just fetched
     // (roadmap 33): the shim's registry-default link then resolves this
     // remote registry without a second fetch. A prime failure never fails
@@ -204,6 +239,137 @@ pub fn add_registry_full<T: Transport>(
         }
     }
     Ok((outcome, registry))
+}
+
+/// The trust-on-first-use gate of `add_registry` (spec 09 §9.1,
+/// tebako#617): the head `signing:` block must be self-consistent (the
+/// armored key's own fingerprint IS the declared fingerprint — a
+/// mismatch is the registry's malformation, exit 65), then the key must
+/// be trusted or consented. Already trusted (embedded root / keyring /
+/// an earlier pin) short-circuits silently-to-a-note; otherwise the
+/// consent channel decides and the armored key is pinned at
+/// `$TEBAKO_HOME/trust/<FINGERPRINT>.pub` with a journal event. Answers
+/// the uppercase fingerprint for the book entry. Every refusal happens
+/// BEFORE the book write — a declined or unattended add leaves no
+/// registry entry and no pin.
+fn tofu_signing(
+    home: &Path,
+    canonical_ref: &str,
+    signing: &tebako_resolve::RegistrySigning,
+    consent: &SigningConsent,
+) -> Result<String, TebakoError> {
+    let declared = signing.fingerprint.to_ascii_uppercase();
+    let presented =
+        tebako_signer::public_key_fingerprint(signing.key.as_bytes()).map_err(|e| {
+            err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "registry '{canonical_ref}' carries a signing block whose public key is unreadable \
+                     ({e}) — the registry's self-description is inconsistent; nothing was added\n  \
+                     remedy: report this to the registry publisher; the block's key must match its declared fingerprint"
+                ),
+            )
+        })?
+        .to_uppercase();
+    if presented != declared {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "registry '{canonical_ref}' declares signing fingerprint {declared} but the block's public \
+                 key has fingerprint {presented} — the registry's self-description is inconsistent; nothing was added\n  \
+                 remedy: report this to the registry publisher; do not trust this registry until the block is fixed"
+            ),
+        ));
+    }
+    if tebako_signer::is_trusted(home, &declared).map_err(map_trust_signer)? {
+        tebako_term::set::ProgressSet::stderr()
+            .line(&format!("registry signing key {declared} already trusted"));
+        return Ok(declared);
+    }
+    match consent {
+        SigningConsent::Expect(expected) => {
+            let expected = expected.to_ascii_uppercase();
+            if expected != presented {
+                return Err(err(
+                    EX_TEBAKO_TRUST,
+                    format!(
+                        "registry '{canonical_ref}' presents signing key fingerprint {presented} but \
+                         --expect-fingerprint declared {expected} — refusing to add the registry; nothing was pinned\n  \
+                         remedy: cross-check the fingerprint against the publisher's out-of-band announcement and retry"
+                    ),
+                ));
+            }
+        }
+        SigningConsent::Prompt => {
+            eprintln!("registry '{canonical_ref}' declares a signing key:");
+            eprintln!("  fingerprint: {presented}");
+            if let Some(url) = &signing.url {
+                eprintln!("  publisher cross-check: {url}");
+            }
+            eprintln!(
+                "  cross-check the fingerprint against the publisher's out-of-band announcement before trusting"
+            );
+            eprint!("trust this key and pin it for future verifications? [y/N] ");
+            let mut answer = String::new();
+            std::io::stdin().read_line(&mut answer).map_err(|e| {
+                err(
+                    EX_TEBAKO_IO,
+                    format!(
+                        "could not read the trust confirmation from stdin ({e}) — nothing was added"
+                    ),
+                )
+            })?;
+            if !consent_answered_yes(&answer) {
+                return Err(err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "registry '{canonical_ref}' was not added: the signing key was not confirmed — nothing was pinned\n  \
+                         remedy: re-run with --expect-fingerprint {presented} once you have cross-checked it out of band"
+                    ),
+                ));
+            }
+        }
+        SigningConsent::Unattended => {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "registry '{canonical_ref}' declares signing key fingerprint {presented}, which is not yet \
+                     trusted, and no confirmation channel is available (not an interactive terminal) — nothing was added\n  \
+                     remedy: re-run interactively to confirm, or re-run with --expect-fingerprint {presented} after \
+                     cross-checking it against the publisher's out-of-band announcement"
+                ),
+            ));
+        }
+    }
+    match tebako_signer::pin_trusted(home, signing.key.as_bytes()).map_err(map_trust_signer)? {
+        tebako_signer::PinOutcome::Pinned(_) => {
+            journal(
+                home,
+                &format!(
+                    "event=registry-key-pinned fingerprint={declared} registry={canonical_ref}"
+                ),
+            );
+            tebako_term::set::ProgressSet::stderr()
+                .line(&format!("registry signing key pinned: {declared}"));
+        }
+        tebako_signer::PinOutcome::AlreadyPinned(_) => {
+            tebako_term::set::ProgressSet::stderr()
+                .line(&format!("registry signing key {declared} already pinned"));
+        }
+    }
+    Ok(declared)
+}
+
+/// The trust-store maintenance failures of the add-registry gate:
+/// trust-class stays 72, everything else is the io class (74).
+fn map_trust_signer(e: tebako_signer::SignerError) -> TebakoError {
+    match e {
+        tebako_signer::SignerError::Trust(_) => err(EX_TEBAKO_TRUST, e.to_string()),
+        other => err(
+            EX_TEBAKO_IO,
+            format!("could not maintain the trust store: {other}"),
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -241,7 +407,15 @@ pub fn seed_official_registry_with<T: Transport>(
         default: true,
         ..tebako_shim::config::AddRegistryOptions::default()
     };
-    add_registry_full(home, OFFICIAL_REGISTRY_REF, &opts, fetcher)
+    add_registry_full(
+        home,
+        OFFICIAL_REGISTRY_REF,
+        &opts,
+        // The official registry's signing key is the embedded root —
+        // is_trusted short-circuits without a consent channel.
+        SigningConsent::Unattended,
+        fetcher,
+    )
 }
 
 /// One `tebako list-registries` row (spec 37 §2): the resolved alias
@@ -2511,13 +2685,13 @@ pub(crate) fn verify_signature<T: Transport>(
     }
 }
 
-/// The named untrusted-signer error (exit 72) — spec 09 §4's shape.
+/// The named untrusted-signer error (exit 72) — spec 09 §4's shape; the
+/// wording is the signer's single owner (the slice-fetch and
+/// runtime-fetch sites print the same remediation).
 fn untrusted_signer(origin: &str, keyid: &str) -> TebakoError {
     err(
         EX_TEBAKO_TRUST,
-        format!(
-            "{origin} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
-        ),
+        tebako_signer::untrusted_signer_message(origin, keyid),
     )
 }
 
@@ -2739,4 +2913,24 @@ pub fn uninstall(home: &Path, name: &str) -> Result<UninstallOutcome, TebakoErro
         versions,
         shims_removed,
     })
+}
+
+/// The TOFU prompt's acceptance grammar: an explicit y/yes, nothing
+/// else — a blank line, EOF, or any other answer declines (the default
+/// answer is fail-closed).
+fn consent_answered_yes(answer: &str) -> bool {
+    matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_tofu_answer_grammar_accepts_only_an_explicit_yes() {
+        for yes in ["y", "Y", "yes", "YES", "  Yes  \n"] {
+            assert!(super::consent_answered_yes(yes), "{yes:?}");
+        }
+        for no in ["", "\n", "n", "no", "nope", "ye", "yes please", "y y"] {
+            assert!(!super::consent_answered_yes(no), "{no:?}");
+        }
+    }
 }

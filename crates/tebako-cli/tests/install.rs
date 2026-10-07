@@ -154,7 +154,13 @@ fn add_registry_book_keys_round_trip_and_render() {
         default: true,
         ..tebako_shim::config::AddRegistryOptions::default()
     };
-    let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    let (outcome, _) = install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &opts,
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
     assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
     let rows = install::list_registries(&fx.home).unwrap();
     assert_eq!(rows.len(), 1);
@@ -179,7 +185,13 @@ fn add_registry_book_keys_round_trip_and_render() {
         default: true,
         ..tebako_shim::config::AddRegistryOptions::default()
     };
-    let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    let (outcome, _) = install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &opts,
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
     assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Updated);
     let rows = install::list_registries(&fx.home).unwrap();
     assert_eq!(rows.len(), 1);
@@ -244,6 +256,193 @@ fn add_registry_primes_the_dispatch_cache_for_remote_refs() {
         tebako_shim::regcache::freshness(&fx.home, "tfs:github:o/r"),
         tebako_shim::regcache::RegistryFreshness::Fresh(_)
     ));
+}
+
+// ---------------------------------------------------------------------
+// add-registry signing trust (spec 09 §9.1, tebako#617)
+// ---------------------------------------------------------------------
+
+/// A registry document carrying the head `signing:` block: the armored
+/// public key, its declared fingerprint, and the publisher cross-check
+/// URL. `fingerprint` is a parameter so tests can declare a fingerprint
+/// that is NOT the key's own (the self-inconsistency class).
+fn signing_registry_yaml(
+    key: &tebako_signer::PressKey,
+    payload_ref: &str,
+    fingerprint: &str,
+) -> String {
+    let armored = String::from_utf8(key.public_key.clone()).unwrap();
+    let indented = armored
+        .lines()
+        .map(|l| format!("    {l}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "schema_version: 1\nsigning:\n  key: |\n{indented}\n  fingerprint: {fingerprint}\n  url: https://publisher.example/keys.txt\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n"
+    )
+}
+
+/// A home carrying a signing-block registry fixture: the generated key,
+/// its uppercase fingerprint, and the registry ref.
+fn signing_fixture(tag: &str) -> (Fixture, tebako_signer::PressKey, String, String) {
+    let fx = Fixture::new(tag);
+    // press_local_key is the convenient real-key generator; the home's
+    // keys/ dir is the PRESS side, never a trust input.
+    let key = tebako_signer::press_local_key(&fx.home).unwrap();
+    let fp = key.fingerprint.to_uppercase();
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &signing_registry_yaml(&key, &payload_ref, &fp),
+    );
+    (fx, key, fp, reg_ref)
+}
+
+#[test]
+fn add_registry_signing_block_pins_on_the_expected_fingerprint() {
+    let (fx, _key, fp, reg_ref) = signing_fixture("addreg-tofu");
+    let (outcome, _) = install::add_registry_full(
+        &fx.home,
+        &reg_ref,
+        &tebako_shim::config::AddRegistryOptions::default(),
+        install::SigningConsent::Expect(fp.clone()),
+        &Fetcher::new(),
+    )
+    .unwrap();
+    assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
+
+    // the pin landed read-only and is a trust input now
+    let pin = tebako_signer::pin_path(&fx.home, &fp);
+    assert!(pin.is_file(), "the pin file exists at {}", pin.display());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(pin.metadata().unwrap().permissions().mode() & 0o777, 0o444);
+    }
+    assert!(tebako_signer::is_trusted(&fx.home, &fp).unwrap());
+
+    // the book entry records the fingerprint (the re-add short-circuit)
+    let cfg = tebako_shim::config::load_config(&fx.home).unwrap();
+    assert_eq!(cfg.registries.len(), 1);
+    assert_eq!(
+        cfg.registries[0].signing_fingerprint.as_deref(),
+        Some(fp.as_str())
+    );
+
+    // the journal carries the pin event
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains(&format!("event=registry-key-pinned fingerprint={fp}")),
+        "{journal}"
+    );
+
+    // a re-add short-circuits on the pin — no consent channel asked
+    let (outcome, _) = install::add_registry_full(
+        &fx.home,
+        &reg_ref,
+        &tebako_shim::config::AddRegistryOptions::default(),
+        install::SigningConsent::Unattended,
+        &Fetcher::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        outcome,
+        tebako_shim::config::AddRegistryOutcome::AlreadyPresent
+    );
+}
+
+#[test]
+fn add_registry_signing_block_mismatched_expectation_is_named() {
+    let (fx, _key, fp, reg_ref) = signing_fixture("addreg-tofu-mismatch");
+    let expected = "F".repeat(40);
+    let err = install::add_registry_full(
+        &fx.home,
+        &reg_ref,
+        &tebako_shim::config::AddRegistryOptions::default(),
+        install::SigningConsent::Expect(expected.clone()),
+        &Fetcher::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 72, "{err:?}");
+    assert!(err.message.contains(&fp), "{err:?}");
+    assert!(err.message.contains(&expected), "{err:?}");
+    // nothing pinned, nothing registered
+    assert!(!tebako_signer::pin_path(&fx.home, &fp).exists());
+    let cfg = tebako_shim::config::load_config(&fx.home).unwrap();
+    assert!(cfg.registries.is_empty());
+}
+
+#[test]
+fn add_registry_signing_block_unattended_is_named() {
+    let (fx, _key, fp, reg_ref) = signing_fixture("addreg-tofu-unattended");
+    let err = install::add_registry_full(
+        &fx.home,
+        &reg_ref,
+        &tebako_shim::config::AddRegistryOptions::default(),
+        install::SigningConsent::Unattended,
+        &Fetcher::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(err.message.contains(&fp), "{err:?}");
+    assert!(err.message.contains("--expect-fingerprint"), "{err:?}");
+    assert!(!tebako_signer::pin_path(&fx.home, &fp).exists());
+    let cfg = tebako_shim::config::load_config(&fx.home).unwrap();
+    assert!(cfg.registries.is_empty());
+}
+
+#[test]
+fn add_registry_signing_block_already_trusted_needs_no_consent() {
+    let (fx, key, fp, reg_ref) = signing_fixture("addreg-tofu-trusted");
+    // the keyring leg: imported keys short-circuit the gate entirely
+    tebako_signer::register_trusted(&fx.home, &key.public_key).unwrap();
+    let (outcome, _) = install::add_registry_full(
+        &fx.home,
+        &reg_ref,
+        &tebako_shim::config::AddRegistryOptions::default(),
+        install::SigningConsent::Unattended,
+        &Fetcher::new(),
+    )
+    .unwrap();
+    assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
+    // no pin — the key was trusted another way; the book still records
+    assert!(!tebako_signer::pin_path(&fx.home, &fp).exists());
+    let cfg = tebako_shim::config::load_config(&fx.home).unwrap();
+    assert_eq!(
+        cfg.registries[0].signing_fingerprint.as_deref(),
+        Some(fp.as_str())
+    );
+    // no pin event on the journal
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap_or_default();
+    assert!(!journal.contains("event=registry-key-pinned"), "{journal}");
+}
+
+#[test]
+fn add_registry_signing_block_self_inconsistent_is_named() {
+    let fx = Fixture::new("addreg-tofu-torn");
+    let key = tebako_signer::press_local_key(&fx.home).unwrap();
+    let wrong_fp = "0".repeat(40);
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &signing_registry_yaml(&key, &payload_ref, &wrong_fp),
+    );
+    let err = install::add_registry_full(
+        &fx.home,
+        &reg_ref,
+        &tebako_shim::config::AddRegistryOptions::default(),
+        install::SigningConsent::Unattended,
+        &Fetcher::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(
+        err.message.contains("self-description is inconsistent"),
+        "{err:?}"
+    );
+    assert!(err.message.contains(&wrong_fp), "{err:?}");
+    let cfg = tebako_shim::config::load_config(&fx.home).unwrap();
+    assert!(cfg.registries.is_empty());
 }
 
 // ---------------------------------------------------------------------
@@ -315,7 +514,13 @@ fn setup_refuses_to_seed_a_second_default() {
         default: true,
         ..tebako_shim::config::AddRegistryOptions::default()
     };
-    install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &opts,
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     let fetcher = official_seed_fetcher("schema_version: 1\npayloads: []\n");
     let err = install::seed_official_registry_with(&fx.home, &fetcher).unwrap_err();
@@ -433,8 +638,20 @@ fn install_qualified_name_scopes_to_the_named_registry() {
         default: false,
         ..tebako_shim::config::AddRegistryOptions::default()
     };
-    install::add_registry_opts(&fx.home, &reg_a, &name("one")).unwrap();
-    install::add_registry_opts(&fx.home, &reg_b, &name("two")).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_a,
+        &name("one"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_b,
+        &name("two"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     // Unscoped, the same name is the ambiguity; scoped, it installs.
     let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
@@ -463,7 +680,13 @@ fn install_qualified_name_unknown_alias_is_the_named_error() {
         default: false,
         ..tebako_shim::config::AddRegistryOptions::default()
     };
-    install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &opts,
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     let err = install::install(&fx.home, "nosuch/app", None, Some(&fx.shim_binary)).unwrap_err();
     assert!(err.message.contains("UnknownRegistryAlias"), "{err:?}");
@@ -484,7 +707,13 @@ fn install_qualified_name_scoped_not_found_names_the_registry() {
         default: false,
         ..tebako_shim::config::AddRegistryOptions::default()
     };
-    install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &opts,
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     let err = install::install(&fx.home, "mine/ghost", None, Some(&fx.shim_binary)).unwrap_err();
     assert!(
@@ -525,8 +754,20 @@ fn two_registries(fx: &Fixture, versions: &[(&str, &[u8])]) -> (String, String) 
         "two.yaml",
         &registry_yaml("app", versions[1].0, &p_b, Some(versions[1].0)),
     );
-    install::add_registry_opts(&fx.home, &reg_a, &named("one")).unwrap();
-    install::add_registry_opts(&fx.home, &reg_b, &named("two")).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_a,
+        &named("one"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_b,
+        &named("two"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
     (reg_a, reg_b)
 }
 
@@ -611,8 +852,20 @@ fn rebind_to_bytes_the_new_registry_does_not_vouch_for_is_refused() {
     };
     let reg_a = fx.registry("one.yaml", &registry_yaml("app", "1.0", &pa, Some("1.0")));
     let reg_b = fx.registry("two.yaml", &registry_yaml("app", "1.0", &pb, Some("1.0")));
-    install::add_registry_opts(&fx.home, &reg_a, &named("one")).unwrap();
-    install::add_registry_opts(&fx.home, &reg_b, &named("two")).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_a,
+        &named("one"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_b,
+        &named("two"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     install::install(&fx.home, "one/app", None, Some(&fx.shim_binary)).unwrap();
 
@@ -1652,8 +1905,20 @@ fn dep_walk_registry_pin_scopes_the_edge_to_the_named_registry() {
         ..tebako_shim::config::AddRegistryOptions::default()
     };
     install::add_registry(&fx.home, &app_reg).unwrap();
-    install::add_registry_opts(&fx.home, &one_reg, &named("one")).unwrap();
-    install::add_registry_opts(&fx.home, &two_reg, &named("two")).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &one_reg,
+        &named("one"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &two_reg,
+        &named("two"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.commands, vec!["app"]);
@@ -2517,7 +2782,13 @@ fn require_signed_registry_refuses_unsigned_rows() {
         "tpkg-registry.yaml",
         &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
     );
-    install::add_registry_opts(&fx.home, &reg_ref, &require_signed_opts("priv")).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &require_signed_opts("priv"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     // the bare form resolves through the flagged registry → exit 70
     let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
@@ -2547,7 +2818,13 @@ fn require_signed_registry_refuses_unsigned_rows() {
         default: false,
         ..tebako_shim::config::AddRegistryOptions::default()
     };
-    let (outcome, _) = install::add_registry_opts(&fx.home, &reg_ref, &opts).unwrap();
+    let (outcome, _) = install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &opts,
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
     assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Updated);
     install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
     assert!(fx.payloads_dir().join("app/1.0.tfs").exists());
@@ -2561,7 +2838,13 @@ fn require_signed_registry_accepts_verifying_rows() {
         "tpkg-registry.yaml",
         &signed_registry(&payload_ref, &asc_ref, &keyid),
     );
-    install::add_registry_opts(&fx.home, &reg_ref, &require_signed_opts("priv")).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &require_signed_opts("priv"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     // §2.2 refuses ABSENT signatures; a verifying row sails through
     let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
@@ -2591,7 +2874,13 @@ fn require_signed_registry_governs_dependency_edges() {
         &versions_registry_yaml("inkscape", "toolkit", &[("1.4.3", &inkscape_ref)]),
     );
     install::add_registry(&fx.home, &app_reg).unwrap();
-    install::add_registry_opts(&fx.home, &inkscape_reg, &require_signed_opts("priv")).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &inkscape_reg,
+        &require_signed_opts("priv"),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
 
     let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
     assert_eq!(err.code, 70, "{err:?}");
@@ -2637,7 +2926,13 @@ fn channel_oci_resolves_the_rows_oci_locator() {
         "tpkg-registry.yaml",
         &per_triplet_registry_yaml("app", "1.0", Some("tfs+oci://127.0.0.1:9/mirror/app:1.0-x")),
     );
-    install::add_registry_opts(&fx.home, &reg_ref, &oci_channel_opts()).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &oci_channel_opts(),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
     let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
     // The exact failure depends on the host's docker config (a
     // credsStore answers 65 before the connect; without one the
@@ -2657,7 +2952,13 @@ fn channel_oci_fails_closed_on_a_row_without_the_oci_locator() {
         "tpkg-registry.yaml",
         &per_triplet_registry_yaml("app", "1.0", None),
     );
-    install::add_registry_opts(&fx.home, &reg_ref, &oci_channel_opts()).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &oci_channel_opts(),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
     let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
     assert!(err.message.contains("channel: oci"), "{err:?}");
@@ -2677,7 +2978,13 @@ fn channel_oci_fails_closed_on_a_universal_row() {
         "tpkg-registry.yaml",
         &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
     );
-    install::add_registry_opts(&fx.home, &reg_ref, &oci_channel_opts()).unwrap();
+    install::add_registry_opts(
+        &fx.home,
+        &reg_ref,
+        &oci_channel_opts(),
+        install::SigningConsent::Unattended,
+    )
+    .unwrap();
     let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
     assert!(err.message.contains("universal"), "{err:?}");

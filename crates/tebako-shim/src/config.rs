@@ -339,6 +339,11 @@ pub struct RegistryBookEntry {
     /// probed). Absent = the primary `release.ref` resolves (today's
     /// behavior, unchanged bit for bit).
     pub channel: Option<BookChannel>,
+    /// The signing key the add-registry TOFU pinned for this registry
+    /// (spec 09 §9.1 — the primary fingerprint, 40 hex). Absent = the
+    /// registry declared no `signing:` block or the key was already
+    /// trusted another way.
+    pub signing_fingerprint: Option<String>,
 }
 
 /// The book's channel declaration (spec 38 §11): rows of a
@@ -361,6 +366,7 @@ impl RegistryBookEntry {
             default: false,
             require_signed: false,
             channel: None,
+            signing_fingerprint: None,
         }
     }
 
@@ -372,7 +378,11 @@ impl RegistryBookEntry {
     /// True when no book keys are set — the entry serializes as the
     /// bare ref string (round-trip cleanliness for pre-book configs).
     pub fn is_bare(&self) -> bool {
-        self.name.is_none() && !self.default && !self.require_signed && self.channel.is_none()
+        self.name.is_none()
+            && !self.default
+            && !self.require_signed
+            && self.channel.is_none()
+            && self.signing_fingerprint.is_none()
     }
 
     /// The YAML form of this entry for authored-config writes: a bare
@@ -408,6 +418,12 @@ impl RegistryBookEntry {
             m.insert(
                 serde_yaml::Value::String("channel".to_string()),
                 serde_yaml::Value::String(channel.as_str().to_string()),
+            );
+        }
+        if let Some(fingerprint) = &self.signing_fingerprint {
+            m.insert(
+                serde_yaml::Value::String("signing_fingerprint".to_string()),
+                serde_yaml::Value::String(fingerprint.clone()),
             );
         }
         serde_yaml::Value::Mapping(m)
@@ -493,6 +509,17 @@ impl<'de> Deserialize<'de> for RegistryBookEntry {
                                 _ => {
                                     return Err(D::Error::custom(
                                         "a `registries` map entry's `channel:` is a string ('oci')",
+                                    ))
+                                }
+                            };
+                        }
+                        "signing_fingerprint" => {
+                            entry.signing_fingerprint = match v {
+                                serde_yaml::Value::Null => None,
+                                serde_yaml::Value::String(s) => Some(s),
+                                _ => {
+                                    return Err(D::Error::custom(
+                                        "a `registries` map entry's `signing_fingerprint:` is a string",
                                     ))
                                 }
                             };
@@ -990,6 +1017,12 @@ pub struct AddRegistryOptions {
     /// `--channel oci` — spec 38 §11's declared resolution channel
     /// (rows resolve through their `oci:` mirror field).
     pub channel: Option<BookChannel>,
+    /// The add-registry TOFU's outcome (spec 09 §9.1): the signing key's
+    /// primary fingerprint, pinned under `$TEBAKO_HOME/trust/`. Recorded
+    /// on the book entry for continuity; never authored by hand — a
+    /// policy-flags update without a pin event preserves the existing
+    /// record, and a pin-only update preserves the policy keys.
+    pub signing_fingerprint: Option<String>,
 }
 
 /// Append `reg_ref` to `registries:` in `~/.tebako/config.yaml`,
@@ -1057,6 +1090,7 @@ pub fn add_registry(
             default: opts.default,
             require_signed: opts.require_signed,
             channel: opts.channel,
+            signing_fingerprint: opts.signing_fingerprint.clone(),
         };
         // A bare re-add never strips an existing entry's book keys —
         // only an explicit policy flag rewrites (`tebako add-registry
@@ -1065,11 +1099,26 @@ pub fn add_registry(
         let has_opts =
             opts.name.is_some() || opts.default || opts.require_signed || opts.channel.is_some();
         if let Some(pos) = entries.iter().position(|e| e.reference == reg_ref) {
-            if !has_opts || entries[pos] == requested {
+            // The pin record is a trust fact, not a policy: a rewrite
+            // that carries no pin event keeps the existing record…
+            let mut requested = requested;
+            if requested.signing_fingerprint.is_none() {
+                requested.signing_fingerprint = entries[pos].signing_fingerprint.clone();
+            }
+            let pin_new = entries[pos].signing_fingerprint != requested.signing_fingerprint;
+            if (!has_opts && !pin_new) || entries[pos] == requested {
                 outcome = AddRegistryOutcome::AlreadyPresent;
                 return Ok(());
             }
-            entries[pos] = requested;
+            // …and a pin-only update keeps the authored policy keys.
+            entries[pos] = if has_opts {
+                requested
+            } else {
+                RegistryBookEntry {
+                    signing_fingerprint: requested.signing_fingerprint,
+                    ..entries[pos].clone()
+                }
+            };
             outcome = AddRegistryOutcome::Updated;
         } else {
             entries.push(requested);
@@ -1558,6 +1607,55 @@ mod tests {
             err.message.contains("`runtimes` must be a mapping"),
             "{err:?}"
         );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_signing_fingerprint_round_trips_and_is_update_safe() {
+        let home = fresh_home("signingfp");
+        let fp = "A".repeat(40);
+        // the add-registry pin record rides the book entry (tebako#617)
+        let opts = AddRegistryOptions {
+            signing_fingerprint: Some(fp.clone()),
+            ..AddRegistryOptions::default()
+        };
+        add_registry(&home, "tfs:github:acme/app", &opts).unwrap();
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(
+            cfg.registries[0].signing_fingerprint.as_deref(),
+            Some(fp.as_str())
+        );
+        // the yaml carries the key — a pinned entry never collapses to
+        // the bare string
+        let text = std::fs::read_to_string(config_path(&home)).unwrap();
+        assert!(
+            text.contains(&format!("signing_fingerprint: {fp}")),
+            "{text}"
+        );
+
+        // a policy rewrite WITHOUT a pin event preserves the fingerprint
+        let opts = AddRegistryOptions {
+            require_signed: true,
+            ..AddRegistryOptions::default()
+        };
+        let outcome = add_registry(&home, "tfs:github:acme/app", &opts).unwrap();
+        assert_eq!(outcome, AddRegistryOutcome::Updated);
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(
+            cfg.registries[0].signing_fingerprint.as_deref(),
+            Some(fp.as_str())
+        );
+        assert!(cfg.registries[0].require_signed);
+
+        // a bare entry stays bare (no phantom key serialized)
+        add_registry(
+            &home,
+            "tfs:github:acme/other",
+            &AddRegistryOptions::default(),
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(config_path(&home)).unwrap();
+        assert!(text.contains("- tfs:github:acme/other"), "{text}");
         let _ = std::fs::remove_dir_all(&home);
     }
 

@@ -1,5 +1,6 @@
 //! tebako — the packager CLI: press + cache subcommands.
 
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -49,7 +50,12 @@ const USAGE: &str = "Usage:
                                        bare = runtimes only; the payload arm never
                                        prunes a pinned or a name's newest version
                                        (no opt-out — prune never strands a pin)
-  tebako add-registry <ref>            register a tpkg-registry.yaml
+  tebako add-registry <ref> [--name <alias>] [--require-signed] [--default]
+               [--channel oci] [--expect-fingerprint <hex>]
+                                       register a tpkg-registry.yaml; a registry
+                                       declaring a head signing key asks for the
+                                       first-use trust pin (unattended runs pass
+                                       the out-of-band fingerprint via the flag)
   tebako list-registries               list the registered registries
   tebako update-registries             refresh the dispatch-time registry cache
   tebako registry validate <path-or-url> [--json]
@@ -65,6 +71,11 @@ const USAGE: &str = "Usage:
   tebako setup                         seed the official registry into the config
                                        (installer flow; idempotent, user-removable)
   tebako keys import <file>            register a public key into the trusted keyring
+  tebako keys list                     the trusted signing keys (root, keyring, pins)
+  tebako keys remove <fingerprint>     drop a key from the keyring and the pin store
+  tebako trust add <file.pem>          add a CA certificate to the TLS trust store
+  tebako trust list                    list the TLS trust store's CA certificates
+  tebako trust remove <name>           remove a CA certificate from the trust store
   tebako install <ref | [alias/]name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
   tebako bundle <name[@ver]> --output <dir> [--also <name[@ver]>]...
@@ -221,6 +232,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "update-registries" => run_update_registries(rest),
         "registry" => run_registry(rest),
         "keys" => run_keys(rest),
+        "trust" => run_trust(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
         "bundle" => run_bundle(rest),
@@ -388,13 +400,14 @@ fn run_inspect(args: &[String]) -> Result<(), CliExit> {
 fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
     let mut registry_ref: Option<&str> = None;
     let mut opts = tebako_shim::config::AddRegistryOptions::default();
+    let mut expect_fingerprint: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--name" => {
                 let Some(value) = args.get(i + 1) else {
                     return Err(CliExit::Usage(
-                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci]".to_string(),
+                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci] [--expect-fingerprint <hex>]".to_string(),
                     ));
                 };
                 opts.name = Some(value.clone());
@@ -411,7 +424,7 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
             "--channel" => {
                 let Some(value) = args.get(i + 1) else {
                     return Err(CliExit::Usage(
-                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci]".to_string(),
+                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci] [--expect-fingerprint <hex>]".to_string(),
                     ));
                 };
                 match value.as_str() {
@@ -422,6 +435,25 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
                         )))
                     }
                 }
+                i += 2;
+            }
+            // tebako#617 (spec 09 §9.1): the out-of-band consent channel
+            // for a registry head `signing:` block — unattended runs
+            // (scripts, CI) never get a blind yes.
+            "--expect-fingerprint" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(CliExit::Usage(
+                        "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci] [--expect-fingerprint <hex>]".to_string(),
+                    ));
+                };
+                let fp = value.trim().to_ascii_uppercase();
+                if fp.len() != 40 || !fp.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Err(CliExit::Usage(format!(
+                        "--expect-fingerprint takes the key's 40-hex fingerprint (got '{value}') — \
+                         copy it from the publisher's out-of-band announcement"
+                    )));
+                }
+                expect_fingerprint = Some(fp);
                 i += 2;
             }
             other if registry_ref.is_none() && !other.starts_with("--") => {
@@ -437,12 +469,22 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
     }
     let Some(registry_ref) = registry_ref else {
         return Err(CliExit::Usage(
-            "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci]"
+            "usage: tebako add-registry <ref> [--name <alias>] [--require-signed] [--default] [--channel oci] [--expect-fingerprint <hex>]"
                 .to_string(),
         ));
     };
+    // tebako#617: the consent channel — the out-of-band flag wins;
+    // else a full terminal gets the interactive prompt; pipes get the
+    // named unattended error from the gate itself.
+    let consent = match expect_fingerprint {
+        Some(fp) => tebako_cli::install::SigningConsent::Expect(fp),
+        None if std::io::stdin().is_terminal() && std::io::stderr().is_terminal() => {
+            tebako_cli::install::SigningConsent::Prompt
+        }
+        None => tebako_cli::install::SigningConsent::Unattended,
+    };
     let (outcome, registry) =
-        tebako_cli::install::add_registry_opts(&tebako_home()?, registry_ref, &opts)?;
+        tebako_cli::install::add_registry_opts(&tebako_home()?, registry_ref, &opts, consent)?;
     let names: Vec<&str> = registry.payloads.iter().map(|p| p.name.as_str()).collect();
     match outcome {
         tebako_shim::config::AddRegistryOutcome::Added => println!(
@@ -576,7 +618,7 @@ fn run_setup(args: &[String]) -> Result<(), CliExit> {
 fn run_keys(args: &[String]) -> Result<(), CliExit> {
     let Some(verb) = args.first() else {
         return Err(CliExit::Usage(
-            "keys subcommand expected: import <file>".to_string(),
+            "keys subcommand expected: import <file> | list | remove <fingerprint>".to_string(),
         ));
     };
     match verb.as_str() {
@@ -606,8 +648,105 @@ fn run_keys(args: &[String]) -> Result<(), CliExit> {
             }
             Ok(())
         }
+        // tebako#617 (spec 09 §9): the key-store ergonomics — every trust
+        // input in one report; removal across the pin store + keyring.
+        "list" => {
+            if args.len() != 1 {
+                return Err(CliExit::Usage("usage: tebako keys list".to_string()));
+            }
+            let rows = tebako_cli::keys::list_keys(&tebako_home()?)?;
+            for row in &rows {
+                let mut line = format!("{}  ({})", row.fingerprint, row.sources.join(", "));
+                if !row.registries.is_empty() {
+                    line.push_str(&format!("  registries: {}", row.registries.join(", ")));
+                }
+                println!("{line}");
+            }
+            Ok(())
+        }
+        "remove" => {
+            let [fingerprint] = &args[1..] else {
+                return Err(CliExit::Usage(
+                    "usage: tebako keys remove <fingerprint>".to_string(),
+                ));
+            };
+            let removed = tebako_cli::keys::remove_key(&tebako_home()?, fingerprint)?;
+            println!(
+                "removed {removed} from the trust stores — artifacts signed by it now fail closed again"
+            );
+            Ok(())
+        }
         other => Err(CliExit::Usage(format!(
-            "unknown keys subcommand '{other}' (usage: tebako keys import <file>)"
+            "unknown keys subcommand '{other}' (usage: tebako keys <import <file> | list | remove <fingerprint>>)"
+        ))),
+    }
+}
+
+/// `tebako trust <verb>` — the operator CA certificate store
+/// (tebako#541): the boot merges a non-empty store into the runtime's
+/// TLS trust input; these verbs are the store's write/read surface.
+fn run_trust(args: &[String]) -> Result<(), CliExit> {
+    let Some(verb) = args.first() else {
+        return Err(CliExit::Usage(
+            "trust subcommand expected: add <file.pem> | list | remove <name>".to_string(),
+        ));
+    };
+    match verb.as_str() {
+        "add" => {
+            let [file] = &args[1..] else {
+                return Err(CliExit::Usage("usage: tebako trust add <file.pem>".to_string()));
+            };
+            match tebako_cli::trust::add(&tebako_home()?, std::path::Path::new(file))? {
+                tebako_cli::trust::TrustAddOutcome::Added(name) => println!(
+                    "added {name} to the CA trust store — boots merge it into the runtime's TLS trust"
+                ),
+                tebako_cli::trust::TrustAddOutcome::AlreadyPresent(name) => {
+                    println!("{name} is already in the CA trust store (identical content)")
+                }
+            }
+            Ok(())
+        }
+        "list" => {
+            if args.len() != 1 {
+                return Err(CliExit::Usage("usage: tebako trust list".to_string()));
+            }
+            let home = tebako_home()?;
+            let rows = tebako_cli::trust::list(&home)?;
+            if rows.is_empty() {
+                println!("no CA certificates in the trust store — tebako trust add <file.pem> adds one");
+            } else {
+                for row in &rows {
+                    match row.certs {
+                        Some(n) => println!(
+                            "{}  ({} certificate(s), sha256 {}…)",
+                            row.name,
+                            n,
+                            &row.sha256[..12]
+                        ),
+                        None => println!(
+                            "{}  (CORRUPT — does not parse; remove it with `tebako trust remove {0}`)",
+                            row.name
+                        ),
+                    }
+                }
+            }
+            if tebako_cli::trust::signing_keys_present(&home) {
+                println!("(signing keys are a separate store — see `tebako keys list`)");
+            }
+            Ok(())
+        }
+        "remove" => {
+            let [name] = &args[1..] else {
+                return Err(CliExit::Usage(
+                    "usage: tebako trust remove <name>".to_string(),
+                ));
+            };
+            let removed = tebako_cli::trust::remove(&tebako_home()?, name)?;
+            println!("removed {removed} from the CA trust store");
+            Ok(())
+        }
+        other => Err(CliExit::Usage(format!(
+            "unknown trust subcommand '{other}' (usage: tebako trust <add <file.pem> | list | remove <name>>)"
         ))),
     }
 }

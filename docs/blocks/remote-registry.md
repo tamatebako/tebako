@@ -142,7 +142,16 @@ never published them. An authored `registry:` scope on a pin outranks
 the binding, exactly like the qualified install form.
 
 The index is fetched, its signing key is shown for confirmation, and
-the key is pinned to that registry. After that:
+the key is pinned to that registry. The block must first be consistent
+with itself — the declared fingerprint must BE the armored key's own
+fingerprint; an inconsistent block is the registry's malformation, never
+a trust question. An interactive run displays the fingerprint and the
+publisher's cross-check URL and asks; an unattended run (a pipe, CI)
+must pass the out-of-band-checked fingerprint as `--expect-fingerprint
+<hex>` — there is no blind yes. The confirmed key pins to
+`~/.tebako/trust/<FINGERPRINT>.pub`, the registry's config entry records
+the fingerprint (`tebako keys list` shows the binding), and an
+already-trusted key asks nothing. After that:
 
 - `tebako install metanorma` resolves the name against the registered
   registries, picks the newest version (or a pinned one), verifies the
