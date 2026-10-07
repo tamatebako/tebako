@@ -107,6 +107,17 @@ payloads:
   on an entry serving every triplet is wrong for every platform but one.
   The authoritative per-platform abi always lives in each slice's
   embedded manifest; dispatch reads it there, never from the mirror.
+- **The per-row shard `release.ref` (additive, 2026-10-07,
+  tebako#711):** a `platforms[<triplet>]` entry may carry its own
+  `release: {ref: …}` naming the shard release tag serving THAT row's
+  bytes. A version line that unions rows from several per-platform shard
+  tags (the runtime factory's shape) cannot name the serving tag at the
+  version level — the row carries it. The same grammar discipline as the
+  version-level ref under per-triplet platforms applies (no `#artifact`,
+  no `?sha256=` pin, a service release); MINOR-6 readers prefer the
+  row's ref over the version-level one, pre-MINOR-6 readers ignore the
+  key (the version-level ref must then name a tag serving every row —
+  the pre-shard shape).
 - **`status: withdrawn` (additive, 2026-09-12, roadmap 85):** the entry
   is YANKED — resolvers refuse it with a named `WithdrawnPayload` error
   (never a silent skip, never a fallback to it), and listing surfaces
@@ -142,7 +153,13 @@ payloads:
 - Install = resolve the registry → select the host entry → download →
   verify (sha256 and/or OpenPGP signature, spec 09) → content-addressed
   cache (`~/.tebako/payloads/<name>/<version>.tfs`) → register shims
-  (spec 07).
+  (spec 07). An install whose selected entry is `kind: runtime` refuses
+  BEFORE any download (2026-10-07, tebako#672): the named
+  `RuntimeKindNotInstallable` error (exit 65) points at the working
+  paths — `tebako install <the app that needs it>` (its
+  runtime_requirement resolves the runtime) or `tebako use --runtime
+  <engine>@<langver>[:<tebako>]`. Runtimes flow through the runtime
+  cache, never the payload store.
 - A developer's release flow: press → sign → upload payloads → commit
   `tpkg-registry.yaml` (a `tebako publish` helper later; manual first).
 

@@ -1307,6 +1307,11 @@ pub fn publish_full_with_oci_sink(
                                 )
                             }),
                             blksum: Some(pin),
+                            // tebako#711's per-row shard ref (MINOR 6) is
+                            // a factory-side authoring concern — `tebako
+                            // publish` writes one release per version, so
+                            // the version-level ref already names the tag.
+                            release: None,
                         },
                     )
                 })
@@ -1585,7 +1590,7 @@ fn upsert_registry(
     }
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), TebakoError> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), TebakoError> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| {
         err(

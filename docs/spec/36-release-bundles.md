@@ -208,7 +208,10 @@ nothing new.
   of the version; a reader substitutes its own platform group's segment
   (`v0.17.1-ruby3.3-windows` read on macOS → `v0.17.1-ruby3.3-macos`),
   and a line-level pin probes its per-platform shard first, the line
-  tag second, the monolith last. The grammar's ONE code owner is tpkg
+  tag second, the monolith last. A row carrying the additive per-row
+  `release.ref` (registry schema MINOR 6, tebako#711) names its serving
+  shard tag EXPLICITLY — it wins over the version-level derivation
+  (spec 04 §2). The grammar's ONE code owner is tpkg
   (`Platform::shard_tag_segment`, `shard_tag_substitute`,
   `shard_tag_append`); a tag outside the vocabulary is opaque and never
   rewritten. The AUDIT rides

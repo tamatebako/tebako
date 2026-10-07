@@ -87,7 +87,44 @@ Runtime discovery is federated (spec 37 §8): a registry's runtime rows
 resolve their downloads from GitHub, GitHub Enterprise, and GitLab
 (SaaS or self-hosted) release references alike — the per-service
 download-URL shape derives from the row's `release.ref`, never from a
-hand-configured mirror.
+hand-configured mirror. When a version line unions rows published under
+several per-platform shard tags, the row carries its own `release.ref`
+(registry schema MINOR 6) naming the tag that serves its bytes; readers
+prefer it over the version-level ref, and older readers ignore it.
+
+## Maintaining a registry
+
+Two verbs keep a registry file healthy without hand-editing YAML:
+
+- `tebako registry validate <path-or-url> [--json]` runs the exact
+  client-side parse against a registry file — the same fail-closed
+  reader every install and dispatch path runs — plus the strict extras
+  a gate wants collected in one report (requirement constraints that do
+  not parse, an `abi` with no implementation axis). The exit code is
+  the verdict: 0 valid, 65 invalid, with one line per violation (or a
+  `registry_validate_schema` JSON document with `--json`). Feedstock CI
+  runs it on every registry-touching PR, so a dangling `default:` fails
+  the pull request instead of every user at merge.
+- `tebako registry retire <registry-file> <name>@<version> [--force]`
+  removes one version row from a local registry file — the auditable
+  path for retiring superseded rows (a re-cut, a line flip). It refuses
+  while the retirement would strand another payload's runtime edge in
+  the same registry, while the row is the payload's `default:` (the
+  dangling-default class), or while it is the payload's last row;
+  `--force` overrides, repointing a dangling default to the newest
+  remaining row and spelling every overridden refusal in the output and
+  the journal.
+
+Both write nothing but the named file (retire) or nothing at all
+(validate); retire rewrites through the publish flow's own discipline —
+parse, mutate, re-validate, atomic rename — and journals the removal as
+`event=registry-row-retired`.
+
+A registry's runtime rows are not installable payloads: `tebako install
+<name>` on a `kind: runtime` entry refuses before any download
+(`RuntimeKindNotInstallable`, exit 65) — install the app that needs the
+runtime (its requirement resolves it), or pin the runtime with
+`tebako use --runtime <engine>@<langver>[:<tebako>]`.
 
 Once a payload is installed, the store remembers WHICH registry
 resolved it (spec 37 §7's origin binding — a `.tfs.registry` marker

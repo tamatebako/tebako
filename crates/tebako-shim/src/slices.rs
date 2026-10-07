@@ -605,8 +605,27 @@ fn fetch_slice(
     let expected_sha256 = match entry.select(tpkg::Platform::host()) {
         Some(PlatformSelection::Universal) => None,
         Some(PlatformSelection::Selected {
-            artifact, sha256, ..
+            artifact,
+            sha256,
+            release: row_release,
+            ..
         }) => {
+            // tebako#711 (registry MINOR 6): the row's additive
+            // `release.ref` names the shard tag carrying THIS row's
+            // bytes — it wins over the version-level ref.
+            if let Some(row_ref) = row_release {
+                reference = Reference::parse(row_ref).map_err(|e| {
+                    ShimError::new(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "registry row release ref for {}@{} [{}]: {e}",
+                            pin.name,
+                            pin.version,
+                            tpkg::Platform::host()
+                        ),
+                    )
+                })?;
+            }
             match &mut reference {
                 Reference::Service { artifact: slot, .. } => {
                     *slot = Some(artifact.to_string());

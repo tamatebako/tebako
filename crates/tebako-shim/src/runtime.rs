@@ -1233,6 +1233,17 @@ fn registry_selected_target(
             // §11). A withdrawn row carries none: the pick's
             // WithdrawnPayload refusal fires before any use, and a
             // non-selected withdrawn row must never fail the walk.
+            // tebako#711 (registry MINOR 6): the row's additive
+            // `release.ref` names the shard tag carrying THIS row's
+            // bytes — when spelled it wins over the version-level ref
+            // (the pick's `shard_tag_substitute` re-derives the host's
+            // own platform segment, identity on a matching shard tag).
+            let row_ref_str = match &selection {
+                tebako_resolve::registry::PlatformSelection::Selected {
+                    release: Some(r), ..
+                } => *r,
+                _ => row.release.r#ref.as_str(),
+            };
             let locator: Option<RowLocator> = if row.is_withdrawn() {
                 None
             } else if channel_oci {
@@ -1245,7 +1256,7 @@ fn registry_selected_target(
                     &reg_ref,
                     &entry.name,
                     &row.version,
-                    &row.release.r#ref,
+                    row_ref_str,
                 )
                 .map(RowLocator::from)
             };
@@ -4959,6 +4970,42 @@ payloads:
         assert_eq!(
             source.artifact_stem.as_deref(),
             Some(format!("tebako-runtime-2.5.0-21.0.12-{asset}").as_str())
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_prefers_a_rows_own_release_ref() {
+        // tebako#711 (registry MINOR 6): the row's additive release.ref
+        // names the shard tag serving THAT row's bytes — it wins over the
+        // version-level ref. The tag here is outside the shard vocabulary
+        // (`-row` is no platform segment), so spec 36 §6's substitution
+        // leaves it verbatim and the assertion names the exact ref the
+        // download path consumed.
+        let home = temp_home("regfacet-rowref");
+        let ctx = test_ctx(&home);
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        let registry = format!(
+            "schema_version: 1\npayloads:\n  - name: tebako-runtime-openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - version: '21.0.12'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-21.0.12-{asset}.tfs, sha256: '{}', release: {{ref: 'tfs:github:acme/tebako-runtime-openjdk:v2.5.1-row'}}}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-openjdk:v2.5.1'}}\n",
+            sha64('b')
+        );
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-openjdk",
+            registry.as_bytes(),
+        )
+        .unwrap();
+        let (pref, source) =
+            registry_selected_target(&reqs("java", ">= 21"), &github_source(), &ctx)
+                .unwrap()
+                .expect("a row carrying its own release.ref still picks");
+        assert_eq!(pref.version, "21.0.12");
+        assert_eq!(source.tag.as_deref(), Some("v2.5.1-row"));
+        assert_eq!(
+            source.base,
+            "https://github.com/acme/tebako-runtime-openjdk/releases/download"
         );
         let _ = std::fs::remove_dir_all(&home);
     }

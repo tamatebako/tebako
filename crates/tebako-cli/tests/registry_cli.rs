@@ -235,3 +235,125 @@ fn add_registry_then_install_resolves_the_requires_closure_no_refresh() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------
+// tebako registry <verb> (tebako#675 retire, tebako#680 validate)
+// ---------------------------------------------------------------------
+
+/// stdout and stderr separately — the `--json` purity assertion needs
+/// stdout alone (the banner must land on stderr).
+fn run_split(home: &PathBuf, shim: &PathBuf, args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(tebako_bin())
+        .args(args)
+        .env("TEBAKO_HOME", home)
+        .env("TEBAKO_SHIM_BINARY", shim)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn failed: {e}"));
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+const TWO_ROW_REGISTRY: &str = "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:1.0}\n        runtime_requirement: {engine: ruby, constraint: \">= 3.1\"}\n        entrypoints: [app]\n      - version: 2.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:2.0}\n        runtime_requirement: {engine: ruby, constraint: \">= 3.1\"}\n        entrypoints: [app]\n    default: 2.0\n";
+
+#[test]
+fn registry_validate_is_the_ci_gate() {
+    let dir = scratch("validate");
+    let home = dir.join("home");
+    let shim = dir.join("tebako-shim");
+    fs::write(&shim, b"#!/bin/sh\n").unwrap();
+    let registry = dir.join("tpkg-registry.yaml");
+    fs::write(&registry, TWO_ROW_REGISTRY).unwrap();
+    let path = registry.to_str().unwrap();
+
+    // a sound registry validates 0 …
+    let (code, text) = run(&home, &shim, &["registry", "validate", path]);
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains("OK (1 payload(s), 2 version row(s))"),
+        "{text}"
+    );
+
+    // … a dangling default (tebako#680's class) is the verbatim client
+    // refusal at 65 …
+    fs::write(
+        &registry,
+        TWO_ROW_REGISTRY.replace("    default: 2.0\n", "    default: 9.9\n"),
+    )
+    .unwrap();
+    let (code, text) = run(&home, &shim, &["registry", "validate", path]);
+    assert_eq!(code, 65, "{text}");
+    assert!(
+        text.contains("default '9.9' names no listed version"),
+        "{text}"
+    );
+
+    // … and --json keeps stdout pure (the banner rides stderr).
+    let (code, stdout, stderr) = run_split(&home, &shim, &["registry", "validate", path, "--json"]);
+    assert_eq!(code, 65, "{stdout}{stderr}");
+    let doc = tebako_pkg::json_parse(&stdout).unwrap();
+    assert!(matches!(
+        doc.find("ok"),
+        Some(tebako_pkg::JsonValue::Bool(false))
+    ));
+    assert!(!stdout.contains("Tebako executable packager"), "{stdout}");
+    assert!(stderr.contains("Tebako executable packager"), "{stderr}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn registry_retire_removes_a_row_and_refuses_a_dangling_default() {
+    let dir = scratch("retire");
+    let home = dir.join("home");
+    let shim = dir.join("tebako-shim");
+    fs::write(&shim, b"#!/bin/sh\n").unwrap();
+    let registry = dir.join("tpkg-registry.yaml");
+    fs::write(&registry, TWO_ROW_REGISTRY).unwrap();
+    let path = registry.to_str().unwrap();
+
+    // … the default's row refuses without --force (65, named) — while a
+    // second row survives, so only the dangling-default class fires …
+    let (code, text) = run(&home, &shim, &["registry", "retire", path, "app@2.0"]);
+    assert_eq!(code, 65, "{text}");
+    assert!(text.contains("RegistryDefaultWouldDangle"), "{text}");
+    assert!(fs::read_to_string(&registry)
+        .unwrap()
+        .contains("version: 2.0"));
+
+    // … then the plain (non-default) row retires clean …
+    let (code, text) = run(&home, &shim, &["registry", "retire", path, "app@1.0"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("retired app@1.0"), "{text}");
+    let after = tebako_resolve::Registry::from_yaml(&fs::read_to_string(&registry).unwrap())
+        .expect("the rewritten registry parses");
+    assert_eq!(
+        after
+            .payload("app")
+            .unwrap()
+            .versions
+            .iter()
+            .map(|v| v.version.as_str())
+            .collect::<Vec<_>>(),
+        vec!["2.0"],
+        "only 2.0 remains"
+    );
+    assert!(
+        fs::read_to_string(home.join("journal.log"))
+            .unwrap()
+            .contains("event=registry-row-retired"),
+        "the retirement journaled"
+    );
+
+    // … and usage errors are usage (1), never a verdict code.
+    let (code, text) = run(&home, &shim, &["registry", "retire", path]);
+    assert_eq!(code, 1, "{text}");
+    assert!(text.contains("usage: tebako registry retire"), "{text}");
+    let (code, text) = run(&home, &shim, &["registry", "bogusverb"]);
+    assert_eq!(code, 1, "{text}");
+    assert!(text.contains("unknown registry verb"), "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}

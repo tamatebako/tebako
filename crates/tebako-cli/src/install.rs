@@ -1132,6 +1132,24 @@ pub(crate) fn plan_from_registry_entry(
         })?,
     };
 
+    // tebako#672: a `kind: runtime` entry is never payload-store
+    // installable — runtimes resolve through the runtime cache (an app's
+    // runtime_requirement, or an explicit `tebako use --runtime`), never
+    // through `tebako install`. Refuse BEFORE any download, naming the
+    // remedy.
+    if payload.kind == tpkg::PayloadKind::Runtime {
+        let use_form = match payload.engine.as_deref() {
+            Some(engine) => format!("tebako use --runtime {engine}@<langver>[:<tebako>]"),
+            None => "tebako use --runtime <engine>@<langver>[:<tebako>]".to_string(),
+        };
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "'{name}' is a runtime (kind: runtime) — runtimes resolve via the runtime cache, not the payload store (RuntimeKindNotInstallable): install the app that needs it (`tebako install <app>` — its runtime_requirement resolves the runtime), or pin the runtime with `{use_form}`"
+            ),
+        ));
+    }
+
     // spec 04 §2: the SELECTED row's `status: withdrawn` is a named
     // refusal — never a silent skip, never a fallback to it. Non-selected
     // withdrawn rows are inert (selection is status-blind).
@@ -1171,6 +1189,7 @@ pub(crate) fn plan_from_registry_entry(
             artifact,
             sha256,
             oci,
+            release: row_release,
         }) => {
             if hit.channel_oci {
                 // spec 38 §11: the channel is DECLARED, never probed —
@@ -1192,7 +1211,17 @@ pub(crate) fn plan_from_registry_entry(
                     .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
                 (reference, Some(sha256.to_string()))
             } else {
-                let mut reference = reference;
+                // tebako#711 (registry MINOR 6): the row's additive
+                // `release.ref` names the shard tag carrying THIS row's
+                // bytes when a version line unions per-platform shard
+                // releases — it wins over the version-level ref (the asc
+                // derivation rides plan.reference, so shard-local
+                // signatures follow automatically).
+                let mut reference = match row_release {
+                    Some(row_ref) => Reference::parse(row_ref)
+                        .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?,
+                    None => reference,
+                };
                 match &mut reference {
                     Reference::Service { artifact: slot, .. } => {
                         *slot = Some(artifact.to_string());
