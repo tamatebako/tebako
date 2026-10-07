@@ -15,7 +15,7 @@
 
 schema: tpkg-registry
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 4 # MINOR — additive changes only (1: engine/implementation on kind:runtime entries, 2: the version-level implementation compat read documented + the runtime_requirement mirror's implementation key, 3: the per-triplet oci mirror (spec 38 §7), 4: the blksum sidecar pins (spec 39 §3))
+schema_minor: 5 # MINOR — additive changes only (1: engine/implementation on kind:runtime entries, 2: the version-level implementation compat read documented + the runtime_requirement mirror's implementation key, 3: the per-triplet oci mirror (spec 38 §7), 4: the blksum sidecar pins (spec 39 §3), 5: the runtime_requirement mirror's abi rule — carried only when one value holds for the whole entry (tebako#440))
 status: normative
 owner: crates/tebako-resolve (the model) in tamatebako/tebako
 edge: C8 (loader → registry), C12 (everything → registries)
@@ -134,7 +134,7 @@ grammar:
             fields:
               engine: {type: string, required: true}
               constraint: {type: string, required: true}
-              abi: {type: string, required: false, notes: "the runtime's platform string for native-extension payloads (resolution checks BOTH lines)"}
+              abi: {type: string, required: false, notes: "the runtime's platform string for native-extension payloads (resolution checks BOTH lines). MINOR 5 (tebako#440): the abi is per-triplet by construction — the mirror carries it only when one value holds for the WHOLE entry (a universal or single-platform row); a multi-platform per-triplet entry OMITS it, and the authoritative per-platform abi lives in each slice's embedded manifest"}
               implementation: {type: string, required: false, notes: "spec 28 §8 (MINOR 2) — the mirror of the L1 entry's implementation key; REQUIRED in the mirror when abi is present (an abi is per-implementation), absent for pure-language payloads. The mirror stays the single-map form: an L1 any_of list mirrors its first entry (the full set rides the embedded manifest L1)"}
           entrypoints:
             type: list of string

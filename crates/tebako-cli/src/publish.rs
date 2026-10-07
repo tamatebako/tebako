@@ -27,6 +27,14 @@
 //! 6. **built-in verify**: a clean-temp-cache `tebako install` proof —
 //!    fresh TEBAKO_HOME, the just-written registry, the mirror (or live
 //!    release) as the source; the shims and the trust anchors must land.
+//! 7. **pin verification** (always — even under `--skip-verify`, which
+//!    skips only the install proof): every row the registry write just
+//!    pinned is checked against what the release ACTUALLY serves — the
+//!    per-artifact `.sha256` sidecar at the row's derived download URL
+//!    must name the row's pin, and a served blksum sidecar's bytes must
+//!    hash to its pin. The check is cheap (tiny sidecar reads, never the
+//!    artifacts); a desync is a named error listing every desynced
+//!    artifact.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -269,6 +277,36 @@ fn runtime_requirement_json(req: &RegistryRuntimeRequirement) -> String {
     }
     out.push('}');
     out
+}
+
+/// The L3 mirror of one manifest's runtime requirement (spec 28 §8's
+/// single-map form): the first entrypoint's requirement — an `any_of`
+/// list mirrors its FIRST entry, the full set rides the embedded
+/// manifest. Returns the requirement and whether an `any_of` list was
+/// truncated (the caller notes once).
+fn mirrored_requirement(provides: &tpkg::Provides) -> (Option<RegistryRuntimeRequirement>, bool) {
+    let tpkg::Provides::App(app) = provides else {
+        return (None, false);
+    };
+    match app
+        .entrypoints
+        .first()
+        .and_then(|e| e.runtime_requirement.as_ref())
+    {
+        Some(reqs) => {
+            let r = &reqs.entries()[0];
+            (
+                Some(RegistryRuntimeRequirement {
+                    engine: r.engine.clone(),
+                    constraint: r.constraint.as_str().to_string(),
+                    implementation: r.implementation.clone(),
+                    abi: r.abi.clone(),
+                }),
+                reqs.entries().len() > 1,
+            )
+        }
+        None => (None, false),
+    }
 }
 
 /// A standalone binary's upload name (no `.tfs` — the tap formula's urls).
@@ -907,31 +945,19 @@ pub fn publish_full_with_oci_sink(
     // flow (spec 13), never through `tebako publish`.
     let (entrypoints, runtime_requirement): (Vec<String>, Option<RegistryRuntimeRequirement>) =
         match &embedded.provides {
-            tpkg::Provides::App(app) => (
-                app.entrypoints.iter().map(|e| e.name.clone()).collect(),
-                app.entrypoints
-                    .first()
-                    .and_then(|e| e.runtime_requirement.as_ref())
-                    .map(|reqs| {
-                        // The L3 mirror stays the single-map form (spec 28
-                        // §8: the list is L1 grammar only): an `any_of`
-                        // list mirrors its FIRST entry; the full set rides
-                        // the embedded manifest.
-                        let r = &reqs.entries()[0];
-                        if reqs.entries().len() > 1 {
-                            notes.push(format!(
-                                "{}: the runtime_requirement any_of list mirrors its first entry in the registry; the full set rides the embedded manifest",
-                                embedded.identity.name
-                            ));
-                        }
-                        RegistryRuntimeRequirement {
-                            engine: r.engine.clone(),
-                            constraint: r.constraint.as_str().to_string(),
-                            implementation: r.implementation.clone(),
-                            abi: r.abi.clone(),
-                        }
-                    }),
-            ),
+            tpkg::Provides::App(app) => {
+                let (req, truncated) = mirrored_requirement(&embedded.provides);
+                if truncated {
+                    notes.push(format!(
+                        "{}: the runtime_requirement any_of list mirrors its first entry in the registry; the full set rides the embedded manifest",
+                        embedded.identity.name
+                    ));
+                }
+                (
+                    app.entrypoints.iter().map(|e| e.name.clone()).collect(),
+                    req,
+                )
+            }
             tpkg::Provides::Toolkit(toolkit) => (
                 toolkit.executables.iter().map(|e| e.name.clone()).collect(),
                 None,
@@ -947,6 +973,11 @@ pub fn publish_full_with_oci_sink(
                 ));
             }
         };
+    // Every payload's OWN mirrored requirement: the per-triplet OCI
+    // annotations mirror each slice's own (a slice's abi is that slice's
+    // truth), and the multi-platform agreement check below rides these.
+    let mut payload_requirements: Vec<Option<RegistryRuntimeRequirement>> =
+        vec![runtime_requirement.clone()];
     for input in opts.payloads.iter().skip(1) {
         // every triplet's manifest must agree (the registry mirrors ONE set)
         if let Some(text) = image_manifest::read_embedded_manifest(&input.path)? {
@@ -975,8 +1006,58 @@ pub fn publish_full_with_oci_sink(
                     ),
                 ));
             }
+            payload_requirements.push(mirrored_requirement(&other.provides).0);
+        } else {
+            payload_requirements.push(None);
         }
     }
+    // tebako#440: the abi is per-triplet by construction — every variant
+    // must agree on engine/constraint/implementation (the registry row
+    // mirrors ONE value; a disagreement is an authoring error, never a
+    // silent first-wins), while abi itself is exempt: a multi-platform
+    // per-triplet entry's mirror OMITS it (one platform's abi on the
+    // whole entry is wrong for every other platform — each slice's
+    // embedded manifest owns the authoritative per-platform value). A
+    // universal or single-platform entry keeps it: one value holds.
+    let multi_platform = !universal && opts.payloads.len() > 1;
+    if multi_platform {
+        let reference = &payload_requirements[0];
+        for (input, req) in opts
+            .payloads
+            .iter()
+            .skip(1)
+            .zip(payload_requirements.iter().skip(1))
+        {
+            let agrees = match (reference, req) {
+                (None, None) => true,
+                (Some(a), Some(b)) => {
+                    a.engine == b.engine
+                        && a.constraint == b.constraint
+                        && a.implementation == b.implementation
+                }
+                _ => false,
+            };
+            if !agrees {
+                return Err(err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "{} declares a different runtime requirement than the first payload — per-triplet variants of one payload must agree on engine/constraint/implementation (the abi is per-triplet and stays in each slice's manifest)",
+                        input.path.display()
+                    ),
+                ));
+            }
+        }
+    }
+    let runtime_requirement = runtime_requirement.map(|mut r| {
+        if multi_platform && r.abi.is_some() {
+            notes.push(format!(
+                "{}: the multi-platform registry mirror omits abi — every platform's slice manifest carries its own",
+                opts.name
+            ));
+            r.abi = None;
+        }
+        r
+    });
 
     // ---- 3. standalones ---------------------------------------------
     let mut standalone_uploads: Vec<(String, String, Vec<u8>)> = Vec::new();
@@ -1017,6 +1098,21 @@ pub fn publish_full_with_oci_sink(
     store.ensure_release(&owner, &repo, &tag)?;
     for (name, _, bytes) in artifacts.iter().chain(standalone_uploads.iter()) {
         store.upload_asset(&owner, &repo, &tag, name, bytes)?;
+    }
+    // The per-artifact `.sha256` sidecars (the `<sha256>  <name>` line,
+    // the sidecar-era convention): the pin verification pass below reads
+    // them back from the SERVED release to prove the bytes the release
+    // carries are the bytes the registry pins — the desync the installer
+    // otherwise catches at run time.
+    for (name, sha, _) in &artifacts {
+        let sidecar = format!("{sha}  {name}\n");
+        store.upload_asset(
+            &owner,
+            &repo,
+            &tag,
+            &format!("{name}.sha256"),
+            sidecar.as_bytes(),
+        )?;
     }
     // The blksum sidecars publish beside their images in the same
     // staging invocation (spec 39 §3). They carry no .asc of their own:
@@ -1066,7 +1162,7 @@ pub fn publish_full_with_oci_sink(
                 embedded.identity.kind,
                 input.triplet,
                 &entrypoints,
-                runtime_requirement.as_ref(),
+                payload_requirements[i].as_ref(),
             );
             let pushed = oci_sink(&OciPushRequest {
                 host: oci_host.clone(),
@@ -1167,7 +1263,17 @@ pub fn publish_full_with_oci_sink(
             sha256: sha256.clone(),
         }
     };
+    // The pin verification pass's rows — exactly what the registry entry
+    // pins, collected as the platforms map is built (the universal row's
+    // artifact sha never lands in the registry grammar; the pass still
+    // proves the release serves the generation this publish staged).
+    let mut pin_rows: Vec<PinRow> = Vec::new();
     let platforms = if universal {
+        pin_rows.push(PinRow {
+            artifact: artifacts[0].0.clone(),
+            sha256: artifacts[0].1.clone(),
+            blksum: Some(blksum_pin(0)),
+        });
         RegistryPlatforms::Universal
     } else {
         RegistryPlatforms::PerTriplet(
@@ -1176,6 +1282,12 @@ pub fn publish_full_with_oci_sink(
                 .enumerate()
                 .map(|(i, p)| {
                     let triplet = p.triplet.expect("per-triplet checked");
+                    let pin = blksum_pin(i);
+                    pin_rows.push(PinRow {
+                        artifact: artifacts[i].0.clone(),
+                        sha256: artifacts[i].1.clone(),
+                        blksum: Some(pin.clone()),
+                    });
                     (
                         triplet,
                         tebako_resolve::registry::PlatformArtifact {
@@ -1194,7 +1306,7 @@ pub fn publish_full_with_oci_sink(
                                     )
                                 )
                             }),
-                            blksum: Some(blksum_pin(i)),
+                            blksum: Some(pin),
                         },
                     )
                 })
@@ -1296,6 +1408,57 @@ pub fn publish_full_with_oci_sink(
         write_atomic(&path, registry_text.as_bytes())?;
         Some(path)
     };
+
+    // ---- 6b. the pin verification pass (always — the module doc's step
+    // 7; --skip-verify skips only the install proof) --------------------
+    let pin_rows_checked = {
+        let fetch_asset: Box<dyn Fn(&str) -> Result<Option<Vec<u8>>, TebakoError>> = match &opts
+            .upload_mirror
+        {
+            Some(mirror) => {
+                let dir = mirror.join(&tag);
+                Box::new(move |name: &str| match std::fs::read(dir.join(name)) {
+                    Ok(bytes) => Ok(Some(bytes)),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(e) => Err(err(
+                        EX_TEBAKO_IO,
+                        format!("cannot read {}: {e}", dir.join(name).display()),
+                    )),
+                })
+            }
+            None => {
+                let reference = tebako_resolve::Reference::parse(&release_ref).map_err(|e| {
+                    err(
+                        EX_TEBAKO_MANIFEST,
+                        format!("the release ref does not parse: {e}"),
+                    )
+                })?;
+                let dir_url = tebako_resolve::release_download_locator(&reference)
+                    .and_then(|l| l.dir_url())
+                    .ok_or_else(|| {
+                        err(
+                            EX_TEBAKO_MANIFEST,
+                            format!("the release ref '{release_ref}' derives no download URL"),
+                        )
+                    })?;
+                Box::new(move |name: &str| {
+                    let url = format!("{dir_url}/{name}");
+                    match tebako_http::get(&url) {
+                        Ok(bytes) => Ok(Some(bytes)),
+                        Err(tebako_http::FetchError::IndexUnavailable(_)) => Ok(None),
+                        Err(e) => Err(err(
+                            EX_TEBAKO_UNAVAILABLE,
+                            format!("cannot fetch {url}: {e}"),
+                        )),
+                    }
+                })
+            }
+        };
+        verify_release_pins(&pin_rows, &fetch_asset)?
+    };
+    notes.push(format!(
+        "pin verification: {pin_rows_checked} row(s) — the release serves exactly what the registry pins"
+    ));
 
     // ---- 7. the tap formula -------------------------------------------
     let mut formula = None;
@@ -1447,6 +1610,100 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), TebakoError> {
             format!("cannot install {}: {e}", path.display()),
         )
     })
+}
+
+// ---------------------------------------------------------------------
+// the pin verification pass
+// ---------------------------------------------------------------------
+
+/// One row the publish just pinned: the artifact, its sha256 pin, and
+/// its blksum sidecar pin.
+struct PinRow {
+    artifact: String,
+    sha256: String,
+    blksum: Option<BlksumPin>,
+}
+
+/// The pin verification pass: for every row the registry write just
+/// pinned, what the release ACTUALLY serves must match — the artifact's
+/// `.sha256` sidecar (read back from the live download URL, or the
+/// `--upload-mirror` directory) must name the row's pin, and a pinned
+/// blksum sidecar's served bytes must hash to the pin. Cheap by
+/// construction (tiny sidecar reads, never the artifacts), so it runs on
+/// every publish, --skip-verify or not. `fetch_asset` answers one
+/// release asset's bytes by name (`None` = the release does not carry
+/// it). Every desync lands in one named error; returns the row count.
+fn verify_release_pins(
+    rows: &[PinRow],
+    fetch_asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>, TebakoError>,
+) -> Result<usize, TebakoError> {
+    let mut desyncs: Vec<String> = Vec::new();
+    for row in rows {
+        let sidecar_name = format!("{}.sha256", row.artifact);
+        match fetch_asset(&sidecar_name)? {
+            None => desyncs.push(format!(
+                "{}: the release carries no {sidecar_name} sidecar",
+                row.artifact
+            )),
+            Some(bytes) => match parse_pin_sidecar(&bytes, &row.artifact) {
+                Ok(served) if served == row.sha256 => {}
+                Ok(served) => desyncs.push(format!(
+                    "{}: the registry pins {}, the release's {sidecar_name} serves {served}",
+                    row.artifact, row.sha256
+                )),
+                Err(reason) => desyncs.push(format!("{}: {sidecar_name}: {reason}", row.artifact)),
+            },
+        }
+        if let Some(pin) = &row.blksum {
+            match fetch_asset(&pin.filename)? {
+                None => desyncs.push(format!(
+                    "{}: the release carries no {} sidecar",
+                    row.artifact, pin.filename
+                )),
+                Some(bytes) => {
+                    let served = tebako_resolve::sha256_hex(&bytes);
+                    if served != pin.sha256 {
+                        desyncs.push(format!(
+                            "{}: the registry pins {} at {}, the release serves {served}",
+                            row.artifact, pin.sha256, pin.filename
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if !desyncs.is_empty() {
+        return Err(err(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "the release does not serve what the registry pins — {} desynced row(s):\n  {}",
+                desyncs.len(),
+                desyncs.join("\n  ")
+            ),
+        ));
+    }
+    Ok(rows.len())
+}
+
+/// The per-artifact `.sha256` sidecar: one `"<sha256>  <filename>"` line
+/// naming ITS artifact — a torn or foreign sidecar is a desync, never a
+/// pass.
+fn parse_pin_sidecar(bytes: &[u8], artifact: &str) -> Result<String, String> {
+    let text = String::from_utf8(bytes.to_vec()).map_err(|_| "not UTF-8".to_string())?;
+    let mut parts = text.split_whitespace();
+    let sha = parts.next().unwrap_or("");
+    let well_formed = sha.len() == 64
+        && sha
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !well_formed {
+        return Err("not a \"<sha256>  <filename>\" line".to_string());
+    }
+    match parts.next() {
+        Some(name) if name == artifact => Ok(sha.to_string()),
+        Some(name) => Err(format!("names {name}, expected {artifact}")),
+        None => Err("carries no filename".to_string()),
+    }
 }
 
 /// Verify temp homes are unique per call (parallel tests share the
@@ -1762,5 +2019,140 @@ mod tests {
         std::fs::create_dir_all(&bare).unwrap();
         assert_eq!(inherit_runtime_prefs(&verify, &bare).unwrap(), 0);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // ---- the pin verification pass ------------------------------------
+
+    fn pin_row(artifact: &str, sha: &str) -> PinRow {
+        PinRow {
+            artifact: artifact.to_string(),
+            sha256: sha.to_string(),
+            blksum: None,
+        }
+    }
+
+    fn sha_of(c: char) -> String {
+        c.to_string().repeat(64)
+    }
+
+    #[test]
+    fn pin_sidecar_parsing_is_the_two_column_line_naming_its_artifact() {
+        let sha = sha_of('a');
+        let ok =
+            parse_pin_sidecar(format!("{sha}  app-1.0.tfs\n").as_bytes(), "app-1.0.tfs").unwrap();
+        assert_eq!(ok, sha);
+        // a foreign artifact's sidecar is not a pass
+        let err = parse_pin_sidecar(
+            format!("{sha}  app-1.0-linux-gnu-x86_64.tfs\n").as_bytes(),
+            "app-1.0-macos-arm64.tfs",
+        )
+        .unwrap_err();
+        assert!(err.contains("names app-1.0-linux-gnu-x86_64.tfs"), "{err}");
+        for (bad, needle) in [
+            ("", "not a \"<sha256>  <filename>\" line"),
+            ("garbage\n", "not a \"<sha256>  <filename>\" line"),
+            (&format!("{sha}\n"), "carries no filename"),
+        ] {
+            let err = parse_pin_sidecar(bad.as_bytes(), "app-1.0.tfs").unwrap_err();
+            assert!(
+                err.contains(needle),
+                "{bad:?}: expected '{needle}' in {err}"
+            );
+        }
+    }
+
+    /// A scripted release: name → served bytes (None = the release does
+    /// not carry the asset).
+    fn scripted_fetch(
+        assets: BTreeMap<String, Vec<u8>>,
+    ) -> impl Fn(&str) -> Result<Option<Vec<u8>>, TebakoError> {
+        move |name: &str| Ok(assets.get(name).cloned())
+    }
+
+    #[test]
+    fn pin_verification_passes_when_the_release_serves_the_pins() {
+        let sha_a = sha_of('a');
+        let sha_b = sha_of('b');
+        let blksum_bytes = b"{\"groups\":[]}\n".to_vec();
+        let blksum_sha = tebako_resolve::sha256_hex(&blksum_bytes);
+        let rows = vec![
+            PinRow {
+                blksum: Some(BlksumPin {
+                    filename: "app-1.0-macos-arm64.tfs.blksum.json".to_string(),
+                    sha256: blksum_sha,
+                }),
+                ..pin_row("app-1.0-macos-arm64.tfs", &sha_a)
+            },
+            pin_row("app-1.0-linux-gnu-x86_64.tfs", &sha_b),
+        ];
+        let mut assets = BTreeMap::new();
+        assets.insert(
+            "app-1.0-macos-arm64.tfs.sha256".to_string(),
+            format!("{sha_a}  app-1.0-macos-arm64.tfs\n").into_bytes(),
+        );
+        assets.insert(
+            "app-1.0-linux-gnu-x86_64.tfs.sha256".to_string(),
+            format!("{sha_b}  app-1.0-linux-gnu-x86_64.tfs\n").into_bytes(),
+        );
+        assets.insert(
+            "app-1.0-macos-arm64.tfs.blksum.json".to_string(),
+            blksum_bytes,
+        );
+        let checked = verify_release_pins(&rows, &scripted_fetch(assets)).unwrap();
+        assert_eq!(checked, 2);
+    }
+
+    #[test]
+    fn pin_verification_lists_every_desync_in_one_named_error() {
+        let sha_a = sha_of('a');
+        let sha_b = sha_of('b');
+        let rotated = sha_of('9');
+        let rows = vec![
+            pin_row("app-1.0-macos-arm64.tfs", &sha_a),
+            pin_row("app-1.0-linux-gnu-x86_64.tfs", &sha_b),
+            PinRow {
+                blksum: Some(BlksumPin {
+                    filename: "app-1.0-windows-ucrt64.tfs.blksum.json".to_string(),
+                    sha256: sha_of('d'),
+                }),
+                ..pin_row("app-1.0-windows-ucrt64.tfs", &sha_of('e'))
+            },
+        ];
+        let mut assets = BTreeMap::new();
+        // row 1: the tag serves a rotated generation's sidecar
+        assets.insert(
+            "app-1.0-macos-arm64.tfs.sha256".to_string(),
+            format!("{rotated}  app-1.0-macos-arm64.tfs\n").into_bytes(),
+        );
+        // row 2: the sidecar never landed
+        // row 3: the artifact sidecar agrees but the blksum sidecar rotated
+        assets.insert(
+            "app-1.0-windows-ucrt64.tfs.sha256".to_string(),
+            format!("{}  app-1.0-windows-ucrt64.tfs\n", sha_of('e')).into_bytes(),
+        );
+        assets.insert(
+            "app-1.0-windows-ucrt64.tfs.blksum.json".to_string(),
+            b"rotated".to_vec(),
+        );
+        let e = verify_release_pins(&rows, &scripted_fetch(assets)).unwrap_err();
+        assert_eq!(e.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(e.message.contains("3 desynced row(s)"), "{}", e.message);
+        assert!(
+            e.message.contains(&format!("pins {sha_a}")),
+            "{}",
+            e.message
+        );
+        assert!(
+            e.message.contains(&format!("serves {rotated}")),
+            "{}",
+            e.message
+        );
+        assert!(
+            e.message
+                .contains("app-1.0-linux-gnu-x86_64.tfs: the release carries no"),
+            "{}",
+            e.message
+        );
+        assert!(e.message.contains(".blksum.json"), "{}", e.message);
     }
 }

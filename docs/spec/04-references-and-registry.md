@@ -99,6 +99,14 @@ payloads:
 
 - The registry MIRRORS only resolution-relevant fields (spec 03 §4 tier 3)
   — the dispatcher resolves without downloading every payload.
+- **The mirror's `runtime_requirement.abi` rule (additive, 2026-10-07,
+  tebako#440):** the abi is per-triplet by construction, so a version
+  entry's mirrored requirement carries `abi` only when one value holds
+  for the WHOLE entry (a `universal` row or a single-platform per-triplet
+  row). A multi-platform per-triplet entry omits it — one platform's abi
+  on an entry serving every triplet is wrong for every platform but one.
+  The authoritative per-platform abi always lives in each slice's
+  embedded manifest; dispatch reads it there, never from the mirror.
 - **`status: withdrawn` (additive, 2026-09-12, roadmap 85):** the entry
   is YANKED — resolvers refuse it with a named `WithdrawnPayload` error
   (never a silent skip, never a fallback to it), and listing surfaces

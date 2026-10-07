@@ -177,11 +177,26 @@ withdrawal bounds growth.
   fails the release) → signed (spec 09) once ceremony lands.
 - Every shipping leg closes with a GitHub artifact attestation
   (`actions/attest-build-provenance`, SLSA Build L3) over the exact
-  staged bytes it uploads — sign-then-hash means the attested digest is
-  the signed artifact's. `finalize` attests SHA256SUMS + manifest.json.
+  staged bytes its publish job uploads — sign-then-hash means the
+  attested digest is the signed artifact's. `finalize` attests
+  SHA256SUMS + manifest.json.
   The arm rides the same `upload_url` gate as the uploads, so PR
   rehearsals never attest. Consumers verify with
   `gh attestation verify <asset> --repo tamatebako/tebako`.
+- **The build/publish split (additive, 2026-10-07, tebako#649 — the
+  factory's tebako-runtime-ruby#190 pattern):** a shipping leg never
+  touches the release. It stages, signs (when its plane is armed),
+  ship-gates, then hands the gated bytes to a runner-native publish job
+  as an immutable in-run artifact whose `.leg-complete` marker is written
+  only after every gate passed. The publish job is pure API work —
+  download the artifact, guard the marker (a leg that failed ships no
+  artifact and the publish job fails NAMED at the guard, never a silent
+  skip), upload via `lib/release-upload.sh`. GitHub's re-run granularity
+  is the job, so a publish-layer failure re-runs as a minutes-long
+  download + upload of the immutable in-run artifact — never a rebuild.
+  The installer legs feed from the platform legs' artifacts on every
+  event (the rehearsal feed is the only feed), and `finalize` needs the
+  publish jobs, not the legs.
 - Reference shape: parsanol-rs release-binary.yml (native runners,
   dtolnay toolchain, upload-release-asset) + our additions (musl
   zigbuild, size gate, completeness gate).
