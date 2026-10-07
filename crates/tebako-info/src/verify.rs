@@ -588,6 +588,41 @@ fn entry_checks(
                 format!("path exists in slot {slot}; name unchecked (no usable L1 manifest)"),
             )),
         }
+        // spec 03 §6 (tebako#559): the entries[].interp_env composition
+        // cross-check — a faithful mirror plus declared overrides, never
+        // an independent authority. Every L1 interp_env key of the slot's
+        // payload must be present in the entry's map (the value may be
+        // the declared or the refined one); a dropped L1 key fails by
+        // name (the tebako#494 class). Unchecked when the slot carries
+        // no usable L1 manifest (the same pre-manifest tolerance as the
+        // name facet above) or declares no keys and the entry adds none.
+        if let (Some(m), None) = (&p.manifest, &p.manifest_validation) {
+            let env_name = format!("entry-env[{}]", e.name);
+            let dropped: Vec<&str> = m
+                .interp_env
+                .keys()
+                .filter(|k| !e.interp_env.contains_key(*k))
+                .map(String::as_str)
+                .collect();
+            if !dropped.is_empty() {
+                checks.push(Check::fail(
+                    env_name,
+                    format!(
+                        "drops slot {slot}'s declared interp_env key(s) {} — the entry mirrors every L1 key with its declared or a refined value",
+                        dropped.join(", ")
+                    ),
+                    exit_code::MALFORMED,
+                ));
+            } else if !m.interp_env.is_empty() || !e.interp_env.is_empty() {
+                checks.push(Check::pass(
+                    env_name,
+                    format!(
+                        "slot {slot}'s interp_env mirrored ({} key(s))",
+                        m.interp_env.len()
+                    ),
+                ));
+            }
+        }
     }
     Ok(())
 }

@@ -56,6 +56,10 @@ pub struct SuiteEntry {
     /// (`ruby@<version>;tebako=<abi>[;image]`); `None` falls back to the
     /// press-level -R.
     pub runtime_ref: Option<String>,
+    /// The packager's interp_env refinement (spec 03 §6 — the L2 face):
+    /// wins over the same L1 key of the entry's authored manifest; L1
+    /// keys pass through otherwise. Empty = no refinement.
+    pub interp_env: std::collections::BTreeMap<String, String>,
 }
 
 /// A parsed + validated suite file.
@@ -79,6 +83,7 @@ struct RawEntry {
     root: String,
     entry: String,
     runtime_ref: Option<String>,
+    interp_env: Option<std::collections::BTreeMap<String, String>>,
 }
 
 fn invalid(reason: impl Into<String>) -> TebakoError {
@@ -128,11 +133,22 @@ pub fn parse_suite(yaml: &str, source: &Path) -> Result<SuiteSpec, TebakoError> 
         if let Some(r) = &e.runtime_ref {
             check_runtime_ref(&e.name, r, source)?;
         }
+        let interp_env = e.interp_env.clone().unwrap_or_default();
+        for key in interp_env.keys() {
+            if !tpkg::valid_interp_env_key(key) {
+                return Err(invalid(format!(
+                    "suite entry \"{}\" declares a malformed interp_env key '{key}' — the grammar is [A-Z_][A-Z0-9_]*, and the TEBAKO_ namespace is dispatcher/driver-owned ({})",
+                    e.name,
+                    source.display()
+                )));
+            }
+        }
         entries.push(SuiteEntry {
             name: e.name.clone(),
             root: e.root.replace('\\', "/"),
             entry: e.entry.replace('\\', "/"),
             runtime_ref: e.runtime_ref.clone(),
+            interp_env,
         });
     }
     let mut names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
@@ -247,11 +263,18 @@ fn check_runtime_ref(
 
 /// The package manifest (ext block type 2) for a suite: one entry per
 /// command, slot i = entries[i]'s image, per-entry runtime refs (already
-/// fallback-resolved).
+/// fallback-resolved). Each entry's `interp_env` is the press-time
+/// composition (spec 03 §6): the entry root's authored L1 `interp_env`
+/// (read from `<dir>/<root>/__tpkg__/manifest.yaml`, verbatim) overlaid
+/// by the suite file's per-entry refinement (a packager key wins the
+/// same L1 key; L1 keys never drop). A malformed authored manifest
+/// skips its layer LOUDLY (the plain press's discipline — the image
+/// carries it unstamped and the package's own verify grades it).
 pub fn suite_package_manifest(
     spec: &SuiteSpec,
     runtime_refs: &[String],
     created: &str,
+    dir: &Path,
 ) -> Result<tpkg::PackageManifest, TebakoError> {
     if runtime_refs.len() != spec.entries.len() {
         return Err(plain_error(format!(
@@ -275,11 +298,18 @@ pub fn suite_package_manifest(
             .entries
             .iter()
             .enumerate()
-            .map(|(i, e)| tpkg::PackageEntry {
-                name: e.name.clone(),
-                slot: Some(i as u32),
-                entrypoint: e.name.clone(),
-                runtime_ref: runtime_refs[i].clone(),
+            .map(|(i, e)| {
+                let mut interp_env = crate::authored_interp_env(&dir.join(&e.root));
+                for (k, v) in &e.interp_env {
+                    interp_env.insert(k.clone(), v.clone());
+                }
+                tpkg::PackageEntry {
+                    name: e.name.clone(),
+                    slot: Some(i as u32),
+                    entrypoint: e.name.clone(),
+                    runtime_ref: runtime_refs[i].clone(),
+                    interp_env,
+                }
             })
             .collect(),
         jail: None,
@@ -395,7 +425,7 @@ pub fn press_suite(
             .map(|d| d.as_secs())
             .unwrap_or(0),
     );
-    let package_manifest = suite_package_manifest(spec, &runtime_refs, &created)?;
+    let package_manifest = suite_package_manifest(spec, &runtime_refs, &created, suite_dir)?;
     let package = suite_package_path(opts, spec);
     // spec 23 §14: a suite rides no compose document — the CLI and env
     // channels decide `quiet_notices` (the registry's precedence holds).

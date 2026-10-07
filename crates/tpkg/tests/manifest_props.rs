@@ -3,6 +3,7 @@
 //! garbage.
 
 use proptest::prelude::*;
+use std::collections::BTreeMap;
 use tpkg::*;
 
 fn arb_platform() -> impl Strategy<Value = Platform> {
@@ -441,6 +442,7 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
                 library_aliases,
                 checks,
                 min_runtime_tebako: None,
+                interp_env: BTreeMap::new(),
             }
         },
     )

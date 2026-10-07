@@ -114,7 +114,8 @@ grammar:
     type: map(command name → map(ENV key → string value))
     required: false
     notes: >-
-      MINOR 3 (PLANNED — tebako#559): the operator's standing per-tool
+      MINOR 3 (IMPLEMENTED 2026-10-07 — tebako#559): the operator's
+      standing per-tool
       interpreter-option policy — layer 2 of the spec 07 §9.1 interp_env
       chain (user env > this map > package manifest > payload manifest >
       interpreter built-in). Keyed by command name, the same axis

@@ -84,12 +84,16 @@ fn mk_image_files(
 /// `metanorma-nokogiri` entrypoints) WITH both entry files present — the
 /// shape the entries cross-check (tebako#494) can fully pass on.
 fn mk_suite_image(w: &TempDir, name: &str) -> PathBuf {
+    mk_suite_image_m(w, name, APP_MANIFEST)
+}
+
+fn mk_suite_image_m(w: &TempDir, name: &str, manifest: &str) -> PathBuf {
     let src = w.0.join(format!("src-{name}"));
     std::fs::create_dir_all(src.join("bin")).unwrap();
     std::fs::write(src.join("bin/metanorma"), b"#!/bin/sh\n").unwrap();
     std::fs::write(src.join("bin/metanorma-nokogiri"), b"#!/bin/sh\n").unwrap();
     std::fs::create_dir_all(src.join("__tpkg__")).unwrap();
-    std::fs::write(src.join("__tpkg__/manifest.yaml"), APP_MANIFEST).unwrap();
+    std::fs::write(src.join("__tpkg__/manifest.yaml"), manifest).unwrap();
     let img = w.0.join(name);
     let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default()).unwrap();
     writer.add_tree(&src, "/").unwrap();
@@ -848,6 +852,76 @@ fn validate_entries_crosscheck_name_and_path() {
     );
     assert!(
         out.contains("  entry[metanorma-nokogiri]: ok — path exists in slot 0; name declared\n"),
+        "{out}"
+    );
+}
+
+// ---------------------------------------------------------------------
+// validate: the entries[].interp_env composition cross-check (#559 —
+// every L1 key mirrored with its declared or a refined value; a dropped
+// L1 key fails by name)
+// ---------------------------------------------------------------------
+
+/// The app-suite L1 plus an authored interp_env block.
+const APP_MANIFEST_INTERP: &str = concat!(
+    include_str!("../../tpkg/tests/fixtures/manifests/app-suite.yaml"),
+    "\ninterp_env:\n  RUBY_YJIT_ENABLE: \"1\"\n  RUBY_GC_HEAP_FREE_SLOTS: \"500000\"\n"
+);
+
+#[test]
+fn validate_entries_interp_env_mirror_passes_with_a_refined_value() {
+    let w = TempDir::new("pxi");
+    let home = test_home("pxi");
+    let app = mk_suite_image_m(&w, "suite.tfs", APP_MANIFEST_INTERP);
+    // Both L1 keys mirrored; RUBY_YJIT_ENABLE refined to "0" by the
+    // packager (a value override is the L2 face's whole point).
+    let pm = pm_file(
+        &w,
+        "schema_version: 1\n\
+         package: {name: mn, version: 1.0.0, producer: {tool: tebako-pkg, tool_version: 0.1.0}, created: 2026-08-01T00:00:00Z}\n\
+         entries:\n  - {name: metanorma, slot: 0, entrypoint: bin/metanorma, runtime_ref: ruby@3.4.2;tebako=0.15.9, interp_env: {RUBY_YJIT_ENABLE: \"0\", RUBY_GC_HEAP_FREE_SLOTS: \"500000\"}}\n",
+    );
+    let pkg = w.0.join("mn");
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement (check 5), see above
+    assert!(
+        out.contains("  entry-env[metanorma]: ok — slot 0's interp_env mirrored (2 key(s))\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn validate_entries_interp_env_dropped_key_fails() {
+    let w = TempDir::new("pxj");
+    let home = test_home("pxj");
+    let app = mk_suite_image_m(&w, "suite.tfs", APP_MANIFEST_INTERP);
+    // The entry carries only one of the L1's two keys — the dropped
+    // RUBY_GC_HEAP_FREE_SLOTS fails by name.
+    let pm = pm_file(
+        &w,
+        "schema_version: 1\n\
+         package: {name: mn, version: 1.0.0, producer: {tool: tebako-pkg, tool_version: 0.1.0}, created: 2026-08-01T00:00:00Z}\n\
+         entries:\n  - {name: metanorma, slot: 0, entrypoint: bin/metanorma, runtime_ref: ruby@3.4.2;tebako=0.15.9, interp_env: {RUBY_YJIT_ENABLE: \"1\"}}\n",
+    );
+    let pkg = w.0.join("mn");
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert!(
+        out.contains("  entry-env[metanorma]: FAILED — drops slot 0's declared interp_env key(s) RUBY_GC_HEAP_FREE_SLOTS"),
         "{out}"
     );
 }

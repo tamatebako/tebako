@@ -323,6 +323,7 @@ pub fn spawn_handoff(
     image: Option<&str>,
     jail: Option<&crate::JailEnv>,
     spawn_lock: Option<&str>,
+    interp_env: &[(String, String)],
 ) -> io::Error {
     install_ctrl_swallow();
     let mut cmd = std::process::Command::new(runtime);
@@ -347,6 +348,11 @@ pub fn spawn_handoff(
         // exports the same variable) — the driver's spawn planner
         // resolves exactly these version pairs, cache-only.
         cmd.env(tpkg::runtime_store::SPAWN_LOCK_VAR, lock);
+    }
+    // spec 07 §9.1 / spec 17 §2.2: the package-manifest interp_env
+    // layer (already filtered against the inherited env by the caller).
+    for (k, v) in interp_env {
+        cmd.env(k, v);
     }
     let status = match cmd.spawn().and_then(|mut child| child.wait()) {
         Ok(status) => status,

@@ -208,6 +208,7 @@ impl RuntimeDeployer {
                     slot: Some(0),
                     entrypoint: "/local/stub.rb".to_string(),
                     runtime_ref,
+                    interp_env: Default::default(),
                 }],
                 jail: None,
                 env: Default::default(),

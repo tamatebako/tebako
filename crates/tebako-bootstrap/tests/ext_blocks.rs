@@ -35,6 +35,7 @@ fn package_manifest(entries: &[(&str, u32, &str, &str)]) -> tpkg::PackageManifes
                     slot: Some(slot),
                     entrypoint: entrypoint.to_string(),
                     runtime_ref: runtime_ref.to_string(),
+                    interp_env: Default::default(),
                 },
             )
             .collect(),

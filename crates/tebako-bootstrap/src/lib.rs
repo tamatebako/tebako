@@ -5786,6 +5786,27 @@ pub fn handoff_argv(
     nargv
 }
 
+/// The standalone dispatcher's interp_env export (spec 07 §9.1's chain,
+/// spec 17 §2.2): the package-manifest layer, computed at handoff. A
+/// key the user already carries in the process env wins passively
+/// (layer 1 — never rewritten); every other declared key exports for
+/// the runtime process. The bootstrap reads no store config (the
+/// managed shim owns that tier) and no image bytes (the L2 mirror is
+/// the whole surface).
+fn interp_env_exports(
+    selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
+) -> Vec<(String, String)> {
+    let Some((_, entry)) = selection else {
+        return Vec::new();
+    };
+    entry
+        .interp_env
+        .iter()
+        .filter(|(k, _)| std::env::var_os(k).is_none())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
 /// Unix: execv(3) replaces the bootstrap — never returns on success.
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
@@ -5827,6 +5848,9 @@ fn exec_runtime(
         // planner resolves exactly these version pairs, cache-only.
         cmd.env(tpkg::runtime_store::SPAWN_LOCK_VAR, lock);
     }
+    for (k, v) in interp_env_exports(selection) {
+        cmd.env(k, v);
+    }
     let err = cmd.exec();
     BootError::new(
         EX_TEBAKO_IO,
@@ -5856,7 +5880,14 @@ fn exec_runtime(
     spawn_lock: Option<&str>,
 ) -> BootError {
     let nargv = handoff_argv(runtime, self_path, m, selection, argv, lock, shared);
-    let err = platform::spawn_handoff(runtime, &nargv[1..], image, jail, spawn_lock);
+    let err = platform::spawn_handoff(
+        runtime,
+        &nargv[1..],
+        image,
+        jail,
+        spawn_lock,
+        &interp_env_exports(selection),
+    );
     BootError::new(
         EX_TEBAKO_IO,
         format!("cannot execute runtime {}: {err}", runtime.display()),
@@ -7709,5 +7740,61 @@ mod spawned_tests {
 
         std::env::remove_var("TEBAKO_HOME");
         let _ = std::fs::remove_dir_all(&home);
+    }
+}
+
+#[cfg(test)]
+mod interp_env_tests {
+    use super::*;
+
+    fn selection_with_interp_env() -> (tpkg::PackageManifest, tpkg::PackageEntry) {
+        let entry = tpkg::PackageEntry {
+            name: "app".to_string(),
+            slot: Some(0),
+            entrypoint: "app".to_string(),
+            runtime_ref: "ruby@3.4".to_string(),
+            interp_env: [
+                ("RUBY_YJIT_ENABLE".to_string(), "1".to_string()),
+                // PATH is always present in a test process — the
+                // layer-1 (user env) passive win needs no env mutation.
+                ("PATH".to_string(), "/declared".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let m = tpkg::PackageManifest {
+            schema_version: tpkg::PACKAGE_SCHEMA_VERSION,
+            package: tpkg::PackageIdentity {
+                name: "app".to_string(),
+                version: "1.0.0".to_string(),
+                producer: tpkg::Producer {
+                    tool: "tebako-cli".to_string(),
+                    tool_version: "0.16.0".to_string(),
+                },
+                created: "2026-10-07T00:00:00Z".to_string(),
+            },
+            entries: Vec::new(),
+            jail: None,
+            env: Default::default(),
+            lock: None,
+            mounts: Vec::new(),
+        };
+        (m, entry)
+    }
+
+    #[test]
+    fn exports_declared_keys_the_process_does_not_carry() {
+        let sel = selection_with_interp_env();
+        let exports = interp_env_exports(Some(&sel));
+        // PATH is already in the process env — skipped, never rewritten.
+        assert_eq!(
+            exports,
+            vec![("RUBY_YJIT_ENABLE".to_string(), "1".to_string())]
+        );
+    }
+
+    #[test]
+    fn no_selection_exports_nothing() {
+        assert!(interp_env_exports(None).is_empty());
     }
 }

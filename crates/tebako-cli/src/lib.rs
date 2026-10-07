@@ -498,6 +498,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         declared_mount(&scenario.fs_mount_point),
         jail,
         Some(lock),
+        authored_interp_env(&PathBuf::from(opts.root())),
     );
     stitch(
         &bootstrap_path,
@@ -861,6 +862,7 @@ fn press_package_manifest(
     mount_point: &str,
     jail: Option<tpkg::HostJail>,
     lock: Option<tpkg::PackageLock>,
+    interp_env: std::collections::BTreeMap<String, String>,
 ) -> tpkg::PackageManifest {
     let stem = Path::new(package)
         .file_stem()
@@ -882,6 +884,7 @@ fn press_package_manifest(
             slot: Some(0),
             entrypoint: "/local/stub.rb".to_string(),
             runtime_ref: runtime_ref.to_string(),
+            interp_env,
         }],
         jail,
         env: Default::default(),
@@ -892,6 +895,32 @@ fn press_package_manifest(
             mode: tpkg::MountMode::Union,
             precedence: Some(tpkg::Precedence::AfterEnv),
         }],
+    }
+}
+
+/// The press-time read of the app tree's authored payload manifest for
+/// the L2 `entries[].interp_env` composition (spec 03 §6): the plain
+/// press has no separate packager-refinement surface — the authored L1
+/// IS the packager's declaration, mirrored verbatim so the size-gated
+/// bootstrap never reads image bytes (spec 17 §2.2). A malformed
+/// authored manifest skips the composition LOUDLY — the image already
+/// carries it unstamped (image.rs's discipline) and the package's own
+/// verify grades it; a silent drop would run the interpreter on its
+/// built-in defaults without a word.
+fn authored_interp_env(root: &Path) -> std::collections::BTreeMap<String, String> {
+    let path = root.join(tpkg::merkle::MANIFEST_DIR).join("manifest.yaml");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Default::default();
+    };
+    match tpkg::PayloadManifest::from_yaml(&text) {
+        Ok(m) => m.interp_env,
+        Err(e) => {
+            eprintln!(
+                "tebako: WARNING: cannot compose entries[].interp_env from {}: {e}",
+                path.display()
+            );
+            Default::default()
+        }
     }
 }
 
@@ -1630,6 +1659,7 @@ mod tests {
             "/__tfs__",
             Some(jail),
             None,
+            Default::default(),
         );
         // Valid per the tpkg discipline (schema version, N>=1 entries, the
         // jail block's own validation, the mounts block's rules).
@@ -1666,6 +1696,7 @@ mod tests {
             "/__tfs__",
             None,
             None,
+            Default::default(),
         );
         m.validate().unwrap();
         assert!(m.jail.is_none());
@@ -2112,6 +2143,7 @@ mod tests {
             "/__tfs__",
             None,
             Some(lock.clone()),
+            Default::default(),
         );
         m.validate().unwrap();
         assert_eq!(m.lock.as_ref(), Some(&lock));

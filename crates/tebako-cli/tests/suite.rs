@@ -126,7 +126,7 @@ fn package_manifest_carries_per_entry_refs_and_slots() {
         "ruby@3.4.2;tebako=0.15.9".to_string(),
         "ruby@3.3.7;tebako=0.15.9;image".to_string(),
     ];
-    let pm = suite_package_manifest(&spec, &refs, "2026-07-27T00:00:00Z").unwrap();
+    let pm = suite_package_manifest(&spec, &refs, "2026-07-27T00:00:00Z", Path::new(".")).unwrap();
     assert_eq!(pm.package.name, "metanorma");
     assert_eq!(pm.package.version, "1.2.3");
     assert_eq!(pm.entries.len(), 2);
@@ -155,6 +155,7 @@ fn runtime_ref_falls_back_to_the_press_level_ruby() {
         root: "r".to_string(),
         entry: "e".to_string(),
         runtime_ref: Some("ruby@3.4.2;tebako=0.15.9".to_string()),
+        interp_env: Default::default(),
     };
     assert_eq!(
         entry_runtime_ref(&explicit, "3.3.7", &o, &resolved),
@@ -183,6 +184,7 @@ fn explicit_refs_must_match_the_press_abi() {
             "ruby@3.4.2;tebako={}",
             tebako_cli::DEFAULT_TEBAKO_VERSION
         )),
+        interp_env: Default::default(),
     };
     check_entry_abi(&good, &o).unwrap();
     let bad = SuiteEntry {

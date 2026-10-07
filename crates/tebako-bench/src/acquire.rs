@@ -1065,6 +1065,7 @@ pub fn assemble_fat_package(
             slot: Some(0),
             entrypoint: entrypoint.path.clone(),
             runtime_ref: runtime_ref.clone(),
+            interp_env: Default::default(),
         }],
         jail: None,
         env: Default::default(),

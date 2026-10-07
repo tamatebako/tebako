@@ -41,6 +41,7 @@ fn composed_pm(runtime_ref: &str, lock: tpkg::PackageLock) -> tpkg::PackageManif
             slot: Some(0),
             entrypoint: "mnconvert".to_string(),
             runtime_ref: runtime_ref.to_string(),
+            interp_env: Default::default(),
         }],
         jail: None,
         env: Default::default(),
@@ -598,12 +599,14 @@ fn the_pointer_entrys_shared_slice_leads_the_image_list() {
                 slot: Some(0),
                 entrypoint: "mnconvert".to_string(),
                 runtime_ref: runtime_ref.to_string(),
+                interp_env: Default::default(),
             },
             tpkg::PackageEntry {
                 name: "mn2pdf".to_string(),
                 slot: None, // the pointer form — backed by the shared slice
                 entrypoint: "bin/mn2pdf".to_string(),
                 runtime_ref: runtime_ref.to_string(),
+                interp_env: Default::default(),
             },
         ],
         jail: None,

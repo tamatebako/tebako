@@ -491,6 +491,24 @@ fn check_abs_path(s: &str, what: &'static str) -> Result<(), ManifestError> {
     Ok(())
 }
 
+/// The `interp_env` key grammar (spec 03 §2.7 — the SINGLE owner; the
+/// user-config layer's per-tool `env:` map obeys the same grammar at
+/// read): `[A-Z_][A-Z0-9_]*`, and never the `TEBAKO` namespace — those
+/// vars are dispatcher/driver-owned, never payload-declared.
+pub fn valid_interp_env_key(key: &str) -> bool {
+    let mut bytes = key.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    if !(first.is_ascii_uppercase() || first == b'_') {
+        return false;
+    }
+    if !bytes.all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_') {
+        return false;
+    }
+    key != "TEBAKO" && !key.starts_with("TEBAKO_")
+}
+
 fn check_sha256(s: &str, what: &'static str) -> Result<(), ManifestError> {
     if s.len() != 64
         || !s
@@ -2460,6 +2478,17 @@ pub struct PayloadManifest {
     /// payload-blaming wording. Absent = no floor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_runtime_tebako: Option<String>,
+    /// The slice author's interpreter-option defaults (spec 03 §2.7,
+    /// additive — schema_minor 8; old readers ignore the key and ship
+    /// the interpreter's built-in default): ordered KEY=VALUE pairs the
+    /// dispatcher exports into the runtime process at dispatch, subject
+    /// to the spec 07 §9.1 chain (user env > user config > package
+    /// manifest > this map > interpreter built-in). Any kind may
+    /// declare. Keys obey [`valid_interp_env_key`]; values are literal
+    /// strings — no expansion, no execution, no references. Absent = the
+    /// slice declares no defaults.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub interp_env: BTreeMap<String, String>,
 }
 
 impl<'de> Deserialize<'de> for PayloadManifest {
@@ -2480,6 +2509,8 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             checks: BTreeMap<String, Check>,
             #[serde(default)]
             min_runtime_tebako: Option<String>,
+            #[serde(default)]
+            interp_env: BTreeMap<String, String>,
         }
         let raw = Raw::deserialize(d)?;
         let provides = match raw.identity.kind {
@@ -2509,6 +2540,7 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             library_aliases: raw.library_aliases,
             checks: raw.checks,
             min_runtime_tebako: raw.min_runtime_tebako,
+            interp_env: raw.interp_env,
         })
     }
 }
@@ -2605,9 +2637,10 @@ impl PayloadManifest {
     /// materialize grammar (spec 22 §4), the library_aliases
     /// grammar (spec 03 §2.5 / spec 22 §2.1), the checks grammar
     /// (spec 26 §1: name grammar, exec/structural split, `entry: self`
-    /// kind binding, path rules, platform filter), and the augments
+    /// kind binding, path rules, platform filter), the augments
     /// grammar (spec 03 §2.8: edge shape, exact-pin binding rule,
-    /// content-only lock). Unknown keys are
+    /// content-only lock), and the interp_env key grammar (spec 03
+    /// §2.7). Unknown keys are
     /// tolerated everywhere (only `annotations` is lossless by contract).
     pub fn validate(&self) -> Result<(), ManifestError> {
         self.identity.validate()?;
@@ -2770,6 +2803,15 @@ impl PayloadManifest {
         for (name, check) in &self.checks {
             check_check_name(name)?;
             check.validate(self.identity.kind)?;
+        }
+        // spec 03 §2.7 (schema_minor 8): the interp_env key grammar —
+        // the named grammar error at READ, never a silent skip.
+        for key in self.interp_env.keys() {
+            if !valid_interp_env_key(key) {
+                return Err(ManifestError::InvalidOwned(format!(
+                    "interp_env key '{key}' is malformed — the grammar is [A-Z_][A-Z0-9_]*, and the TEBAKO_ namespace is dispatcher/driver-owned, never payload-declared"
+                )));
+            }
         }
         Ok(())
     }
@@ -3153,6 +3195,7 @@ mod tests {
             library_aliases: Vec::new(),
             checks: BTreeMap::new(),
             min_runtime_tebako: None,
+            interp_env: BTreeMap::new(),
         };
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
@@ -3896,6 +3939,64 @@ mod tests {
         assert!(
             matches!(err, ManifestError::Yaml(_)) && msg.contains("duplicate check name"),
             "{msg}"
+        );
+    }
+
+    #[test]
+    fn interp_env_roundtrips_and_defaults_absent() {
+        let m = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "interp_env:\n  RUBY_YJIT_ENABLE: \"1\"\n  RUBY_GC_HEAP_FREE_SLOTS: \"500000\"\n",
+        ))
+        .expect("a well-formed interp_env parses");
+        assert_eq!(
+            m.interp_env.get("RUBY_YJIT_ENABLE").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            m.interp_env
+                .get("RUBY_GC_HEAP_FREE_SLOTS")
+                .map(String::as_str),
+            Some("500000")
+        );
+        // Serialization stays byte-identical for a manifest that declares
+        // nothing (the pre-minor-8 shape carries no key).
+        let plain = PayloadManifest::from_yaml(&minimal_app_yaml("")).unwrap();
+        assert!(plain.interp_env.is_empty());
+        assert!(!plain.to_yaml().unwrap().contains("interp_env"));
+    }
+
+    #[test]
+    fn interp_env_keys_obey_the_grammar() {
+        assert!(valid_interp_env_key("RUBY_YJIT_ENABLE"));
+        assert!(valid_interp_env_key("PYTHON_JIT"));
+        assert!(valid_interp_env_key("_PRIVATE"));
+        for bad in [
+            "",
+            "ruby_yjit_enable",
+            "1ST",
+            "HAS-DASH",
+            "HAS SPACE",
+            "TEBAKO",
+            "TEBAKO_JAIL",
+            "TEBAKO_MOUNT_ROOT",
+        ] {
+            assert!(!valid_interp_env_key(bad), "{bad}");
+        }
+        // …and through the manifest: an offending key is the named
+        // grammar error at read, never a silent skip.
+        let err =
+            PayloadManifest::from_yaml(&minimal_app_yaml("interp_env:\n  TEBAKO_JAIL: \"none\"\n"))
+                .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::InvalidOwned(ref m) if m.contains("TEBAKO_JAIL")),
+            "{err}"
+        );
+        let err =
+            PayloadManifest::from_yaml(&minimal_app_yaml("interp_env:\n  lowercase: \"1\"\n"))
+                .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::InvalidOwned(ref m) if m.contains("lowercase")),
+            "{err}"
         );
     }
 }

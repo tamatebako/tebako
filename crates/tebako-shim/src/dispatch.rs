@@ -532,13 +532,17 @@ pub fn plan(
         // The dispatcher's jail (the consumer payload's needs ∩ the
         // user's tightening) always wins (spec 08 §2).
         env.extend(jail_env);
-        return Ok(ExecPlan {
+        let mut plan = ExecPlan {
             program: rt.exe.clone(),
             argv,
             env,
             mounts: Vec::new(),
             runtime: RuntimeResolution::Ready(Box::new(rt)),
-        });
+        };
+        // The consumer payload's interp_env declares options for exactly
+        // this runtime (spec 07 §9.1) — the exposed name IS its engine.
+        apply_interp_env(&mut plan, res, ctx)?;
+        return Ok(plan);
     }
     // spec 32 §2/§3: an exposed name of an EXECUTABLE edge dispatches
     // the PROVIDER payload's own managed dispatch as the child — its own
@@ -824,13 +828,18 @@ pub fn plan(
     // manifest/host value (spec 07 §9 env composition).
     env.extend(jail_env);
 
-    Ok(ExecPlan {
+    let mut plan = ExecPlan {
         program,
         argv,
         env,
         mounts,
         runtime,
-    })
+    };
+    // spec 07 §9.1 / spec 17 §2.2: the dispatch-time interp_env chain —
+    // the winning keys ride the plan's env (the process env's own wins
+    // are passive).
+    apply_interp_env(&mut plan, res, ctx)?;
+    Ok(plan)
 }
 
 // ---------------------------------------------------------------------
@@ -954,6 +963,113 @@ pub fn compose_jail_env(
     Ok(out)
 }
 
+/// One key's winning layer in the spec 07 §9.1 interp_env chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterpEnvSource {
+    /// The operator's invocation environment (the passive win — the
+    /// variable is simply there, never rewritten).
+    Env,
+    /// `~/.tebako/config.yaml`'s per-tool `env:` map.
+    Config,
+    /// The package manifest's `entries[].interp_env` (the standalone
+    /// form; managed dispatch has no L2 — never emitted here).
+    Package,
+    /// The payload's L1 `interp_env:` (the slice author's default).
+    Payload,
+    /// No layer declares the key — the interpreter's own default
+    /// stands (the reporting surface's rendering; never an export).
+    Builtin,
+}
+
+impl InterpEnvSource {
+    /// The spec 15 §4 provenance label.
+    pub fn label(&self) -> &'static str {
+        match self {
+            InterpEnvSource::Env => "env",
+            InterpEnvSource::Config => "config",
+            InterpEnvSource::Package => "package",
+            InterpEnvSource::Payload => "payload",
+            InterpEnvSource::Builtin => "built-in",
+        }
+    }
+}
+
+/// One effective interp_env entry: the key, the winning value, and the
+/// layer that won (spec 15 §4's provenance rendering).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InterpEnvEntry {
+    pub key: String,
+    pub value: Option<String>,
+    pub source: InterpEnvSource,
+}
+
+/// The spec 07 §9.1 chain, managed mode: per declared key (the union of
+/// the config and payload maps), FIRST SET wins — process env (passive),
+/// then the per-tool config map, then the payload's L1 declaration. The
+/// package-manifest layer exists only in standalone dispatch (the
+/// bootstrap composes it from the L2 mirror; there is no L2 here).
+pub fn effective_interp_env(
+    payload: &std::collections::BTreeMap<String, String>,
+    config: Option<&std::collections::BTreeMap<String, String>>,
+    process_env: &std::collections::BTreeMap<String, String>,
+) -> Vec<InterpEnvEntry> {
+    let mut keys: std::collections::BTreeSet<&String> = payload.keys().collect();
+    if let Some(config) = config {
+        keys.extend(config.keys());
+    }
+    keys.into_iter()
+        .map(|key| {
+            if let Some(v) = process_env.get(key) {
+                InterpEnvEntry {
+                    key: key.clone(),
+                    value: Some(v.clone()),
+                    source: InterpEnvSource::Env,
+                }
+            } else if let Some(v) = config.and_then(|c| c.get(key)) {
+                InterpEnvEntry {
+                    key: key.clone(),
+                    value: Some(v.clone()),
+                    source: InterpEnvSource::Config,
+                }
+            } else {
+                // The union guarantees the payload declares the key here.
+                InterpEnvEntry {
+                    key: key.clone(),
+                    value: payload.get(key).cloned(),
+                    source: InterpEnvSource::Payload,
+                }
+            }
+        })
+        .collect()
+}
+
+/// The dispatcher-side export (spec 17 §2.2): every winning key NOT
+/// already in the process env rides the plan's env to the runtime
+/// process. Never scrubs, never rewrites, never synthesizes a value for
+/// an unset-declared key. Not applied to an exposed-executable dispatch
+/// (spec 32 §2): that child is the PROVIDER's own boot — the consumer's
+/// declarations would inherit in as its layer 1, and the provider's own
+/// chain is the shim dispatch it was supposed to go through.
+fn apply_interp_env(plan: &mut ExecPlan, res: &Resolution, ctx: &Ctx) -> Result<(), ShimError> {
+    let payload = &res.manifest.payload_manifest().interp_env;
+    let cfg = crate::config::load_config(&ctx.home)?;
+    let config = cfg.interp_env_for(&res.tool);
+    if payload.is_empty() && config.is_none() {
+        return Ok(());
+    }
+    for entry in effective_interp_env(payload, config, &ctx.env) {
+        if entry.source == InterpEnvSource::Env {
+            continue; // the passive win — already inherited
+        }
+        let Some(value) = entry.value else { continue };
+        if plan.env.iter().any(|(k, _)| *k == entry.key) {
+            continue;
+        }
+        plan.env.push((entry.key, value));
+    }
+    Ok(())
+}
+
 /// Exec the plan, replacing the process (unix). Never returns on success.
 ///
 /// Zero-runtime dispatches scrub the preload shim's env (`LD_PRELOAD`,
@@ -1032,5 +1148,62 @@ fn install_ctrl_swallow() {
     use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
     unsafe {
         SetConsoleCtrlHandler(Some(ctrl_swallow), 1);
+    }
+}
+
+#[cfg(test)]
+mod interp_env_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn the_chain_orders_env_over_config_over_payload() {
+        let payload = map(&[
+            ("RUBY_YJIT_ENABLE", "1"),
+            ("RUBY_GC_HEAP_FREE_SLOTS", "500000"),
+        ]);
+        let config = map(&[("RUBY_YJIT_ENABLE", "0"), ("RUBY_GC_STATS", "1")]);
+        let env = map(&[("RUBY_YJIT_ENABLE", "1")]);
+        let out = effective_interp_env(&payload, Some(&config), &env);
+        let get = |k: &str| out.iter().find(|e| e.key == k).unwrap();
+        // Layer 1 wins passively with the PROCESS value, not the
+        // config's or payload's.
+        assert_eq!(get("RUBY_YJIT_ENABLE").value.as_deref(), Some("1"));
+        assert_eq!(get("RUBY_YJIT_ENABLE").source, InterpEnvSource::Env);
+        // Layer 2 beats the payload.
+        assert_eq!(get("RUBY_GC_STATS").value.as_deref(), Some("1"));
+        assert_eq!(get("RUBY_GC_STATS").source, InterpEnvSource::Config);
+        // Layer 4 when nothing above declares the key.
+        assert_eq!(
+            get("RUBY_GC_HEAP_FREE_SLOTS").value.as_deref(),
+            Some("500000")
+        );
+        assert_eq!(
+            get("RUBY_GC_HEAP_FREE_SLOTS").source,
+            InterpEnvSource::Payload
+        );
+    }
+
+    #[test]
+    fn an_undeclared_key_never_renders_and_nothing_is_synthesized() {
+        let out = effective_interp_env(&BTreeMap::new(), None, &map(&[("HOME", "/x")]));
+        assert!(out.is_empty());
+        // A config-declared key unset in the env exports the config
+        // value — never a synthesized "0".
+        let out = effective_interp_env(
+            &BTreeMap::new(),
+            Some(&map(&[("PYTHON_JIT", "1")])),
+            &BTreeMap::new(),
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].value.as_deref(), Some("1"));
+        assert_eq!(out[0].source, InterpEnvSource::Config);
     }
 }

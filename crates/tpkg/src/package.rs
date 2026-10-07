@@ -46,6 +46,9 @@ pub enum PackageManifestError {
     Yaml(serde_yml::Error),
     /// Semantic validation failure (`validate()`).
     Invalid(&'static str),
+    /// Semantic validation failure carrying a formatted reason (the
+    /// interp_env grammar errors name the offending key).
+    InvalidOwned(String),
     /// The `jail:` block failed the spec 08 validation (the reason travels
     /// with the jail error).
     Jail(crate::jail::JailError),
@@ -56,6 +59,7 @@ impl fmt::Display for PackageManifestError {
         match self {
             PackageManifestError::Yaml(e) => write!(f, "package manifest yaml error: {e}"),
             PackageManifestError::Invalid(m) => write!(f, "invalid package manifest: {m}"),
+            PackageManifestError::InvalidOwned(m) => write!(f, "invalid package manifest: {m}"),
             PackageManifestError::Jail(e) => write!(f, "invalid package manifest jail: {e}"),
         }
     }
@@ -65,7 +69,7 @@ impl std::error::Error for PackageManifestError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             PackageManifestError::Yaml(e) => Some(e),
-            PackageManifestError::Invalid(_) => None,
+            PackageManifestError::Invalid(_) | PackageManifestError::InvalidOwned(_) => None,
             PackageManifestError::Jail(e) => Some(e),
         }
     }
@@ -121,6 +125,15 @@ pub struct PackageEntry {
     pub entrypoint: String,
     /// Per-entry runtime reference (`type@version;tebako=<abi>[;params]`).
     pub runtime_ref: String,
+    /// The press-time composition of the slot payload's L1 `interp_env`
+    /// with the packager's refinement (spec 03 §6 — additive): a
+    /// packager key wins over the same L1 key; L1 keys pass through
+    /// untouched otherwise and are never dropped. The mirror exists
+    /// because the size-gated bootstrap reads no image bytes — the
+    /// standalone dispatcher consumes exactly this block. Absent = the
+    /// entry declares no interpreter-option defaults.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub interp_env: BTreeMap<String, String>,
 }
 
 /// The mount mode of one slot's image (spec 03 §6 / spec 17 §1). The
@@ -877,6 +890,13 @@ impl PackageManifest {
                 &entry.runtime_ref,
                 "entries[].runtime_ref must not be empty",
             )?;
+            for key in entry.interp_env.keys() {
+                if !crate::manifest::valid_interp_env_key(key) {
+                    return Err(PackageManifestError::InvalidOwned(format!(
+                        "entries[].interp_env key '{key}' is malformed — the grammar is [A-Z_][A-Z0-9_]*, and the TEBAKO_ namespace is dispatcher/driver-owned, never package-declared"
+                    )));
+                }
+            }
             match entry.slot {
                 Some(slot) if slot >= TPKG_MAX_SLOTS => {
                     return Err(PackageManifestError::Invalid(
@@ -1014,6 +1034,7 @@ mod tests {
                 slot: Some(0),
                 entrypoint: "metanorma".to_string(),
                 runtime_ref: "ruby@3.4.2;tebako=0.15.9".to_string(),
+                interp_env: Default::default(),
             }],
             jail: None,
             env: BTreeMap::new(),
@@ -1058,6 +1079,19 @@ mod tests {
         let mut m = minimal();
         m.entries[0].slot = None; // a shared entry slice with no lock backing
         assert!(bad(&m));
+
+        // spec 03 §6: an entries[].interp_env key obeys the L1 grammar —
+        // the named error, never a silent skip.
+        let mut m = minimal();
+        m.entries[0]
+            .interp_env
+            .insert("TEBAKO_JAIL".to_string(), "none".to_string());
+        assert!(bad(&m));
+        let mut m = minimal();
+        m.entries[0]
+            .interp_env
+            .insert("RUBY_YJIT_ENABLE".to_string(), "1".to_string());
+        m.validate().unwrap();
 
         let mut m = minimal();
         m.package.name.clear();
