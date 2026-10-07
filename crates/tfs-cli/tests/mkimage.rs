@@ -312,6 +312,93 @@ fn mkimage_limnifs_floor_recipe_emits_no_shared_inline() {
     assert_eq!(dups, 3, "all three duplicates ride plain inline data");
 }
 
+/// Deterministic imaging (#718): two writes of the same tree emit
+/// byte-identical images even when host mtimes move between the runs —
+/// a publish rerun of unchanged bytes must not die on the write-once
+/// asset name. An operator's SOURCE_DATE_EPOCH outranks the default
+/// epoch pin (the writer resolves and validates the env).
+#[test]
+fn mkimage_limnifs_is_byte_reproducible() {
+    let w = TempDir::new("mkimgrepro");
+    let src = make_source(&w);
+    let img_a = w.0.join("a.tfs");
+    let img_b = w.0.join("b.tfs");
+    let img_sde = w.0.join("sde.tfs");
+
+    let perturb = |epoch_secs: u64| {
+        let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(epoch_secs);
+        for rel in ["one.txt", "sub/two.txt", "sub/three.txt"] {
+            std::fs::File::options()
+                .write(true)
+                .open(src.join(rel))
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+        }
+    };
+
+    perturb(1_700_000_000);
+    let (rc, _, err) = run(
+        &[
+            "mkimage",
+            "--format",
+            "limnifs",
+            src.to_str().unwrap(),
+            "-o",
+            img_a.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "first write: {err}");
+
+    // Without the epoch pin this second write would record the new
+    // host mtimes and diverge byte-wise.
+    perturb(1_700_100_000);
+    let (rc, _, err) = run(
+        &[
+            "mkimage",
+            "--format",
+            "limnifs",
+            src.to_str().unwrap(),
+            "-o",
+            img_b.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "second write: {err}");
+
+    assert_eq!(
+        std::fs::read(&img_a).unwrap(),
+        std::fs::read(&img_b).unwrap(),
+        "identical trees must image byte-identically regardless of host mtimes (#718)"
+    );
+
+    // The operator's SOURCE_DATE_EPOCH threads through and changes the
+    // recorded mtimes (a pin other than the default epoch).
+    let mut cmd = Command::new(rust_tfs());
+    cmd.args([
+        "mkimage",
+        "--format",
+        "limnifs",
+        src.to_str().unwrap(),
+        "-o",
+        img_sde.to_str().unwrap(),
+    ])
+    .current_dir(&w.0)
+    .env("SOURCE_DATE_EPOCH", "1234567890");
+    let out = cmd.output().expect("spawn tfs");
+    assert!(
+        out.status.success(),
+        "SOURCE_DATE_EPOCH write: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_ne!(
+        std::fs::read(&img_a).unwrap(),
+        std::fs::read(&img_sde).unwrap(),
+        "an operator's SOURCE_DATE_EPOCH must change the recorded mtimes (#718)"
+    );
+}
+
 #[test]
 fn mkimage_overwrites_existing_output() {
     let w = TempDir::new("mkimg3");

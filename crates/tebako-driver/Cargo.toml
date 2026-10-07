@@ -86,5 +86,5 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # The lazy-mount e2e writes its limnifs fixture in-process (never a
 # limni binary — the tfs tests' pattern) and stages the store entry in
 # a tempdir.
-limnifs-write = "0.3.57"
+limnifs-write = "0.3.58"
 tempfile = "3"

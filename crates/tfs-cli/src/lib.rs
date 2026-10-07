@@ -1102,6 +1102,17 @@ fn write_limnifs_image(source: &Path, output: &Path) -> Result<(), (String, i32)
     config.defaults.binary_codec = "lz4".to_string();
     config.defaults.shared_inline = false;
     config.tournament.codecs = vec!["store".to_string(), "lz4".to_string()];
+    // Deterministic imaging (#718): a rebuilt tree must emit
+    // byte-identical bytes or a publish rerun dies on the write-once
+    // asset name. Ownership/permission bits always canonicalize;
+    // recorded mtimes pin to the epoch unless the operator set
+    // SOURCE_DATE_EPOCH, which the writer then resolves and validates
+    // (malformed = its named error).
+    config.source_date_epoch = match std::env::var_os("SOURCE_DATE_EPOCH") {
+        Some(_) => None,
+        None => Some(0),
+    };
+    config.normalize_metadata = true;
     let artifact = limnifs_write::write_directory_with_config(source, &config).map_err(|e| {
         (
             format!("limnifs writer: scanning {}: {e}", source.display()),
