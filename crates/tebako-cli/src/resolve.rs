@@ -3523,6 +3523,66 @@ mod tests {
         (cache, dir.join("mirror"))
     }
 
+    /// tebako#678's fixture: a ≤ 0.16-era factory release whose ONLY
+    /// layout is the per-line shard tag (`v<tebako>-ruby<line>/`) — no
+    /// monolithic `v<tebako>/` tag exists. The assets carry the immutable
+    /// old-era spellings (`tebako-runtime-<tv>-<rv>-<platform>`, spec 05
+    /// §2's era law).
+    fn sharded_only_legacy_mirror(tag: &str, tag_dir: &str) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-resolve-sharded016-{tag}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = dir.join("home");
+        let release = dir.join("mirror").join(tag_dir);
+        fs::create_dir_all(&release).unwrap();
+        let exe = "tebako-runtime-0.16.30-4.0.6-linux-gnu-x86_64";
+        let image = "tebako-runtime-0.16.30-4.0.6-linux-gnu-x86_64.tfs";
+        fs::write(release.join(exe), b"fake runtime exe\n").unwrap();
+        fs::write(release.join(image), b"fake env image\n").unwrap();
+        let shard = format!(
+            "{{\"tebako_version\":\"0.16.30\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"/__tfs__\",\"ruby_version\":\"4.0.6\",\"platform\":\"linux-gnu-x86_64\",\"filename\":\"{exe}\",\"sha256\":\"{}\",\"image\":{{\"filename\":\"{image}\",\"sha256\":\"{}\"}}}}\n",
+            sha256_file_hex(&release.join(exe)).unwrap(),
+            sha256_file_hex(&release.join(image)).unwrap(),
+        );
+        fs::write(release.join(format!("{exe}.manifest.json")), shard).unwrap();
+        (cache, dir.join("mirror"))
+    }
+
+    #[test]
+    fn resolve_runtime_installs_from_a_sharded_only_legacy_release() {
+        // tebako#678: a ≤ 0.16-era factory release may serve ONLY the
+        // per-line shard tag — the monolithic probe misses (ENOENT → the
+        // next candidate), the shard tag serves the old-era spellings,
+        // and the asset downloads ride that same base (never a 124).
+        let (cache, mirror) = sharded_only_legacy_mirror("sharded-only", "v0.16.30-ruby4.0");
+        let r = dll_resolver(&cache, &mirror);
+        let exe = "tebako-runtime-0.16.30-4.0.6-linux-gnu-x86_64";
+        let resolved = r
+            .resolve_runtime("4.0.6", "linux-gnu-x86_64", "0.16.30")
+            .unwrap();
+        assert_eq!(
+            resolved.executable.file_name().unwrap().to_string_lossy(),
+            exe,
+            "the old-era exe spelling flowed verbatim from the shard"
+        );
+        let dir = cache
+            .join("runtimes")
+            .join("ruby-4.0.6-0.16.30-linux-gnu-x86_64");
+        assert!(dir.join(format!("{exe}.tfs")).is_file());
+        let origin = fs::read_to_string(dir.join(ORIGIN_FILE)).unwrap();
+        assert!(
+            origin.contains("/v0.16.30-ruby4.0/"),
+            "every fetched artifact rode the shard tag: {origin}"
+        );
+        // a cache hit needs no mirror at all (a run is a run)
+        fs::remove_dir_all(&mirror).unwrap();
+        r.resolve_runtime("4.0.6", "linux-gnu-x86_64", "0.16.30")
+            .unwrap();
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
     #[test]
     fn resolve_runtime_installs_from_the_sharded_release_tag() {
         // tebako#716's tag grammar (spec 36 §6): the ≥ 0.17 era publishes
