@@ -1357,6 +1357,11 @@ pub fn publish_full_with_oci_sink(
     let mut registry = if registry_out == "-" {
         Registry {
             schema_version: Some(tebako_resolve::registry::REGISTRY_SCHEMA_VERSION),
+            // A fresh registry carries no head `signing:` block;
+            // publishing into an EXISTING file round-trips the block
+            // through the parse above (authoring it is factory-side —
+            // tebako#617).
+            signing: None,
             payloads: Vec::new(),
         }
     } else {
@@ -1370,6 +1375,7 @@ pub fn publish_full_with_oci_sink(
             })?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Registry {
                 schema_version: Some(tebako_resolve::registry::REGISTRY_SCHEMA_VERSION),
+                signing: None,
                 payloads: Vec::new(),
             },
             Err(e) => {

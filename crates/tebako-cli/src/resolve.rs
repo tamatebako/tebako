@@ -2512,22 +2512,20 @@ impl CommitSink {
     }
 }
 
-/// The named untrusted-signer error (exit 72) — spec 09 §4's shape.
+/// The named untrusted-signer error (exit 72) — spec 09 §4's shape; the
+/// wording is the signer's single owner (tebako#617 — every boundary
+/// spells the same failure + remedy).
 fn untrusted_signer_error(asset: &str, keyid: &str) -> TebakoError {
-    TebakoError::new(
-        format!(
-            "{asset} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
-        ),
-        72,
-    )
+    TebakoError::new(tebako_signer::untrusted_signer_message(asset, keyid), 72)
 }
 
 /// The named untrusted-signer refusal for a release index form (exit
-/// 72) — spec 09 §4's shape.
+/// 72) — spec 09 §4's shape, the shared wording.
 fn untrusted_index_signer(name: &str, tebako_version: &str, keyid: &str) -> TebakoError {
     TebakoError::new(
-        format!(
-            "the {RELEASE_NAME} release index {name} (v{tebako_version}) is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
+        tebako_signer::untrusted_signer_message(
+            &format!("the {RELEASE_NAME} release index {name} (v{tebako_version})"),
+            keyid,
         ),
         72,
     )

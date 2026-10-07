@@ -1074,10 +1074,23 @@ pub fn tebako_home_with(
     Err("cannot determine tebako home (set TEBAKO_HOME)".to_string())
 }
 
+/// The trust-store root (`<home>/trust`): pinned third-party signing
+/// keys (`<FINGERPRINT>.pub` — the add-registry TOFU pin layout, spec 09
+/// §9.1, written by tebako-signer). The single owner of the spelling.
+pub fn trust_dir(home: &Path) -> PathBuf {
+    home.join("trust")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::cmp::Ordering;
+
+    #[test]
+    fn the_trust_store_spellings() {
+        let home = Path::new("/h");
+        assert_eq!(trust_dir(home), PathBuf::from("/h/trust"));
+    }
 
     #[test]
     fn entry_name_parses_engine_lv_ver() {

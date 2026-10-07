@@ -270,6 +270,45 @@ fn validate_collects_the_strict_extras_per_row() {
 }
 
 #[test]
+fn validate_catches_a_signing_block_whose_key_is_not_the_declared_one() {
+    let dir = scratch("vsigning");
+    let registry = dir.join("tpkg-registry.yaml");
+    let donor = dir.join("donor");
+    fs::create_dir_all(&donor).unwrap();
+    let key = tebako_signer::press_local_key(&donor).unwrap();
+    let armored = String::from_utf8(key.public_key.clone()).unwrap();
+    let indented = armored
+        .lines()
+        .map(|l| format!("    {l}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let wrong = "0".repeat(40);
+    let doc = |fp: &str| {
+        format!(
+            "schema_version: 1\nsigning:\n  key: |\n{indented}\n  fingerprint: {fp}\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: tfs:github:o/app:1.0}}\n        entrypoints: [app]\n    default: 1.0\n"
+        )
+    };
+    fs::write(&registry, doc(&wrong)).unwrap();
+
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 65, "{text}");
+    assert!(text.contains("signing.fingerprint"), "{text}");
+    // the report names the key's OWN fingerprint
+    assert!(
+        text.contains(&tebako_signer::public_key_fingerprint(&key.public_key).unwrap()),
+        "{text}"
+    );
+
+    // declaring the key's own fingerprint clears the row
+    let actual = tebako_signer::public_key_fingerprint(&key.public_key).unwrap();
+    fs::write(&registry, doc(&actual)).unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 0, "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn validate_json_is_a_machine_document() {
     let dir = scratch("vjson");
     let registry = dir.join("tpkg-registry.yaml");

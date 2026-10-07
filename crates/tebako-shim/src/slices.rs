@@ -887,10 +887,7 @@ fn verify_slice_signature<T: Transport>(
                     None => {
                         return fail(
                             EX_TEBAKO_TRUST,
-                            format!(
-                                "{} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached",
-                                fetched.origin
-                            ),
+                            tebako_signer::untrusted_signer_message(&fetched.origin, &keyid),
                         );
                     }
                 }
@@ -898,10 +895,7 @@ fn verify_slice_signature<T: Transport>(
             tebako_signer::VerifyOutcome::Untrusted(keyid) => {
                 return fail(
                     EX_TEBAKO_TRUST,
-                    format!(
-                        "{} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached",
-                        fetched.origin
-                    ),
+                    tebako_signer::untrusted_signer_message(&fetched.origin, &keyid),
                 );
             }
             tebako_signer::VerifyOutcome::Invalid(keyid) => {
@@ -945,30 +939,19 @@ fn verify_slice_signature<T: Transport>(
     Ok(())
 }
 
-/// The zero-interaction keyring (spec 09 §9): the user's trusted
-/// keyring + the embedded tamatebako root + the TEBAKO_TRUSTED_ROOT
-/// dev override's bundled key.
+/// The zero-interaction keyring (spec 09 §9) — the single owner's
+/// ([`tebako_signer::verification_keyring`]): the user's trusted
+/// keyring + the TOFU pin store + the embedded tamatebako root + the
+/// TEBAKO_TRUSTED_ROOT dev override. A trust-store failure is the trust
+/// class (72); a plain read failure is io (74).
 fn shim_verification_keyring(ctx: &Ctx) -> Result<Vec<u8>, ShimError> {
-    let mut keyring = tebako_signer::trusted_keyring_bytes(&ctx.home).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!("cannot read the trusted keyring: {e}"),
-        )
-    })?;
-    let root =
-        tebako_signer::dearmor_bytes(tebako_signer::ROOT_PUBLIC_KEY.as_bytes()).map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_IO,
-                format!("the embedded root key does not dearmor: {e}"),
-            )
-        })?;
-    keyring.extend_from_slice(&root);
-    if let Some(extra) = tebako_signer::trusted_root_override_key(
-        ctx.env_get("TEBAKO_TRUSTED_ROOT").map(str::to_string),
-    ) {
-        keyring.extend_from_slice(&extra);
-    }
-    Ok(keyring)
+    tebako_signer::verification_keyring(&ctx.home).map_err(|e| {
+        let code = match e {
+            tebako_signer::SignerError::Trust(_) => EX_TEBAKO_TRUST,
+            _ => EX_TEBAKO_IO,
+        };
+        ShimError::new(code, format!("cannot read the trusted keyring: {e}"))
+    })
 }
 
 /// The spec 09 §10 ceremony for a slice's pinned signer: fetch the key

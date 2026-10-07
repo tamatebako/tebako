@@ -10,6 +10,11 @@
 //! - **trusted keyring** ([`keyring` module]): `$TEBAKO_HOME/keyring/
 //!   trusted.pgp`, a binary GPG keyring; additional signer keys are
 //!   TOFU-registered with named outcomes ([`keyring::RegisterOutcome`]).
+//! - **pinned-key trust store** ([`trust` module]): `$TEBAKO_HOME/trust/
+//!   <FINGERPRINT>.pub`, one armored public key per file — the
+//!   add-registry TOFU pin layout (spec 09 §9.1). A verification input on
+//!   par with the keyring ([`verification_keyring`] concatenates both),
+//!   per-key addressable for list/remove.
 //! - **sign/verify** ([`sign_detached`], [`verify_detached`]): detached
 //!   OpenPGP signatures over byte strings; verification classifies into
 //!   [`VerifyOutcome::Trusted`] / [`VerifyOutcome::Untrusted`] /
@@ -29,6 +34,7 @@ mod keys;
 pub mod retrieve;
 mod root;
 mod sign;
+pub mod trust;
 
 pub use envelope::{
     envelope_recipients, public_key_from_secret, public_key_keyid, unwrap_dek, wrap_dek,
@@ -56,4 +62,8 @@ pub use root::{
 pub use sign::{
     dearmor_bytes, sign_detached, signature_issuer_fingerprint, verify_detached,
     verify_detached_full, VerifyOutcome,
+};
+pub use trust::{
+    is_trusted, list_trusted, pin_path, pin_trusted, pinned_public_keys, public_key_fingerprint,
+    remove_trusted, untrusted_signer_message, PinOutcome, RemovalOutcome, TrustedKey, PIN_SUFFIX,
 };

@@ -283,6 +283,31 @@ pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
         Ok(registry) => {
             payloads = registry.payloads.len();
             rows = registry.payloads.iter().map(|p| p.versions.len()).sum();
+            // tebako#617's consistency extra: the head `signing:` block's
+            // declared fingerprint must be the armored key's OWN
+            // fingerprint — from_yaml's grammar check cannot see the
+            // crypto, and the add-registry trust gate refuses the
+            // mismatch; better the registry's own CI catches it here.
+            if let Some(signing) = &registry.signing {
+                match tebako_signer::public_key_fingerprint(signing.key.as_bytes()) {
+                    Ok(actual) if !actual.eq_ignore_ascii_case(&signing.fingerprint) => {
+                        violations.push(Violation {
+                            payload: None,
+                            version: None,
+                            message: format!(
+                                "signing.fingerprint {} is not the block key's own fingerprint {actual} — the add-registry trust gate refuses this registry",
+                                signing.fingerprint
+                            ),
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(e) => violations.push(Violation {
+                        payload: None,
+                        version: None,
+                        message: format!("signing.key is not a readable OpenPGP public key: {e}"),
+                    }),
+                }
+            }
             // The strict extras from_yaml deliberately does not enforce
             // (reader leniency is a compat surface — pre-MINOR readers
             // ignore additive keys); the gate collects them all in one

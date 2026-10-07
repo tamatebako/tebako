@@ -81,7 +81,7 @@ pub(crate) fn fingerprint_of(public_key: &[u8]) -> Result<String, SignerError> {
 }
 
 /// Whether a keyring blob already contains a fingerprint.
-fn contains_fingerprint(keyring: &[u8], fingerprint: &str) -> Result<bool, SignerError> {
+pub(crate) fn contains_fingerprint(keyring: &[u8], fingerprint: &str) -> Result<bool, SignerError> {
     let ctx = Context::new().map_err(|e| SignerError::Trust(e.to_string()))?;
     ctx.load_keys(KeyringFormat::Gpg, keyring, LoadSaveFlags::PUBLIC)
         .map_err(|e| SignerError::Trust(format!("trusted keyring is unreadable: {e}")))?;
@@ -111,6 +111,93 @@ fn export_binary_public(public_key: &[u8]) -> Result<Vec<u8>, SignerError> {
         .ok_or_else(|| SignerError::Trust("cannot re-read the key".into()))?;
     key.export(rnp::ExportFlags::PUBLIC | rnp::ExportFlags::SUBKEYS)
         .map_err(|e| SignerError::Trust(e.to_string()))
+}
+
+/// The PRIMARY fingerprint of every key in a keyring blob (uppercase,
+/// load order) — subkeys resolve to their primary, so each transferable
+/// key lists once.
+pub(crate) fn primary_fingerprints(keyring: &[u8]) -> Result<Vec<String>, SignerError> {
+    let ctx = Context::new().map_err(|e| SignerError::Trust(e.to_string()))?;
+    ctx.load_keys(KeyringFormat::Gpg, keyring, LoadSaveFlags::PUBLIC)
+        .map_err(|e| SignerError::Trust(format!("trusted keyring is unreadable: {e}")))?;
+    let fps: Vec<String> = ctx
+        .identifiers(rnp::IdentifierKind::Fingerprint)
+        .map_err(|e| SignerError::Trust(e.to_string()))?
+        .collect();
+    let mut primaries: Vec<String> = Vec::new();
+    for fp in fps {
+        let key = ctx
+            .find_key(rnp::KeyIdentifier::Fingerprint(&fp))
+            .map_err(|e| SignerError::Trust(e.to_string()))?
+            .ok_or_else(|| SignerError::Trust("cannot re-read a keyring key".into()))?;
+        // The primary_keyid_of pattern: on a PRIMARY key librnp's
+        // primary_fprint answers BadParameters / None — the key is its
+        // own primary.
+        let primary = match key.primary_fprint() {
+            Ok(Some(pfp)) if !pfp.is_empty() => pfp,
+            Ok(_) => fp.clone(),
+            Err(e) if e.kind() == rnp::ErrorKind::BadParameters => fp.clone(),
+            Err(e) => return Err(SignerError::Trust(e.to_string())),
+        };
+        let primary = primary.to_uppercase();
+        if !primaries.contains(&primary) {
+            primaries.push(primary);
+        }
+    }
+    Ok(primaries)
+}
+
+/// The keyring blob without the transferable key whose primary OR any
+/// of whose subkeys' fingerprint is `fingerprint` (case-insensitive) —
+/// the removal half of the trust store's keyring leg. The remaining
+/// primaries re-export (binary, subkeys included) in load order.
+pub(crate) fn rebuild_without(keyring: &[u8], fingerprint: &str) -> Result<Vec<u8>, SignerError> {
+    let ctx = Context::new().map_err(|e| SignerError::Trust(e.to_string()))?;
+    ctx.load_keys(KeyringFormat::Gpg, keyring, LoadSaveFlags::PUBLIC)
+        .map_err(|e| SignerError::Trust(format!("trusted keyring is unreadable: {e}")))?;
+    let want = fingerprint.to_uppercase();
+    let fps: Vec<String> = ctx
+        .identifiers(rnp::IdentifierKind::Fingerprint)
+        .map_err(|e| SignerError::Trust(e.to_string()))?
+        .collect();
+    // Resolve every enumerated fingerprint to its primary; a target hit
+    // at either level drops the whole transferable key.
+    let mut dropped: Vec<String> = Vec::new();
+    let mut primaries: Vec<String> = Vec::new();
+    for fp in &fps {
+        let key = ctx
+            .find_key(rnp::KeyIdentifier::Fingerprint(fp))
+            .map_err(|e| SignerError::Trust(e.to_string()))?
+            .ok_or_else(|| SignerError::Trust("cannot re-read a keyring key".into()))?;
+        let primary = match key.primary_fprint() {
+            Ok(Some(pfp)) if !pfp.is_empty() => pfp,
+            Ok(_) => fp.clone(),
+            Err(e) if e.kind() == rnp::ErrorKind::BadParameters => fp.clone(),
+            Err(e) => return Err(SignerError::Trust(e.to_string())),
+        }
+        .to_uppercase();
+        if fp.to_uppercase() == want {
+            dropped.push(primary.clone());
+        }
+        if !primaries.contains(&primary) {
+            primaries.push(primary);
+        }
+    }
+    let mut out: Vec<u8> = Vec::new();
+    for primary in primaries {
+        if dropped.contains(&primary) || primary == want {
+            continue;
+        }
+        let key = ctx
+            .find_key(rnp::KeyIdentifier::Fingerprint(&primary))
+            .map_err(|e| SignerError::Trust(e.to_string()))?
+            .ok_or_else(|| SignerError::Trust("cannot re-read a keyring key".into()))?;
+        let bytes = key
+            .export(rnp::ExportFlags::PUBLIC | rnp::ExportFlags::SUBKEYS)
+            .map_err(|e| SignerError::Trust(e.to_string()))?;
+        out.extend_from_slice(&bytes);
+    }
+    Ok(out)
 }
 
 /// The keyid (16 lowercase hex) of the PRIMARY key that `issuer_keyid`

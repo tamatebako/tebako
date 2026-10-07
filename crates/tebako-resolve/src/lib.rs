@@ -54,7 +54,7 @@ pub use plan::{
 pub use reference::{Reference, Service};
 pub use registry::{
     PlatformSelection, Registry, RegistryPayload, RegistryPlatforms, RegistryRef,
-    RegistryRuntimeRequirement, RegistryVersion, ReleaseRef,
+    RegistryRuntimeRequirement, RegistrySigning, RegistryVersion, ReleaseRef,
 };
 #[cfg(feature = "oci")]
 pub use tebako_oci::{blksum_tag, payload_tag, signature_tag, Annotations, ArtifactClass};

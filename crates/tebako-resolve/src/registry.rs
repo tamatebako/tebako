@@ -59,8 +59,31 @@ pub struct Registry {
     /// [`REGISTRY_SCHEMA_VERSION`].
     #[serde(default)]
     pub schema_version: Option<u32>,
+    /// The registry publisher's signing key (spec 09 §9.1, schema MINOR
+    /// 7): the add-registry TOFU channel — the reader displays the
+    /// fingerprint for out-of-band confirmation and pins the key on
+    /// consent. Additive: pre-MINOR-7 readers ignore the block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signing: Option<RegistrySigning>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub payloads: Vec<RegistryPayload>,
+}
+
+/// The registry head's `signing:` block (spec 09 §9.1): the publisher's
+/// armored public key, its primary fingerprint (the TOFU comparison
+/// value), and an optional canonical URL where the same key is published
+/// for cross-checking.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegistrySigning {
+    /// The armored public key (`-----BEGIN PGP PUBLIC KEY BLOCK-----`).
+    pub key: String,
+    /// The key's primary fingerprint (40 hex, either case — comparisons
+    /// normalize).
+    pub fingerprint: String,
+    /// Where the same key is published for out-of-band confirmation
+    /// (the publisher's well-known page).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// One listed payload: name, kind, the version entries, and the
@@ -374,6 +397,9 @@ impl Registry {
             }
             Some(_) => {}
         }
+        if let Some(signing) = &self.signing {
+            signing.validate()?;
+        }
         for payload in &self.payloads {
             payload.validate()?;
         }
@@ -381,6 +407,37 @@ impl Registry {
         names.sort();
         if names.windows(2).any(|w| w[0] == w[1]) {
             return Err(invalid_entry("duplicate payload name"));
+        }
+        Ok(())
+    }
+}
+
+impl RegistrySigning {
+    /// The shape checks a pure-YAML reader can run (spec 09 §9.1). The
+    /// cryptographic half — the declared fingerprint must BE the key's
+    /// primary fingerprint — needs the OpenPGP stack and runs at the
+    /// add-registry / registry-validate layer (tebako-cli), keeping this
+    /// crate rnp-free for the size-gated bootstrap.
+    fn validate(&self) -> Result<(), RegistryError> {
+        let fp = &self.fingerprint;
+        if fp.len() != 40 || !fp.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(invalid_entry(format!(
+                "signing.fingerprint '{fp}' is not a 40-hex fingerprint"
+            )));
+        }
+        if !self.key.contains("-----BEGIN PGP PUBLIC KEY BLOCK-----")
+            || !self.key.contains("-----END PGP PUBLIC KEY BLOCK-----")
+        {
+            return Err(invalid_entry(
+                "signing.key is not an armored PGP public key block",
+            ));
+        }
+        if let Some(url) = &self.url {
+            if !url.starts_with("https://") {
+                return Err(invalid_entry(format!(
+                    "signing.url '{url}' is not an https URL — the cross-check page is a publication, fetched out of band"
+                )));
+            }
         }
         Ok(())
     }
@@ -1439,6 +1496,57 @@ payloads:
             (
                 yaml.replace("tfs:github:o/ruby:v0.17.1-ruby4.0-macos", "file:///m/a.tfs"),
                 "not a service release",
+            ),
+        ] {
+            let err = Registry::from_yaml(&mutated).unwrap_err();
+            assert!(
+                err.to_string().contains(needle),
+                "expected '{needle}' in: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_head_signing_block_round_trips_and_torn_blocks_are_named() {
+        // spec 09 §9.1 (MINOR 7; tebako#617): the registry head MAY carry
+        // the publisher's signing key for the add-registry TOFU pin.
+        let yaml = "schema_version: 1\nsigning:\n  key: |\n    -----BEGIN PGP PUBLIC KEY BLOCK-----\n    mDMEAAAA\n    -----END PGP PUBLIC KEY BLOCK-----\n  fingerprint: 9E210CA8E9FDE9E6587740B2EFC3C250F7862A48\n  url: https://example.com/.well-known/tebako-key.asc\npayloads: []\n";
+        let registry = Registry::from_yaml(yaml).unwrap();
+        let signing = registry.signing.as_ref().unwrap();
+        assert_eq!(
+            signing.fingerprint,
+            "9E210CA8E9FDE9E6587740B2EFC3C250F7862A48"
+        );
+        assert!(signing.key.contains("BEGIN PGP PUBLIC KEY BLOCK"));
+        assert_eq!(
+            signing.url.as_deref(),
+            Some("https://example.com/.well-known/tebako-key.asc")
+        );
+        // round-trip identity with the block present
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+        // a block-less document parses to None (the pre-MINOR-7 shape)
+        let plain = Registry::from_yaml("schema_version: 1\npayloads: []\n").unwrap();
+        assert_eq!(plain.signing, None);
+        // Torn blocks are named errors, never silently ignored.
+        for (mutated, needle) in [
+            (
+                yaml.replace(
+                    "9E210CA8E9FDE9E6587740B2EFC3C250F7862A48",
+                    "efc3c250f7862a48",
+                ),
+                "signing.fingerprint 'efc3c250f7862a48' is not a 40-hex fingerprint",
+            ),
+            (
+                yaml.replace("    -----BEGIN PGP PUBLIC KEY BLOCK-----\n", ""),
+                "signing.key is not an armored PGP public key block",
+            ),
+            (
+                yaml.replace(
+                    "https://example.com/.well-known/tebako-key.asc",
+                    "http://example.com/key.asc",
+                ),
+                "signing.url 'http://example.com/key.asc' is not an https URL",
             ),
         ] {
             let err = Registry::from_yaml(&mutated).unwrap_err();

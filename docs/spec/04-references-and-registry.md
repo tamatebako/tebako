@@ -118,6 +118,13 @@ payloads:
   row's ref over the version-level one, pre-MINOR-6 readers ignore the
   key (the version-level ref must then name a tag serving every row —
   the pre-shard shape).
+- **The head `signing:` block (additive, 2026-10-07, tebako#617):** the
+  registry's signing-key self-description (spec 09 §9.1) —
+  `key:` (armored OpenPGP public key), `fingerprint:` (the key's own
+  primary, 40 hex), optional `url:` (https cross-check). `tebako
+  add-registry` verifies the block against its own key, then TOFU-pins
+  it (prompt, or `--expect-fingerprint` unattended); pre-MINOR-7 readers
+  ignore the block.
 - **`status: withdrawn` (additive, 2026-09-12, roadmap 85):** the entry
   is YANKED — resolvers refuse it with a named `WithdrawnPayload` error
   (never a silent skip, never a fallback to it), and listing surfaces

@@ -249,11 +249,18 @@ channels agreeing are the trust event:
    is GitHub's guarantee that this is the metanorma org). The registry
    index carries a `signing:` block at its head: armored public key,
    fingerprint, and an optional canonical key URL. `tebako add-registry`
-   fetches the index, displays the fingerprint and the cross-check URLs,
-   and asks for confirmation (TOFU). On confirmation the key is pinned
-   to `$TEBAKO_HOME/trust/<fingerprint>.pub`, keyed by the registry ref.
-   `--yes` non-interactive flows must supply the expected fingerprint out
-   of band (env/config) — never a blind yes.
+   fetches the index, verifies the block's key IS its declared
+   fingerprint (an inconsistent block is the registry's malformation,
+   exit 65 — never a trust question), displays the fingerprint and the
+   cross-check URLs, and asks for confirmation (TOFU). On confirmation
+   the key is pinned to `$TEBAKO_HOME/trust/<FINGERPRINT>.pub` and the
+   registry's config book entry records the fingerprint
+   (`signing_fingerprint:`) so re-adds short-circuit and `tebako keys
+   list` shows the binding [shipped — tebako#617]. An already-trusted
+   key (embedded root, keyring, an earlier pin) asks nothing.
+   Non-interactive flows supply the expected fingerprint out of band via
+   `--expect-fingerprint <hex>` — never a blind yes; a mismatch is the
+   trust class (exit 72) printing both fingerprints.
 2. **Out-of-band confirmation (second channel, never auto-trusted).**
    Authors publish the same fingerprint where their audience already
    trusts them: `https://<author-domain>/.well-known/tebako-key.asc`
@@ -365,8 +372,10 @@ rotate` creates + signs + publishes a successor statement in one command
 root — the CLI carries the root public key, so first-party artifacts
 verify Trusted on a fresh machine). Third-party: one informed consent
 per author (the TOFU prompt),
-then silent verification forever. `tebako trust list|show|remove`
-manage the trust store [planned]; `tebako doctor` re-verifies installed
+then silent verification forever. `tebako keys list|remove` manage the
+signing-key trust inputs (the keyring and the add-registry pin store)
+[shipped — tebako#617; the `trust` verb family is the TLS CA store,
+spec 22 §4]; `tebako doctor` re-verifies installed
 artifacts against pinned keys [roadmap 50]. Unverified artifacts always
 produce the loud warning + journal (§3); `TEBAKO_REQUIRE_SIGNED=1`
 refuses them outright.

@@ -2216,40 +2216,28 @@ fn expected_checksum(q: &ChecksumQuery) -> Result<ChecksumAnswer, ShimError> {
     })
 }
 
-/// The G1 fetch-time verification keyring (spec 09 §4): the user's
-/// trusted keyring + the embedded first-party root + the
-/// `TEBAKO_TRUSTED_ROOT` dev override (the CLI's payload-install
-/// keyring, mirrored key-for-key).
+/// The G1 fetch-time verification keyring (spec 09 §4) — the single
+/// owner's ([`tebako_signer::verification_keyring`]): the user's trusted
+/// keyring + the TOFU pin store + the embedded first-party root + the
+/// `TEBAKO_TRUSTED_ROOT` dev override. A trust-store failure is the
+/// trust class (72); a plain read failure is io (74).
 fn fetch_keyring(ctx: &Ctx) -> Result<Vec<u8>, ShimError> {
-    let mut keyring = tebako_signer::trusted_keyring_bytes(&ctx.home).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!("cannot read the trusted keyring: {e}"),
-        )
-    })?;
-    let root =
-        tebako_signer::dearmor_bytes(tebako_signer::ROOT_PUBLIC_KEY.as_bytes()).map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_IO,
-                format!("the embedded root key does not dearmor: {e}"),
-            )
-        })?;
-    keyring.extend_from_slice(&root);
-    if let Some(extra) = tebako_signer::trusted_root_override_key(
-        ctx.env_get("TEBAKO_TRUSTED_ROOT").map(str::to_string),
-    ) {
-        keyring.extend_from_slice(&extra);
-    }
-    Ok(keyring)
+    tebako_signer::verification_keyring(&ctx.home).map_err(|e| {
+        let code = match e {
+            tebako_signer::SignerError::Trust(_) => EX_TEBAKO_TRUST,
+            _ => EX_TEBAKO_IO,
+        };
+        ShimError::new(code, format!("cannot read the trusted keyring: {e}"))
+    })
 }
 
-/// The named untrusted-signer refusal (exit 72) — spec 09 §4's shape.
+/// The named untrusted-signer refusal (exit 72) — spec 09 §4's shape;
+/// the wording is the signer's single owner (the payload-install and
+/// slice-fetch sites print the same remediation).
 fn untrusted_signer(what: &str, keyid: &str) -> ShimError {
     ShimError::new(
         EX_TEBAKO_TRUST,
-        format!(
-            "{what} is signed by {keyid}, which is not in the trusted keyring — refusing to install or execute\n  if you trust this signer, register its public key with `tebako keys import`"
-        ),
+        tebako_signer::untrusted_signer_message(what, keyid),
     )
 }
 
@@ -4571,6 +4559,7 @@ payloads:
                     default: false,
                     require_signed: false,
                     channel: None,
+                    signing_fingerprint: None,
                 },
                 crate::config::RegistryBookEntry {
                     reference: full,
@@ -4578,6 +4567,7 @@ payloads:
                     default: false,
                     require_signed: false,
                     channel: None,
+                    signing_fingerprint: None,
                 },
             ],
             ..UserConfig::default()
@@ -4650,6 +4640,7 @@ payloads:
                 default: false,
                 require_signed: true,
                 channel: None,
+                signing_fingerprint: None,
             }],
             ..UserConfig::default()
         };
@@ -4694,6 +4685,7 @@ payloads:
                 default: false,
                 require_signed: true,
                 channel: None,
+                signing_fingerprint: None,
             }],
             ..UserConfig::default()
         };
@@ -6128,6 +6120,7 @@ payloads:
                 default: false,
                 require_signed: false,
                 channel: Some(crate::config::BookChannel::Oci),
+                signing_fingerprint: None,
             }],
             ..UserConfig::default()
         }
