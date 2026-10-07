@@ -10,18 +10,28 @@
 # double-fire it. `workflow_dispatch` stays a build+gate dry run (every
 # upload gates on the prepared upload_url).
 #
-# Shape: parsanol-rs's release-binary.yml — prepare (get_release →
-# upload_url) → native runners per OS → upload per artifact via
-# lib/release-upload.sh (the archived actions/upload-release-asset was
-# retired 2026-08-01; blanket `gh release upload --clobber` retired
-# 2026-09-23 — tebako#189: payload names are byte-immutable, a deleted
-# asset name 422-blocks re-uploads on a young release object for hours;
-# the lib skips byte-identical re-uploads and never deletes payload
-# assets) — plus our additions: the vendored native deps via vcpkg
-# (baseline pin + the org's GitHub Packages NuGet binary cache on the
-# native legs — the run-vcpkg x-gha injection is dead since vcpkg 2025.06;
-# the container legs keep the mounted-archives actions/cache), the musl
-# legs in
+# Shape: parsanol-rs's release-binary.yml grown into the build/publish
+# split (tebako#649 — the factory's tebako-runtime-ruby#190 pattern):
+# prepare (get_release → upload_url) → native BUILD legs per OS (stage,
+# sign when armed, ship-gate, then hand the gated bytes to an immutable
+# in-run bin-<platform> artifact — the .leg-complete marker is written
+# only after every gate passed) → runner-native PUBLISH jobs (one per
+# leg: download the artifact, guard the marker, upload via
+# lib/release-upload.sh — pure API work, no toolchain) → finalize
+# (fragments → SHA256SUMS + manifest.json + sidecars + signatures + the
+# item-11 completeness gate). The split is the recovery story: GitHub's
+# re-run granularity is the job, so a publish-layer failure re-runs as a
+# minutes-long download + upload of the immutable in-run artifact —
+# never a rebuild. The uploader is lib/release-upload.sh (the archived
+# actions/upload-release-asset was retired 2026-08-01; blanket
+# `gh release upload --clobber` retired 2026-09-23 — tebako#189: payload
+# names are byte-immutable, a deleted asset name 422-blocks re-uploads
+# on a young release object for hours; the lib skips byte-identical
+# re-uploads and never deletes payload assets) — plus our additions: the
+# vendored native deps via vcpkg (baseline pin + the org's GitHub
+# Packages NuGet binary cache on the native legs — the run-vcpkg x-gha
+# injection is dead since vcpkg 2025.06; the container legs keep the
+# mounted-archives actions/cache), the musl legs in
 # Alpine containers (docker run from the host; the proven native-musl
 # path — see ci/musl-build.sh; node actions cannot run on musl), the
 # bootstrap size gate (back to 3 MB: rnp/botan is feature-gated out of
@@ -50,11 +60,11 @@
 #
 # Build provenance: every shipping leg closes with a GitHub artifact
 # attestation (actions/attest-build-provenance, SLSA Build L3) over the
-# exact staged bytes it uploads — sign-then-hash means the attested digest
-# is the SIGNED artifact's. finalize attests SHA256SUMS + manifest.json,
-# the trust-anchor pair. The arm rides the same upload_url gate as the
-# uploads, so PR rehearsals never attest. Consumers verify with
-# `gh attestation verify <asset> --repo tamatebako/tebako`.
+# exact staged bytes its publish job uploads — sign-then-hash means the
+# attested digest is the SIGNED artifact's. finalize attests SHA256SUMS +
+# manifest.json, the trust-anchor pair. The arm rides the same upload_url
+# gate as the uploads, so PR rehearsals never attest. Consumers verify
+# with `gh attestation verify <asset> --repo tamatebako/tebako`.
 #
 # macOS signing (spec 31 §5): the macOS legs codesign (Developer ID
 # Application, hardened runtime) the staged binaries BEFORE their sha256
@@ -66,8 +76,10 @@
 #
 # Installer containers (roadmap 83, spec 16 §7): the installer-msi /
 # installer-pkg legs build the system MSI/pkg from THIS release's own
-# signed bytes (downloaded back from the release, verified against the
-# platform legs' sign-then-hash fragments), sign the CONTAINER on its own
+# signed bytes (fed from the platform legs' bin-<platform> artifacts on
+# every event — tebako#649: the rehearsal feed is the only feed — and
+# verified against the legs' sign-then-hash fragments), sign the
+# CONTAINER on its own
 # plane (Azure Artifact Signing for the MSI; Developer ID Installer +
 # notarize + staple for the pkg), and gate on a real install rehearsal.
 # The container SHIPS only when its signing plane is armed — an unsigned
@@ -95,10 +107,13 @@
 # Rehearsal mode (roadmap 89): PRs touching this workflow, ci/, or
 # templates/installers/ run the macos + windows + installer legs with
 # every signing plane force-disarmed and every upload gated off — the
-# platform legs feed the installer legs through bin-<platform> artifacts
-# instead of the release, and the install rehearsals gate for real.
+# installer legs feed from the platform legs' bin-<platform> artifacts
+# on every event (tebako#649), the publish jobs rehearse the artifact
+# handoff + guard with the upload step gated on upload_url, and the
+# install rehearsals gate for real.
 # The legs a PR proves nothing about (linux-gnu, linux-musl,
-# windows-link-unit, finalize) sit rehearsals out. A tag run that fails
+# windows-link-unit — and their publish jobs — plus finalize) sit
+# rehearsals out. A tag run that fails
 # in an UNARMED code path is a process bug, not bad luck — v2.8.0's four
 # and v2.8.1's two first-contact installer failures are why this exists.
 #
@@ -114,7 +129,7 @@ on:
       # A tag push IS the release event (the v0.2.5 lesson: a tag alone
       # built nothing when only release:published triggered — the tag was
       # pushed, no Release object existed, no run fired). prepare creates
-      # the Release itself; every leg uploads against it.
+      # the Release itself; the publish jobs upload against it.
       - "v*"
   pull_request:
     paths:
@@ -377,73 +392,48 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: bash .github/workflows/lib/link-unit-stage.sh
 
-      - name: Upload link-unit
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload fragment artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frag-${{ matrix.platform }}
           path: tebako-rs/fragments/frag-${{ matrix.platform }}
 
-      # Roadmap 89: on a PR there is no release to download back from —
-      # the installer legs' rehearsal reads the staged (unsigned) bytes
-      # from this artifact instead (the frag artifact above carries the
-      # matching hashes on every event).
-      - name: Upload the staged binaries (the installer legs' rehearsal feed)
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bin-${{ matrix.platform }}
-          path: tebako-rs/out/
-
-      - name: Upload tebako-bootstrap
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-bootstrap-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tfs
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tfs-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-pkg
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-pkg-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-shim
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-runtime-launcher
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # SLSA L3 provenance over everything this leg ships — the staged
-      # (signed + notarized, when armed) bytes the uploads above carried.
+      # (signed + notarized, when armed) bytes the publish job carries.
       # Gated with the uploads; disarmed on rehearsals.
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: tebako-rs/out/*
+
+      # The leg-complete marker (tebako#649): written only when every
+      # gate above passed — a failed step stops the job before this point
+      # (default step gating), so a red leg ships NO artifact at all and
+      # its publish job fails named at the download guard. The marker is
+      # the belt to that suspenders: an artifact without it is never
+      # publishable.
+      - name: Mark the leg complete
+        run: |
+          # The untarred link-unit tree is a staging intermediate (the
+          # tarball beside it is the shipped form) — drop it so the
+          # publish artifact is files-only and the publish job's
+          # `staged/*` glob is all release assets (the trailing slash
+          # makes the glob match directories only; -f swallows the
+          # no-match literal).
+          rm -rf tebako-rs/out/link-unit-*/
+          touch tebako-rs/out/.leg-complete
+
+      # The publish job's feed (tebako#649) — and the installer legs'
+      # rehearsal feed on a PR: the whole staged out/ tree, marker
+      # included (include-hidden-files: the .leg-complete marker is
+      # dot-hidden and upload-artifact excludes dotfiles by default).
+      - name: Upload the staged binaries (the publish + rehearsal feed)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-${{ matrix.platform }}
+          path: tebako-rs/out/
+          include-hidden-files: true
 
   # ==========================================================================
   # Linux GNU (native runners incl. arm64 — no cross)
@@ -540,61 +530,46 @@ jobs:
             -w "$GITHUB_WORKSPACE/tebako-rs" \
             ubuntu:20.04 bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM"
 
-      - name: Upload link-unit
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload fragment artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frag-${{ matrix.platform }}
           path: tebako-rs/fragments/frag-${{ matrix.platform }}
 
-      - name: Upload tebako-bootstrap
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-bootstrap-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tfs
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tfs-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-pkg
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-pkg-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-shim
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-runtime-launcher
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # SLSA L3 provenance over everything this leg ships (gated with
-      # the uploads; disarmed on rehearsals).
+      # SLSA L3 provenance over everything this leg ships — the staged
+      # bytes the publish job carries (gated with the uploads; disarmed
+      # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: tebako-rs/out/*
+
+      # The leg-complete marker (tebako#649): written only when every
+      # gate above passed — a red leg ships NO artifact at all and its
+      # publish job fails named at the download guard. The touch rides a
+      # container: out/ is root-owned on the host (every leg step above
+      # ran in a root container), so a host-side write would EACCES.
+      - name: Mark the leg complete
+        run: |
+          # The untarred link-unit tree is a staging intermediate (the
+          # tarball beside it is the shipped form) — drop it so the
+          # publish artifact is files-only and the publish job's
+          # `staged/*` glob is all release assets.
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -w "$GITHUB_WORKSPACE/tebako-rs" \
+            ubuntu:20.04 bash -c 'rm -rf out/link-unit-*/ && touch out/.leg-complete'
+
+      # The publish job's feed (tebako#649): the whole staged out/ tree,
+      # marker included (include-hidden-files: the .leg-complete marker
+      # is dot-hidden and upload-artifact excludes dotfiles by default).
+      - name: Upload the staged binaries (the publish feed)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-${{ matrix.platform }}
+          path: tebako-rs/out/
+          include-hidden-files: true
 
   # ==========================================================================
   # Linux musl (Alpine container via docker run from the glibc host —
@@ -696,55 +671,40 @@ jobs:
           name: frag-${{ matrix.platform }}
           path: tebako-rs/fragments/frag-${{ matrix.platform }}
 
-      - name: Upload tebako-bootstrap
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-bootstrap-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tfs
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tfs-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-pkg
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-pkg-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-shim
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-runtime-launcher
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload link-unit
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # SLSA L3 provenance over everything this leg ships (gated with
-      # the uploads; disarmed on rehearsals).
+      # SLSA L3 provenance over everything this leg ships — the staged
+      # bytes the publish job carries (gated with the uploads; disarmed
+      # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: tebako-rs/out/*
+
+      # The leg-complete marker (tebako#649): written only when every
+      # gate above passed — a red leg ships NO artifact at all and its
+      # publish job fails named at the download guard. The touch rides a
+      # container: out/ is root-owned on the host (every leg step above
+      # ran in a root container), so a host-side write would EACCES.
+      - name: Mark the leg complete
+        run: |
+          # The untarred link-unit tree is a staging intermediate (the
+          # tarball beside it is the shipped form) — drop it so the
+          # publish artifact is files-only and the publish job's
+          # `staged/*` glob is all release assets.
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -w "$GITHUB_WORKSPACE/tebako-rs" \
+            alpine:3.21 sh -c 'rm -rf out/link-unit-*/ && touch out/.leg-complete'
+
+      # The publish job's feed (tebako#649): the whole staged out/ tree,
+      # marker included (include-hidden-files: the .leg-complete marker
+      # is dot-hidden and upload-artifact excludes dotfiles by default).
+      - name: Upload the staged binaries (the publish feed)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-${{ matrix.platform }}
+          path: tebako-rs/out/
+          include-hidden-files: true
 
   # ==========================================================================
   # finalize: SHA256SUMS + manifest.json + the item-11 completeness gate
@@ -758,7 +718,13 @@ jobs:
       attestations: write
       id-token: write
     runs-on: ubuntu-24.04
-    needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit, windows, windows-arm64-ship, installer-msi, installer-pkg]
+    # tebako#649: finalize waits on the PUBLISH jobs, not the build legs —
+    # the release's asset set is what the completeness gate counts, and
+    # the publish jobs are its writers (a failed leg's publish job fails
+    # named at its guard, which skips finalize the same way a failed leg
+    # used to). The fragments this job merges still come straight from
+    # the legs' frag-<platform> artifacts below.
+    needs: [prepare, publish-macos, publish-linux-gnu, publish-linux-musl, publish-windows-link-unit, publish-windows, publish-windows-arm64-ship, publish-installer-msi, publish-installer-pkg]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -984,19 +950,37 @@ jobs:
             --target x86_64-pc-windows-gnu --skip-build
           tar -czf "out/link-unit-${VERSION}-x86_64-windows-gnu.tar.gz" -C out link-unit-x86_64-windows-gnu
 
-      - name: Upload link-unit
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-x86_64-windows-gnu.tar.gz"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # SLSA L3 provenance for the shipped link-unit tarball (gated with
-      # the upload; disarmed on rehearsals).
+      # SLSA L3 provenance for the shipped link-unit tarball — the staged
+      # bytes the publish job carries (gated with the upload; disarmed on
+      # rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: tebako-rs/out/link-unit-*.tar.gz
+
+      # The leg-complete marker (tebako#649): written only when every
+      # gate above passed — a red leg ships NO artifact at all and its
+      # publish job fails named at the download guard.
+      - name: Mark the leg complete
+        shell: bash
+        run: |
+          # The untarred link-unit tree is a staging intermediate (the
+          # tarball beside it is the shipped form) — drop it so the
+          # publish artifact is files-only and the publish job's
+          # `staged/*` glob is all release assets.
+          rm -rf tebako-rs/out/link-unit-*/
+          touch tebako-rs/out/.leg-complete
+
+      # The publish job's feed (tebako#649): the whole staged out/ tree,
+      # marker included (include-hidden-files: the .leg-complete marker
+      # is dot-hidden and upload-artifact excludes dotfiles by default).
+      - name: Upload the staged link-unit (the publish feed)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-windows-link-unit
+          path: tebako-rs/out/
+          include-hidden-files: true
 
   # ==========================================================================
   # Windows (ucrt64) — the five binaries. Provisioning mirrors the ci.yml
@@ -1288,61 +1272,32 @@ jobs:
           name: frag-windows-ucrt64
           path: tebako-rs/fragments/frag-windows-ucrt64
 
-      # Roadmap 89: on a PR there is no release to download back from —
-      # the MSI leg's rehearsal reads the staged (unsigned) exes from
-      # this artifact instead (the frag artifact above carries the
-      # matching hashes on every event).
-      - name: Upload the staged binaries (the installer legs' rehearsal feed)
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bin-windows-ucrt64
-          path: tebako-rs/out/
-
-      - name: Upload tebako-bootstrap
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-bootstrap-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tfs
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tfs-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-pkg
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-pkg-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-shim
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-runtime-launcher
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # SLSA L3 provenance over everything this leg ships — the staged
-      # SIGNED bytes (sign-then-hash, spec 34 §1.3) the uploads above
-      # carried. Gated with the uploads; disarmed on rehearsals.
+      # SIGNED bytes (sign-then-hash, spec 34 §1.3) the publish job
+      # carries. Gated with the uploads; disarmed on rehearsals.
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: tebako-rs/out/*
+
+      # The leg-complete marker (tebako#649): written only when every
+      # gate above passed — a red leg ships NO artifact at all and its
+      # publish job fails named at the download guard.
+      - name: Mark the leg complete
+        shell: bash
+        run: touch tebako-rs/out/.leg-complete
+
+      # The publish job's feed (tebako#649) — and the MSI leg's rehearsal
+      # feed on a PR: the whole staged out/ tree, marker included
+      # (include-hidden-files: the .leg-complete marker is dot-hidden and
+      # upload-artifact excludes dotfiles by default).
+      - name: Upload the staged binaries (the publish + rehearsal feed)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-windows-ucrt64
+          path: tebako-rs/out/
+          include-hidden-files: true
 
   # ==========================================================================
   # Windows arm64 (roadmap 02 Gap 1, phase 1 — build + smoke, ships
@@ -1533,36 +1488,43 @@ jobs:
           name: frag-windows-ucrt-arm64
           path: tebako-rs/fragments/frag-windows-ucrt-arm64
 
-      - name: Upload tfs
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tfs-${{ needs.prepare.outputs.version }}-windows-ucrt-arm64.exe"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload tebako-pkg
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-pkg-${{ needs.prepare.outputs.version }}-windows-ucrt-arm64.exe"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload link-unit
-        if: needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-aarch64-windows-gnu.tar.gz"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # SLSA L3 provenance over everything this leg ships (gated with
-      # the uploads; disarmed on rehearsals).
+      # SLSA L3 provenance over everything this leg ships — the staged
+      # bytes the publish job carries (gated with the uploads; disarmed
+      # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: tebako-rs/out/*
 
+      # The leg-complete marker (tebako#649): written only when every
+      # gate above passed — a red leg ships NO artifact at all and its
+      # publish job fails named at the download guard.
+      - name: Mark the leg complete
+        shell: bash
+        run: |
+          # The untarred link-unit tree is a staging intermediate (the
+          # tarball beside it is the shipped form) — drop it so the
+          # publish artifact is files-only and the publish job's
+          # `staged/*` glob is all release assets.
+          rm -rf tebako-rs/out/link-unit-*/
+          touch tebako-rs/out/.leg-complete
+
+      # The publish job's feed (tebako#649): the whole staged out/ tree,
+      # marker included (include-hidden-files: the .leg-complete marker
+      # is dot-hidden and upload-artifact excludes dotfiles by default).
+      - name: Upload the staged binaries (the publish feed)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-windows-ucrt-arm64
+          path: tebako-rs/out/
+          include-hidden-files: true
+
   # ==========================================================================
   # Installer containers (roadmap 83, spec 16 §7): the system MSI + pkg,
-  # built from THIS release's own signed bytes (downloaded back from the
-  # release + verified against the platform legs' sign-then-hash fragments).
+  # built from THIS release's own signed bytes (fed from the platform
+  # legs' bin- artifacts on every event — tebako#649 — and verified
+  # against the legs' sign-then-hash fragments).
   # The build runs on every release (the templates' CI signal); the
   # CONTAINER ships only when its signing plane is armed — an unsigned
   # installer is a trap for exactly the audience containers serve (the
@@ -1605,28 +1567,13 @@ jobs:
           AZURE_SIGNING_CERT_PROFILE: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
         run: bash ci/windows-sign-gate.sh
 
-      # The MSI wraps THIS release's bytes: download the four PATH tools
-      # back from the release (the windows leg uploaded them) and verify
-      # each against the leg's sign-then-hash fragments (ci script).
-      - name: Download this release's windows-ucrt64 tools
-        if: needs.prepare.outputs.upload_url != ''
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          set -euo pipefail
-          mkdir -p staged
-          for tool in tebako tebako-shim tfs tebako-pkg; do
-            gh release download "${{ needs.prepare.outputs.tag_name }}" --dir staged --clobber \
-              --pattern "${tool}-${VERSION}-windows-ucrt64.exe"
-          done
-
-      # Roadmap 89: on a PR there is no release — the rehearsal feeds
-      # from the windows leg's bin- artifact (unsigned bytes, matched
-      # against the leg's frags exactly like the release path).
-      - name: Download the windows-ucrt64 tools (rehearsal feed)
-        if: github.event_name == 'pull_request'
+      # The MSI wraps THIS release's bytes — fed from the windows leg's
+      # bin- artifact on EVERY event (tebako#649: the rehearsal feed is
+      # the only feed; the bytes the leg staged, signed when armed, and
+      # ship-gated are the bytes the container wraps). The ci script
+      # verifies each tool against the leg's sign-then-hash fragments
+      # below — the same anchor on every event.
+      - name: Download the windows-ucrt64 tools (the leg's staged bytes)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: bin-windows-ucrt64
@@ -1751,14 +1698,9 @@ jobs:
           if (Test-Path 'C:\Program Files\tebako') { Write-Host "::error::uninstall left C:\Program Files\tebako"; exit 1 }
           Write-Host 'install rehearsal OK (install → run → uninstall, clean)'
 
-      - name: Upload the MSI
-        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh --metadata "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-setup-${{ needs.prepare.outputs.version }}-windows-ucrt64.msi"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # SLSA L3 provenance for the shipped MSI — the exact signed bytes
-      # that uploaded above (same ship gate; disarmed on rehearsals).
+      # the handoff below carries to the publish job (same ship gate;
+      # disarmed on rehearsals).
       - name: Attest build provenance (MSI)
         if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -1780,6 +1722,28 @@ jobs:
           path: tebako-rs/fragments/frag-installers-windows-ucrt64
           include-hidden-files: true
           if-no-files-found: error
+
+      # tebako#649: hand the shippable bytes to the publish job as an
+      # artifact — the .leg-complete marker lands ALWAYS (the publish
+      # job's guard), the MSI only when this leg actually ships it (armed
+      # gate + a release to upload to). A marker-only artifact lets the
+      # publish job green-skip an unsigned run.
+      - name: Hand the MSI to the publish job
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p handoff
+          touch handoff/.leg-complete
+          if [ "${{ steps.signgate.outputs.armed }}" = 'true' ] && [ -n "${{ needs.prepare.outputs.upload_url }}" ]; then
+            cp tebako-rs/out/tebako-setup-*.msi handoff/
+          fi
+
+      - name: Upload the installer handoff artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-installer-windows-ucrt64
+          path: handoff/
+          include-hidden-files: true
 
   installer-pkg:
     name: macOS pkg installer (${{ matrix.platform }})
@@ -1820,25 +1784,13 @@ jobs:
           APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD }}
         run: bash ci/macos-sign-setup-installer.sh
 
-      - name: Download this release's ${{ matrix.platform }} tools
-        if: needs.prepare.outputs.upload_url != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-          PLATFORM: ${{ matrix.platform }}
-        run: |
-          set -euo pipefail
-          mkdir -p staged
-          for tool in tebako tebako-shim tfs tebako-pkg; do
-            gh release download "${{ needs.prepare.outputs.tag_name }}" --dir staged --clobber \
-              --pattern "${tool}-${VERSION}-${PLATFORM}"
-          done
-
-      # Roadmap 89: on a PR there is no release — the rehearsal feeds
-      # from the macos leg's bin- artifact (unsigned bytes, matched
-      # against the leg's frags exactly like the release path).
-      - name: Download the ${{ matrix.platform }} tools (rehearsal feed)
-        if: github.event_name == 'pull_request'
+      # The pkg wraps THIS release's bytes — fed from the macos leg's
+      # bin- artifact on EVERY event (tebako#649: the rehearsal feed is
+      # the only feed; the bytes the leg staged, signed + notarized when
+      # armed, and ship-gated are the bytes the container wraps). The ci
+      # script verifies each tool against the leg's sign-then-hash
+      # fragments below — the same anchor on every event.
+      - name: Download the ${{ matrix.platform }} tools (the leg's staged bytes)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: bin-${{ matrix.platform }}
@@ -1869,15 +1821,10 @@ jobs:
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
         run: bash ci/macos-pkg-build.sh
 
-      - name: Upload the pkg
-        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
-        run: bash tebako-rs/.github/workflows/lib/release-upload.sh --metadata "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-setup-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.pkg"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # SLSA L3 provenance for the shipped pkg — the exact signed +
-      # notarized bytes that uploaded above (same ship gate; disarmed on
-      # rehearsals). Verify: gh attestation verify --repo tamatebako/tebako.
+      # notarized bytes the handoff below carries to the publish job
+      # (same ship gate; disarmed on rehearsals). Verify:
+      # gh attestation verify --repo tamatebako/tebako.
       - name: Attest build provenance (pkg)
         if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -1898,3 +1845,387 @@ jobs:
           path: tebako-rs/fragments/frag-installers-${{ matrix.platform }}
           include-hidden-files: true
           if-no-files-found: error
+
+      # tebako#649: hand the shippable bytes to the publish job as an
+      # artifact — the .leg-complete marker lands ALWAYS (the publish
+      # job's guard), the pkg only when this leg actually ships it (armed
+      # gate + a release to upload to). A marker-only artifact lets the
+      # publish job green-skip an unsigned run.
+      - name: Hand the pkg to the publish job
+        run: |
+          set -euo pipefail
+          mkdir -p handoff
+          touch handoff/.leg-complete
+          if [ "${{ steps.signgate.outputs.armed }}" = 'true' ] && [ -n "${{ needs.prepare.outputs.upload_url }}" ]; then
+            cp tebako-rs/out/tebako-setup-*.pkg handoff/
+          fi
+
+      - name: Upload the installer handoff artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-installer-${{ matrix.platform }}
+          path: handoff/
+          include-hidden-files: true
+
+  # ==========================================================================
+  # The publish layer (tebako#649 — the factory's tebako-runtime-ruby#190
+  # pattern): each shipping leg above hands its gated bytes to a publish
+  # job as an immutable in-run artifact; the publish job is pure API work
+  # (runner-native ubuntu, no toolchain). The split is the recovery story:
+  # GitHub's re-run granularity is the job, so a publish-layer failure
+  # re-runs as a minutes-long download + upload of the immutable in-run
+  # artifact — never a rebuild. A leg whose build failed ships no
+  # artifact; its publish job fails NAMED at the download guard (always()
+  # decouples the job from the leg's result precisely so the failure names
+  # itself instead of silently skipping). The upload step rides the same
+  # upload_url gate the in-leg uploads used to — PR/dispatch runs rehearse
+  # the handoff + guard with the release write gated off.
+  # ==========================================================================
+  publish-macos:
+    name: Publish macOS (${{ matrix.platform }})
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    needs: [prepare, macos]
+    if: always() && !cancelled()
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-arm64, macos-x86_64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the leg's staged bytes
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-${{ matrix.platform }}
+          path: staged
+      - name: Guard the artifact's completeness
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::error::no bin-${{ matrix.platform }} artifact — the ${{ matrix.platform }} build leg did not complete"
+            echo "(a failed leg publishes nothing; fix the build leg, then re-run failed jobs)"
+            exit 1
+          fi
+          if [ ! -f staged/.leg-complete ]; then
+            echo "::error::the bin-${{ matrix.platform }} artifact carries no .leg-complete marker — the build leg died before its gates passed; these partial bytes are not publishable"
+            exit 1
+          fi
+      - name: Upload the leg's release assets
+        if: needs.prepare.outputs.upload_url != ''
+        run: |
+          set -euo pipefail
+          # The artifact is files-only by construction (the leg drops its
+          # staging intermediates before marking complete) — a non-file
+          # entry means the leg's staging broke; name it, never skip it.
+          for f in staged/*; do
+            [ -f "$f" ] || { echo "::error::the bin-${{ matrix.platform }} artifact carries a non-file entry: $f"; exit 1; }
+          done
+          bash .github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" staged/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-linux-gnu:
+    name: Publish Linux GNU (${{ matrix.platform }})
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    needs: [prepare, linux-gnu]
+    # Mirrors the leg's own event gate: the leg sits PR rehearsals out,
+    # so there is no artifact to publish on one.
+    if: always() && !cancelled() && github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux-gnu-x86_64, linux-gnu-arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the leg's staged bytes
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-${{ matrix.platform }}
+          path: staged
+      - name: Guard the artifact's completeness
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::error::no bin-${{ matrix.platform }} artifact — the ${{ matrix.platform }} build leg did not complete"
+            echo "(a failed leg publishes nothing; fix the build leg, then re-run failed jobs)"
+            exit 1
+          fi
+          if [ ! -f staged/.leg-complete ]; then
+            echo "::error::the bin-${{ matrix.platform }} artifact carries no .leg-complete marker — the build leg died before its gates passed; these partial bytes are not publishable"
+            exit 1
+          fi
+      - name: Upload the leg's release assets
+        if: needs.prepare.outputs.upload_url != ''
+        run: |
+          set -euo pipefail
+          for f in staged/*; do
+            [ -f "$f" ] || { echo "::error::the bin-${{ matrix.platform }} artifact carries a non-file entry: $f"; exit 1; }
+          done
+          bash .github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" staged/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-linux-musl:
+    name: Publish Linux musl (${{ matrix.platform }})
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    needs: [prepare, linux-musl]
+    # Mirrors the leg's own event gate: the leg sits PR rehearsals out,
+    # so there is no artifact to publish on one.
+    if: always() && !cancelled() && github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux-musl-x86_64, linux-musl-arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the leg's staged bytes
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-${{ matrix.platform }}
+          path: staged
+      - name: Guard the artifact's completeness
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::error::no bin-${{ matrix.platform }} artifact — the ${{ matrix.platform }} build leg did not complete"
+            echo "(a failed leg publishes nothing; fix the build leg, then re-run failed jobs)"
+            exit 1
+          fi
+          if [ ! -f staged/.leg-complete ]; then
+            echo "::error::the bin-${{ matrix.platform }} artifact carries no .leg-complete marker — the build leg died before its gates passed; these partial bytes are not publishable"
+            exit 1
+          fi
+      - name: Upload the leg's release assets
+        if: needs.prepare.outputs.upload_url != ''
+        run: |
+          set -euo pipefail
+          for f in staged/*; do
+            [ -f "$f" ] || { echo "::error::the bin-${{ matrix.platform }} artifact carries a non-file entry: $f"; exit 1; }
+          done
+          bash .github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" staged/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-windows-link-unit:
+    name: Publish the Windows link-unit (ucrt64)
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    needs: [prepare, windows-link-unit]
+    # Mirrors the leg's own event gate: the leg sits PR rehearsals out,
+    # so there is no artifact to publish on one.
+    if: always() && !cancelled() && github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the leg's staged bytes
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-windows-link-unit
+          path: staged
+      - name: Guard the artifact's completeness
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::error::no bin-windows-link-unit artifact — the windows-link-unit build leg did not complete"
+            echo "(a failed leg publishes nothing; fix the build leg, then re-run failed jobs)"
+            exit 1
+          fi
+          if [ ! -f staged/.leg-complete ]; then
+            echo "::error::the bin-windows-link-unit artifact carries no .leg-complete marker — the build leg died before its gates passed; these partial bytes are not publishable"
+            exit 1
+          fi
+      - name: Upload the leg's release assets
+        if: needs.prepare.outputs.upload_url != ''
+        run: |
+          set -euo pipefail
+          for f in staged/*; do
+            [ -f "$f" ] || { echo "::error::the bin-windows-link-unit artifact carries a non-file entry: $f"; exit 1; }
+          done
+          bash .github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" staged/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-windows:
+    name: Publish Windows binaries (ucrt64)
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    needs: [prepare, windows]
+    if: always() && !cancelled()
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the leg's staged bytes
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-windows-ucrt64
+          path: staged
+      - name: Guard the artifact's completeness
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::error::no bin-windows-ucrt64 artifact — the windows build leg did not complete"
+            echo "(a failed leg publishes nothing; fix the build leg, then re-run failed jobs)"
+            exit 1
+          fi
+          if [ ! -f staged/.leg-complete ]; then
+            echo "::error::the bin-windows-ucrt64 artifact carries no .leg-complete marker — the build leg died before its gates passed; these partial bytes are not publishable"
+            exit 1
+          fi
+      - name: Upload the leg's release assets
+        if: needs.prepare.outputs.upload_url != ''
+        run: |
+          set -euo pipefail
+          for f in staged/*; do
+            [ -f "$f" ] || { echo "::error::the bin-windows-ucrt64 artifact carries a non-file entry: $f"; exit 1; }
+          done
+          bash .github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" staged/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-windows-arm64-ship:
+    name: Publish Windows arm64 (ucrt) binaries
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    needs: [prepare, windows-arm64-ship]
+    if: always() && !cancelled()
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the leg's staged bytes
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-windows-ucrt-arm64
+          path: staged
+      - name: Guard the artifact's completeness
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::error::no bin-windows-ucrt-arm64 artifact — the windows-arm64-ship build leg did not complete"
+            echo "(a failed leg publishes nothing; fix the build leg, then re-run failed jobs)"
+            exit 1
+          fi
+          if [ ! -f staged/.leg-complete ]; then
+            echo "::error::the bin-windows-ucrt-arm64 artifact carries no .leg-complete marker — the build leg died before its gates passed; these partial bytes are not publishable"
+            exit 1
+          fi
+      - name: Upload the leg's release assets
+        if: needs.prepare.outputs.upload_url != ''
+        run: |
+          set -euo pipefail
+          for f in staged/*; do
+            [ -f "$f" ] || { echo "::error::the bin-windows-ucrt-arm64 artifact carries a non-file entry: $f"; exit 1; }
+          done
+          bash .github/workflows/lib/release-upload.sh "${{ needs.prepare.outputs.tag_name }}" staged/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The installer publishes ride the METADATA plane (the MSI/pkg names
+  # are mutable across re-runs of a re-armed gate — the lib's bounded
+  # replace), matching the in-leg uploads they replace. A marker-only
+  # handoff (the leg's signing plane disarmed, or a dry run) is a
+  # green skip: an unsigned installer never ships (spec 16 §7), and
+  # finalize's needs stay green.
+  publish-installer-msi:
+    name: Publish the MSI installer
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    needs: [prepare, installer-msi]
+    if: always() && !cancelled()
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the installer handoff
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-installer-windows-ucrt64
+          path: staged
+      - name: Guard the artifact's completeness
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::error::no bin-installer-windows-ucrt64 artifact — the installer-msi leg did not complete"
+            echo "(a failed leg publishes nothing; fix the installer leg, then re-run failed jobs)"
+            exit 1
+          fi
+          if [ ! -f staged/.leg-complete ]; then
+            echo "::error::the bin-installer-windows-ucrt64 artifact carries no .leg-complete marker — the installer leg died before its gates passed; these partial bytes are not publishable"
+            exit 1
+          fi
+      - name: Upload the MSI (metadata plane)
+        if: needs.prepare.outputs.upload_url != ''
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          installers=(staged/*.msi)
+          if [ "${#installers[@]}" -eq 0 ]; then
+            echo "no MSI in the handoff — the installer leg's signing plane was disarmed this run; an unsigned installer never ships (spec 16 §7)"
+            exit 0
+          fi
+          bash .github/workflows/lib/release-upload.sh --metadata "${{ needs.prepare.outputs.tag_name }}" "${installers[@]}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-installer-pkg:
+    name: Publish the pkg installer (${{ matrix.platform }})
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    needs: [prepare, installer-pkg]
+    if: always() && !cancelled()
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-arm64, macos-x86_64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the installer handoff
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-installer-${{ matrix.platform }}
+          path: staged
+      - name: Guard the artifact's completeness
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.download.outcome }}" != "success" ]; then
+            echo "::error::no bin-installer-${{ matrix.platform }} artifact — the ${{ matrix.platform }} installer leg did not complete"
+            echo "(a failed leg publishes nothing; fix the installer leg, then re-run failed jobs)"
+            exit 1
+          fi
+          if [ ! -f staged/.leg-complete ]; then
+            echo "::error::the bin-installer-${{ matrix.platform }} artifact carries no .leg-complete marker — the installer leg died before its gates passed; these partial bytes are not publishable"
+            exit 1
+          fi
+      - name: Upload the pkg (metadata plane)
+        if: needs.prepare.outputs.upload_url != ''
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          installers=(staged/*.pkg)
+          if [ "${#installers[@]}" -eq 0 ]; then
+            echo "no pkg in the handoff — the installer leg's signing plane was disarmed this run; an unsigned installer never ships (spec 16 §7)"
+            exit 0
+          fi
+          bash .github/workflows/lib/release-upload.sh --metadata "${{ needs.prepare.outputs.tag_name }}" "${installers[@]}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
