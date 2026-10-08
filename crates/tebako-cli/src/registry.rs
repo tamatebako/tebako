@@ -8,7 +8,12 @@
 //! dispatch path runs, default-names-a-listed-version included) plus the
 //! strict extras a CI gate wants collected in one report, so a
 //! registry-touching change fails on ITS OWN check instead of breaking
-//! every reader at merge. `retire` (tebako#675) removes one version row
+//! every reader at merge: requirement constraints that do not parse, an
+//! abi with no implementation axis, an abi mirrored on a multi-platform
+//! per-triplet row (tebako#440's mirror rule), and the tebako#549
+//! one-grammar classes — a version-level `implementation`, a mix of both
+//! spellings, and the parse-dropped version-level `engine` key.
+//! `retire` (tebako#675) removes one version row
 //! from a LOCAL registry file through the publish flow's own discipline
 //! (spec 18 C12: parse → mutate → re-validate → atomic write), refusing
 //! while the retirement would strand an in-registry runtime edge, dangle
@@ -313,6 +318,34 @@ pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
             // ignore additive keys); the gate collects them all in one
             // report so a registry PR fails its own CI leg.
             for p in &registry.payloads {
+                // tebako#549's one-grammar lock: the payload-level
+                // engine/implementation keys are the ONLY authored
+                // spelling of the runtime axis. The version-level
+                // implementation stays a compat READ so registries
+                // published before the axis existed keep resolving — but
+                // authoring it anew (or mixing both spellings) is a
+                // producer-side error, named here, never silently
+                // coerced.
+                let version_axis: Vec<&str> = p
+                    .versions
+                    .iter()
+                    .filter(|v| v.implementation.is_some())
+                    .map(|v| v.version.as_str())
+                    .collect();
+                if !version_axis.is_empty() {
+                    let mixed = p.implementation.is_some();
+                    for ver in version_axis {
+                        violations.push(Violation {
+                            payload: Some(p.name.clone()),
+                            version: Some(ver.to_string()),
+                            message: if mixed {
+                                "implementation is spelled at BOTH the payload and the version level — the payload-level key is the one grammar; drop the version-level key".to_string()
+                            } else {
+                                "implementation is spelled at the version level — the one grammar carries it at the payload level, beside engine: (the version-level spelling survives only so older registries keep resolving)".to_string()
+                            },
+                        });
+                    }
+                }
                 for v in &p.versions {
                     if let Some(req) = &v.runtime_requirement {
                         if let Err(e) = tpkg::versions::parse_constraint(&req.constraint) {
@@ -335,9 +368,34 @@ pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
                                     .to_string(),
                             });
                         }
+                        // tebako#440's mirror rule, producer-enforced: the
+                        // abi is per-triplet by construction, so the
+                        // mirror carries it only when one value holds for
+                        // the WHOLE entry. On a multi-platform per-triplet
+                        // row one platform's abi is wrong for every other
+                        // platform — the embedded slice manifests own the
+                        // per-platform values.
+                        let platform_rows = v.published_triplets().len();
+                        if req.abi.is_some() && platform_rows > 1 {
+                            violations.push(Violation {
+                                payload: Some(p.name.clone()),
+                                version: Some(v.version.clone()),
+                                message: format!(
+                                    "runtime_requirement.abi on a {platform_rows}-platform per-triplet row — the abi is per-triplet by construction, so the mirror omits it here (each slice's embedded manifest carries its own)"
+                                ),
+                            });
+                        }
                     }
                 }
             }
+            // A version-level `engine:` key parses to NOTHING — the model
+            // owns the engine axis at the payload level, and the lenient
+            // reader drops the misplaced key without a word (tebako#549's
+            // silent-drop class). The gate re-scans the raw document for
+            // exactly this known-misplaced key — never a generic
+            // unknown-key refusal: additive keys a newer writer emits must
+            // keep validating clean under an older gate.
+            violations.extend(misplaced_engine_violations(&text));
         }
     }
 
@@ -360,6 +418,49 @@ pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
         out
     };
     Ok((text, code))
+}
+
+/// The version-level `engine:` scan (tebako#549): the lenient model
+/// parse drops a misplaced `engine` key on a version row — the axis is
+/// payload-level only — so the gate re-reads the raw document and names
+/// every occurrence. Scoped to the ONE known-misplaced key; any other
+/// unknown key is a newer writer's additive field and passes (reader
+/// leniency is the compat law).
+fn misplaced_engine_violations(text: &str) -> Vec<Violation> {
+    let Ok(serde_yml::Value::Mapping(root)) = serde_yml::from_str::<serde_yml::Value>(text) else {
+        return Vec::new(); // the model parse already named the document
+    };
+    let payloads = root
+        .get(serde_yml::Value::String("payloads".to_string()))
+        .and_then(|p| p.as_sequence());
+    let mut out = Vec::new();
+    for payload in payloads.into_iter().flatten() {
+        let name = payload
+            .get(serde_yml::Value::String("name".to_string()))
+            .and_then(|n| n.as_str())
+            .unwrap_or("?");
+        let versions = payload
+            .get(serde_yml::Value::String("versions".to_string()))
+            .and_then(|v| v.as_sequence());
+        for version in versions.into_iter().flatten() {
+            if version
+                .get(serde_yml::Value::String("engine".to_string()))
+                .is_none()
+            {
+                continue;
+            }
+            let ver = version
+                .get(serde_yml::Value::String("version".to_string()))
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            out.push(Violation {
+                payload: Some(name.to_string()),
+                version: Some(ver.to_string()),
+                message: "a version row carries an engine: key — the grammar reads engine only at the payload level; this key is dropped on parse and never reaches a runtime edge".to_string(),
+            });
+        }
+    }
+    out
 }
 
 /// The input's bytes: an existing local path reads directly; anything
