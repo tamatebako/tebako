@@ -97,8 +97,26 @@ pub use transport::{HttpTransport, Transport};
 /// plane armed factory-side; `TEBAKO_REQUIRE_SIGNED=1` resolves this
 /// line and refuses 0.16.22's unsigned one) and the line adds ruby
 /// 4.0.6 — the ruby 4 flavor's runtime source. Same v2.3.0 driver
-/// unit as 0.16.22 (contract 2, unchanged).
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.23";
+/// unit as 0.16.22 (contract 2, unchanged). 0.16.32 (tebako#738): the
+/// default must never sit below [`SIGNED_PKG_RUNTIME_FLOOR`] — while
+/// the pin sat at 0.16.23 every default macOS press (ad-hoc re-signed,
+/// spec 31 §1.2) produced a package whose pre-0.16.26 driver reads the
+/// trailer at physical EOF, past the appended codesign superblob, and
+/// EINVALs the payload mount. The line ships ruby 3.1.6 / 3.2.11 /
+/// 3.3.12 / 3.4.10 / 4.0.7 as per-ruby shards (spec 36 §6; the
+/// resolver's era-ordered probing serves them).
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.32";
+
+/// The first runtime line whose embedded driver locates the tpkg
+/// trailer by spec 02 §1's LOGICAL EOF — the floor for RUNNING a
+/// codesigned package (tebako#738). Codesigning appends the
+/// code-signature superblob AFTER the trailer, so a pre-floor driver
+/// reads the trailer at physical EOF, finds superblob bytes, and
+/// EINVALs the payload mount (the slot bytes are intact — it is the
+/// trailer read, not corruption). THE SINGLE OWNER: press refuses a
+/// codesigned output pinned below this line, and the CLI e2e's
+/// run-half self-gate flows it from here.
+pub const SIGNED_PKG_RUNTIME_FLOOR: &str = "0.16.26";
 
 /// Fetch `reference` (pin-verified at the fetch boundary) and install it
 /// as `payloads/<name>/<version>.tfs` — or return the existing entry.

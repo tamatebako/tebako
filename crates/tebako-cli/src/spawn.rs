@@ -345,6 +345,21 @@ fn spawned_runtime_row(
         ),
         preset,
     )?;
+    // spec 33 §4 (tebako#552): a spawned runtime whose cached release
+    // index mirrors an on_runtime edge composes on an OWNER — resolve
+    // that owner through the shim's single fail-closed gate (a pre-
+    // 2.5.0 owner line would mis-join the entry onto the depending
+    // runtime's env image at boot; the gate names the line, exit 75).
+    // The pick pre-stages in the machine store — the same posture as
+    // the dep edge above; the §13.6 row grammar carries no owner arm.
+    let exe_name = rt
+        .exe
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if let Some(mirror) = tpkg::runtime_store::on_runtime_mirror(&rt.dir, &exe_name).map_err(err)? {
+        tebako_shim::runtime::resolve_owner(&mirror, true, ctx).map_err(install::map_shim)?;
+    }
     carried_runtime_row(
         &rt,
         engine,

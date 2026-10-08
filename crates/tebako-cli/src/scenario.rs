@@ -15,8 +15,9 @@ pub const BUNDLER_MIN_VERSION: &str = "2.4.22";
 /// The default ruby pairs with `tebako_resolve::DEFAULT_TEBAKO_VERSION`:
 /// the default line must PUBLISH this version (resolution of a version a
 /// line does not carry is the named exit-120 error with the available set
-/// — the pairing is exercised by the press e2e suite). The 0.16.23 line
-/// carries 3.1.6 / 3.2.11 / 3.3.12 / 3.4.10 / 4.0.6.
+/// — the pairing is exercised by the press e2e suite). The 0.16.32 line
+/// carries 3.1.6 / 3.2.11 / 3.3.12 / 3.4.10 / 4.0.7 (per-ruby shards,
+/// spec 36 §6).
 pub const DEFAULT_RUBY_VERSION: &str = "3.3.12";
 pub const MIN_RUBY_VERSION_WINDOWS: &str = "3.1.6";
 

@@ -695,6 +695,20 @@ pub(crate) fn stale_floor_in_text(text: &str) -> Option<(String, &'static str)> 
         .then_some((floor, DRIVER_TEBAKO_VERSION))
 }
 
+/// The tebako#536 schema-skew verdict on a manifest TEXT whose full
+/// parse already FAILED: `Some((declared, spoken))` iff the text
+/// declares an `identity.schema_minor` above this reader's maximum
+/// ([`tpkg::PAYLOAD_SCHEMA_MINOR`]). Within one MAJOR a newer minor is
+/// TOLERATED on a clean parse (the spec 18 §3 evolution law — unknown
+/// keys change nothing a reader does), so the verdict exists for the
+/// failure path only: there, "the manifest speaks a newer schema minor"
+/// is the diagnosis and the plain corrupt-manifest wording would send
+/// the user after the payload when the fix is a newer runtime.
+pub(crate) fn schema_minor_skew_in_text(text: &str) -> Option<(u32, u32)> {
+    let declared = tpkg::PayloadManifest::declared_schema_minor(text)?;
+    (declared > tpkg::PAYLOAD_SCHEMA_MINOR).then_some((declared, tpkg::PAYLOAD_SCHEMA_MINOR))
+}
+
 /// The mounted image's own manifest, when readable: no manifest
 /// declares nothing (plain images mount fine); a corrupt one is the
 /// image lying about its self-description — a named 65. Shared by the
@@ -726,6 +740,16 @@ pub(crate) fn mounted_manifest_at(
             if let Some((floor, have)) = stale_floor_in_text(&text) {
                 return Err(manifest(format!(
                     "the image mounted at '{mount}' declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for this payload's manifest (needs {floor}, have {have}); update the runtime — the payload is not corrupt (parse: {e})"
+                )));
+            }
+            // tebako#536: the same rewording keyed on the schema
+            // counter — the manifest speaks a schema minor this driver
+            // predates (e.g. a `kind: executable` requires edge read by
+            // a pre-minor-5 link unit).
+            if let Some((declared, spoken)) = schema_minor_skew_in_text(&text) {
+                return Err(manifest(format!(
+                    "the image mounted at '{mount}' declares identity.schema_minor {declared} but this runtime's driver speaks payload-manifest schema {major} only up to minor {spoken} — the manifest is NEWER than this runtime, not corrupt; point the payload at a newer runtime (or republish it against an older schema target) (parse: {e})",
+                    major = tpkg::PAYLOAD_SCHEMA_VERSION
                 )));
             }
             Err(manifest(format!(
@@ -1524,6 +1548,49 @@ mod tests {
         let old = &future.replace("9999.0.0", "0.0.1");
         assert_eq!(stale_floor_in_text(old), None);
         assert_eq!(stale_floor_in_text("not: a manifest\n"), None);
+    }
+
+    #[test]
+    fn schema_minor_skew_in_text_names_a_manifest_this_reader_predates() {
+        // tebako#536: a manifest speaking a schema minor this driver
+        // predates fails the parse (here: a requires edge kind from a
+        // later minor) — the loose scan still names the skew.
+        let future = "identity:\n  schema_version: 1\n  schema_minor: 99\n  kind: app\n  name: x\n  version: 1.0.0\n\
+                      \x20 producer: {tool: t, tool_version: \"1\"}\n  created: now\n\
+                      \x20 digest: {tree_hash: \"sha256:00\", blob_sha256: \"00\"}\n\
+                      \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+                      provides:\n  entrypoints: []\n  capabilities: {exec: true, read: true}\n\
+                      requires:\n  - kind: quantum\n    name: q\n    constraint: \">= 1\"\n";
+        assert!(tpkg::PayloadManifest::from_yaml(future).is_err());
+        assert_eq!(
+            schema_minor_skew_in_text(future),
+            Some((99, tpkg::PAYLOAD_SCHEMA_MINOR))
+        );
+        // A clean parse TOLERATES the newer minor (spec 18 §3: unknown
+        // keys within the MAJOR change nothing a reader does) — the
+        // verdict exists for the failure path only.
+        let tolerable = format!(
+            "identity:\n  schema_version: 1\n  schema_minor: 99\n  kind: data\n  name: x\n  version: 1.0.0\n\
+             \x20 producer: {{tool: t, tool_version: \"1\"}}\n  created: now\n\
+             \x20 digest: {{tree_hash: \"sha256:{}\", blob_sha256: {}}}\n\
+             \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+             provides:\n  mount_semantics: {{suggested: /usr/share/x}}\n  capabilities: {{exec: false, read: true}}\n",
+            "0".repeat(64),
+            "0".repeat(64),
+        );
+        assert!(tpkg::PayloadManifest::from_yaml(&tolerable).is_ok());
+        // At or below the spoken minor, undeclared, or non-integer: no
+        // verdict — the caller keeps the plain corrupt-manifest wording.
+        let spoken = &future.replace(
+            "schema_minor: 99",
+            &format!("schema_minor: {}", tpkg::PAYLOAD_SCHEMA_MINOR),
+        );
+        assert_eq!(schema_minor_skew_in_text(spoken), None);
+        let undeclared = &future.replace("  schema_minor: 99\n", "");
+        assert_eq!(schema_minor_skew_in_text(undeclared), None);
+        let non_integer = &future.replace("schema_minor: 99", "schema_minor: soon");
+        assert_eq!(schema_minor_skew_in_text(non_integer), None);
+        assert_eq!(schema_minor_skew_in_text("not: a manifest\n"), None);
     }
 
     #[test]

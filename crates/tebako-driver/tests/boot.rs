@@ -2285,6 +2285,63 @@ fn a_corrupt_dependency_manifest_is_a_named_65() {
     );
 }
 
+#[test]
+fn a_newer_schema_minor_dependency_manifest_is_a_named_skew_65() {
+    // tebako#536: the dependency's manifest speaks a schema minor this
+    // driver predates (the kind: quantum edge stands in for any grammar
+    // from a later minor) — the refusal names the skew, not corruption.
+    let g = guard("path-env-skew");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let skewed = {
+        let p = g.path().join("skewed.tfs");
+        build_zip(
+            &p,
+            &["__tpkg__/"],
+            &[(
+                "__tpkg__/manifest.yaml",
+                b"identity:\n  schema_version: 1\n  schema_minor: 99\n  kind: app\n  name: x\n  version: 1.0.0\n  producer: {tool: t, tool_version: \"1\"}\n  created: now\n  digest: {tree_hash: \"sha256:00\", blob_sha256: \"00\"}\n  signing: {state: unsigned}\n  encryption: {state: none}\nprovides:\n  entrypoints: []\n  capabilities: {exec: true, read: true}\nrequires:\n  - kind: quantum\n    name: q\n    constraint: \">= 1\"\n"
+                    .as_slice(),
+            )],
+        );
+        p
+    };
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/skewed", skewed.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("identity.schema_minor 99"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("only up to minor"), "{}", err.message);
+    assert!(
+        err.message.contains("NEWER than this runtime, not corrupt"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("(parse:"), "{}", err.message);
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refusal unmounts everything"
+    );
+}
+
 // ---------------------------------------------------------------------
 // spec 22 §3.2: the host-launcher tier — self-injecting PATH wrappers
 // ---------------------------------------------------------------------

@@ -118,6 +118,12 @@ pub const LAUNCHER_ABI: u32 = 1;
 /// tebako-resolve (the single source every consumer flows from).
 pub use tebako_resolve::DEFAULT_TEBAKO_VERSION;
 
+/// The first runtime line whose embedded driver locates the tpkg
+/// trailer of a CODESIGNED package (spec 02 §1's logical EOF) — the
+/// press-time floor for output the CLI ad-hoc signs. Owned by
+/// tebako-resolve; every consumer flows it from there.
+pub use tebako_resolve::SIGNED_PKG_RUNTIME_FLOOR;
+
 /// The CLI version banner: the product version IS the crate semver
 /// (env!("CARGO_PKG_VERSION") — the single owner; a hand-written copy
 /// here froze at 0.15.9 across two releases).
@@ -155,7 +161,41 @@ const WARN2: &str = "
 // press
 // ---------------------------------------------------------------------
 
+/// The tebako#738 fail-closed gate: a press whose output will be
+/// codesigned (every macOS press — `resign_if_needed` ad-hoc signs by
+/// default) against a runtime line below [`SIGNED_PKG_RUNTIME_FLOOR`]
+/// produces a package that never boots (the pre-floor driver reads the
+/// trailer at physical EOF, past the appended superblob) — refuse by
+/// name instead of shipping it. The same pin on an UNSIGNED output
+/// (every other platform) boots fine; the floor is advisory there.
+/// Returns the loud warning to print, or the refusal.
+fn signed_pkg_floor_gate(
+    tebako_version: &str,
+    codesigned: bool,
+) -> Result<Option<String>, TebakoError> {
+    if !tpkg::versions::below_floor(tebako_version, SIGNED_PKG_RUNTIME_FLOOR) {
+        return Ok(None);
+    }
+    if codesigned {
+        return Err(packaging_error(
+            130,
+            Some(&format!(
+                "--tebako-version {tebako_version} is below the signed-package runtime floor {SIGNED_PKG_RUNTIME_FLOOR}: this platform ad-hoc codesigns the package, and a pre-{SIGNED_PKG_RUNTIME_FLOOR} runtime driver locates the trailer at physical EOF — past the appended code-signature superblob — so the package would fail to boot (EINVAL on the payload mount). Press with --tebako-version {SIGNED_PKG_RUNTIME_FLOOR} or newer (the default is {DEFAULT_TEBAKO_VERSION})"
+            )),
+        ));
+    }
+    Ok(Some(format!(
+        "--tebako-version {tebako_version} is below the signed-package runtime floor {SIGNED_PKG_RUNTIME_FLOOR} — the package boots unsigned, but codesigning it later (a macOS distribution, say) makes it unbootable: pre-{SIGNED_PKG_RUNTIME_FLOOR} drivers read the trailer at physical EOF, past the signature superblob"
+    )))
+}
+
 pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
+    // tebako#738: the signed-package floor gates EVERY press shape
+    // (suites included) before any heavy work — a refusal must not
+    // cost a runtime download.
+    if let Some(warning) = signed_pkg_floor_gate(&opts.tebako_version, cfg!(target_os = "macos"))? {
+        eprintln!("tebako: WARNING: {warning}");
+    }
     // --suite: one package, N entries (spec 03 §6 — src/suite.rs).
     if let Some(suite_path) = &opts.suite {
         if opts.compose.is_some() || opts.carry.is_some() || opts.share.is_some() {
@@ -1647,6 +1687,49 @@ mod tests {
         assert_eq!(rfc3339_utc(1_704_067_200), "2024-01-01T00:00:00Z");
         assert_eq!(rfc3339_utc(1_767_225_600), "2026-01-01T00:00:00Z");
         assert_eq!(rfc3339_utc(86_399), "1970-01-01T23:59:59Z");
+    }
+
+    #[test]
+    fn the_default_line_never_sits_below_the_signed_pkg_floor() {
+        // tebako#738's invariant: a default press must never compose a
+        // package its own runtime line cannot boot once codesigned.
+        assert!(!tpkg::versions::below_floor(
+            DEFAULT_TEBAKO_VERSION,
+            SIGNED_PKG_RUNTIME_FLOOR
+        ));
+    }
+
+    #[test]
+    fn the_signed_pkg_floor_gate_refuses_a_codesigned_press_below_the_floor() {
+        // tebako#738: below the floor on a codesigned output is the
+        // named refusal, citing the pin, the floor, and the default.
+        let err = signed_pkg_floor_gate("0.16.25", true).unwrap_err();
+        assert_eq!(err.code, 130, "{err:?}");
+        assert!(err.message.contains("0.16.25"), "{err:?}");
+        assert!(err.message.contains(SIGNED_PKG_RUNTIME_FLOOR), "{err:?}");
+        assert!(err.message.contains(DEFAULT_TEBAKO_VERSION), "{err:?}");
+        assert!(err.message.contains("would fail to boot"), "{err:?}");
+    }
+
+    #[test]
+    fn the_signed_pkg_floor_gate_passes_at_and_above_the_floor() {
+        assert!(signed_pkg_floor_gate(SIGNED_PKG_RUNTIME_FLOOR, true)
+            .unwrap()
+            .is_none());
+        assert!(signed_pkg_floor_gate(DEFAULT_TEBAKO_VERSION, true)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn the_signed_pkg_floor_gate_warns_and_proceeds_on_unsigned_output() {
+        // Off macOS the output is unsigned and boots on any line — the
+        // floor is advisory (a later codesign would strand it).
+        let warning = signed_pkg_floor_gate("0.16.25", false)
+            .unwrap()
+            .expect("a loud warning");
+        assert!(warning.contains("0.16.25"), "{warning}");
+        assert!(warning.contains(SIGNED_PKG_RUNTIME_FLOOR), "{warning}");
     }
 
     #[test]

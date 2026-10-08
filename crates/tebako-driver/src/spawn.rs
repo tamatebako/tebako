@@ -791,6 +791,14 @@ fn materialize_mirror(
                     image.display()
                 ));
             }
+            // tebako#536: the schema-counter form of the same skew.
+            if let Some((declared, spoken)) = crate::driver::schema_minor_skew_in_text(&text) {
+                return Err(format!(
+                    "the payload image '{}' declares identity.schema_minor {declared} but this runtime's driver speaks payload-manifest schema {major} only up to minor {spoken} — the manifest is NEWER than this runtime, not corrupt; point the payload at a newer runtime (or republish it against an older schema target) (parse: {e})",
+                    image.display(),
+                    major = tpkg::PAYLOAD_SCHEMA_VERSION
+                ));
+            }
             return Err(format!(
                 "corrupt {} in the payload image '{}' — the provider's self-description lies: {e}",
                 tpkg::PAYLOAD_MANIFEST_PATH,
@@ -1220,6 +1228,16 @@ fn runtime_facts(rt: &CachedRuntime, runtime_root: &str) -> Result<Arc<RuntimeFa
                 return Err(format!(
                     "the env image '{}' declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for its own image manifest (needs {floor}, have {have}); reinstall the runtime pair (parse: {e})",
                     image.display()
+                ));
+            }
+            // tebako#536: the schema-counter form of the same skew —
+            // the env image's own manifest speaks a minor this driver
+            // predates (a mismatched, newer image beside an older exe).
+            if let Some((declared, spoken)) = crate::driver::schema_minor_skew_in_text(&text) {
+                return Err(format!(
+                    "the env image '{}' declares identity.schema_minor {declared} but this runtime's driver speaks payload-manifest schema {major} only up to minor {spoken} — the image is NEWER than this runtime, not corrupt; reinstall a current runtime pair (parse: {e})",
+                    image.display(),
+                    major = tpkg::PAYLOAD_SCHEMA_VERSION
                 ));
             }
             return Err(format!(

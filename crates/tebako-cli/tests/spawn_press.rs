@@ -427,6 +427,106 @@ fn shared_runtime_preset_refuses_the_spawned_runtime_row() {
 }
 
 #[test]
+fn an_on_runtime_composition_on_a_pre_2_5_0_owner_fails_closed_75() {
+    // spec 33 §4 (tebako#552): the depending runtime's cached release
+    // index mirrors the on_runtime edge; the press walk resolves the
+    // OWNER through the shim's fail-closed gate — a pre-2.5.0 owner
+    // line is the named exit-75 refusal, never a composed lock whose
+    // boot would mis-join the entry.
+    let fx = Fixture::new("owner-stale");
+    let app = app_image(
+        &fx,
+        &app_image_with_requires(
+            "  - kind: runtime\n    engine: ruby\n    constraint: \">= 34\"\n",
+        ),
+    );
+    let platform = tebako_shim::runtime::platform_string();
+    let suffix = tebako_shim::runtime::exe_suffix();
+    // The depending runtime (the truffleruby shape): a ruby engine on
+    // tebako 2.4.0, its cached index mirroring the graalvm owner edge.
+    let dep_exe = format!("tebako-runtime-2.4.0-34.0.1-{platform}{suffix}");
+    cached_runtime(
+        &fx,
+        "ruby",
+        "34.0.1",
+        "2.4.0",
+        &["ruby"],
+        Some(format!(
+            "[{{\"filename\": \"{dep_exe}\", \"on_runtime\": {{\"engine\": \"java\", \"implementation\": \"graalvm\", \"constraint\": \">= 24\", \"mount\": \"/__runners__/truffleruby\", \"owner_contract\": \">= 2\"}}}}]"
+        )),
+    );
+    // The cached owner: graalvm java 25.0.4.1 on the pre-2.5.0 line,
+    // contract 2 — the contract gate is satisfied; the LINE gate fires.
+    let owner_exe = format!("tebako-runtime-2.4.1-25.0.4.1-{platform}{suffix}");
+    cached_runtime(
+        &fx,
+        "java",
+        "25.0.4.1",
+        "2.4.1",
+        &["java"],
+        Some(format!(
+            "[{{\"filename\": \"{owner_exe}\", \"implementation\": \"graalvm\", \"contract_version\": 2, \"tebako_version\": \"2.4.1\"}}]"
+        )),
+    );
+
+    let err = walk(&fx, &app).unwrap_err();
+    assert_eq!(err.code, 75, "{err:?}");
+    assert!(
+        err.message.contains("cannot own this composition"),
+        "{err:?}"
+    );
+    assert!(err.message.contains("2.4.1"), "{err:?}");
+    assert!(err.message.contains("2.5.0"), "{err:?}");
+}
+
+#[test]
+fn an_on_runtime_composition_on_a_2_5_0_owner_composes_the_dep_row() {
+    // The same shape with the owner on the 2.5.0 line: both gates pass
+    // and the walk composes the depending runtime's row as before.
+    let fx = Fixture::new("owner-ok");
+    let app = app_image(
+        &fx,
+        &app_image_with_requires(
+            "  - kind: runtime\n    engine: ruby\n    constraint: \">= 34\"\n",
+        ),
+    );
+    let platform = tebako_shim::runtime::platform_string();
+    let suffix = tebako_shim::runtime::exe_suffix();
+    let dep_exe = format!("tebako-runtime-2.4.0-34.0.1-{platform}{suffix}");
+    cached_runtime(
+        &fx,
+        "ruby",
+        "34.0.1",
+        "2.4.0",
+        &["ruby"],
+        Some(format!(
+            "[{{\"filename\": \"{dep_exe}\", \"on_runtime\": {{\"engine\": \"java\", \"implementation\": \"graalvm\", \"constraint\": \">= 24\", \"mount\": \"/__runners__/truffleruby\", \"owner_contract\": \">= 2\"}}}}]"
+        )),
+    );
+    let owner_exe = format!("tebako-runtime-2.5.0-25.0.4.1-{platform}{suffix}");
+    cached_runtime(
+        &fx,
+        "java",
+        "25.0.4.1",
+        "2.5.0",
+        &["java"],
+        Some(format!(
+            "[{{\"filename\": \"{owner_exe}\", \"implementation\": \"graalvm\", \"contract_version\": 2, \"tebako_version\": \"2.5.0\"}}]"
+        )),
+    );
+
+    let plan = walk(&fx, &app).unwrap();
+    assert_eq!(plan.rows.len(), 1);
+    let tpkg::LockedSpawned::Runtime(row) = &plan.rows[0] else {
+        panic!("a runtime row: {:?}", plan.rows[0]);
+    };
+    assert_eq!(row.engine, "ruby");
+    assert_eq!(row.version, "34.0.1");
+    assert_eq!(row.tebako, "2.4.0");
+    assert!(row.carry);
+}
+
+#[test]
 fn the_dll_facet_rides_the_carried_row() {
     // tebako-runtime-ruby#40: the cached release index declares the dll
     // facet; the store staged it under install_as; the row pins it as the
