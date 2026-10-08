@@ -1,23 +1,31 @@
 # Spec 28 — Runtime variants and the run-configuration surface
 
-**Status: PLANNED (drafted 2026-08-26; revised 2026-08-30 — the
+**Status: SHIPPED IN PART (drafted 2026-08-26; revised 2026-08-30 — the
 language/implementation split: `engine` names the LANGUAGE, so mri,
 jruby and truffleruby are all `ruby`, and the optional `implementation`
-sub-axis distinguishes them). §8's implementation-axis pieces SHIP
+sub-axis distinguishes them; 2026-10-09 — the variant REGISTRY arm
+ships, tebako#557: §3's grammar (`variants:`, `default_variant`, the
+MECE shorthand law), §2's derived variant id (registry validation and
+default matching), §4 rule 1's no-selector selection (the declared
+default, else the newest line), and `tebako publish`'s N-arm emission.
+Still PLANNED: §4 rules 2–3 (selector matching), §5's selector
+surfaces, §6's per-variant store layout (until it ships, one installed
+variant per version per machine — the no-selector pick is
+deterministic, so the flat store stays coherent), §7's D2 amendment,
+§9's CLI/info surface.)** §8's implementation-axis pieces SHIP
 incrementally ahead of the variant machinery: the `implementation` axis
 on edges and shards (spec 30, v2.4.0), and — with the axis-polish batch
 — `provides.language_version`, the `any_of` list form of
-`runtime_requirement`, and its native-extension rules. The variant
-dimension (§1–§7, §9) remains PLANNED.** Amends spec 03 §2 (the requirement and
-`provides` grammars), spec 04 §2 (registry), spec 05 §3/§5 (store
-layout, selection), spec 07 §0/§2/§4 (the selection chains), spec 23 §3
-(the D2 `runtime:` key alignment), spec 15 (the info surface). No
-wire-format change; no trailer change; the L1 manifest change is
-ADDITIVE (the optional `implementation` key; the variant key still
-DERIVES from the manifest's existing `runtime_requirement`). The
-revision lands before any variant machinery shipped — there is nothing
-to migrate; the pre-revision flat-engine spellings are retired, not
-carried.
+`runtime_requirement`, and its native-extension rules. Amends spec 03
+§2 (the requirement and `provides` grammars), spec 04 §2 (registry),
+spec 05 §3/§5 (store layout, selection), spec 07 §0/§2/§4 (the
+selection chains), spec 23 §3 (the D2 `runtime:` key alignment), spec
+15 (the info surface). No wire-format change; no trailer change; the L1
+manifest change is ADDITIVE (the optional `implementation` key; the
+variant key still DERIVES from the manifest's existing
+`runtime_requirement`). The revision landed before any variant
+machinery shipped — there was nothing to migrate; the pre-revision
+flat-engine spellings are retired, not carried.
 
 A payload version is not one build. A native-extension payload is locked
 to the runtime ABI line it was baked against (spec 05 §5), so
@@ -96,6 +104,11 @@ the id appears in store paths and diagnostics only.
 
 ## 3. Registry grammar (spec 04 §2 amendment)
 
+**SHIPPED 2026-10-09 (tebako#557):** the grammar below is live —
+`tebako publish` emits the `variants:` form for a multi-arm publish
+(the single-arm shorthand emission is byte-identical with the pre-variant
+shape), and the reader validates and resolves both forms.
+
 A version entry gains the additive key `variants:`; the top-level
 `platforms:` + `runtime_requirement:` pair is exactly the single-variant
 shorthand. MECE: a version entry carries EITHER the shorthand OR
@@ -133,6 +146,9 @@ payloads:
   (spec 09 unchanged).
 
 ## 4. Selection semantics (normative)
+
+**Rule 1 (no selector) SHIPPED 2026-10-09 (tebako#557); rules 2–3
+(selector matching) remain PLANNED with §5's surfaces.**
 
 Given `(name, version, selector?)`:
 
