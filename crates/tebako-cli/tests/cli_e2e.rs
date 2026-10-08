@@ -1271,14 +1271,17 @@ fn image_era_press_and_cold_run() {
 /// version check — spec 20 §8 negotiation.)
 const POST_FLIP_RUNTIME_FLOOR: (u64, u64, u64) = (0, 16, 11);
 
-fn runtime_line_at_least(ver: &str, floor: (u64, u64, u64)) -> bool {
+fn parse_runtime_line(ver: &str) -> (u64, u64, u64) {
     let mut parts = ver.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
-    let v = (
+    (
         parts.next().unwrap_or(0),
         parts.next().unwrap_or(0),
         parts.next().unwrap_or(0),
-    );
-    v >= floor
+    )
+}
+
+fn runtime_line_at_least(ver: &str, floor: (u64, u64, u64)) -> bool {
+    parse_runtime_line(ver) >= floor
 }
 
 fn runtime_line_is_post_flip(ver: &str) -> bool {
@@ -1293,8 +1296,12 @@ fn runtime_line_is_post_flip(ver: &str) -> bool {
 /// superblob. A pre-locator driver reads the physical EOF, finds
 /// superblob bytes, and EINVALs the payload mount. The macOS run halves
 /// re-activate by themselves once DEFAULT_TEBAKO_VERSION names this
-/// line; pressing is unaffected (it never involves a runtime).
-const SIGNED_PKG_RUNTIME_FLOOR: (u64, u64, u64) = (0, 16, 26);
+/// line; pressing is unaffected (it never involves a runtime). The
+/// VALUE flows from tebako-resolve — the single owner (press refuses a
+/// codesigned output below it, tebako#738); never hand-copy it here.
+fn signed_pkg_runtime_floor() -> (u64, u64, u64) {
+    parse_runtime_line(tebako_cli::SIGNED_PKG_RUNTIME_FLOOR)
+}
 
 /// True when the published runtime line can RUN this CLI's press output.
 /// Off macOS the output is unsigned and any post-flip driver reads it;
@@ -1305,12 +1312,12 @@ fn published_runtime_runs_press_output() -> bool {
         return true;
     }
     let ver = tebako_cli::DEFAULT_TEBAKO_VERSION;
-    if runtime_line_at_least(ver, SIGNED_PKG_RUNTIME_FLOOR) {
+    if runtime_line_at_least(ver, signed_pkg_runtime_floor()) {
         return true;
     }
     eprintln!(
-        "skipping the packaged run: runtime line {ver} predates the signed-package floor {}.{}.{} — the published runtime's embedded driver cannot locate the trailer of a codesigned package (spec 02 §1's logical EOF) yet",
-        SIGNED_PKG_RUNTIME_FLOOR.0, SIGNED_PKG_RUNTIME_FLOOR.1, SIGNED_PKG_RUNTIME_FLOOR.2
+        "skipping the packaged run: runtime line {ver} predates the signed-package floor {} — the published runtime's embedded driver cannot locate the trailer of a codesigned package (spec 02 §1's logical EOF) yet",
+        tebako_cli::SIGNED_PKG_RUNTIME_FLOOR
     );
     false
 }
