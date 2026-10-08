@@ -28,6 +28,17 @@ pub const PAYLOAD_MANIFEST_PATH: &str = "/__tpkg__/manifest.yaml";
 /// The only `identity.schema_version` this implementation reads and writes.
 pub const PAYLOAD_SCHEMA_VERSION: u32 = 1;
 
+/// The highest `identity.schema_minor` this implementation reads and
+/// writes (spec 18 §3's additive counter) — the code-side mirror of
+/// `docs/spec/schemas/payload-manifest.yaml`'s `schema_minor:` head,
+/// kept in sync in the same PR (the schema file owns the grammar).
+/// Within one MAJOR a reader TOLERATES a newer minor on a clean parse
+/// (unknown keys change nothing it does); the counter's diagnostic use
+/// is the parse-FAILURE path, where a declared minor above this one is
+/// the difference between "the payload speaks a newer schema" and "the
+/// payload is corrupt" (tebako#536).
+pub const PAYLOAD_SCHEMA_MINOR: u32 = 15;
+
 /// Error returned by payload-manifest operations.
 ///
 /// Deliberately separate from [`crate::TpkgError`]: `TpkgError`'s codes are
@@ -2630,6 +2641,22 @@ impl PayloadManifest {
             .map(str::to_string)
     }
 
+    /// The declared `identity.schema_minor` of a manifest TEXT,
+    /// tolerantly extracted (tebako#536) — for the parse-failure error
+    /// path, where the document almost certainly speaks grammar this
+    /// reader predates and the full parse has ALREADY failed. A
+    /// non-negative integer scalar only; anything else (absent,
+    /// non-integer, unparsable YAML) is None and the caller keeps the
+    /// plain corrupt-manifest wording.
+    pub fn declared_schema_minor(text: &str) -> Option<u32> {
+        let value: serde_yml::Value = serde_yml::from_str(text).ok()?;
+        value
+            .get("identity")
+            .and_then(|i| i.get("schema_minor"))
+            .and_then(|v| v.as_u64())
+            .and_then(|n| u32::try_from(n).ok())
+    }
+
     /// Semantic checks beyond the serde structure: schema version,
     /// kind ↔ provides binding, the locked capability truth tables,
     /// digest/keyid shapes, signing/encryption state consistency, the
@@ -3437,6 +3464,37 @@ mod tests {
             PayloadManifest::declared_min_runtime_tebako("{{{{not yaml"),
             None
         );
+    }
+
+    #[test]
+    fn declared_schema_minor_tolerates_unparsable_manifests() {
+        // tebako#536: the schema-skew error path reads the declared
+        // minor out of a manifest THIS reader cannot fully parse (a
+        // requires edge kind from a later schema_minor, say) — the
+        // loose scan answers from the raw text.
+        let future = "identity:\n  schema_version: 1\n  schema_minor: 99\n  kind: app\n  name: x\n  version: 1.0.0\n\
+                      \x20 producer: {tool: t, tool_version: \"1\"}\n  created: now\n\
+                      \x20 digest: {tree_hash: \"sha256:00\", blob_sha256: \"00\"}\n\
+                      \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+                      provides:\n  entrypoints: []\n  capabilities: {exec: true, read: true}\n\
+                      requires:\n  - kind: quantum\n    name: q\n    constraint: \">= 1\"\n";
+        assert!(PayloadManifest::from_yaml(future).is_err());
+        assert_eq!(PayloadManifest::declared_schema_minor(future), Some(99));
+        // Absent key, non-integer value, and unparsable YAML all answer
+        // None — the caller keeps the plain corrupt-manifest wording.
+        assert_eq!(
+            PayloadManifest::declared_schema_minor(&minimal_data_yaml("")),
+            None
+        );
+        assert_eq!(
+            PayloadManifest::declared_schema_minor("identity:\n  schema_minor: soon\n"),
+            None
+        );
+        assert_eq!(
+            PayloadManifest::declared_schema_minor("schema_minor: 99\n"),
+            None
+        );
+        assert_eq!(PayloadManifest::declared_schema_minor("{{{{not yaml"), None);
     }
 
     #[test]
