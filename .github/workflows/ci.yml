@@ -398,6 +398,55 @@ jobs:
         working-directory: tebako-rs
         run: cargo test -p tfs --no-default-features
 
+  # tebako#518: the PR-time musl leg for the preload shim. Before it,
+  # the first musl compile OR run of any preload change was the runtime
+  # factory's boot smoke — tebako#516's musl-missing symbol
+  # (canonicalize_file_name) passed every gnu/macos/windows leg here and
+  # then aborted all 44 factory musl jobs on 2026-09-02. The leg builds
+  # the shim + its unit tests for musl libc inside an alpine:3.21
+  # container (docker run from the glibc runner — node actions cannot
+  # run on musl; the release leg's proven native-musl path), runs the
+  # unit suite, and runs the jail/dup/fopen smoke matrix on real musl
+  # libc. All build/smoke logic lives in ci/musl-preload-smoke.sh.
+  test-musl-preload:
+    name: test (alpine:3.21 musl, libtfs-preload)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      # The vendored-dwarfs build needs the sibling path dep + submodule.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      # The release musl leg's exact cache shape (same key formula, same
+      # inputs): vcpkg runs inside the alpine container — no run-vcpkg,
+      # no x-gha injection — and the mounted ~/.cache/vcpkg files
+      # provider round-trips through this actions/cache.
+      - name: Cache vcpkg package archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/vcpkg
+          key: vcpkg-archives-musl-${{ runner.arch }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**', 'tebako-rs/crates/sqfs-sys/vcpkg.json', 'tebako-rs/crates/sqfs-sys/vcpkg_ports/**', 'tebako-rs/crates/sqfs-sys/vcpkg_triplets/**') }}
+          restore-keys: |
+            vcpkg-archives-musl-${{ runner.arch }}-
+
+      - name: Build + smoke in the Alpine container (docker run)
+        env:
+          RUST_VERSION: "1.94.1"
+          VCPKG_COMMIT: ${{ env.VCPKG_COMMIT }}
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -v "$HOME/.cache/vcpkg:/root/.cache/vcpkg" \
+            -e RUST_VERSION -e VCPKG_COMMIT -e GITHUB_WORKSPACE \
+            alpine:3.21 sh "$GITHUB_WORKSPACE/tebako-rs/ci/musl-preload-smoke.sh"
+
   # The pure-Rust crates compile and test on the real platform (TODO.v2-1/03):
   # no vcpkg anywhere in this job — tfs/sqfs/rnp are all out of the graph.
   # This is where the Windows ports (bootstrap platform.rs, shim link

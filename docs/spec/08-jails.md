@@ -231,7 +231,16 @@ because glibc hands `_FILE_OFFSET_BITS=64`/`_FORTIFY_SOURCE`/pre-2.33
 callers DISTINCT symbols that never touch the plain names (the #439
 hole: OpenSSL's `o_fopen.c` defines `_FILE_OFFSET_BITS=64` itself, so
 every `BIO_new_file`/`X509_LOOKUP_load_file` bound `fopen64` straight to
-libc). Known-uncovered at this layer: the remaining fortify open family
+libc). The WRITE class rides the same gate (tebako#444, closing the
+pre-existing hole the #439 read-class audit left): `open`/`openat` with
+`O_WRONLY`/`O_CREAT`/`O_RDWR` were policy-gated by the engine's open
+from the start, and `fopen`'s write/append/update modes (`w`/`a` bases,
+every `+` update form including `r+`, the `x`-forms) plus `creat` now
+route through `host_policy` BEFORE the real libc call touches the host
+— a jailed write outside an rw grant is EPERM by name, a write against
+an ro grant EROFS, and a write naming a memfs-held path is EROFS under
+any policy (payload images are always read-only). Known-uncovered at
+this layer: the remaining fortify open family
 (`__open_2`/`__open64_2`/`__openat64_2` — no importer observed in the
 0.16.6 linux-gnu runtime) and raw `syscall(2)` IO. Separately, the
 runtime EXE's own statically-linked native libraries are gated only for

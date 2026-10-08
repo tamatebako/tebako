@@ -155,6 +155,11 @@ real_fn!(
     unsafe extern "C" fn(c_int, *const c_char, c_int, ...) -> c_int
 );
 real_fn!(
+    real_creat,
+    c"creat",
+    unsafe extern "C" fn(*const c_char, c_int) -> c_int
+);
+real_fn!(
     real_stat,
     c"stat",
     unsafe extern "C" fn(*const c_char, *mut libc::stat) -> c_int
@@ -543,6 +548,22 @@ pub(super) unsafe fn raw_openat(
     mode: c_int,
 ) -> c_int {
     unsafe { libc::syscall(libc::SYS_openat, dirfd, path, flags, mode) as c_int }
+}
+
+/// `creat` via SYS_openat(AT_FDCWD, …, O_WRONLY|O_CREAT|O_TRUNC) — creat(2)
+/// has no syscall of its own on the asm-generic ABI and glibc's creat is
+/// exactly this open (the tebako#444 audit's adjacent-write surface).
+#[cfg(target_pointer_width = "64")]
+pub(super) unsafe fn raw_creat(path: *const c_char, mode: c_int) -> c_int {
+    unsafe {
+        libc::syscall(
+            libc::SYS_openat,
+            libc::AT_FDCWD,
+            path,
+            libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
+            mode,
+        ) as c_int
+    }
 }
 
 /// `read` via SYS_read.

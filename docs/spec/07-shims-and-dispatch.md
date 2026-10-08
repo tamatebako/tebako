@@ -346,7 +346,14 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    never a format. **SHIPPED (roadmap 30): `crates/libtfs-preload` +
    `tfs exec <image>[:mount] [--image …] [--jail <spec>] -- <cmd>` in
    tfs-cli — macOS and linux-gnu first-class, windows later. Coverage
-   (roadmap 39):** interposed surface open/openat/stat/
+   (roadmap 39):** interposed surface open/openat/creat(the tebako#444
+   audit's adjacent-write finding: creat(3) IS
+   open(O_WRONLY|O_CREAT|O_TRUNC) spelled as its own libc symbol —
+   glibc builds it over libc-internal open aliases and libSystem gives
+   it its own stub, so un-interposed it bypassed the write gate
+   everywhere; it routes exactly like a write-mode open: a memfs-held
+   path is EROFS, a host path is policy-gated before the real creat
+   runs)/stat/
    lstat/fstat/fstatat(+fstatat64/statx/__xstat/__lxstat/__fxstat/
    __fxstatat and the LFS open64/stat64/lstat64/fstat64/pread64/lseek64
    family and the pre-2.33-glibc versioned __xstat64/__lxstat64/
@@ -380,7 +387,15 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    like the dup/dup2 shims above, host fds pass through untouched —
    CPython's io.FileIO boot
    path fcntls every fresh source fd with raise=1, so unshimmed the
-   interpreter died importing `encodings` before any user code)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
+   interpreter died importing `encodings` before any user code)/fopen(tebako#444:
+   read-only modes (r with no +) materialize the memfs original through
+   dlmap2file exactly like dlopen — stdio's internal open path never
+   touches the interposed `open`; the write-ish modes (w/a bases, every
+   + update form incl. r+, the x-forms) ride the SAME spec 08 write
+   gate as open(O_WRONLY|O_CREAT|O_RDWR) BEFORE the real fopen touches
+   the host — a memfs-held path is EROFS, a jailed write outside an rw
+   grant is EPERM by name; pre-fix the write modes sailed through
+   ungated and r+ was misclassified as a read)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
    + the realpath family (realpath, plus macOS's realpath$DARWIN_EXTSN;
    canonicalize_file_name and the fortified __realpath_chk on linux):
    glibc's realpath(3) walks the path with libc-INTERNAL stat/readlink

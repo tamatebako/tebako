@@ -163,6 +163,7 @@ fn build_fixtures() -> Option<Fixtures> {
         "close-probe",
         "fcntl-probe",
         "dup-probe",
+        "fopen-probe",
         "fork-exec",
         "alias-probe",
         "realpath-probe",
@@ -1194,6 +1195,144 @@ fn dup_family_on_a_memfs_fd() {
     let r = run(f, "dup-probe", &[path.as_str()], None);
     assert_eq!(r.rc, 0, "dup-probe failed, stderr: {}", r.stderr);
     assert!(r.stdout.contains("dup-probe:ok"), "stdout: {}", r.stdout);
+}
+
+/// tebako#444 — the fopen write/append/update modes ride the SAME jail
+/// gate as open(O_WRONLY/O_CREAT/O_RDWR): pre-fix every non-'r' mode
+/// sailed through to the real fopen ungated, and "r+" was misclassified
+/// as a read (writes landed in the materialized copy, silently lost).
+/// The matrix: every write-ish mode ("w","a","r+","w+","a+","wx") of a
+/// host path is EPERM under deny, EROFS against an ro grant, and succeeds
+/// under an rw grant; a memfs-HELD path is EROFS under NO jail at all
+/// (payload images are always ro); "r+" of a memfs file is EROFS (the
+/// update classification pin). The audit's adjacent-write legs ride
+/// along: open(O_WRONLY|O_CREAT)/open(O_RDWR) (gated by the engine from
+/// the start — regression pins) and creat (never interposed before this
+/// fix — glibc builds it over libc-internal open aliases, libSystem
+/// gives it its own stub).
+#[test]
+fn fopen_write_modes_ride_the_jail_gate() {
+    let Some(f) = fixtures() else { return };
+    let secret = format!("{MOUNT}/data/secret.txt");
+    let host = f.work.join("hostfile.txt");
+    let host = host.to_str().unwrap();
+    let deny = "deny";
+    let ro_jail = format!("deny;{}:/work:ro", f.work.display());
+
+    // Every write-ish mode of a host path: EPERM under deny…
+    for mode in ["w", "a", "r+", "w+", "a+", "wx"] {
+        let r = run(f, "fopen-probe", &["fopen-write", mode, host], Some(deny));
+        assert_eq!(
+            r.rc,
+            libc::EPERM,
+            "fopen({host}, {mode:?}) under deny, stderr: {}",
+            r.stderr
+        );
+        assert!(
+            r.stderr.contains("Operation not permitted"),
+            "fopen {mode:?}: the named EPERM, stderr: {}",
+            r.stderr
+        );
+        // …and EROFS against the ro grant.
+        let r = run(
+            f,
+            "fopen-probe",
+            &["fopen-write", mode, host],
+            Some(&ro_jail),
+        );
+        assert_eq!(
+            r.rc,
+            libc::EROFS,
+            "fopen({host}, {mode:?}) against the ro grant, stderr: {}",
+            r.stderr
+        );
+    }
+    // The audit's adjacent-write legs, deny arm.
+    for leg in ["open-write", "open-rdwr", "creat-write"] {
+        let r = run(f, "fopen-probe", &[leg, host], Some(deny));
+        assert_eq!(
+            r.rc,
+            libc::EPERM,
+            "{leg} of a denied host path, stderr: {}",
+            r.stderr
+        );
+        let r = run(f, "fopen-probe", &[leg, host], Some(&ro_jail));
+        assert_eq!(
+            r.rc,
+            libc::EROFS,
+            "{leg} against the ro grant, stderr: {}",
+            r.stderr
+        );
+    }
+
+    // The rw grant passes the write through — the file really lands.
+    let outdir = f.dir.join("rw-out");
+    std::fs::create_dir_all(&outdir).unwrap();
+    let outfile = outdir.join("created.txt");
+    let rw_jail = format!("deny;{}:/rw:rw", outdir.display());
+    let r = run(
+        f,
+        "fopen-probe",
+        &["fopen-write", "w", outfile.to_str().unwrap()],
+        Some(&rw_jail),
+    );
+    assert_eq!(r.rc, 0, "rw-granted fopen write, stderr: {}", r.stderr);
+    assert_eq!(r.stdout, "OK:w\n");
+    assert_eq!(std::fs::read(&outfile).unwrap(), b"Z");
+    let r = run(
+        f,
+        "fopen-probe",
+        &["creat-write", outdir.join("created2.txt").to_str().unwrap()],
+        Some(&rw_jail),
+    );
+    assert_eq!(r.rc, 0, "rw-granted creat, stderr: {}", r.stderr);
+
+    // A memfs-HELD path: EROFS with NO jail at all (payload images are
+    // always ro) — the "w" form and the "r+" update-classification pin.
+    let r = run(f, "fopen-probe", &["fopen-write", "w", &secret], None);
+    assert_eq!(
+        r.rc,
+        libc::EROFS,
+        "memfs-held fopen w, stderr: {}",
+        r.stderr
+    );
+    let r = run(f, "fopen-probe", &["fopen-write", "r+", &secret], None);
+    assert_eq!(
+        r.rc,
+        libc::EROFS,
+        "memfs-held fopen r+ (the update classification pin), stderr: {}",
+        r.stderr
+    );
+    // The engine-side write gate on the same path (the regression pin —
+    // open was never the hole, and must stay gated).
+    let r = run(f, "fopen-probe", &["open-rdwr", &secret], None);
+    assert_eq!(
+        r.rc,
+        libc::EROFS,
+        "memfs-held open(O_RDWR), stderr: {}",
+        r.stderr
+    );
+    let r = run(f, "fopen-probe", &["creat-write", &secret], None);
+    assert_eq!(r.rc, libc::EROFS, "memfs-held creat, stderr: {}", r.stderr);
+
+    // Controls: the read side still serves the memfs under deny, the
+    // host read is EPERM under deny (both pre-existing; must not
+    // regress), and an UNjailed host write succeeds (no false denial
+    // under the open policy).
+    let r = run(f, "fopen-probe", &["fopen-read", &secret], Some(deny));
+    assert_eq!(r.rc, 0, "memfs fopen read under deny, stderr: {}", r.stderr);
+    assert_eq!(r.stdout, SECRET);
+    let r = run(f, "fopen-probe", &["fopen-read", host], Some(deny));
+    assert_eq!(r.rc, libc::EPERM, "host fopen read under deny");
+    let plain = f.dir.join("plain.txt");
+    let r = run(
+        f,
+        "fopen-probe",
+        &["fopen-write", "w", plain.to_str().unwrap()],
+        None,
+    );
+    assert_eq!(r.rc, 0, "unjailed host fopen write, stderr: {}", r.stderr);
+    assert_eq!(std::fs::read(&plain).unwrap(), b"Z");
 }
 
 /// The 2026-08-22 fork/exec deadlock regression pin (runtime 0.16.4: a
