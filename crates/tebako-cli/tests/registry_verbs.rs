@@ -270,6 +270,87 @@ fn validate_collects_the_strict_extras_per_row() {
 }
 
 #[test]
+fn validate_names_the_old_and_mixed_runtime_axis_spellings() {
+    // tebako#549's one-grammar lock: payload-level engine/implementation
+    // is the ONLY authored spelling of the runtime axis. The reader stays
+    // lenient (the version-level implementation compat read keeps
+    // pre-axis registries resolving); the producer gate names the old
+    // spelling, the mixed spelling, and the parse-dropped version-level
+    // engine key — never a silent coercion.
+    let dir = scratch("vaxis");
+    let registry = dir.join("tpkg-registry.yaml");
+    // The old spelling alone (the pre-axis registry shape): version-level
+    // implementation, no payload-level key.
+    fs::write(
+        &registry,
+        "schema_version: 1\npayloads:\n  - name: openjdk\n    kind: runtime\n    engine: java\n    versions:\n      - {version: 21.0.12, implementation: temurin, platforms: universal, release: {ref: tfs:github:o/j:21.0.12}}\n      - {version: 21.0.13, implementation: temurin, platforms: universal, release: {ref: tfs:github:o/j:21.0.13}}\n",
+    )
+    .unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 65, "{text}");
+    assert!(
+        text.contains("openjdk 21.0.12: implementation is spelled at the version level"),
+        "{text}"
+    );
+    assert!(
+        text.contains("openjdk 21.0.13: implementation is spelled at the version level"),
+        "{text}"
+    );
+    assert!(!text.contains("BOTH"), "{text}");
+
+    // The mixed spelling: payload-level key AND a version-level row.
+    fs::write(
+        &registry,
+        "schema_version: 1\npayloads:\n  - name: openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - {version: 21.0.12, implementation: temurin, platforms: universal, release: {ref: tfs:github:o/j:21.0.12}}\n",
+    )
+    .unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 65, "{text}");
+    assert!(
+        text.contains(
+            "openjdk 21.0.12: implementation is spelled at BOTH the payload and the version level"
+        ),
+        "{text}"
+    );
+
+    // The parse-dropped spelling: an engine: key on a version row — the
+    // model has no slot for it, so the lenient read says nothing.
+    fs::write(
+        &registry,
+        "schema_version: 1\npayloads:\n  - name: openjdk\n    kind: runtime\n    versions:\n      - {version: 21.0.12, engine: java, platforms: universal, release: {ref: tfs:github:o/j:21.0.12}}\n",
+    )
+    .unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 65, "{text}");
+    assert!(
+        text.contains("openjdk 21.0.12: a version row carries an engine: key"),
+        "{text}"
+    );
+
+    // The one grammar validates clean: payload-level engine +
+    // implementation, nothing at the version level.
+    fs::write(
+        &registry,
+        "schema_version: 1\npayloads:\n  - name: openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - {version: 21.0.12, platforms: universal, release: {ref: tfs:github:o/j:21.0.12}}\n",
+    )
+    .unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 0, "{text}");
+
+    // An engine-less runtime entry (pre-discovery legacy) stays valid —
+    // resolvable by name, invisible to edges, never an axis violation.
+    fs::write(
+        &registry,
+        "schema_version: 1\npayloads:\n  - name: legacy\n    kind: runtime\n    versions:\n      - {version: 1.0, platforms: universal, release: {ref: tfs:github:o/l:1.0}}\n",
+    )
+    .unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 0, "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn validate_names_an_abi_mirrored_on_a_multi_platform_row() {
     // tebako#440's mirror rule, producer-enforced: the abi is per-triplet
     // by construction, so the mirror carries it only when one value holds

@@ -1986,6 +1986,20 @@ payloads:
         }
     }
 
+    #[test]
+    fn a_version_level_engine_key_is_parse_dropped_never_an_axis() {
+        // tebako#549's silent-drop class: the model owns the engine axis
+        // at the payload level — a version-level spelling parses away
+        // under reader leniency (never a coercion), leaving the entry
+        // edge-invisible. The producer gate (tebako registry validate)
+        // names the misplaced key; the reader must NOT invent one.
+        let yaml = "schema_version: 1\npayloads:\n  - name: x\n    kind: runtime\n    versions:\n      - {version: '1.0', engine: java, platforms: universal, release: {ref: file:///m/a.tfs}}\n";
+        let registry = Registry::from_yaml(yaml).unwrap();
+        let p = registry.payload("x").unwrap();
+        assert_eq!(p.engine(), None);
+        assert!(registry.runtime_entries("java", None).is_empty());
+    }
+
     // -----------------------------------------------------------------
     // The withdrawal axis (spec 04 §2, roadmap 85)
     // -----------------------------------------------------------------

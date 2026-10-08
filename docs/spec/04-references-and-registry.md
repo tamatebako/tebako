@@ -151,7 +151,14 @@ payloads:
   the matched version's `release.ref` derives the download base
   (spec 05 §2's per-engine chain, the zero-config path for third-party
   runtimes). Runtime entries predating MINOR 1 carry no `engine:` and
-  stay invisible to edges.
+  stay invisible to edges. **The payload-level spelling is the one
+  authored grammar (2026-10-08, tebako#549, MINOR 8):** the version-level
+  `implementation:` remains a compat READ (MINOR 2 — already-published
+  registries keep resolving) but is never authored anew, and a
+  version-level `engine:` parses to nothing; `tebako registry validate`
+  names the old spelling, a mix of both spellings, and the misplaced
+  `engine:` key as producer-gate violations, so a registry PR fails its
+  own CI leg instead of publishing a decorative axis.
 - **Bundle-era runtime rows name the bundle** (additive, 2026-09-24,
   spec 36): `platforms[<triplet>].artifact` is `<stem>.tar.gz` and the
   row's `sha256` pins the bundle, whose members unpack into the runtime
