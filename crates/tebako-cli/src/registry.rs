@@ -8,7 +8,10 @@
 //! dispatch path runs, default-names-a-listed-version included) plus the
 //! strict extras a CI gate wants collected in one report, so a
 //! registry-touching change fails on ITS OWN check instead of breaking
-//! every reader at merge. `retire` (tebako#675) removes one version row
+//! every reader at merge: requirement constraints that do not parse, an
+//! abi with no implementation axis, and an abi mirrored on a
+//! multi-platform per-triplet row (tebako#440's mirror rule).
+//! `retire` (tebako#675) removes one version row
 //! from a LOCAL registry file through the publish flow's own discipline
 //! (spec 18 C12: parse → mutate → re-validate → atomic write), refusing
 //! while the retirement would strand an in-registry runtime edge, dangle
@@ -333,6 +336,23 @@ pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
                                 version: Some(v.version.clone()),
                                 message: "runtime_requirement.abi is spelled with no implementation axis anywhere (spec 28 §8 — an abi is per-implementation by construction)"
                                     .to_string(),
+                            });
+                        }
+                        // tebako#440's mirror rule, producer-enforced: the
+                        // abi is per-triplet by construction, so the
+                        // mirror carries it only when one value holds for
+                        // the WHOLE entry. On a multi-platform per-triplet
+                        // row one platform's abi is wrong for every other
+                        // platform — the embedded slice manifests own the
+                        // per-platform values.
+                        let platform_rows = v.published_triplets().len();
+                        if req.abi.is_some() && platform_rows > 1 {
+                            violations.push(Violation {
+                                payload: Some(p.name.clone()),
+                                version: Some(v.version.clone()),
+                                message: format!(
+                                    "runtime_requirement.abi on a {platform_rows}-platform per-triplet row — the abi is per-triplet by construction, so the mirror omits it here (each slice's embedded manifest carries its own)"
+                                ),
                             });
                         }
                     }

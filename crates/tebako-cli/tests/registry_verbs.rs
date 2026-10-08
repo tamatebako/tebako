@@ -270,6 +270,55 @@ fn validate_collects_the_strict_extras_per_row() {
 }
 
 #[test]
+fn validate_names_an_abi_mirrored_on_a_multi_platform_row() {
+    // tebako#440's mirror rule, producer-enforced: the abi is per-triplet
+    // by construction, so the mirror carries it only when one value holds
+    // for the WHOLE entry (a universal row, or a single-platform
+    // per-triplet row). A multi-platform row's abi is the published-lie
+    // class (one platform's value served to every triplet).
+    let dir = scratch("vabi");
+    let registry = dir.join("tpkg-registry.yaml");
+    let sha = "a".repeat(64);
+    let doc = |abi: &str| {
+        format!(
+            "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    implementation: mri\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos: {{artifact: app-1.0-macos-arm64.tfs, sha256: \"{sha}\"}}\n          x86_64-linux-gnu: {{artifact: app-1.0-linux-gnu-x86_64.tfs, sha256: \"{sha}\"}}\n        release: {{ref: tfs:github:o/app:1.0}}\n        runtime_requirement: {{engine: ruby, constraint: \"~> 3.3.0\", implementation: mri{abi}}}\n        entrypoints: [app]\n"
+        )
+    };
+
+    // the multi-platform row carrying one platform's abi: the named lie
+    fs::write(&registry, doc(", abi: arm64-darwin-23")).unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 65, "{text}");
+    assert!(
+        text.contains("app 1.0: runtime_requirement.abi on a 2-platform per-triplet row"),
+        "{text}"
+    );
+
+    // the honest mirror of the same row: abi omitted
+    fs::write(&registry, doc("")).unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 0, "{text}");
+
+    // one value holding for the whole entry keeps the abi: the
+    // single-platform per-triplet row …
+    let single = format!(
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    implementation: mri\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos: {{artifact: app-1.0-macos-arm64.tfs, sha256: \"{sha}\"}}\n        release: {{ref: tfs:github:o/app:1.0}}\n        runtime_requirement: {{engine: ruby, constraint: \"~> 3.3.0\", implementation: mri, abi: arm64-darwin-23}}\n        entrypoints: [app]\n"
+    );
+    fs::write(&registry, &single).unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 0, "{text}");
+
+    // … and the universal row
+    let universal =
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    implementation: mri\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {ref: tfs:github:o/app:1.0}\n        runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\", implementation: mri, abi: arm64-darwin-23}\n        entrypoints: [app]\n";
+    fs::write(&registry, universal).unwrap();
+    let (text, code) = tebako_cli::registry::validate(registry.to_str().unwrap(), false).unwrap();
+    assert_eq!(code, 0, "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn validate_catches_a_signing_block_whose_key_is_not_the_declared_one() {
     let dir = scratch("vsigning");
     let registry = dir.join("tpkg-registry.yaml");

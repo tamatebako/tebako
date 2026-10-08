@@ -107,6 +107,9 @@ payloads:
   on an entry serving every triplet is wrong for every platform but one.
   The authoritative per-platform abi always lives in each slice's
   embedded manifest; dispatch reads it there, never from the mirror.
+  `tebako registry validate` names a multi-platform row's `abi` a
+  producer-gate violation (2026-10-08) — the reader stays lenient so
+  already-published registries keep resolving.
 - **The per-row shard `release.ref` (additive, 2026-10-07,
   tebako#711):** a `platforms[<triplet>]` entry may carry its own
   `release: {ref: …}` naming the shard release tag serving THAT row's
