@@ -164,11 +164,13 @@ pub struct HostPolicy {
     floor_mounts: Vec<HostMount>,
     arg_files: Vec<PathBuf>,
     /// The ancestor traverse set (spec 08 §2.1): the strict ancestors of
-    /// every bound grant (mounts + floor), checkable as EXACT-path reads
-    /// — never prefix, never write. Canonicalization walks are universal
-    /// (the JVM reads its cwd and each ancestor at VM init; without the
-    /// traverse grant the factory's jailed_exec leg died with "Could not
-    /// determine current working directory", PR #95 macOS, 2026-08-14).
+    /// every bound grant (mounts + floor + argument files), checkable as
+    /// EXACT-path reads — never prefix, never write. Canonicalization
+    /// walks are universal (the JVM reads its cwd and each ancestor at VM
+    /// init; without the traverse grant the factory's jailed_exec leg
+    /// died with "Could not determine current working directory", PR #95
+    /// macOS, 2026-08-14 — and again under the `deny:arg` profile whose
+    /// file grants missed the derivation, 2026-10-08).
     /// Derived at bind, never authored, never serialized.
     traverse: Vec<PathBuf>,
     /// Who installed the policy (`manifest`, `user`, `manifest+user`,
@@ -298,13 +300,19 @@ impl HostPolicy {
             bound_files.push(canonicalize(f)?);
         }
         // The ancestor traverse set (spec 08 §2.1): every strict ancestor
-        // of every bound grant is readable as an EXACT path — never
-        // prefix (no sideways exposure), never write. Canonicalization
-        // walks are universal (the JVM reads its cwd and each ancestor at
-        // VM init). Derived at bind, never authored, never serialized.
+        // of every bound grant — authored mounts, the floor, AND the
+        // argument files (a granted file you cannot stat your way to is
+        // unusable: the JVM's cwd walk dies on the denied chain) — is
+        // readable as an EXACT path: never prefix (no sideways exposure),
+        // never write. Derived at bind, never authored, never serialized.
         let mut traverse: Vec<PathBuf> = Vec::new();
-        for m in bound_mounts.iter().chain(floor_mounts.iter()) {
-            let mut anc = m.host.as_path();
+        for path in bound_mounts
+            .iter()
+            .map(|m| &m.host)
+            .chain(floor_mounts.iter().map(|m| &m.host))
+            .chain(bound_files.iter())
+        {
+            let mut anc = path.as_path();
             while let Some(parent) = anc.parent() {
                 if !traverse.iter().any(|t| t == parent) {
                     traverse.push(parent.to_path_buf());
@@ -729,6 +737,36 @@ mod tests {
             }
         }
         assert_eq!(p.check(&tree.work, HostAccess::Rw), Err(libc::EPERM));
+    }
+
+    #[test]
+    fn arg_file_grants_imply_the_ancestor_traverse() {
+        let tree = Tree::new("argtrav");
+        let nested = tree.work.join("a").join("b");
+        std::fs::create_dir_all(&nested).unwrap();
+        let file = nested.join("in.csv");
+        std::fs::write(&file, b"x").unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![file.clone()]).unwrap();
+        // The granted file reads (exact canonical match); every strict
+        // ancestor traverses — exact-path read, never write (the JVM's
+        // cwd walk under the `deny:arg` profile, tebako#539).
+        assert_eq!(p.check(&file, HostAccess::Ro), Ok(()));
+        let canon = std::fs::canonicalize(&file).unwrap();
+        let mut anc = canon.parent();
+        while let Some(a) = anc {
+            assert_eq!(p.check(a, HostAccess::Ro), Ok(()), "traverse {a:?}");
+            assert_eq!(
+                p.check(a, HostAccess::Rw),
+                Err(libc::EPERM),
+                "never write {a:?}"
+            );
+            anc = a.parent();
+        }
+        // Sideways stays denied: a sibling of the granted file is not
+        // exposed by the traverse set.
+        let sib = nested.join("other.csv");
+        std::fs::write(&sib, b"y").unwrap();
+        assert_eq!(p.check(&sib, HostAccess::Ro), Err(libc::EPERM));
     }
 
     #[test]
