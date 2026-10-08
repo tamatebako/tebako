@@ -42,6 +42,7 @@ fn package_manifest(runtime_ref: &str, jail: tpkg::HostJail) -> tpkg::PackageMan
             slot: Some(0),
             entrypoint: "jailtest".to_string(),
             runtime_ref: runtime_ref.to_string(),
+            interp_env: Default::default(),
         }],
         jail: Some(jail),
         env: Default::default(),

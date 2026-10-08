@@ -2485,6 +2485,9 @@ fn synthesize_manifest(
         // rule: the floor is an authored declaration of the embedded
         // manifest; a synthesized mirror never invents one).
         min_runtime_tebako: None,
+        // …and no interpreter-option defaults (spec 03 §2.7 — the same
+        // mirror rule).
+        interp_env: Default::default(),
     })
 }
 

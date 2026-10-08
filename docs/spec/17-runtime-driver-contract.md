@@ -213,7 +213,7 @@ mount      = "/" *path-char              ; a VFS-absolute mount point
   over the env image at the runtime root never reached spawned
   children).
 
-### 2.2 Interpreter-option env (`interp_env`, PLANNED — tebako#559)
+### 2.2 Interpreter-option env (`interp_env`, IMPLEMENTED 2026-10-07 — tebako#559)
 
 The spec 07 §9.1 chain's product is ordinary process env, not a driver
 wire var: the dispatcher (the shim in managed mode, the bootstrap in

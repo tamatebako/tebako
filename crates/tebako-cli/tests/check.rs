@@ -573,6 +573,7 @@ fn package_with_checks(dir: &Path) -> PathBuf {
             // manifest.
             entrypoint: "acme".to_string(),
             runtime_ref: "ruby@9.9.9;tebako=9.9.9".to_string(),
+            interp_env: Default::default(),
         }],
         jail: None,
         env: Default::default(),

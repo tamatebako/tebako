@@ -26,6 +26,8 @@ invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manag
   tebako-shim use --clear <tool>       remove the tool's user default
   tebako-shim use --runtime <engine>@<langver>[:<tebako>]
                                        write the engine's runtime preference
+  tebako-shim env <tool> [KEY=VALUE …]   list or set the tool's standing interpreter options
+  tebako-shim env <tool> --unset KEY …   remove standing options
   tebako-shim enable <tool>[@<ver>] [--of <payload>]
                                        re-enable a disabled tool, version, or payload claim
   tebako-shim disable <tool>[@<ver>] [--of <payload>]
@@ -47,6 +49,8 @@ invoked as <TEBAKO_HOME>\\shims\\<tool>.exe it dispatches; invoked as tebako-shi
   tebako-shim use --clear <tool>       remove the tool's user default
   tebako-shim use --runtime <engine>@<langver>[:<tebako>]
                                        write the engine's runtime preference
+  tebako-shim env <tool> [KEY=VALUE …]   list or set the tool's standing interpreter options
+  tebako-shim env <tool> --unset KEY …   remove standing options
   tebako-shim enable <tool>[@<ver>] [--of <payload>]
                                        re-enable a disabled tool, version, or payload claim
   tebako-shim disable <tool>[@<ver>] [--of <payload>]
@@ -67,6 +71,7 @@ pub fn run_command(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
     match cmd.as_str() {
         "list" => cmd_list(rest, ctx),
         "use" => cmd_use(rest, ctx),
+        "env" => cmd_env(rest, ctx),
         "enable" => cmd_enable(rest, ctx, true),
         "disable" => cmd_enable(rest, ctx, false),
         "which" => cmd_which(rest, ctx),
@@ -185,6 +190,82 @@ fn cmd_use(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
             "usage: tebako-shim use <tool> <pin> | use --clear <tool> | use --runtime <engine>@<langver>[:<tebako>]",
         ),
     }
+}
+
+// ---------------------------------------------------------------------
+// env (spec 07 §9.1 layer 2 — the operator's standing per-tool
+// interpreter-option policy; tmp + rename in config.rs's edit_config)
+// ---------------------------------------------------------------------
+
+fn cmd_env(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
+    let Some(tool) = args.first() else {
+        return fail(
+            EX_USAGE,
+            "usage: tebako-shim env <tool> [KEY=VALUE …] | env <tool> --unset KEY …",
+        );
+    };
+    manifest::check_path_component("command name", tool)?;
+    let rest = &args[1..];
+    if rest.is_empty() {
+        // List the tool's standing map.
+        let cfg = config::load_config(&ctx.home)?;
+        let text = match cfg.interp_env_for(tool) {
+            None => format!("{tool} has no standing interpreter options\n"),
+            Some(map) if map.is_empty() => {
+                format!("{tool} has no standing interpreter options\n")
+            }
+            Some(map) => {
+                let mut out = String::new();
+                for (k, v) in map {
+                    let _ = writeln!(out, "{k}={v}");
+                }
+                out
+            }
+        };
+        return Ok(Action::Print { text, code: 0 });
+    }
+    if rest[0] == "--unset" {
+        let keys = &rest[1..];
+        if keys.is_empty() {
+            return fail(EX_USAGE, "usage: tebako-shim env <tool> --unset KEY …");
+        }
+        let mut removed = 0;
+        for key in keys {
+            if config::set_interp_env(&ctx.home, tool, key, None)? {
+                removed += 1;
+            }
+        }
+        return Ok(Action::Print {
+            text: format!("unset {removed} option(s) for {tool} (~/.tebako/config.yaml)\n"),
+            code: 0,
+        });
+    }
+    for kv in rest {
+        let Some((key, value)) = kv.split_once('=') else {
+            return fail(
+                EX_USAGE,
+                format!(
+                    "expected KEY=VALUE, got \"{kv}\" — usage: tebako-shim env <tool> KEY=VALUE …"
+                ),
+            );
+        };
+        if !tpkg::valid_interp_env_key(key) {
+            return fail(
+                crate::EX_TEBAKO_MANIFEST,
+                format!(
+                    "env {tool}: the key '{key}' is malformed — the grammar is [A-Z_][A-Z0-9_]*, and the TEBAKO_ namespace is dispatcher/driver-owned"
+                ),
+            );
+        }
+        config::set_interp_env(&ctx.home, tool, key, Some(value))?;
+    }
+    Ok(Action::Print {
+        text: format!(
+            "set {} option(s) for {tool} (~/.tebako/config.yaml)\n",
+            rest.len()
+        ),
+        code: 0,
+    })
 }
 
 // ---------------------------------------------------------------------
@@ -678,6 +759,28 @@ fn cmd_which(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
     let _ = writeln!(out, "exec argv:");
     for a in &plan.argv {
         let _ = writeln!(out, "  {a}");
+    }
+    // spec 15 §4 / spec 07 §9.1: the effective interp_env map with each
+    // key's provenance layer (env / config / payload — managed dispatch
+    // has no package layer; an undeclared key never renders).
+    let cfg = config::load_config(&ctx.home)?;
+    let entries = dispatch::effective_interp_env(
+        &res.manifest.payload_manifest().interp_env,
+        cfg.interp_env_for(tool),
+        &ctx.env,
+    );
+    if !entries.is_empty() {
+        let _ = writeln!(out, "interp env:");
+        for e in &entries {
+            match &e.value {
+                Some(v) => {
+                    let _ = writeln!(out, "  {}={} ({})", e.key, v, e.source.label());
+                }
+                None => {
+                    let _ = writeln!(out, "  {} ({})", e.key, e.source.label());
+                }
+            }
+        }
     }
     Ok(Action::Print { text: out, code: 0 })
 }

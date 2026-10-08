@@ -399,7 +399,7 @@ grammar:
     since: schema_minor 8
     key: "[A-Z_][A-Z0-9_]* — the shell-safe env-name grammar; a key outside it is a named manifest error at press/`tfs validate` (exit 65)"
     notes: >-
-      tebako#559 (PLANNED) — INTERPRETER-OPTION defaults owned by the
+      tebako#559 (IMPLEMENTED 2026-10-07) — INTERPRETER-OPTION defaults owned by the
       slice author (RUBY_YJIT_ENABLE, PYTHON_JIT, JAVA_TOOL_OPTIONS, …):
       values the dispatcher exports into the runtime process at dispatch
       so the interpreter reads them at its own boot. MECE against

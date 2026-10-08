@@ -224,10 +224,10 @@ per declared entrypoint name — never as re-exec wrappers.
 
 - User config: `~/.tebako/config.yaml` (YAML — the locked convention;
   supersedes the earlier `config.json` note). Contents: defaults,
-  registries, runtime preferences. (PLANNED — tebako#559: a per-tool
-  `env:` map, store-config schema minor 3 — the user-config layer of
-  the §9.1 interp_env chain, set by hand or by `tebako-shim env`; never
-  written implicitly by a dispatch.)
+  registries, runtime preferences. (IMPLEMENTED 2026-10-07 — tebako#559:
+  a per-tool `env:` map, store-config schema minor 3 — the user-config
+  layer of the §9.1 interp_env chain, set by hand or by `tebako-shim
+  env`; never written implicitly by a dispatch.)
 - Project pins: `.tebako-tools.yaml` at any directory — the dispatcher
   walks up from cwd; nearest wins.
 - **Extension slices (schema_minor 10):** per-tool keys in the same two
@@ -498,7 +498,7 @@ app) composes by RULE, never by accident:
 - Per-entrypoint overrides (suite entries, spec 03 §6) apply last for
   that entry only.
 
-### 9.1 The interp_env chain (PLANNED — tebako#559; spec 03 §2.7)
+### 9.1 The interp_env chain (IMPLEMENTED 2026-10-07 — tebako#559; spec 03 §2.7)
 
 Interpreter-option defaults compose by their own chain, parallel to the
 rules above and NEVER through the M7 scrub (interp_env keys are
@@ -529,4 +529,7 @@ passive: the variable is simply there). No key is ever scrubbed,
 rewritten, or guessed; an unset-declared key stays unset (never a
 synthesized "0"). The effective map and each key's provenance layer are
 reportable through the spec 15 §4 surface — resolution is auditable,
-never silent.
+never silent. The standalone bootstrap reads no store config — the
+managed shim owns that tier — so a stitched package's chain is process
+env over the package manifest (layers 1 and 3; layers 2 and 4 are
+absent by construction).

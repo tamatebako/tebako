@@ -74,6 +74,14 @@ pub struct UserConfig {
     /// trust anchors. Env wins per key; see [`install_network_config`].
     #[serde(default)]
     pub network: NetworkSection,
+    /// The operator's standing per-tool interpreter-option policy
+    /// (spec 07 §9.1 layer 2, store-config schema minor 3): command
+    /// name → KEY=VALUE map, inner keys obeying the spec 03 §2.7
+    /// grammar (a malformed key is the named grammar error at READ —
+    /// [`load_config`] validates the whole map, never a silent skip).
+    /// Set by hand or by `tebako-shim env`; a dispatch never writes it.
+    #[serde(default)]
+    pub env: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// One `defaults:` entry (spec 07 §4; `registry:` added by spec 37 §3).
@@ -837,6 +845,33 @@ impl UserConfig {
             ref_index,
         })
     }
+
+    /// The interp_env book's load-time validation (spec 07 §9.1 layer
+    /// 2, store-config schema minor 3): every inner key obeys the spec
+    /// 03 §2.7 grammar — an offending key is the named grammar error at
+    /// READ, never a silent skip.
+    pub fn interp_env_book(&self) -> Result<(), ShimError> {
+        for (tool, map) in &self.env {
+            for key in map.keys() {
+                if !tpkg::valid_interp_env_key(key) {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "an env entry's key '{key}' for tool '{tool}' is malformed (InvalidInterpEnvKey) — the grammar is [A-Z_][A-Z0-9_]*, and the TEBAKO_ namespace is dispatcher/driver-owned",
+                        ),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The tool's config-layer interp_env map (spec 07 §9.1 layer 2);
+    /// None when the tool declares none. Grammar already validated by
+    /// [`load_config`]'s [`Self::interp_env_book`] call.
+    pub fn interp_env_for(&self, tool: &str) -> Option<&BTreeMap<String, String>> {
+        self.env.get(tool)
+    }
 }
 
 /// The `network:` section of `~/.tebako/config.yaml` — all keys optional.
@@ -914,6 +949,10 @@ pub fn load_config(home: &Path) -> Result<UserConfig, ShimError> {
     let book = cfg.credential_book()?;
     tebako_resolve::credentials::install_book(book);
     tebako_resolve::credentials::set_journal_home(Some(home.to_path_buf()));
+    // The interp_env book validates at load as well (spec 07 §9.1 layer
+    // 2, store-config schema minor 3): an offending inner key is the
+    // named grammar error here — at READ, never a silent skip.
+    cfg.interp_env_book()?;
     Ok(cfg)
 }
 
@@ -1364,6 +1403,72 @@ pub fn set_default(home: &Path, tool: &str, pin: Option<&str>) -> Result<bool, S
     Ok(changed)
 }
 
+/// The `env <tool> KEY=VALUE` / `env <tool> --unset KEY` write (spec 07
+/// §9.1 layer 2): one standing interpreter-option for one tool. `None`
+/// unsets; a left-empty tool map and a left-empty `env:` document key
+/// go. The caller validates the key grammar
+/// ([`tpkg::valid_interp_env_key`]) BEFORE calling. Returns whether the
+/// file changed.
+pub fn set_interp_env(
+    home: &Path,
+    tool: &str,
+    key: &str,
+    value: Option<&str>,
+) -> Result<bool, ShimError> {
+    let mut changed = false;
+    edit_config(home, |mapping| {
+        let env_key = serde_yaml::Value::String("env".to_string());
+        let tool_key = serde_yaml::Value::String(tool.to_string());
+        let key_key = serde_yaml::Value::String(key.to_string());
+        match value {
+            Some(value) => {
+                let entry = mapping
+                    .entry(env_key)
+                    .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+                let env_map = entry.as_mapping_mut().ok_or_else(|| {
+                    ShimError::new(
+                        EX_TEBAKO_MANIFEST,
+                        format!("{}: `env` must be a mapping", config_path(home).display()),
+                    )
+                })?;
+                let tool_entry = tool_key.clone();
+                let tool_map = env_map
+                    .entry(tool_entry)
+                    .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+                let tool_map = tool_map.as_mapping_mut().ok_or_else(|| {
+                    ShimError::new(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "{}: `env.{tool}` must be a mapping",
+                            config_path(home).display()
+                        ),
+                    )
+                })?;
+                let new = serde_yaml::Value::String(value.to_string());
+                if tool_map.get(&key_key) != Some(&new) {
+                    tool_map.insert(key_key, new);
+                    changed = true;
+                }
+            }
+            None => {
+                if let Some(serde_yaml::Value::Mapping(env_map)) = mapping.get_mut(&env_key) {
+                    if let Some(serde_yaml::Value::Mapping(tool_map)) = env_map.get_mut(&tool_key) {
+                        changed = tool_map.remove(&key_key).is_some();
+                        if tool_map.is_empty() {
+                            env_map.remove(&tool_key);
+                        }
+                    }
+                    if env_map.is_empty() {
+                        mapping.remove(&env_key);
+                    }
+                }
+            }
+        }
+        Ok(())
+    })?;
+    Ok(changed)
+}
+
 /// The `use --runtime <engine>@<langver>[:<tebako>]` write: one engine's
 /// runtime preference. Without the `:<tebako>` part only `version` is
 /// written — the tebako line then follows the product default at read
@@ -1656,6 +1761,63 @@ mod tests {
         .unwrap();
         let text = std::fs::read_to_string(config_path(&home)).unwrap();
         assert!(text.contains("- tfs:github:acme/other"), "{text}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn set_interp_env_writes_reads_and_unsets() {
+        let home = fresh_home("interp-env");
+        assert!(set_interp_env(&home, "metanorma", "RUBY_YJIT_ENABLE", Some("1")).unwrap());
+        assert!(set_interp_env(
+            &home,
+            "metanorma",
+            "RUBY_GC_HEAP_FREE_SLOTS",
+            Some("500000")
+        )
+        .unwrap());
+        // A same-value rewrite reports no change.
+        assert!(!set_interp_env(&home, "metanorma", "RUBY_YJIT_ENABLE", Some("1")).unwrap());
+        let cfg = load_config(&home).unwrap();
+        let map = cfg.interp_env_for("metanorma").unwrap();
+        assert_eq!(map.get("RUBY_YJIT_ENABLE").map(String::as_str), Some("1"));
+        assert_eq!(
+            map.get("RUBY_GC_HEAP_FREE_SLOTS").map(String::as_str),
+            Some("500000")
+        );
+        // Unset one, then the other — the left-empty tool map and the
+        // left-empty `env:` document key go with the last one.
+        assert!(set_interp_env(&home, "metanorma", "RUBY_YJIT_ENABLE", None).unwrap());
+        assert!(!set_interp_env(&home, "metanorma", "RUBY_YJIT_ENABLE", None).unwrap());
+        let cfg = load_config(&home).unwrap();
+        assert!(!cfg
+            .interp_env_for("metanorma")
+            .unwrap()
+            .contains_key("RUBY_YJIT_ENABLE"));
+        assert!(set_interp_env(&home, "metanorma", "RUBY_GC_HEAP_FREE_SLOTS", None).unwrap());
+        let cfg = load_config(&home).unwrap();
+        assert!(cfg.interp_env_for("metanorma").is_none());
+        assert!(
+            !std::fs::read_to_string(config_path(&home))
+                .unwrap()
+                .contains("env:"),
+            "the left-empty env: document key goes"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn load_config_rejects_a_malformed_interp_env_key() {
+        let home = fresh_home("interp-env-bad");
+        std::fs::write(
+            config_path(&home),
+            "env:\n  metanorma:\n    TEBAKO_JAIL: \"none\"\n",
+        )
+        .unwrap();
+        let err = load_config(&home).unwrap_err();
+        assert!(
+            err.message.contains("TEBAKO_JAIL") && err.message.contains("InvalidInterpEnvKey"),
+            "{err:?}"
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 

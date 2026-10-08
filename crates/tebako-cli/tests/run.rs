@@ -49,6 +49,7 @@ fn package_manifest(jail: tpkg::HostJail) -> tpkg::PackageManifest {
             slot: Some(0),
             entrypoint: "probe".to_string(),
             runtime_ref: "ruby@9.9.9;tebako=9.9.9".to_string(),
+            interp_env: Default::default(),
         }],
         jail: Some(jail),
         env: Default::default(),

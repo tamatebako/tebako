@@ -316,7 +316,7 @@ the engine, the three moments, SKIP/FAIL discipline — are spec 26; the
 grammar is registered in
 `docs/spec/schemas/payload-manifest.yaml`.
 
-### 2.7 INTERP ENV (`interp_env:`, additive — schema_minor 8) — PLANNED (tebako#559)
+### 2.7 INTERP ENV (`interp_env:`, additive — schema_minor 8) — IMPLEMENTED 2026-10-07 (tebako#559)
 
 ```yaml
 interp_env:
@@ -551,7 +551,7 @@ entries:                          # one per invocable command (N=1 for simple ap
     slot: 0                       # which payload image
     entrypoint: metanorma         # which PROVIDES entrypoint inside it
     runtime_ref: ruby@3.4.2;tebako=0.15.9   # per-entry — suites/multi-runtime
-    interp_env: {RUBY_YJIT_ENABLE: "1"}     # PLANNED (tebako#559): the press-time
+    interp_env: {RUBY_YJIT_ENABLE: "1"}     # the press-time
                                   # composition of slot 0's L1 interp_env,
                                   # packager-refined (spec 07 §9's chain)
   - name: mn2pdf
@@ -587,7 +587,7 @@ lock:                             # the press-time composition lock (spec 23 §4
   validate` (tebako#494). Two entries MAY share one slot — same image,
   different in-image entrypoints: the multi-command single-payload form
   (one app slice carrying several CLIs, e.g. metanorma + fontist).
-- `entries[].interp_env` (PLANNED, tebako#559 — §2.7's L2 face): the
+- `entries[].interp_env` (IMPLEMENTED 2026-10-07, tebako#559 — §2.7's L2 face): the
   press-time COMPOSITION of the slot payload's L1 `interp_env` with the
   packager's refinement (a packager key wins over the same L1 key; L1
   keys pass through untouched otherwise). The mirror exists because the
