@@ -82,14 +82,19 @@ process, so the floor grants it always.
   stays byte-identical (`never_denies` keeps its exact meaning). A
   floor path absent on the host is skipped silently (it is a courtesy
   surface, not an authored request whose absence must fail the bind).
-- **Ancestor traverse (locked 2026-08-14):** every bound grant
-  (authored mount or floor entry) implies its strict ancestors are
+- **Ancestor traverse (locked 2026-08-14; extended 2026-10-08):** every
+  bound grant — authored mount, floor entry, or `@file` argument-file
+  grant — implies its strict ancestors are
   traversable: each ancestor answers an exact-path READ — never a
   prefix (no sideways exposure), never a write. Canonicalization walks
   are universal: the JVM reads its cwd and every ancestor at VM init,
   and the factory's jailed_exec leg died with "Could not determine
   current working directory" when the chain was denied (PR #95 macOS
-  legs). The set is derived at bind — never authored, never serialized.
+  legs). The `deny:arg` profile's file grants join the same rule
+  (2026-10-08, tebako#539): a granted input file you cannot stat your
+  way to is unusable — the JVM died at VM init under `deny:arg` with a
+  granted file in a denied cwd chain. The set is derived at bind —
+  never authored, never serialized.
   It is what makes an authored `$CWD`-style grant sufficient in
   practice: the payload names the directory it works in; the platform
   walk to reach it passes by construction.
