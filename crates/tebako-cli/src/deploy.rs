@@ -892,7 +892,9 @@ mod tests {
         // Fast path: the whole value in one probe, kept verbatim when the
         // compiler accepts it (same family as the build — zero drift).
         assert!(
-            out.contains("return tg_recorded if tg_tokens.empty? || tg_probe_ok(tg_cc, tg_lang, tg_tokens)"),
+            out.contains(
+                "return tg_recorded if tg_tokens.empty? || tg_probe_ok(tg_cc, tg_lang, tg_tokens)"
+            ),
             "fast path missing:\n{out}"
         );
         // Pair flags probe with their value (a bare -arch would be a
@@ -932,7 +934,9 @@ mod tests {
         // No resolvable compiler -> no filtering (the build dies on its
         // own terms; stripping flags would only obscure that).
         assert!(
-            out.contains("next if tg_cc.empty? || !system(\"command -v #{tg_cc} >/dev/null 2>&1\")"),
+            out.contains(
+                "next if tg_cc.empty? || !system(\"command -v #{tg_cc} >/dev/null 2>&1\")"
+            ),
             "unresolvable-cc guard missing:\n{out}"
         );
     }
@@ -951,7 +955,10 @@ mod tests {
         // filter probes the re-resolved compiler).
         let tools = out.find("}.each do |tg_key, tg_candidates|").unwrap();
         let filter = out.find("\"CFLAGS\" => [\"CC\", \"c\"]").unwrap();
-        assert!(tools < filter, "filter must follow the tool re-resolution:\n{out}");
+        assert!(
+            tools < filter,
+            "filter must follow the tool re-resolution:\n{out}"
+        );
     }
 
     #[test]
@@ -966,4 +973,3 @@ mod tests {
         assert!(src.contains("$0 = ARGV.first"));
     }
 }
-
