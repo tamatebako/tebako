@@ -189,7 +189,7 @@ fn universal_signed_publish_end_to_end() {
     let v = app.version("1.0").unwrap();
     assert!(matches!(
         v.platforms,
-        tebako_resolve::RegistryPlatforms::Universal
+        Some(tebako_resolve::RegistryPlatforms::Universal)
     ));
     // the universal row's version-level pin anchors the sidecar's bytes
     let pin = v.blksum.clone().unwrap();
@@ -244,7 +244,7 @@ fn per_triplet_publish_and_idempotent_republish() {
     let registry = registry_at(&fx);
     let app = registry.payload("app").unwrap();
     let v = app.version("1.0").unwrap();
-    let tebako_resolve::RegistryPlatforms::PerTriplet(map) = &v.platforms else {
+    let Some(tebako_resolve::RegistryPlatforms::PerTriplet(map)) = &v.platforms else {
         panic!("per-triplet platforms");
     };
     assert_eq!(map.len(), 2);
@@ -467,40 +467,253 @@ fn single_platform_and_universal_entries_keep_abi_in_the_mirror() {
 }
 
 #[test]
-fn per_triplet_requirement_disagreement_is_a_named_error() {
-    // engine/constraint/implementation must agree across the variants —
-    // the registry mirrors one value, so a disagreement is an authoring
-    // error (abi is exempt: per-triplet by construction).
-    let fx = Fixture::new("abidisagree");
-    let mac = write_payload(
-        &fx,
-        "app-1.0-macos-arm64.tfs",
-        &app_manifest_native("app", "1.0", "~> 3.3.0", "arm64-darwin-23"),
-    );
-    let linux = write_payload(
-        &fx,
-        "app-1.0-linux-gnu-x86_64.tfs",
-        &app_manifest_native("app", "1.0", "~> 4.0.0", "x86_64-linux-gnu"),
-    );
+fn two_abi_lines_publish_the_variant_arms_round_trip() {
+    // tebako#557 (spec 28 §3): per-triplet builds whose requirements
+    // disagree on the ABI line group into variant arms — one
+    // `{runtime_requirement, platforms}` row per line. The shorthand
+    // fields stay empty (MECE), the artifacts keep their input basenames
+    // (the publisher authors the variant infix), and the no-selector
+    // pick is the newest ABI line.
+    let fx = Fixture::new("variants");
     let mut opts = base_opts(&fx, "app");
-    opts.payloads = vec![
-        PayloadInput {
-            triplet: Some(Platform::Aarch64Macos),
-            path: mac,
-        },
-        PayloadInput {
-            triplet: Some(Platform::X86_64LinuxGnu),
-            path: linux,
-        },
-    ];
+    // the variant infix keeps the file-name version derivation from
+    // agreeing — the version is explicit
+    opts.version = Some("1.0".to_string());
+    for (file, triplet, constraint, abi) in [
+        (
+            "app-1.0-ruby3.3-macos-arm64.tfs",
+            Platform::Aarch64Macos,
+            "~> 3.3.0",
+            "arm64-darwin-23",
+        ),
+        (
+            "app-1.0-ruby3.3-linux-gnu-x86_64.tfs",
+            Platform::X86_64LinuxGnu,
+            "~> 3.3.0",
+            "x86_64-linux-gnu",
+        ),
+        (
+            "app-1.0-ruby4.0-macos-arm64.tfs",
+            Platform::Aarch64Macos,
+            "~> 4.0.0",
+            "arm64-darwin-23",
+        ),
+        (
+            "app-1.0-ruby4.0-linux-gnu-x86_64.tfs",
+            Platform::X86_64LinuxGnu,
+            "~> 4.0.0",
+            "x86_64-linux-gnu",
+        ),
+    ] {
+        opts.payloads.push(PayloadInput {
+            triplet: Some(triplet),
+            path: write_payload(
+                &fx,
+                file,
+                &app_manifest_native("app", "1.0", constraint, abi),
+            ),
+        });
+    }
+
+    let outcome = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
+
+    // the emitted document round-trips through the reader's own parser
+    let text = fs::read_to_string(fx.work.join("tpkg-registry.yaml")).unwrap();
+    assert!(text.contains("variants:"), "{text}");
+    let registry = tebako_resolve::Registry::from_yaml(&text).unwrap();
+    let v = registry.payload("app").unwrap().version("1.0").unwrap();
+    // MECE with the shorthand: neither top-level platforms: nor
+    // runtime_requirement: on a variant entry
+    assert!(v.platforms.is_none(), "{:?}", v.platforms);
+    assert!(v.runtime_requirement.is_none());
+    assert!(v.blksum.is_none());
+    let variants = v.variants.as_ref().expect("the variant arms");
+    assert_eq!(variants.len(), 2);
+    let ids: Vec<String> = variants
+        .iter()
+        .map(|arm| tebako_resolve::registry::variant_id(arm.runtime_requirement.as_ref()).unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["ruby-mri-3.3".to_string(), "ruby-mri-4.0".to_string()]
+    );
+    // every arm: its own per-triplet map of the input basenames, the
+    // abi-free mirror (each slice's manifest owns the per-platform value)
+    for (arm, prefix) in variants.iter().zip(["ruby3.3", "ruby4.0"]) {
+        let req = arm.runtime_requirement.as_ref().unwrap();
+        assert_eq!(req.abi, None, "{prefix} arm omits abi");
+        assert!(arm.blksum.is_none(), "the arm's pins live per row");
+        let tebako_resolve::RegistryPlatforms::PerTriplet(map) = &arm.platforms else {
+            panic!("per-triplet variant arm");
+        };
+        assert_eq!(map.len(), 2);
+        assert_eq!(
+            map[&Platform::Aarch64Macos].artifact,
+            format!("app-1.0-{prefix}-macos-arm64.tfs")
+        );
+        assert_eq!(
+            map[&Platform::X86_64LinuxGnu].artifact,
+            format!("app-1.0-{prefix}-linux-gnu-x86_64.tfs")
+        );
+    }
+
+    // the no-selector pick is the newest ABI line; the explicit selector
+    // names its arm
+    let view = v.resolve_variant(None).unwrap();
+    assert_eq!(
+        view.picked_by,
+        tebako_resolve::registry::VariantPick::NewestLine
+    );
+    assert_eq!(view.id.as_deref(), Some("ruby-mri-4.0"));
+    let Some(tebako_resolve::registry::PlatformSelection::Selected { artifact, .. }) =
+        view.select(Platform::Aarch64Macos)
+    else {
+        panic!("the macos row of the newest line");
+    };
+    assert_eq!(artifact, "app-1.0-ruby4.0-macos-arm64.tfs");
+    let pinned = v.resolve_variant(Some("ruby-mri-3.3")).unwrap();
+    assert_eq!(
+        pinned.picked_by,
+        tebako_resolve::registry::VariantPick::Default
+    );
+    assert_eq!(pinned.id.as_deref(), Some("ruby-mri-3.3"));
+
+    // the built-in verify installed from the mirror — the newest line's
+    // host artifact through the emitted variant entry
+    let verified = outcome.verified.unwrap();
+    assert!(
+        verified.contains("verified: clean-cache install of app 1.0"),
+        "{verified}"
+    );
+}
+
+#[test]
+fn two_arms_canonizing_to_one_variant_id_is_a_named_error() {
+    // spec 28 §1: builds of one version that canonize to one ABI line
+    // are ONE variant — `~> 3.3.0` and `~> 3.3` both derive ruby-mri-3.3.
+    let fx = Fixture::new("vardup");
+    let mut opts = base_opts(&fx, "app");
+    opts.version = Some("1.0".to_string());
+    for (file, triplet, constraint, abi) in [
+        (
+            "app-1.0-r330-macos-arm64.tfs",
+            Platform::Aarch64Macos,
+            "~> 3.3.0",
+            "arm64-darwin-23",
+        ),
+        (
+            "app-1.0-r330-linux-gnu-x86_64.tfs",
+            Platform::X86_64LinuxGnu,
+            "~> 3.3.0",
+            "x86_64-linux-gnu",
+        ),
+        (
+            "app-1.0-r33-macos-arm64.tfs",
+            Platform::Aarch64Macos,
+            "~> 3.3",
+            "arm64-darwin-23",
+        ),
+        (
+            "app-1.0-r33-linux-gnu-x86_64.tfs",
+            Platform::X86_64LinuxGnu,
+            "~> 3.3",
+            "x86_64-linux-gnu",
+        ),
+    ] {
+        opts.payloads.push(PayloadInput {
+            triplet: Some(triplet),
+            path: write_payload(
+                &fx,
+                file,
+                &app_manifest_native("app", "1.0", constraint, abi),
+            ),
+        });
+    }
     let e = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
     assert_eq!(e.code, 65, "{e:?}");
     assert!(
-        e.message
-            .contains("must agree on engine/constraint/implementation"),
+        e.message.contains("derive the same variant 'ruby-mri-3.3'"),
         "{}",
         e.message
     );
+}
+
+#[test]
+fn multi_variant_artifact_names_are_the_input_basenames_checked() {
+    // a payload file that is not a .tfs
+    let fx = Fixture::new("varnotfs");
+    let mut opts = base_opts(&fx, "app");
+    opts.version = Some("1.0".to_string());
+    opts.payloads.push(PayloadInput {
+        triplet: Some(Platform::Aarch64Macos),
+        path: write_payload(
+            &fx,
+            "app-1.0-ruby3.3-macos-arm64.tfs",
+            &app_manifest_native("app", "1.0", "~> 3.3.0", "arm64-darwin-23"),
+        ),
+    });
+    let bad = fx.work.join("app-1.0-ruby4.0-macos-arm64.img");
+    fs::write(
+        &bad,
+        zip_image(&app_manifest_native(
+            "app",
+            "1.0",
+            "~> 4.0.0",
+            "arm64-darwin-23",
+        )),
+    )
+    .unwrap();
+    opts.payloads.push(PayloadInput {
+        triplet: Some(Platform::Aarch64Macos),
+        path: bad,
+    });
+    let e = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(e.code, 64, "{e:?}");
+    assert!(e.message.contains("is not a .tfs"), "{}", e.message);
+
+    // a per-triplet name missing the platform suffix
+    let fx = Fixture::new("varnosuffix");
+    let mut opts = base_opts(&fx, "app");
+    opts.version = Some("1.0".to_string());
+    opts.payloads.push(PayloadInput {
+        triplet: Some(Platform::Aarch64Macos),
+        path: write_payload(
+            &fx,
+            "app-1.0-ruby3.3-macos-arm64.tfs",
+            &app_manifest_native("app", "1.0", "~> 3.3.0", "arm64-darwin-23"),
+        ),
+    });
+    opts.payloads.push(PayloadInput {
+        triplet: Some(Platform::Aarch64Macos),
+        path: write_payload(
+            &fx,
+            "app-1.0-ruby4.0.tfs",
+            &app_manifest_native("app", "1.0", "~> 4.0.0", "arm64-darwin-23"),
+        ),
+    });
+    let e = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(e.code, 64, "{e:?}");
+    assert!(e.message.contains("does not end"), "{}", e.message);
+
+    // two arms, one basename
+    let fx = Fixture::new("varsamename");
+    fs::create_dir_all(fx.work.join("a")).unwrap();
+    fs::create_dir_all(fx.work.join("b")).unwrap();
+    let mut opts = base_opts(&fx, "app");
+    opts.version = Some("1.0".to_string());
+    for (dir, constraint) in [("a", "~> 3.3.0"), ("b", "~> 4.0.0")] {
+        opts.payloads.push(PayloadInput {
+            triplet: Some(Platform::Aarch64Macos),
+            path: write_payload(
+                &fx,
+                &format!("{dir}/x-macos-arm64.tfs"),
+                &app_manifest_native("app", "1.0", constraint, "arm64-darwin-23"),
+            ),
+        });
+    }
+    let e = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(e.code, 64, "{e:?}");
+    assert!(e.message.contains("share a basename"), "{}", e.message);
 }
 
 #[test]
@@ -1013,7 +1226,7 @@ fn per_triplet_publish_with_oci_pushes_and_mirrors_the_rows() {
     // the registry rows mirror the per-triplet oci: locator
     let registry = registry_at(&fx);
     let v = registry.payload("app").unwrap().version("1.0").unwrap();
-    let tebako_resolve::RegistryPlatforms::PerTriplet(map) = &v.platforms else {
+    let Some(tebako_resolve::RegistryPlatforms::PerTriplet(map)) = &v.platforms else {
         panic!("per-triplet platforms");
     };
     assert_eq!(
@@ -1113,7 +1326,7 @@ fn signed_publish_with_oci_pushes_the_signature_siblings() {
     let v = registry.payload("app").unwrap().version("1.0").unwrap();
     assert!(matches!(
         v.platforms,
-        tebako_resolve::RegistryPlatforms::Universal
+        Some(tebako_resolve::RegistryPlatforms::Universal)
     ));
     assert!(
         outcome

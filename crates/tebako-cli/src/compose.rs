@@ -326,10 +326,15 @@ pub fn resolve_closure<T: Transport>(
                 })?,
         };
         let entry = payload.version(&version).expect("selected above");
+        // The no-selector variant pick (spec 28 §4 rule 1) scopes every
+        // platforms read below.
+        let view = entry
+            .resolve_variant(payload.default_variant.as_deref())
+            .map_err(|e| err(e.to_string()))?;
 
         // The §13.3 coverage assertion, checked against the registry's
         // mirrored coverage rows (fail-closed, never a silent fallback).
-        let declared = match &entry.platforms {
+        let declared = match view.platforms {
             RegistryPlatforms::Universal => Platforms::Universal,
             RegistryPlatforms::PerTriplet(map) => {
                 Platforms::Triplets(map.keys().copied().collect())
@@ -384,7 +389,7 @@ pub fn resolve_closure<T: Transport>(
         // The lock's pin (spec 23 §13.3): the single universal digest,
         // or the host triplet's row — press verifies the host's bytes;
         // other triplets are never asserted.
-        let pin = match &entry.platforms {
+        let pin = match view.platforms {
             RegistryPlatforms::Universal => tpkg::DigestPin::One(cached.sha256.clone()),
             RegistryPlatforms::PerTriplet(_) => tpkg::DigestPin::PerTriplet(BTreeMap::from([(
                 host.release_asset_name().to_string(),

@@ -106,6 +106,12 @@ pub struct RegistryPayload {
     pub versions: Vec<RegistryVersion>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<String>,
+    /// spec 28 §3's no-selector pick (schema MINOR 9): the variant id
+    /// (derived, never authored as a key — it appears here only as the
+    /// SELECTION) resolution starts from. Validated against the default
+    /// version's variants.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_variant: Option<String>,
 }
 
 /// One version entry of a payload.
@@ -117,12 +123,19 @@ pub struct RegistryVersion {
     /// payload-level key wins when both are present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub implementation: Option<String>,
-    pub platforms: RegistryPlatforms,
+    /// The single-variant shorthand's platform axis (spec 04 §2): present
+    /// exactly when `variants:` is absent (spec 28 §3's MECE law — both
+    /// at once is a named validation error; neither is too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platforms: Option<RegistryPlatforms>,
     /// The universal row's blksum sidecar pin (spec 39 §3, MINOR 4): a
     /// `platforms: universal` row names ONE artifact by the single-.tfs
     /// rule, so its sidecar pin lives at the version level — spelled on
     /// a per-triplet row it is a named validation error (the pins live
     /// in `platforms[<triplet>].blksum`; exactly one location per form).
+    /// On a variants entry each arm carries its own pin (arm-level
+    /// `blksum`, universal arms only) — the version-level spelling is a
+    /// named error there too.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blksum: Option<BlksumPin>,
     /// The payload's release home — a spec 04 §1 reference (any class;
@@ -144,7 +157,9 @@ pub struct RegistryVersion {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<SignaturePin>,
     /// The runtime the payload's entrypoints need (spec 03 §2.2);
-    /// mirrored for dispatch-time runtime resolution.
+    /// mirrored for dispatch-time runtime resolution. Part of the
+    /// single-variant shorthand — a variants entry carries the mirror per
+    /// arm (the arm's requirement IS the variant's key, spec 28 §3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_requirement: Option<RegistryRuntimeRequirement>,
     /// The command names the payload PROVIDES (spec 03 §4 tier 3); each
@@ -159,6 +174,31 @@ pub struct RegistryVersion {
     /// refusal semantics.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// The variant arms (spec 28 §3, schema MINOR 9): one
+    /// `{runtime_requirement, platforms}` row per build of this version.
+    /// MECE with the shorthand — a version carries EITHER the top-level
+    /// `platforms:` (+ `runtime_requirement:`) OR `variants:`, never
+    /// both, never neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variants: Option<Vec<RegistryVariant>>,
+}
+
+/// One variant arm of a version entry (spec 28 §3): the runtime
+/// requirement that KEYS the variant (the variant id derives from it —
+/// spec 28 §2 — and is never authored) plus the arm's own platforms map.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegistryVariant {
+    /// Absent keys the `universal` variant (a data slice, or a
+    /// pure-language build — exactly one per version, the variant law).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_requirement: Option<RegistryRuntimeRequirement>,
+    pub platforms: RegistryPlatforms,
+    /// The arm's universal row sidecar pin (spec 39 §3's version-level
+    /// rule applied per arm): present iff the arm's platforms are
+    /// `universal`; on a per-triplet arm the pins live in the platforms
+    /// map entries — the one-location-per-form rule, per arm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blksum: Option<BlksumPin>,
 }
 
 /// The platform axis (spec 04 §2): EITHER the bare string `universal`
@@ -487,6 +527,65 @@ impl RegistryPayload {
                 )));
             }
         }
+        // spec 28 §3/§10: `default_variant` is the no-selector pick among
+        // the DEFAULT version's variants — it must exist (a default
+        // version carrying variants), and it must name one of them.
+        if let Some(dv) = &self.default_variant {
+            let Some(default) = &self.default else {
+                return Err(invalid_entry(format!(
+                    "payload '{}' default_variant '{dv}' is declared but the payload pins no default version — the no-selector pick starts from the default version's variants",
+                    self.name
+                )));
+            };
+            let entry = self.version(default).expect("the default validated above");
+            let Some(arms) = &entry.variants else {
+                return Err(invalid_entry(format!(
+                    "payload '{}' default_variant '{dv}' is declared but the default version {default} carries no variants:",
+                    self.name
+                )));
+            };
+            let mut ids = Vec::with_capacity(arms.len());
+            for arm in arms {
+                let (id, _) = variant_key(arm.runtime_requirement.as_ref()).map_err(|reason| {
+                    invalid_entry(format!(
+                        "payload '{}' {default} variant: {reason}",
+                        self.name
+                    ))
+                })?;
+                ids.push(id);
+            }
+            if !ids.iter().any(|id| id == dv) {
+                return Err(invalid_entry(format!(
+                    "payload '{}' default_variant '{dv}' names no variant of the default version {default} (variants: {})",
+                    self.name,
+                    ids.join(", ")
+                )));
+            }
+        }
+        // spec 28 §4 rule 1's authoring gate: variants spanning
+        // IMPLEMENTATIONS need the declared default — the newest-line
+        // rule is defined within one implementation, never across them.
+        for v in &self.versions {
+            let Some(arms) = &v.variants else { continue };
+            let mut impls: Vec<&str> = arms
+                .iter()
+                .filter_map(|a| {
+                    a.runtime_requirement
+                        .as_ref()
+                        .and_then(|r| r.implementation.as_deref())
+                })
+                .collect();
+            impls.sort_unstable();
+            impls.dedup();
+            if impls.len() > 1 && self.default_variant.is_none() {
+                return Err(invalid_entry(format!(
+                    "payload '{}' {} variants span implementations ({}) but the payload declares no default_variant — the no-selector pick never guesses across implementations",
+                    self.name,
+                    v.version,
+                    impls.join(", ")
+                )));
+            }
+        }
         Ok(())
     }
 
@@ -548,84 +647,115 @@ impl RegistryVersion {
                 payload.name, self.version
             )));
         }
-        match (&self.platforms, &release) {
-            (RegistryPlatforms::PerTriplet(map), Reference::Service { sha256, .. }) => {
-                if sha256.is_some() {
-                    return Err(invalid_entry(format!(
-                        "payload '{}' {} release.ref carries a ?sha256= pin but platforms is per-triplet — the pins live in platforms[<triplet>].sha256",
-                        payload.name, self.version
-                    )));
-                }
-                if map.is_empty() {
-                    return Err(invalid_entry(format!(
-                        "payload '{}' {} platforms map is empty (use \"universal\")",
-                        payload.name, self.version
-                    )));
-                }
-                for (platform, entry) in map {
-                    if entry.artifact.is_empty() {
-                        return Err(invalid_entry(format!(
-                            "payload '{}' {} platforms[{platform}].artifact must not be empty",
-                            payload.name, self.version
-                        )));
-                    }
-                    check_sha256(
-                        &format!(
-                            "payload '{}' {} platforms[{platform}].sha256",
-                            payload.name, self.version
-                        ),
-                        &entry.sha256,
-                    )?;
-                }
-            }
-            // spec 38 §2/§3: a per-triplet payload published to OCI. The
-            // platform rows keep their declarative pins (the sha256 binds
-            // the channels — spec 38 §11); the per-triplet TAG derives
-            // (<version>-<triplet>, the registry's declarative selection
-            // unchanged), so the ref itself must not carry a selector.
-            (RegistryPlatforms::PerTriplet(map), Reference::Oci { tag, digest, .. }) => {
-                if tag.is_some() || digest.is_some() {
-                    return Err(invalid_entry(format!(
-                        "payload '{}' {} release.ref is tfs+oci: with per-triplet platforms but carries a :tag/@digest — the per-triplet tag derives as <version>-<triplet>; name the bare tfs+oci://<host>/<repo>",
-                        payload.name, self.version
-                    )));
-                }
-                if map.is_empty() {
-                    return Err(invalid_entry(format!(
-                        "payload '{}' {} platforms map is empty (use \"universal\")",
-                        payload.name, self.version
-                    )));
-                }
-                for (platform, entry) in map {
-                    if entry.artifact.is_empty() {
-                        return Err(invalid_entry(format!(
-                            "payload '{}' {} platforms[{platform}].artifact must not be empty",
-                            payload.name, self.version
-                        )));
-                    }
-                    check_sha256(
-                        &format!(
-                            "payload '{}' {} platforms[{platform}].sha256",
-                            payload.name, self.version
-                        ),
-                        &entry.sha256,
-                    )?;
-                }
-            }
-            (RegistryPlatforms::PerTriplet(_), _) => {
+        // spec 28 §3's MECE law: a version entry carries EITHER the
+        // shorthand (top-level `platforms:` + `runtime_requirement:` —
+        // exactly the single-variant form) OR `variants:`, never both,
+        // never neither.
+        match (&self.platforms, &self.variants) {
+            (Some(_), Some(_)) => {
                 return Err(invalid_entry(format!(
-                    "payload '{}' {} has per-triplet platforms but release.ref is not a service release — artifact names only exist on tfs:<service>: releases",
+                    "payload '{}' {} carries both the shorthand (platforms:) and variants: — one form per version entry",
                     payload.name, self.version
                 )));
             }
-            (RegistryPlatforms::Universal, _) => {}
+            (None, None) => {
+                return Err(invalid_entry(format!(
+                    "payload '{}' {} carries neither platforms: nor variants: — a version entry names its artifacts in exactly one of the two forms",
+                    payload.name, self.version
+                )));
+            }
+            (Some(platforms), None) => {
+                validate_platforms_map(
+                    &payload.name,
+                    &self.version,
+                    "platforms",
+                    platforms,
+                    &release,
+                )?;
+            }
+            (None, Some(variants)) => {
+                if self.runtime_requirement.is_some() {
+                    return Err(invalid_entry(format!(
+                        "payload '{}' {} runtime_requirement at the version level is the shorthand's mirror — a variants entry mirrors the requirement per arm (it is each variant's key)",
+                        payload.name, self.version
+                    )));
+                }
+                if variants.is_empty() {
+                    return Err(invalid_entry(format!(
+                        "payload '{}' {} variants: lists no arms",
+                        payload.name, self.version
+                    )));
+                }
+                let mut ids: Vec<String> = Vec::with_capacity(variants.len());
+                for (i, variant) in variants.iter().enumerate() {
+                    if let Some(req) = &variant.runtime_requirement {
+                        if req.engine.is_empty() || req.constraint.is_empty() {
+                            return Err(invalid_entry(format!(
+                                "payload '{}' {} variants[{i}] runtime_requirement needs engine and constraint",
+                                payload.name, self.version
+                            )));
+                        }
+                    }
+                    let (id, _) =
+                        variant_key(variant.runtime_requirement.as_ref()).map_err(|reason| {
+                            invalid_entry(format!(
+                                "payload '{}' {} variants[{i}]: {reason}",
+                                payload.name, self.version
+                            ))
+                        })?;
+                    // The variant law (spec 28 §1): two arms of one
+                    // version declaring the same requirement are the same
+                    // variant — a duplicate key is a named authoring
+                    // error.
+                    if ids.contains(&id) {
+                        return Err(invalid_entry(format!(
+                            "payload '{}' {} lists the variant '{id}' twice — two builds of one version that declare the same requirement are the same variant",
+                            payload.name, self.version
+                        )));
+                    }
+                    validate_platforms_map(
+                        &payload.name,
+                        &self.version,
+                        &format!("variants[{id}].platforms"),
+                        &variant.platforms,
+                        &release,
+                    )?;
+                    // spec 39 §3's one-location rule, per arm: the
+                    // arm-level pin exists iff the arm names ONE
+                    // artifact (its platforms are universal).
+                    if let Some(blksum) = &variant.blksum {
+                        if !matches!(variant.platforms, RegistryPlatforms::Universal) {
+                            return Err(invalid_entry(format!(
+                                "payload '{}' {} variants[{id}].blksum names the arm's single artifact — a per-triplet arm pins the sidecar in its platforms map entries",
+                                payload.name, self.version
+                            )));
+                        }
+                        check_blksum_pin(
+                            &format!(
+                                "payload '{}' {} variants[{id}].blksum",
+                                payload.name, self.version
+                            ),
+                            blksum,
+                        )?;
+                    }
+                    ids.push(id);
+                }
+            }
         }
-        // The universal row's sidecar pin (spec 39 §3): a `platforms:
-        // universal` row names ONE artifact by the single-.tfs rule, so
-        // the pin lives at the version level; spelled on a per-triplet
-        // row it duplicates the platforms map's job — a named error.
+        // The universal shorthand row's sidecar pin (spec 39 §3): a
+        // `platforms: universal` row names ONE artifact by the
+        // single-.tfs rule, so the pin lives at the version level;
+        // spelled on a per-triplet row it duplicates the platforms map's
+        // job — a named error. On a variants entry each arm carries its
+        // own pin (variants[].blksum, universal arms only).
         if let Some(blksum) = &self.blksum {
-            if !matches!(self.platforms, RegistryPlatforms::Universal) {
+            if self.variants.is_some() {
+                return Err(invalid_entry(format!(
+                    "payload '{}' {} blksum at the version level has no meaning on a variants entry — each arm carries its own (variants[].blksum on a universal arm; the platforms map entries otherwise)",
+                    payload.name, self.version
+                )));
+            }
+            if !matches!(self.platforms, Some(RegistryPlatforms::Universal)) {
                 return Err(invalid_entry(format!(
                     "payload '{}' {} blksum at the version level names the universal payload's single artifact — per-triplet pins live in platforms[<triplet>].blksum",
                     payload.name, self.version
@@ -636,86 +766,9 @@ impl RegistryVersion {
                 blksum,
             )?;
         }
-        // The additive per-row OCI mirror (spec 38 §7): when spelled it
-        // parses as a `tfs+oci:` reference (the row's artifact at its OCI
-        // locator — a mirror of resolution fields, never a second
-        // authority).
-        if let RegistryPlatforms::PerTriplet(map) = &self.platforms {
-            for (platform, entry) in map {
-                if let Some(oci) = &entry.oci {
-                    match Reference::parse(oci) {
-                        Ok(Reference::Oci { .. }) => {}
-                        Ok(_) => {
-                            return Err(invalid_entry(format!(
-                            "payload '{}' {} platforms[{platform}].oci is not a tfs+oci: reference",
-                            payload.name, self.version
-                        )))
-                        }
-                        Err(e) => {
-                            return Err(invalid_entry(format!(
-                                "payload '{}' {} platforms[{platform}].oci does not parse: {e}",
-                                payload.name, self.version
-                            )))
-                        }
-                    }
-                }
-                if let Some(blksum) = &entry.blksum {
-                    check_blksum_pin(
-                        &format!(
-                            "payload '{}' {} platforms[{platform}].blksum",
-                            payload.name, self.version
-                        ),
-                        blksum,
-                    )?;
-                }
-                // The additive per-row shard release ref (spec 04 §2,
-                // MINOR 6; tebako#711): the same grammar discipline as the
-                // version-level ref under per-triplet platforms — no
-                // `#artifact` (artifact selection belongs to THIS map
-                // entry), no `?sha256=` pin (the row's `sha256` key is the
-                // digest channel), and a class whose releases carry named
-                // artifacts (a shard tag names a service release; OCI rows
-                // keep the derived <version>-<triplet> tag on the
-                // version-level ref).
-                if let Some(row_release) = &entry.release {
-                    match Reference::parse(&row_release.r#ref) {
-                        Ok(Reference::Service {
-                            artifact: None,
-                            sha256: None,
-                            ..
-                        }) => {}
-                        Ok(Reference::Service {
-                            artifact: Some(_), ..
-                        }) => {
-                            return Err(invalid_entry(format!(
-                                "payload '{}' {} platforms[{platform}].release.ref carries an #artifact — artifact selection belongs to the platforms map entry",
-                                payload.name, self.version
-                            )));
-                        }
-                        Ok(Reference::Service {
-                            sha256: Some(_), ..
-                        }) => {
-                            return Err(invalid_entry(format!(
-                                "payload '{}' {} platforms[{platform}].release.ref carries a ?sha256= pin — the row's sha256 key is the digest channel",
-                                payload.name, self.version
-                            )));
-                        }
-                        Ok(_) => {
-                            return Err(invalid_entry(format!(
-                                "payload '{}' {} platforms[{platform}].release.ref is not a service release — artifact names only exist on tfs:<service>: releases",
-                                payload.name, self.version
-                            )));
-                        }
-                        Err(e) => {
-                            return Err(invalid_entry(format!(
-                                "payload '{}' {} platforms[{platform}].release.ref does not parse: {e}",
-                                payload.name, self.version
-                            )));
-                        }
-                    }
-                }
-            }
-        }
+        // The additive per-row OCI mirror / blksum pin / shard release
+        // ref checks run inside validate_platforms_map (per shorthand map
+        // and per variant arm's map).
         if let Some(sig) = &self.signature {
             let keyid_ok = sig.keyid.len() == 16
                 && sig
@@ -790,12 +843,163 @@ impl RegistryVersion {
         Ok(())
     }
 
+    /// The no-selector variant resolution (spec 28 §4 rule 1): the
+    /// shorthand is the single-variant case; on a variants entry the
+    /// payload's declared `default_variant` wins when it names a variant
+    /// of THIS version (a mismatch is a named error — never a silent
+    /// fallthrough), a one-arm entry resolves to its arm, and otherwise
+    /// the variant whose requirement's line is NEWEST wins (a `universal`
+    /// variant orders below every line-carrying one).
+    pub fn resolve_variant(
+        &self,
+        default_variant: Option<&str>,
+    ) -> Result<VariantView<'_>, RegistryError> {
+        let Some(variants) = &self.variants else {
+            let platforms = self.platforms.as_ref().ok_or_else(|| {
+                invalid_entry(format!(
+                    "version {} carries neither platforms: nor variants:",
+                    self.version
+                ))
+            })?;
+            return Ok(VariantView {
+                id: None,
+                picked_by: VariantPick::Shorthand,
+                runtime_requirement: self.runtime_requirement.as_ref(),
+                platforms,
+                blksum: self.blksum.as_ref(),
+            });
+        };
+        let mut arms: Vec<(String, Option<String>, &RegistryVariant)> = Vec::new();
+        for variant in variants {
+            let (id, line) =
+                variant_key(variant.runtime_requirement.as_ref()).map_err(|reason| {
+                    invalid_entry(format!("version {} variant: {reason}", self.version))
+                })?;
+            arms.push((id, line, variant));
+        }
+        let (picked, picked_by) = if let Some(dv) = default_variant {
+            (
+                arms.iter().find(|(id, _, _)| id == dv).ok_or_else(|| {
+                    invalid_entry(format!(
+                        "default_variant '{dv}' names no variant of version {} (variants: {})",
+                        self.version,
+                        arms.iter()
+                            .map(|(id, _, _)| id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                })?,
+                VariantPick::Default,
+            )
+        } else if arms.len() == 1 {
+            (&arms[0], VariantPick::Only)
+        } else {
+            (
+                arms.iter()
+                    .max_by(|a, b| match (&a.1, &b.1) {
+                        (Some(x), Some(y)) => tpkg::versions::compare(x, y),
+                        (Some(_), None) => std::cmp::Ordering::Greater,
+                        (None, Some(_)) => std::cmp::Ordering::Less,
+                        (None, None) => std::cmp::Ordering::Equal,
+                    })
+                    .expect("variants non-empty post-validation"),
+                VariantPick::NewestLine,
+            )
+        };
+        Ok(VariantView {
+            id: Some(picked.0.clone()),
+            picked_by,
+            runtime_requirement: picked.2.runtime_requirement.as_ref(),
+            platforms: &picked.2.platforms,
+            blksum: picked.2.blksum.as_ref(),
+        })
+    }
+
+    /// spec 04 §2 (roadmap 85): the row is yanked (`status: withdrawn`) —
+    /// resolvers refuse it by name ([`RegistryError::Withdrawn`]), never a
+    /// silent skip, never a fallback to it.
+    pub fn is_withdrawn(&self) -> bool {
+        self.status.as_deref() == Some("withdrawn")
+    }
+
+    /// Every runtime-requirement mirror this version carries: the
+    /// shorthand's plus each variant arm's (spec 28 §3). Consumers that
+    /// scan requirements (the authoring gate, the retire gate) walk this
+    /// — never the fields directly.
+    pub fn requirement_mirrors(&self) -> impl Iterator<Item = &RegistryRuntimeRequirement> {
+        self.runtime_requirement.iter().chain(
+            self.variants
+                .iter()
+                .flatten()
+                .filter_map(|a| a.runtime_requirement.as_ref()),
+        )
+    }
+
+    /// Every (requirement mirror, its row's per-triplet platform count)
+    /// pair — the authoring gate's per-triplet abi rule reads the count
+    /// of the ROW the mirror sits on (the shorthand map, or the arm's
+    /// map; universal rows count 0).
+    pub fn requirement_rows(&self) -> Vec<(&RegistryRuntimeRequirement, usize)> {
+        fn rows(p: &RegistryPlatforms) -> usize {
+            match p {
+                RegistryPlatforms::PerTriplet(m) => m.len(),
+                RegistryPlatforms::Universal => 0,
+            }
+        }
+        let mut out = Vec::new();
+        if let (Some(req), Some(platforms)) = (&self.runtime_requirement, self.platforms.as_ref()) {
+            out.push((req, rows(platforms)));
+        }
+        for arm in self.variants.iter().flatten() {
+            if let Some(req) = &arm.runtime_requirement {
+                out.push((req, rows(&arm.platforms)));
+            }
+        }
+        out
+    }
+}
+
+/// The resolved per-variant view of a version entry (spec 28 §3): the
+/// shorthand is the one-variant case. The declarative host selection
+/// lives here — a consumer never reads the version's `platforms`
+/// directly.
+#[derive(Debug, Clone)]
+pub struct VariantView<'a> {
+    /// The derived variant id (spec 28 §2); `None` for the shorthand.
+    pub id: Option<String>,
+    /// How the no-selector pick chose this arm (§4 rule 1's journal
+    /// fields).
+    pub picked_by: VariantPick,
+    /// The picked arm's runtime requirement mirror (the shorthand's
+    /// version-level mirror for the single-variant form).
+    pub runtime_requirement: Option<&'a RegistryRuntimeRequirement>,
+    pub platforms: &'a RegistryPlatforms,
+    /// The universal row's sidecar pin (spec 39 §3): the version-level
+    /// pin for the shorthand, the arm-level pin for a universal variant.
+    pub blksum: Option<&'a BlksumPin>,
+}
+
+/// How [`RegistryVersion::resolve_variant`] picked the arm (spec 28 §4
+/// rule 1's `source=` journal field).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VariantPick {
+    /// The shorthand — one variant by construction.
+    Shorthand,
+    /// The payload's declared `default_variant`.
+    Default,
+    /// §4 rule 1's fallback: the newest requirement line.
+    NewestLine,
+    /// A one-arm `variants:` list.
+    Only,
+}
+
+impl VariantView<'_> {
     /// The declarative host-triplet selection (spec 04 §2): `universal` →
     /// the release's single-`.tfs` rule (no artifact name; the release
     /// ref's own `?sha256=` pin is the digest channel); per-triplet →
     /// `platforms[host]`, `None` when the host triplet is not published.
     pub fn select(&self, host: Platform) -> Option<PlatformSelection<'_>> {
-        match &self.platforms {
+        match self.platforms {
             RegistryPlatforms::Universal => Some(PlatformSelection::Universal),
             RegistryPlatforms::PerTriplet(map) => {
                 map.get(&host).map(|e| PlatformSelection::Selected {
@@ -808,24 +1012,238 @@ impl RegistryVersion {
         }
     }
 
-    /// The triplets this version is published for (for the named
-    /// platform-missing error); empty for universal payloads.
+    /// The triplets this variant is published for (for the named
+    /// platform-missing error); empty for universal rows.
     pub fn published_triplets(&self) -> Vec<Platform> {
-        match &self.platforms {
+        match self.platforms {
             RegistryPlatforms::Universal => Vec::new(),
             RegistryPlatforms::PerTriplet(map) => map.keys().copied().collect(),
         }
     }
+}
 
-    /// spec 04 §2 (roadmap 85): the row is yanked (`status: withdrawn`) —
-    /// resolvers refuse it by name ([`RegistryError::Withdrawn`]), never a
-    /// silent skip, never a fallback to it.
-    pub fn is_withdrawn(&self) -> bool {
-        self.status.as_deref() == Some("withdrawn")
+/// spec 28 §2's derived variant id: `(id, line)` where `line` is the
+/// ABI line the id carries (`None` for the `universal` variant — it
+/// orders below every line-carrying variant in the §4 rule-1 pick).
+///
+/// - No requirement → `universal`.
+/// - `abi:` with no `implementation` → a named error (spec 28 §10's
+///   registry-load gate: an abi is per-implementation by construction).
+/// - No `abi:` and no `implementation` → `universal` (a pure-language
+///   build serves every implementation its requirement admits — the
+///   axis does not fork a pure variant).
+/// - `implementation` present (with or without the mirror's abi key —
+///   the abi is per-triplet by construction, so a multi-platform arm's
+///   mirror omits it): the constraint must be the single ABI-line clause
+///   `~> X.Y[.0]` → `<engine>-<implementation>-<X.Y>`; anything else
+///   cannot canonize → a named error. (A range constraint with an
+///   implementation axis but no abi is a pure-language requirement —
+///   `universal`.)
+pub fn variant_id(req: Option<&RegistryRuntimeRequirement>) -> Result<String, String> {
+    variant_key(req).map(|(id, _)| id)
+}
+
+fn variant_key(
+    req: Option<&RegistryRuntimeRequirement>,
+) -> Result<(String, Option<String>), String> {
+    let Some(req) = req else {
+        return Ok(("universal".to_string(), None));
+    };
+    match (&req.implementation, &req.abi) {
+        (None, Some(_)) => Err(
+            "runtime_requirement carries abi with no implementation — an abi is per-implementation by construction"
+                .to_string(),
+        ),
+        (None, None) => Ok(("universal".to_string(), None)),
+        (Some(implementation), abi) => {
+            match pessimistic_line(&req.constraint) {
+                Some(line) => Ok((
+                    format!("{}-{}-{}", req.engine, implementation, line),
+                    Some(line),
+                )),
+                // The ABI-line clause is the native lock's shape. With an
+                // abi in force anything else is uncanonizable (spec 28 §2's
+                // "anything else" rule); without one the row is a
+                // pure-language requirement — the universal variant.
+                None if abi.is_some() => Err(format!(
+                    "runtime_requirement constraint {:?} cannot canonize to a variant id — the variant grammar keys ABI-line builds (\"~> X.Y[.0]\")",
+                    req.constraint
+                )),
+                None => Ok(("universal".to_string(), None)),
+            }
+        }
     }
 }
 
-/// The outcome of [`RegistryVersion::select`].
+/// `~> X.Y` / `~> X.Y.0` → `Some("X.Y")` (the ABI line); anything else
+/// → `None`.
+fn pessimistic_line(constraint: &str) -> Option<String> {
+    let rest = constraint.trim().strip_prefix("~>")?.trim();
+    let mut parts = rest.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    let patch = parts.next();
+    if parts.next().is_some() {
+        return None;
+    }
+    let numeric = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if !numeric(major) || !numeric(minor) {
+        return None;
+    }
+    match patch {
+        None => Some(format!("{major}.{minor}")),
+        Some("0") => Some(format!("{major}.{minor}")),
+        _ => None,
+    }
+}
+
+/// The platforms-map checks, shared by the shorthand and every variant
+/// arm: the release-ref class rules (spec 04 §2, spec 38 §2/§3) and the
+/// per-row additive mirrors (spec 38 §7's `oci:`, spec 39 §3's `blksum:`,
+/// MINOR 6's shard `release:`). `loc` is the map's key path in error
+/// messages (`platforms` for the shorthand, `variants[<id>].platforms`
+/// per arm).
+fn validate_platforms_map(
+    payload_name: &str,
+    version: &str,
+    loc: &str,
+    platforms: &RegistryPlatforms,
+    release: &Reference,
+) -> Result<(), RegistryError> {
+    match (platforms, release) {
+        (RegistryPlatforms::PerTriplet(map), Reference::Service { sha256, .. }) => {
+            if sha256.is_some() {
+                return Err(invalid_entry(format!(
+                    "payload '{payload_name}' {version} release.ref carries a ?sha256= pin but platforms is per-triplet — the pins live in platforms[<triplet>].sha256"
+                )));
+            }
+            if map.is_empty() {
+                return Err(invalid_entry(format!(
+                    "payload '{payload_name}' {version} platforms map is empty (use \"universal\")"
+                )));
+            }
+            for (platform, entry) in map {
+                if entry.artifact.is_empty() {
+                    return Err(invalid_entry(format!(
+                        "payload '{payload_name}' {version} {loc}[{platform}].artifact must not be empty"
+                    )));
+                }
+                check_sha256(
+                    &format!("payload '{payload_name}' {version} {loc}[{platform}].sha256"),
+                    &entry.sha256,
+                )?;
+            }
+        }
+        // spec 38 §2/§3: a per-triplet payload published to OCI. The
+        // platform rows keep their declarative pins (the sha256 binds
+        // the channels — spec 38 §11); the per-triplet TAG derives
+        // (<version>-<triplet>, the registry's declarative selection
+        // unchanged), so the ref itself must not carry a selector.
+        (RegistryPlatforms::PerTriplet(map), Reference::Oci { tag, digest, .. }) => {
+            if tag.is_some() || digest.is_some() {
+                return Err(invalid_entry(format!(
+                    "payload '{payload_name}' {version} release.ref is tfs+oci: with per-triplet platforms but carries a :tag/@digest — the per-triplet tag derives as <version>-<triplet>; name the bare tfs+oci://<host>/<repo>"
+                )));
+            }
+            if map.is_empty() {
+                return Err(invalid_entry(format!(
+                    "payload '{payload_name}' {version} platforms map is empty (use \"universal\")"
+                )));
+            }
+            for (platform, entry) in map {
+                if entry.artifact.is_empty() {
+                    return Err(invalid_entry(format!(
+                        "payload '{payload_name}' {version} {loc}[{platform}].artifact must not be empty"
+                    )));
+                }
+                check_sha256(
+                    &format!("payload '{payload_name}' {version} {loc}[{platform}].sha256"),
+                    &entry.sha256,
+                )?;
+            }
+        }
+        (RegistryPlatforms::PerTriplet(_), _) => {
+            return Err(invalid_entry(format!(
+                "payload '{payload_name}' {version} has per-triplet platforms but release.ref is not a service release — artifact names only exist on tfs:<service>: releases"
+            )));
+        }
+        (RegistryPlatforms::Universal, _) => {}
+    }
+    // The additive per-row OCI mirror (spec 38 §7): when spelled it
+    // parses as a `tfs+oci:` reference (the row's artifact at its OCI
+    // locator — a mirror of resolution fields, never a second
+    // authority).
+    if let RegistryPlatforms::PerTriplet(map) = platforms {
+        for (platform, entry) in map {
+            if let Some(oci) = &entry.oci {
+                match Reference::parse(oci) {
+                    Ok(Reference::Oci { .. }) => {}
+                    Ok(_) => {
+                        return Err(invalid_entry(format!(
+                            "payload '{payload_name}' {version} {loc}[{platform}].oci is not a tfs+oci: reference"
+                        )))
+                    }
+                    Err(e) => {
+                        return Err(invalid_entry(format!(
+                            "payload '{payload_name}' {version} {loc}[{platform}].oci does not parse: {e}"
+                        )))
+                    }
+                }
+            }
+            if let Some(blksum) = &entry.blksum {
+                check_blksum_pin(
+                    &format!("payload '{payload_name}' {version} {loc}[{platform}].blksum"),
+                    blksum,
+                )?;
+            }
+            // The additive per-row shard release ref (spec 04 §2,
+            // MINOR 6; tebako#711): the same grammar discipline as the
+            // version-level ref under per-triplet platforms — no
+            // `#artifact` (artifact selection belongs to THIS map
+            // entry), no `?sha256=` pin (the row's `sha256` key is the
+            // digest channel), and a class whose releases carry named
+            // artifacts (a shard tag names a service release; OCI rows
+            // keep the derived <version>-<triplet> tag on the
+            // version-level ref).
+            if let Some(row_release) = &entry.release {
+                match Reference::parse(&row_release.r#ref) {
+                    Ok(Reference::Service {
+                        artifact: None,
+                        sha256: None,
+                        ..
+                    }) => {}
+                    Ok(Reference::Service {
+                        artifact: Some(_), ..
+                    }) => {
+                        return Err(invalid_entry(format!(
+                            "payload '{payload_name}' {version} {loc}[{platform}].release.ref carries an #artifact — artifact selection belongs to the platforms map entry"
+                        )));
+                    }
+                    Ok(Reference::Service {
+                        sha256: Some(_), ..
+                    }) => {
+                        return Err(invalid_entry(format!(
+                            "payload '{payload_name}' {version} {loc}[{platform}].release.ref carries a ?sha256= pin — the row's sha256 key is the digest channel"
+                        )));
+                    }
+                    Ok(_) => {
+                        return Err(invalid_entry(format!(
+                            "payload '{payload_name}' {version} {loc}[{platform}].release.ref is not a service release — artifact names only exist on tfs:<service>: releases"
+                        )));
+                    }
+                    Err(e) => {
+                        return Err(invalid_entry(format!(
+                            "payload '{payload_name}' {version} {loc}[{platform}].release.ref does not parse: {e}"
+                        )));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The outcome of [`VariantView::select`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlatformSelection<'a> {
     /// Pure-language payload: the release's single `.tfs` asset (spec 04
@@ -1313,8 +1731,11 @@ payloads:
         assert_eq!(m.kind, PayloadKind::App);
         assert_eq!(m.default.as_deref(), Some("1.2.3"));
         let v = m.default_version().unwrap();
+        let view = v.resolve_variant(None).unwrap();
+        assert_eq!(view.id, None);
+        assert_eq!(view.picked_by, VariantPick::Shorthand);
         assert_eq!(
-            v.select(Platform::Aarch64Macos),
+            view.select(Platform::Aarch64Macos),
             Some(PlatformSelection::Selected {
                 artifact: "metanorma-1.2.3-macos-arm64.tfs",
                 sha256: &"b".repeat(64),
@@ -1323,7 +1744,7 @@ payloads:
             })
         );
         assert_eq!(
-            v.select(Platform::X86_64LinuxGnu),
+            view.select(Platform::X86_64LinuxGnu),
             Some(PlatformSelection::Selected {
                 artifact: "metanorma-1.2.3-linux-gnu-x86_64.tfs",
                 sha256: &"a".repeat(64),
@@ -1333,18 +1754,19 @@ payloads:
         );
         // a triplet the registry does not publish → None (the caller's
         // named error lists published_triplets)
-        assert_eq!(v.select(Platform::X86_64WindowsUcrt), None);
+        assert_eq!(view.select(Platform::X86_64WindowsUcrt), None);
         assert_eq!(
-            v.published_triplets(),
+            view.published_triplets(),
             vec![Platform::Aarch64Macos, Platform::X86_64LinuxGnu]
         );
         assert_eq!(v.signature.as_ref().unwrap().keyid, "0123456789abcdef");
 
         let p = registry.payload("pure-tool").unwrap();
         let v = &p.versions[0];
-        assert!(matches!(v.platforms, RegistryPlatforms::Universal));
+        assert!(matches!(v.platforms, Some(RegistryPlatforms::Universal)));
+        let view = v.resolve_variant(None).unwrap();
         assert_eq!(
-            v.select(Platform::X86_64WindowsUcrt),
+            view.select(Platform::X86_64WindowsUcrt),
             Some(PlatformSelection::Universal)
         );
         assert!(p.default_version().is_none());
@@ -1369,7 +1791,7 @@ payloads:
         let registry = Registry::from_yaml(&per_triplet).unwrap();
         let v = registry.payload("x").unwrap().version("1.0").unwrap();
         assert!(v.blksum.is_none());
-        let RegistryPlatforms::PerTriplet(map) = &v.platforms else {
+        let Some(RegistryPlatforms::PerTriplet(map)) = &v.platforms else {
             panic!("per-triplet platforms");
         };
         let pin = map[&Platform::Aarch64Macos].blksum.as_ref().unwrap();
@@ -1448,9 +1870,10 @@ payloads:
             .unwrap()
             .version("4.0.7-0.17.1")
             .unwrap();
+        let view = v.resolve_variant(None).unwrap();
         // the shard row flows its own ref …
         assert_eq!(
-            v.select(Platform::Aarch64Macos),
+            view.select(Platform::Aarch64Macos),
             Some(PlatformSelection::Selected {
                 artifact: "tebako-runtime-0.17.1-ruby-4.0-aarch64-macos.tfs",
                 sha256: &whole,
@@ -1461,7 +1884,7 @@ payloads:
         // … and the unsharded row flows None (the version-level ref
         // serves it).
         assert_eq!(
-            v.select(Platform::X86_64LinuxGnu),
+            view.select(Platform::X86_64LinuxGnu),
             Some(PlatformSelection::Selected {
                 artifact: "tebako-runtime-0.17.1-ruby-4.0-x86_64-linux-gnu.tfs",
                 sha256: &whole,
@@ -2057,5 +2480,312 @@ payloads:
         // the L3 wrapper carries it through verbatim
         let wrapped = ResolveError::from(err);
         assert!(wrapped.to_string().contains("WithdrawnPayload"));
+    }
+
+    // -----------------------------------------------------------------
+    // The variant dimension (spec 28 §2/§3/§4 rule 1; schema MINOR 9)
+    // -----------------------------------------------------------------
+
+    /// spec 28 §3's two-arm example: the 3.3 line's arm is the
+    /// multi-platform mirror (the abi omitted per tebako#440), the 4.0
+    /// line's arm a single-platform row (its abi kept — one value holds).
+    fn variants_fixture(default_variant: Option<&str>) -> String {
+        let sha_a = "a".repeat(64);
+        let sha_b = "b".repeat(64);
+        let dv = default_variant
+            .map(|d| format!("    default_variant: {d}\n"))
+            .unwrap_or_default();
+        format!(
+            "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: 1.16.9\n{dv}    versions:\n      - version: 1.16.9\n        release: {{ref: tfs:github:tebako-packages/metanorma:1.16.9-4}}\n        entrypoints: [metanorma]\n        variants:\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}}\n            platforms:\n              aarch64-macos: {{artifact: metanorma-1.16.9-ruby3.3-macos-arm64.tfs, sha256: \"{sha_a}\"}}\n              x86_64-linux-gnu: {{artifact: metanorma-1.16.9-ruby3.3-linux-gnu-x86_64.tfs, sha256: \"{sha_a}\"}}\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 4.0.0\", abi: arm64-darwin-24}}\n            platforms:\n              aarch64-macos: {{artifact: metanorma-1.16.9-ruby4.0-macos-arm64.tfs, sha256: \"{sha_b}\"}}\n"
+        )
+    }
+
+    #[test]
+    fn variants_parse_resolve_and_round_trip() {
+        let registry = Registry::from_yaml(&variants_fixture(None)).unwrap();
+        let m = registry.payload("metanorma").unwrap();
+        let v = m.version("1.16.9").unwrap();
+        assert!(
+            v.platforms.is_none(),
+            "a variants entry carries no shorthand"
+        );
+        assert_eq!(v.variants.as_ref().unwrap().len(), 2);
+
+        // §4 rule 1's newest-line fallback (no declared default).
+        let view = v.resolve_variant(None).unwrap();
+        assert_eq!(view.id.as_deref(), Some("ruby-mri-4.0"));
+        assert_eq!(view.picked_by, VariantPick::NewestLine);
+        assert_eq!(view.runtime_requirement.unwrap().constraint, "~> 4.0.0");
+        assert_eq!(
+            view.select(Platform::Aarch64Macos),
+            Some(PlatformSelection::Selected {
+                artifact: "metanorma-1.16.9-ruby4.0-macos-arm64.tfs",
+                sha256: &"b".repeat(64),
+                oci: None,
+                release: None,
+            })
+        );
+        // …scoped to the variant: the 4.0 arm is not published for linux.
+        assert_eq!(view.select(Platform::X86_64LinuxGnu), None);
+        assert_eq!(view.published_triplets(), vec![Platform::Aarch64Macos]);
+
+        // The declared default wins over the newest-line rule.
+        let registry = Registry::from_yaml(&variants_fixture(Some("ruby-mri-3.3"))).unwrap();
+        let m = registry.payload("metanorma").unwrap();
+        let v = m.version("1.16.9").unwrap();
+        let view = v.resolve_variant(m.default_variant.as_deref()).unwrap();
+        assert_eq!(view.id.as_deref(), Some("ruby-mri-3.3"));
+        assert_eq!(view.picked_by, VariantPick::Default);
+        assert_eq!(
+            view.published_triplets(),
+            vec![Platform::Aarch64Macos, Platform::X86_64LinuxGnu]
+        );
+        // round-trip identity, variants form included
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+    }
+
+    #[test]
+    fn the_variants_shorthand_mece_law_is_named() {
+        let sha = "a".repeat(64);
+        let row = format!("aarch64-macos: {{artifact: a.tfs, sha256: \"{sha}\"}}");
+        // both forms at once
+        let both = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        platforms:\n          {row}\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n        variants:\n          - platforms:\n              {row}\n"
+        );
+        let err = Registry::from_yaml(&both).unwrap_err();
+        assert!(err.to_string().contains("both the shorthand"), "{err}");
+        // neither form
+        let neither = "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        release: {ref: tfs:github:o/x:1.0}\n        entrypoints: [x]\n";
+        let err = Registry::from_yaml(neither).unwrap_err();
+        assert!(
+            err.to_string().contains("neither platforms: nor variants:"),
+            "{err}"
+        );
+        // the shorthand's requirement mirror on a variants entry
+        let req_too = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.3\"}}\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n        variants:\n          - platforms:\n              {row}\n"
+        );
+        let err = Registry::from_yaml(&req_too).unwrap_err();
+        assert!(err.to_string().contains("per arm"), "{err}");
+        // an empty arms list
+        let empty = "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        release: {ref: tfs:github:o/x:1.0}\n        entrypoints: [x]\n        variants: []\n";
+        let err = Registry::from_yaml(empty).unwrap_err();
+        assert!(err.to_string().contains("lists no arms"), "{err}");
+    }
+
+    #[test]
+    fn a_duplicate_variant_id_is_a_named_error() {
+        // §1's variant law: two arms declaring the same requirement are
+        // the same variant — a duplicate key is a named authoring error.
+        let sha = "a".repeat(64);
+        let yaml = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n        variants:\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}}\n            platforms:\n              aarch64-macos: {{artifact: a-3.3.tfs, sha256: \"{sha}\"}}\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}}\n            platforms:\n              x86_64-linux-gnu: {{artifact: b-3.3.tfs, sha256: \"{sha}\"}}\n"
+        );
+        let err = Registry::from_yaml(&yaml).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("lists the variant 'ruby-mri-3.3' twice"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn variant_id_derivation_rules() {
+        let req = |implementation: Option<&str>, constraint: &str, abi: Option<&str>| {
+            RegistryRuntimeRequirement {
+                engine: "ruby".to_string(),
+                constraint: constraint.to_string(),
+                implementation: implementation.map(str::to_string),
+                abi: abi.map(str::to_string),
+            }
+        };
+        // no requirement → universal (a data slice)
+        assert_eq!(variant_id(None).unwrap(), "universal");
+        // a pure-language constraint → universal (the implementation axis
+        // does not fork a pure variant)
+        assert_eq!(
+            variant_id(Some(&req(None, ">= 3.3, < 5.0", None))).unwrap(),
+            "universal"
+        );
+        // … even when the pure requirement names an implementation
+        assert_eq!(
+            variant_id(Some(&req(Some("jruby"), ">= 9.4, < 10.0", None))).unwrap(),
+            "universal"
+        );
+        // abi with no implementation → §10's registry-load gate
+        let err = variant_id(Some(&req(None, "~> 3.3.0", Some("arm64-darwin-23")))).unwrap_err();
+        assert!(err.contains("abi with no implementation"), "{err}");
+        // the ABI-line clause canonizes — with or without the mirror's
+        // abi key (a multi-platform arm omits it, tebako#440)
+        assert_eq!(
+            variant_id(Some(&req(Some("mri"), "~> 3.3.0", Some("arm64-darwin-23")))).unwrap(),
+            "ruby-mri-3.3"
+        );
+        assert_eq!(
+            variant_id(Some(&req(Some("mri"), "~> 4.0", None))).unwrap(),
+            "ruby-mri-4.0"
+        );
+        assert_eq!(
+            variant_id(Some(&req(
+                Some("jruby"),
+                "~> 9.4.0",
+                Some("universal-java")
+            )))
+            .unwrap(),
+            "ruby-jruby-9.4"
+        );
+        // a non-ABI-line constraint with an abi in force cannot canonize
+        let err = variant_id(Some(&req(
+            Some("mri"),
+            ">= 3.3, < 5.0",
+            Some("x86_64-linux"),
+        )))
+        .unwrap_err();
+        assert!(err.contains("cannot canonize"), "{err}");
+        let err =
+            variant_id(Some(&req(Some("mri"), "~> 3.3.5", Some("x86_64-linux")))).unwrap_err();
+        assert!(err.contains("cannot canonize"), "{err}");
+    }
+
+    #[test]
+    fn default_variant_validation_is_named() {
+        // naming no variant of the default version
+        let err = Registry::from_yaml(&variants_fixture(Some("ruby-mri-9.9"))).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("default_variant 'ruby-mri-9.9' names no variant of the default version 1.16.9 (variants: ruby-mri-3.3, ruby-mri-4.0)"),
+            "{err}"
+        );
+        // declared without a payload default version
+        let no_default =
+            variants_fixture(Some("ruby-mri-3.3")).replace("    default: 1.16.9\n", "");
+        let err = Registry::from_yaml(&no_default).unwrap_err();
+        assert!(err.to_string().contains("pins no default version"), "{err}");
+        // the default version carries no variants
+        let shorthand = variants_fixture(Some("ruby-mri-3.3")).replace(
+            "        variants:\n          - runtime_requirement: {engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}\n            platforms:\n              aarch64-macos: {artifact: metanorma-1.16.9-ruby3.3-macos-arm64.tfs, sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n              x86_64-linux-gnu: {artifact: metanorma-1.16.9-ruby3.3-linux-gnu-x86_64.tfs, sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n          - runtime_requirement: {engine: ruby, implementation: mri, constraint: \"~> 4.0.0\", abi: arm64-darwin-24}\n            platforms:\n              aarch64-macos: {artifact: metanorma-1.16.9-ruby4.0-macos-arm64.tfs, sha256: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n",
+            "        platforms: universal\n        runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n",
+        );
+        let err = Registry::from_yaml(&shorthand).unwrap_err();
+        assert!(err.to_string().contains("carries no variants:"), "{err}");
+        // and at resolution: a default naming no variant of THIS
+        // (non-default) version is a named error, never a fallthrough
+        let sha = "a".repeat(64);
+        let two_versions = format!(
+            "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: 1.16.9\n    default_variant: ruby-mri-3.3\n    versions:\n      - version: 1.16.9\n        release: {{ref: tfs:github:o/m:1.16.9}}\n        entrypoints: [metanorma]\n        variants:\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}}\n            platforms:\n              aarch64-macos: {{artifact: m-33.tfs, sha256: \"{sha}\"}}\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 4.0.0\"}}\n            platforms:\n              aarch64-macos: {{artifact: m-40.tfs, sha256: \"{sha}\"}}\n      - version: 1.17.0\n        release: {{ref: tfs:github:o/m:1.17.0}}\n        entrypoints: [metanorma]\n        variants:\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 4.1.0\"}}\n            platforms: universal\n"
+        );
+        let registry = Registry::from_yaml(&two_versions).unwrap();
+        let v = registry
+            .payload("metanorma")
+            .unwrap()
+            .version("1.17.0")
+            .unwrap();
+        let err = v.resolve_variant(Some("ruby-mri-3.3")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("default_variant 'ruby-mri-3.3' names no variant of version 1.17.0"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn implementation_spanning_variants_need_the_declared_default() {
+        // §4 rule 1's authoring gate: the newest-line rule never picks
+        // across implementations.
+        let sha = "a".repeat(64);
+        let yaml = |dv: &str| {
+            format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    default: 1.0\n{dv}    versions:\n      - version: 1.0\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n        variants:\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}}\n            platforms:\n              aarch64-macos: {{artifact: x-mri.tfs, sha256: \"{sha}\"}}\n          - runtime_requirement: {{engine: ruby, implementation: jruby, constraint: \"~> 9.4.0\"}}\n            platforms:\n              aarch64-macos: {{artifact: x-jruby.tfs, sha256: \"{sha}\"}}\n"
+        )
+        };
+        let err = Registry::from_yaml(&yaml("")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("variants span implementations (jruby, mri)"),
+            "{err}"
+        );
+        let registry = Registry::from_yaml(&yaml("    default_variant: ruby-jruby-9.4\n")).unwrap();
+        let m = registry.payload("x").unwrap();
+        let view = m
+            .version("1.0")
+            .unwrap()
+            .resolve_variant(m.default_variant.as_deref())
+            .unwrap();
+        assert_eq!(view.id.as_deref(), Some("ruby-jruby-9.4"));
+        assert_eq!(view.picked_by, VariantPick::Default);
+    }
+
+    #[test]
+    fn the_newest_line_pick_orders_universal_below() {
+        // A universal arm (a pure-language build) beside a line-carrying
+        // arm: the line wins the no-selector pick.
+        let sha = "a".repeat(64);
+        let yaml = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    default: 1.0\n    versions:\n      - version: 1.0\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n        variants:\n          - platforms:\n              aarch64-macos: {{artifact: x-pure.tfs, sha256: \"{sha}\"}}\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}}\n            platforms:\n              aarch64-macos: {{artifact: x-33.tfs, sha256: \"{sha}\"}}\n"
+        );
+        let registry = Registry::from_yaml(&yaml).unwrap();
+        let v = registry.payload("x").unwrap().version("1.0").unwrap();
+        let view = v.resolve_variant(None).unwrap();
+        assert_eq!(view.id.as_deref(), Some("ruby-mri-3.3"));
+        assert_eq!(view.picked_by, VariantPick::NewestLine);
+        // a one-arm variants: list resolves to its arm
+        let one = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n        variants:\n          - platforms:\n              aarch64-macos: {{artifact: x.tfs, sha256: \"{sha}\"}}\n"
+        );
+        let registry = Registry::from_yaml(&one).unwrap();
+        let v = registry.payload("x").unwrap().version("1.0").unwrap();
+        let view = v.resolve_variant(None).unwrap();
+        assert_eq!(view.id.as_deref(), Some("universal"));
+        assert_eq!(view.picked_by, VariantPick::Only);
+    }
+
+    #[test]
+    fn variant_arm_blksum_discipline() {
+        // spec 39 §3 per arm: the arm-level pin exists iff the arm is
+        // universal; on a per-triplet arm the platforms map carries it.
+        let sha = "a".repeat(64);
+        let pin_sha = "c".repeat(64);
+        let ok = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n        variants:\n          - platforms: universal\n            blksum: {{filename: x-1.0.tfs.blksum.json, sha256: \"{pin_sha}\"}}\n          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}}\n            platforms:\n              aarch64-macos: {{artifact: x-33.tfs, sha256: \"{sha}\"}}\n"
+        );
+        let registry = Registry::from_yaml(&ok).unwrap();
+        let v = registry.payload("x").unwrap().version("1.0").unwrap();
+        let arms = v.variants.as_ref().unwrap();
+        assert_eq!(
+            arms[0].blksum.as_ref().unwrap().filename,
+            "x-1.0.tfs.blksum.json"
+        );
+        let view = v.resolve_variant(None).unwrap();
+        assert_eq!(view.id.as_deref(), Some("ruby-mri-3.3"));
+        assert!(view.blksum.is_none());
+
+        // a per-triplet arm carrying the arm-level pin → named
+        let bad = ok.replace(
+            "          - runtime_requirement: {engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}\n            platforms:\n              aarch64-macos: {artifact: x-33.tfs, sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+            &format!(
+                "          - runtime_requirement: {{engine: ruby, implementation: mri, constraint: \"~> 3.3.0\"}}\n            blksum: {{filename: x-33.tfs.blksum.json, sha256: \"{pin_sha}\"}}\n            platforms:\n              aarch64-macos: {{artifact: x-33.tfs, sha256: \"{sha}\"}}\n"
+            ),
+        );
+        let err = Registry::from_yaml(&bad).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("variants[ruby-mri-3.3].blksum names the arm's single artifact"),
+            "{err}"
+        );
+
+        // the version-level pin on a variants entry → named
+        let bad = ok.replace(
+            "        variants:\n",
+            &format!(
+                "        blksum: {{filename: x-1.0.tfs.blksum.json, sha256: \"{pin_sha}\"}}\n        variants:\n"
+            ),
+        );
+        let err = Registry::from_yaml(&bad).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("blksum at the version level has no meaning on a variants entry"),
+            "{err}"
+        );
     }
 }

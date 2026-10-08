@@ -269,9 +269,11 @@ tebako-packages/index/            # the catalog: a registry-of-registries
   spec-03 requires graph (inkscape → libxml2/poppler payloads).
 - **The `exclude:` recipe axis (additive, 2026-10-09, tebako#333):** a
   Tebakofile may carry `exclude:` — a list of globs, payload-root
-  relative, in the spec 03 §5 imaging-exclusion grammar — handed to the
-  imager verbatim (the feedstock tooling spells it as repeated
-  `--exclude` flags). Development-time trees (tmp/, test directories,
+  relative, in the spec 03 §5 imaging-exclusion grammar — applied when
+  the staging tree is assembled (a matching path never reaches the
+  imager, so the mechanism is imager-agnostic; an imager carrying the
+  grammar may take the same list as repeated `--exclude` flags
+  instead). Development-time trees (tmp/, test directories,
   scratch data) stay in the source tree without landing in the shipped
   `.tfs`; the manifest never records the list.
 - **Release hosting (locked):** every package's built payloads —

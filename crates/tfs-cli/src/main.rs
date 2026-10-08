@@ -10,7 +10,7 @@
 //! tfs stat [-v] <image> <path>
 //! tfs extract [-v] [-q|--quiet] [-d|--dest <dir>] <image> [files...]
 //! tfs find [-v] <image> <pattern>
-//! tfs mkimage [--format dwarfs|limnifs] <srcdir> -o <img> [-v]
+//! tfs mkimage [--format dwarfs|limnifs] [--exclude <glob>]... <srcdir> -o <img> [-v]
 //! tfs exec <image>[:mount] [--image <image:mount>]...
 //!          [--jail <spec> | --compose <file.yaml>] -- <cmd> [args...]
 //! tfs needs --from-journal <journal.log>
@@ -99,6 +99,7 @@ struct Args {
     recipients: Vec<String>,
     key: Option<String>,
     subtrees: Vec<String>,
+    exclude: Vec<String>,
     rewrap: bool,
 }
 
@@ -177,6 +178,7 @@ impl Args {
                 "--recipient" => a.recipients.push(take_value(&mut i)?),
                 "--key" => a.key = Some(take_value(&mut i)?),
                 "--subtree" => a.subtrees.push(take_value(&mut i)?),
+                "--exclude" => a.exclude.push(take_value(&mut i)?),
                 "-d" | "--dest" => a.dest = Some(take_value(&mut i)?),
                 "-o" | "--output" => a.output = Some(take_value(&mut i)?),
                 "--format" => a.format = Some(take_value(&mut i)?),
@@ -405,7 +407,7 @@ fn cmd_mkimage_main(rest: &[String]) -> ExitCode {
     if let Err(e) = a.positional_count(
         1,
         1,
-        "tfs mkimage [--format dwarfs|limnifs] <srcdir> --output <img>",
+        "tfs mkimage [--format dwarfs|limnifs] [--exclude <glob>]... <srcdir> --output <img>",
     ) {
         return fail(&format!("Error: {e}"));
     }
@@ -415,7 +417,12 @@ fn cmd_mkimage_main(rest: &[String]) -> ExitCode {
     let Some(output) = a.output else {
         return fail("Error: missing required option --output");
     };
-    match cmd_mkimage(&format, Path::new(&a.positional[0]), Path::new(&output)) {
+    match cmd_mkimage(
+        &format,
+        Path::new(&a.positional[0]),
+        Path::new(&output),
+        &a.exclude,
+    ) {
         Ok(()) => {
             if a.verbose {
                 println!("Wrote {} image: {output}", format.to_lowercase());
@@ -685,8 +692,9 @@ fn print_help() {
     println!("  extract  Extract archive contents (-d dest, default .)");
     println!("  find     Search for files by name glob");
     println!(
-        "  mkimage  Create a dwarfs or limnifs (.tfs) image from a directory (in-process writer)"
+        "  mkimage  Create a dwarfs or limnifs (.tfs) image from a directory (in-process writer;"
     );
+    println!("           --exclude <glob> drops matching paths from the image)");
     println!("  exec     Run a dynamic native command with the VFS injected (preload shim;");
     println!("           --compose <file.yaml> takes the whole composition)");
     println!("  needs    Draft a payload needs: block from a record-mode journal");

@@ -99,6 +99,14 @@ constraint, abi?}`:
   registry entry is a named validation error — the grammar does not
   guess.
 
+The derivation reads the constraint's SHAPE and the implementation
+axis alone: the mirror's `abi` key may be absent — tebako#440's
+per-triplet omission (spec 04 §2), the multi-platform mirror carrying
+`{engine, implementation, constraint}` while every slice's embedded
+manifest owns the authoritative abi — without changing the derived id
+(`{engine: ruby, implementation: mri, constraint: "~> 3.3.0"}` derives
+`ruby-mri-3.3` with or without the `abi:` key).
+
 The id is computed, never authored: registries carry the requirement;
 the id appears in store paths and diagnostics only.
 

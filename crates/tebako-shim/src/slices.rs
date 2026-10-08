@@ -551,11 +551,15 @@ fn fetch_slice(
         let registry = crate::regcache::registry_for(home, reg_ref, ctx)?;
         if let Some(payload) = registry.payload(&pin.name) {
             if let Some(entry) = payload.versions.iter().find(|v| v.version == pin.version) {
-                hits.push((reg_ref.to_string(), entry.clone()));
+                hits.push((
+                    reg_ref.to_string(),
+                    payload.default_variant.clone(),
+                    entry.clone(),
+                ));
             }
         }
     }
-    let (reg_ref, entry) = match hits.len() {
+    let (reg_ref, default_variant, entry) = match hits.len() {
         0 => {
             return fail(
                 EX_TEBAKO_MANIFEST,
@@ -575,7 +579,7 @@ fn fetch_slice(
                     pin.version,
                     pin.source,
                     hits.iter()
-                        .map(|(r, _)| format!("    - {r}"))
+                        .map(|(r, _, _)| format!("    - {r}"))
                         .collect::<Vec<_>>()
                         .join("\n"),
                     pin.name,
@@ -602,7 +606,17 @@ fn fetch_slice(
             format!("registry release ref for {}@{}: {e}", pin.name, pin.version),
         )
     })?;
-    let expected_sha256 = match entry.select(tpkg::Platform::host()) {
+    // The no-selector variant pick (spec 28 §4 rule 1) scopes the host
+    // selection.
+    let view = entry
+        .resolve_variant(default_variant.as_deref())
+        .map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!("registry row for {}@{}: {e}", pin.name, pin.version),
+            )
+        })?;
+    let expected_sha256 = match view.select(tpkg::Platform::host()) {
         Some(PlatformSelection::Universal) => None,
         Some(PlatformSelection::Selected {
             artifact,

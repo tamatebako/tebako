@@ -97,10 +97,13 @@ impl RuntimeDeployer {
         // only). A limnifs-less runtime therefore presses a
         // `--format limnifs` package fine; running that package needs a
         // limnifs-capable runtime (spec 20 §5's fail-closed rule).
+        // --exclude governs the shipped payload too — the driver image
+        // is assembled by press itself and always ships whole.
         crate::image::build_image(
             &self.driver_image(),
             seed_dir,
             crate::options::PressImageFormat::Dwarfs,
+            &Default::default(),
         )?;
         self.stitch_driver_package()?;
         if self.shim_supported() {

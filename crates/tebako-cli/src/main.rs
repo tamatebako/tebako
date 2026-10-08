@@ -15,7 +15,7 @@ const USAGE: &str = "Usage:
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local] [--jail <spec>]
                [--no-install] [--quiet-notices] [--sign[=<keyid>] | --no-sign]
-               [--format dwarfs|limnifs] [--compose <tebako.yaml>]
+               [--format dwarfs|limnifs] [--exclude <glob>]... [--compose <tebako.yaml>]
                [--carry all|none|<name,...>] [--share <name,...>]
                (lean/fat stay accepted as deprecated aliases)
   tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
@@ -1331,6 +1331,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut quiet_notices: Option<bool> = None;
     let mut sign: Option<tpkg::settings::SignCli> = None;
     let mut format = tebako_cli::options::PressImageFormat::Limnifs;
+    let mut exclude: Vec<String> = Vec::new();
     let mut compose: Option<PathBuf> = None;
     let mut carry: Option<String> = None;
     let mut share: Option<String> = None;
@@ -1393,6 +1394,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
                 format =
                     tebako_cli::options::PressImageFormat::parse(&v).map_err(CliExit::Usage)?;
             }
+            "--exclude" => exclude.push(take_value(&mut i)?),
             "-D" | "--devmode" => devmode = true,
             "--compose" => compose = Some(PathBuf::from(take_value(&mut i)?)),
             "--carry" => carry = Some(take_value(&mut i)?),
@@ -1464,6 +1466,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         quiet_notices,
         sign,
         format,
+        exclude,
         compose,
         carry,
         share,

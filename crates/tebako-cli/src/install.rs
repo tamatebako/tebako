@@ -1341,12 +1341,17 @@ pub(crate) fn plan_from_registry_entry(
     let reference = Reference::parse(&entry.release.r#ref)
         .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
 
-    // The declarative host-triplet selection (spec 04 §2).
+    // The declarative host-triplet selection (spec 04 §2), scoped to the
+    // no-selector variant pick (spec 28 §4 rule 1): the payload's declared
+    // default_variant, else the newest requirement line.
+    let view = entry
+        .resolve_variant(payload.default_variant.as_deref())
+        .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
     let host = match host {
         Some(h) => h,
         None => host_platform()?,
     };
-    let (reference, expected_sha256) = match entry.select(host) {
+    let (reference, expected_sha256) = match view.select(host) {
         Some(PlatformSelection::Universal) => {
             if hit.channel_oci {
                 return Err(err(
@@ -1416,7 +1421,7 @@ pub(crate) fn plan_from_registry_entry(
             }
         }
         None => {
-            let published = entry
+            let published = view
                 .published_triplets()
                 .iter()
                 .map(|p| p.as_triplet())
@@ -1443,7 +1448,7 @@ pub(crate) fn plan_from_registry_entry(
         origin_registry: Some(hit.reference.clone()),
         registry_alias: hit.alias.clone(),
         entrypoints: entry.entrypoints.clone(),
-        runtime_requirement: entry.runtime_requirement.as_ref().map(|r| {
+        runtime_requirement: view.runtime_requirement.map(|r| {
             (
                 r.engine.clone(),
                 r.constraint.clone(),

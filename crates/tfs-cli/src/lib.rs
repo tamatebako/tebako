@@ -978,14 +978,23 @@ fn name_matches(pattern: &str, name: &str) -> bool {
 // mkimage (in-process writers: dwarfs-t / limnifs — no binaries anywhere)
 // ---------------------------------------------------------------------
 
-/// `tfs mkimage --format <fmt> <srcdir> -o <img>` — builds the image
-/// in-process (dwarfs: the dwarfs-t Writer, the same C ABI the reader
-/// uses; limnifs: `limnifs-write`, spec 20 §6). No mkdwarfs/limni binary,
-/// no PATH lookup. An existing output is replaced (the mkdwarfs --force
-/// parity). Dwarfs images carry dwarfs-t-native (FlatBuffers) metadata —
-/// name them `.tfs` (the `.dwarfs` extension stays for
-/// upstream-compatible images).
-pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(), (String, i32)> {
+/// `tfs mkimage --format <fmt> [--exclude <glob>]... <srcdir> -o <img>` —
+/// builds the image in-process (dwarfs: the dwarfs-t Writer, the same C
+/// ABI the reader uses; limnifs: `limnifs-write`, spec 20 §6). No
+/// mkdwarfs/limni binary, no PATH lookup. An existing output is replaced
+/// (the mkdwarfs --force parity). Dwarfs images carry dwarfs-t-native
+/// (FlatBuffers) metadata — name them `.tfs` (the `.dwarfs` extension
+/// stays for upstream-compatible images).
+///
+/// `excludes` drops matching payload-root-relative paths from the image
+/// build (the same grammar `tebako press --exclude` accepts; exclusions
+/// never enter the manifest).
+pub fn cmd_mkimage(
+    format: &str,
+    source_dir: &Path,
+    output: &Path,
+    excludes: &[String],
+) -> Result<(), (String, i32)> {
     let fmt = format.to_lowercase();
     if fmt == "zip" {
         return Err((
@@ -1013,12 +1022,20 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
             1,
         ));
     }
+    let excludes = tpkg::exclude::ExcludeSet::parse(excludes)
+        .map_err(|e| (format!("invalid --exclude: {e}"), 1))?;
     // Stamp the payload manifest's `tree_hash` when the source carries a
     // manifest (spec 03 §7 fixed-point rule: the hash excludes
     // `/__tpkg__/`, so the stamp is a fixed point). The stamp is
     // format-neutral (spec 20 §6: the staged hardlink mirror rides ahead
-    // of writer selection) — the author's source is never mutated.
-    let staged = stamp_tree_hash(source_dir)?;
+    // of writer selection) — the author's source is never mutated. With
+    // exclusions the staged mirror is the FILTERED tree and the hash
+    // covers it — the image's actual contents.
+    let staged = if excludes.is_empty() {
+        stamp_tree_hash(source_dir)?.map(|(t, h)| (t, Some(h)))
+    } else {
+        Some(stage_filtered_source(source_dir, &excludes)?)
+    };
     let staged_tree;
     let source = match &staged {
         Some((tmp, _)) => {
@@ -1561,6 +1578,43 @@ fn stamp_tree_hash(
     Ok(Some((tmp, tpkg::render_tree_hash(&digest))))
 }
 
+/// The `--exclude` flow: stage the FILTERED hardlink mirror, then stamp
+/// the tree hash over it (the hash covers the image's actual contents).
+/// Returns the staging tempdir plus the rendered hash when a manifest
+/// survived the filter and was stamped. Same lenient stamp policy as
+/// `stamp_tree_hash` — a malformed manifest goes in unstamped.
+fn stage_filtered_source(
+    source_dir: &Path,
+    excludes: &tpkg::exclude::ExcludeSet,
+) -> Result<(tempfile::TempDir, Option<String>), (String, i32)> {
+    let tmp = tempfile::tempdir().map_err(|e| (format!("cannot create a staging dir: {e}"), 1))?;
+    let tree = tmp.path().join("tree");
+    tpkg::merkle_host::stage_tree_excluding(source_dir, &tree, None, excludes)
+        .map_err(|e| (format!("cannot stage the source tree: {e}"), 1))?;
+    let staged_manifest = tree.join(tpkg::merkle::MANIFEST_DIR).join("manifest.yaml");
+    if !staged_manifest.is_file() {
+        return Ok((tmp, None));
+    }
+    let digest = tpkg::tree_digest(&tpkg::merkle_host::HostTree::new(&tree))
+        .map_err(|e| (format!("cannot hash the source tree: {e}"), 1))?;
+    let authored = std::fs::read_to_string(&staged_manifest)
+        .map_err(|e| (format!("cannot read {}: {e}", staged_manifest.display()), 1))?;
+    let Ok(filled) = tpkg::merkle_host::fill_tree_hash(&authored, &digest) else {
+        return Ok((tmp, None)); // malformed authored manifest: unstamped, verify grades it
+    };
+    // The staged manifest is a hardlink to the author's source — remove
+    // before writing so the source tree is never mutated.
+    std::fs::remove_file(&staged_manifest)
+        .and_then(|()| std::fs::write(&staged_manifest, &filled))
+        .map_err(|e| {
+            (
+                format!("cannot stamp {}: {e}", staged_manifest.display()),
+                1,
+            )
+        })?;
+    Ok((tmp, Some(tpkg::render_tree_hash(&digest))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1720,7 +1774,7 @@ mod tests {
         std::fs::write(src.join("hello.txt"), b"hello from mkimage").unwrap();
         std::fs::write(src.join("sub").join("big.bin"), vec![0xABu8; 120_000]).unwrap();
         let out = dir.join("fs.tfs");
-        cmd_mkimage("limnifs", &src, &out).expect("mkimage limnifs");
+        cmd_mkimage("limnifs", &src, &out, &[]).expect("mkimage limnifs");
 
         {
             let mount = tfs::mount::build_from_file(&out.to_string_lossy(), "/mnt")
@@ -1734,8 +1788,44 @@ mod tests {
         }
 
         // The unsupported-format named error lists the new supported set.
-        let (msg, _) = cmd_mkimage("ext4", &src, &out).unwrap_err();
+        let (msg, _) = cmd_mkimage("ext4", &src, &out, &[]).unwrap_err();
         assert!(msg.contains("supported: dwarfs, limnifs"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `mkimage --exclude`: matching paths never reach the image — the
+    /// mounted backend proves the absence — and the source tree is never
+    /// mutated (staging filters a hardlink mirror).
+    #[test]
+    fn mkimage_exclude_drops_matching_paths_from_the_image() {
+        let dir =
+            std::env::temp_dir().join(format!("tfs-cli-mkimage-exclude-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let src = dir.join("src");
+        std::fs::create_dir_all(src.join("lib")).unwrap();
+        std::fs::create_dir_all(src.join("tmp").join("work")).unwrap();
+        std::fs::write(src.join("lib").join("keep.txt"), b"keep").unwrap();
+        std::fs::write(src.join("tmp").join("work").join("scratch.o"), b"object").unwrap();
+        std::fs::write(src.join("build.log"), b"log").unwrap();
+        let out = dir.join("fs.tfs");
+        cmd_mkimage(
+            "limnifs",
+            &src,
+            &out,
+            &["tmp".to_string(), "*.log".to_string()],
+        )
+        .expect("mkimage limnifs with excludes");
+
+        let mount = tfs::mount::build_from_file(&out.to_string_lossy(), "/mnt")
+            .expect("the written image mounts");
+        assert!(mount.backend.stat("lib/keep.txt").is_ok());
+        assert!(mount.backend.stat("tmp").is_err());
+        assert!(mount.backend.stat("tmp/work/scratch.o").is_err());
+        assert!(mount.backend.stat("build.log").is_err());
+
+        // The source tree keeps everything (staging never mutates it).
+        assert!(src.join("tmp/work/scratch.o").is_file());
+        assert!(src.join("build.log").is_file());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1786,7 +1876,8 @@ mod tests {
                 )
                 .unwrap();
             }
-            cmd_mkimage("limnifs", &src, &out).expect("mkimage limnifs over the 1 MiB default");
+            cmd_mkimage("limnifs", &src, &out, &[])
+                .expect("mkimage limnifs over the 1 MiB default");
             let image = std::fs::read(&out).unwrap();
             let mut probe = limnifs_core::ManifestCursor::new(&image);
             limnifs_core::parse_manifest_header(&mut probe).unwrap();

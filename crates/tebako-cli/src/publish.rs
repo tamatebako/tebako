@@ -217,6 +217,47 @@ fn payload_artifact_name(name: &str, version: &str, triplet: Option<Platform>) -
     }
 }
 
+/// A multi-variant publish names each artifact by its input file's
+/// basename — the variant infix is the publisher's authoring, the CLI
+/// never invents one (spec 28 §3). Every basename a `.tfs`; a
+/// triplet-bound input's name ends `-<release_asset_name>.tfs` so the
+/// platform axis stays machine-readable in the release listing.
+fn payload_variant_artifact_name(input: &PayloadInput) -> Result<String, TebakoError> {
+    let base = input
+        .path
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            err(
+                EX_USAGE,
+                format!(
+                    "multi-variant publish: {} has no file name — name each payload file for its variant",
+                    input.path.display()
+                ),
+            )
+        })?;
+    if !base.ends_with(".tfs") {
+        return Err(err(
+            EX_USAGE,
+            format!(
+                "multi-variant publish: payload file '{base}' is not a .tfs — name each payload file <name>-<version>-<variant>[-<platform>].tfs"
+            ),
+        ));
+    }
+    if let Some(p) = input.triplet {
+        let suffix = format!("-{}.tfs", p.release_asset_name());
+        if !base.ends_with(&suffix) {
+            return Err(err(
+                EX_USAGE,
+                format!(
+                    "multi-variant publish: payload file '{base}' is bound to {p} but does not end '{suffix}' — the per-triplet variant name keeps the platform suffix readable"
+                ),
+            ));
+        }
+    }
+    Ok(base)
+}
+
 /// The L1 IDENTITY kind spelling (spec 03: `app | data | toolkit` —
 /// publish ships no other kinds; checked before this is called).
 fn payload_kind_str(kind: tpkg::PayloadKind) -> &'static str {
@@ -836,13 +877,9 @@ pub fn publish_full_with_oci_sink(
             "do not mix per-triplet and universal payloads in one publish",
         ));
     }
-    {
-        let mut triplets: Vec<Platform> = opts.payloads.iter().filter_map(|p| p.triplet).collect();
-        triplets.sort();
-        if triplets.windows(2).any(|w| w[0] == w[1]) {
-            return Err(err(EX_USAGE, "duplicate payload triplet"));
-        }
-    }
+    // The duplicate-triplet check rides the variant arms below (2b): a
+    // multi-variant publish repeats a triplet once PER ARM; within one
+    // arm a repeat is the authoring error.
 
     let version = match &opts.version {
         Some(v) => v.clone(),
@@ -869,12 +906,9 @@ pub fn publish_full_with_oci_sink(
     };
     let tag = ref_tag.unwrap_or_else(|| version.clone());
 
-    // ---- 2. payloads: bytes, digests, the embedded manifest ----------
-    let mut artifacts: Vec<(String, String, Vec<u8>)> = Vec::new(); // (upload name, sha, bytes)
-
-    // The blksum sidecars (spec 39 §3), one per payload image, in
-    // `artifacts` order: (sidecar name, sidecar sha, sidecar bytes).
-    let mut blksum_uploads: Vec<(String, String, Vec<u8>)> = Vec::new();
+    // ---- 2. payloads: manifests, the variant arms, bytes, digests -----
+    // The byte-level gates ride first: a missing or empty payload file
+    // is its own named error, ahead of any manifest read.
     for input in &opts.payloads {
         if !input.path.is_file() {
             return Err(err(
@@ -882,13 +916,7 @@ pub fn publish_full_with_oci_sink(
                 format!("payload not found: {}", input.path.display()),
             ));
         }
-        let bytes = std::fs::read(&input.path).map_err(|e| {
-            err(
-                EX_TEBAKO_IO,
-                format!("cannot read {}: {e}", input.path.display()),
-            )
-        })?;
-        if bytes.is_empty() {
+        if input.path.metadata().map(|m| m.len()).unwrap_or(0) == 0 {
             return Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
@@ -897,19 +925,12 @@ pub fn publish_full_with_oci_sink(
                 ),
             ));
         }
-        let name = payload_artifact_name(&opts.name, &version, input.triplet);
-        let sha = tebako_resolve::sha256_hex(&bytes);
-        // spec 39 §3: the PUBLISHER authors the lazy-mount digest
-        // sidecar in-process, in the same invocation that stages the
-        // release bytes (a resolver never derives one — derivation
-        // would require the whole file and arrive unanchored).
-        let sidecar = tpkg::lazy::Blksum::from_image_bytes(&bytes)
-            .render()
-            .into_bytes();
-        let sidecar_sha = tebako_resolve::sha256_hex(&sidecar);
-        blksum_uploads.push((format!("{name}.blksum.json"), sidecar_sha, sidecar));
-        artifacts.push((name, sha, bytes));
     }
+    // 2a. Every payload's embedded manifest: the first carries the
+    // identity/entrypoints truth (a missing one is the named error); the
+    // rest must AGREE on the entrypoint set (one payload, per-triplet
+    // builds) while their runtime requirements group the variant arms
+    // below.
     let manifest_text = image_manifest::read_embedded_manifest(&opts.payloads[0].path)?
         .ok_or_else(|| {
             err(
@@ -975,11 +996,11 @@ pub fn publish_full_with_oci_sink(
         };
     // Every payload's OWN mirrored requirement: the per-triplet OCI
     // annotations mirror each slice's own (a slice's abi is that slice's
-    // truth), and the multi-platform agreement check below rides these.
+    // truth), and the variant-arm grouping below rides these.
     let mut payload_requirements: Vec<Option<RegistryRuntimeRequirement>> =
         vec![runtime_requirement.clone()];
     for input in opts.payloads.iter().skip(1) {
-        // every triplet's manifest must agree (the registry mirrors ONE set)
+        // every triplet's manifest must agree on the dispatchable view
         if let Some(text) = image_manifest::read_embedded_manifest(&input.path)? {
             let other = tpkg::PayloadManifest::from_yaml_authoring(&text).map_err(|e| {
                 err(
@@ -1011,53 +1032,148 @@ pub fn publish_full_with_oci_sink(
             payload_requirements.push(None);
         }
     }
-    // tebako#440: the abi is per-triplet by construction — every variant
-    // must agree on engine/constraint/implementation (the registry row
-    // mirrors ONE value; a disagreement is an authoring error, never a
-    // silent first-wins), while abi itself is exempt: a multi-platform
-    // per-triplet entry's mirror OMITS it (one platform's abi on the
-    // whole entry is wrong for every other platform — each slice's
-    // embedded manifest owns the authoritative per-platform value). A
-    // universal or single-platform entry keeps it: one value holds.
-    let multi_platform = !universal && opts.payloads.len() > 1;
-    if multi_platform {
-        let reference = &payload_requirements[0];
-        for (input, req) in opts
-            .payloads
+    // 2b. The variant arms (tebako#557 — spec 28 §3): payloads grouped by
+    // their mirrored requirement, first-seen order. The abi is exempt
+    // WITHIN an arm (tebako#440's per-triplet rule); one arm is the
+    // single-variant shorthand, N arms emit the `variants:` list.
+    let mut arms: Vec<(Option<RegistryRuntimeRequirement>, Vec<usize>)> = Vec::new();
+    for (i, req) in payload_requirements.iter().enumerate() {
+        let same_arm = |a: &Option<RegistryRuntimeRequirement>| match (a, req) {
+            (None, None) => true,
+            (Some(a), Some(b)) => {
+                a.engine == b.engine
+                    && a.implementation == b.implementation
+                    && a.constraint == b.constraint
+            }
+            _ => false,
+        };
+        match arms.iter_mut().find(|(a, _)| same_arm(a)) {
+            Some((_, members)) => members.push(i),
+            None => arms.push((req.clone(), vec![i])),
+        }
+    }
+    let multi_arm = arms.len() > 1;
+    // One triplet appears at most once WITHIN an arm — across arms a
+    // repeat is the variant matrix's whole point (one build per ABI
+    // line per platform).
+    for (_, members) in &arms {
+        let mut triplets: Vec<Platform> = members
             .iter()
-            .skip(1)
-            .zip(payload_requirements.iter().skip(1))
-        {
-            let agrees = match (reference, req) {
-                (None, None) => true,
-                (Some(a), Some(b)) => {
-                    a.engine == b.engine
-                        && a.constraint == b.constraint
-                        && a.implementation == b.implementation
+            .filter_map(|&i| opts.payloads[i].triplet)
+            .collect();
+        triplets.sort();
+        if triplets.windows(2).any(|w| w[0] == w[1]) {
+            return Err(err(
+                EX_USAGE,
+                "duplicate payload triplet within one variant arm",
+            ));
+        }
+    }
+    // tebako#440's abi mirror rule, per arm: the abi is per-triplet by
+    // construction, so an arm spanning several payloads omits it from the
+    // mirror (each slice's embedded manifest owns the authoritative
+    // per-platform value); a one-payload arm keeps it — one value holds.
+    let arm_requirements: Vec<Option<RegistryRuntimeRequirement>> = arms
+        .iter()
+        .map(|(req, members)| {
+            req.clone().map(|mut r| {
+                if members.len() > 1 && r.abi.is_some() {
+                    notes.push(format!(
+                        "{}: the multi-platform registry mirror omits abi — every platform's slice manifest carries its own",
+                        opts.name
+                    ));
+                    r.abi = None;
                 }
-                _ => false,
-            };
-            if !agrees {
+                r
+            })
+        })
+        .collect();
+    if multi_arm {
+        // Every arm's id derives from its requirement (spec 28 §2): an
+        // uncanonizable requirement, and two arms canonizing to ONE id,
+        // are named authoring errors — never emitted.
+        let mut ids: Vec<String> = Vec::with_capacity(arm_requirements.len());
+        for req in &arm_requirements {
+            let id = tebako_resolve::registry::variant_id(req.as_ref())
+                .map_err(|reason| err(EX_TEBAKO_MANIFEST, format!("{}: {reason}", opts.name)))?;
+            if ids.contains(&id) {
                 return Err(err(
                     EX_TEBAKO_MANIFEST,
                     format!(
-                        "{} declares a different runtime requirement than the first payload — per-triplet variants of one payload must agree on engine/constraint/implementation (the abi is per-triplet and stays in each slice's manifest)",
-                        input.path.display()
+                        "two payload arms derive the same variant '{id}' — builds of one version that canonize to one ABI line are one variant (spec 28 §1); re-cut the build matrix"
                     ),
                 ));
             }
+            ids.push(id);
         }
     }
-    let runtime_requirement = runtime_requirement.map(|mut r| {
-        if multi_platform && r.abi.is_some() {
-            notes.push(format!(
-                "{}: the multi-platform registry mirror omits abi — every platform's slice manifest carries its own",
-                opts.name
+    // 2c. bytes + digests. One arm keeps the synthesized release-asset
+    // names (byte-identical with the pre-variant shape); a multi-arm
+    // publish names each artifact by its input file's basename — the
+    // variant infix is the publisher's authoring, the CLI never invents
+    // one (every basename a `.tfs`, per-triplet names ending
+    // `-<platform>.tfs`, pairwise distinct).
+    let mut artifacts: Vec<(String, String, Vec<u8>)> = Vec::new(); // (upload name, sha, bytes)
+
+    // The blksum sidecars (spec 39 §3), one per payload image, in
+    // `artifacts` order: (sidecar name, sidecar sha, sidecar bytes).
+    let mut blksum_uploads: Vec<(String, String, Vec<u8>)> = Vec::new();
+    for input in &opts.payloads {
+        if !input.path.is_file() {
+            return Err(err(
+                EX_USAGE,
+                format!("payload not found: {}", input.path.display()),
             ));
-            r.abi = None;
         }
-        r
-    });
+        let bytes = std::fs::read(&input.path).map_err(|e| {
+            err(
+                EX_TEBAKO_IO,
+                format!("cannot read {}: {e}", input.path.display()),
+            )
+        })?;
+        if bytes.is_empty() {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "payload {} is empty — a 0-byte image has no blksum and is not a publishable .tfs",
+                    input.path.display()
+                ),
+            ));
+        }
+        let name = if multi_arm {
+            payload_variant_artifact_name(input)?
+        } else {
+            payload_artifact_name(&opts.name, &version, input.triplet)
+        };
+        let sha = tebako_resolve::sha256_hex(&bytes);
+        // spec 39 §3: the PUBLISHER authors the lazy-mount digest
+        // sidecar in-process, in the same invocation that stages the
+        // release bytes (a resolver never derives one — derivation
+        // would require the whole file and arrive unanchored).
+        let sidecar = tpkg::lazy::Blksum::from_image_bytes(&bytes)
+            .render()
+            .into_bytes();
+        let sidecar_sha = tebako_resolve::sha256_hex(&sidecar);
+        blksum_uploads.push((format!("{name}.blksum.json"), sidecar_sha, sidecar));
+        artifacts.push((name, sha, bytes));
+    }
+    if multi_arm {
+        let mut names: Vec<&str> = artifacts.iter().map(|a| a.0.as_str()).collect();
+        names.sort();
+        if names.windows(2).any(|w| w[0] == w[1]) {
+            return Err(err(
+                EX_USAGE,
+                "multi-variant publish: two payload files share a basename — rename them so each artifact name is distinct",
+            ));
+        }
+    }
+    // The single-arm registry mirror (the shorthand); a multi-arm entry
+    // carries the requirement per variant row instead.
+    let runtime_requirement = if multi_arm {
+        None
+    } else {
+        arm_requirements[0].clone()
+    };
 
     // ---- 3. standalones ---------------------------------------------
     let mut standalone_uploads: Vec<(String, String, Vec<u8>)> = Vec::new();
@@ -1268,55 +1384,86 @@ pub fn publish_full_with_oci_sink(
     // artifact sha never lands in the registry grammar; the pass still
     // proves the release serves the generation this publish staged).
     let mut pin_rows: Vec<PinRow> = Vec::new();
-    let platforms = if universal {
+    // One platform row: the artifact entry plus the pin-verification
+    // pass's row, identical in the shorthand map and in every variant
+    // arm.
+    let platform_row = |i: usize| -> (
+        PinRow,
+        (Platform, tebako_resolve::registry::PlatformArtifact),
+    ) {
+        let triplet = opts.payloads[i].triplet.expect("per-triplet checked");
+        let pin = blksum_pin(i);
+        (
+            PinRow {
+                artifact: artifacts[i].0.clone(),
+                sha256: artifacts[i].1.clone(),
+                blksum: Some(pin.clone()),
+            },
+            (
+                triplet,
+                tebako_resolve::registry::PlatformArtifact {
+                    artifact: artifacts[i].0.clone(),
+                    sha256: artifacts[i].1.clone(),
+                    // spec 38 §7's per-triplet mirror: the dual publish
+                    // records the row's OCI locator (the tag derives
+                    // exactly as the push derived it); the sha256 pin
+                    // binds both channels.
+                    oci: oci_repo.as_ref().map(|(oci_host, oci_repo_name)| {
+                        format!(
+                            "tfs+oci://{oci_host}/{oci_repo_name}:{}",
+                            tebako_resolve::payload_tag(&version, Some(triplet.as_triplet()))
+                        )
+                    }),
+                    blksum: Some(pin),
+                    // tebako#711's per-row shard ref (MINOR 6) is a
+                    // factory-side authoring concern — `tebako publish`
+                    // writes one release per version, so the
+                    // version-level ref already names the tag.
+                    release: None,
+                },
+            ),
+        )
+    };
+    // MECE with the shorthand (spec 28 §3): a multi-variant version
+    // carries `variants:` and neither top-level `platforms:` nor
+    // `runtime_requirement:`.
+    let (platforms, variants) = if universal {
         pin_rows.push(PinRow {
             artifact: artifacts[0].0.clone(),
             sha256: artifacts[0].1.clone(),
             blksum: Some(blksum_pin(0)),
         });
-        RegistryPlatforms::Universal
+        (Some(RegistryPlatforms::Universal), None)
+    } else if !multi_arm {
+        let mut map = std::collections::BTreeMap::new();
+        for i in 0..opts.payloads.len() {
+            let (pin_row, (triplet, row)) = platform_row(i);
+            pin_rows.push(pin_row);
+            map.insert(triplet, row);
+        }
+        (Some(RegistryPlatforms::PerTriplet(map)), None)
     } else {
-        RegistryPlatforms::PerTriplet(
-            opts.payloads
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                    let triplet = p.triplet.expect("per-triplet checked");
-                    let pin = blksum_pin(i);
-                    pin_rows.push(PinRow {
-                        artifact: artifacts[i].0.clone(),
-                        sha256: artifacts[i].1.clone(),
-                        blksum: Some(pin.clone()),
-                    });
-                    (
-                        triplet,
-                        tebako_resolve::registry::PlatformArtifact {
-                            artifact: artifacts[i].0.clone(),
-                            sha256: artifacts[i].1.clone(),
-                            // spec 38 §7's per-triplet mirror: the dual
-                            // publish records the row's OCI locator (the
-                            // tag derives exactly as the push derived
-                            // it); the sha256 pin binds both channels.
-                            oci: oci_repo.as_ref().map(|(oci_host, oci_repo_name)| {
-                                format!(
-                                    "tfs+oci://{oci_host}/{oci_repo_name}:{}",
-                                    tebako_resolve::payload_tag(
-                                        &version,
-                                        Some(triplet.as_triplet())
-                                    )
-                                )
-                            }),
-                            blksum: Some(pin),
-                            // tebako#711's per-row shard ref (MINOR 6) is
-                            // a factory-side authoring concern — `tebako
-                            // publish` writes one release per version, so
-                            // the version-level ref already names the tag.
-                            release: None,
-                        },
-                    )
-                })
-                .collect(),
-        )
+        let variant_entries: Vec<tebako_resolve::registry::RegistryVariant> = arms
+            .iter()
+            .zip(&arm_requirements)
+            .map(|((_, members), req)| {
+                let mut map = std::collections::BTreeMap::new();
+                for &i in members {
+                    let (pin_row, (triplet, row)) = platform_row(i);
+                    pin_rows.push(pin_row);
+                    map.insert(triplet, row);
+                }
+                tebako_resolve::registry::RegistryVariant {
+                    runtime_requirement: req.clone(),
+                    platforms: RegistryPlatforms::PerTriplet(map),
+                    // A per-triplet arm's sidecar pins live in the
+                    // platforms map entries (spec 39 §3's
+                    // one-location-per-form rule, per arm).
+                    blksum: None,
+                }
+            })
+            .collect();
+        (None, Some(variant_entries))
     };
     let signature = key.as_ref().map(|key| SignaturePin {
         // The pin names the signing key's PRIMARY keyid — the identity
@@ -1338,7 +1485,10 @@ pub fn publish_full_with_oci_sink(
         // `status: withdrawn` is authored by hand in the registry (a
         // yank is a registry edit, spec 04 §2) — publish never sets it.
         status: None,
+        // MECE with `variants:` (spec 28 §3) — Some(..) exactly when the
+        // version is the single-variant shorthand.
         platforms,
+        variants,
         // The universal row's sidecar pin (spec 39 §3); per-triplet rows
         // carry theirs in the platforms map entries above.
         blksum: universal.then(|| blksum_pin(0)),
@@ -1590,6 +1740,9 @@ fn upsert_registry(
             kind,
             engine: None,
             implementation: None,
+            // The newest-line pick is the default dispatch (spec 28 §2) —
+            // `tebako publish` never authors a `default_variant:` pin.
+            default_variant: None,
             versions: vec![entry],
             default: Some(version),
         }),
