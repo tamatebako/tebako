@@ -44,8 +44,18 @@
 //! `faccessat`, `opendir`, `readdir` (+`readdir64` on Linux),
 //! `readdir_r`, `rewinddir`/`telldir`/`seekdir`, `dirfd`, `closedir`,
 //! `pread`, `read`, `lseek` (additive — stdio fseek on a memfs fd must
-//! stay on the VFS), `close`, `mkdir`, `unlink`, `rename`, `dlopen`,
-//! `fopen` (read modes), the `realpath` family (`realpath` + macOS's
+//! stay on the VFS), `close`, `dup`/`dup2` (tebako#534 — the clone
+//! carries the SAME open-file description: the offset is shared per
+//! POSIX, never an EBADF-by-default; libxml2's `xmlInputFromFd` dup()s
+//! its fd unconditionally), `fcntl` (the descriptor commands incl.
+//! F_DUPFD/F_DUPFD_CLOEXEC), `mkdir`, `unlink`, `rename`, `dlopen`,
+//! `fopen` (tebako#444: read-only modes materialize through the engine;
+//! the write-ish modes — `w`/`a` bases, every `+` update form, the
+//! `x`-forms — gate through the SAME spec 08 host policy as
+//! `open(O_WRONLY|O_CREAT|O_RDWR)` BEFORE the real fopen touches the
+//! host), `creat` (the #444 audit's adjacent-write finding: glibc builds
+//! it over libc-internal open aliases, libSystem gives it its own stub —
+//! un-interposed it bypassed the write gate everywhere), the `realpath` family (`realpath` + macOS's
 //! `realpath$DARWIN_EXTSN`; linux's `canonicalize_file_name` and
 //! `__realpath_chk` — spec 07 §8: glibc's realpath walks the path
 //! with libc-INTERNAL aliases no PLT interpose sees, so covered paths

@@ -117,6 +117,15 @@ interpose!(
     libc::openat,
     unsafe extern "C" fn(c_int, *const c_char, c_int, ...) -> c_int
 );
+// creat is NOT variadic (fixed path+mode) — no arm64 trampoline (the
+// dup/dup2 note applies verbatim).
+interpose!(
+    INTERPOSE_CREAT,
+    real_creat,
+    super::creat,
+    libc::creat,
+    unsafe extern "C" fn(*const c_char, c_int) -> c_int
+);
 interpose!(
     INTERPOSE_STAT,
     real_stat,

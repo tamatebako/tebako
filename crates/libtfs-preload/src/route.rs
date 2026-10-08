@@ -124,16 +124,32 @@ pub fn vfs_dlmap(path: &str) -> PathRoute<std::ffi::CString> {
     route_answer(answer, path, HostAccess::Ro)
 }
 
-/// fopen routing (read modes only): like dlopen, the consumer needs a
+/// fopen routing (read-only modes): like dlopen, the consumer needs a
 /// real `FILE *` — the engine materializes the memfs original
 /// (`dlmap2file`, dlmap-prefix redirect included) and the real fopen
-/// opens that copy. Write modes never route here (the caller's real
-/// fopen answers for the host path, policy-gated like any write).
+/// opens that copy. Write-ish modes never route here: they gate through
+/// [`vfs_write_path`] before the caller's real fopen answers for the
+/// host path (tebako#444).
 /// The trace surface is `open` (spec 25 §2: a stdio consumer is the
 /// §4 materialize-candidate signal), never dlopen.
 pub fn vfs_fopen(path: &str) -> PathRoute<std::ffi::CString> {
     let answer = { context().write().unwrap().dlmap2file_for_open(path) };
     route_answer(answer, path, HostAccess::Ro)
+}
+
+/// The fopen/freopen mode-string classification (tebako#444). A mode is
+/// READ-ONLY exactly when it begins with `r` and carries no `+` anywhere
+/// — the only class that can never write. Everything else is write-ish:
+/// the `w`/`a` bases, every `+` update form (`r+`/`w+`/`a+`/`rb+`/…),
+/// the `x`-forms (O_EXCL — always a `w` base or a `+` away), and any
+/// string glibc would EINVAL (an empty mode, a non-rwa lead). The shim
+/// gates the write-ish class through [`vfs_write_path`] — the SAME
+/// spec 08 policy gate open(O_WRONLY/O_CREAT/O_RDWR) already rides —
+/// before the real fopen touches the host; over-classifying a mode as
+/// write-ish is fail-closed (more gating, never less), and under an open
+/// policy the real fopen answers EINVAL for the garbage forms itself.
+pub fn fopen_mode_is_readonly(mode: &str) -> bool {
+    mode.starts_with('r') && !mode.contains('+')
 }
 
 /// realpath routing (spec 07 §8). glibc's realpath(3) walks the path
@@ -722,6 +738,36 @@ mod tests {
         );
         assert_eq!(vfs_write_path("/tmp/libtfs-preload-route-write"), Ok(()));
 
+        // ---- the open-side write gate (the tebako#444 audit): the
+        // engine already gates write-mode opens — a HELD memfs path is
+        // EROFS (spec 24 §5), a covered-but-not-held or uncovered write
+        // passes through under the open policy ----
+        assert_eq!(
+            vfs_open(&secret, libc::O_WRONLY),
+            PathRoute::Denied(libc::EROFS)
+        );
+        assert_eq!(
+            vfs_open(&secret, libc::O_RDWR),
+            PathRoute::Denied(libc::EROFS)
+        );
+        assert_eq!(
+            vfs_open(
+                &format!("{mp}/data/new.txt"),
+                libc::O_WRONLY | libc::O_CREAT
+            ),
+            PathRoute::Denied(libc::EROFS),
+            "a create inside a held tree is image territory — EROFS, never a host write"
+        );
+        assert_eq!(
+            vfs_open(&format!("{mp}/missing"), libc::O_WRONLY | libc::O_CREAT),
+            PathRoute::Host,
+            "covered-but-not-held stays a host write under the open policy"
+        );
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_WRONLY | libc::O_CREAT),
+            PathRoute::Host
+        );
+
         // ---- exec/spawn trace surfaces (spec 25 §2, phase T2) ----
         // execve and posix_spawn share the engine's routing answer; the
         // trace op names the syscall surface. The bus is process-global:
@@ -815,12 +861,50 @@ mod tests {
             vfs_dlmap("/etc/definitely-host"),
             PathRoute::Denied(libc::EPERM)
         );
+        // The #444 audit, deny arm: write-mode opens of a host path are
+        // EPERM by name, exactly like the read class.
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_WRONLY | libc::O_CREAT),
+            PathRoute::Denied(libc::EPERM)
+        );
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_RDWR),
+            PathRoute::Denied(libc::EPERM)
+        );
         let PathRoute::Vfs(fd) = vfs_open(&secret, libc::O_RDONLY) else {
             panic!("memfs is unaffected by a deny jail");
         };
         vfs_close(fd).unwrap();
 
+        // ---- deny + an ro grant: reads pass, writes are EROFS ----
+        context().write().unwrap().set_host_policy(
+            HostPolicy::bind(
+                tfs::policy::PolicyDefault::Deny,
+                vec![tfs::policy::HostMountSpec {
+                    host: PathBuf::from("/etc"),
+                    mount: "/etc".to_string(),
+                    access: HostAccess::Ro,
+                }],
+                vec![],
+            )
+            .unwrap(),
+            None,
+        );
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_RDONLY),
+            PathRoute::Host,
+            "the ro grant still reads"
+        );
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_WRONLY | libc::O_CREAT),
+            PathRoute::Denied(libc::EROFS)
+        );
+
         // ---- jail-only mode: no mounts, ENODEV routes through host_check ----
+        context().write().unwrap().set_host_policy(
+            HostPolicy::bind(tfs::policy::PolicyDefault::Deny, vec![], vec![]).unwrap(),
+            None,
+        );
         context().write().unwrap().unmount_handle(handle).unwrap();
         assert_eq!(
             vfs_open("/etc/definitely-host", libc::O_RDONLY),
@@ -880,5 +964,21 @@ mod tests {
             resolve_at_strict(libc::AT_FDCWD, "/abs/x", None).unwrap(),
             AtRoute::Routed("/abs/x".to_string())
         );
+    }
+
+    /// The tebako#444 mode classifier: read-only is exactly "r"-led with
+    /// no update '+' anywhere; every other spelling is write-ish —
+    /// fail-closed, so a mode glibc would EINVAL gates as write, never as
+    /// read (under an open policy the real fopen answers EINVAL itself).
+    #[test]
+    fn fopen_mode_classification() {
+        for ro in ["r", "rb", "re", "rm", "rbe", "r,ccs=UTF-8"] {
+            assert!(fopen_mode_is_readonly(ro), "{ro:?} is read-only");
+        }
+        for w in [
+            "w", "a", "w+", "a+", "r+", "rb+", "br+", "wx", "w+x", "ax", "wbx", "x", "wr", "q", "",
+        ] {
+            assert!(!fopen_mode_is_readonly(w), "{w:?} is write-ish");
+        }
     }
 }

@@ -1507,21 +1507,33 @@ pub unsafe extern "C" fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void
     }
 }
 
-/// Interposed `fopen` (read modes): libSystem's stdio opens files
-/// through its own internal syscall path (never the interposed `open` —
-/// the JVM's `jvm.cfg` read proved it), so stdio consumers need their
-/// own hook. Like dlopen: the engine materializes the memfs original
-/// (`dlmap2file`, dlmap-prefix redirect included) and the REAL fopen
-/// opens that copy. Write/append/update modes pass through with the
-/// ORIGINAL arguments (memfs content is read-only; the real fopen
-/// answers).
+/// Interposed `fopen`: libSystem's stdio opens files through its own
+/// internal syscall path (never the interposed `open` — the JVM's
+/// `jvm.cfg` read proved it), so stdio consumers need their own hook.
+/// The mode string decides the route (tebako#444):
+///
+/// - **Read-only modes** (`r` with no `+`): like dlopen, the engine
+///   materializes the memfs original (`dlmap2file`, dlmap-prefix
+///   redirect included) and the REAL fopen opens that copy.
+/// - **Write-ish modes** (`w`/`a` bases, every `+` update form, the
+///   `x`-forms — and any string glibc would EINVAL, fail-closed): the
+///   spec 08 write gate, exactly like `open(O_WRONLY|O_CREAT|O_RDWR)` —
+///   a memfs-HELD path is EROFS (payload images are always ro), a host
+///   path is policy-gated BEFORE the real fopen touches it (deny →
+///   EPERM, ro grant → EROFS, rw grant → the real fopen answers).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc::FILE {
     let (Some(p), Some(m)) = (unsafe { c_path(path) }, unsafe { c_path(mode) }) else {
         return unsafe { plat::real_fopen()(path, mode) };
     };
-    if !m.starts_with('r') {
-        return unsafe { plat::real_fopen()(path, mode) };
+    if !route::fopen_mode_is_readonly(m) {
+        return match engine_call(|| route::vfs_write_path(p)) {
+            Some(Ok(())) | None => unsafe { plat::real_fopen()(path, mode) },
+            Some(Err(e)) => {
+                set_errno(e);
+                std::ptr::null_mut()
+            }
+        };
     }
     match engine_call(|| route::vfs_fopen(p)) {
         // SAFETY: `host` outlives the call.
@@ -1531,6 +1543,38 @@ pub unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut
             std::ptr::null_mut()
         }
         Some(PathRoute::Host) | None => unsafe { plat::real_fopen()(path, mode) },
+    }
+}
+
+/// Interposed `creat` (the tebako#444 audit's adjacent-write finding):
+/// `creat(path, mode)` IS `open(path, O_WRONLY|O_CREAT|O_TRUNC)` spelled
+/// as its own libc symbol — glibc implements it over libc-internal open
+/// aliases and libSystem as its own syscall stub, so an un-interposed
+/// creat bypassed the jail's write gate on every platform. Routes
+/// exactly like a write-mode `open`: a memfs-HELD path is EROFS, a host
+/// path is policy-gated before the real creat runs. (Fixed two-argument
+/// signature — not variadic, so no arm64 trampoline.)
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn creat(path: *const c_char, mode: c_int) -> c_int {
+    boot_arm!(plat::raw_creat, (path, mode));
+    let Some(p) = (unsafe { c_path(path) }) else {
+        // SAFETY: forwarding the original arguments.
+        return unsafe { plat::real_creat()(path, mode) };
+    };
+    let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC;
+    match engine_call(|| route::vfs_open(p, flags)) {
+        // Unreachable by construction (the engine never hands out a write
+        // fd — the write gate answers EROFS first); kept for total
+        // exhaustiveness, mirroring the open shim.
+        Some(PathRoute::Vfs(fd)) => {
+            fd_table_note(fd, false);
+            fd
+        }
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(PathRoute::Host) | None => unsafe { plat::real_creat()(path, mode) },
     }
 }
 
