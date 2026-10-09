@@ -224,7 +224,12 @@ fn readdir_names(dir: *mut std::ffi::c_void) -> Vec<String> {
             .iter()
             .position(|&ch| ch == 0)
             .unwrap_or(d.d_name.len());
-        names.push(d.d_name[..end].iter().map(|&ch| ch as u8 as char).collect());
+        names.push(
+            d.d_name[..end]
+                .iter()
+                .map(|&ch| ch as libc::c_int as u8 as char)
+                .collect(),
+        );
     }
     unsafe { c_api::tebako_fs_closedir(dir) };
     names.sort();
