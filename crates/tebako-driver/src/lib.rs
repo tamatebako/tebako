@@ -40,6 +40,7 @@
 
 pub mod alias;
 pub mod driver;
+pub mod env_scrub;
 pub mod exec_cache;
 pub mod ffi;
 pub mod handoff;

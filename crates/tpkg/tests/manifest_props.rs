@@ -443,6 +443,7 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
                 checks,
                 min_runtime_tebako: None,
                 interp_env: BTreeMap::new(),
+                env_pass: Vec::new(),
             }
         },
     )

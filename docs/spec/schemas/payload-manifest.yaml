@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 15 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env, 9: per-edge triplets conditioning on requires edges — data/runtime/executable gain the toolkit edge's triplets key; kind: language refuses it, 10: augments + provides.extension_points + provides.gems — the reverse extension-slice edge and its dedup inventory, spec 03 §2.8, 11: windows_boot on runtime provides — the windows materialize boot tier, spec 17 §7, 12: the constraint grammar admits the variant-suffixed component shape versions already carry — each component is leading decimals plus an optional -label ([0-9A-Za-z-]+) — so an exact pin can name a base/runtime LINE (spec 05 §5; pre-minor-12 readers reject a suffixed clause by name, exit 65), 13: aarch64-windows-ucrt joins the platforms axis, 14: the toolkit/data/runtime/executable requires edges gain the optional registry: alias pin — spec 37 §3's pin-surface rule; kind: language never carries it, 15: min_runtime_tebako — the payload's min-runtime tooling floor (spec 03 §2.9, tebako#666; resolution discards stale cached runtimes, the driver refuses by name))
+schema_minor: 16 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env, 9: per-edge triplets conditioning on requires edges — data/runtime/executable gain the toolkit edge's triplets key; kind: language refuses it, 10: augments + provides.extension_points + provides.gems — the reverse extension-slice edge and its dedup inventory, spec 03 §2.8, 11: windows_boot on runtime provides — the windows materialize boot tier, spec 17 §7, 12: the constraint grammar admits the variant-suffixed component shape versions already carry — each component is leading decimals plus an optional -label ([0-9A-Za-z-]+) — so an exact pin can name a base/runtime LINE (spec 05 §5; pre-minor-12 readers reject a suffixed clause by name, exit 65), 13: aarch64-windows-ucrt joins the platforms axis, 14: the toolkit/data/runtime/executable requires edges gain the optional registry: alias pin — spec 37 §3's pin-surface rule; kind: language never carries it, 15: min_runtime_tebako — the payload's min-runtime tooling floor (spec 03 §2.9, tebako#666; resolution discards stale cached runtimes, the driver refuses by name), 16: env_pass — the packager's env pass-through list for the driver's credential scrub (spec 03 §2.10, tebako#737; the driver blanks every non-contract TEBAKO_* variable at boot unless declared here))
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -487,3 +487,17 @@ refusals:
     behavior: resolution skips the stale cached runtime and fetches (TEBAKO_OFFLINE stays fail-closed); at boot the driver refuses with the named stale-runtime wording — \"the runtime is too old for this payload's manifest (needs X, have Y)\" — never \"corrupt manifest / self-description lies\" (spec 05 §5, spec 17 §8, tebako#666)
 
 deprecated: [] # no field is in a deprecation window
+
+  env_pass:
+    type: list-of-strings
+    optional: true
+    description: |
+      The packager's env pass-through list (spec 03 §2.10, additive —
+      schema_minor 16, tebako#737): TEBAKO_* variable names the
+      packaged run KEEPS despite the driver's packager-credential
+      scrub (every non-contract TEBAKO_* variable is blanked at boot —
+      a packaged app must not exfiltrate the packager's credentials,
+      TEBAKO_GITHUB_TOKEN above all). Names are TEBAKO_-prefixed
+      uppercase alphanumerics/underscore; anything else is a named
+      manifest error at parse. Absent = the scrub takes everything
+      non-contract.

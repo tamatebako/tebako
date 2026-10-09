@@ -315,7 +315,9 @@ pub unsafe extern "C" fn tebako_spawn_runtime_plan(
     let raw: &[u8] = if args_len == 0 {
         &[]
     } else {
-        unsafe { std::slice::from_raw_parts(args_packed as *const u8, args_len) }
+        unsafe {
+            std::slice::from_raw_parts(args_packed as *const libc::c_void as *const u8, args_len)
+        }
     };
     let args: Vec<String> = raw
         .split(|b| *b == 0)
@@ -376,7 +378,13 @@ fn malloc_bytes(bytes: &[u8]) -> Option<*mut c_char> {
         return None;
     }
     if !bytes.is_empty() {
-        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), p as *mut u8, bytes.len()) };
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                p as *mut libc::c_void as *mut u8,
+                bytes.len(),
+            )
+        };
     }
     Some(p)
 }
@@ -390,7 +398,13 @@ fn malloc_cstr(s: &str) -> Option<*mut c_char> {
     if p.is_null() {
         return None;
     }
-    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), p as *mut u8, bytes.len()) };
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            bytes.as_ptr(),
+            p as *mut libc::c_void as *mut u8,
+            bytes.len(),
+        )
+    };
     Some(p)
 }
 

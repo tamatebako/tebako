@@ -93,6 +93,14 @@ impl Env for MapEnv {
             .borrow_mut()
             .insert(key.to_string(), value.to_string());
     }
+    fn names_with_prefix(&self, prefix: &str) -> Vec<String> {
+        self.0
+            .borrow()
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
 }
 
 /// Build a zip from an in-memory entry list (the tests/contract
@@ -1400,7 +1408,7 @@ fn union_row_merges_the_trees_at_the_runtime_root() {
         seen.push(
             cur.d_name[..len]
                 .iter()
-                .map(|&c| c as u8 as char)
+                .map(|&c| c as libc::c_int as u8 as char)
                 .collect::<String>(),
         );
     }

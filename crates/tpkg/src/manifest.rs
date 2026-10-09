@@ -37,7 +37,7 @@ pub const PAYLOAD_SCHEMA_VERSION: u32 = 1;
 /// is the parse-FAILURE path, where a declared minor above this one is
 /// the difference between "the payload speaks a newer schema" and "the
 /// payload is corrupt" (tebako#536).
-pub const PAYLOAD_SCHEMA_MINOR: u32 = 15;
+pub const PAYLOAD_SCHEMA_MINOR: u32 = 16;
 
 /// Error returned by payload-manifest operations.
 ///
@@ -2500,6 +2500,18 @@ pub struct PayloadManifest {
     /// slice declares no defaults.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub interp_env: BTreeMap<String, String>,
+    /// The packager's env pass-through list (spec 03 §2.10, additive —
+    /// schema_minor 16, tebako#737; old readers ignore the key):
+    /// `TEBAKO_*` variable names the packaged run KEEPS despite the
+    /// driver's packager-credential scrub (every non-contract
+    /// `TEBAKO_*` variable is blanked at boot — a packaged app must
+    /// not exfiltrate the packager's credentials, TEBAKO_GITHUB_TOKEN
+    /// above all). Names are `TEBAKO_`-prefixed uppercase
+    /// alphanumerics/underscore; anything else is a named manifest
+    /// error at parse. Absent = the scrub takes everything
+    /// non-contract.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_pass: Vec<String>,
 }
 
 impl<'de> Deserialize<'de> for PayloadManifest {
@@ -2522,6 +2534,8 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             min_runtime_tebako: Option<String>,
             #[serde(default)]
             interp_env: BTreeMap<String, String>,
+            #[serde(default)]
+            env_pass: Vec<String>,
         }
         let raw = Raw::deserialize(d)?;
         let provides = match raw.identity.kind {
@@ -2552,6 +2566,7 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             checks: raw.checks,
             min_runtime_tebako: raw.min_runtime_tebako,
             interp_env: raw.interp_env,
+            env_pass: raw.env_pass,
         })
     }
 }
@@ -2788,6 +2803,22 @@ impl PayloadManifest {
             {
                 return Err(ManifestError::Invalid(
                     "min_runtime_tebako must be 1..=4 dot-separated components (leading decimals, optional -label suffix)",
+                ));
+            }
+        }
+        // spec 03 §2.10 (schema_minor 16): every env_pass name is a
+        // TEBAKO_-prefixed variable of uppercase alphanumerics and
+        // underscore — the scrub's opt-in may only name what the scrub
+        // itself could take.
+        for name in &self.env_pass {
+            let body = name.strip_prefix("TEBAKO_").unwrap_or("");
+            if body.is_empty()
+                || !body
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+            {
+                return Err(ManifestError::Invalid(
+                    "env_pass entries must be TEBAKO_-prefixed variable names (uppercase alphanumerics and underscore)",
                 ));
             }
         }
@@ -3223,6 +3254,7 @@ mod tests {
             checks: BTreeMap::new(),
             min_runtime_tebako: None,
             interp_env: BTreeMap::new(),
+            env_pass: Vec::new(),
         };
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
@@ -3429,6 +3461,44 @@ mod tests {
                 panic!("{bad}: expected Invalid, got {err}");
             };
             assert!(m.contains("min_runtime_tebako"), "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn env_pass_defaults_absent_and_round_trips() {
+        // spec 03 §2.10 (schema_minor 16, tebako#737): the scrub's
+        // opt-in — absent by default, never serialized when absent.
+        let bare = PayloadManifest::from_yaml(&minimal_data_yaml("")).unwrap();
+        assert!(bare.env_pass.is_empty());
+        assert!(!bare.to_yaml().unwrap().contains("env_pass"));
+
+        let passing =
+            PayloadManifest::from_yaml(&minimal_data_yaml("env_pass: [TEBAKO_FLAVOR_KEY]\n"))
+                .unwrap();
+        assert_eq!(passing.env_pass, vec!["TEBAKO_FLAVOR_KEY".to_string()]);
+        let rendered = passing.to_yaml().unwrap();
+        assert!(rendered.contains("env_pass"), "{rendered}");
+        let back = PayloadManifest::from_yaml(&rendered).unwrap();
+        assert_eq!(back, passing);
+    }
+
+    #[test]
+    fn env_pass_grammar_is_tebako_prefixed_names() {
+        // The opt-in may only name what the scrub itself could take:
+        // TEBAKO_-prefixed uppercase alphanumerics and underscore.
+        for bad in [
+            "GITHUB_TOKEN",
+            "TEBAKO_",
+            "TEBAKO_lower",
+            "TEBAKO_A-B",
+            "tebako_x",
+        ] {
+            let yaml = minimal_data_yaml(&format!("env_pass: [\"{bad}\"]\n"));
+            let err = PayloadManifest::from_yaml(&yaml).unwrap_err();
+            let ManifestError::Invalid(m) = &err else {
+                panic!("{bad}: expected Invalid, got {err}");
+            };
+            assert!(m.contains("env_pass"), "{bad}: {err}");
         }
     }
 

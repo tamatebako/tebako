@@ -712,7 +712,7 @@ mod tests {
             names.push(
                 e.d_name[..end]
                     .iter()
-                    .map(|&c| c as u8 as char)
+                    .map(|&c| c as libc::c_int as u8 as char)
                     .collect::<String>(),
             );
         }

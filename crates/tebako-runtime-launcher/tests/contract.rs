@@ -87,7 +87,7 @@ fn layout(spec29_keys: &str) -> String {
 
 /// The stub interpreter: prints its argv and the two env markers, then
 /// exits 7 — the verbatim-exit-code witness.
-const STUB: &[u8] = b"#!/bin/sh\necho \"ARGV0=$0\"\ni=1\nfor a in \"$@\"; do echo \"ARG$i=$a\"; i=$((i+1)); done\necho \"EXEC_CACHE=${TEBAKO_EXEC_CACHE:-unset}\"\necho \"MARKER=${TEBAKO_STUB_MARKER:-unset}\"\nexit 7\n";
+const STUB: &[u8] = b"#!/bin/sh\necho \"ARGV0=$0\"\ni=1\nfor a in \"$@\"; do echo \"ARG$i=$a\"; i=$((i+1)); done\necho \"EXEC_CACHE=${TEBAKO_EXEC_CACHE:-unset}\"\necho \"MARKER=${TEBAKO_STUB_MARKER:-unset}\"\necho \"UNDECLARED=${TEBAKO_STUB_UNDECLARED:-unset}\"\nexit 7\n";
 
 /// The env image: the layout declaration + the stub at bin/stub.
 fn write_env_image(dir: &Path, spec29_keys: &str) -> PathBuf {
@@ -115,7 +115,8 @@ fn write_app_image(dir: &Path) -> PathBuf {
          signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
          provides:\n  \
          entrypoints: [{{name: app, path: /bin/app, args_default: [\"-jar\"]}}]\n  \
-         platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+         platforms: universal\n  capabilities: {{exec: true, read: true}}\n\
+         env_pass: [TEBAKO_STUB_MARKER]\n",
         z = "0".repeat(64)
     );
     let p = dir.join("app.tfs");
@@ -142,7 +143,8 @@ fn launcher(tmp: &TempDir, env_image: &Path) -> Command {
     cmd.env_clear()
         .env("TMPDIR", tmp.path().join("tmp"))
         .env("TEBAKO_RUNTIME_IMAGE", env_image)
-        .env("TEBAKO_STUB_MARKER", "contract-marker");
+        .env("TEBAKO_STUB_MARKER", "contract-marker")
+        .env("TEBAKO_STUB_UNDECLARED", "scrub-me");
     std::fs::create_dir_all(tmp.path().join("tmp")).expect("create tmp redirect");
     cmd
 }
@@ -183,7 +185,7 @@ fn exec_composes_argv_and_passes_the_exit_code_verbatim() {
     );
     let lines = stdout_lines(&out.stdout);
     // [interpreter, args_default…, entry, user args…] (spec 29 §1).
-    assert_eq!(lines.len(), 7, "{lines:?}");
+    assert_eq!(lines.len(), 8, "{lines:?}");
     // ARGV0 is the MATERIALIZED host copy of the in-image stub.
     let argv0 = lines[0].strip_prefix("ARGV0=").expect("ARGV0 line");
     assert_ne!(argv0, "/__tfs__/bin/stub");
@@ -204,6 +206,9 @@ fn exec_composes_argv_and_passes_the_exit_code_verbatim() {
     assert!(lines[5].starts_with("EXEC_CACHE="), "{lines:?}");
     assert_ne!(lines[5], "EXEC_CACHE=unset", "the exec-cache export arms");
     assert_eq!(lines[6], "MARKER=contract-marker");
+    // tebako#737 e2e: the declared env_pass name carries through the
+    // boot; the undeclared TEBAKO_* variable is scrubbed.
+    assert_eq!(lines[7], "UNDECLARED=unset");
 }
 
 #[test]
@@ -223,7 +228,7 @@ fn the_bare_smoke_form_composes_the_interpreters_own_args() {
     let lines = stdout_lines(&out.stdout);
     assert_eq!(lines[1], "ARG1=--version", "{lines:?}");
     // No payload, no entry: marker + exec-cache lines follow.
-    assert_eq!(lines.len(), 4, "{lines:?}");
+    assert_eq!(lines.len(), 5, "{lines:?}");
 }
 
 #[test]
