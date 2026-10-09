@@ -1408,7 +1408,7 @@ fn union_row_merges_the_trees_at_the_runtime_root() {
         seen.push(
             cur.d_name[..len]
                 .iter()
-                .map(|&c| c as u8 as char)
+                .map(|&c| c as libc::c_int as u8 as char)
                 .collect::<String>(),
         );
     }
