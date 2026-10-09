@@ -483,6 +483,14 @@ fn is_executable(path: &Path) -> bool {
 /// for the llvm tools. Each candidate list starts with the recorded tool
 /// as a Ruby code reference (it reads the runtime's rbconfig inside the
 /// driver), followed by the literal fallbacks.
+///
+/// The tool re-resolution alone is not enough (tebako-runtime-ruby#22):
+/// the recorded flag STRINGS stay clang-flavored, and on a gcc-only press
+/// host mkmf's first probe dies on clang-only flags (-fdeclspec & co).
+/// The emitted tg_filter_flags replays each compile-flag value against
+/// the re-resolved compiler and drops what it rejects, loudly. Deliberate
+/// deviation from the gem (which replayed the recorded flags verbatim —
+/// correct only while every runtime and every press host were clang).
 fn cc_override() -> String {
     let mut out = String::from(
         "def tg_first_tool(*candidates)\n  candidates.find { |tg_c| !tg_c.to_s.empty? && system(\"command -v #{tg_c} >/dev/null 2>&1\") }\nend\n\n{\n",
@@ -497,6 +505,7 @@ fn cc_override() -> String {
     out.push_str(
         "}.each do |tg_key, tg_candidates|\n  tg_tool = tg_first_tool(*tg_candidates)\n  next if tg_tool.nil?\n  [RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each { |tg_config| tg_config[tg_key] = tg_tool }\nend\n",
     );
+    out.push_str(&flag_filter());
     out
 }
 
@@ -512,6 +521,91 @@ fn override_candidates(key: &str, fallbacks: &[String]) -> String {
     let mut parts = vec![recorded];
     parts.extend(fallbacks.iter().map(|c| rb_str(c)));
     parts.join(", ")
+}
+
+/// The compile-flag keys mkmf assembles into its probes, as
+/// (rbconfig key, tool key, probe -x language). Link flags (LDFLAGS,
+/// DLDFLAGS) are not filtered: they reach the SAME system linker through
+/// either compiler driver, and EXTLDFLAGS/LIBRUBYARG are already
+/// overridden above.
+const FLAG_FILTER_KEYS: &[(&str, &str, &str)] = &[
+    ("CFLAGS", "CC", "c"),
+    ("cflags", "CC", "c"),
+    ("CPPFLAGS", "CC", "c"),
+    ("cppflags", "CC", "c"),
+    ("warnflags", "CC", "c"),
+    ("ARCH_FLAG", "CC", "c"),
+    ("CXXFLAGS", "CXX", "c++"),
+    ("cxxflags", "CXX", "c++"),
+];
+
+/// The emitted flag filter (tg_probe_ok / TG_FLAG_PAIRS /
+/// tg_filter_flags + the per-key application). Probe semantics: the fast
+/// path replays the whole value at once and keeps it verbatim when the
+/// re-resolved compiler accepts everything (same family as the runtime's
+/// build compiler — zero drift, one probe); only a rejection pays the
+/// per-token pass. Pair flags (-arch arm64, -isysroot <path>) probe with
+/// their value — gcc rejects a bare -arch just the same, but a bare
+/// -isystem would spuriously pass while the pair fails. Make-variable
+/// references ($(cflags) in MAKEFILE_CONFIG's unexpanded compositions)
+/// are never probe subjects. Every drop is logged: the drop lines in the
+/// press log are the audit trail of the deviation.
+fn flag_filter() -> String {
+    let mut out = String::from(
+        r#"def tg_probe_ok(tg_cc, tg_lang, tg_flags)
+  system(tg_cc, "-Werror", "-x", tg_lang, "/dev/null", "-fsyntax-only", *tg_flags, out: File::NULL, err: File::NULL) ? true : false
+end
+
+TG_FLAG_PAIRS = %w[-arch -isysroot -isystem -iquote -idirafter -include -imacros -target --sysroot -gcc-toolchain -Xclang -Xpreprocessor].freeze
+
+def tg_filter_flags(tg_cc, tg_lang, tg_recorded)
+  tg_tokens = tg_recorded.to_s.split
+  return tg_recorded if tg_tokens.empty? || tg_probe_ok(tg_cc, tg_lang, tg_tokens)
+
+  tg_kept = []
+  tg_idx = 0
+  while tg_idx < tg_tokens.length
+    tg_tok = tg_tokens[tg_idx]
+    if tg_tok.include?("$(")
+      tg_kept << tg_tok
+      tg_idx += 1
+      next
+    end
+    tg_pair = TG_FLAG_PAIRS.include?(tg_tok) && tg_idx + 1 < tg_tokens.length ? [tg_tok, tg_tokens[tg_idx + 1]] : [tg_tok]
+    if tg_probe_ok(tg_cc, tg_lang, tg_pair)
+      tg_kept.concat(tg_pair)
+    else
+      warn "tebako deploy: dropped compiler flag '#{tg_pair.join(" ")}' (rejected by #{tg_cc}; recorded for the runtime's build compiler)"
+    end
+    tg_idx += tg_pair.length
+  end
+  tg_kept.join(" ")
+end
+
+{
+"#,
+    );
+    for (key, tool_key, lang) in FLAG_FILTER_KEYS {
+        out.push_str(&format!(
+            "  {} => [{}, {}],\n",
+            rb_str(key),
+            rb_str(tool_key),
+            rb_str(lang)
+        ));
+    }
+    out.push_str(
+        r#"}.each do |tg_key, (tg_tool_key, tg_lang)|
+  tg_cc = RbConfig::CONFIG[tg_tool_key].to_s
+  next if tg_cc.empty? || !system("command -v #{tg_cc} >/dev/null 2>&1")
+  [RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|
+    tg_recorded = tg_config[tg_key]
+    next if tg_recorded.to_s.empty?
+    tg_config[tg_key] = tg_filter_flags(tg_cc, tg_lang, tg_recorded)
+  end
+end
+"#,
+    );
+    out
 }
 
 // ---------------------------------------------------------------------
@@ -785,6 +879,89 @@ mod tests {
         );
         let nm = override_candidates("NM", &["nm".to_string()]);
         assert_eq!(nm, "RbConfig::CONFIG[\"NM\"].to_s.split.first, \"nm\"");
+    }
+
+    #[test]
+    fn flag_filter_replays_against_the_resolved_compiler() {
+        // tebako-runtime-ruby#22: the recorded flags are the runtime build
+        // machine's (clang on the CI legs); a gcc press host dies on
+        // clang-only flags inside mkmf's first probe. The emitted driver
+        // code probes the RE-RESOLVED compiler and drops what it rejects.
+        let out = flag_filter();
+        assert!(
+            out.contains("def tg_probe_ok(tg_cc, tg_lang, tg_flags)"),
+            "probe helper missing:\n{out}"
+        );
+        // Fast path: the whole value in one probe, kept verbatim when the
+        // compiler accepts it (same family as the build — zero drift).
+        assert!(
+            out.contains(
+                "return tg_recorded if tg_tokens.empty? || tg_probe_ok(tg_cc, tg_lang, tg_tokens)"
+            ),
+            "fast path missing:\n{out}"
+        );
+        // Pair flags probe with their value (a bare -arch would be a
+        // different question than -arch arm64).
+        assert!(
+            out.contains("TG_FLAG_PAIRS = %w["),
+            "pair-flag table missing:\n{out}"
+        );
+        for pair in ["-arch", "-isysroot", "-isystem", "-target", "--sysroot"] {
+            assert!(out.contains(pair), "TG_FLAG_PAIRS misses {pair}:\n{out}");
+        }
+        // Make-var references ($(cflags) in MAKEFILE_CONFIG's unexpanded
+        // compositions) are never probe subjects.
+        assert!(
+            out.contains("tg_tok.include?(\"$(\")"),
+            "make-var skip missing:\n{out}"
+        );
+        // Every drop is loud — the press log's drop lines are the audit
+        // trail of the deviation from the gem's verbatim replay.
+        assert!(
+            out.contains("tebako deploy: dropped compiler flag"),
+            "drop log missing:\n{out}"
+        );
+        // The mkmf compile surface: C flags against CC as c, C++ flags
+        // against CXX as c++.
+        for entry in [
+            "\"CFLAGS\" => [\"CC\", \"c\"]",
+            "\"cflags\" => [\"CC\", \"c\"]",
+            "\"CPPFLAGS\" => [\"CC\", \"c\"]",
+            "\"warnflags\" => [\"CC\", \"c\"]",
+            "\"ARCH_FLAG\" => [\"CC\", \"c\"]",
+            "\"CXXFLAGS\" => [\"CXX\", \"c++\"]",
+            "\"cxxflags\" => [\"CXX\", \"c++\"]",
+        ] {
+            assert!(out.contains(entry), "flag key table misses {entry}:\n{out}");
+        }
+        // No resolvable compiler -> no filtering (the build dies on its
+        // own terms; stripping flags would only obscure that).
+        assert!(
+            out.contains(
+                "next if tg_cc.empty? || !system(\"command -v #{tg_cc} >/dev/null 2>&1\")"
+            ),
+            "unresolvable-cc guard missing:\n{out}"
+        );
+    }
+
+    #[test]
+    fn build_overrides_with_sdk_carries_the_flag_filter() {
+        if cfg!(windows) {
+            return;
+        }
+        let out = deployer(Some(sdk_paths())).build_overrides();
+        assert!(
+            out.contains("def tg_filter_flags(tg_cc, tg_lang, tg_recorded)"),
+            "the SDK overrides must emit the flag filter:\n{out}"
+        );
+        // The tool re-resolution still lands ahead of the filter (the
+        // filter probes the re-resolved compiler).
+        let tools = out.find("}.each do |tg_key, tg_candidates|").unwrap();
+        let filter = out.find("\"CFLAGS\" => [\"CC\", \"c\"]").unwrap();
+        assert!(
+            tools < filter,
+            "filter must follow the tool re-resolution:\n{out}"
+        );
     }
 
     #[test]
