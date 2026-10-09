@@ -353,7 +353,10 @@ mod tests {
             seen.push(
                 cur.d_name[..len]
                     .iter()
-                    .map(|&c| c as u8 as char)
+                    // c_char's signedness is arch-dependent; routing
+                    // through c_int keeps the conversion real (and the
+                    // bits identical) on every target.
+                    .map(|&c| c as libc::c_int as u8 as char)
                     .collect::<String>(),
             );
         }
