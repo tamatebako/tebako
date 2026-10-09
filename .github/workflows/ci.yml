@@ -147,7 +147,12 @@ jobs:
       - name: Pre-install squashfs-tools-ng (serialized)
         working-directory: tebako-rs
         run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then TRIPLET=x64-linux-static; else TRIPLET=arm64-osx-static; fi
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            case "${{ runner.arch }}" in
+              ARM64) TRIPLET=arm64-linux-static ;;
+              *) TRIPLET=x64-linux-static ;;
+            esac
+          else TRIPLET=arm64-osx-static; fi
           ../.vcpkg-root/vcpkg install \
             --vcpkg-root "${{ github.workspace }}/.vcpkg-root" \
             --x-wait-for-lock \
@@ -171,9 +176,13 @@ jobs:
         run: |
           mkdir -p .oracle
           if [ "${{ runner.os }}" = "Linux" ]; then
-            TEBAKOFS=tebakofs-linux-gnu-x86_64
-            MKDWARFS=mkdwarfs-linux-gnu-x86_64
-            BOOTSTRAP=tebako-bootstrap-0.2.0-linux-gnu-x86_64
+            case "${{ runner.arch }}" in
+              ARM64) ARCH=arm64 ;;
+              *) ARCH=x86_64 ;;
+            esac
+            TEBAKOFS=tebakofs-linux-gnu-$ARCH
+            MKDWARFS=mkdwarfs-linux-gnu-$ARCH
+            BOOTSTRAP=tebako-bootstrap-0.2.0-linux-gnu-$ARCH
           else
             TEBAKOFS=tebakofs-macos-arm64
             MKDWARFS=mkdwarfs-macos-arm64

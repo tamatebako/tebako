@@ -2493,6 +2493,7 @@ fn synthesize_manifest(
         // …and no interpreter-option defaults (spec 03 §2.7 — the same
         // mirror rule).
         interp_env: Default::default(),
+        env_pass: Vec::new(),
     })
 }
 
