@@ -15,10 +15,12 @@ use crate::error::{plain_error, TebakoError};
 /// process (tests) must not interleave mount → read → unmount.
 static MOUNT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The manifest bytes of the image at `path`. `Ok(None)` covers every
-/// "no manifest here" case — the file is not a mountable image, or the
-/// image carries nothing at the well-known path; the caller then falls
-/// back to the registry's tier-3 mirror.
+/// The manifest bytes of the image at `path`. `Ok(None)` means the image
+/// mounted cleanly and carries nothing at the well-known path — the caller
+/// falls back to the registry's tier-3 mirror (loudly). An image the reader
+/// cannot OPEN is a hard error naming the format mismatch (tebako#744):
+/// never a silent `None`, which would degrade into a synthesized manifest
+/// whose entrypoint paths the embedded manifest never declared.
 pub fn read_embedded_manifest(path: &Path) -> Result<Option<String>, TebakoError> {
     use tfs::c_api::*;
 
@@ -29,7 +31,20 @@ pub fn read_embedded_manifest(path: &Path) -> Result<Option<String>, TebakoError
     let c_mount = std::ffi::CString::new("/__tebako_install__").unwrap();
     let rc = unsafe { tebako_fs_init_from_file(c_path.as_ptr(), c_mount.as_ptr()) };
     if rc != 0 {
-        return Ok(None); // not a mountable image
+        // The reader refused the image: no backend recognizes these bytes —
+        // an unsupported format, a newer format revision than this toolchain
+        // speaks, or not an image at all. Distinguishable from "the image
+        // carries no manifest" and must never degrade into the synthesized
+        // mirror (tebako#744): the fallback would hand the dispatcher
+        // entrypoint paths the embedded manifest never declared.
+        let errno = tfs::errno::get_errno();
+        let reason = tfs::errno::strerror_text(errno);
+        return Err(plain_error(format!(
+            "this tebako cannot read {} ({} {}) — the image is not in a format this toolchain supports; if the payload was pressed by a newer tebako, upgrade tebako and retry",
+            path.display(),
+            errno,
+            reason
+        )));
     }
     struct Unmount;
     impl Drop for Unmount {
@@ -105,4 +120,39 @@ pub fn with_image_mounted<T>(
     }
     let _unmount = Unmount;
     f()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// tebako#744: a reader-refused image (no backend recognizes the
+    /// bytes) must surface as a NAMED format error at the read — never
+    /// as "no embedded manifest", which would degrade into a
+    /// synthesized mirror whose entrypoint paths the image never
+    /// declared. The genuinely manifest-less image keeps its designed
+    /// loud-synthesis path (covered in tests/install.rs).
+    #[test]
+    fn an_unreadable_image_is_a_named_error_not_a_missing_manifest() {
+        let path = std::env::temp_dir().join(format!(
+            "tebako-i744-garbage-{}-{}.tfs",
+            std::process::id(),
+            line!()
+        ));
+        std::fs::write(
+            &path,
+            b"not an image: no backend magic matches these bytes\n",
+        )
+        .unwrap();
+        let err = read_embedded_manifest(&path)
+            .expect_err("an unreadable image must fail, not synthesize");
+        let text = err.to_string();
+        assert!(text.contains("cannot read"), "{text}");
+        assert!(text.contains("upgrade tebako"), "{text}");
+        assert!(
+            !text.to_lowercase().contains("no embedded manifest"),
+            "{text}"
+        );
+        std::fs::remove_file(&path).ok();
+    }
 }

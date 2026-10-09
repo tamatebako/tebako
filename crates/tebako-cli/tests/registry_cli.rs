@@ -14,6 +14,16 @@ fn shim_path(home: &std::path::Path, command: &str) -> PathBuf {
         .join(tebako_shim::manage::shim_file_name(command))
 }
 
+/// A mountable manifest-less image (the install path reads it cleanly;
+/// plain fake bytes fail closed since tebako#744).
+fn entry_image(bytes: &[u8]) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    writer.start_file("payload", options).unwrap();
+    writer.write_all(bytes).unwrap();
+    writer.finish().unwrap().into_inner()
+}
+
 fn tebako_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_tebako"))
 }
@@ -60,7 +70,7 @@ fn registry_install_uninstall_smoke() {
     let shim = dir.join("tebako-shim");
     fs::write(&shim, b"#!/bin/sh\n").unwrap();
 
-    fs::write(mirror.join("app-1.0.tfs"), b"app-bytes").unwrap();
+    fs::write(mirror.join("app-1.0.tfs"), entry_image(b"app-bytes")).unwrap();
     let app_url = tebako_http::file_url(&mirror.join("app-1.0.tfs"));
     fs::write(
         mirror.join("tpkg-registry.yaml"),
@@ -384,7 +394,7 @@ fn trust_and_keys_verbs_smoke() {
         .map(|l| format!("    {l}"))
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(mirror.join("app-1.0.tfs"), b"app-bytes").unwrap();
+    fs::write(mirror.join("app-1.0.tfs"), entry_image(b"app-bytes")).unwrap();
     let app_url = tebako_http::file_url(&mirror.join("app-1.0.tfs"));
     fs::write(
         mirror.join("tpkg-registry.yaml"),

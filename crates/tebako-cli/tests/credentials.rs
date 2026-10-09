@@ -16,6 +16,16 @@ static ENV_LOCK: Mutex<()> = Mutex::new(());
 const TOKEN_VAR: &str = "TEBAKO_CLI_TEST_NIST_TOKEN";
 const CONTENTS_URL: &str = "https://api.github.com/repos/acme/priv/contents/tpkg-registry.yaml";
 
+/// A mountable manifest-less image (the install path reads it cleanly;
+/// plain fake bytes fail closed since tebako#744).
+fn entry_image(bytes: &[u8]) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    writer.start_file("payload", options).unwrap();
+    std::io::Write::write_all(&mut writer, bytes).unwrap();
+    writer.finish().unwrap().into_inner()
+}
+
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "tebako-cli-credentials-{tag}-{}",
@@ -43,7 +53,7 @@ impl Env {
         let mirror = dir.join("mirror");
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&mirror).unwrap();
-        fs::write(mirror.join("app-1.0.tfs"), b"app-bytes").unwrap();
+        fs::write(mirror.join("app-1.0.tfs"), entry_image(b"app-bytes")).unwrap();
         let app_url = tebako_http::file_url(&mirror.join("app-1.0.tfs"));
         let registry_yaml = format!(
             "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {app_url}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n"
@@ -182,7 +192,7 @@ fn a_bookless_home_installs_anonymously_and_journals_no_fetch_lines() {
     let mirror = dir.join("mirror");
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&mirror).unwrap();
-    fs::write(mirror.join("app-1.0.tfs"), b"app-bytes").unwrap();
+    fs::write(mirror.join("app-1.0.tfs"), entry_image(b"app-bytes")).unwrap();
     let shim_binary = dir.join("tebako-shim");
     fs::write(&shim_binary, b"#!/bin/sh\n").unwrap();
     fs::write(

@@ -22,6 +22,22 @@ fn scratch(tag: &str) -> PathBuf {
     dir
 }
 
+/// A minimal MOUNTABLE image (zip backend) carrying the given entries
+/// and no embedded manifest: install reads it cleanly and synthesizes
+/// the mirror from the registry's tier-3 fields. Fake non-image bytes
+/// stopped being acceptable fixtures when the reader began failing
+/// closed on unmountable payloads (tebako#744) — an unreadable image
+/// is a named error, never a quiet synthesis.
+fn zip_image(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    for (name, bytes) in entries {
+        writer.start_file(*name, options).unwrap();
+        std::io::Write::write_all(&mut writer, bytes).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
 /// A bundle fixture: the builder's TEBAKO_HOME (its config names the
 /// registry + the ruby line to stage), a tools dir with the four CLI
 /// binaries, and a mirror dir holding the payload, its registry, and a
@@ -57,17 +73,18 @@ impl Fixture {
             }
         }
 
-        // The app payload (fake bytes — install stores them verbatim and
-        // synthesizes the manifest mirror from the registry's tier-3
-        // fields) and its registry. The two `ext-*` payloads are the
-        // `--also` fixtures: content-only data payloads (no entrypoints,
-        // no runtime edge) resolving through the same registry.
+        // The app payload (a real mountable zip image without an
+        // embedded manifest — install reads it and synthesizes the
+        // mirror from the registry's tier-3 fields) and its registry.
+        // The two `ext-*` payloads are the `--also` fixtures:
+        // content-only data payloads (no entrypoints, no runtime edge)
+        // resolving through the same registry.
         let payload_path = mirror.join("app-1.0.tfs");
-        fs::write(&payload_path, b"app-bytes").unwrap();
+        fs::write(&payload_path, zip_image(&[("bin/app", b"app\n")])).unwrap();
         let ext_one_path = mirror.join("ext-one-1.0.tfs");
-        fs::write(&ext_one_path, b"ext-one-bytes").unwrap();
+        fs::write(&ext_one_path, zip_image(&[("data/one", b"one\n")])).unwrap();
         let ext_two_path = mirror.join("ext-two-2.0.tfs");
-        fs::write(&ext_two_path, b"ext-two-bytes").unwrap();
+        fs::write(&ext_two_path, zip_image(&[("data/two", b"two\n")])).unwrap();
         let registry_path = mirror.join("tpkg-registry.yaml");
         fs::write(
             &registry_path,
@@ -99,14 +116,16 @@ impl Fixture {
         fs::create_dir_all(&rt_dir).unwrap();
         let exe_name = format!("tebako-runtime-0.0.1-3.3.5-{platform}{}", exe_suffix());
         let image_name = format!("tebako-runtime-0.0.1-3.3.5-{platform}.tfs");
-        fs::write(rt_dir.join(&exe_name), b"fake runtime exe\n").unwrap();
-        fs::write(rt_dir.join(&image_name), b"fake runtime image\n").unwrap();
+        let runtime_exe_bytes = b"fake runtime exe\n".to_vec();
+        let runtime_image_bytes = zip_image(&[("lib/ruby.rb", b"# runtime\n")]);
+        fs::write(rt_dir.join(&exe_name), &runtime_exe_bytes).unwrap();
+        fs::write(rt_dir.join(&image_name), &runtime_image_bytes).unwrap();
         fs::write(
             rt_dir.join("manifest.json"),
             format!(
                 "[{{\"tebako_version\": \"0.0.1\", \"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"ruby_version\": \"3.3.5\", \"platform\": \"{platform}\", \"filename\": \"{exe_name}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{}\"}}}}]\n",
-                sha256_hex(b"fake runtime exe\n"),
-                sha256_hex(b"fake runtime image\n")
+                sha256_hex(&runtime_exe_bytes),
+                sha256_hex(&runtime_image_bytes)
             ),
         )
         .unwrap();
@@ -191,7 +210,10 @@ fn bundle_stages_a_self_consistent_offline_tree() {
     // home/payloads: the payload image + its trust anchor.
     let image = out.join("home/payloads/app/1.0.tfs");
     assert!(image.is_file(), "payload image staged");
-    assert_eq!(fs::read(&image).unwrap(), b"app-bytes");
+    assert_eq!(
+        fs::read(&image).unwrap(),
+        fs::read(fx.mirror.join("app-1.0.tfs")).unwrap()
+    );
     assert!(out.join("home/payloads/app/1.0.tfs.sha256").is_file());
 
     // home/runtimes: the primary runtime WARMED (install alone leaves it
@@ -394,8 +416,14 @@ fn bundle_also_stages_the_slices_and_pins_them_on_the_target() {
     let two = out.join("home/payloads/ext-two/2.0.tfs");
     assert!(one.is_file(), "ext-one staged");
     assert!(two.is_file(), "ext-two staged");
-    assert_eq!(fs::read(&one).unwrap(), b"ext-one-bytes");
-    assert_eq!(fs::read(&two).unwrap(), b"ext-two-bytes");
+    assert_eq!(
+        fs::read(&one).unwrap(),
+        fs::read(fx.mirror.join("ext-one-1.0.tfs")).unwrap()
+    );
+    assert_eq!(
+        fs::read(&two).unwrap(),
+        fs::read(fx.mirror.join("ext-two-2.0.tfs")).unwrap()
+    );
     assert!(out.join("home/payloads/ext-one/1.0.tfs.sha256").is_file());
     assert!(out.join("home/payloads/ext-two/2.0.tfs.sha256").is_file());
 
