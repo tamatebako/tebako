@@ -841,7 +841,9 @@ fn publish_errors_are_named() {
     let err = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
     assert!(err.message.contains("duplicate"), "{err:?}");
 
-    // no embedded manifest
+    // not a readable image at all — the stricter, earlier named error
+    // (tebako#744): the reader refuses the bytes before the manifest
+    // question exists
     let plain = fx.work.join("plain-1.0.tfs");
     fs::write(&plain, b"not an image").unwrap();
     let mut opts = base_opts(&fx, "app");
@@ -851,7 +853,8 @@ fn publish_errors_are_named() {
         path: plain,
     });
     let err = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
-    assert!(err.message.contains("embedded manifest"), "{err:?}");
+    assert!(err.message.contains("cannot read"), "{err:?}");
+    assert!(err.message.contains("not in a format"), "{err:?}");
 
     // name mismatch against the embedded manifest
     let mut opts = base_opts(&fx, "other-app");
