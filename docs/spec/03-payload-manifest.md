@@ -451,6 +451,40 @@ the BASE's gem home at run time). Dispatch semantics live in spec 07
   exactly the row whose inventory the press verified identical to the
   subtraction source.
 
+  **The line-split idiom, worked** (first production use: the
+  metanorma flavor slices, metanorma/packed-metanorma-bsi and -nist,
+  2026-09-27 — the living instance to copy). A pure-ruby slice that
+  serves every runtime line of a base family cannot use ONE exact
+  pin: equality clauses are suffix-exact in the versions grammar
+  (`= 1.17.0` never matches `1.17.0-ruby3.3`). Nor should it reach
+  for a range (`>= 1.17.0-ruby3.3, < 1.17.1`): a range is legal for
+  content that honestly spans, but a gem-closure slice subtracts a
+  specific inventory, and the binding rule wants each served row
+  named. The shipped spelling is one edge per row:
+
+  ```yaml
+  augments:
+    - payload: metanorma
+      constraint: "= 1.17.0"
+      extension_point: flavors
+      built_against: {version: "1.17.0", closure_sha256: "…"}
+    - payload: metanorma
+      constraint: "= 1.17.0-ruby3.3"
+      extension_point: flavors
+      built_against: {version: "1.17.0-ruby3.3", closure_sha256: "…"}
+  ```
+
+  Soundness: the press subtracts the INTERSECTION of the family's
+  platform/line closures — a gem is subtracted only if present in
+  every closure the slice will mount beside — and refuses (build
+  error) when the inventories are not identical. One subtraction
+  therefore serves every named row; the dispatcher's any-edge match
+  (v2.8.19) attaches the slice to whichever row the user's version
+  pin selected. A new base line (say `-ruby3.5`) is a NEW row the
+  slice does not name: dispatch skips loudly (the unattached-flavor
+  journal), and the slice press adds the edge after verifying the
+  new row's closure identity — never a silent range stretch.
+
 ### 2.9 MIN RUNTIME TEBAKO (`min_runtime_tebako:`, additive — schema_minor 15, tebako#666)
 
 An OPTIONAL top-level key naming the minimum tebako tooling version of
