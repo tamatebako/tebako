@@ -181,6 +181,13 @@ Full reference: [`docs/spec/`](docs/spec/00-INDEX.md) (the normative spec
 set — wire format, manifests, references, cache, launcher ABI, shims,
 jails, trust, encryption, TFS, comparisons, factories, distribution).
 
+## Maintainers
+
+Releasing across the repos: **[docs/release-train.md](docs/release-train.md)**
+— the stage graph, the ordering and rehearsal rules, and the failure
+recovery playbook (finalize wedge, orphaned releases, mirror 404s,
+toolchain-format skew, stale registry serve).
+
 ## Status
 
 - **Shipped**: the full Rust stack — packager, loader (macOS, Linux, and
