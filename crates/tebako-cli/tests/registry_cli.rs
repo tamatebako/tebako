@@ -9,6 +9,10 @@ use std::process::Command;
 
 /// The registered shim path for a command — windows names it
 /// `<command>.exe` (production's own mapping, tebako-shim#manage).
+fn shim_path(home: &std::path::Path, command: &str) -> PathBuf {
+    home.join("shims")
+        .join(tebako_shim::manage::shim_file_name(command))
+}
 
 /// A mountable manifest-less image (the install path reads it cleanly;
 /// plain fake bytes fail closed since tebako#744).
@@ -16,13 +20,8 @@ fn entry_image(bytes: &[u8]) -> Vec<u8> {
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default();
     writer.start_file("payload", options).unwrap();
-    std::io::Write::write_all(&mut writer, bytes).unwrap();
+    writer.write_all(bytes).unwrap();
     writer.finish().unwrap().into_inner()
-}
-
-fn shim_path(home: &std::path::Path, command: &str) -> PathBuf {
-    home.join("shims")
-        .join(tebako_shim::manage::shim_file_name(command))
 }
 
 fn tebako_bin() -> PathBuf {
