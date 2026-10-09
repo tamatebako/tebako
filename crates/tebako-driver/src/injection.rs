@@ -131,6 +131,14 @@ mod tests {
                 .borrow_mut()
                 .insert(key.to_string(), value.to_string());
         }
+        fn names_with_prefix(&self, prefix: &str) -> Vec<String> {
+            self.0
+                .borrow()
+                .keys()
+                .filter(|k| k.starts_with(prefix))
+                .cloned()
+                .collect()
+        }
     }
 
     #[test]

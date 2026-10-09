@@ -529,6 +529,34 @@ runtime wins above it, and it never substitutes for the
 `runtime_requirement` constraint (the interpreter version axis is the
 requirement's; the tooling axis is the floor's).
 
+### 2.10 ENV PASS (`env_pass:`, additive — schema_minor 16, tebako#737)
+
+The packager's opt-in to the driver's credential scrub. A packaged
+app must not exfiltrate the packager's credentials by default: at
+boot's end, after every contract read, the driver BLANKS every
+`TEBAKO_*` environment variable that is not part of the boot contract
+(spec 17 §1/§7's handoff surface, spec 08 §2's jail, spec 22 §6's
+exec cache, spec 22 §3's child injection, spec 25 §2's trace, and the
+`TEBAKO_MOUNT_*` discovery prefix) — `TEBAKO_GITHUB_TOKEN` above all.
+The scrub journals each NAME at debug, never a value.
+
+```yaml
+env_pass:
+  - TEBAKO_FLAVOR_KEY
+```
+
+- Every entry is a `TEBAKO_`-prefixed variable name (uppercase
+  alphanumerics and underscore); anything else is a named manifest
+  error at parse. The opt-in may only name what the scrub itself
+  could take.
+- The driver reads the list from the FIRST image's embedded manifest
+  (the app payload); an absent/unreadable manifest means NO opt-in —
+  the scrub fails safe. A standalone boot (no images) scrubs with no
+  opt-in.
+- Old readers ignore the key; the scrub is driver behavior, not a
+  resolution input — the failure mode the key retires is a packaged
+  run silently carrying the press host's credentials.
+
 ## 3. Platform axis (locked, vcpkg-triplet form)
 
 `platforms` is EITHER `"universal"` (pure-ruby/data) OR an explicit list:

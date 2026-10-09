@@ -43,6 +43,15 @@ jobs:
           - os: ubuntu-24.04
             crypto_triplet: x64-linux-dynamic
             triplet: x64-linux-static
+          # tebako#544: PR CI never compiled aarch64-linux before — the
+          # release legs were the first arch check, and the v2.3.1 lesson
+          # (libc::SYS_dup2 does not exist on arm64 kernels; PR legs were
+          # green because x86_64/macOS/Windows all compile it) reached the
+          # tag. The native arm runner closes the gap in the PR required
+          # set.
+          - os: ubuntu-24.04-arm
+            crypto_triplet: arm64-linux-dynamic
+            triplet: arm64-linux-static
           - os: macos-14
             crypto_triplet: arm64-osx-dynamic
             triplet: arm64-osx-static

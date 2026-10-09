@@ -101,6 +101,10 @@ pub trait Env {
     /// handoff env (the spec 22 §6 surface: `TEBAKO_EXEC_CACHE`, the
     /// mount-discovery vars, the child-injection vars).
     fn set_var(&self, key: &str, value: &str);
+    /// The names of the currently set variables carrying `prefix` —
+    /// the packager-credential scrub's enumeration (tebako#737). Names
+    /// only: no value crosses this seam.
+    fn names_with_prefix(&self, prefix: &str) -> Vec<String>;
 }
 
 /// The process environment (the shipped path).
@@ -112,6 +116,12 @@ impl Env for ProcessEnv {
     }
     fn set_var(&self, key: &str, value: &str) {
         std::env::set_var(key, value);
+    }
+    fn names_with_prefix(&self, prefix: &str) -> Vec<String> {
+        std::env::vars()
+            .filter(|(k, _)| k.starts_with(prefix))
+            .map(|(k, _)| k)
+            .collect()
     }
 }
 
@@ -1025,6 +1035,44 @@ fn export_mount_vars(
     Ok(keys)
 }
 
+/// tebako#737 (spec 03 §2.10): the app payload's `env_pass` opt-in,
+/// read from the first image's embedded manifest through the mounted
+/// VFS. An absent/unreadable/invalid manifest means NO opt-in — the
+/// packager-credential scrub fails safe (scrub by default).
+fn app_env_pass(mount: &str) -> Vec<String> {
+    let path = format!("{mount}{}", tpkg::PAYLOAD_MANIFEST_PATH);
+    let mut data = Vec::new();
+    {
+        let mut ctx = context().write().unwrap();
+        let Ok(fd) = ctx.open(&path, libc::O_RDONLY) else {
+            return Vec::new();
+        };
+        let mut buf = [0u8; 8192];
+        loop {
+            match ctx.read(fd, &mut buf) {
+                Ok(0) => break,
+                Ok(n) => data.extend_from_slice(&buf[..n]),
+                Err(_) => {
+                    let _ = ctx.close(fd);
+                    return Vec::new();
+                }
+            }
+        }
+        let _ = ctx.close(fd);
+    }
+    tpkg::PayloadManifest::from_yaml(&String::from_utf8_lossy(&data))
+        .map(|m| m.env_pass)
+        .unwrap_or_default()
+}
+
+/// The boot's final step before the interpreter handoff: blank every
+/// non-contract `TEBAKO_*` variable (the packager's credentials must
+/// not ride into the packaged app) except the app manifest's declared
+/// `env_pass` names. Called AFTER every contract read.
+fn scrub_packager_env(env: &dyn Env, pass: &[String]) {
+    crate::env_scrub::scrub(env, pass);
+}
+
 /// Resolve the entry against the first image's mount (the app payload —
 /// spec 17 §1) and verify it exists in the mounted tree — but only
 /// against mounts THIS boot established (an entry outside them belongs
@@ -1280,6 +1328,9 @@ pub fn boot_with_mount_modes(
                 v.push(program.clone());
             }
             v.extend(h.interpreter_args.iter().cloned());
+            // tebako#737: the standalone boot scrubs with no opt-in
+            // (no app payload is mounted; nothing declared env_pass).
+            scrub_packager_env(env, &[]);
             Ok(BootOutcome {
                 argv: v,
                 layout: declaration,
@@ -1472,6 +1523,15 @@ pub fn boot_with_mount_modes(
                 (v, Some(index))
             }
         };
+        // tebako#737 (spec 03 §2.10): the packager-credential scrub at
+        // boot's end — every non-contract TEBAKO_* variable blanks
+        // unless the app payload's manifest declared it in env_pass.
+        let pass = h
+            .images
+            .first()
+            .map(|i| app_env_pass(&i.mount))
+            .unwrap_or_default();
+        scrub_packager_env(env, &pass);
         Ok(BootOutcome {
             argv: rewritten,
             layout: declaration,
@@ -1665,6 +1725,14 @@ mod tests {
             self.0
                 .borrow_mut()
                 .insert(key.to_string(), value.to_string());
+        }
+        fn names_with_prefix(&self, prefix: &str) -> Vec<String> {
+            self.0
+                .borrow()
+                .keys()
+                .filter(|k| k.starts_with(prefix))
+                .cloned()
+                .collect()
         }
     }
 
