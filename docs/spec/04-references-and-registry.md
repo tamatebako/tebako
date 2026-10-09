@@ -110,6 +110,21 @@ payloads:
   `tebako registry validate` names a multi-platform row's `abi` a
   producer-gate violation (2026-10-08) — the reader stays lenient so
   already-published registries keep resolving.
+- **The variant dimension (additive, 2026-10-09, tebako#557; spec 28
+  §2–§3):** a version entry carries EITHER the shorthand above
+  (top-level `platforms:` + `runtime_requirement:` — exactly the
+  single-variant form) OR `variants:` — a list of
+  `{runtime_requirement, platforms}` arms, one per
+  (runtime_requirement × platforms) build of the same version — never
+  both. Each variant is keyed by its requirement alone (the variant id
+  derives, spec 28 §2); a duplicate key inside one version, both forms
+  at once, or a `default_variant:` (payload level) naming no variant of
+  the default version are named registry validation errors. With no
+  selector in force, resolution picks the declared `default_variant`,
+  else the variant whose requirement's line is newest (spec 28 §4 rule
+  1). Pre-variant readers see a variants-only entry as a version with
+  no top-level `platforms:` and refuse it loudly — a clean break, never
+  a mis-resolution.
 - **The per-row shard `release.ref` (additive, 2026-10-07,
   tebako#711):** a `platforms[<triplet>]` entry may carry its own
   `release: {ref: …}` naming the shard release tag serving THAT row's

@@ -57,7 +57,14 @@ pub fn build_app_image(
         align_layout_to_runtime(&opts.data_src_dir(), layout_dir, ruby_ver);
     }
     write_entry_dispatcher(&opts.data_src_dir(), scenario, opts.cwd.as_deref());
-    build_image(&opts.data_bundle_file(), &opts.data_src_dir(), opts.format)?;
+    let excludes = tpkg::exclude::ExcludeSet::parse(&opts.exclude)
+        .map_err(|e| plain_error(format!("invalid --exclude: {e}")))?;
+    build_image(
+        &opts.data_bundle_file(),
+        &opts.data_src_dir(),
+        opts.format,
+        &excludes,
+    )?;
     Ok(opts.data_bundle_file())
 }
 
@@ -768,6 +775,7 @@ mod tests {
             quiet_notices: None,
             sign: None,
             format: crate::options::PressImageFormat::Dwarfs,
+            exclude: Vec::new(),
             compose: None,
             carry: None,
             share: None,

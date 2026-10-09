@@ -586,8 +586,12 @@ fn spawned_payload_row<T: Transport>(
     };
 
     // The lock's pin (spec 23 §13.3): the single universal digest, or the
-    // host triplet's row — press verifies the host's bytes.
-    let pin = match &entry.platforms {
+    // host triplet's row — press verifies the host's bytes. The no-selector
+    // variant pick scopes the read (spec 28 §4 rule 1).
+    let view = entry
+        .resolve_variant(hit.payload.default_variant.as_deref())
+        .map_err(|e| err(e.to_string()))?;
+    let pin = match view.platforms {
         RegistryPlatforms::Universal => tpkg::DigestPin::One(cached.sha256.clone()),
         RegistryPlatforms::PerTriplet(_) => tpkg::DigestPin::PerTriplet(BTreeMap::from([(
             host.release_asset_name().to_string(),

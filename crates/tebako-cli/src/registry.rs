@@ -126,30 +126,30 @@ pub fn retire(
         if let Some(engine) = payload.engine() {
             for consumer in &registry.payloads {
                 for row in &consumer.versions {
-                    let Some(req) = &row.runtime_requirement else {
-                        continue;
-                    };
-                    if req.engine != engine {
-                        continue;
-                    }
-                    let Ok(constraint) = tpkg::versions::parse_constraint(&req.constraint) else {
-                        continue;
-                    };
-                    if !constraint.matches(version) {
-                        continue;
-                    }
-                    let satisfied_elsewhere = registry
-                        .runtime_entries(engine, req.implementation.as_deref())
-                        .iter()
-                        .flat_map(|p| p.versions.iter().map(move |v| (p.name.as_str(), v)))
-                        .filter(|(pname, v)| !(*pname == name && v.version == version))
-                        .filter(|(_, v)| !v.is_withdrawn())
-                        .any(|(_, v)| constraint.matches(&v.version));
-                    if !satisfied_elsewhere {
-                        stranded.push(format!(
-                            "{} {} (runtime_requirement {{engine: {}, constraint: \"{}\"}})",
-                            consumer.name, row.version, req.engine, req.constraint
-                        ));
+                    for req in row.requirement_mirrors() {
+                        if req.engine != engine {
+                            continue;
+                        }
+                        let Ok(constraint) = tpkg::versions::parse_constraint(&req.constraint)
+                        else {
+                            continue;
+                        };
+                        if !constraint.matches(version) {
+                            continue;
+                        }
+                        let satisfied_elsewhere = registry
+                            .runtime_entries(engine, req.implementation.as_deref())
+                            .iter()
+                            .flat_map(|p| p.versions.iter().map(move |v| (p.name.as_str(), v)))
+                            .filter(|(pname, v)| !(*pname == name && v.version == version))
+                            .filter(|(_, v)| !v.is_withdrawn())
+                            .any(|(_, v)| constraint.matches(&v.version));
+                        if !satisfied_elsewhere {
+                            stranded.push(format!(
+                                "{} {} (runtime_requirement {{engine: {}, constraint: \"{}\"}})",
+                                consumer.name, row.version, req.engine, req.constraint
+                            ));
+                        }
                     }
                 }
             }
@@ -347,7 +347,10 @@ pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
                     }
                 }
                 for v in &p.versions {
-                    if let Some(req) = &v.runtime_requirement {
+                    // The shorthand's mirror plus each variant arm's
+                    // (spec 28 §3) — the gate walks them all, each against
+                    // the platform-row count of the row it sits on.
+                    for (req, platform_rows) in v.requirement_rows() {
                         if let Err(e) = tpkg::versions::parse_constraint(&req.constraint) {
                             violations.push(Violation {
                                 payload: Some(p.name.clone()),
@@ -371,11 +374,11 @@ pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
                         // tebako#440's mirror rule, producer-enforced: the
                         // abi is per-triplet by construction, so the
                         // mirror carries it only when one value holds for
-                        // the WHOLE entry. On a multi-platform per-triplet
+                        // the WHOLE row. On a multi-platform per-triplet
                         // row one platform's abi is wrong for every other
                         // platform — the embedded slice manifests own the
-                        // per-platform values.
-                        let platform_rows = v.published_triplets().len();
+                        // per-platform values. The count is the row's own
+                        // (the shorthand map's, or the variant arm's).
                         if req.abi.is_some() && platform_rows > 1 {
                             violations.push(Violation {
                                 payload: Some(p.name.clone()),

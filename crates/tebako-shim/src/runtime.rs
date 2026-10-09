@@ -974,9 +974,19 @@ fn row_oci_mirror_locator(
     reg_ref: &str,
     entry_name: &str,
     version: &tebako_resolve::RegistryVersion,
+    default_variant: Option<&str>,
     host: tpkg::Platform,
 ) -> Result<Option<OciRuntimeSource>, ShimError> {
-    let Some(selection) = version.select(host) else {
+    let view = version.resolve_variant(default_variant).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "registry {reg_ref}'s row for {entry_name} {}: {e}",
+                version.version
+            ),
+        )
+    })?;
+    let Some(selection) = view.select(host) else {
         return Ok(None);
     };
     let row = &version.version;
@@ -1212,7 +1222,14 @@ fn registry_selected_target(
     let mut declared: Vec<(String, bool)> = Vec::new();
     for entry in entries {
         for row in &entry.versions {
-            let Some(selection) = row.select(host) else {
+            // The no-selector variant pick (spec 28 §4 rule 1) scopes the
+            // host coverage read; a row the pick cannot resolve (a
+            // default_variant that names no variant of THIS row's
+            // version) is out of the competition, never a guessed arm.
+            let Ok(view) = row.resolve_variant(entry.default_variant.as_deref()) else {
+                continue;
+            };
+            let Some(selection) = view.select(host) else {
                 continue;
             };
             declared.push((row.version.clone(), row.is_withdrawn()));
@@ -1247,7 +1264,14 @@ fn registry_selected_target(
             let locator: Option<RowLocator> = if row.is_withdrawn() {
                 None
             } else if channel_oci {
-                row_oci_mirror_locator(&reg_ref, &entry.name, row, host)?.map(RowLocator::Oci)
+                row_oci_mirror_locator(
+                    &reg_ref,
+                    &entry.name,
+                    row,
+                    entry.default_variant.as_deref(),
+                    host,
+                )?
+                .map(RowLocator::Oci)
             } else {
                 row_download_locator(
                     &ctx.home,
@@ -1755,8 +1779,13 @@ fn registry_derived_source(
                 // `oci:` mirror is THE locator — fail-closed; a row
                 // this host is not published for skips with a journal
                 // note (another version or channel may answer).
-                match row_oci_mirror_locator(reg_ref, &entry.name, version, tpkg::Platform::host())?
-                {
+                match row_oci_mirror_locator(
+                    reg_ref,
+                    &entry.name,
+                    version,
+                    entry.default_variant.as_deref(),
+                    tpkg::Platform::host(),
+                )? {
                     Some(oci) => RowLocator::Oci(oci),
                     None => {
                         journal(
@@ -1805,14 +1834,16 @@ fn registry_derived_source(
             // tebako#716: the shard/OCI-tag probe flows the row's
             // declared artifact stem verbatim — the factory's
             // distribution identity is never recomposed consumer-side.
-            let artifact_stem = version
-                .select(tpkg::Platform::host())
-                .and_then(|sel| match sel {
-                    tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
-                        Some(registry_artifact_stem(artifact).to_string())
-                    }
-                    tebako_resolve::registry::PlatformSelection::Universal => None,
-                });
+            let artifact_stem = match version.resolve_variant(entry.default_variant.as_deref()) {
+                Ok(view) => match view.select(tpkg::Platform::host()) {
+                    Some(tebako_resolve::registry::PlatformSelection::Selected {
+                        artifact,
+                        ..
+                    }) => Some(registry_artifact_stem(artifact).to_string()),
+                    _ => None,
+                },
+                Err(_) => None,
+            };
             return Ok(Some(picked_row_source(
                 locator,
                 "registry",

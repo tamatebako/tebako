@@ -530,6 +530,19 @@ dispatcher, release tooling, and registry consume the SAME mapping.
 - `tebako press` / `tfs mkimage` embed the manifest at build time (kind
   inferred: app for pressed apps; data for plain images; runtime for
   runtime packages — `provides` filled from the factory's versions data).
+- **Payload exclusion at imaging time (additive, 2026-10-09,
+  tebako#333):** `tebako press --exclude <glob>` (repeatable) and `tfs
+  mkimage --exclude <glob>` leave matching paths out of the BUILT image —
+  one grammar, one semantics, one implementation shared by both commands.
+  A pattern matches the payload-root-relative path (slash-separated, no
+  leading `/`): `*`, `?`, and `[...]` classes follow fnmatch flag-0
+  semantics (a `*` run spans `/`), `\` quotes the next character, and a
+  matched directory prunes its whole subtree (a trailing `/` on the
+  pattern is accepted and stripped — it names the directory). Exclusion
+  is imaging-time only: excluded paths are absent from the image, and
+  the manifest never records the list (the image simply lacks them).
+  The feedstock Tebakofile's `exclude:` list (spec 13 §9) is the same
+  grammar, handed to the imager verbatim.
 - `tfs info` prints the manifest; `tfs stat` exposes digests.
 - The dispatcher (spec 07) resolves runtime compatibility FROM the
   manifest (`runtime_requirement` vs cached runtimes' `provides`).

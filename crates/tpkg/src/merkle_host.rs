@@ -135,6 +135,30 @@ pub fn stage_tree(src: &Path, dst: &Path, manifest_text: &str) -> io::Result<()>
     Ok(())
 }
 
+/// Stage `src` into `dst` like [`stage_tree`], minus every path the
+/// exclusion set matches (the imaging-time `--exclude` surface — the
+/// excluded paths never reach the image writer; a matched directory's
+/// whole subtree is pruned). `manifest_text`, when `Some`, is written
+/// over the staged manifest exactly like [`stage_tree`] does — the
+/// caller hashes the STAGED tree so the stamped tree hash covers the
+/// filtered contents the image actually carries.
+pub fn stage_tree_excluding(
+    src: &Path,
+    dst: &Path,
+    manifest_text: Option<&str>,
+    excludes: &crate::exclude::ExcludeSet,
+) -> io::Result<()> {
+    mirror_filtered(src, dst, "", excludes)?;
+    if let Some(text) = manifest_text {
+        let staged_manifest = dst.join(crate::merkle::MANIFEST_DIR).join("manifest.yaml");
+        if staged_manifest.exists() {
+            fs::remove_file(&staged_manifest)?;
+            fs::write(&staged_manifest, text)?;
+        }
+    }
+    Ok(())
+}
+
 fn mirror(src: &Path, dst: &Path) -> io::Result<()> {
     fs::create_dir_all(dst)?;
     for entry in fs::read_dir(src)? {
@@ -144,6 +168,43 @@ fn mirror(src: &Path, dst: &Path) -> io::Result<()> {
         let ft = entry.file_type()?;
         if ft.is_dir() {
             mirror(&from, &to)?;
+        } else if ft.is_symlink() {
+            let target = fs::read_link(&from)?;
+            link_or_copy(&target, &from, &to)?;
+        } else {
+            fs::hard_link(&from, &to).or_else(|_| fs::copy(&from, &to).map(|_| ()))?;
+        }
+    }
+    Ok(())
+}
+
+/// The filtered mirror: `rel` is the slash-separated path of `src`
+/// relative to the tree root ("" at the root). An entry the exclusion
+/// set matches never lands — a matched directory prunes its whole
+/// subtree (the walk simply does not descend).
+fn mirror_filtered(
+    src: &Path,
+    dst: &Path,
+    rel: &str,
+    excludes: &crate::exclude::ExcludeSet,
+) -> io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let entry_rel = if rel.is_empty() {
+            name.to_string_lossy().replace('\\', "/")
+        } else {
+            format!("{rel}/{}", name.to_string_lossy().replace('\\', "/"))
+        };
+        if excludes.matches(&entry_rel) {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        let ft = entry.file_type()?;
+        if ft.is_dir() {
+            mirror_filtered(&from, &to, &entry_rel, excludes)?;
         } else if ft.is_symlink() {
             let target = fs::read_link(&from)?;
             link_or_copy(&target, &from, &to)?;
@@ -280,6 +341,46 @@ mod tests {
             tree_digest(&HostTree::new(&staged)).unwrap(),
             digest,
             "staged tree must hash identically (manifest dir excluded)"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn filtered_staging_prunes_the_excluded_subtrees() {
+        let dir = scratch("stage-exclude");
+        let src = dir.join("src");
+        fs::create_dir_all(src.join("bin")).unwrap();
+        fs::create_dir_all(src.join("tmp/nested")).unwrap();
+        fs::create_dir_all(src.join("test")).unwrap();
+        fs::write(src.join("bin/tool"), b"tool\n").unwrap();
+        fs::write(src.join("tmp/scratch.txt"), b"scratch\n").unwrap();
+        fs::write(src.join("tmp/nested/deep.txt"), b"deep\n").unwrap();
+        fs::write(src.join("test/tool_test.txt"), b"test\n").unwrap();
+        fs::write(src.join("debug.log"), b"log\n").unwrap();
+
+        let excludes = crate::exclude::ExcludeSet::parse(&[
+            "tmp".to_string(),
+            "test/".to_string(),
+            "*.log".to_string(),
+        ])
+        .unwrap();
+        let staged = dir.join("staged");
+        stage_tree_excluding(&src, &staged, None, &excludes).unwrap();
+
+        assert!(staged.join("bin/tool").is_file());
+        assert!(!staged.join("tmp").exists(), "the matched dir is pruned");
+        assert!(
+            !staged.join("test").exists(),
+            "the trailing-slash form names the dir"
+        );
+        assert!(!staged.join("debug.log").exists(), "the glob matched");
+
+        // The staged (filtered) tree hashes differently from the source
+        // — the caller hashes the STAGED tree so the manifest's
+        // tree_hash covers what the image actually carries.
+        assert_ne!(
+            tree_digest(&HostTree::new(&staged)).unwrap(),
+            tree_digest(&HostTree::new(&src)).unwrap()
         );
         let _ = fs::remove_dir_all(&dir);
     }

@@ -160,6 +160,10 @@ pub struct PressOptions {
     /// --format <dwarfs|limnifs> (spec 20 §6): the application image
     /// format. Limnifs by default; `dwarfs` stays an explicit opt-in.
     pub format: PressImageFormat,
+    /// Repeatable `--exclude <glob>`: payload-root-relative globs left
+    /// out of the built application image (imaging-time only — the
+    /// manifest never records them).
+    pub exclude: Vec<String>,
     /// --compose <tebako.yaml> (spec 23 §3 D2): the composition document
     /// naming the payload slices pressed around the local app.
     pub compose: Option<PathBuf>,

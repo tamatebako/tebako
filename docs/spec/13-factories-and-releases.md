@@ -243,7 +243,8 @@ sets, and release line:
 ```
 tebako-packages/inkscape/         # one repo per package (a "feedstock")
   Tebakofile            # upstream url+sha256, versions, build system,
-                        # link mode, deps (other toolkits), platforms
+                        # link mode, deps (other toolkits), platforms,
+                        # exclude (imaging-time path exclusions)
   patches/              # per-version patch sets, ruby-factory naming rules
   manifests/            # payload manifest templates (provides/exec tier)
   .github/workflows/    # build matrix per triplet + boot-smoke + release
@@ -266,6 +267,15 @@ tebako-packages/index/            # the catalog: a registry-of-registries
   (`dynamic` | `wrapped` | `tfs-native` | `static`), `$ORIGIN/../lib`
   RPATH for dynamic builds, deps on other toolkit payloads via the
   spec-03 requires graph (inkscape → libxml2/poppler payloads).
+- **The `exclude:` recipe axis (additive, 2026-10-09, tebako#333):** a
+  Tebakofile may carry `exclude:` — a list of globs, payload-root
+  relative, in the spec 03 §5 imaging-exclusion grammar — applied when
+  the staging tree is assembled (a matching path never reaches the
+  imager, so the mechanism is imager-agnostic; an imager carrying the
+  grammar may take the same list as repeated `--exclude` flags
+  instead). Development-time trees (tmp/, test directories,
+  scratch data) stay in the source tree without landing in the shipped
+  `.tfs`; the manifest never records the list.
 - **Release hosting (locked):** every package's built payloads —
   platform-specific or platform-free (universal) — are published as
   GitHub releases **in the package's own feedstock repo** (artifacts +

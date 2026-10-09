@@ -2323,6 +2323,7 @@ mod tests {
             quiet_notices: None,
             sign: None,
             format: options::PressImageFormat::Dwarfs,
+            exclude: Vec::new(),
             compose: None,
             carry: None,
             share: None,
