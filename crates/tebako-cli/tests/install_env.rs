@@ -10,6 +10,16 @@ use tebako_cli::install;
 
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// A mountable manifest-less image (the install path reads it cleanly;
+/// plain fake bytes fail closed since tebako#744).
+fn entry_image(bytes: &[u8]) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    writer.start_file("payload", options).unwrap();
+    std::io::Write::write_all(&mut writer, bytes).unwrap();
+    writer.finish().unwrap().into_inner()
+}
+
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "tebako-cli-installenv-{tag}-{}",
@@ -33,7 +43,7 @@ impl Env {
         let mirror = dir.join("mirror");
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&mirror).unwrap();
-        fs::write(mirror.join("app-1.0.tfs"), b"app-bytes").unwrap();
+        fs::write(mirror.join("app-1.0.tfs"), entry_image(b"app-bytes")).unwrap();
         let app_url = tebako_http::file_url(&mirror.join("app-1.0.tfs"));
         fs::write(
             mirror.join("tpkg-registry.yaml"),
