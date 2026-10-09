@@ -54,8 +54,19 @@ impl Fixture {
         }
     }
 
+    /// Every .tfs fixture is a real mountable image (the entry carries
+    /// `bytes`): install reads it and synthesizes the manifest mirror
+    /// from the registry's tier-3 fields. Raw fake bytes stopped being
+    /// acceptable when the reader began failing closed on unmountable
+    /// images (tebako#744). Non-image sidecars (.asc, .yaml) pass
+    /// through verbatim.
     fn payload(&self, file: &str, bytes: &[u8]) -> String {
-        fs::write(self.mirror.join(file), bytes).unwrap();
+        let out = if file.ends_with(".tfs") && !bytes.starts_with(b"PK\x03\x04") {
+            entry_image(bytes)
+        } else {
+            bytes.to_vec()
+        };
+        fs::write(self.mirror.join(file), out).unwrap();
         tebako_http::file_url(&self.mirror.join(file))
     }
 
@@ -659,11 +670,11 @@ fn install_qualified_name_scopes_to_the_named_registry() {
 
     let out = install::install(&fx.home, "two/app", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.version, "2.0");
-    assert_eq!(fs::read(&out.path).unwrap(), b"from-two");
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"from-two"));
 
     let out = install::install(&fx.home, "one/app@1.0", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.version, "1.0");
-    assert_eq!(fs::read(&out.path).unwrap(), b"from-one");
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"from-one"));
 }
 
 #[test]
@@ -841,9 +852,9 @@ fn rebind_to_bytes_the_new_registry_does_not_vouch_for_is_refused() {
     let fx = Fixture::new("originmismatch");
     // `?sha256=` pins make each registry's digest assertion explicit.
     let pa = fx.payload("app-a.tfs", b"from-one");
-    let pa = format!("{pa}?sha256={}", sha256_hex(b"from-one"));
+    let pa = format!("{pa}?sha256={}", sha256_hex(&entry_image(b"from-one")));
     let pb = fx.payload("app-b.tfs", b"from-two");
-    let pb = format!("{pb}?sha256={}", sha256_hex(b"from-two"));
+    let pb = format!("{pb}?sha256={}", sha256_hex(&entry_image(b"from-two")));
     let named = |n: &str| tebako_shim::config::AddRegistryOptions {
         name: Some(n.to_string()),
         require_signed: false,
@@ -902,7 +913,7 @@ fn install_nickname_resolves_default_and_explicit_versions() {
     let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.version, "1.1");
     assert_eq!(out.status, tebako_resolve::InstallStatus::Installed);
-    assert_eq!(fs::read(&out.path).unwrap(), b"v1.1-bytes");
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"v1.1-bytes"));
     assert_eq!(out.commands, vec!["app"]);
     assert_eq!(out.shims.len(), 1);
     assert!(out.shims[0].is_symlink() || out.shims[0].is_file());
@@ -913,7 +924,7 @@ fn install_nickname_resolves_default_and_explicit_versions() {
     // explicit @ver
     let out = install::install(&fx.home, "app@1.0", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.version, "1.0");
-    assert_eq!(fs::read(&out.path).unwrap(), b"v1.0-bytes");
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"v1.0-bytes"));
 
     // reinstall → cache hit, no re-verify
     let out = install::install(&fx.home, "app@1.0", None, Some(&fx.shim_binary)).unwrap();
@@ -988,13 +999,13 @@ impl Transport for MockTransport {
 #[test]
 fn per_triplet_selection_fetches_the_host_artifact_with_the_registry_pin() {
     let fx = Fixture::new("triplet");
-    let mac_bytes = b"mac-payload";
+    let mac_bytes = entry_image(b"mac-payload");
     let registry_path = fx.mirror.join("tpkg-registry.yaml");
     fs::write(
         &registry_path,
         format!(
             "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos:\n            artifact: app-1.0-macos.tfs\n            sha256: {}\n          x86_64-linux-gnu:\n            artifact: app-1.0-linux.tfs\n            sha256: {}\n        release: {{ref: tfs:github:acme/app:1.0}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
-            sha256_hex(mac_bytes),
+            sha256_hex(&mac_bytes),
             sha(b'0')
         ),
     )
@@ -1006,9 +1017,12 @@ fn per_triplet_selection_fetches_the_host_artifact_with_the_registry_pin() {
     let t = MockTransport::new()
         .with_file(registry_path.to_str().unwrap())
         .with(api, release.as_bytes())
-        .with("https://dl/app-1.0-macos.tfs", mac_bytes)
+        .with("https://dl/app-1.0-macos.tfs", &mac_bytes)
         // served bytes whose digest is NOT the registry's 000…0 pin
-        .with("https://dl/app-1.0-linux.tfs", b"linux-payload");
+        .with(
+            "https://dl/app-1.0-linux.tfs",
+            &entry_image(b"linux-payload"),
+        );
     let fetcher = Fetcher::with_transport(t);
 
     let reg_ref = tebako_http::file_url(&registry_path);
@@ -1037,8 +1051,8 @@ fn per_triplet_selection_fetches_the_host_artifact_with_the_registry_pin() {
         &fetcher,
     )
     .unwrap();
-    assert_eq!(fs::read(&out.path).unwrap(), b"mac-payload");
-    assert_eq!(out.sha256, sha256_hex(mac_bytes));
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"mac-payload"));
+    assert_eq!(out.sha256, sha256_hex(&mac_bytes));
 
     // a triplet the registry does not publish → the named error
     let err = install::install_with(
@@ -1073,7 +1087,7 @@ fn universal_selection_uses_the_single_tfs_rule() {
     let t = MockTransport::new()
         .with_file(registry_path.to_str().unwrap())
         .with(api, release.as_bytes())
-        .with("https://dl/tool-2.0.tfs", b"tool-bytes");
+        .with("https://dl/tool-2.0.tfs", &entry_image(b"tool-bytes"));
     let fetcher = Fetcher::with_transport(t);
     install::add_registry_with(&fx.home, &tebako_http::file_url(&registry_path), &fetcher).unwrap();
 
@@ -1085,7 +1099,7 @@ fn universal_selection_uses_the_single_tfs_rule() {
         &fetcher,
     )
     .unwrap();
-    assert_eq!(fs::read(&out.path).unwrap(), b"tool-bytes");
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"tool-bytes"));
 }
 
 #[test]
@@ -1135,15 +1149,15 @@ fn a_rows_own_release_ref_names_the_shard_tag_serving_it() {
     // fetched), while the linux row carries none and resolves through
     // the version-level tag.
     let fx = Fixture::new("rowref");
-    let mac_bytes = b"mac-shard-payload";
-    let linux_bytes = b"linux-payload";
+    let mac_bytes = entry_image(b"mac-shard-payload");
+    let linux_bytes = entry_image(b"linux-payload");
     let registry_path = fx.mirror.join("tpkg-registry.yaml");
     fs::write(
         &registry_path,
         format!(
             "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos:\n            artifact: app-1.0-macos.tfs\n            sha256: {}\n            release: {{ref: tfs:github:acme/app:1.0-macos-shard}}\n          x86_64-linux-gnu:\n            artifact: app-1.0-linux.tfs\n            sha256: {}\n        release: {{ref: tfs:github:acme/app:1.0}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
-            sha256_hex(mac_bytes),
-            sha256_hex(linux_bytes)
+            sha256_hex(&mac_bytes),
+            sha256_hex(&linux_bytes)
         ),
     )
     .unwrap();
@@ -1156,9 +1170,9 @@ fn a_rows_own_release_ref_names_the_shard_tag_serving_it() {
     let t = MockTransport::new()
         .with_file(registry_path.to_str().unwrap())
         .with(shard_api, shard_release.as_bytes())
-        .with("https://dl/shard/app-1.0-macos.tfs", mac_bytes)
+        .with("https://dl/shard/app-1.0-macos.tfs", &mac_bytes)
         .with(version_api, version_release.as_bytes())
-        .with("https://dl/app-1.0-linux.tfs", linux_bytes);
+        .with("https://dl/app-1.0-linux.tfs", &linux_bytes);
     let fetcher = Fetcher::with_transport(t);
     let reg_ref = tebako_http::file_url(&registry_path);
 
@@ -1174,7 +1188,10 @@ fn a_rows_own_release_ref_names_the_shard_tag_serving_it() {
         &fetcher,
     )
     .unwrap();
-    assert_eq!(fs::read(&out.path).unwrap(), b"mac-shard-payload");
+    assert_eq!(
+        fs::read(&out.path).unwrap(),
+        entry_image(b"mac-shard-payload")
+    );
 
     let lin = Fixture::new("rowref-lin");
     install::add_registry_with(&lin.home, &reg_ref, &fetcher).unwrap();
@@ -1186,7 +1203,7 @@ fn a_rows_own_release_ref_names_the_shard_tag_serving_it() {
         &fetcher,
     )
     .unwrap();
-    assert_eq!(fs::read(&out.path).unwrap(), b"linux-payload");
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"linux-payload"));
 }
 
 // ---------------------------------------------------------------------
@@ -1294,8 +1311,12 @@ fn signed_fixture(tag: &str) -> (Fixture, String, String, Vec<u8>, String) {
     let fx = Fixture::new(tag);
     let key = tebako_signer::press_local_key(&fx.home).unwrap();
     let payload_ref = fx.payload("app-1.0.tfs", b"signed-bytes");
-    let asc =
-        tebako_signer::sign_detached(b"signed-bytes", &key.secret_key, &key.fingerprint).unwrap();
+    let asc = tebako_signer::sign_detached(
+        &entry_image(b"signed-bytes"),
+        &key.secret_key,
+        &key.fingerprint,
+    )
+    .unwrap();
     let asc_ref = fx.payload("app-1.0.tfs.asc", &asc);
     let keyid = tebako_signer::hex_lower(&key.keyid);
     (fx, payload_ref, asc_ref, key.public_key.clone(), keyid)
@@ -1431,7 +1452,7 @@ fn subkeyed_signer_verifies_against_the_primary_pin() {
     let fx = Fixture::new("sig5");
     let payload_ref = fx.payload("app-1.0.tfs", b"signed-bytes");
     let asc = tebako_signer::sign_detached(
-        b"signed-bytes",
+        &entry_image(b"signed-bytes"),
         SUBKEYED_SECRET.as_bytes(),
         SUBKEYED_PRIMARY_FP,
     )
@@ -1466,7 +1487,7 @@ fn pin_naming_another_primary_is_the_named_mismatch() {
     let fx = Fixture::new("sig6");
     let payload_ref = fx.payload("app-1.0.tfs", b"signed-bytes");
     let asc = tebako_signer::sign_detached(
-        b"signed-bytes",
+        &entry_image(b"signed-bytes"),
         SUBKEYED_SECRET.as_bytes(),
         SUBKEYED_PRIMARY_FP,
     )
@@ -1622,35 +1643,31 @@ fn embedded_manifest_mismatch_with_the_registry_is_a_named_error() {
 }
 
 #[test]
-fn plain_bytes_fall_back_to_the_synthesized_mirror_with_a_note() {
+fn plain_bytes_are_a_named_format_error_never_a_synthesized_mirror() {
     let fx = Fixture::new("fallback");
-    let payload_ref = fx.payload("app-1.0.tfs", b"not-an-image");
+    // Written RAW (not via Fixture::payload, which wraps plain bytes
+    // into mountable images): the unmountable-bytes case itself.
+    let raw = fx.mirror.join("app-1.0.tfs");
+    fs::write(&raw, b"not-an-image").unwrap();
+    let payload_ref = tebako_http::file_url(&raw);
     let yaml = format!(
         "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        runtime_requirement: {{engine: ruby, constraint: \"~> 3.3.0\"}}\n        entrypoints: [app, app-helper]\n    default: 1.0\n"
     );
     let reg_ref = fx.registry("tpkg-registry.yaml", &yaml);
     install::add_registry(&fx.home, &reg_ref).unwrap();
 
-    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
-    assert_eq!(out.commands, vec!["app", "app-helper"]);
-    assert_eq!(out.shims.len(), 2);
-    assert_eq!(out.notes.len(), 1);
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary))
+        .expect_err("an unmountable payload must fail closed");
+    let text = err.to_string();
+    assert!(text.contains("cannot read"), "{text}");
+    assert!(text.contains("upgrade tebako"), "{text}");
     assert!(
-        out.notes[0].contains("no embedded manifest"),
-        "{:?}",
-        out.notes
+        !text.to_lowercase().contains("no embedded manifest"),
+        "{text}"
     );
-
-    let mirror =
-        tebako_shim::manifest::Manifest::load(&fx.payloads_dir().join("app/1.0.manifest.yaml"))
-            .unwrap();
-    let ep = mirror.entrypoint("app-helper").unwrap();
-    assert_eq!(ep.path, "/app-helper");
-    assert_eq!(
-        ep.runtime_requirement.as_ref().unwrap().entries()[0]
-            .constraint
-            .as_str(),
-        "~> 3.3.0"
+    assert!(
+        !fx.payloads_dir().join("app/1.0.manifest.yaml").exists(),
+        "no synthesized mirror for an unreadable image"
     );
 }
 
@@ -1757,7 +1774,10 @@ fn uninstall_removes_shims_and_cache_and_journals_the_anchors() {
         journal.contains("event=payload-uninstalled name=app version=1.0"),
         "{journal}"
     );
-    assert!(journal.contains(&sha256_hex(b"v1.0-bytes")), "{journal}");
+    assert!(
+        journal.contains(&sha256_hex(&entry_image(b"v1.0-bytes"))),
+        "{journal}"
+    );
     assert!(
         journal.contains("event=payload-uninstalled name=app version=1.1"),
         "{journal}"
@@ -2718,7 +2738,7 @@ fn withdrawn_selected_version_is_a_named_refusal() {
     // installs it
     let out = install::install(&fx.home, "app@1.0", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.version, "1.0");
-    assert_eq!(fs::read(&out.path).unwrap(), b"v1.0-bytes");
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"v1.0-bytes"));
 }
 
 #[test]
@@ -3009,4 +3029,17 @@ fn a_row_without_the_channel_declaration_never_reads_the_oci_field() {
         !err.message.contains("127.0.0.1:9"),
         "the oci: field is inert without the declaration: {err:?}"
     );
+}
+
+/// A mountable manifest-less image whose single entry carries `bytes`:
+/// install reads it cleanly and synthesizes the mirror from the
+/// registry's tier-3 fields (the loud note). Plain fake bytes stopped
+/// being acceptable payload fixtures when the reader began failing
+/// closed on unmountable images (tebako#744).
+fn entry_image(bytes: &[u8]) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    writer.start_file("payload", options).unwrap();
+    writer.write_all(bytes).unwrap();
+    writer.finish().unwrap().into_inner()
 }
