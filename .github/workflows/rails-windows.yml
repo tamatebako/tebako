@@ -1,0 +1,88 @@
+# The Rails-on-Windows validation (tebako#330): press a freshly
+# generated Rails application against the prebuilt windows-ucrt64 ruby
+# runtime with the released tebako toolchain, boot the packaged
+# executable, and prove the Rails stack loads inside it (the runner
+# boots autoloaders, initializers, and the railties — the executable
+# serving real Rails work).
+#
+# Scheduled weekly + manual dispatch — a Rails press is heavy; PR CI
+# does not carry it. The walkthrough the leg validates lives at
+# docs/rails-packaging.md.
+name: rails-windows
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch: {}
+
+concurrency:
+  group: rails-windows
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  press-and-boot:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Generate the Rails application
+        run: |
+          gem install rails --no-document
+          rails new myapp --skip-git --skip-docker --skip-jbuilder --skip-system-test --skip-bootsnap
+
+      - name: Fetch the pinned tebako tools (sha256-verified)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rel="v2.8.27"; ver="2.8.27"
+          mkdir -p .tools && cd .tools
+          base="https://github.com/tamatebako/tebako/releases/download/$rel"
+          for a in "tebako-$ver-windows-ucrt64.exe" "tebako-shim-$ver-windows-ucrt64.exe" SHA256SUMS; do
+            curl -fsSLO --retry 5 --retry-all-errors --retry-delay 3 "$base/$a"
+          done
+          grep "tebako-$ver-windows-ucrt64.exe\$" SHA256SUMS | sha256sum -c -
+          grep "tebako-shim-$ver-windows-ucrt64.exe\$" SHA256SUMS | sha256sum -c -
+          mv "tebako-$ver-windows-ucrt64.exe" tebako.exe
+          mv "tebako-shim-$ver-windows-ucrt64.exe" tebako-shim.exe
+
+      - name: Precompile assets at press time
+        working-directory: myapp
+        run: bundle exec rails assets:precompile
+
+      - name: Press the Rails application (self-contained)
+        shell: bash
+        run: |
+          set -euo pipefail
+          .tools/tebako.exe press \
+            --root myapp \
+            --entry-point bin/rails \
+            --Ruby 3.4 \
+            --mode self-contained \
+            --output dist/myapp
+
+      - name: Boot the packaged Rails stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The runner boots the full Rails stack inside the packaged
+          # executable — autoloaders, initializers, railties. The
+          # marker line proves the stack answered from INSIDE the
+          # package (the host ruby here is only the generator).
+          out="$(dist/myapp.exe runner 'puts "RAILS-BOOT-OK-#{Rails.version}"')"
+          echo "$out"
+          echo "$out" | grep -E 'RAILS-BOOT-OK-[0-9]'
+
+      - name: The jailed writes work inside the package
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(dist/myapp.exe runner 'FileUtils.mkdir_p("tmp/validate"); File.write("tmp/validate/marker", "w"); puts File.read("tmp/validate/marker")')"
+          echo "$out"
+          [ "$(echo "$out" | tail -1)" = "w" ]
