@@ -304,13 +304,20 @@ mod tests {
         }
     }
 
+    /// tebako#751: TEBAKO_JAIL_JOURNAL is process-global; the journal
+    /// tests' set→open→remove windows must not interleave (a parallel
+    /// sibling's set races another's open onto the wrong path).
+    static JOURNAL_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn journal_line_shape() {
         let dir = std::env::temp_dir().join(format!("tfs-journal-test-{}", std::process::id()));
         let log = dir.join("journal.log");
+        let _guard = JOURNAL_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("TEBAKO_JAIL_JOURNAL", &log);
         let file = open_journal().expect("journal opens");
         std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+        drop(_guard);
         journal_deny(&file, Path::new("/etc/hosts"), HostAccess::Ro, "manifest");
         journal_deny(&file, Path::new("/x"), HostAccess::Rw, "user");
         drop(file);
@@ -343,9 +350,11 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("tfs-journal-allow-test-{}", std::process::id()));
         let log = dir.join("journal.log");
+        let _guard = JOURNAL_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("TEBAKO_JAIL_JOURNAL", &log);
         let file = open_journal().expect("journal opens");
         std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+        drop(_guard);
         journal_allow(
             &file,
             Path::new("/home/u/.ssh/config"),
@@ -459,6 +468,7 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("tfs-journal-libload-test-{}", std::process::id()));
         let log = dir.join("journal.log");
+        let _guard = JOURNAL_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("TEBAKO_JAIL_JOURNAL", &log);
         let file = open_journal().expect("journal opens");
         std::env::remove_var("TEBAKO_JAIL_JOURNAL");

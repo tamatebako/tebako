@@ -1413,6 +1413,25 @@ pub fn boot_with_mount_modes(
         crate::spawn::capture(app_images, env, runtime_root, mount_keys)?;
         let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
         crate::path_env::export(&h.images, env, shim_host.as_deref(), &host_overrides)?;
+        // tebako#237 (spec 17 §7): the invoked program NAME rides the
+        // handoff so the interpreter's $0/$PROGRAM_NAME names the
+        // program the user ran, not the resolved in-VFS script path
+        // (the Thor/CLI-UI class reads it). The bare-keyword dispatch
+        // names its entry; the path form takes the basename (the gem
+        // binstub convention). The ruby patch assigns it at boot; the
+        // variable is read-once — payloads cannot flip it for children.
+        if let Some(entry) = h.entry.as_deref() {
+            let name = if entry.contains('/') || entry.contains('\\') {
+                entry
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .unwrap_or(entry)
+                    .to_string()
+            } else {
+                entry.to_string()
+            };
+            env.set_var("TEBAKO_PROGRAM_NAME", &name);
+        }
         let template: &[String] = on_runtime
             .as_ref()
             .map(|on| on.template.as_slice())
