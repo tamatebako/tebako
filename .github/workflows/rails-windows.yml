@@ -63,7 +63,7 @@ jobs:
           .tools/tebako.exe press \
             --root myapp \
             --entry-point bin/rails \
-            --Ruby 3.4 \
+            --Ruby 3.4.10 \
             --mode self-contained \
             --output dist/myapp
 
