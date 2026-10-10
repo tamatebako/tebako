@@ -7,9 +7,19 @@ on:
   # keeps the CANCELLED check runs beside the SUCCESS ones on the same
   # SHA — mergeStateStatus BLOCKED (the rerun-the-cancelled-run dance on
   # #519/#520/#521). PR branches get CI from the pull_request event.
+  #
+  # The tier map (tebako#279): PRs run the SMOKE subset — fmt, the
+  # ubuntu test leg, the pure-cargo leg, the musl preload leg. The full
+  # matrix (macos + arm64 rows, every windows leg, the trace-dogfood
+  # legs) runs on push-to-main and on the nightly schedule. Branch
+  # protection's required set names the smoke subset's check runs
+  # (see the PR that introduced this comment for the exact list).
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly 03:17 UTC — the full matrix (owner-locked tier map).
+    - cron: "17 3 * * *"
 
 # One run per branch/PR-head at a time: a new push cancels the stale run.
 concurrency:
@@ -43,18 +53,24 @@ jobs:
           - os: ubuntu-24.04
             crypto_triplet: x64-linux-dynamic
             triplet: x64-linux-static
-          # tebako#544: PR CI never compiled aarch64-linux before — the
-          # release legs were the first arch check, and the v2.3.1 lesson
-          # (libc::SYS_dup2 does not exist on arm64 kernels; PR legs were
-          # green because x86_64/macOS/Windows all compile it) reached the
-          # tag. The native arm runner closes the gap in the PR required
-          # set.
+            smoke: true
+          # tebako#544: the v2.3.1 lesson (libc::SYS_dup2 does not exist
+          # on arm64 kernels; PR legs were green because x86_64/macOS/
+          # Windows all compile it) — the native arm runner closes the
+          # arch gap. tebako#279: the arm and macos rows ride the
+          # nightly/main matrix; PRs keep the ubuntu smoke leg (the arch
+          # classes the arm leg catches are compile-class, and the
+          # nightly catches them within a day of landing).
           - os: ubuntu-24.04-arm
             crypto_triplet: arm64-linux-dynamic
             triplet: arm64-linux-static
+            smoke: false
           - os: macos-14
             crypto_triplet: arm64-osx-dynamic
             triplet: arm64-osx-static
+            smoke: false
+        # tebako#279: PRs run the smoke rows only.
+        exclude: "${{ github.event_name == 'pull_request' && fromJSON('[{\"smoke\": false}]') || fromJSON('[]') }}"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -511,6 +527,7 @@ jobs:
   # (closed PATH, RUSTFLAGS, serialized tests, size gate) — never inline
   # run-blocks.
   test-windows-gnu-bootstrap:
+    if: github.event_name != 'pull_request'  # tebako#279: the windows gnu legs ride the nightly/main matrix (PR smoke keeps the pure-cargo windows leg below).
     name: test (windows-latest, x86_64-pc-windows-gnu, tebako-bootstrap)
     runs-on: windows-latest
     steps:
@@ -551,6 +568,7 @@ jobs:
   # mingw — the tebako-http provider split, commit 8de4335), proven here
   # on the real toolchain. All logic lives in ci/windows-gnu-shim.sh.
   test-windows-gnu-shim:
+    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier.
     name: test (windows-latest, x86_64-pc-windows-gnu, tebako-shim)
     runs-on: windows-latest
     steps:
@@ -599,6 +617,7 @@ jobs:
   # cache mirrors the release link-unit leg; all build/test logic lives
   # in ci/windows-gnu-cli.sh.
   test-windows-gnu-cli:
+    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier.
     name: test (windows-latest, x86_64-pc-windows-gnu, tebako-cli + tfs-cli + tebako-pkg + tebako-driver)
     runs-on: windows-latest
     permissions:
