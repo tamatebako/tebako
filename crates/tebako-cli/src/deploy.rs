@@ -312,6 +312,16 @@ impl RuntimeDeployer {
             "  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", {})\n",
             rb_str(&self.staging_bin_dir.to_string_lossy())
         ));
+        // tebako#753: the factory bakes CONFIG[\"ruby\"] as the BUILD
+        // container's absolute path (A:/t/bin/ruby.exe — the mount-root
+        // world); mkmf and Gem.ruby invoke it verbatim for extconf and
+        // make's $(RUBY), so the bindir override alone never reaches
+        // them. Point the absolute spellings at the host shim.
+        out.push_str(
+            "  tg_ruby = File.join(ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\"), \"ruby\")\n  \
+             tg_config[\"ruby\"] = tg_ruby\n  \
+             tg_config[\"RUBY\"] = tg_ruby\n",
+        );
         let Some(sdk) = &self.sdk else {
             return format!("{out}end\n");
         };
@@ -829,7 +839,7 @@ mod tests {
         }
         assert_eq!(
             deployer(None).build_overrides(),
-            "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\nend\n"
+            "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\n  tg_ruby = File.join(ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\"), \"ruby\")\n  tg_config[\"ruby\"] = tg_ruby\n  tg_config[\"RUBY\"] = tg_ruby\nend\n"
         );
     }
 
@@ -839,7 +849,7 @@ mod tests {
             return;
         }
         let out = deployer(Some(sdk_paths())).build_overrides();
-        let head = "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\n  tg_config[\"rubyhdrdir\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/include\"\n  tg_config[\"rubyarchhdrdir\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/archhdr\"\n  tg_config[\"LIBRUBYARG\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/lib/libruby-stub.a\"\n  tg_config[\"EXTDLDFLAGS\"] = \"\"\n";
+        let head = "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\n  tg_ruby = File.join(ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\"), \"ruby\")\n  tg_config[\"ruby\"] = tg_ruby\n  tg_config[\"RUBY\"] = tg_ruby\n  tg_config[\"rubyhdrdir\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/include\"\n  tg_config[\"rubyarchhdrdir\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/archhdr\"\n  tg_config[\"LIBRUBYARG\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/lib/libruby-stub.a\"\n  tg_config[\"EXTDLDFLAGS\"] = \"\"\n";
         assert!(out.starts_with(head), "unexpected overrides head:\n{out}");
         assert!(
             out.ends_with("end\n"),
