@@ -449,6 +449,18 @@ re-extraction), 74 (extraction IO failure, a symlink/special entry in
 the tree, the flock timeout). Runtime-side failures keep the
 interpreter's own codes (§4).
 
+## 7a. The invoked program name (tebako#237)
+
+The driver exports `TEBAKO_PROGRAM_NAME` on every entry handoff: the
+NAME the dispatch selected — the bare `--tebako-entry` keyword
+verbatim, or the entry path's basename (the gem-binstub convention)
+for the path form. The ruby patch assigns `$0`/`$PROGRAM_NAME` from it
+at interpreter start, so CLI frameworks that read the program name
+(the Thor/option-parser class) see the program the user ran, not the
+resolved in-VFS script path. The variable is a read-once handoff: it
+sits on the boot-contract side of the credential scrub (spec 03
+§2.10) and payloads cannot flip it for children.
+
 ## 8. The min-runtime floor (spec 03 §2.9, tebako#666)
 
 Every payload manifest the driver reads at boot — the app payload's, a

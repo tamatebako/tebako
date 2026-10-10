@@ -45,6 +45,9 @@ const CONTRACT_VARS: &[&str] = &[
     // trust material the runtime's own fetches consume (spec 81's plane)
     "TEBAKO_EXTRA_CA",
     "TEBAKO_TLS_PLATFORM_ROOTS",
+    // the invoked program name (tebako#237, spec 17 §7) — the ruby
+    // patch reads it at interpreter start, after this scrub
+    "TEBAKO_PROGRAM_NAME",
     // the store + toolchain surface an embedded tebako CLI needs
     "TEBAKO_HOME",
     "TEBAKO_DEPLOY_BINDIR",
