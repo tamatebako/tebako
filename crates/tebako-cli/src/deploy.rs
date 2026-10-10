@@ -631,6 +631,19 @@ require "tmpdir"
 
 BUNDLE_EXEC_SCRIPT = @BUNDLE_EXEC_SCRIPT@
 
+# tebako#119: git-source gems must materialize INTO the image. Bundler
+# keeps a git gem's checkout under the bundle path (the default is the
+# host-absolute ~/.bundle — empty at run time, so Bundler.require died
+# with 'not yet checked out'). Pin the bundle path RELATIVE to the
+# Gemfile's app root: the press world's paths ARE the image's VFS
+# paths, so the checkout lands in-image, and the relative spelling
+# resolves identically when the packaged app runs.
+if (tg_gemfile = ENV["BUNDLE_GEMFILE"]) && File.file?(tg_gemfile)
+  tg_bundle_root = File.expand_path("vendor/bundle", File.dirname(tg_gemfile))
+  ENV["BUNDLE_PATH"] = tg_bundle_root
+  ENV["BUNDLE_DISABLE_SHARED_GEMS"] = "false"
+end
+
 @BUILD_OVERRIDES@if ARGV.any?
   # Script mode: mkmf-driven extension builds spawn the ruby at
   # RbConfig's bindir (the host shim); the shim re-enters this image
@@ -742,6 +755,13 @@ end
 const BUNDLE_EXEC_SCRIPT: &str = r##"# THIS FILE WAS GENERATED AUTOMATICALLY BY TEBAKO. DO NOT CHANGE IT, PLEASE
 version = ARGV.shift
 gem "bundler", version unless version.nil? || version.empty?
+# tebako#119: the bundle exec re-entry runs in a FRESH interpreter —
+# the driver's BUNDLE_PATH pin must hold here too, or Bundler falls
+# back to the host-absolute ~/.bundle and the in-image git checkout
+# the press materialized is invisible.
+if (tg_gemfile = ENV["BUNDLE_GEMFILE"]) && File.file?(tg_gemfile)
+  ENV["BUNDLE_PATH"] ||= File.expand_path("vendor/bundle", File.dirname(tg_gemfile))
+end
 require "bundler"
 Bundler.setup
 require "rubygems"
