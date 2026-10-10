@@ -146,6 +146,10 @@ struct Report {
     kept: usize,
     imports: usize,
     deduped: usize,
+    /// COFF .drectve export directives stripped for naming scoped
+    /// symbols (tebako#708) — the dllexport attributes the scoped
+    /// objects carried pre-rename.
+    drectve_stripped: usize,
 }
 
 /// The (name, content) index of an already-scoped base archive, for
@@ -534,6 +538,41 @@ fn keeps_name(name: &str, keep: &str) -> bool {
     name.trim_start_matches('_').starts_with(keep)
 }
 
+/// Filter a COFF `.drectve` payload (tebako#708): drop every export
+/// directive (`-export:NAME`, `-export:"NAME"`, `/EXPORT:NAME`) naming a
+/// symbol the scoping pass renames; keep everything else (exports of
+/// kept symbols, `-failifmismatch` and kin). `None` when nothing
+/// survives — the section drops entirely.
+fn strip_scoped_drectve_exports(
+    data: &[u8],
+    scoped_names: &std::collections::HashSet<String>,
+    report: &mut Report,
+) -> Option<Vec<u8>> {
+    let text = String::from_utf8_lossy(data);
+    let mut kept_parts: Vec<&str> = Vec::new();
+    for token in text.split_ascii_whitespace() {
+        let lower = token.to_ascii_lowercase();
+        let is_export = lower.starts_with("-export:") || lower.starts_with("/export:");
+        if is_export {
+            // Both directive spellings share the 8-byte prefix; the
+            // name is the token past it, quotes stripped — clang quotes
+            // (`-export:"sym"`), mrt doesn't (`-export:sym`).
+            let name = token.get(8..).unwrap_or(token).trim_matches('"');
+            if scoped_names.contains(name) {
+                report.drectve_stripped += 1;
+                continue;
+            }
+        }
+        kept_parts.push(token);
+    }
+    if kept_parts.is_empty() {
+        return None;
+    }
+    let mut out = kept_parts.join(" ").into_bytes();
+    out.push(b' ');
+    Some(out)
+}
+
 /// The symbol's name without the format's mangling prefix (Mach-O
 /// prepends '_' to every external name; ELF names are verbatim).
 fn logical_name(name: &str, format: object::BinaryFormat) -> &str {
@@ -637,6 +676,26 @@ fn scope_object(
     // The archive-index names: every defined, externally visible symbol.
     let mut exported: Vec<String> = Vec::new();
 
+    // tebako#708: the .drectve pass needs the set of names this member's
+    // symbol pass will scope (defined, externally visible, not
+    // keep-prefixed) — computed ahead of the section loop, mirroring
+    // the rename predicate below exactly.
+    let scoped_names: std::collections::HashSet<String> = obj
+        .symbols()
+        .filter(|s| {
+            !s.is_undefined()
+                && (s.is_weak() || matches!(s.scope(), SymbolScope::Linkage | SymbolScope::Dynamic))
+                && s.name()
+                    .map(|n| !keeps_name(logical_name(n, obj.format()), keep))
+                    .unwrap_or(false)
+        })
+        .filter_map(|s| {
+            s.name()
+                .ok()
+                .map(|n| logical_name(n, obj.format()).to_string())
+        })
+        .collect();
+
     let mut section_ids = std::collections::HashMap::new();
     let mut skipped: std::collections::HashSet<object::SectionIndex> =
         std::collections::HashSet::new();
@@ -660,6 +719,27 @@ fn scope_object(
         if skipped_bookkeeping(&name) {
             skipped.insert(section.index());
             continue;
+        }
+        // tebako#708: COFF .drectve linker directives carry the
+        // dllexport attributes the source compiled with — naming the
+        // PRE-scoping spellings. A scoped symbol is internal by
+        // construction (no object defines the old name after the
+        // rename), so its export directive demands the impossible
+        // (the aws-lc jitterentropy case: GNU ld "cannot export …
+        // symbol not found", lld "undefined symbol"). Strip the export
+        // directives naming scoped symbols; a section that reduces to
+        // nothing drops entirely. Exports of KEPT symbols survive —
+        // they name real, still-public definitions.
+        let mut drectve_data: Option<Vec<u8>> = None;
+        if obj.format() == object::BinaryFormat::Coff && name == b".drectve" {
+            let data = section.data().map_err(|e| format!("section data: {e}"))?;
+            match strip_scoped_drectve_exports(data, &scoped_names, report) {
+                None => {
+                    skipped.insert(section.index());
+                    continue;
+                }
+                Some(filtered) => drectve_data = Some(filtered),
+            }
         }
         let segment = section
             .segment_name()
@@ -687,6 +767,8 @@ fn scope_object(
         if section.kind().is_bss() {
             // BSS carries no bytes but keeps its size and alignment.
             new_section.append_bss(section.size(), section.align());
+        } else if let Some(filtered) = drectve_data {
+            new_section.set_data(filtered, section.align());
         } else {
             new_section.set_data(
                 section.data().map_err(|e| format!("section data: {e}"))?,
@@ -2613,5 +2695,112 @@ mod tests {
         assert_eq!(data.len(), padded_len, "the ld64 pad rides the member");
         assert_eq!(&data[..scoped.len()], &scoped[..], "scoped bytes verbatim");
         assert!(data[scoped.len()..].iter().all(|&b| b == 0), "zero slack");
+    }
+    /// A COFF object with a .drectve carrying mixed linker directives:
+    /// exports of one scoped and one kept symbol, plus a non-export
+    /// directive that must survive untouched.
+    fn drectve_fixture_object() -> Vec<u8> {
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::X86_64,
+            object::Endianness::Little,
+        );
+        let text = out.add_section(Vec::new(), b".text".to_vec(), object::SectionKind::Text);
+        out.section_mut(text).set_data(b"\xc3", 1);
+        out.add_symbol(object::write::Symbol {
+            name: b"jent_entropy_init".to_vec(),
+            value: 0,
+            size: 1,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        out.add_symbol(object::write::Symbol {
+            name: b"tebako_public_api".to_vec(),
+            value: 0,
+            size: 1,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        let drectve = out.add_section(Vec::new(), b".drectve".to_vec(), object::SectionKind::Other);
+        out.section_mut(drectve).set_data(
+            b"-export:\"jent_entropy_init\" -export:tebako_public_api -failifmismatch:some ",
+            1,
+        );
+        out.write().expect("drectve fixture object")
+    }
+
+    #[test]
+    fn drectve_exports_of_scoped_symbols_strip_and_kept_exports_survive() {
+        // tebako#708: the dllexport directive names the PRE-scoping
+        // spelling — after the rename no object defines it and the
+        // linker demands the impossible. The scoped symbol's directive
+        // goes; the kept symbol's export and the unrelated directive
+        // survive.
+        let mut report = Report::default();
+        let (bytes, _) = scope_object(
+            &drectve_fixture_object(),
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            &std::collections::HashSet::new(),
+            &mut report,
+        )
+        .expect("scope the drectve fixture");
+        assert_eq!(report.drectve_stripped, 1);
+        let obj = File::parse(&bytes[..]).expect("parse the rewritten object");
+        let drectve = obj
+            .sections()
+            .find(|s| s.name_bytes() == Ok(b".drectve"))
+            .expect("the .drectve section survives (kept exports remain)");
+        let text = String::from_utf8_lossy(drectve.data().expect("drectve data"));
+        assert!(!text.contains("jent_entropy_init"), "{text}");
+        assert!(text.contains("-export:tebako_public_api"), "{text}");
+        assert!(text.contains("-failifmismatch:some"), "{text}");
+    }
+
+    #[test]
+    fn a_drectve_of_only_scoped_exports_drops_entirely() {
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::X86_64,
+            object::Endianness::Little,
+        );
+        let text = out.add_section(Vec::new(), b".text".to_vec(), object::SectionKind::Text);
+        out.section_mut(text).set_data(b"\xc3", 1);
+        out.add_symbol(object::write::Symbol {
+            name: b"jent_version".to_vec(),
+            value: 0,
+            size: 1,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        let drectve = out.add_section(Vec::new(), b".drectve".to_vec(), object::SectionKind::Other);
+        out.section_mut(drectve)
+            .set_data(b"-export:\"jent_version\" ", 1);
+        let bytes = out.write().expect("fixture");
+
+        let mut report = Report::default();
+        let (scoped, _) = scope_object(
+            &bytes,
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            &std::collections::HashSet::new(),
+            &mut report,
+        )
+        .expect("scope");
+        assert_eq!(report.drectve_stripped, 1);
+        let obj = File::parse(&scoped[..]).expect("parse");
+        assert!(
+            !obj.sections().any(|s| s.name_bytes() == Ok(b".drectve")),
+            "the emptied .drectve drops"
+        );
     }
 }
