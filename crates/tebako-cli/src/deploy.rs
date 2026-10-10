@@ -839,7 +839,7 @@ mod tests {
         }
         assert_eq!(
             deployer(None).build_overrides(),
-            "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\nend\n"
+            "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\n  tg_ruby = File.join(ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\"), \"ruby\")\n  tg_config[\"ruby\"] = tg_ruby\n  tg_config[\"RUBY\"] = tg_ruby\nend\n"
         );
     }
 
