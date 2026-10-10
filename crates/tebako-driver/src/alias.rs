@@ -88,6 +88,12 @@ struct AliasEntry {
     vfs: String,
     /// Human-readable description of the declaring image, for errors.
     desc: String,
+    /// The declaring image's identity key (tebako#486): the same
+    /// physical image reached through two channels — the env-image
+    /// handoff AND a payload slot, the self-contained shape — declares
+    /// one name twice WITHOUT being two authors. `None` for entries
+    /// added before the key existed (never: all adds carry it).
+    source: String,
 }
 
 /// The verdict of a bare-name alias check (spec 22 §2.1).
@@ -129,12 +135,23 @@ impl AliasUnion {
         mount: &str,
         manifest: &tpkg::PayloadManifest,
     ) -> Result<(), DriverError> {
+        let source = source_key(manifest);
         for alias in &manifest.library_aliases {
             if let Some(prior) = self
                 .entries
                 .iter()
                 .find(|e| e.name.eq_ignore_ascii_case(&alias.name))
             {
+                // tebako#486: a self-contained package names the runtime
+                // image TWICE — TEBAKO_RUNTIME_IMAGE and a payload slot
+                // of the same file. One set of bytes through two
+                // channels is one author, not an ambiguity: the first
+                // channel's mount wins (the env image is collected
+                // first) and the re-declaration is a no-op. A DIFFERENT
+                // image re-declaring the name stays the named error.
+                if prior.source == source {
+                    continue;
+                }
                 return Err(manifest_err(format!(
                     "library alias '{}' is declared by both {} and {} — an authoring ambiguity, never a silent winner",
                     alias.name, prior.desc, desc
@@ -144,6 +161,7 @@ impl AliasUnion {
                 name: alias.name.clone(),
                 vfs: join_mount(mount, &alias.path),
                 desc: desc.to_string(),
+                source: source.clone(),
             });
         }
         Ok(())
@@ -187,6 +205,20 @@ fn collect_image(union: &mut AliasUnion, desc: &str, mount: &str) -> Result<(), 
         return Ok(());
     };
     union.add_image(desc, mount, &manifest)
+}
+
+/// The declaring image's identity for the ambiguity check (tebako#486):
+/// name + version + both digests. The zero-digest placeholder of
+/// unsigned manifests is included deliberately — a test fixture pair
+/// sharing it must differ by name or version to count as two authors.
+fn source_key(m: &tpkg::PayloadManifest) -> String {
+    format!(
+        "{}\u{0}{}\u{0}{}\u{0}{}",
+        m.identity.name,
+        m.identity.version,
+        m.identity.digest.tree_hash,
+        m.identity.digest.blob_sha256
+    )
 }
 
 /// The boot pass's yield (spec 22 §2.1, phase W2): the covered
@@ -418,8 +450,14 @@ mod tests {
     /// block verbatim (the union tests' vehicle — the parse path is the
     /// real one).
     fn manifest_with_aliases(aliases: &str) -> tpkg::PayloadManifest {
+        manifest_with_aliases_as("x", aliases)
+    }
+
+    /// The identity's name is the discriminator the ambiguity check's
+    /// source key reads — two genuinely different images differ here.
+    fn manifest_with_aliases_as(name: &str, aliases: &str) -> tpkg::PayloadManifest {
         let text = format!(
-            "identity:\n  schema_version: 1\n  kind: data\n  name: x\n  version: \"1\"\n  \
+            "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: \"1\"\n  \
              producer: {{tool: t, tool_version: \"1\"}}\n  created: \"2026-08-15T00:00:00Z\"\n  \
              digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
              signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
@@ -495,7 +533,10 @@ mod tests {
             .add_image(
                 "image 'app.tfs'",
                 "/__app__",
-                &manifest_with_aliases("library_aliases:\n  - {name: foo.DLL, path: /lib/b.dll}\n"),
+                &manifest_with_aliases_as(
+                    "app",
+                    "library_aliases:\n  - {name: foo.DLL, path: /lib/b.dll}\n",
+                ),
             )
             .unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{}", err.message);
@@ -506,6 +547,36 @@ mod tests {
             err.message
         );
         assert!(err.message.contains("image 'app.tfs'"), "{}", err.message);
+    }
+
+    #[test]
+    fn the_same_image_through_two_channels_declares_once_not_twice() {
+        // tebako#486: a self-contained package names the runtime image
+        // BOTH as the env image and as a payload slot — one set of
+        // bytes through two channels. The re-declaration is a no-op
+        // (the env channel's mount wins, collected first), and the
+        // union still resolves the alias.
+        let mut union = AliasUnion::new();
+        let aliases =
+            "library_aliases:\n  - {name: libwinpthread-1.dll, path: /bin/libwinpthread-1.dll}\n";
+        union
+            .add_image(
+                "env image 'pkg.exe:2'",
+                "/__tfs__",
+                &manifest_with_aliases(aliases),
+            )
+            .unwrap();
+        union
+            .add_image(
+                "image 'pkg.exe'",
+                "/__slot2__",
+                &manifest_with_aliases(aliases),
+            )
+            .expect("the same image through two channels is one author");
+        assert_eq!(
+            union.resolve("libwinpthread-1.dll"),
+            AliasVerdict::Alias("/__tfs__/bin/libwinpthread-1.dll")
+        );
     }
 
     #[test]
