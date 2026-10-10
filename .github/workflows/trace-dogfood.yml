@@ -12,6 +12,7 @@ on:
   # Push runs on main only — see ci.yml's trigger note (the feat/* double-
   # fire poisoned the merge rollup with cancelled check runs).
   push:
+    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier
     branches: [main]
   pull_request:
 
@@ -40,6 +41,7 @@ jobs:
   # leg is the upstream-drift alarm).
   # ------------------------------------------------------------------
   parity:
+    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier
     name: parity (retrace-correlate vs tebako trace cover)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -150,6 +152,7 @@ jobs:
   # libtfs-preload shim serves the VFS), cover over the two streams.
   # ------------------------------------------------------------------
   dogfood-libc-linux:
+    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier
     name: dogfood (linux, libc layer)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -268,6 +271,7 @@ jobs:
   # here (§7's strong contract, no vacuity waiver).
   # ------------------------------------------------------------------
   dogfood-kernel-linux:
+    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier
     name: dogfood (linux, kernel layer — strace→retrace)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -387,6 +391,7 @@ jobs:
   # ucrt64 — the test-windows-gnu-cli leg's shape).
   # ------------------------------------------------------------------
   dogfood-windows:
+    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier
     name: dogfood (windows — procmon chain + libc layer)
     runs-on: windows-latest
     timeout-minutes: 180
