@@ -6,6 +6,16 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{packaging_error, TebakoError};
 
+/// tebako#460 (spec 19 §6a): the embed dial's parsed value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbedSet {
+    All,
+    None,
+    Names(Vec<String>),
+}
+
+/// The press mode presets (spec 23 §13.2's vocabulary; the embed dial of
+/// spec 19 §6a layers over these).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PressMode {
     Lean,
@@ -17,6 +27,31 @@ pub enum PressMode {
 impl PressMode {
     pub fn parse(s: &str) -> Result<PressMode, String> {
         Self::parse_named(s).map(|(mode, _)| mode)
+    }
+
+    /// tebako#460 (spec 19 §6a): the embed dial over the mode presets.
+    /// `--embed=all|none|name,…` names which resolved slices ride as
+    /// trailer slots; `--mode` stays as sugar (self-contained = all,
+    /// shared-runtime = the payload slices, runtime external). An
+    /// explicit `--embed` wins over the mode preset; names that match
+    /// no resolved slice are a NAMED error (never a silent no-op).
+    pub fn parse_embed(s: &str) -> Result<EmbedSet, String> {
+        match s {
+            "all" => Ok(EmbedSet::All),
+            "none" => Ok(EmbedSet::None),
+            _ => {
+                let names: Vec<String> = s
+                    .split(',')
+                    .map(|n| n.trim().to_string())
+                    .filter(|n| !n.is_empty())
+                    .collect();
+                if names.is_empty() {
+                    Err(format!("invalid --embed '{s}' (all|none|name,… expected)"))
+                } else {
+                    Ok(EmbedSet::Names(names))
+                }
+            }
+        }
     }
 
     /// The spec 23 §13.2 vocabulary: `self-contained`/`shared-runtime`
@@ -110,6 +145,8 @@ pub struct PressOptions {
     /// --Ruby value (validated/resolved against the Gemfile later).
     pub ruby_requested: Option<String>,
     pub mode: PressMode,
+    /// tebako#460 (spec 19 §6a): the embed dial; None = the mode preset governs.
+    pub embed: Option<EmbedSet>,
     pub log_level: String,
     /// Repeatable --image '<path>:<mount-point>'.
     pub image_specs: Vec<String>,
@@ -362,6 +399,26 @@ pub fn host_platform() -> Result<String, TebakoError> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn parse_embed_covers_the_dial() {
+        use super::EmbedSet;
+        assert_eq!(PressMode::parse_embed("all"), Ok(EmbedSet::All));
+        assert_eq!(PressMode::parse_embed("none"), Ok(EmbedSet::None));
+        assert_eq!(
+            PressMode::parse_embed("openjdk, inkscape"),
+            Ok(EmbedSet::Names(vec![
+                "openjdk".to_string(),
+                "inkscape".to_string()
+            ]))
+        );
+        // The named-error arms: empty names and the bare-comma garbage
+        // forms refuse; an unknown keyword is NOT an error here (the
+        // name resolves — or fails by name — at press).
+        assert!(PressMode::parse_embed(",").is_err());
+        assert!(PressMode::parse_embed("").is_err());
+    }
+
     use super::*;
 
     #[test]

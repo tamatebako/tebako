@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use tebako_cli::error::TebakoError;
-use tebako_cli::options::{resolve_prefix, PressMode, PressOptions};
+use tebako_cli::options::{resolve_prefix, EmbedSet, PressMode, PressOptions};
 use tebako_cli::runner::verbose_mode;
 use tebako_cli::{cache_list, cache_list_json, cache_prune, cache_seal, press, VERSION_BANNER};
 
@@ -1318,6 +1318,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut cwd: Option<String> = None;
     let mut ruby: Option<String> = None;
     let mut mode = PressMode::Lean;
+    let mut embed: Option<EmbedSet> = None;
     let mut mode_explicit = false;
     let mut log_level = "error".to_string();
     let mut image_specs: Vec<String> = Vec::new();
@@ -1367,6 +1368,13 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
                 }
                 mode = m;
                 mode_explicit = true;
+            }
+            "--embed" => {
+                let v = take_value(&mut i)?;
+                embed = Some(
+                    PressMode::parse_embed(&v)
+                        .map_err(|e| CliExit::Usage(format!("invalid --embed '{v}': {e}")))?,
+                );
             }
             "-l" | "--log-level" => log_level = take_value(&mut i)?,
             "--image" => image_specs.push(take_value(&mut i)?),
@@ -1452,6 +1460,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         cwd: cwd.map(|c| c.replace('\\', "/")),
         ruby_requested: ruby,
         mode,
+        embed,
         log_level,
         image_specs,
         bootstrap,
