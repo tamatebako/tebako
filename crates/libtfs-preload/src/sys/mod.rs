@@ -2200,9 +2200,11 @@ pub unsafe extern "C" fn fchdir(fd: libc::c_int) -> libc::c_int {
 pub unsafe extern "C" fn getcwd(buf: *mut libc::c_char, size: libc::size_t) -> *mut libc::c_char {
     if let Some(cwd) = route::virtual_cwd() {
         let bytes = cwd.as_bytes();
-        // +1 for the NUL; ERANGE when the buffer cannot hold it.
+        // +1 for the NUL; ERANGE when the buffer cannot hold it. The
+        // errno spelling is per-platform: __error on darwin,
+        // __errno_location on ELF (glibc and musl both).
         if size < bytes.len() + 1 {
-            unsafe { *libc::__error() = libc::ERANGE };
+            set_errno(libc::ERANGE);
             return std::ptr::null_mut();
         }
         unsafe {
@@ -2212,6 +2214,16 @@ pub unsafe extern "C" fn getcwd(buf: *mut libc::c_char, size: libc::size_t) -> *
         return buf;
     }
     unsafe { plat::real_getcwd()(buf, size) }
+}
+
+#[cfg(target_os = "macos")]
+fn set_errno(e: libc::c_int) {
+    unsafe { *libc::__error() = e };
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_errno(e: libc::c_int) {
+    unsafe { *libc::__errno_location() = e };
 }
 
 // ---------------------------------------------------------------------
