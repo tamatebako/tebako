@@ -2309,6 +2309,7 @@ mod tests {
             cwd: None,
             ruby_requested: None,
             mode: PressMode::Lean,
+            embed: None,
             log_level: "error".to_string(),
             image_specs: Vec::new(),
             bootstrap,
