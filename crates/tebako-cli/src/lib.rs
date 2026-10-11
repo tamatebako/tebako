@@ -104,7 +104,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use error::{packaging_error, plain_error, TebakoError};
-use options::{host_platform, PressMode, PressOptions};
+use options::{host_platform, EmbedSet, PressMode, PressOptions};
 use resolve::Resolver;
 use scenario::{check_ruby_version, ruby_version_with_gemfile, ScenarioManager};
 
@@ -190,6 +190,17 @@ fn signed_pkg_floor_gate(
 }
 
 pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
+    // tebako#460 (spec 19 §6a): the named embed dial is the compose
+    // surface's — refuse BEFORE any bootstrap/deploy work when no compose
+    // document backs it (never a silent no-op, never a wasted press).
+    if let Some(EmbedSet::Names(_)) = &opts.embed {
+        if opts.compose.is_none() {
+            return Err(plain_error(
+                "--embed name,… selects compose slices, but this press carries no compose document — use --embed=all|none or press with a --compose document",
+            ));
+        }
+    }
+
     // tebako#738: the signed-package floor gates EVERY press shape
     // (suites included) before any heavy work — a refusal must not
     // cost a runtime download.
@@ -335,6 +346,21 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // exactly what press tested (spec 23 §4).
     let mut compose_slices: Vec<compose::ComposeSlice> = Vec::new();
     let mut runtime_carried = opts.mode == PressMode::Fat;
+    // tebako#460 (spec 19 §6a): an explicit --embed wins over the mode
+    // preset. `all` carries everything; `none` externalizes every slice
+    // (the runtime pair included — resolution-only); the named subset
+    // embeds exactly those slices, named-error on a name the resolved
+    // closure never produced (never a silent no-op).
+    if let Some(embed) = &opts.embed {
+        match embed {
+            EmbedSet::All => runtime_carried = true,
+            EmbedSet::None => runtime_carried = false,
+            // The named form passed the top-of-press guard (a compose
+            // document exists); the selection against resolve_closure's
+            // slice set lands with the closure walk.
+            EmbedSet::Names(_) => {}
+        }
+    }
     // The spawn walk's (preset, home) inputs (spec 23 §13.6): the compose
     // document's resolved pair when one drives the press; else the
     // --mode-derived preset and a lazily resolved store home (a spawn-less
@@ -2298,6 +2324,24 @@ mod tests {
         assert!(m.package_flags & tpkg::TPKG_FLAG_LEAN != 0);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_named_embed_dial_requires_a_compose_document() {
+        // tebako#460 (spec 19 §6a): the named subset selects compose
+        // slices; a plain script press (no compose doc) with names is
+        // the NAMED error pointing at the valid spellings — never a
+        // silent no-op.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("main.rb"), b"puts 'hi'\n").unwrap();
+        let mut opts = press_opts(None);
+        opts.root_arg = dir.path().to_string_lossy().into_owned();
+        opts.entrance = "main.rb".to_string();
+        opts.embed = Some(EmbedSet::Names(vec!["openjdk".to_string()]));
+        let err = press(&opts).expect_err("named embed without compose refuses");
+        let text = err.to_string();
+        assert!(text.contains("--embed name,…"), "{text}");
+        assert!(text.contains("--embed=all|none"), "{text}");
     }
 
     fn press_opts(bootstrap: Option<PathBuf>) -> PressOptions {
