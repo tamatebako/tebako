@@ -57,6 +57,14 @@ pub fn build_app_image(
         align_layout_to_runtime(&opts.data_src_dir(), layout_dir, ruby_ver);
     }
     write_entry_dispatcher(&opts.data_src_dir(), scenario, opts.cwd.as_deref());
+    // tebako#735: the staging tree is SEEDED from the runtime image, so
+    // the tree's /__tpkg__/manifest.yaml is the runtime's — a pressed
+    // app payload inherited the runtime's identity (install registered
+    // "tebako-runtime-ruby", no app shims). Author the APP's own L1
+    // identity from the press inputs, overwriting the runtime's copy:
+    // name/version/entrypoints are the app's; the digest block is the
+    // placeholder (install synthesizes/stamps what it needs).
+    write_app_manifest(&opts.data_src_dir(), scenario, opts)?;
     let excludes = tpkg::exclude::ExcludeSet::parse(&opts.exclude)
         .map_err(|e| plain_error(format!("invalid --exclude: {e}")))?;
     build_image(
@@ -66,6 +74,79 @@ pub fn build_app_image(
         &excludes,
     )?;
     Ok(opts.data_bundle_file())
+}
+
+/// tebako#735: the app payload's own L1 manifest. The name is the
+/// package output's basename (press's own identity rule); the version
+/// is the press timestamp — the press has no authored version input,
+/// and every re-press must differ (install's overwrite rule).
+fn write_app_manifest(
+    data_src_dir: &Path,
+    scenario: &ScenarioManager,
+    opts: &PressOptions,
+) -> Result<(), TebakoError> {
+    let name = Path::new(&opts.package())
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "app".to_string());
+    let stem = Path::new(&scenario.fs_entry_point)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| name.clone());
+    let version = utc_timestamp();
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  \
+         producer: {{tool: tebako-press, tool_version: \"{tv}\"}}\n  \
+         created: \"{version}\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  \
+         entrypoints: [{{name: {stem}, path: {entry}}}]\n  \
+         platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        name = name,
+        version = version,
+        tv = env!("CARGO_PKG_VERSION"),
+        z = "0".repeat(64),
+        stem = stem,
+        entry = scenario.fs_entry_point,
+    );
+    let dir = data_src_dir.join(tpkg::merkle::MANIFEST_DIR);
+    fs::create_dir_all(&dir).map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
+    fs::write(dir.join("manifest.yaml"), manifest)
+        .map_err(|e| plain_error(format!("{e} writing the app manifest")))
+}
+
+/// A UTC RFC3339 timestamp without pulling chrono into the CLI: the
+/// seconds-precision form the manifest grammar accepts.
+fn utc_timestamp() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    // days-since-epoch → civil date (Howard Hinnant's algorithm, the
+    // std-lib-free spelling)
+    let days = now / 86_400;
+    let secs = now % 86_400;
+    let (y, m, d) = civil_from_days(days as i64);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        secs / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    )
+}
+
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
 /// Init: recreate o/{s,r,p} and seed s/ from the runtime image
@@ -752,7 +833,7 @@ mod tests {
     use super::*;
     use crate::options::PressMode;
 
-    fn test_opts(prefer_local: bool) -> PressOptions {
+    pub(crate) fn test_opts(prefer_local: bool) -> PressOptions {
         PressOptions {
             root_arg: "/tmp/root".to_string(),
             entrance: "main.rb".to_string(),
@@ -815,5 +896,43 @@ mod tests {
         // The build hints for the SDK source-build path stay.
         assert!(opts.iter().any(|kv| kv[0] == "build.ffi"));
         assert!(opts.iter().any(|kv| kv[0] == "build.nokogiri"));
+    }
+}
+
+#[cfg(test)]
+mod app_manifest_tests {
+    use super::*;
+
+    fn test_opts_like() -> PressOptions {
+        let mut o = crate::packager::tests::test_opts(false);
+        o.output = Some("myapp".to_string());
+        o
+    }
+
+    #[test]
+    fn the_app_manifest_names_the_app_not_the_runtime() {
+        // tebako#735: the pressed payload's L1 identity is the APP's —
+        // name from the press output, entrypoint from the scenario.
+        let dir = tempfile::tempdir().unwrap();
+        let scenario = crate::scenario::ScenarioManager {
+            fs_root: "/__tfs__".to_string(),
+            fs_entrance: "main.rb".to_string(),
+            fs_entry_point: "bin/myapp".to_string(),
+            fs_mount_point: "/__tfs__".to_string(),
+            exe_suffix: String::new(),
+            scenario: crate::scenario::Scenario::SimpleScript,
+            with_gemfile: false,
+            gemfile_path: std::path::PathBuf::new(),
+            lockfile_path: std::path::PathBuf::new(),
+            needs_bundler: false,
+            bundler_version: String::new(),
+        };
+        let opts = test_opts_like();
+        write_app_manifest(dir.path(), &scenario, &opts).expect("author");
+        let m = std::fs::read_to_string(dir.path().join("__tpkg__/manifest.yaml")).unwrap();
+        assert!(m.contains("name: myapp"), "{m}");
+        assert!(m.contains("kind: app"), "{m}");
+        assert!(m.contains("name: myapp, path: bin/myapp"), "{m}");
+        assert!(!m.contains("tebako-runtime"), "{m}");
     }
 }
