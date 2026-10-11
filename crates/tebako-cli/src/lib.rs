@@ -190,6 +190,17 @@ fn signed_pkg_floor_gate(
 }
 
 pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
+    // tebako#460 (spec 19 §6a): the named embed dial is the compose
+    // surface's — refuse BEFORE any bootstrap/deploy work when no compose
+    // document backs it (never a silent no-op, never a wasted press).
+    if let Some(EmbedSet::Names(_)) = &opts.embed {
+        if opts.compose.is_none() {
+            return Err(plain_error(
+                "--embed name,… selects compose slices, but this press carries no compose document — use --embed=all|none or press with a --compose document",
+            ));
+        }
+    }
+
     // tebako#738: the signed-package floor gates EVERY press shape
     // (suites included) before any heavy work — a refusal must not
     // cost a runtime download.
@@ -344,18 +355,10 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         match embed {
             EmbedSet::All => runtime_carried = true,
             EmbedSet::None => runtime_carried = false,
-            EmbedSet::Names(names) => {
-                // The named dial applies to the compose closure's slice
-                // set; a plain press (no compose document) has no named
-                // slices to select — the named form is the compose
-                // surface's (spec 23 §13).
-                if compose_doc.is_none() {
-                    return Err(plain_error(format!(
-                        "--embed name,… selects compose slices, but this press carries no compose document — use --embed=all|none or press with a --compose document"
-                    )));
-                }
-                let _ = names; // selection against resolve_closure's output lands with the closure walk below
-            }
+            // The named form passed the top-of-press guard (a compose
+            // document exists); the selection against resolve_closure's
+            // slice set lands with the closure walk.
+            EmbedSet::Names(_) => {}
         }
     }
     // The spawn walk's (preset, home) inputs (spec 23 §13.6): the compose
