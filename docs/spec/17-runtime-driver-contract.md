@@ -461,6 +461,17 @@ resolved in-VFS script path. The variable is a read-once handoff: it
 sits on the boot-contract side of the credential scrub (spec 03
 §2.10) and payloads cannot flip it for children.
 
+## 7b. Co-mounting run-time-resolved payloads (tebako#460)
+
+A payload slice the boot needs but the package did not embed resolves at
+first run per spec 05 §4a, then co-mounts EXACTLY like an embedded slot:
+the loader hands the driver the same `--tebako-image <path>:<slot>:<mount>`
+triple — the driver cannot tell an embedded slot from a cache-resolved one,
+and never may (one code path, spec 05 §4a's rule). The resolution happens
+BEFORE the handoff (bootstrap standalone / shim managed); a named 75-class
+error (unresolvable), a trust error (digest mismatch), or 65 (a DEPENDS
+cycle) fires at resolution time — the driver's mount contract is unchanged.
+
 ## 8. The min-runtime floor (spec 03 §2.9, tebako#666)
 
 Every payload manifest the driver reads at boot — the app payload's, a
