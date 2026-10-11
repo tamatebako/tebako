@@ -21,6 +21,7 @@ fn opts() -> PressOptions {
         cwd: None,
         ruby_requested: Some("3.3.7".to_string()),
         mode: PressMode::Lean,
+        embed: None,
         log_level: "error".to_string(),
         image_specs: Vec::new(),
         bootstrap: None,
