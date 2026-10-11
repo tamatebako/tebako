@@ -152,6 +152,76 @@ pub fn fopen_mode_is_readonly(mode: &str) -> bool {
     mode.starts_with('r') && !mode.contains('+')
 }
 
+// tebako#734 (spec 07 §8a): the VIRTUAL cwd. `None` = the host cwd
+// (today's behavior — every relative path resolves against the host).
+// `Some(vfs_path)` = chdir(2) landed on a VFS mount; relative paths
+// resolve against the in-image point. Thread-local: the cwd is a
+// per-thread property in POSIX (a forked child inherits a copy).
+thread_local! {
+    static VIRTUAL_CWD: std::cell::RefCell<Option<String>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+/// Record a successful chdir into a VFS point (spec 07 §8a).
+pub fn set_virtual_cwd(vfs_path: &str) {
+    VIRTUAL_CWD.with(|c| *c.borrow_mut() = Some(vfs_path.to_string()));
+}
+
+/// Clear the virtual cwd (chdir back to a host directory).
+pub fn clear_virtual_cwd() {
+    VIRTUAL_CWD.with(|c| c.borrow_mut().take());
+}
+
+/// The current virtual cwd, if any (the interposed getcwd/realpath and
+/// every relative-path resolution read this).
+pub fn virtual_cwd() -> Option<String> {
+    VIRTUAL_CWD.with(|c| c.borrow().clone())
+}
+
+/// Resolve a possibly-relative path against the EFFECTIVE cwd: the
+/// virtual one when set (spec 07 §8a), the host's otherwise.
+pub fn resolve_cwd_relative(path: &str) -> String {
+    if path.starts_with('/') {
+        return path.to_string();
+    }
+    match virtual_cwd() {
+        Some(cwd) => normalize_lexical(&format!("{cwd}/{path}")),
+        None => match std::env::current_dir() {
+            Ok(host) => format!("{}/{}", host.to_string_lossy(), path),
+            Err(_) => path.to_string(),
+        },
+    }
+}
+
+/// tebako#734 (spec 07 §8a): where a chdir lands. A VFS DIRECTORY
+/// routes virtually; anything else (host path, or a VFS non-directory)
+/// is the host's business — a non-directory VFS path fails the real
+/// chdir's own ENOTDIR, honest as the kernel's.
+pub enum ChdirTarget {
+    Vfs(String),
+    Host,
+}
+
+pub fn vfs_chdir_target(path: &str) -> ChdirTarget {
+    let absolute = resolve_cwd_relative(path);
+    match vfs_stat(&absolute) {
+        PathRoute::Vfs(st) if st.entry_type == tfs::backend::EntryType::Directory => {
+            ChdirTarget::Vfs(normalize_lexical(&absolute))
+        }
+        _ => ChdirTarget::Host,
+    }
+}
+
+/// The VFS path a directory fd stands for, when it is a VFS handle
+/// (the opendir interpose's handle table owns the mapping).
+pub fn vfs_dirfd_path(_fd: libc::c_int) -> Option<String> {
+    // The handle-table lookup rides the opendir interpose's registry;
+    // wired there when that table gains the reverse index. Until then
+    // fchdir on a VFS fd falls to the host (named per §8a's floor).
+    None
+}
+
 /// realpath routing (spec 07 §8). glibc's realpath(3) walks the path
 /// with libc-INTERNAL stat/readlink aliases that LD_PRELOAD cannot
 /// interpose, so an un-interposed realpath canonicalizes a VFS path
@@ -178,14 +248,7 @@ pub fn vfs_realpath(path: &str) -> PathRoute<std::ffi::CString> {
     // realpath is absolute-only: a relative input resolves against the
     // cwd first. The kernel never lets a process chdir into the VFS (the
     // VFS has no host directory entries), so the cwd is always host.
-    let absolute = if path.starts_with('/') {
-        path.to_string()
-    } else {
-        match std::env::current_dir() {
-            Ok(cwd) => format!("{}/{}", cwd.to_string_lossy(), path),
-            Err(e) => return PathRoute::Denied(e.raw_os_error().unwrap_or(libc::EIO)),
-        }
-    };
+    let absolute = resolve_cwd_relative(path);
     let normalized = normalize_lexical(&absolute);
     let st = { context().read().unwrap().stat(&normalized) };
     match route_answer(st, &normalized, HostAccess::Ro) {
