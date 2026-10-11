@@ -2161,6 +2161,59 @@ pub fn init() {
     BOOT_LIVE.store(true, Ordering::Release);
 }
 
+// tebako#734 (spec 07 §8a): the virtual cwd. chdir into a VFS mount
+// succeeds and records the point; chdir to a host path passes through
+// and clears the virtual state. The route layer's relative-path
+// resolution consults the recorded point.
+#[no_mangle]
+pub unsafe extern "C" fn chdir(path: *const libc::c_char) -> libc::c_int {
+    let Some(p) = c_path(path) else {
+        return unsafe { plat::real_chdir()(path) };
+    };
+    match route::vfs_chdir_target(p) {
+        route::ChdirTarget::Vfs(vfs_path) => {
+            route::set_virtual_cwd(&vfs_path);
+            0
+        }
+        route::ChdirTarget::Host => {
+            let rc = unsafe { plat::real_chdir()(path) };
+            if rc == 0 {
+                route::clear_virtual_cwd();
+            }
+            rc
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fchdir(fd: libc::c_int) -> libc::c_int {
+    let rc = unsafe { plat::real_fchdir()(fd) };
+    if rc == 0 {
+        route::clear_virtual_cwd();
+    }
+    rc
+}
+
+/// getcwd answers the VIRTUAL cwd when one is set (spec 07 §8a): the
+/// process sees its in-image working directory, not the host's.
+#[no_mangle]
+pub unsafe extern "C" fn getcwd(buf: *mut libc::c_char, size: libc::size_t) -> *mut libc::c_char {
+    if let Some(cwd) = route::virtual_cwd() {
+        let bytes = cwd.as_bytes();
+        // +1 for the NUL; ERANGE when the buffer cannot hold it.
+        if size < bytes.len() + 1 {
+            unsafe { *libc::__error() = libc::ERANGE };
+            return std::ptr::null_mut();
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), bytes.len());
+            *buf.add(bytes.len()) = 0;
+        }
+        return buf;
+    }
+    unsafe { plat::real_getcwd()(buf, size) }
+}
+
 // ---------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------

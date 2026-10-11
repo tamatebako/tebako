@@ -162,6 +162,27 @@ interpose!(
     unsafe extern "C" fn(c_int, *const c_char, c_int, c_int) -> c_int
 );
 interpose!(
+    INTERPOSE_CHDIR,
+    real_chdir,
+    super::chdir,
+    libc::chdir,
+    unsafe extern "C" fn(*const c_char) -> c_int
+);
+interpose!(
+    INTERPOSE_FCHDIR,
+    real_fchdir,
+    super::fchdir,
+    libc::fchdir,
+    unsafe extern "C" fn(c_int) -> c_int
+);
+interpose!(
+    INTERPOSE_GETCWD,
+    real_getcwd,
+    super::getcwd,
+    libc::getcwd,
+    unsafe extern "C" fn(*mut c_char, libc::size_t) -> *mut c_char
+);
+interpose!(
     INTERPOSE_OPENDIR,
     real_opendir,
     super::opendir,

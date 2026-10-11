@@ -185,6 +185,17 @@ real_fn!(
     unsafe extern "C" fn(c_int, *const c_char, c_int, c_int) -> c_int
 );
 real_fn!(
+    real_chdir,
+    c"chdir",
+    unsafe extern "C" fn(*const c_char) -> c_int
+);
+real_fn!(real_fchdir, c"fchdir", unsafe extern "C" fn(c_int) -> c_int);
+real_fn!(
+    real_getcwd,
+    c"getcwd",
+    unsafe extern "C" fn(*mut c_char, libc::size_t) -> *mut c_char
+);
+real_fn!(
     real_opendir,
     c"opendir",
     unsafe extern "C" fn(*const c_char) -> *mut libc::DIR

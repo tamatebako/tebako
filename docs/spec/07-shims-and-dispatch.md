@@ -494,6 +494,31 @@ The locked model is three tiers — **interposition-first, never FUSE**:
 - ptrace/syscall-tracing (retrace-v1-style tracing for vulnerability
   research) is a debugging tool, not an exec foundation.
 
+## 8a. The virtual cwd (tebako#734)
+
+**Decision: virtual-cwd, named-limitation floor.** The process's cwd is
+tracked as a VFS-aware value: `chdir(2)` into a mounted path SUCCEEDS (the
+preload interposes it and records the VFS point); every relative-path
+interposition resolves against the tracked cwd — a VFS cwd makes relative
+paths route into the image, a host cwd keeps today's behavior. The floor
+until each surface lands: a surface that cannot yet honor a VFS cwd fails
+with a NAMED `EXDEV`-class error naming the cwd ("cwd is a VFS path this
+operation does not serve"), never a bare ENOENT that reads as image
+corruption.
+
+- **`press -c/--cwd`**: the generated stub may `Dir.chdir` into the VFS
+  (the feature was broken-broken before — bare ENOENT on its own
+  stub); the stub's chdir now succeeds and the interpreter's relative
+  loads resolve in-image.
+- **The pre-existing assumption retires** (`route.rs`: "the cwd is always
+  host"): every `current_dir()`-based relative resolution in the preload
+  joins the VIRTUAL cwd when one is set.
+- **Bundler's git source** (the #119 reporter): `SharedHelpers.chdir`
+  into the checkout now works in-image.
+- **Host escapes**: `chdir("..")` past the VFS root reaches the host
+  parent exactly as a path op would (the jail policy governs); no new
+  wall is invented.
+
 ## 9. Environment composition (locked 2026-07-27)
 
 Env across the mount stack (runtime + toolkit layers + data layers +
