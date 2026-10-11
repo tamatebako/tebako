@@ -2204,7 +2204,7 @@ pub unsafe extern "C" fn getcwd(buf: *mut libc::c_char, size: libc::size_t) -> *
         // errno spelling is per-platform: __error on darwin,
         // __errno_location on ELF (glibc and musl both).
         if size < bytes.len() + 1 {
-            super::set_errno(libc::ERANGE);
+            set_errno(libc::ERANGE);
             return std::ptr::null_mut();
         }
         unsafe {
