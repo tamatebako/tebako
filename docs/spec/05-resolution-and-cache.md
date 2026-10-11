@@ -301,6 +301,39 @@ audit journal degrades to best-effort silence.
   The shared-runtime preset needs no exception: its artifacts arrive
   through the ordinary resolve-download-verify-install path.
 
+## 4a. Run-time payload resolution + lazy seeding (tebako#460, locked 2026-08-25 — the fat/lean unification)
+
+**One pipeline, one lock.** `press` resolves the full composition closure at
+build time — the runtime_ref plus every payload ref, transitively — and locks
+concrete versions + sha256 digests into the L2 package manifest. What press
+tested is what runs, always.
+
+**The embed dial.** `-m lean|fat` is sugar over an embed set (`--embed=all|
+none|name,…`): `fat` embeds everything (runtime exe + env image + all payload
+slices, per #458's two-slot shape); lean embeds a subset. Embedding changes
+byte placement only — non-embedded slices resolve at run time **by the locked
+digests**, never by fresh semver resolution, fail-closed on mismatch.
+
+**Run-time payload resolution** mirrors the runtime's own chain exactly:
+registry fetch → sha256 verify → tmp+rename into `~/.tebako/payloads/` →
+co-mount at the declared points. Transitive DEPENDS walk with cycle
+detection; `TEBAKO_OFFLINE=1` is cache-or-named-error. Named errors: an
+unresolvable slice is the 75 class; a digest mismatch is the trust class; a
+cycle is 65.
+
+**Lazy seeding (the one exception to §4's run-is-a-run).** A fat package's
+carried slices are byte-identical with registry artifacts; at first run the
+loader MAY copy absent slice regions into the machine cache (tmp+rename, the
+trailer-slot digest the trust anchor for signed packages / the computed
+digest for unsigned; journaled; idempotent same-sha skip). Strictly
+best-effort: never blocks, never fails, invisible when partial. The runtime
+pair seeds the runtime cache identically. Net: a fat download is a cache
+prime with a runnable side effect; fat and lean converge byte-for-byte.
+
+**Trust uniform:** embedded or resolved, the same sha256 anchors, the same
+unsigned-is-loud + journal rules, the same `TEBAKO_REQUIRE_SIGNED=1`
+fail-closed, verification at fetch/install — never per run.
+
 ## 5. Resolution chains
 
 **Runtime for a payload (dispatch time):** payload's declared requirement

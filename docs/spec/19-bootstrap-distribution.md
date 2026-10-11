@@ -216,6 +216,15 @@ resolving the same runtime version finds it already cached — the seed
 converges the two presets onto one cache. The legacy single-slot form
 keeps READING as before; presses never emit it.
 
+## 6a. Fat redefined: the embed dial over #458's two-slot runtime (tebako#460)
+
+"Fat" is `--embed=all` — the runtime rides as its TWO ordinary trailer
+slots (the interpreter exe + the env `.tfs`, per #458); "lean" is a subset
+embed with run-time resolution by locked digests (spec 05 §4a). The
+`set-runtime` region-replace path is RETIRED: a runtime is slots like any
+slice, placed by the same composition pipeline. `--mode` remains as sugar
+over the dial for compatibility.
+
 ## 7. The contract card inside every bootstrap
 
 Every bootstrap binary we ship carries an embedded

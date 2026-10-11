@@ -231,6 +231,16 @@ payloads:
 - Digest mismatch → the named sha error (exit 70); nothing enters the
   cache.
 
+## 3a. Run-time payload resolution grammar (tebako#460)
+
+The L2 package manifest's resolution rows carry the SAME reference grammar
+as §1 plus the press-locked pin: `ref` (the registry/source reference),
+`version` (the locked concrete version), and `sha256` (the locked digest).
+Run-time resolution consumes the locked pair ONLY — the ref locates, the
+digest decides; a version resolved fresh that disagrees with the lock is the
+trust-error class, never a silent swap. Registries, offline mode, and the
+fetch discipline (§3) are identical with the runtime's own chain.
+
 ## 4. Enterprise networking — proxies and trust anchors (2026-09-06 amendment)
 
 Every fetch the loader or the toolchain makes rides ONE client
