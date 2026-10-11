@@ -384,12 +384,20 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         };
         compose::check_runtime_row(&doc, &ruby_ver)?;
         compose::check_entrypoint(&doc, &stem)?;
-        compose::apply_overrides(
-            &mut doc,
-            opts.carry.as_deref(),
-            opts.share.as_deref(),
-            &stem,
-        )?;
+        // tebako#460 (spec 19 §6a over spec 23 §13.2): the named embed
+        // dial IS carry-by-name on the compose surface — route it into
+        // the same D5 override walk (one selection grammar, one set of
+        // named errors). An explicit --embed=all|none maps to the same
+        // global carry flips the mode preset governs.
+        let (embed_carry, embed_share): (Option<String>, Option<String>) = match &opts.embed {
+            Some(EmbedSet::All) => (Some("all".to_string()), None),
+            Some(EmbedSet::None) => (Some("none".to_string()), None),
+            Some(EmbedSet::Names(names)) => (Some(names.join(",")), None),
+            None => (None, None),
+        };
+        let carry = embed_carry.as_deref().or(opts.carry.as_deref());
+        let share = embed_share.as_deref().or(opts.share.as_deref());
+        compose::apply_overrides(&mut doc, carry, share, &stem)?;
         let home = compose::tebako_home()?;
         let host = install::host_platform()?;
         compose_slices =
