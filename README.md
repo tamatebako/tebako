@@ -27,6 +27,14 @@ your users              →   run it             →   it just works
   images (per-subtree, in-memory-only decryption). Unsigned stays
   first-class.
 
+## Status: actively maintained (v2)
+
+tebako v2 is the live line — the Rust product (this repo). The v1
+Ruby/gem era is end-of-life: the archive lives at
+[tamatebako/tebako-v1](https://github.com/tamatebako/tebako-v1), and the
+[flag-by-flag migration guide](https://tebako.org/docs/architecture/migrate-v1-v2/)
+takes a v1 project to v2 in one sitting.
+
 ## Install
 
 ```console
