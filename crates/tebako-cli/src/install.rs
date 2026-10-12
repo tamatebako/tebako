@@ -921,6 +921,21 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 fn plan_from_reference(target: &str) -> Result<InstallPlan, TebakoError> {
     let reference = Reference::parse(target).map_err(|e| err(EX_USAGE, e.to_string()))?;
+    // A pressed package (an executable with a tpkg trailer) is not a
+    // payload slice: refuse it by name BEFORE any fetch or cache write —
+    // the whole-package form installs by path (`tebako install ./pkg`),
+    // never through a reference (tebako#736).
+    if let Reference::File { path, .. } = &reference {
+        let local = Path::new(path);
+        if local.is_file() && is_tpkg_package(local) {
+            return Err(err(
+                EX_TEBAKO_INSTALL,
+                format!(
+                    "{path} is a pressed tebako package (an executable with a package trailer), not a payload slice — install it by path: tebako install {path}"
+                ),
+            ));
+        }
+    }
     let (name, version) = reference_identity(&reference)?;
     manifest::check_path_component("payload name", &name).map_err(map_shim)?;
     manifest::check_path_component("version", &version).map_err(map_shim)?;
