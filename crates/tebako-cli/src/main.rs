@@ -148,7 +148,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         println!("{USAGE}");
         return Ok(());
     }
-    // Enterprise networking (TODO.v2-1/33): the network: section of
+    // Enterprise networking: the network: section of
     // ~/.tebako/config.yaml under the env, installed before any fetch;
     // a malformed section is the named startup error. Runs after the
     // version/help early-outs so those never depend on config health.
@@ -845,7 +845,7 @@ fn run_install(args: &[String]) -> Result<(), CliExit> {
         ));
     };
     // A local pressed package (fat or lean): slot-wise install from its
-    // own bytes (TODO.v2-1/12) — never a registry flow. Shims link only
+    // own bytes — never a registry flow. Shims link only
     // via the explicit --shims.
     let path = std::path::Path::new(target);
     if path.is_file() && tebako_cli::install::is_tpkg_package(path) {

@@ -869,7 +869,7 @@ pub(crate) fn stitch(
         runtime_ref: runtime_ref.to_string(),
         // TPKG_FLAG_LEAN unless the press is self-contained;
         // TPKG_FLAG_NO_INSTALL when the press froze the package
-        // (--no-install, TODO.v2-1/12); TPKG_FLAG_QUIET_NOTICES when
+        // (--no-install,); TPKG_FLAG_QUIET_NOTICES when
         // the registry setting resolved true (spec 23 §14).
         package_flags: {
             let mut pf = match (flags.lean, flags.no_install) {
@@ -1825,7 +1825,7 @@ mod tests {
 
     #[test]
     fn stitch_bakes_the_no_install_flag_only_when_asked() {
-        // TODO.v2-1/12: --no-install freezes the package in the trailer
+        //: --no-install freezes the package in the trailer
         // (TPKG_FLAG_NO_INSTALL); the default press leaves the bit clear
         // (installable-on-request, pre-era shape).
         let dir = std::env::temp_dir().join(format!("tebako-cli-stitch-{}", std::process::id()));

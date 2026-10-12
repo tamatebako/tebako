@@ -20,7 +20,7 @@
 //! exactly like the gem. Without the SDK the overrides carry only the
 //! bindir override (the gem's no-SDK branch).
 //!
-//! Windows decision (TODO.prepublish/03): the ruby shim is a `#!/bin/sh`
+//! Windows decision: the ruby shim is a `#!/bin/sh`
 //! re-entry script — mkmf spawns RbConfig.ruby, the shim execs the
 //! runtime with the deploy image attached, and the driver's script mode
 //! (ARGV.any? below) emulates the ruby command line. A .cmd/.ps1

@@ -29,7 +29,7 @@ fn main() -> ExitCode {
             return ExitCode::from(e.code);
         }
     };
-    // Enterprise networking (TODO.v2-1/33): config.yaml's network:
+    // Enterprise networking: config.yaml's network:
     // section under the env, installed before any fetch; a malformed
     // section is the named error here, at startup.
     if let Err(e) = tebako_shim::config::install_network_config(&ctx.home) {

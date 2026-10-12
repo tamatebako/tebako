@@ -30,7 +30,7 @@
 //!   derives the base AND the tag) → the product default (ruby only —
 //!   a non-ruby engine no channel answers is the named error enumerating
 //!   the channels).
-//! - **Fetch-time OpenPGP verification** (spec 09 §4, roadmap 80's G1):
+//! - **Fetch-time OpenPGP verification** (spec 09 §4,'s G1):
 //!   the consumed index form's detached `.asc` verifies BEFORE its
 //!   digests are trusted; every artifact whose entry DECLARES
 //!   `signature:` (spec 13 §2a) verifies against it. Strict: invalid →
@@ -334,7 +334,7 @@ fn resolve_runtime_scoped<T: Transport + Sync>(
     // channel that supplied it.
     let source = runtime_source(reqs, (!prefless).then_some(pref), &cfg, ctx, scope)?;
     // The pick may REDIRECT the source: the registry-first enumeration
-    // (spec 05 §2, roadmap 85) names each version's own release (base +
+    // (spec 05 §2,) names each version's own release (base +
     // tag + signature pin ride the picked row).
     let (target, source) = match index_selected_target(reqs, pref, &source, ctx)? {
         Some(pick) => pick,
@@ -660,7 +660,7 @@ fn released_versions(text: &str, engine: &str, platform: &str) -> Option<Vec<Rel
 }
 
 /// The download-target selection on a cache miss (spec 05 §2's order,
-/// roadmap 85): the factory's in-repo L3 registry first (range
+///): the factory's in-repo L3 registry first (range
 /// enumeration flows through it, never through a release monolith —
 /// post-2026-09-12 release lines ship no monolith at all), then the
 /// immutable pre-85 fallback: the release index of the pin's tebako line
@@ -1138,7 +1138,7 @@ fn split_line_id(
 }
 
 /// spec 05 §2's registry facet of the download-target selection
-/// (roadmap 85): derive the factory's in-repo L3 registry
+///: derive the factory's in-repo L3 registry
 /// (`tfs:github:<owner>/<repo>`) from the download base — every channel,
 /// uniform — and enumerate its `kind: runtime` entries for the engine.
 /// An unreadable registry is journaled and uninformative (`Ok(None)` —
@@ -2502,7 +2502,7 @@ impl FetchTrust {
     }
 }
 
-/// What the shard-first index acquisition (spec 05 §2, roadmap 85)
+/// What the shard-first index acquisition (spec 05 §2,)
 /// consumed: the release-card text (a consumed shard NORMALIZED to the
 /// one-entry array shape every card reader speaks — the store's cached
 /// `manifest.json`, `release_index_entry`, `sha_from_manifest`), the
@@ -4899,7 +4899,7 @@ payloads:
         assert_eq!(source.tag.as_deref(), Some("v2.5.1"));
     }
 
-    // ---- the registry facet of the index selection (spec 05 §2, roadmap 85) ----
+    // ---- the registry facet of the index selection (spec 05 §2,) ----
 
     fn sha64(c: char) -> String {
         c.to_string().repeat(64)

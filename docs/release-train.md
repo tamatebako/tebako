@@ -134,3 +134,29 @@ registry PR (publication IS the merge); never hand-edit the served file.
   ecosystem root (this document's citations: `PROGRESS/37`, `PROGRESS/38`).
 - The independent-publish rules: roadmap 85 (spec 09 §9, spec 13 §2a).
 - The flavor/base binding grammar: spec 03 §2.8.
+
+## The feature coverage matrix (2026-10-12)
+
+Every shipped capability and its documentation home (zero gaps — the
+acceptance of the housekeeping sweep):
+
+| Feature | Doc home |
+|---|---|
+| Install/quickstart/platforms | README §Install/§Quickstart/§Platforms |
+| Packaging an app (press) | README §Commands; tebako.org/docs/guides |
+| Rails packaging | docs/rails-packaging.md |
+| The embed dial (`--embed`) | `--help` (spec 19 §6a; this file's stage graph) |
+| Run-time payload resolution | spec 05 §4a (rendered on tebako.org/docs/reference) |
+| Flavor/extension slices (augments) | spec 03 §2.8; the packed-metanorma-flavor repos' guides |
+| Env scrub + env_pass | spec 03 §2.10 |
+| Credential/proxy config (enterprise) | docs/enterprise-networking.md; spec 04 §4 |
+| Signing/trust (sign, keys, REQUIRE_SIGNED) | spec 09 (reference rendering); README §Commands |
+| OCI distribution (dual-publish, registries) | spec 38; the feedstock READMEs |
+| Registries (add/list/update, file://) | `--help` + spec 04 §2 |
+| The jail (host policy) | spec 08; `--help` |
+| Shims/suite dispatch | spec 07; README §Commands |
+| Trace tooling | README §Commands (trace run/cover/import) |
+| The virtual cwd | spec 07 §8a |
+| Release train (who ships what, recovery) | this file |
+| Benchmarks | tebako.org/benchmarks |
+| v1→v2 migration | tebako.org/docs/architecture/migrate-v1-v2 + README banner |

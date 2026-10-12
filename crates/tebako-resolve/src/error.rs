@@ -76,7 +76,7 @@ pub enum RegistryError {
     /// Semantic validation failure (bad schema_version, dangling default,
     /// malformed sha256, …).
     Invalid { reason: String },
-    /// spec 04 §2 (roadmap 85): the selected version row carries
+    /// spec 04 §2: the selected version row carries
     /// `status: withdrawn` — the publisher YANKED it. Resolvers refuse by
     /// name: never a silent skip, never a fallback to it; release assets
     /// are immutable, so the fix ships as a new version line.

@@ -878,7 +878,7 @@ pub fn doctor_report(ctx: &Ctx) -> DoctorReport {
     }
 
     // authored config + registries: parse, local existence, and the
-    // dispatch-cache freshness of remote refs (spec 04 §2 + roadmap 33).
+    // dispatch-cache freshness of remote refs (spec 04 §2 +).
     match config::load_config(&ctx.home) {
         Ok(cfg) => {
             for entry in &cfg.registries {

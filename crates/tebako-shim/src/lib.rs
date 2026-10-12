@@ -22,7 +22,7 @@
 //! Discipline: no async, no clap, no logging framework; hand-rolled argv;
 //! named errors and exit codes (spec 06 §4 reused); cache-install mirrors
 //! the bootstrap's flock / tmp+rename / trust-marker discipline (spec 05
-//! §4). Runtime fetch-time OpenPGP verification (spec 09 §4, roadmap 80's
+//! §4). Runtime fetch-time OpenPGP verification (spec 09 §4,'s
 //! G1) links tebako-signer directly — the shim carries no size gate, so
 //! unlike the bootstrap it verifies with the full keyring machinery
 //! (trusted keyring + embedded root + `TEBAKO_TRUSTED_ROOT` override).
@@ -43,7 +43,7 @@
 //! ```
 //!
 //! The mirror files are written by the installer (`tebako install`,
-//! roadmap 28.1 — from the image's embedded manifest when present, else
+//!.1 — from the image's embedded manifest when present, else
 //! synthesized from the registry's tier-3 fields); tests and early
 //! adopters may also seed them directly.
 
@@ -72,7 +72,7 @@ pub const EX_TEBAKO_UNAVAILABLE: u8 = 69;
 pub const EX_TEBAKO_SHA: u8 = 70;
 /// spec 06 §4: an invalid signature on a fetched runtime artifact (or an
 /// unsigned fetch under `TEBAKO_REQUIRE_SIGNED=1`) — spec 09 §4's strict
-/// rule, G1 (roadmap 80).
+/// rule, G1.
 pub const EX_TEBAKO_SIGNATURE: u8 = 71;
 /// spec 06 §4: the signer of a fetched runtime artifact is not in the
 /// trusted keyring, or the verified signer is not the key the index

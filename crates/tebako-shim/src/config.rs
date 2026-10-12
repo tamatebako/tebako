@@ -70,7 +70,7 @@ pub struct UserConfig {
     /// `TEBAKO_RUNTIME_LAZY` wins per key; absent = eager.
     #[serde(default)]
     pub runtime_lazy: Option<bool>,
-    /// Enterprise networking (TODO.v2-1/33, spec 04 amendment): proxy +
+    /// Enterprise networking (spec 04 §4): proxy +
     /// trust anchors. Env wins per key; see [`install_network_config`].
     #[serde(default)]
     pub network: NetworkSection,
@@ -957,7 +957,7 @@ pub fn load_config(home: &Path) -> Result<UserConfig, ShimError> {
 }
 
 // ---------------------------------------------------------------------
-// enterprise networking (TODO.v2-1/33): install the effective config
+// enterprise networking: install the effective config
 // ---------------------------------------------------------------------
 
 /// Resolve the effective network config — env over the config file's

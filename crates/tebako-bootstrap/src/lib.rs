@@ -98,12 +98,12 @@ pub const EX_TEBAKO_TRUST: u8 = 72;
 pub const EX_TEBAKO_JAIL: u8 = 73;
 pub const EX_TEBAKO_IO: u8 = 74;
 /// The runtime declares a bootstrap↔runtime contract this bootstrap does
-/// not speak — or none at all (roadmap 45 + spec 18 C2): a pre-era
+/// not speak — or none at all: a pre-era
 /// release manifest (no contract set declared), a newer contract era, or
 /// a contract_version outside this bootstrap's supported range — fail
 /// CLOSED before any download, never a guess.
 pub const EX_TEBAKO_CONTRACT: u8 = 75;
-/// The explicit install verb (TODO.v2-1/12) was refused
+/// The explicit install verb was refused
 /// (`TPKG_FLAG_NO_INSTALL` — the publisher froze the package) or needs
 /// the tebako CLI (the manifest read wants the TFS engine the
 /// size-capped bootstrap deliberately does not carry).
@@ -1058,7 +1058,7 @@ fn int_field_of_entry(text: &str, asset: &str, key: &str) -> Option<u32> {
 }
 
 /// The `contract_version` of the release-manifest entry for `asset`
-/// (roadmap 45): the same bounding as [`sha_from_manifest_json`], reading
+///: the same bounding as [`sha_from_manifest_json`], reading
 /// the object's integer "contract_version" when present. `None` when the
 /// field is absent or unparseable — spec 18 reads that as the pre-era
 /// signal (see [`contract_gate`]).
@@ -1104,7 +1104,7 @@ fn contract_entry_present(text: &str, asset: &str) -> bool {
     text.contains(&format!("\"{asset}\""))
 }
 
-/// roadmap 45 negotiation failure (exe and image paths share the message).
+/// negotiation failure (exe and image paths share the message).
 fn contract_mismatch_error(runtime_ref: &str, declared: u32) -> BootError {
     BootError::new(
         EX_TEBAKO_CONTRACT,
@@ -1114,7 +1114,7 @@ fn contract_mismatch_error(runtime_ref: &str, declared: u32) -> BootError {
     )
 }
 
-/// Fail-closed contract gate (roadmap 45 + spec 18 C2/S11/S12), run
+/// Fail-closed contract gate, run
 /// BEFORE any asset download: the release manifest's entry for `asset`
 /// must DECLARE its contract set (contract_era / contract_version /
 /// mount_root) — anything undeclared is pre-era (era 1) and refused by
@@ -2473,7 +2473,7 @@ fn download_executable(
     // asset spelling, flowed verbatim into the URL, the cache layout, and
     // the contract gate below. Fetched ahead of the install lock (a pure
     // mirror read): the spelling decides the staging and cache paths.
-    // Read shard-first (roadmap 85): the per-identity `<stem>.manifest.json`
+    // Read shard-first: the per-identity `<stem>.manifest.json`
     // card is the primary form, the release-wide monolith the forever
     // fallback (spec 00 invariant 7). The stem probes dual-era
     // (tebako#716's era law, rule 3): the release's grammar era is
@@ -2715,7 +2715,7 @@ fn download_executable(
 
 /// Resolve the runtime image into the executable's cache entry: download
 /// (same mirror/offline rules), verify against the release index — read
-/// shard-first (the per-identity `<stem>.manifest.json`, roadmap 85), the
+/// shard-first (the per-identity `<stem>.manifest.json`,), the
 /// release-wide manifest.json the forever fallback (spec 00 invariant 7),
 /// the entry's `image` key primary, SHA256SUMS line fallback — then
 /// install read-only with `<image>.sha256`/`<image>.origin` trusted
@@ -2855,7 +2855,7 @@ fn resolve_image(
     // image is additive metadata of the exe's package entry — the entry
     // anchored by the executable's filename governs it, the same gate
     // the executable path applies). No readable index at all is the same
-    // pre-era signal. Read shard-first (roadmap 85): the per-identity
+    // pre-era signal. Read shard-first: the per-identity
     // `<stem>.manifest.json` primary, the release-wide monolith the
     // forever fallback (spec 00 invariant 7); a shard serves only when it
     // declares THIS identity, then normalizes to the array shape. The
@@ -5960,7 +5960,7 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         );
     }
 
-    // The explicit install verb (TODO.v2-1/12): a run is a run — payload
+    // The explicit install verb: a run is a run — payload
     // slices land in the local store only when asked. The manifest read
     // needs the TFS engine the size-capped bootstrap deliberately does
     // not carry, so the verb refuses (frozen package) or guides to the

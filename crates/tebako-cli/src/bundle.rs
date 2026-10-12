@@ -1,4 +1,4 @@
-//! `tebako bundle` (spec 16 §6, roadmap 82/83): compose an OFFLINE
+//! `tebako bundle` (spec 16 §6,/83): compose an OFFLINE
 //! application bundle from the canonical published artifacts — a
 //! pre-seeded store tree (payloads + the whole runtime closure +
 //! registry caches + a rendered config.yaml) plus the platform's CLI
