@@ -4268,6 +4268,94 @@ fn download_runtime<T: Transport + Sync>(
 // unit tests: the per-engine download-source chain (spec 05 §2, #567)
 // ---------------------------------------------------------------------
 
+/// tebako#460 (spec 05 §4a + 04 §3a): run-time payload resolution by the
+/// locked digest — the dep-mount arm of the composition spectrum. The
+/// alias's registry book (the same cached read the payload resolution
+/// rides) names the rows; the newest constraint-satisfying version's
+/// row carries the sha256 lock pin + the release reference; the fetch
+/// rides resolve_locked_slice (verify → tmp+rename into the payload
+/// cache). OFFLINE answers None — the caller keeps its cache-only
+/// refusal; nothing-published-satisfies answers None likewise.
+pub fn fetch_payload_by_lock(
+    name: &str,
+    constraint: &crate::versions::Constraint,
+    registry_ref: &str,
+    ctx: &Ctx,
+) -> Result<Option<std::path::PathBuf>, ShimError> {
+    use tebako_resolve::registry::PlatformSelection;
+    let registry = crate::regcache::registry_for(&ctx.home, registry_ref, ctx)?;
+    let Some(payload) = registry.payload(name) else {
+        return Ok(None);
+    };
+    let host = tpkg::Platform::host();
+    let _ = constraint;
+    // The newest satisfying version whose platforms row COVERS the host
+    // and carries a sha256 pin (the digest that decides — spec 04 §3a).
+    let mut best: Option<(&str, String, String)> = None;
+    for row in &payload.versions {
+        if !constraint.matches(&row.version) || row.is_withdrawn() {
+            continue;
+        }
+        let Ok(view) = row.resolve_variant(None) else {
+            continue;
+        };
+        let Some(sel) = view.select(host) else {
+            continue;
+        };
+        let (pin, release_ref) = match sel {
+            PlatformSelection::Selected {
+                sha256, release, ..
+            } => (
+                sha256.to_ascii_lowercase(),
+                release.unwrap_or(row.release.r#ref.as_str()).to_string(),
+            ),
+            // Universal: pinned only when the release ref carries the
+            // query pin; an unpinned universal answers None (no digest
+            // to decide by — the cache-only refusal stays honest).
+            PlatformSelection::Universal => match Reference::parse(&row.release.r#ref) {
+                Ok(r) if r.sha256().is_some() => {
+                    let p = r.sha256().unwrap();
+                    (p.to_ascii_lowercase(), row.release.r#ref.clone())
+                }
+                _ => continue,
+            },
+        };
+        let better = best
+            .as_ref()
+            .map(|(v, _, _)| {
+                tpkg::versions::compare(&row.version, v) == std::cmp::Ordering::Greater
+            })
+            .unwrap_or(true);
+        if better {
+            best = Some((row.version.as_str(), pin, release_ref));
+        }
+    }
+    let Some((version, pin, release_ref)) = best else {
+        return Ok(None);
+    };
+    let cache = tebako_resolve::PayloadCache::with_root(&ctx.home);
+    let reference = Reference::parse(&release_ref).map_err(|e| {
+        ShimError::new(
+            crate::EX_TEBAKO_MANIFEST,
+            format!("registry row for {name} {version} does not parse: {e}"),
+        )
+    })?;
+    let entry = tebako_resolve::resolve_locked_slice(&cache, name, version, &pin, &reference)
+        .map_err(|e| {
+            ShimError::new(
+                crate::EX_TEBAKO_UNAVAILABLE,
+                format!("resolving {name} {version} by its locked digest: {e}"),
+            )
+        })?;
+    let image = ctx
+        .home
+        .join("payloads")
+        .join(name)
+        .join(format!("{version}.tfs"));
+    let _ = entry;
+    Ok(Some(image))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6451,92 +6539,4 @@ payloads:
         );
         let _ = std::fs::remove_dir_all(&home);
     }
-}
-
-/// tebako#460 (spec 05 §4a + 04 §3a): run-time payload resolution by the
-/// locked digest — the dep-mount arm of the composition spectrum. The
-/// alias's registry book (the same cached read the payload resolution
-/// rides) names the rows; the newest constraint-satisfying version's
-/// row carries the sha256 lock pin + the release reference; the fetch
-/// rides resolve_locked_slice (verify → tmp+rename into the payload
-/// cache). OFFLINE answers None — the caller keeps its cache-only
-/// refusal; nothing-published-satisfies answers None likewise.
-pub fn fetch_payload_by_lock(
-    name: &str,
-    constraint: &crate::versions::Constraint,
-    registry_ref: &str,
-    ctx: &Ctx,
-) -> Result<Option<std::path::PathBuf>, ShimError> {
-    use tebako_resolve::registry::PlatformSelection;
-    let registry = crate::regcache::registry_for(&ctx.home, registry_ref, ctx)?;
-    let Some(payload) = registry.payload(name) else {
-        return Ok(None);
-    };
-    let host = tpkg::Platform::host();
-    let _ = constraint;
-    // The newest satisfying version whose platforms row COVERS the host
-    // and carries a sha256 pin (the digest that decides — spec 04 §3a).
-    let mut best: Option<(&str, String, String)> = None;
-    for row in &payload.versions {
-        if !constraint.matches(&row.version) || row.is_withdrawn() {
-            continue;
-        }
-        let Ok(view) = row.resolve_variant(None) else {
-            continue;
-        };
-        let Some(sel) = view.select(host) else {
-            continue;
-        };
-        let (pin, release_ref) = match sel {
-            PlatformSelection::Selected {
-                sha256, release, ..
-            } => (
-                sha256.to_ascii_lowercase(),
-                release.unwrap_or(row.release.r#ref.as_str()).to_string(),
-            ),
-            // Universal: pinned only when the release ref carries the
-            // query pin; an unpinned universal answers None (no digest
-            // to decide by — the cache-only refusal stays honest).
-            PlatformSelection::Universal => match Reference::parse(&row.release.r#ref) {
-                Ok(r) if r.sha256().is_some() => {
-                    let p = r.sha256().unwrap();
-                    (p.to_ascii_lowercase(), row.release.r#ref.clone())
-                }
-                _ => continue,
-            },
-        };
-        let better = best
-            .as_ref()
-            .map(|(v, _, _)| {
-                tpkg::versions::compare(&row.version, v) == std::cmp::Ordering::Greater
-            })
-            .unwrap_or(true);
-        if better {
-            best = Some((row.version.as_str(), pin, release_ref));
-        }
-    }
-    let Some((version, pin, release_ref)) = best else {
-        return Ok(None);
-    };
-    let cache = tebako_resolve::PayloadCache::with_root(&ctx.home);
-    let reference = Reference::parse(&release_ref).map_err(|e| {
-        ShimError::new(
-            crate::EX_TEBAKO_MANIFEST,
-            format!("registry row for {name} {version} does not parse: {e}"),
-        )
-    })?;
-    let entry = tebako_resolve::resolve_locked_slice(&cache, name, version, &pin, &reference)
-        .map_err(|e| {
-            ShimError::new(
-                crate::EX_TEBAKO_UNAVAILABLE,
-                format!("resolving {name} {version} by its locked digest: {e}"),
-            )
-        })?;
-    let image = ctx
-        .home
-        .join("payloads")
-        .join(name)
-        .join(format!("{version}.tfs"));
-    let _ = entry;
-    Ok(Some(image))
 }
