@@ -234,7 +234,7 @@ fn file_ref_to_a_pressed_package_is_named_before_any_cache_write() {
         &[(img, "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
         0,
     );
-    let reference = format!("file://{}?sha256={}", pkg.display(), sha256_of(&pkg));
+    let reference = format!("{}?sha256={}", tebako_http::file_url(&pkg), sha256_of(&pkg));
     let err = install::install(&home, &reference, None, None).unwrap_err();
     assert_eq!(err.code, 76, "{err}");
     assert!(err.to_string().contains("pressed tebako package"), "{err}");
