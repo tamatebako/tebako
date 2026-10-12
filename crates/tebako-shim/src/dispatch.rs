@@ -159,6 +159,26 @@ fn dependency_mount(
         .filter(|v| constraint.matches(v))
         .max_by(|a, b| versions::compare(a, b));
     let Some(version) = version else {
+        // tebako#460 (spec 05 §4a): run-time payload resolution — an
+        // edge carrying a registry pin fetches its newest satisfying
+        // published version through the locked-digest discipline; a
+        // fetch that answers None keeps the honest cache-only refusal.
+        if let Some(registry_ref) = req.registry() {
+            if let Some(image) =
+                crate::runtime::fetch_payload_by_lock(name, &constraint, registry_ref, ctx)?
+            {
+                tebako_log::log!(
+                    tebako_log::Level::Debug,
+                    "shim",
+                    "dep-lock-fetch kind={kind} name={name} mount={mount}"
+                );
+                return Ok(Some(MountSpec {
+                    image,
+                    slot: 0,
+                    mount: mount.clone(),
+                }));
+            }
+        }
         return fail(
             EX_TEBAKO_MANIFEST,
             format!(
