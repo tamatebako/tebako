@@ -54,7 +54,7 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-fn offline(ctx: &Ctx) -> bool {
+pub(crate) fn offline(ctx: &Ctx) -> bool {
     ctx.env_get("TEBAKO_OFFLINE")
         .is_some_and(|v| !v.is_empty() && v != "0")
 }

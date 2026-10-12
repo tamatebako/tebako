@@ -4269,21 +4269,30 @@ fn download_runtime<T: Transport + Sync>(
 // ---------------------------------------------------------------------
 
 /// tebako#460 (spec 05 §4a + 04 §3a): run-time payload resolution by the
-/// locked digest — the dep-mount arm of the composition spectrum. The
-/// alias's registry book (the same cached read the payload resolution
-/// rides) names the rows; the newest constraint-satisfying version's
-/// row carries the sha256 lock pin + the release reference; the fetch
-/// rides resolve_locked_slice (verify → tmp+rename into the payload
-/// cache). OFFLINE answers None — the caller keeps its cache-only
-/// refusal; nothing-published-satisfies answers None likewise.
+/// locked digest — the dep-mount arm of the composition spectrum.
+///
+/// The edge's `registry:` pin is a book ALIAS (spec 37 §3): the config
+/// book resolves it to the one entry's reference (an unknown alias is the
+/// named `UnknownRegistryAlias`), whose cached read names the rows. The
+/// newest constraint-satisfying version's row carries the sha256 lock pin
+/// and the release reference; the fetch rides `resolve_locked_slice`
+/// (verify, then tmp+rename into the payload cache). OFFLINE answers
+/// None — the caller keeps its cache-only refusal;
+/// nothing-published-satisfies answers None likewise.
 pub fn fetch_payload_by_lock(
     name: &str,
     constraint: &crate::versions::Constraint,
-    registry_ref: &str,
+    registry_alias: &str,
     ctx: &Ctx,
 ) -> Result<Option<std::path::PathBuf>, ShimError> {
     use tebako_resolve::registry::PlatformSelection;
-    let registry = crate::regcache::registry_for(&ctx.home, registry_ref, ctx)?;
+    if crate::regcache::offline(ctx) {
+        return Ok(None);
+    }
+    let cfg = config::load_config(&ctx.home)?;
+    let rows = cfg.registry_book_scoped(Some(registry_alias))?;
+    let registry_reference = rows[0].entry.reference().to_string();
+    let registry = crate::regcache::registry_for(&ctx.home, &registry_reference, ctx)?;
     let Some(payload) = registry.payload(name) else {
         return Ok(None);
     };
@@ -4342,8 +4351,14 @@ pub fn fetch_payload_by_lock(
     })?;
     let entry = tebako_resolve::resolve_locked_slice(&cache, name, version, &pin, &reference)
         .map_err(|e| {
+            // A digest mismatch is a TRUST failure (the spec 18 S63
+            // class), never an availability blur.
+            let code = match &e {
+                ResolveError::Sha256Mismatch { .. } => crate::EX_TEBAKO_SHA,
+                _ => crate::EX_TEBAKO_UNAVAILABLE,
+            };
             ShimError::new(
-                crate::EX_TEBAKO_UNAVAILABLE,
+                code,
                 format!("resolving {name} {version} by its locked digest: {e}"),
             )
         })?;
