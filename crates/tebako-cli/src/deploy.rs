@@ -84,11 +84,6 @@ impl RuntimeDeployer {
         env: &[(String, String)],
         seed_dir: &Path,
     ) -> Result<(), TebakoError> {
-        if let Some(op) = unsupported_script_op(ops, self.shim_supported()) {
-            return Err(crate::error::plain_error(format!(
-                "deploy op {op:?} is unsupported on this platform: script mode (the bundle_exec re-entry) rides the ruby shim, a #!/bin/sh script with no Windows shape — press on a POSIX host, or drop the native-extension deploy"
-            )));
-        }
         self.write_driver(seed_dir, ops);
         // The deploy driver image is PRESS-INTERNAL machinery: the
         // resolved runtime mounts it to run the deploy ops, and released
@@ -106,10 +101,8 @@ impl RuntimeDeployer {
             &Default::default(),
         )?;
         self.stitch_driver_package()?;
-        if self.shim_supported() {
-            self.write_bundle_exec_script()?;
-            self.write_ruby_shim()?;
-        }
+        self.write_bundle_exec_script()?;
+        self.write_ruby_shim()?;
         let mut full_env = self.toolchain_env();
         full_env.extend(env.iter().cloned());
         // The v2 handoff needs the entry explicitly (spec 17 §1): with no
@@ -133,10 +126,6 @@ impl RuntimeDeployer {
         Ok(())
     }
 
-    fn shim_supported(&self) -> bool {
-        !cfg!(windows)
-    }
-
     fn driver_image(&self) -> PathBuf {
         self.staging_bin_dir.join(DRIVER_IMAGE)
     }
@@ -155,10 +144,6 @@ impl RuntimeDeployer {
 
     fn bundle_exec_script(&self) -> PathBuf {
         self.staging_bin_dir.join(BUNDLE_EXEC_SCRIPT_NAME)
-    }
-
-    fn ruby_shim_path(&self) -> PathBuf {
-        self.staging_bin_dir.join("ruby")
     }
 
     fn write_driver(&self, seed_dir: &Path, ops: &[Op]) {
@@ -239,13 +224,20 @@ impl RuntimeDeployer {
     /// image at its stub (the script mode applies the RbConfig overrides
     /// and loads the script in-process — the interpreter keyword would
     /// skip them).
+    ///
+    /// tebako#753: the shim has a WINDOWS shape — `ruby.cmd` beside the
+    /// POSIX `ruby` (the override's `File.join(bindir, "ruby")` keeps the
+    /// extensionless spelling; CreateProcess resolves it through PATHEXT).
+    /// Without it the child's spawn fell to the runtime's baked
+    /// CONFIG["ruby"] (A:/t/bin/ruby.exe — the mount-root world, naming
+    /// nothing on the host) and the press died on the first native gem.
     fn write_ruby_shim(&self) -> Result<(), TebakoError> {
-        let shim = format!(
-            "#!/bin/sh\nTEBAKO_DEPLOY_BINDIR=\"$(dirname \"$0\")\"; export TEBAKO_DEPLOY_BINDIR\nexec \"{}\" --tebako-image \"{}\" --tebako-entry /local/stub.rb \"$@\"\n",
-            self.runtime_path.display(),
-            self.driver_image_ref()
+        let (path, shim) = ruby_shim(
+            &self.staging_bin_dir,
+            &self.runtime_path.display().to_string(),
+            &self.driver_image_ref(),
+            cfg!(windows),
         );
-        let path = self.ruby_shim_path();
         fs::write(&path, shim)
             .map_err(|e| crate::error::plain_error(format!("{e} writing {}", path.display())))?;
         #[cfg(unix)]
@@ -265,7 +257,10 @@ impl RuntimeDeployer {
     /// candidate per key, but only for keys the user has not already set
     /// (explicit user CC/CXX/... wins). POSIX-only.
     fn toolchain_env(&self) -> Vec<(String, String)> {
-        if !self.shim_supported() {
+        // POSIX-only by platform, never by the shim's reach (the shim now
+        // exists everywhere — tebako#753; the candidate list is the POSIX
+        // toolchain's spellings).
+        if cfg!(windows) {
             return Vec::new();
         }
         let mut out = Vec::new();
@@ -303,9 +298,6 @@ impl RuntimeDeployer {
     /// reads MAKEFILE_CONFIG, rubygems reads CONFIG — both take the
     /// overrides.
     fn build_overrides(&self) -> String {
-        if !self.shim_supported() {
-            return String::new();
-        }
         let mut out =
             String::from("[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n");
         out.push_str(&format!(
@@ -348,17 +340,27 @@ impl RuntimeDeployer {
 // op serialization (RuntimeDeployer#op_line)
 // ---------------------------------------------------------------------
 
-/// The upfront script-mode guard (execute() refuses by name, never
-/// writes a file the platform cannot exec): the first op that needs the
-/// ruby shim when the platform has none. `Op::BundleExec` re-enters the
-/// driver through the shim's script mode; everything else (Gem, Bundle,
-/// Chdir, InstallAll) runs in the driver's plain branch on every
-/// platform.
-fn unsupported_script_op(ops: &[Op], shim_supported: bool) -> Option<&Op> {
-    if shim_supported {
-        return None;
+/// The ruby shim's (path, content) per platform — a pure function so the
+/// windows form is testable on any host (the `cfg!(windows)` code path is
+/// invisible to POSIX test runs otherwise). POSIX writes `ruby` (a
+/// #!/bin/sh re-entry); windows writes `ruby.cmd` (the batch re-entry —
+/// PATHEXT resolves the override's extensionless `bin\ruby` to it).
+fn ruby_shim(bin_dir: &Path, runtime: &str, image_ref: &str, windows: bool) -> (PathBuf, String) {
+    if windows {
+        (
+            bin_dir.join("ruby.cmd"),
+            format!(
+                "@echo off\r\nset \"TEBAKO_DEPLOY_BINDIR=%~dp0\"\r\n\"{runtime}\" --tebako-image \"{image_ref}\" --tebako-entry /local/stub.rb %*\r\nexit /b %ERRORLEVEL%\r\n"
+            ),
+        )
+    } else {
+        (
+            bin_dir.join("ruby"),
+            format!(
+                "#!/bin/sh\nTEBAKO_DEPLOY_BINDIR=\"$(dirname \"$0\")\"; export TEBAKO_DEPLOY_BINDIR\nexec \"{runtime}\" --tebako-image \"{image_ref}\" --tebako-entry /local/stub.rb \"$@\"\n"
+            ),
+        )
     }
-    ops.iter().find(|op| matches!(op, Op::BundleExec(..)))
 }
 
 fn op_lines(ops: &[Op]) -> String {
@@ -778,22 +780,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn script_mode_ops_are_named_unsupported_without_the_shim() {
-        let ops = vec![
-            Op::Chdir("/tmp/x".to_string()),
-            Op::BundleExec(None, vec!["install".to_string()]),
-        ];
-        // POSIX (shim present): nothing refused.
-        assert!(unsupported_script_op(&ops, true).is_none());
-        // Windows shape: the BundleExec op is the one named (Gem/Bundle/
-        // Chdir/InstallAll stay supported — they run the driver's plain
-        // branch).
-        assert_eq!(
-            unsupported_script_op(&ops, false),
-            Some(&Op::BundleExec(None, vec!["install".to_string()]))
-        );
-        let plain = vec![Op::Gem(vec!["env".to_string()])];
-        assert!(unsupported_script_op(&plain, false).is_none());
+    fn the_ruby_shim_has_a_windows_shape() {
+        // tebako#753: the windows shim is a batch re-entry beside the
+        // POSIX script — PATHEXT resolves the override's extensionless
+        // `bin\ruby` to `ruby.cmd`; the batch sets TEBAKO_DEPLOY_BINDIR
+        // from its own dir (%~dp0) and re-enters the runtime at the stub
+        // with the exit code propagated.
+        let (path, content) =
+            ruby_shim(Path::new("/x/bin"), "/rt/ruby.exe", "/p/pkg.tfs:0:/t", true);
+        assert_eq!(path, Path::new("/x/bin").join("ruby.cmd"));
+        assert!(content.contains("TEBAKO_DEPLOY_BINDIR=%~dp0"), "{content}");
+        assert!(content.contains("\"/rt/ruby.exe\" --tebako-image \"/p/pkg.tfs:0:/t\" --tebako-entry /local/stub.rb %*"), "{content}");
+        assert!(content.contains("exit /b %ERRORLEVEL%"), "{content}");
+
+        // POSIX keeps the shell re-entry byte shape (the override's
+        // File.join(bindir, "ruby") names it directly).
+        let (path, content) = ruby_shim(Path::new("/x/bin"), "/rt/ruby", "/p/pkg.tfs:0:/t", false);
+        assert_eq!(path, Path::new("/x/bin").join("ruby"));
+        assert!(content.starts_with("#!/bin/sh\n"), "{content}");
+        assert!(content.contains("exec \"/rt/ruby\" --tebako-image \"/p/pkg.tfs:0:/t\" --tebako-entry /local/stub.rb \"$@\""), "{content}");
     }
 
     #[test]
@@ -853,10 +858,8 @@ mod tests {
 
     #[test]
     fn build_overrides_without_sdk_is_the_gem_no_sdk_branch() {
-        if cfg!(windows) {
-            assert_eq!(deployer(None).build_overrides(), "");
-            return;
-        }
+        // tebako#753: the overrides emit on every platform — the shim's
+        // windows shape (ruby.cmd) carries the re-entry there too.
         assert_eq!(
             deployer(None).build_overrides(),
             "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\n  tg_ruby = File.join(ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\"), \"ruby\")\n  tg_config[\"ruby\"] = tg_ruby\n  tg_config[\"RUBY\"] = tg_ruby\nend\n"
