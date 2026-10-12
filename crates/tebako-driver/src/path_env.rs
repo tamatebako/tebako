@@ -540,8 +540,19 @@ mod tests {
             .is_none());
     }
 
+    /// `export()` reads the spawn tier's process-global STATE (the expose
+    /// set) on unix — these tests serialize on the crate lock and reset
+    /// the tier, the same discipline the spawn tests keep, so a sibling
+    /// test's installed state can never leak a wrapper dir into PATH here.
+    fn spawn_isolation() -> std::sync::MutexGuard<'static, ()> {
+        let guard = crate::TEST_LOCK.lock().unwrap();
+        crate::spawn::reset();
+        guard
+    }
+
     #[test]
     fn export_without_dependency_mounts_touches_nothing() {
+        let _iso = spawn_isolation();
         let env = MapEnv(RefCell::new(HashMap::from([(
             "PATH".to_string(),
             "/usr/bin".to_string(),
@@ -555,6 +566,7 @@ mod tests {
 
     #[test]
     fn a_delivered_shim_without_dependencies_launches_nothing() {
+        let _iso = spawn_isolation();
         // The launcher tier is armed but no dependency declares an
         // executable — no wrapper dir rides PATH.
         let env = MapEnv(RefCell::new(HashMap::from([(
