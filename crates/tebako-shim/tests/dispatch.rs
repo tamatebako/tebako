@@ -213,6 +213,181 @@ fn declared_dependency_mounts_join_the_mount_set() {
     assert_eq!(images.len(), 2);
 }
 
+// ---------------------------------------------------------------------
+// tebako#460 (spec 05 §4a) — the dep-mount locked-fetch goldens: an edge
+// carrying a `registry:` alias resolves a cache MISS at dispatch time
+// through the alias's book entry, by the locked digest (fail-closed).
+// ---------------------------------------------------------------------
+
+/// A file:// registry (book alias `priv`) carrying one data payload row
+/// whose universal release ref is pinned at the written bytes; `pin`
+/// overrides the computed digest (the mismatch arm).
+fn seed_lock_registry(
+    home: &std::path::Path,
+    tmp: &std::path::Path,
+    name: &str,
+    version: &str,
+    bytes: &[u8],
+    pin: Option<String>,
+) {
+    let image = tmp.join(format!("{name}-{version}.tfs"));
+    std::fs::write(&image, bytes).expect("registry payload bytes");
+    let pin = pin.unwrap_or_else(|| sha256_hex(bytes));
+    let registry = tmp.join("priv-registry.yaml");
+    std::fs::write(
+        &registry,
+        format!(
+            "schema_version: 1\npayloads:\n  - name: {name}\n    kind: data\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: '{}?sha256={pin}'}}\n",
+            tebako_http::file_url(&image)
+        ),
+    )
+    .expect("registry yaml");
+    write_config(
+        home,
+        &format!(
+            "registries:\n  - ref: {}\n    name: priv\n",
+            tebako_http::file_url(&registry)
+        ),
+    );
+}
+
+const LOCK_EDGE: &str =
+    "requires:\n  - kind: data\n    name: iso-codes\n    constraint: \">= 2024.1\"\n    mount: /__app__/share/iso-codes\n    registry: priv\n";
+
+fn seed_lock_tool(home: &std::path::Path) {
+    write_payload(
+        home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            LOCK_EDGE,
+        ),
+    );
+    write_runtime(home, "4.0.6", "0.16.0", false);
+}
+
+#[test]
+fn dep_lock_fetch_resolves_a_cache_miss_through_the_edge_alias() {
+    let tmp = TempDir::new("dep-lock-fetch");
+    let home = tmp.path().join("home");
+    seed_lock_tool(&home);
+    seed_lock_registry(
+        &home,
+        tmp.path(),
+        "iso-codes",
+        "2025.2",
+        b"locked bytes\n",
+        None,
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &[], &ctx).unwrap();
+
+    let cached = home.join("payloads").join("iso-codes").join("2025.2.tfs");
+    assert!(
+        cached.is_file(),
+        "the locked fetch seeded the payload cache"
+    );
+    assert_eq!(plan.mounts.len(), 2);
+    assert_eq!(plan.mounts[1].image, cached);
+    assert_eq!(plan.mounts[1].mount, "/__app__/share/iso-codes");
+}
+
+#[test]
+fn dep_lock_fetch_pin_mismatch_is_a_trust_error_and_caches_nothing() {
+    let tmp = TempDir::new("dep-lock-mismatch");
+    let home = tmp.path().join("home");
+    seed_lock_tool(&home);
+    seed_lock_registry(
+        &home,
+        tmp.path(),
+        "iso-codes",
+        "2025.2",
+        b"locked bytes\n",
+        Some("f".repeat(64)),
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_SHA, "{}", err.message);
+    assert!(err.message.contains("iso-codes"), "{}", err.message);
+    let entry_dir = home.join("payloads").join("iso-codes");
+    assert!(
+        !entry_dir.join("2025.2.tfs").exists()
+            && !entry_dir.join("2025.2.tfs.sha256").exists()
+            && !entry_dir.join("2025.2.manifest.yaml").exists(),
+        "a pin mismatch cached a payload entry"
+    );
+}
+
+#[test]
+fn dep_lock_fetch_offline_keeps_the_cache_only_refusal() {
+    let tmp = TempDir::new("dep-lock-offline");
+    let home = tmp.path().join("home");
+    seed_lock_tool(&home);
+    seed_lock_registry(
+        &home,
+        tmp.path(),
+        "iso-codes",
+        "2025.2",
+        b"locked bytes\n",
+        None,
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+    ctx.env
+        .insert("TEBAKO_OFFLINE".to_string(), "1".to_string());
+
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST, "{}", err.message);
+    assert!(
+        err.message.contains("no satisfying version is installed"),
+        "{}",
+        err.message
+    );
+    assert!(
+        !home.join("payloads").join("iso-codes").exists(),
+        "an offline run wrote into the store"
+    );
+}
+
+#[test]
+fn dep_lock_fetch_unknown_alias_is_the_named_error() {
+    let tmp = TempDir::new("dep-lock-noalias");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            "requires:\n  - kind: data\n    name: iso-codes\n    constraint: \">= 2024.1\"\n    mount: /__app__/share/iso-codes\n    registry: nosuch\n",
+        ),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    write_config(&home, "registries: []\n");
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+
+    assert!(
+        err.message.contains("UnknownRegistryAlias"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("nosuch"), "{}", err.message);
+}
+
 #[test]
 fn missing_dependency_is_a_named_error() {
     let tmp = TempDir::new("dep-missing");
