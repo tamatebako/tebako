@@ -1,4 +1,4 @@
-//! `tebako publish` (spec 16 §5 developer side, roadmap 41): the release
+//! `tebako publish` (spec 16 §5 developer side,): the release
 //! helper for persona C. One flow, all in-process (no gh CLI, no
 //! shell-outs — spec 14 §3):
 //!

@@ -377,7 +377,7 @@ fn map_fetch(url: &str, e: FetchError) -> ResolveError {
             origin: url.to_string(),
             reason: msg,
         },
-        // The enterprise-networking failures (TODO.v2-1/33) are download
+        // The enterprise-networking failures are download
         // failures carrying their own named messages — never NotFound
         // (they must not walk the next-index chain).
         FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_) => {

@@ -1,6 +1,6 @@
-//! The windows surface of the ENC verbs (TODO.v2-1/02): the ENC
+//! The windows surface of the ENC verbs: the ENC
 //! transform ships only in the POSIX tfs build (rnp's mingw build is
-//! unproven — TODO.v2-1/08), so on windows every encryption verb is the
+//! unproven —), so on windows every encryption verb is the
 //! named ENOTSUP error — never a compile error, never a silent skip.
 //!
 //! Same module API as enc.rs (the POSIX implementation) — keep the two

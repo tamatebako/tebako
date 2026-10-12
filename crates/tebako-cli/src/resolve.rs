@@ -166,7 +166,7 @@ pub struct DllRef {
 type IndexAndCard = (Vec<IndexEntry>, Option<String>);
 
 /// Whether the consumed release-index form was signature-verified at the
-/// fetch boundary (spec 09 §4/§5, roadmap 80 G1): the detached `.asc`
+/// fetch boundary (spec 09 §4/§5, G1): the detached `.asc`
 /// sibling of the shard / manifest.json / SHA256SUMS.txt verified
 /// TRUSTED against the keyring (the signer's resolved PRIMARY keyid
 /// rides along for the audit journal), or no form carried a verifiable
@@ -1636,7 +1636,7 @@ impl Resolver {
         out
     }
 
-    // ---- trust (spec 09 §4/§5, roadmap 80 G1) ------------------------
+    // ---- trust (spec 09 §4/§5, G1) ------------------------
 
     /// The spec 09 §9 zero-interaction keyring: the user's trusted
     /// keyring plus the embedded tamatebako root (and the
@@ -4421,7 +4421,7 @@ mod tests {
         let _ = fs::remove_dir_all(cache.parent().unwrap());
     }
 
-    // ---- roadmap 80 G1: the signed runtime fetch (spec 09 §4/§5) -------
+    // ---- G1: the signed runtime fetch (spec 09 §4/§5) -------
 
     /// Retrieval-triggering tests point the trust-anchor channel at an
     /// empty LOCAL directory (never the network) for the guard's

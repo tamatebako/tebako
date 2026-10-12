@@ -1,4 +1,4 @@
-//! Windows shell integration (TODO.v2-1/05): no rc files exist here — the
+//! Windows shell integration: no rc files exist here — the
 //! shim dir goes onto the USER PATH in the registry
 //! (`HKCU\Environment`, value `Path`, REG_EXPAND_SZ), followed by a
 //! `WM_SETTINGCHANGE` broadcast so NEW consoles see it without re-login.

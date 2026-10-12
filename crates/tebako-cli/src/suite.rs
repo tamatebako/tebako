@@ -318,7 +318,7 @@ pub fn suite_package_manifest(
         // Suite members keep exclusive mounts for now: their shared
         // point collides with the env image's runtime root exactly like
         // the plain press's app slot did — the union rows for suites
-        // land with the suite mount-model follow-up (TODO.prepublish/12).
+        // land with the suite mount-model follow-up.
         mounts: Vec::new(),
     };
     manifest

@@ -230,7 +230,7 @@ pub fn vfs_dirfd_path(_fd: libc::c_int) -> Option<String> {
 /// the VFS cannot serve — the JDK's `File.getCanonicalFile` canonicalizes
 /// every `-jar`/`-cp` classpath entry exactly this way, which dropped the
 /// payload's jing jar from the classpath (the dogfood linux-gnu
-/// ClassNotFoundException, 2026-09-03; PROGRESS/31).
+/// ClassNotFoundException, 2026-09-03;).
 ///
 /// The discipline: a path that EXISTS in the VFS is answered with its
 /// lexically normalized VFS spelling — the host walk never runs, so no
@@ -382,7 +382,7 @@ pub fn resolve_at(dirfd: i32, path: &str, base: Option<PathBuf>) -> Result<Strin
     }
 }
 
-/// The *at-family route resolution (roadmap 39). CRITICAL discipline:
+/// The *at-family route resolution. CRITICAL discipline:
 /// `AT_FDCWD` (-100) has the `TEBAKO_FD_FLAG` bit set, so the fd branch of
 /// every *at shim MUST gate on `dirfd >= 0` — a bare
 /// `tebako_fd_is_embedded`-style bit test misroutes AT_FDCWD-relative
@@ -434,7 +434,7 @@ pub fn vfs_rewinddir(id: usize) -> Result<(), i32> {
     context().write().unwrap().rewinddir(id)
 }
 
-/// execve/posix_spawn of a MEMFS path (roadmap 39): materialize through
+/// execve/posix_spawn of a MEMFS path: materialize through
 /// the engine's exec answer (`exec_materialize` — a home-layout mount
 /// (the in-image manifest's `home` annotation, or the shipped
 /// `java_home` alias) extracts WHOLE once
@@ -881,7 +881,7 @@ mod tests {
         assert_eq!(vfs_write_path(&secret), Err(libc::EROFS));
         assert_eq!(vfs_rename("/tmp/a-x", &secret), Err(libc::EROFS));
 
-        // ---- dir streams: rewind/tell/seek (roadmap 39) ----
+        // ---- dir streams: rewind/tell/seek ----
         let PathRoute::Vfs(dir_id) = vfs_opendir(&format!("{mp}/dir")) else {
             panic!("memfs opendir should route Vfs");
         };
@@ -995,7 +995,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The AT_FDCWD regression pin (roadmap 39): `AT_FDCWD` is -100, whose
+    /// The AT_FDCWD regression pin: `AT_FDCWD` is -100, whose
     /// two's-complement form has the `TEBAKO_FD_FLAG` bit set — a bare
     /// `is_memfs_fd` bit test therefore lies for every *at shim. The fd
     /// branch gates on `dirfd >= 0` instead: AT_FDCWD paths route

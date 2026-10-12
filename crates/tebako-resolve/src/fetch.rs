@@ -84,7 +84,7 @@ pub(crate) fn map_fetch_error(url: &str, e: FetchError) -> ResolveError {
             origin: url.to_string(),
             reason,
         },
-        // TODO.v2-1/33's named networking failures ride their own
+        //'s named networking failures ride their own
         // messages; never NotFound (no next-index walk).
         FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_) => {
             ResolveError::DownloadFailed {

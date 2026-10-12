@@ -422,7 +422,7 @@ pub fn build_from_source_with_mode(
 
 /// A gated-off backend degrades to the NAMED error, never a crash or
 /// a silent re-route (the Windows build ships without squashfs —
-/// TODO.v2-1/02). Runs in the `--no-default-features` CI job; with
+///). Runs in the `--no-default-features` CI job; with
 /// the feature on, the same magic would attempt a real SquashFS
 /// mount instead. The whole module compiles out with the feature on
 /// (an empty tests module would only borrow trouble).

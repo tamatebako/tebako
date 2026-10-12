@@ -475,7 +475,7 @@ impl HttpTransport {
                     }
                     std::thread::sleep(RETRY_DELAY);
                 }
-                // TODO.v2-1/33's named networking failures are
+                //'s named networking failures are
                 // deterministic configuration answers — retried never,
                 // surfaced verbatim. A credential refusal (spec 37 §5)
                 // is terminal too: retrying a rejected (or absent)

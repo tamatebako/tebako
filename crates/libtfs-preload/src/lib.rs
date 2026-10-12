@@ -34,7 +34,7 @@
 //! `fstatat` (+`fstatat64`/`__xstat`/`__lxstat`/`__fxstat`/`__fxstatat`/
 //! `__xstat64`/`__lxstat64`/`__fxstat64`/`__fxstatat64`/`statx`/
 //! `getdents64` and the LFS `open64`/`openat64`/`stat64`/`lstat64`/
-//! `fstat64`/`pread64`/`lseek64`/`fcntl64` family on Linux — roadmap 39
+//! `fstat64`/`pread64`/`lseek64`/`fcntl64` family on Linux —
 //! (fcntl64: glibc's `_FILE_OFFSET_BITS=64` header redirect, the gnu
 //! CPython boot's actual entry point — tebako#529); the fortified
 //! `__read_chk` and `__openat_2`, and `fopen64` — tebako#439:
@@ -63,7 +63,7 @@
 //! normalized — a host canonicalization must never rewrite a VFS path,
 //! the 2026-09-03 dogfood jing ClassNotFound), and
 //! `execve`/`posix_spawn`/`posix_spawnp` (memfs paths materialize through
-//! the `dlmap2file` host cache; roadmap 39). Memfs paths are served by
+//! the `dlmap2file` host cache. Memfs paths are served by
 //! the engine; host paths pass through, gated by the SAME `host_policy`
 //! (spec 08 §3 — denied paths fail `EPERM`, writes against an ro grant
 //! `EROFS`). `dlopen` of a memfs library rides the engine's `dlmap2file`
@@ -75,10 +75,10 @@
 //!
 //! - Dynamic binaries only (a static binary has no interposition point —
 //!   spec 07 §8 tier 2 is its story). macOS first-class, linux-gnu
-//!   first-class; Windows is roadmap 30 phase 2.
+//!   first-class; Windows is phase 2.
 //! - The process tree stays in the VFS by env propagation: a child
 //!   process inherits the preload variables, so its own IO is interposed
-//!   too. Spawning works with HOST paths and — since roadmap 39 — with
+//!   too. Spawning works with HOST paths and — since — with
 //!   MEMFS paths: execve/posix_spawn of an in-image binary materializes
 //!   it through `dlmap2file` (one copy per exec, gc later); a bare name
 //!   is a host PATH search (memfs dirs are not in it). `exec` of a host

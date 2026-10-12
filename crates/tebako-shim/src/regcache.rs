@@ -1,5 +1,5 @@
 //! The dispatch-time registry cache (spec 04 §2 + spec 05 §4 discipline,
-//! roadmap 33): the shim's registry-default chain link resolves EVERY
+//!): the shim's registry-default chain link resolves EVERY
 //! registry form through tebako-resolve — service contents API, pinned
 //! release artifact, git blob, `file://` — and remote registries ride a
 //! per-ref cache so dispatch never blocks on the network twice in a row:
@@ -15,7 +15,7 @@
 //! - stale/missing cache, online → fetch through tebako-resolve, publish
 //!   tmp + rename, then read;
 //! - stale cache + fetch FAILED → serve the stale cache LOUD (stderr +
-//!   journal `event=stale-registry-serve`; spec 05 §4, roadmap 86) —
+//!   journal `event=stale-registry-serve`; spec 05 §4,) —
 //!   the trust anchor is the artifact's `.sha256`/`.asc` at fetch time,
 //!   never the registry's freshness; a MISSING cache + fetch failed
 //!   stays the named error;
@@ -342,7 +342,7 @@ pub fn registry_for_with<T: Transport>(
 
     // Stale or missing: fetch, publish, read. A PRESENT-but-stale cache
     // whose refresh failed serves LOUD (spec 05 §4's stale-serve,
-    // roadmap 86); a MISSING cache keeps the named error.
+    //); a MISSING cache keeps the named error.
     // spec 06 §5a's wiring rule: the network read renders through
     // tebako-term — a one-shot quiet-gated line (an index read, not an
     // artifact stream — no bar).

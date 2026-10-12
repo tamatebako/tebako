@@ -16,7 +16,7 @@
 //!   `JAVA_TOOL_OPTIONS` (the JVM then trusts the OS store natively) —
 //!   an additive merge, never a stomp: an existing trustStore setting is
 //!   the user's own and wins. `extra_ca` with java in force is the open
-//!   sub-item of roadmap 81: a loud journal line names the gap, never a
+//!   sub-item of: a loud journal line names the gap, never a
 //!   silent partial-trust boot.
 
 use tebako_http::netconfig::{NetworkConfig, TlsRoots};
@@ -81,12 +81,12 @@ pub fn apply_with(plan: &mut ExecPlan, ctx: &Ctx, cfg: &NetworkConfig) -> Result
     Ok(())
 }
 
-/// The extra_ca + java gap, made loud (spec 17 §2.3 — roadmap 81's open
+/// The extra_ca + java gap, made loud (spec 17 §2.3 —'s open
 /// sub-item): a stderr warning always, a journal line when the home is
 /// known — never a silent partial-trust boot. `pub` so the CLI's
 /// package-run surface names the same gap with its own prefix.
 pub fn journal_java_gap(home: Option<&std::path::Path>, prefix: &str) {
-    // roadmap 81's open sub-item: the materialized-PKCS12 bridge is
+    //'s open sub-item: the materialized-PKCS12 bridge is
     // not built — the gap is loud (stderr + journal), never a silent
     // partial-trust boot.
     eprintln!(

@@ -1,4 +1,4 @@
-//! tebako-resolve — L3 payload resolution (spec 04/05, roadmap 07/28).
+//! tebako-resolve — L3 payload resolution (spec 04/05,/28).
 //!
 //! Four pieces, one crate:
 //!

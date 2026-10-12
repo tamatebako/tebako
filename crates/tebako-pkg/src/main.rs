@@ -732,7 +732,7 @@ fn cmd_verify(rest: &[String]) -> ExitCode {
 }
 
 // ---------------------------------------------------------------------
-// release-index (roadmap 85 §5): derive the monolithic manifest.json +
+// release-index: derive the monolithic manifest.json +
 // SHA256SUMS.txt a release's shard cards stand in for, or --check the
 // published monoliths against that derivation (read-only audit).
 // ---------------------------------------------------------------------

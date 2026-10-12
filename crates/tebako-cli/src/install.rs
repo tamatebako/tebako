@@ -1,6 +1,6 @@
 //! `tebako add-registry | list-registries | install | uninstall`
 //! (spec 04 §2, spec 16 §3.3 — registry listing + native install,
-//! roadmap 28 item 1).
+//! item 1).
 //!
 //! - **add-registry <ref>** — validates the reference, fetches the
 //!   registry once (proving it parses), and appends it to
@@ -222,7 +222,7 @@ pub fn add_registry_full<T: Transport>(
     };
     let outcome = config::add_registry(home, &canonical, &opts).map_err(map_shim)?;
     // Prime the dispatch-time registry cache with the bytes just fetched
-    // (roadmap 33): the shim's registry-default link then resolves this
+    //: the shim's registry-default link then resolves this
     // remote registry without a second fetch. A prime failure never fails
     // the add — dispatch refreshes on demand; noted, not silent.
     if r.is_remote() {
@@ -447,7 +447,7 @@ pub fn list_registries(home: &Path) -> Result<Vec<RegistryRow>, TebakoError> {
         .collect())
 }
 
-/// What `tebako update-registries` did (roadmap 33): per-registry outcome
+/// What `tebako update-registries` did: per-registry outcome
 /// of the force-renew of the dispatch-time cache.
 #[derive(Debug, Default)]
 pub struct UpdateRegistriesOutcome {
@@ -589,7 +589,7 @@ fn looks_like_reference(target: &str) -> bool {
     target.contains("://") || target.starts_with("tfs:")
 }
 
-// ---- the local-package form (TODO.v2-1/12) ----------------------------
+// ---- the local-package form ----------------------------
 
 /// The exit code for a refused or impossible package install (spec 06 §4).
 const EX_TEBAKO_INSTALL: i32 = 76;
@@ -623,7 +623,7 @@ pub struct LocalInstallOutcome {
     pub notes: Vec<String>,
 }
 
-/// `tebako install <path>` (TODO.v2-1/12): install every payload slice
+/// `tebako install <path>`: install every payload slice
 /// of a local pressed package (fat or lean) into the store. Trust
 /// anchors: the signed trailer's per-slot digest for v2 packages, the
 /// computed digest for unsigned ones — exactly the run's own

@@ -1,4 +1,4 @@
-//! roadmap 85 (spec 13 §2a): `tebako-pkg release-index` — derive the
+//! (spec 13 §2a): `tebako-pkg release-index` — derive the
 //! legacy release monoliths (`manifest.json` + `SHA256SUMS.txt`) from a
 //! release's per-package shards, READ-ONLY, for humans and audit. The
 //! shards and the per-asset `.sha256` sidecars are the sidecar-era

@@ -1,7 +1,7 @@
 //! tebako-runtime-launcher — the spec-29 wrapper exe: the standalone
 //! form of the tebako runtime driver for REPACKED runtimes (upstream
 //! interpreter bytes tebako does not compile; the openjdk promotion is
-//! the first instance — ecosystem TODO.java/04).
+//! the first instance — ecosystem).
 //!
 //! The binary is deliberately thin: every decision (the spec-17 boot,
 //! the interpreter declaration, the visibility mechanism, the argv

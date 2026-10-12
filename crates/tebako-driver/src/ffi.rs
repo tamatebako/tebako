@@ -10,7 +10,7 @@
 //! - [`tebako_main`] — the ruby-runtime entry (the patched ruby's
 //!   `main.c` hook): the root is the ruby memfs point, plus the
 //!   build-time `miniruby` pass-through and the `TEBAKO_CONTRACT_VERSION`
-//!   environment export (roadmap 45). The three compat getters
+//!   environment export. The three compat getters
 //!   ([`tebako_mount_point`], [`tebako_original_pwd`],
 //!   [`tebako_is_running_miniruby`]) are exactly the surface the ruby
 //!   io-routing patches and the toolchain stub reference.
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn tebako_driver_boot(
 /// - the `miniruby` pass-through: the build-time tool links the same
 ///   patched `main.c` and must run as a plain interpreter (no mounts, no
 ///   exports — the v1 `tebako_main` behavior);
-/// - the `TEBAKO_CONTRACT_VERSION` environment export (roadmap 45): the
+/// - the `TEBAKO_CONTRACT_VERSION` environment export: the
 ///   runtime is authoritative for the contract it speaks, so an
 ///   inherited value is always overwritten;
 /// - the mount-point and original-pwd getters, set for the io-routing

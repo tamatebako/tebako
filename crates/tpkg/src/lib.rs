@@ -116,7 +116,7 @@
 //!
 //! # cbindgen / C header
 //!
-//! The locked repo strategy (TODO.restructure/21) wants a C `tpkg.h`
+//! The locked repo strategy wants a C `tpkg.h`
 //! generated from this crate via cbindgen for the C++ bootstrap/driver.
 //! v1 deliberately does **not** wire cbindgen yet: the C++ side currently
 //! vendors the self-contained C99 `tpkg.h` (declarations *and*
@@ -241,7 +241,7 @@ pub const TPKG_FLAG_LEAN: u32 = 0x1;
 pub const TPKG_FLAG_SIGNED_V2: u32 = 0x2;
 /// `package_flags` bit 2: the publisher froze this package — it RUNS
 /// standalone but every install attempt (`--tebako-install`,
-/// `tebako install <path>`) is refused with a named error (TODO.v2-1/12).
+/// `tebako install <path>`) is refused with a named error.
 /// Absence means installable-on-request, including packages written
 /// before the install verb existed — pass-through like every flag.
 pub const TPKG_FLAG_NO_INSTALL: u32 = 0x4;

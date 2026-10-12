@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use tfs::c_api::*;
 
 // The ENC verbs compile where tfs ships the `enc` feature (everywhere
-// but windows — rnp's mingw build is unproven, TODO.v2-1/08); windows
-// gets the named-ENOTSUP surface instead (TODO.v2-1/02). Same module API
+// but windows — rnp's mingw build is unproven,); windows
+// gets the named-ENOTSUP surface instead. Same module API
 // on both sides — keep enc.rs and enc_enotsup.rs in lockstep.
 #[cfg(not(windows))]
 pub mod enc;
@@ -1372,7 +1372,7 @@ fn compose_exists(path: &str) -> bool {
 }
 
 /// `tfs exec` is macOS/linux first (spec 07 §8 tier 1); windows is
-/// roadmap 30 phase 2 (DLL injection).
+/// phase 2 (DLL injection).
 #[cfg(not(unix))]
 pub fn cmd_exec(_opts: &ExecOptions) -> Result<(), (String, i32)> {
     Err((

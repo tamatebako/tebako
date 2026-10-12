@@ -166,7 +166,7 @@ pub struct RegistryVersion {
     /// becomes a registered shim at install.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entrypoints: Vec<String>,
-    /// spec 04 §2's withdrawal axis (roadmap 85): `status: withdrawn`
+    /// spec 04 §2's withdrawal axis: `status: withdrawn`
     /// marks the row YANKED (release assets are immutable — withdrawal is
     /// the only remedy for a bad published artifact). An `Option<String>`,
     /// not an enum, for forward tolerance: unknown values parse and are
@@ -915,7 +915,7 @@ impl RegistryVersion {
         })
     }
 
-    /// spec 04 §2 (roadmap 85): the row is yanked (`status: withdrawn`) —
+    /// spec 04 §2: the row is yanked (`status: withdrawn`) —
     /// resolvers refuse it by name ([`RegistryError::Withdrawn`]), never a
     /// silent skip, never a fallback to it.
     pub fn is_withdrawn(&self) -> bool {
@@ -2424,7 +2424,7 @@ payloads:
     }
 
     // -----------------------------------------------------------------
-    // The withdrawal axis (spec 04 §2, roadmap 85)
+    // The withdrawal axis (spec 04 §2,)
     // -----------------------------------------------------------------
 
     #[test]
