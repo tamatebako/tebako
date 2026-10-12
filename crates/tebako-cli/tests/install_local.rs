@@ -223,6 +223,28 @@ fn no_install_flag_refuses_with_zero_writes() {
 }
 
 #[test]
+fn file_ref_to_a_pressed_package_is_named_before_any_cache_write() {
+    let dir = scratch("file-ref-pkg");
+    let home = dir.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let img = payload_image(&dir, "app.tfs", "app", "1.0");
+    let pkg = pressed_package(
+        &dir,
+        "whole-pkg",
+        &[(img, "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+        0,
+    );
+    let reference = format!("file://{}?sha256={}", pkg.display(), sha256_of(&pkg));
+    let err = install::install(&home, &reference, None, None).unwrap_err();
+    assert_eq!(err.code, 76, "{err}");
+    assert!(err.to_string().contains("pressed tebako package"), "{err}");
+    assert!(
+        !payloads_dir(&home).exists(),
+        "a refused install wrote into the store"
+    );
+}
+
+#[test]
 fn lean_package_installs_and_the_runtime_slot_is_skipped_with_a_note() {
     let dir = scratch("lean");
     let home = dir.join("home");
