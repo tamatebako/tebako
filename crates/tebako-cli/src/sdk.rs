@@ -307,8 +307,18 @@ impl RuntimeSdk {
         let src_dir = extract_src_tarball(tarball, tmp)?;
         let mut args = self.filtered_configure_args()?;
         args.push(format!("--prefix={}", tmp.join("install").display()));
-        let output = std::process::Command::new("./configure")
-            .args(&args)
+        // Windows: `./configure` is a shell script — CreateProcess cannot
+        // exec it directly. Run it through sh (the press's msys2/Git Bash
+        // PATH carries sh.exe; a missing sh is the named 135 below).
+        let (program, argv): (&str, Vec<String>) = if cfg!(windows) {
+            let mut v = vec!["./configure".to_string()];
+            v.append(&mut args);
+            ("sh", v)
+        } else {
+            ("./configure", args)
+        };
+        let output = std::process::Command::new(program)
+            .args(&argv)
             .current_dir(&src_dir)
             .output()
             .map_err(|e| {

@@ -413,28 +413,25 @@ fn deploy(
 
     if !ops.is_empty() {
         // Native-extension deploy (the gem's semantics): whenever deploy
-        // ops run on POSIX, provision the runtime SDK so mkmf-driven
-        // extension builds inside the driver compile against the
-        // runtime's own header tree. Windows stays on the gem's no-SDK
-        // branch for now: the SDK's configure-replay has no Windows shape
-        // yet (tebako#753 phase 2) — the re-entry vehicles (ruby.cmd /
-        // ruby.exe) carry the spawn, and a source build without the SDK
-        // fails at the header probe with mkmf's own named error.
-        let sdk = if cfg!(windows) {
-            None
-        } else {
-            rbconfig_source
-                .as_ref()
-                .map(|source| {
-                    crate::sdk::RuntimeSdk::resolve(
-                        runtime_path,
-                        source.clone(),
-                        &opts.deps(),
-                        ruby_ver,
-                    )
-                })
-                .transpose()?
-        };
+        // ops run, provision the runtime SDK so mkmf-driven extension
+        // builds inside the driver compile against the runtime's own
+        // header tree. Windows joins with tebako#753 phase 2: the
+        // configure replay runs through sh (CreateProcess cannot exec a
+        // shell script), the toolchain probe is Ruby-native (no
+        // `command -v` under Windows ruby), and the leg provisions the
+        // ucrt toolchain on PATH. Without a sh/cc on PATH the resolve
+        // fails with the named 135, never a silent no-SDK fallthrough.
+        let sdk = rbconfig_source
+            .as_ref()
+            .map(|source| {
+                crate::sdk::RuntimeSdk::resolve(
+                    runtime_path,
+                    source.clone(),
+                    &opts.deps(),
+                    ruby_ver,
+                )
+            })
+            .transpose()?;
         let deployer = RuntimeDeployer {
             runtime_path: runtime_path.to_path_buf(),
             staging_bin_dir: opts.data_bin_dir(),
