@@ -54,6 +54,15 @@ const CONTRACT_VARS: &[&str] = &[
     "TEBAKO_RUNTIME_MIRROR",
     "TEBAKO_CONTRACT_VERSION",
     "TEBAKO_DEBUG_TFS",
+    // the runtime factories' build-time smoke contract (tebako#772): the
+    // probe + its expectation knobs are read INSIDE the packaged context
+    // by the boot smoke — a first-class boot consumer. Absent in every
+    // production run (nothing sets them outside the factory harness).
+    "TEBAKO_BOOT_PROBE",
+    "TEBAKO_BOOT_PROBE_MOUNT",
+    "TEBAKO_BOOT_MOUNT_POINT",
+    "TEBAKO_MAGNUS_FIXTURE",
+    "TEBAKO_SMOKE_EXPECT_SUPPORT_DLLS",
 ];
 
 fn is_contract(name: &str) -> bool {
@@ -141,6 +150,37 @@ mod tests {
             Some("/opt/tools")
         );
         assert_eq!(map.get("HOME").map(String::as_str), Some("/home/u"));
+    }
+
+    /// tebako#772: the runtime factories' boot smoke reads its probe
+    /// contract INSIDE the packaged context — the scrub blanked
+    /// TEBAKO_BOOT_PROBE, the probe answered exit 2 with no output, and
+    /// every scenario "did not boot". The smoke contract keeps its names.
+    #[test]
+    fn the_factory_smoke_contract_survives_the_scrub() {
+        let env = env_with(&[
+            ("TEBAKO_BOOT_PROBE", "boot"),
+            ("TEBAKO_BOOT_PROBE_MOUNT", "/probe"),
+            ("TEBAKO_BOOT_MOUNT_POINT", "/__tfs__"),
+            ("TEBAKO_MAGNUS_FIXTURE", "/tmp/fixture"),
+            ("TEBAKO_SMOKE_EXPECT_SUPPORT_DLLS", "ok"),
+            ("TEBAKO_GITHUB_TOKEN", "ghp_secret"),
+        ]);
+        scrub(&env, &[]);
+        let map = env.0.into_inner();
+        for key in [
+            "TEBAKO_BOOT_PROBE",
+            "TEBAKO_BOOT_PROBE_MOUNT",
+            "TEBAKO_BOOT_MOUNT_POINT",
+            "TEBAKO_MAGNUS_FIXTURE",
+            "TEBAKO_SMOKE_EXPECT_SUPPORT_DLLS",
+        ] {
+            assert!(
+                map.get(key).is_some_and(|v| !v.is_empty()),
+                "{key} scrubbed"
+            );
+        }
+        assert_eq!(map.get("TEBAKO_GITHUB_TOKEN").map(String::as_str), Some(""));
     }
 
     #[test]
