@@ -82,12 +82,17 @@ fn stage_source(
     tpkg::merkle_host::stage_tree_excluding(src_dir, &staged_tree, None, excludes)
         .map_err(|e| plain_error(format!("cannot stage the payload tree: {e}")))?;
     let mut hash = None;
-    if manifest_path.is_file() {
+    let staged_manifest = staged_tree
+        .join(tpkg::merkle::MANIFEST_DIR)
+        .join("manifest.yaml");
+    // The stamp reads the STAGED manifest — which the exclusion may have
+    // dropped (the deploy driver image excludes the staging tree's
+    // __tpkg__/ block, tebako#753's alias-ambiguity fix): no manifest
+    // surviving the filter → an unstamped, manifest-less image, which the
+    // mount side accepts ("no manifest declares nothing").
+    if manifest_path.is_file() && staged_manifest.is_file() {
         let digest = tpkg::tree_digest(&tpkg::merkle_host::HostTree::new(&staged_tree))
             .map_err(|e| plain_error(format!("cannot hash the payload tree: {e}")))?;
-        let staged_manifest = staged_tree
-            .join(tpkg::merkle::MANIFEST_DIR)
-            .join("manifest.yaml");
         let authored = std::fs::read_to_string(&staged_manifest)
             .map_err(|e| plain_error(format!("cannot read {}: {e}", staged_manifest.display())))?;
         // A malformed authored manifest goes in unstamped (the imager is
