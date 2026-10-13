@@ -610,7 +610,12 @@ fn is_executable(path: &Path) -> bool {
 /// correct only while every runtime and every press host were clang).
 fn cc_override() -> String {
     let mut out = String::from(
-        "def tg_first_tool(*candidates)\n  candidates.find { |tg_c| !tg_c.to_s.empty? && system(\"command -v #{tg_c} >/dev/null 2>&1\") }\nend\n\n{\n",
+        // tebako#753 phase 2: the probe is Ruby-native (a PATH search with
+        // the EXEEXT variants) — `command -v` is a POSIX shell builtin and
+        // silently finds nothing under Windows ruby. POSIX behavior is
+        // unchanged (same candidates, same first-hit order; a documented
+        // deviation from the gem's shell-out, which has no Windows shape).
+        "def tg_tool_on_path(tg_name)\n  return false if tg_name.to_s.empty?\n  tg_bin = tg_name.split.first\n  tg_exts = [\"\"]\n  tg_exts << RbConfig::CONFIG[\"EXEEXT\"] unless RbConfig::CONFIG[\"EXEEXT\"].to_s.empty?\n  ENV.fetch(\"PATH\", \"\").split(File::PATH_SEPARATOR).uniq.any? do |tg_d|\n    tg_exts.any? { |tg_e| File.exist?(File.join(tg_d, tg_bin + tg_e)) }\n  end\nend\n\ndef tg_first_tool(*candidates)\n  candidates.find { |tg_c| tg_tool_on_path(tg_c) }\nend\n\n{\n",
     );
     for (key, fallbacks) in toolchain_candidates() {
         out.push_str(&format!(
@@ -713,7 +718,7 @@ end
     out.push_str(
         r#"}.each do |tg_key, (tg_tool_key, tg_lang)|
   tg_cc = RbConfig::CONFIG[tg_tool_key].to_s
-  next if tg_cc.empty? || !system("command -v #{tg_cc} >/dev/null 2>&1")
+  next unless tg_tool_on_path(tg_cc)
   [RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|
     tg_recorded = tg_config[tg_key]
     next if tg_recorded.to_s.empty?
@@ -1176,11 +1181,11 @@ mod tests {
             assert!(out.contains(entry), "flag key table misses {entry}:\n{out}");
         }
         // No resolvable compiler -> no filtering (the build dies on its
-        // own terms; stripping flags would only obscure that).
+        // own terms; stripping flags would only obscure that). The probe
+        // is the Ruby-native PATH search (tebako#753 phase 2 — `command
+        // -v` is a POSIX shell builtin; Windows ruby has no such thing).
         assert!(
-            out.contains(
-                "next if tg_cc.empty? || !system(\"command -v #{tg_cc} >/dev/null 2>&1\")"
-            ),
+            out.contains("next unless tg_tool_on_path(tg_cc)"),
             "unresolvable-cc guard missing:\n{out}"
         );
     }

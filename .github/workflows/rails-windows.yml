@@ -56,8 +56,24 @@ jobs:
         working-directory: myapp
         run: bundle exec rails assets:precompile
 
+      # tebako#753 phase 2: the press's native-extension deploy builds
+      # source-only gems (bigdecimal, json, prism, erb, io-console,
+      # nio4r — no precompiled ucrt variants) against the runtime SDK.
+      # That needs the ucrt toolchain + sh on PATH: the SDK replays the
+      # runtime's recorded configure through sh (a shell script — no
+      # CreateProcess target), and mkmf's probes compile with gcc/make.
+      - name: Set up the msys2 ucrt toolchain (the SDK replay + native gem builds)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-toolchain
+            make
+            mingw-w64-ucrt-x86_64-make
+
       - name: Press the Rails application (self-contained)
-        shell: bash
+        shell: msys2 {0}
         run: |
           set -euo pipefail
           .tools/tebako.exe press \
