@@ -337,7 +337,8 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // resolved release carries one — a carried runtime's third slot.
     let resolved_dll = runtime_resolver.resolved_dll(&ruby_ver, &platform, &opts.tebako_version);
 
-    let app_image = packager::build_app_image(opts, &mut scenario, &resolved, &ruby_ver)?;
+    let app_image =
+        packager::build_app_image(opts, &mut scenario, &resolved, &ruby_ver, &bootstrap_path)?;
 
     // The composition (spec 23 §13): the document's preset governs the
     // carry defaults; an explicit --mode OVERRIDES it (the invocation

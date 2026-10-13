@@ -22,6 +22,7 @@ pub fn build_app_image(
     scenario: &mut ScenarioManager,
     resolved: &Resolved,
     ruby_ver: &str,
+    bootstrap_path: &Path,
 ) -> Result<PathBuf, TebakoError> {
     let runtime_path = &resolved.executable;
     // Layout source (item 30b): the runtime image when the release is
@@ -50,7 +51,14 @@ pub fn build_app_image(
         (None, Some(layout)) => Some(crate::sdk::RbconfigSource::Layout(layout.to_path_buf())),
         (None, None) => None,
     };
-    deploy(opts, scenario, runtime_path, ruby_ver, rbconfig_source)?;
+    deploy(
+        opts,
+        scenario,
+        runtime_path,
+        ruby_ver,
+        rbconfig_source,
+        bootstrap_path,
+    )?;
     if let Some(layout_dir) = &layout_dir {
         // Image-era seeds come from the runtime's own image, so the arch
         // layout matches by construction (alignment is a no-op).
@@ -333,6 +341,7 @@ fn deploy(
     runtime_path: &Path,
     ruby_ver: &str,
     rbconfig_source: Option<crate::sdk::RbconfigSource>,
+    bootstrap_path: &Path,
 ) -> Result<(), TebakoError> {
     println!("-- Running deploy script");
     let target = opts.data_src_dir();
@@ -407,7 +416,10 @@ fn deploy(
         // ops run on POSIX, provision the runtime SDK so mkmf-driven
         // extension builds inside the driver compile against the
         // runtime's own header tree. Windows stays on the gem's no-SDK
-        // branch (the ruby shim has no exec path there).
+        // branch for now: the SDK's configure-replay has no Windows shape
+        // yet (tebako#753 phase 2) — the re-entry vehicles (ruby.cmd /
+        // ruby.exe) carry the spawn, and a source build without the SDK
+        // fails at the header probe with mkmf's own named error.
         let sdk = if cfg!(windows) {
             None
         } else {
@@ -431,6 +443,7 @@ fn deploy(
             tebako_version: opts.tebako_version.clone(),
             verbose: opts.verbose,
             sdk,
+            bootstrap_path: bootstrap_path.to_path_buf(),
         };
         deployer.execute(&ops, &deploy_env(&target, &api), &target)?;
     }
