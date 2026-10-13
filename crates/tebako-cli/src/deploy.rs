@@ -20,18 +20,23 @@
 //! exactly like the gem. Without the SDK the overrides carry only the
 //! bindir override (the gem's no-SDK branch).
 //!
-//! Windows decision: the ruby shim is a `#!/bin/sh`
-//! re-entry script — mkmf spawns RbConfig.ruby, the shim execs the
-//! runtime with the deploy image attached, and the driver's script mode
-//! (ARGV.any? below) emulates the ruby command line. A .cmd/.ps1
-//! equivalent is NOT meaningful: it would have to re-implement that
-//! interpreter-switch parser through cmd.exe quoting, and the only
-//! consumers of script mode are mkmf-driven native extension builds,
-//! which are POSIX-only here by construction (packager keeps Windows on
-//! the gem's no-SDK branch — precompiled gems, no ruby shim). So script
-//! mode gets a NAMED unsupported error on Windows, never a silently
-//! wrong file: [`unsupported_script_op`] refuses `Op::BundleExec` up
-//! front and the shim/bundle_exec files are not written.
+//! Windows deploy: the re-entry vehicles exist on every platform
+//! (tebako#753). POSIX keeps the `#!/bin/sh` ruby shim; Windows gets
+//! `ruby.cmd` (the batch re-entry, PATHEXT's answer to the override's
+//! extensionless `bin/ruby`) AND `ruby.exe` — a real re-entry
+//! executable, because mkmf/rubygems compute the spawn path as
+//! `bindir + ruby_install_name + EXEEXT` and CreateProcess runs only a
+//! PE at the explicit `.exe` spelling. The exe is the architecture's
+//! own vehicle: the press's bootstrap bytes stitched with the deploy
+//! driver image (the trailer's `;image` ref resolves the exact runtime
+//! pair from the store; the handoff's `--tebako-entry /local/stub.rb`
+//! runs the stub, which applies the RbConfig overrides in the child —
+//! the same script mode the shims ride). Windows paths crossing into
+//! Ruby sources and spawned command lines are normalized to forward
+//! slashes (`fwd`): cmd.exe/sh.exe layers strip backslashes (the
+//! leg's `C:Usersrunneradmin…/ruby.exe` evidence). Script mode's named
+//! refusal on Windows is retired with the shim's arrival; the SDK
+//! (header overrides) stays POSIX-only.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -69,6 +74,10 @@ pub struct RuntimeDeployer {
     /// The provisioned runtime SDK (native-extension deploy); None keeps
     /// the gem's no-SDK build_overrides branch (bindir override only).
     pub sdk: Option<crate::sdk::SdkPaths>,
+    /// The press's resolved bootstrap (the base of the shipped package);
+    /// on Windows the deploy reuses those bytes as the base of the
+    /// `ruby.exe` re-entry vehicle (tebako#753). POSIX never reads it.
+    pub bootstrap_path: PathBuf,
 }
 
 impl RuntimeDeployer {
@@ -103,8 +112,18 @@ impl RuntimeDeployer {
         self.stitch_driver_package()?;
         self.write_bundle_exec_script()?;
         self.write_ruby_shim()?;
+        self.write_ruby_exe()?;
         let mut full_env = self.toolchain_env();
         full_env.extend(env.iter().cloned());
+        // The deploy bindir in the process env: a contract variable (the
+        // scrub keeps it), so every re-entered generation's stub reads the
+        // same forward-slashed value — the ruby.exe vehicle sets nothing
+        // itself, and the shims' own assignment is belt-and-braces over
+        // this inheritance.
+        full_env.push((
+            "TEBAKO_DEPLOY_BINDIR".to_string(),
+            fwd(&self.staging_bin_dir.to_string_lossy()),
+        ));
         // The v2 handoff needs the entry explicitly (spec 17 §1): with no
         // --tebako-entry the boot is the smoke form — the interpreter
         // starts with its own args and the driver script never runs (the
@@ -164,13 +183,35 @@ impl RuntimeDeployer {
         fs::write(&empty_base, b"").map_err(|e| {
             crate::error::plain_error(format!("{e} writing {}", empty_base.display()))
         })?;
+        // Press-internal machinery, never loader-booted: the ref carries
+        // no `;image` flag (write_ruby_exe's loader-booted trailer does).
+        let runtime_ref = format!("ruby@{};tebako={}", self.ruby_version, self.tebako_version);
+        self.stitch_deploy_package(
+            &empty_base,
+            &self.driver_package(),
+            "tebako-deploy-driver",
+            runtime_ref,
+        )
+    }
+
+    /// The deploy driver image stitched onto `base` at `out`, under the
+    /// package identity `name` — the shared assembly of the driver
+    /// package (empty base, runtime-exec reads the trailer) and the
+    /// Windows ruby.exe vehicle (bootstrap base, the bootstrap reads the
+    /// trailer).
+    fn stitch_deploy_package(
+        &self,
+        base: &Path,
+        out: &Path,
+        name: &str,
+        runtime_ref: String,
+    ) -> Result<(), TebakoError> {
         let declared = crate::declared_mount(&self.fs_mount_point);
         let images = [tebako_pkg::PackageImage {
             path: self.driver_image(),
             mount_point: declared.to_string(),
             format_id: tpkg::TPKG_FORMAT_DWARFS,
         }];
-        let runtime_ref = format!("ruby@{};tebako={}", self.ruby_version, self.tebako_version);
         let options = tebako_pkg::PackageOptions {
             runtime_ref: runtime_ref.clone(),
             package_flags: tpkg::TPKG_FLAG_LEAN,
@@ -178,7 +219,7 @@ impl RuntimeDeployer {
             package_manifest: Some(tpkg::PackageManifest {
                 schema_version: tpkg::PACKAGE_SCHEMA_VERSION,
                 package: tpkg::PackageIdentity {
-                    name: "tebako-deploy-driver".to_string(),
+                    name: name.to_string(),
                     version: self.tebako_version.clone(),
                     producer: tpkg::Producer {
                         tool: "tebako-cli".to_string(),
@@ -192,7 +233,7 @@ impl RuntimeDeployer {
                     ),
                 },
                 entries: vec![tpkg::PackageEntry {
-                    name: "tebako-deploy-driver".to_string(),
+                    name: name.to_string(),
                     slot: Some(0),
                     entrypoint: "/local/stub.rb".to_string(),
                     runtime_ref,
@@ -210,8 +251,45 @@ impl RuntimeDeployer {
             }),
             ..Default::default()
         };
-        tebako_pkg::bundle_exact(&empty_base, &images, &self.driver_package(), &options)
-            .map_err(crate::error::plain_error)
+        tebako_pkg::bundle_exact(base, &images, out, &options).map_err(crate::error::plain_error)
+    }
+
+    fn ruby_exe_path(&self) -> PathBuf {
+        self.staging_bin_dir.join("ruby.exe")
+    }
+
+    /// tebako#753 (the spawn-name layer): mkmf/rubygems compute the
+    /// re-entry path as `bindir + ruby_install_name + EXEEXT` —
+    /// `ruby.exe` on Windows, an explicit suffix PATHEXT never rewrites
+    /// to the `ruby.cmd` script, and CreateProcess runs only a real PE at
+    /// that name. The vehicle is the architecture's own entry point: the
+    /// press's bootstrap bytes stitched with this same deploy driver
+    /// image. A spawn of ruby.exe reads the trailer, resolves the exact
+    /// pinned runtime pair from the store (the `;image` flag — the
+    /// deployer resolved the pair into this store moments earlier, so
+    /// this is a cache hit, and TEBAKO_HOME rides the contract env), and
+    /// hands off `--tebako-entry /local/stub.rb <user args>` — the stub
+    /// applies the overrides in the child, exactly as the shims do.
+    /// POSIX never builds it (its spawn spellings resolve the exec-shim
+    /// directly).
+    fn write_ruby_exe(&self) -> Result<(), TebakoError> {
+        self.write_ruby_exe_for(cfg!(windows))
+    }
+
+    fn write_ruby_exe_for(&self, windows: bool) -> Result<(), TebakoError> {
+        if !windows {
+            return Ok(());
+        }
+        let runtime_ref = format!(
+            "ruby@{};tebako={};image",
+            self.ruby_version, self.tebako_version
+        );
+        self.stitch_deploy_package(
+            &self.bootstrap_path,
+            &self.ruby_exe_path(),
+            "tebako-deploy-ruby",
+            runtime_ref,
+        )
     }
 
     fn write_bundle_exec_script(&self) -> Result<(), TebakoError> {
@@ -298,22 +376,27 @@ impl RuntimeDeployer {
     /// reads MAKEFILE_CONFIG, rubygems reads CONFIG — both take the
     /// overrides.
     fn build_overrides(&self) -> String {
+        let bindir = fwd(&self.staging_bin_dir.to_string_lossy());
         let mut out =
             String::from("[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n");
         out.push_str(&format!(
             "  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", {})\n",
-            rb_str(&self.staging_bin_dir.to_string_lossy())
+            rb_str(&bindir)
         ));
         // tebako#753: the factory bakes CONFIG[\"ruby\"] as the BUILD
         // container's absolute path (A:/t/bin/ruby.exe — the mount-root
         // world); mkmf and Gem.ruby invoke it verbatim for extconf and
         // make's $(RUBY), so the bindir override alone never reaches
-        // them. Point the absolute spellings at the host shim.
-        out.push_str(
-            "  tg_ruby = File.join(ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\"), \"ruby\")\n  \
+        // them. Point the absolute spellings at the host shim. The values
+        // are forward-slashed (`fwd`): cmd.exe/sh.exe layers strip
+        // backslashes from spawn strings (the rails-windows leg's
+        // `C:Usersrunneradmin…/ruby.exe` evidence).
+        out.push_str(&format!(
+            "  tg_ruby = File.join(ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", {}), \"ruby\")\n  \
              tg_config[\"ruby\"] = tg_ruby\n  \
              tg_config[\"RUBY\"] = tg_ruby\n",
-        );
+            rb_str(&bindir)
+        ));
         let Some(sdk) = &self.sdk else {
             return format!("{out}end\n");
         };
@@ -344,13 +427,17 @@ impl RuntimeDeployer {
 /// windows form is testable on any host (the `cfg!(windows)` code path is
 /// invisible to POSIX test runs otherwise). POSIX writes `ruby` (a
 /// #!/bin/sh re-entry); windows writes `ruby.cmd` (the batch re-entry —
-/// PATHEXT resolves the override's extensionless `bin\ruby` to it).
+/// PATHEXT resolves the override's extensionless `bin\ruby` to it, behind
+/// `ruby.exe`'s earlier PATHEXT slot when both exist). The batch
+/// normalizes its self-located bindir to forward slashes: the value
+/// re-enters Ruby sources and spawned command lines, where cmd.exe/sh.exe
+/// layers strip backslashes (tebako#753).
 fn ruby_shim(bin_dir: &Path, runtime: &str, image_ref: &str, windows: bool) -> (PathBuf, String) {
     if windows {
         (
             bin_dir.join("ruby.cmd"),
             format!(
-                "@echo off\r\nset \"TEBAKO_DEPLOY_BINDIR=%~dp0\"\r\n\"{runtime}\" --tebako-image \"{image_ref}\" --tebako-entry /local/stub.rb %*\r\nexit /b %ERRORLEVEL%\r\n"
+                "@echo off\r\nset \"TEBAKO_DEPLOY_BINDIR=%~dp0\"\r\nset \"TEBAKO_DEPLOY_BINDIR=%TEBAKO_DEPLOY_BINDIR:\\=/%\"\r\n\"{runtime}\" --tebako-image \"{image_ref}\" --tebako-entry /local/stub.rb %*\r\nexit /b %ERRORLEVEL%\r\n"
             ),
         )
     } else {
@@ -361,6 +448,15 @@ fn ruby_shim(bin_dir: &Path, runtime: &str, image_ref: &str, windows: bool) -> (
             ),
         )
     }
+}
+
+/// Windows path values flowing into Ruby sources and spawned command
+/// lines are forward-slashed: Ruby-win32, CreateProcess, cmd.exe and the
+/// msys2 sh/make layers all accept them, while backslashes die at the
+/// shell layers (tebako#753's `C:Usersrunneradmin…` evidence). A no-op
+/// for POSIX spellings (no backslashes to rewrite).
+fn fwd(s: &str) -> String {
+    s.replace('\\', "/")
 }
 
 fn op_lines(ops: &[Op]) -> String {
@@ -783,13 +879,19 @@ mod tests {
     fn the_ruby_shim_has_a_windows_shape() {
         // tebako#753: the windows shim is a batch re-entry beside the
         // POSIX script — PATHEXT resolves the override's extensionless
-        // `bin\ruby` to `ruby.cmd`; the batch sets TEBAKO_DEPLOY_BINDIR
-        // from its own dir (%~dp0) and re-enters the runtime at the stub
-        // with the exit code propagated.
+        // `bin\ruby` to it (behind ruby.exe's earlier PATHEXT slot);
+        // the batch sets TEBAKO_DEPLOY_BINDIR from its own dir (%~dp0),
+        // normalized to forward slashes for the Ruby-source and spawn
+        // consumers, and re-enters the runtime at the stub with the exit
+        // code propagated.
         let (path, content) =
             ruby_shim(Path::new("/x/bin"), "/rt/ruby.exe", "/p/pkg.tfs:0:/t", true);
         assert_eq!(path, Path::new("/x/bin").join("ruby.cmd"));
         assert!(content.contains("TEBAKO_DEPLOY_BINDIR=%~dp0"), "{content}");
+        assert!(
+            content.contains("set \"TEBAKO_DEPLOY_BINDIR=%TEBAKO_DEPLOY_BINDIR:\\=/%\""),
+            "{content}"
+        );
         assert!(content.contains("\"/rt/ruby.exe\" --tebako-image \"/p/pkg.tfs:0:/t\" --tebako-entry /local/stub.rb %*"), "{content}");
         assert!(content.contains("exit /b %ERRORLEVEL%"), "{content}");
 
@@ -799,6 +901,84 @@ mod tests {
         assert_eq!(path, Path::new("/x/bin").join("ruby"));
         assert!(content.starts_with("#!/bin/sh\n"), "{content}");
         assert!(content.contains("exec \"/rt/ruby\" --tebako-image \"/p/pkg.tfs:0:/t\" --tebako-entry /local/stub.rb \"$@\""), "{content}");
+    }
+
+    #[test]
+    fn the_ruby_exe_is_the_bootstrap_stitched_with_the_deploy_image() {
+        // tebako#753 (the spawn-name layer): mkmf/rubygems spawn
+        // `bindir + ruby_install_name + EXEEXT` — `ruby.exe` on Windows —
+        // and CreateProcess runs only a real PE at that explicit suffix.
+        // The vehicle is the press's bootstrap bytes stitched with the
+        // deploy driver image: the trailer carries the `;image` ref (the
+        // bootstrap resolves the exact runtime pair + exports
+        // TEBAKO_RUNTIME_IMAGE) and the /local/stub.rb entry (the
+        // argv0-fallback entry — "ruby.exe" matches no declared name).
+        let tmp = tempfile::tempdir().unwrap();
+        let bootstrap = tmp.path().join("bootstrap.exe");
+        fs::write(&bootstrap, b"MZ-fake-bootstrap-bytes").unwrap();
+        let d = RuntimeDeployer {
+            staging_bin_dir: tmp.path().to_path_buf(),
+            bootstrap_path: bootstrap.clone(),
+            ..deployer(None)
+        };
+        // The driver image must exist for the stitch (the press builds it
+        // first); the bytes are irrelevant to the trailer assertions.
+        fs::write(d.driver_image(), b"image-bytes").unwrap();
+        d.write_ruby_exe_for(true).unwrap();
+
+        let exe = d.ruby_exe_path();
+        let bytes = fs::read(&exe).unwrap();
+        assert!(
+            bytes.starts_with(b"MZ-fake-bootstrap-bytes"),
+            "ruby.exe must carry the bootstrap bytes as its base"
+        );
+        let mut f = fs::File::open(&exe).unwrap();
+        let m = tpkg::read_from(&mut f).expect("ruby.exe must carry a readable tpkg trailer");
+        assert_eq!(
+            m.runtime_ref_str(),
+            Some("ruby@3.3.7;tebako=0.15.9;image"),
+            "the bootstrap resolves the exact pinned pair via the ;image ref"
+        );
+        let pm = m.package_manifest().unwrap().expect("package manifest");
+        assert_eq!(pm.package.name, "tebako-deploy-ruby");
+        assert_eq!(pm.entries[0].entrypoint, "/local/stub.rb");
+        assert_eq!(pm.entries[0].runtime_ref, "ruby@3.3.7;tebako=0.15.9;image");
+
+        // The POSIX arm is a no-op.
+        let tmp2 = tempfile::tempdir().unwrap();
+        let d2 = RuntimeDeployer {
+            staging_bin_dir: tmp2.path().to_path_buf(),
+            ..deployer(None)
+        };
+        d2.write_ruby_exe_for(false).unwrap();
+        assert!(!d2.ruby_exe_path().exists());
+    }
+
+    #[test]
+    fn forward_slash_normalization() {
+        assert_eq!(
+            fwd("C:\\Users\\runneradmin\\.tebako\\op"),
+            "C:/Users/runneradmin/.tebako/op"
+        );
+        assert_eq!(fwd("/tmp/o/p"), "/tmp/o/p");
+    }
+
+    #[test]
+    fn build_overrides_normalize_the_bindir_to_forward_slashes() {
+        // tebako#753: a backslashed windows staging dir must not reach the
+        // Ruby sources verbatim — the shell layers strip the backslashes.
+        let d = RuntimeDeployer {
+            staging_bin_dir: PathBuf::from("C:\\Users\\runneradmin\\.tebako\\op"),
+            ..deployer(None)
+        };
+        let out = d.build_overrides();
+        assert!(
+            out.contains(
+                "ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"C:/Users/runneradmin/.tebako/op\")"
+            ),
+            "{out}"
+        );
+        assert!(!out.contains("runneradmin\\"), "{out}");
     }
 
     #[test]
@@ -844,6 +1024,7 @@ mod tests {
             tebako_version: "0.15.9".to_string(),
             verbose: false,
             sdk,
+            bootstrap_path: PathBuf::from("/tmp/bootstrap"),
         }
     }
 

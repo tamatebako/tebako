@@ -397,8 +397,13 @@ pub fn press_suite(
             entry.name,
             ruby_ver
         );
-        let app_image =
-            packager::build_app_image(&entry_opts, &mut scenario_mgr, resolved, &ruby_ver)?;
+        let app_image = packager::build_app_image(
+            &entry_opts,
+            &mut scenario_mgr,
+            resolved,
+            &ruby_ver,
+            &bootstrap_path,
+        )?;
         // the next entry's build recreates the packaging environment —
         // move this entry's image aside first
         let staged = opts
