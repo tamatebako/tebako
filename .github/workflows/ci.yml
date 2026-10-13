@@ -37,8 +37,39 @@ env:
   VCPKG_COMMIT: f14401ca0f2754347c3864da7488a9b955b4e47a
 
 jobs:
+  # The tier source (tebako#279): PRs run the SMOKE row only; main +
+  # nightly run the full matrix. The matrix rides a job output because
+  # the per-row mechanisms both misbehave: a job-level `if` cannot see
+  # the matrix context, and the matrix `exclude` expression this
+  # replaces dropped EVERY row on pull_request (strategy-evaluation
+  # failure — the protection-required smoke check never reported and
+  # every PR merge rode the admin override).
+  tiers:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          set -euo pipefail
+          smoke='"os":"ubuntu-24.04","crypto_triplet":"x64-linux-dynamic","triplet":"x64-linux-static"'
+          # tebako#544: the v2.3.1 lesson (libc::SYS_dup2 does not exist
+          # on arm64 kernels; PR legs were green because x86_64/macOS/
+          # Windows all compile it) — the native arm runner closes the
+          # arch gap in the nightly/main tier (the arch classes it
+          # catches are compile-class; the nightly lands within a day).
+          arm='"os":"ubuntu-24.04-arm","crypto_triplet":"arm64-linux-dynamic","triplet":"arm64-linux-static"'
+          mac='"os":"macos-14","crypto_triplet":"arm64-osx-dynamic","triplet":"arm64-osx-static"'
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            m="{\"include\":[{$smoke}]}"
+          else
+            m="{\"include\":[{$smoke},{$arm},{$mac}]}"
+          fi
+          echo "matrix=$m" >> "$GITHUB_OUTPUT"
+
   test:
     name: test (${{ matrix.os }})
+    needs: tiers
     runs-on: ${{ matrix.os }}
     permissions:
       # packages:write populates the org's GitHub Packages vcpkg binary
@@ -48,29 +79,7 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            crypto_triplet: x64-linux-dynamic
-            triplet: x64-linux-static
-            smoke: true
-          # tebako#544: the v2.3.1 lesson (libc::SYS_dup2 does not exist
-          # on arm64 kernels; PR legs were green because x86_64/macOS/
-          # Windows all compile it) — the native arm runner closes the
-          # arch gap. tebako#279: the arm and macos rows ride the
-          # nightly/main matrix; PRs keep the ubuntu smoke leg (the arch
-          # classes the arm leg catches are compile-class, and the
-          # nightly catches them within a day of landing).
-          - os: ubuntu-24.04-arm
-            crypto_triplet: arm64-linux-dynamic
-            triplet: arm64-linux-static
-            smoke: false
-          - os: macos-14
-            crypto_triplet: arm64-osx-dynamic
-            triplet: arm64-osx-static
-            smoke: false
-        # tebako#279: PRs run the smoke rows only.
-        exclude: "${{ github.event_name == 'pull_request' && fromJSON('[{\"smoke\": false}]') || fromJSON('[]') }}"
+      matrix: ${{ fromJSON(needs.tiers.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
         with:
