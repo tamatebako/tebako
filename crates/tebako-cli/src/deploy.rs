@@ -101,13 +101,22 @@ impl RuntimeDeployer {
         // only). A limnifs-less runtime therefore presses a
         // `--format limnifs` package fine; running that package needs a
         // limnifs-capable runtime (spec 20 §5's fail-closed rule).
-        // --exclude governs the shipped payload too — the driver image
-        // is assembled by press itself and always ships whole.
+        // The staging tree carries the extracted runtime layout — its
+        // `__tpkg__/` block (the runtime's own in-image manifest,
+        // library_aliases included) must NOT ride the deploy image: the
+        // env image declares the same aliases from its own bytes, and
+        // two different byte sources declaring one alias is the driver's
+        // authoring-ambiguity named error (tebako#753's windows leg:
+        // 'libwinpthread-1.dll' declared by both). The deploy image
+        // declares no manifest of its own (spec 03 §7 already excludes
+        // the block from the digest).
+        let deploy_excludes = tpkg::exclude::ExcludeSet::parse(&["__tpkg__".to_string()])
+            .map_err(|e| crate::error::plain_error(format!("{e:?}")))?;
         crate::image::build_image(
             &self.driver_image(),
             seed_dir,
             crate::options::PressImageFormat::Dwarfs,
-            &Default::default(),
+            &deploy_excludes,
         )?;
         self.stitch_driver_package()?;
         self.write_bundle_exec_script()?;
@@ -961,6 +970,24 @@ mod tests {
             "C:/Users/runneradmin/.tebako/op"
         );
         assert_eq!(fwd("/tmp/o/p"), "/tmp/o/p");
+    }
+
+    #[test]
+    fn the_deploy_image_drops_the_runtime_manifest_block() {
+        // tebako#753 (the alias-ambiguity layer): the staging tree carries
+        // the extracted runtime layout; its __tpkg__/ manifest declares
+        // the runtime's library_aliases, and mounted beside the env
+        // image's own declaration the driver fails closed on the
+        // authoring ambiguity ('libwinpthread-1.dll' declared by both).
+        // The deploy image excludes the block; the stub's own tree is
+        // untouched.
+        let ex = tpkg::exclude::ExcludeSet::parse(&["__tpkg__".to_string()]).unwrap();
+        // The walker prunes a matched directory with its whole subtree
+        // (merkle_host::mirror_filtered's continue) — the matcher answers
+        // for the directory itself, not for paths beneath it.
+        assert!(ex.matches("__tpkg__"));
+        assert!(!ex.matches("local/stub.rb"));
+        assert!(!ex.matches("bin/bundle_exec.rb"));
     }
 
     #[test]
