@@ -308,12 +308,19 @@ impl RuntimeSdk {
         let mut args = self.filtered_configure_args()?;
         args.push(format!("--prefix={}", tmp.join("install").display()));
         // Windows: `./configure` is a shell script — CreateProcess cannot
-        // exec it directly. Run it through sh (the press's msys2/Git Bash
-        // PATH carries sh.exe; a missing sh is the named 135 below).
+        // exec it directly. The wrapper is bash-as-bash, never sh:
+        // ruby's configure carries an `eval 'test -n "${ac_cv_sizeof_'
+        // $type'+set}"'` probe whose expansion is a bad substitution for
+        // the ucrt ssize_t ("long long" — the space), and a POSIX-mode sh
+        // treats an expansion error inside the special builtin `eval` as
+        // FATAL (the v2.8.32 leg died at configure:24970). bash-as-bash
+        // logs it and continues — the behavior the factory's msys2 build
+        // already proves. Git Bash/DevKit carry bash.exe on PATH; a
+        // missing bash is the named 135 below.
         let (program, argv): (&str, Vec<String>) = if cfg!(windows) {
             let mut v = vec!["./configure".to_string()];
             v.append(&mut args);
-            ("sh", v)
+            ("bash", v)
         } else {
             ("./configure", args)
         };
