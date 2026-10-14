@@ -338,10 +338,15 @@ jobs:
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         # timeout(1) is GNU-only — macOS runners lack it (the sweep's
-        # 40 min backstop simply degrades to the job timeout there).
+        # backstop simply degrades to the job timeout there). 3600: a
+        # cache-missed runner pays the full vcpkg/compile bill inside
+        # this budget — 2400 killed a healthy suite mid-run on a
+        # degraded runner (788 attempt 2: caches failed to restore, the
+        # workspace suite died at exactly 40:00, all-green to that
+        # point).
         run: |
           if command -v timeout >/dev/null; then
-            timeout 2400 cargo test --workspace --exclude libtfs-preload
+            timeout 3600 cargo test --workspace --exclude libtfs-preload
           else
             cargo test --workspace --exclude libtfs-preload
           fi
