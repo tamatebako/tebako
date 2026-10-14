@@ -305,6 +305,7 @@ impl RuntimeSdk {
 
     fn configure(&self, tmp: &Path, tarball: &Path) -> Result<PathBuf, TebakoError> {
         let src_dir = extract_src_tarball(tarball, tmp)?;
+        patch_configure_cache_evals(&src_dir)?;
         let mut args = self.filtered_configure_args()?;
         args.push(format!("--prefix={}", tmp.join("install").display()));
         // Windows: `./configure` is a shell script — CreateProcess cannot
@@ -614,6 +615,53 @@ fn sorted_dirs(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The configure cache-eval patch (tebako#753, the msys-bash fatality):
+/// ruby's generated configure probes each integer type with
+///
+/// ```sh
+/// rb_defint_type="${rb_cv_type_<T>##unsigned }"        # "long long" on ucrt
+/// if test "$rb_defint_type" != yes && eval 'test -n "${ac_cv_sizeof_'$rb_defint_type'+set}"'
+/// eval rb_defint_cond='"${ac_cv_sizeof_'$rb_defint_type'}"'
+/// ```
+///
+/// The concatenation builds an INVALID variable name (`ac_cv_sizeof_long
+/// long` — the space). POSIX shells and macOS bash tolerate the bad
+/// substitution (the probe's failure falls to the tr-mapped #define
+/// fallback); **msys bash aborts the whole script on it** — the ucrt
+/// ssize_t is "long long", so the Windows replay died at the first such
+/// probe under every shell the resolver picked. The patch rewrites both
+/// eval forms to build the CORRECT cache name (autoconf's own mapping:
+/// spaces → underscores) and expand it indirectly — valid in every
+/// bash, and on POSIX it now hits the probed cache instead of the
+/// fallback. The rewrite is textual and count-guarded: a tarball whose
+/// configure drifted regenerates fewer sites and fails by name, never
+/// silently unpatched.
+fn patch_configure_cache_evals(src_dir: &Path) -> Result<(), TebakoError> {
+    let path = src_dir.join("configure");
+    let text = fs::read_to_string(&path)
+        .map_err(|e| plain_error(format!("cannot read {}: {e}", path.display())))?;
+    const PROBE_OLD: &str = "eval 'test -n \"${ac_cv_sizeof_'$rb_defint_type'+set}\"'";
+    const PROBE_NEW: &str = "rb_defint_c=\"ac_cv_sizeof_$(printf %s \"$rb_defint_type\" | tr ' ' '_')\" && eval 'test -n \"${!rb_defint_c+set}\"'";
+    const COND_OLD: &str = "eval rb_defint_cond='\"${ac_cv_sizeof_'$rb_defint_type'}\"'";
+    const COND_NEW: &str = "eval rb_defint_cond='\"${!rb_defint_c}\"'";
+    let probes = text.matches(PROBE_OLD).count();
+    let conds = text.matches(COND_OLD).count();
+    if probes < 10 || probes != conds {
+        return Err(packaging_error(
+            135,
+            Some(&format!(
+                "the ruby configure cache-eval patch found {probes} probe sites and {conds} cond sites (expected >= 10, equal) — the tarball's generated configure drifted; the patch must be re-derived"
+            )),
+        ));
+    }
+    let patched = text
+        .replace(PROBE_OLD, PROBE_NEW)
+        .replace(COND_OLD, COND_NEW);
+    fs::write(&path, patched)
+        .map_err(|e| plain_error(format!("cannot write {}: {e}", path.display())))?;
+    Ok(())
+}
+
 /// The Windows configure shell, resolved explicitly (never a bare
 /// `bash` name): the DevKit's msys2 bash — the same shell the runtime
 /// factory builds ruby under (`$RI_DEVKIT/usr/bin/bash.exe`, exported
@@ -790,6 +838,39 @@ fn symbol_stub_asm(symbols: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_configure_cache_eval_patch_rewrites_every_site_or_fails_by_name() {
+        // tebako#753 (the msys-bash fatality): the generated probe
+        // concatenates the C type into a shell variable NAME — `long
+        // long` makes it invalid, and msys bash aborts the script on the
+        // expansion error (POSIX shells tolerate it). The patch rewrites
+        // both eval forms to the correct autoconf cache name, expanded
+        // indirectly. The real tfs-ruby-3.4.10 tarball carries 13 of
+        // each; the guard requires >= 10 and equality.
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("tfs-ruby-3.4.10-src");
+        std::fs::create_dir_all(&src).unwrap();
+        let block = "rb_defint_type=\"${rb_cv_type_ssize_t##unsigned }\"\n    if test \"$rb_defint_type\" != yes && eval 'test -n \"${ac_cv_sizeof_'$rb_defint_type'+set}\"'\n\teval rb_defint_cond='\"${ac_cv_sizeof_'$rb_defint_type'}\"'\n";
+        std::fs::write(src.join("configure"), block.repeat(11)).unwrap();
+        patch_configure_cache_evals(&src).unwrap();
+        let patched = std::fs::read_to_string(src.join("configure")).unwrap();
+        assert!(
+            !patched.contains("$rb_defint_type'+set}\"'"),
+            "the fatal probe form survives"
+        );
+        assert_eq!(patched.matches("tr ' ' '_'").count(), 11);
+        assert_eq!(patched.matches("${!rb_defint_c+set}").count(), 11);
+        assert_eq!(patched.matches("${!rb_defint_c}").count(), 11);
+
+        // Drift (a regenerated configure): fewer sites -> the named 135,
+        // never a silently partial patch.
+        let drifted = tmp.path().join("drifted-src");
+        std::fs::create_dir_all(&drifted).unwrap();
+        std::fs::write(drifted.join("configure"), block.repeat(2)).unwrap();
+        let err = patch_configure_cache_evals(&drifted).unwrap_err();
+        assert!(format!("{err:?}").contains("configure drifted"));
+    }
 
     #[test]
     fn windows_bash_resolver_skips_the_wsl_stub_and_prefers_the_devkit() {
