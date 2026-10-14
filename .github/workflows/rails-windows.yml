@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rel="v2.8.30"; ver="2.8.30"
+          rel="v2.8.32"; ver="2.8.32"
           mkdir -p .tools && cd .tools
           base="https://github.com/tamatebako/tebako/releases/download/$rel"
           for a in "tebako-$ver-windows-ucrt64.exe" "tebako-shim-$ver-windows-ucrt64.exe" SHA256SUMS; do
@@ -62,15 +62,22 @@ jobs:
       # That needs the ucrt toolchain + sh on PATH: the SDK replays the
       # runtime's recorded configure through sh (a shell script — no
       # CreateProcess target), and mkmf's probes compile with gcc/make.
+      # tebako#753 phase 2: the press's native-extension deploy builds
+      # source-only gems (bigdecimal, json, prism, erb, io-console,
+      # nio4r — no precompiled ucrt variants) against the runtime SDK.
+      # That needs the ucrt toolchain + sh on PATH: the SDK replays the
+      # runtime's recorded configure through sh (a shell script — no
+      # CreateProcess target), and mkmf's probes compile with gcc/make.
+      # The proven shape (ci.yml's windows-gnu legs): the sha-pinned
+      # action, the runner's EXISTING msys2 (no `update: true` — a fresh
+      # install collides with the image's own D:\a\_temp\msys64), the
+      # minimal path-type.
       - name: Set up the msys2 ucrt toolchain (the SDK replay + native gem builds)
-        uses: msys2/setup-msys2@v2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
         with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            mingw-w64-ucrt-x86_64-toolchain
-            make
-            mingw-w64-ucrt-x86_64-make
+          msystem: ucrt64
+          path-type: minimal
+          install: mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-make
 
       - name: Press the Rails application (self-contained)
         shell: msys2 {0}
