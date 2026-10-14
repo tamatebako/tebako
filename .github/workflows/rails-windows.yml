@@ -59,30 +59,27 @@ jobs:
       # tebako#753 phase 2: the press's native-extension deploy builds
       # source-only gems (bigdecimal, json, prism, erb, io-console,
       # nio4r — no precompiled ucrt variants) against the runtime SDK.
-      # That needs the ucrt toolchain + sh on PATH: the SDK replays the
+      # That needs sh + the ucrt toolchain on PATH: the SDK replays the
       # runtime's recorded configure through sh (a shell script — no
       # CreateProcess target), and mkmf's probes compile with gcc/make.
-      # tebako#753 phase 2: the press's native-extension deploy builds
-      # source-only gems (bigdecimal, json, prism, erb, io-console,
-      # nio4r — no precompiled ucrt variants) against the runtime SDK.
-      # That needs the ucrt toolchain + sh on PATH: the SDK replays the
-      # runtime's recorded configure through sh (a shell script — no
-      # CreateProcess target), and mkmf's probes compile with gcc/make.
-      # The proven shape (ci.yml's windows-gnu legs): the sha-pinned
-      # action, the runner's EXISTING msys2 (no `update: true` — a fresh
-      # install collides with the image's own D:\a\_temp\msys64), the
-      # minimal path-type.
-      - name: Set up the msys2 ucrt toolchain (the SDK replay + native gem builds)
-        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
-        with:
-          msystem: ucrt64
-          path-type: minimal
-          install: mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-make
-
+      # Both are ALREADY here: ruby/setup-ruby's DevKit puts its msys2
+      # tree's ucrt64\bin (gcc, nm, ar, make) and usr\bin (sh.exe) on
+      # PATH (RI_DEVKIT). A setup-msys2 step is NOT the answer — its
+      # cache restore collides with the toolchain the runner already has
+      # ("Trying to install MSYS2 to D:\a\_temp\msys64 but that already
+      # exists", twice). The press rides Git Bash: its sh.exe answers the
+      # SDK's spawn and the DevKit's ucrt64\bin answers mkmf's.
       - name: Press the Rails application (self-contained)
-        shell: msys2 {0}
+        shell: bash
         run: |
           set -euo pipefail
+          # The DevKit's ucrt64 gcc must win over the runner image's
+          # legacy C:\mingw64 (msvcrt) gcc — the runtime is ucrt.
+          devkit_ucrt="$(cygpath "$RI_DEVKIT")/ucrt64/bin"
+          export PATH="$devkit_ucrt:$PATH"
+          gcc --version | head -1
+          sh --version | head -1
+          make --version | head -1
           .tools/tebako.exe press \
             --root myapp \
             --entry-point bin/rails \
