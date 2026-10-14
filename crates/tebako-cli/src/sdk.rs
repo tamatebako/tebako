@@ -308,21 +308,21 @@ impl RuntimeSdk {
         let mut args = self.filtered_configure_args()?;
         args.push(format!("--prefix={}", tmp.join("install").display()));
         // Windows: `./configure` is a shell script — CreateProcess cannot
-        // exec it directly. The wrapper is bash-as-bash, never sh:
-        // ruby's configure carries an `eval 'test -n "${ac_cv_sizeof_'
-        // $type'+set}"'` probe whose expansion is a bad substitution for
-        // the ucrt ssize_t ("long long" — the space), and a POSIX-mode sh
-        // treats an expansion error inside the special builtin `eval` as
-        // FATAL (the v2.8.32 leg died at configure:24970). bash-as-bash
-        // logs it and continues — the behavior the factory's msys2 build
-        // already proves. Git Bash/DevKit carry bash.exe on PATH; a
-        // missing bash is the named 135 below.
-        let (program, argv): (&str, Vec<String>) = if cfg!(windows) {
+        // exec it directly, and a BARE `bash` name is a trap: PATH order
+        // puts C:\Windows\System32 first, whose bash.exe is the WSL
+        // stub (the v2.8.33 leg died to its UTF-16 "no installed
+        // distributions" banner; the v2.8.32 `sh` spelling reached Git's
+        // POSIX-mode sh instead, fatal on configure's eval'd cache
+        // probe). The resolver names an msys bash explicitly — the
+        // DevKit's (the factory's own shell) first, else the first
+        // bash.exe on PATH OUTSIDE System32; no candidate is the
+        // named 135.
+        let (program, argv): (PathBuf, Vec<String>) = if cfg!(windows) {
             let mut v = vec!["./configure".to_string()];
             v.append(&mut args);
-            ("bash", v)
+            (windows_bash()?, v)
         } else {
-            ("./configure", args)
+            (PathBuf::from("./configure"), args)
         };
         let output = std::process::Command::new(program)
             .args(&argv)
@@ -614,6 +614,48 @@ fn sorted_dirs(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The Windows configure shell, resolved explicitly (never a bare
+/// `bash` name): the DevKit's msys2 bash — the same shell the runtime
+/// factory builds ruby under (`$RI_DEVKIT/usr/bin/bash.exe`, exported
+/// by ruby/setup-ruby on CI) — first; else the first `bash.exe` on PATH
+/// OUTSIDE the Windows system dir, whose own `bash.exe` is the WSL
+/// launcher stub (it prints a UTF-16 "no installed distributions"
+/// banner and exits — the v2.8.33 leg's evidence). The pure core is
+/// host-testable; the env-reading wrapper feeds it.
+fn windows_bash() -> Result<PathBuf, TebakoError> {
+    let devkit = std::env::var_os("RI_DEVKIT").map(PathBuf::from);
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    windows_bash_from(&devkit, std::env::split_paths(&path).collect())
+}
+
+fn windows_bash_from(
+    devkit: &Option<PathBuf>,
+    path_dirs: Vec<PathBuf>,
+) -> Result<PathBuf, TebakoError> {
+    if let Some(root) = devkit {
+        let p = root.join("usr").join("bin").join("bash.exe");
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    for dir in &path_dirs {
+        let spelling = dir.to_string_lossy().replace('/', "\\").to_lowercase();
+        if spelling.ends_with("\\windows\\system32") || spelling.ends_with("\\windows\\syswow64") {
+            continue;
+        }
+        let p = dir.join("bash.exe");
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    Err(packaging_error(
+        135,
+        Some(
+            "no msys bash on PATH for the configure replay — install the Ruby DevKit (ruby/setup-ruby) or Git Bash, or set RI_DEVKIT; the Windows System32 bash.exe is the WSL stub and is never used",
+        ),
+    ))
+}
+
 /// Extract `tfs-ruby-*-src.tar.gz` in-process (flate2 + tar — no tar
 /// binary anywhere) and return the `tfs-ruby-*-src` root.
 fn extract_src_tarball(tarball: &Path, dest: &Path) -> Result<PathBuf, TebakoError> {
@@ -748,6 +790,48 @@ fn symbol_stub_asm(symbols: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_bash_resolver_skips_the_wsl_stub_and_prefers_the_devkit() {
+        // tebako#753 (the shell-resolution layer): a bare `bash` name
+        // resolved to C:\Windows\System32\bash.exe — the WSL launcher
+        // stub (UTF-16 "no installed distributions" banner, the v2.8.33
+        // leg's evidence). The resolver names an msys bash explicitly:
+        // the DevKit's first, else the first bash.exe OUTSIDE the
+        // system dirs.
+        let tmp = tempfile::tempdir().unwrap();
+        let sys32 = tmp.path().join("Windows/System32");
+        let gitbin = tmp.path().join("Git/bin");
+        let devkit = tmp.path().join("msys64");
+        for d in [&sys32, &gitbin, devkit.join("usr/bin").as_path()] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("bash.exe"), b"stub").unwrap();
+        }
+
+        // The system dir's bash.exe (the WSL stub) is skipped even when
+        // first on PATH; Git's wins.
+        let got = windows_bash_from(&None, vec![sys32.clone(), gitbin.clone()]).unwrap();
+        assert_eq!(got, gitbin.join("bash.exe"));
+
+        // The DevKit root outranks everything on PATH (the factory's own
+        // shell).
+        let got = windows_bash_from(&Some(devkit.clone()), vec![sys32, gitbin.clone()]).unwrap();
+        assert_eq!(got, devkit.join("usr/bin/bash.exe"));
+
+        // Forward-slash system spellings are caught too (msys PATH
+        // forms).
+        let posix_sys = tmp.path().join("c/windows/system32");
+        std::fs::create_dir_all(&posix_sys).unwrap();
+        std::fs::write(posix_sys.join("bash.exe"), b"stub").unwrap();
+        let got = windows_bash_from(&None, vec![posix_sys, gitbin.clone()]).unwrap();
+        assert_eq!(got, gitbin.join("bash.exe"));
+
+        // No candidate anywhere: the named 135, never a stub run.
+        let empty = tmp.path().join("nowhere");
+        std::fs::create_dir_all(&empty).unwrap();
+        let err = windows_bash_from(&None, vec![empty]).unwrap_err();
+        assert!(format!("{err:?}").contains("no msys bash on PATH"));
+    }
 
     #[test]
     fn configure_args_parsing_matches_the_gem() {
