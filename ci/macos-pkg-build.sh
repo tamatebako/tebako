@@ -190,7 +190,22 @@ if [ "${APPLE_INSTALLER_SIGNING_ENABLED:-false}" = "true" ]; then
     echo "ticket not yet fetchable for $ASSET — polling again in 10 s"
     sleep 10
   done
-  xcrun stapler validate "out/$ASSET"
+  # validate re-checks the stapled ticket against Apple's ticket-delivery
+  # service (api.apple-cloudkit.com) and dies on transient network blips
+  # (NSURLError -1005 — the v2.8.30 and v2.8.32 x86_64 pkg legs both lost
+  # to it). Retry the network signature; any other verdict stands
+  # immediately (a genuinely bad staple must not hide behind retries).
+  vdeadline=$(( $(date +%s) + 300 ))
+  while true; do
+    xcrun stapler validate "out/$ASSET" 2>&1 | tee "$work/validate.txt" || true
+    grep -q "The validate action worked" "$work/validate.txt" && break
+    grep -qE "NSURLError|network connection" "$work/validate.txt" || {
+      echo "::error::stapler validate failed for $ASSET (not a network blip) — the verdict stands"; exit 1; }
+    [ "$(date +%s)" -lt "$vdeadline" ] || {
+      echo "::error::stapler validate for $ASSET kept hitting the ticket-delivery network for 300s"; exit 1; }
+    echo "validate hit the ticket-delivery network blip — retrying in 15 s"
+    sleep 15
+  done
   # §6.3a: the pkg's assessment IS the right spctl gate (unlike bare
   # exes): notarized + stapled must Assess accepted, source=Notarized
   # Developer ID. (spctl prints its verdict on STDERR — 2>&1 or the tee
