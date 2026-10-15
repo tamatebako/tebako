@@ -8,7 +8,7 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-      - name: Press nio4r with the RELEASED v2.8.37 tools + dissect the staging
+      - name: Press + dissect BOTH manifests the child sees
         shell: bash
         run: |
           set -euo pipefail
@@ -16,26 +16,30 @@ jobs:
           export PATH="$devkit_ucrt:$PATH"
           base="https://github.com/tamatebako/tebako/releases/download/v2.8.37"
           mkdir -p tools && cd tools
-          curl -fsSLO "$base/tebako-2.8.37-windows-ucrt64.exe" && curl -fsSLO "$base/SHA256SUMS"
-          grep "tebako-2.8.37-windows-ucrt64.exe\$" SHA256SUMS | sha256sum -c -
+          curl -fsSLO "$base/tebako-2.8.37-windows-ucrt64.exe"
+          curl -fsSLO "$base/tfs-2.8.37-windows-ucrt64.exe"
+          curl -fsSLO "$base/SHA256SUMS"
+          grep -E "tebako-2.8.37-windows-ucrt64.exe$|tfs-2.8.37-windows-ucrt64.exe$" SHA256SUMS | sha256sum -c -
           mv tebako-2.8.37-windows-ucrt64.exe tebako.exe
+          mv tfs-2.8.37-windows-ucrt64.exe tfs.exe
           cd ..
           mkdir -p app && cd app
           printf 'source "https://rubygems.org"\ngem "nio4r", "2.7.5"\n' > Gemfile
           printf 'puts "hello"\n' > main.rb
           set +e
-          ../tools/tebako.exe press --root . --entry-point main.rb --Ruby 3.4.10 --mode self-contained --output dist/app > press.out 2> press.err
+          ../tools/tebako.exe press --root . --entry-point main.rb --Ruby 3.4.10 --mode self-contained --output dist/app > press.out 2>&1
           rc=$?
           set -e
           echo "press rc=$rc"
-          grep -E "alias|Tebako|failed|error" press.out press.err | head -8
-          echo "---- staging tree manifests ----"
-          find "$USERPROFILE/.tebako/o/s" -name "manifest.yaml" 2>/dev/null | head -5
-          echo "---- staging __tpkg__ contents ----"
-          ls "$USERPROFILE/.tebako/o/s/__tpkg__/" 2>/dev/null || echo "no staging __tpkg__"
-          echo "---- the staging manifest's library_aliases ----"
-          grep -A6 "library_aliases" "$USERPROFILE/.tebako/o/s/__tpkg__/manifest.yaml" 2>/dev/null || echo "none"
-          echo "---- deploy-driver.tfs size + ruby.exe present ----"
-          ls -la "$USERPROFILE/.tebako/o/p/" 2>/dev/null | head -8
-          echo "---- does the pressed staging contain a SECOND manifest? ----"
-          find "$USERPROFILE/.tebako" -name "manifest.yaml" 2>/dev/null | head -8
+          P="$USERPROFILE/.tebako/o/p"
+          echo "---- o/p full listing ----"
+          ls -la "$P/"
+          echo "---- deploy-driver.tfs top-level content ----"
+          ../tools/tfs.exe ls "$P/deploy-driver.tfs" | head -20
+          echo "---- deploy image __tpkg__ entries? ----"
+          ../tools/tfs.exe ls "$P/deploy-driver.tfs" | grep -c "__tpkg__" || echo "0 __tpkg__ entries"
+          echo "---- env image manifest identity ----"
+          ENVIMG="$LOCALAPPDATA/tebako/runtimes/ruby-3.4.10-0.16.32-windows-ucrt64/tebako-runtime-0.16.32-3.4.10-windows-ucrt64.tfs"
+          ../tools/tfs.exe cat "$ENVIMG" __tpkg__/manifest.yaml 2>/dev/null | head -30
+          echo "---- deploy image manifest (if any) ----"
+          ../tools/tfs.exe cat "$P/deploy-driver.tfs" __tpkg__/manifest.yaml 2>&1 | head -30
