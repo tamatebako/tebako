@@ -337,11 +337,28 @@ impl RuntimeSdk {
                 + &String::from_utf8_lossy(&output.stderr);
             let tail: Vec<&str> = out.lines().collect();
             let start = tail.len().saturating_sub(10);
+            // config.log carries the probes' actual compiler invocations
+            // and errors — configure's stdout names the failed check but
+            // never WHY (the v2.8.35 leg: 'clock_gettime() or
+            // gettimeofday() must exist' with no compiler error in
+            // sight). The tail of the log is the last failed probe.
+            let config_log = src_dir.join("config.log");
+            let log_tail = fs::read_to_string(&config_log)
+                .map(|text| {
+                    let lines: Vec<&str> = text.lines().collect();
+                    let from = lines.len().saturating_sub(40);
+                    format!(
+                        "\n---- config.log (tail 40) ----\n{}",
+                        lines[from..].join("\n")
+                    )
+                })
+                .unwrap_or_else(|e| format!("\n(config.log unreadable: {e})"));
             return Err(packaging_error(
                 135,
                 Some(&format!(
-                    "ruby configure failed:\n{}",
-                    tail[start..].join("\n")
+                    "ruby configure failed:\n{}{}",
+                    tail[start..].join("\n"),
+                    log_tail
                 )),
             ));
         }
