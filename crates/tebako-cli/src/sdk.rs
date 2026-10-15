@@ -325,13 +325,25 @@ impl RuntimeSdk {
         } else {
             (PathBuf::from("./configure"), args)
         };
-        let output = std::process::Command::new(program)
-            .args(&argv)
-            .current_dir(&src_dir)
-            .output()
-            .map_err(|e| {
-                packaging_error(135, Some(&format!("failed to run ruby configure: {e}")))
-            })?;
+        let mut cmd = std::process::Command::new(program);
+        cmd.args(&argv).current_dir(&src_dir);
+        if cfg!(windows) {
+            // Pin the mingw toolchain. configure's own compiler search
+            // finds the runner image's LLVM clang first — an MSVC-ABI
+            // clang driving the MSVC linker, whose world has no POSIX
+            // symbols (the v2.8.36 leg: 'LNK2019: unresolved external
+            // symbol gettimeofday'; every mingwex function fell with
+            // it). With CC/CXX pinned, gcc/g++ resolve from PATH — the
+            // press environment leads with the Ruby DevKit's ucrt64
+            // gcc, the same ABI family the runtime was built with.
+            // Probe-verified end-to-end on the runner: cache-eval patch
+            // + this pin → configure rc=0 (tamatebako/tebako probe run
+            // 38722160821).
+            cmd.env("CC", "gcc").env("CXX", "g++");
+        }
+        let output = cmd.output().map_err(|e| {
+            packaging_error(135, Some(&format!("failed to run ruby configure: {e}")))
+        })?;
         if !output.status.success() {
             let out = String::from_utf8_lossy(&output.stdout).into_owned()
                 + &String::from_utf8_lossy(&output.stderr);
