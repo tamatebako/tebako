@@ -1,0 +1,48 @@
+name: deploy-probe
+on: [push, workflow_dispatch]
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - name: Build tebako-cli (the released fix line)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd tebako-rs
+          git clone --depth 1 https://github.com/tamatebako/dwarfs-rs ../dwarfs-rs || true
+          ls ../dwarfs-rs >/dev/null
+          # The CLI builds without the dwarfs backend for a press? It needs tfs — build with defaults; vcpkg-free via pure tfs? Keep it simple: build the CLI crate only, no dwarfs (limnifs default).
+          cargo build -p tebako-cli 2>&1 | tail -3
+      - name: Press a source-only-gem app (the child flow)
+        shell: bash
+        run: |
+          set -euo pipefail
+          devkit_ucrt="$(cygpath "$RI_DEVKIT")/ucrt64/bin"
+          export PATH="$devkit_ucrt:$PATH"
+          mkdir -p app && cd app
+          printf 'source "https://rubygems.org"\ngem "nio4r", "2.7.5"\n' > Gemfile
+          printf 'puts "hello"\n' > main.rb
+          BUNDLE_PATH=vendor/bundle bundle install --quiet || true
+          ls vendor/bundle 2>/dev/null | head -2 || echo "no vendored bundle"
+          set +e
+          ../tebako-rs/target/debug/tebako.exe press --root . --entry-point main.rb --Ruby 3.4.10 --mode self-contained --output dist/app > press.out 2> press.err
+          rc=$?
+          set -e
+          echo "press rc=$rc"
+          tail -25 press.out || true
+          tail -25 press.err || true
+          echo "---- the staging tree's manifests ----"
+          find "$USERPROFILE/.tebako/o" -name "manifest.yaml" 2>/dev/null | head -5
+          echo "---- the deploy image's __tpkg__ (tfs view via strings) ----"
+          ls -la "$USERPROFILE/.tebako/o/p/" 2>/dev/null | head -10
+          # dissect: does deploy-driver.tfs carry a __tpkg__? dwarfs images are compressed; check the staged tree instead (pre-image), which is what the image mirrors
+          find "$USERPROFILE/.tebako/o/s" -maxdepth 2 -name "__tpkg__" 2>/dev/null | head -3
+          find "$USERPROFILE/.tebako/o/s/__tpkg__" -type f 2>/dev/null | head -3
