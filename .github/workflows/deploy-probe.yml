@@ -3,36 +3,29 @@ on: [push, workflow_dispatch]
 jobs:
   probe:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 40
     steps:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-      - name: Cache the runtime via a trivial press, then dissect the link surface
+      - name: List the env image (errors visible)
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           devkit_ucrt="$(cygpath "$RI_DEVKIT")/ucrt64/bin"
           export PATH="$devkit_ucrt:$PATH"
           base="https://github.com/tamatebako/tebako/releases/download/v2.8.38"
           mkdir -p tools && cd tools
-          curl -fsSLO "$base/tebako-2.8.38-windows-ucrt64.exe" && curl -fsSLO "$base/tfs-2.8.38-windows-ucrt64.exe" && curl -fsSLO "$base/SHA256SUMS"
-          grep -E "tebako-2.8.38-windows-ucrt64.exe$|tfs-2.8.38-windows-ucrt64.exe$" SHA256SUMS | sha256sum -c -
+          curl -fsSLO "$base/tebako-2.8.38-windows-ucrt64.exe" && curl -fsSLO "$base/tfs-2.8.38-windows-ucrt64.exe"
           mv tebako-2.8.38-windows-ucrt64.exe tebako.exe && mv tfs-2.8.38-windows-ucrt64.exe tfs.exe
           cd ..
           mkdir -p app && cd app
           printf 'puts "hello"\n' > main.rb
-          set +e
-          ../tools/tebako.exe press --root . --entry-point main.rb --Ruby 3.4.10 --mode self-contained --output dist/app > press.out 2>&1
-          echo "press rc=$?"
-          set -e
+          ../tools/tebako.exe press --root . --entry-point main.rb --Ruby 3.4.10 --mode self-contained --output dist/app > press.out 2>&1 || true
           RT="$LOCALAPPDATA/tebako/runtimes/ruby-3.4.10-0.16.32-windows-ucrt64"
           ENVIMG="$RT.tfs"
-          echo "==== the runtime dir ===="
-          ls -la "$RT" 2>/dev/null | head -10
-          echo "==== the env image's lib/ link surface ===="
-          ../tools/tfs.exe ls "$ENVIMG" 2>/dev/null | grep -iE "lib/.*(\.a|\.dll)" | head -20
-          echo "==== the env image's bin ===="
-          ../tools/tfs.exe ls "$ENVIMG" 2>/dev/null | grep -E "^/bin/" | head -6
-          echo "==== the SDK's stub (what LIBRUBYARG points at today) ===="
-          ls -la "$USERPROFILE/.tebako/deps/sdk/"*/lib/ 2>/dev/null | head -8
+          echo "==== tfs ls errors? ===="
+          ../tools/tfs.exe ls "$ENVIMG" 2>&1 | head -5
+          echo "==== full ls | link-relevant ===="
+          ../tools/tfs.exe ls "$ENVIMG" 2>/dev/null | grep -iE "lib/|\.a$|\.dll" > /tmp/envls.txt; head -30 /tmp/envls.txt
+          echo "==== count ===="; wc -l /tmp/envls.txt
