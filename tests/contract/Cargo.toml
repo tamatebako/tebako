@@ -21,7 +21,7 @@ tfs = { version = "2.0.0", path = "../../crates/tfs", default-features = false, 
 
 [dependencies]
 libc = "0.2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 # The limnifs backend-pair golden class builds its fixture image
