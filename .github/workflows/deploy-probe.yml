@@ -1,0 +1,39 @@
+name: deploy-probe
+on: [push, workflow_dispatch]
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - name: Mount-point variants + the env-as-payload smoking gun
+        shell: bash
+        run: |
+          set -euo pipefail
+          devkit_ucrt="$(cygpath "$RI_DEVKIT")/ucrt64/bin"
+          export PATH="$devkit_ucrt:$PATH"
+          base="https://github.com/tamatebako/tebako/releases/download/v2.8.37"
+          mkdir -p tools && cd tools
+          curl -fsSLO "$base/tebako-2.8.37-windows-ucrt64.exe" && curl -fsSLO "$base/SHA256SUMS"
+          grep "tebako-2.8.37-windows-ucrt64.exe\$" SHA256SUMS | sha256sum -c -
+          mv tebako-2.8.37-windows-ucrt64.exe tebako.exe
+          cd ..
+          mkdir -p app && cd app
+          printf 'source "https://rubygems.org"\ngem "nio4r", "2.7.5"\n' > Gemfile
+          printf 'puts "hello"\n' > main.rb
+          set +e
+          ../tools/tebako.exe press --root . --entry-point main.rb --Ruby 3.4.10 --mode self-contained --output dist/app > press.out 2>&1
+          echo "press rc=$?"
+          set -e
+          P="$USERPROFILE/.tebako/o/p"
+          RT="$LOCALAPPDATA/tebako/runtimes/ruby-3.4.10-0.16.32-windows-ucrt64/tebako-runtime-0.16.32-3.4.10-windows-ucrt64"
+          ENVIMG="$RT.tfs"
+          export TEBAKO_RUNTIME_IMAGE="$ENVIMG"
+          export MSYS2_ARG_CONV_EXCL="*"
+          run() { echo "==== $1 ===="; shift; "$RT" "$@" 2>&1 | head -4; echo; }
+          run "payload at /app (not /t)" --tebako-image "$P/deploy-driver.pkg:0:/app" --tebako-entry /local/stub.rb -e 'puts X'
+          run "payload at /app/app" --tebako-image "$P/deploy-driver.pkg:0:/app/app" --tebako-entry /local/stub.rb -e 'puts X'
+          run "ENV IMAGE ITSELF as payload at /app" --tebako-image "$ENVIMG:/app" --tebako-entry /local/stub.rb -e 'puts X'
+          run "payload at /t again (control)" --tebako-image "$P/deploy-driver.pkg:0:/t" --tebako-entry /local/stub.rb -e 'puts X'

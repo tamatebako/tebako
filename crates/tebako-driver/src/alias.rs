@@ -152,9 +152,17 @@ impl AliasUnion {
                 if prior.source == source {
                     continue;
                 }
+                // The verdict carries both sides' identity keys (the
+                // #486 comparison inputs) — an ambiguity whose keys
+                // LOOK equal from the outside is a comparison bug, and
+                // one whose keys differ names its two authors outright.
                 return Err(manifest_err(format!(
-                    "library alias '{}' is declared by both {} and {} — an authoring ambiguity, never a silent winner",
-                    alias.name, prior.desc, desc
+                    "library alias '{}' is declared by both {} and {} — an authoring ambiguity, never a silent winner [prior key: {}] [this key: {}]",
+                    alias.name,
+                    prior.desc,
+                    desc,
+                    prior.source,
+                    source
                 )));
             }
             self.entries.push(AliasEntry {
