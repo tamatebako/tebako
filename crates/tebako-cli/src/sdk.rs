@@ -308,6 +308,16 @@ impl RuntimeSdk {
         patch_configure_cache_evals(&src_dir)?;
         let mut args = self.filtered_configure_args()?;
         args.push(format!("--prefix={}", tmp.join("install").display()));
+        // The runtime is a STATIC exe (ruby embedded; the env image
+        // carries no libruby DLL and no import library — the v2.8.38
+        // link-surface dissection). The SDK headers must therefore NOT
+        // declare dllimport: configure's shared-libruby default makes
+        // ruby/internal's DECLSPEC emit `__imp_rb_*` references, and the
+        // extension link then fails with undefined references to every
+        // ruby symbol (the v2.8.38 verdict leg: bigdecimal.o built,
+        // `undefined reference to __imp_rb_eArgError`). Idempotent when
+        // the recorded configure_args already carry it.
+        args.push("--disable-shared".to_string());
         // Windows: `./configure` is a shell script — CreateProcess cannot
         // exec it directly, and a BARE `bash` name is a trap: PATH order
         // puts C:\Windows\System32 first, whose bash.exe is the WSL
