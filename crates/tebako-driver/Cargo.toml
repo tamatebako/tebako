@@ -82,7 +82,7 @@ cc = "1"
 
 [dev-dependencies]
 # Zip fixtures built in-code (the tests/contract pattern).
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # The lazy-mount e2e writes its limnifs fixture in-process (never a
 # limni binary — the tfs tests' pattern) and stages the store entry in
 # a tempdir.

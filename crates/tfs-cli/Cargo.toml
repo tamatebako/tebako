@@ -73,7 +73,7 @@ tebako-contract-tests = { version = "2.0.0", path = "../../tests/contract" }
 tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
 rnp = { package = "rnp-rs", version = "0.1.15", features = ["vendored"] }
 # Exec-proof image fixtures (zip backend).
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # The floor-recipe structural test parses the emitted metadata through
 # the reader (spec 20 §5 constraint 1: no SharedInline handle anywhere)
 # — test-only, never linked into the shipped binary. Floor: see the
