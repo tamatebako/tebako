@@ -8,7 +8,7 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-      - name: List the env image (errors visible)
+      - name: The extracted staging's link surface
         shell: bash
         run: |
           set -uo pipefail
@@ -16,16 +16,20 @@ jobs:
           export PATH="$devkit_ucrt:$PATH"
           base="https://github.com/tamatebako/tebako/releases/download/v2.8.38"
           mkdir -p tools && cd tools
-          curl -fsSLO "$base/tebako-2.8.38-windows-ucrt64.exe" && curl -fsSLO "$base/tfs-2.8.38-windows-ucrt64.exe"
-          mv tebako-2.8.38-windows-ucrt64.exe tebako.exe && mv tfs-2.8.38-windows-ucrt64.exe tfs.exe
+          curl -fsSLO "$base/tebako-2.8.38-windows-ucrt64.exe"
+          mv tebako-2.8.38-windows-ucrt64.exe tebako.exe
           cd ..
           mkdir -p app && cd app
           printf 'puts "hello"\n' > main.rb
           ../tools/tebako.exe press --root . --entry-point main.rb --Ruby 3.4.10 --mode self-contained --output dist/app > press.out 2>&1 || true
-          RT="$LOCALAPPDATA/tebako/runtimes/ruby-3.4.10-0.16.32-windows-ucrt64"
-          ENVIMG="$RT.tfs"
-          echo "==== tfs ls errors? ===="
-          ../tools/tfs.exe ls "$ENVIMG" 2>&1 | head -5
-          echo "==== full ls | link-relevant ===="
-          ../tools/tfs.exe ls "$ENVIMG" 2>/dev/null | grep -iE "lib/|\.a$|\.dll" > /tmp/envls.txt; head -30 /tmp/envls.txt
-          echo "==== count ===="; wc -l /tmp/envls.txt
+          S="$USERPROFILE/.tebako/o/s"
+          echo "==== staging lib/ (.a/.dll) ===="
+          find "$S/lib" -maxdepth 2 \( -name "*.a" -o -name "*.dll" \) 2>/dev/null | head -15
+          echo "==== staging bin/ ===="
+          find "$S/bin" -maxdepth 1 2>/dev/null | head -8
+          echo "==== staging root ===="
+          ls "$S" | head -12
+          echo "==== SDK lib/ (the stub) ===="
+          find "$USERPROFILE/.tebako/deps/sdk" -name "*.a" 2>/dev/null | head -5
+          nm "$(find "$USERPROFILE/.tebako/deps/sdk" -name "libruby-stub.a" 2>/dev/null | head -1)" 2>/dev/null | grep -c " T " || echo "stub unreadable"
+          nm "$(find "$USERPROFILE/.tebako/deps/sdk" -name "libruby-stub.a" 2>/dev/null | head -1)" 2>/dev/null | grep -m2 "__imp_" || echo "no __imp_ symbols in stub"
