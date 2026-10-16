@@ -458,17 +458,30 @@ impl RuntimeSdk {
     /// exports — the exact, provenance-true symbol table. Only throwaway
     /// probe binaries link it; shipped extensions stay on dynamic lookup
     /// against the executable (which exports these symbols).
+    ///
+    /// tebako#753 (the dll-era layer): on Windows the ruby symbols live
+    /// in the runtime DLL (`x64-ucrt-ruby340.dll`), not the 99 KB
+    /// loader exe — nm'ing the exe alone left the stub with ~no ruby
+    /// symbols and every extension link died (`undefined reference to
+    /// ruby_snprintf`, the v2.8.39 verdict). The DLL's symbols join the
+    /// stub: the DLL already materialized beside the exe when the
+    /// resolver installed the pair; otherwise it is fetched from the
+    /// runtime release (the store's `origin` file names the exe's asset
+    /// URL — the DLL's rides the same release under `<exe-stem>.dll`)
+    /// and cached in the SDK dir.
     fn generate_symbol_stub(&self, tmp: &Path) -> Result<(), TebakoError> {
-        let out = run_quiet("nm", &nm_args(&self.runtime_path), None).map_err(|e| {
-            packaging_error(
-                135,
-                Some(&format!(
-                    "nm failed on {}: {e}",
-                    self.runtime_path.display()
-                )),
-            )
-        })?;
-        let symbols = parse_nm_defined(&out);
+        let mut symbols = {
+            let out = run_quiet("nm", &nm_args(&self.runtime_path), None).map_err(|e| {
+                packaging_error(
+                    135,
+                    Some(&format!(
+                        "nm failed on {}: {e}",
+                        self.runtime_path.display()
+                    )),
+                )
+            })?;
+            parse_nm_defined(&out)
+        };
         if symbols.is_empty() {
             return Err(packaging_error(
                 135,
@@ -477,6 +490,17 @@ impl RuntimeSdk {
                     self.runtime_path.display()
                 )),
             ));
+        }
+        if cfg!(windows) {
+            let dll = self.windows_ruby_dll()?;
+            let out = run_quiet("nm", &nm_args(&dll), None).map_err(|e| {
+                packaging_error(135, Some(&format!("nm failed on {}: {e}", dll.display())))
+            })?;
+            for s in parse_nm_defined(&out) {
+                if !symbols.contains(&s) {
+                    symbols.push(s);
+                }
+            }
         }
         let asm = tmp.join("symbols.s");
         fs::write(&asm, symbol_stub_asm(&symbols))
@@ -509,6 +533,86 @@ impl RuntimeSdk {
         )
         .map_err(|e| packaging_error(135, Some(&format!("ar failed: {e}"))))?;
         Ok(())
+    }
+
+    /// The dll-era runtime's ruby DLL, for the stub's symbol table. The
+    /// resolver installs it beside the exe under the manifest's PE name
+    /// (`x64-ucrt-ruby340.dll` — the name differs from the asset's); a
+    /// cache that predates the dll facet (or a runtime installed by the
+    /// loader's own path) has only the exe — then the DLL is fetched
+    /// from the runtime release, whose URL the store's `origin` file
+    /// names (the exe's asset URL; the DLL's rides the same release as
+    /// `<exe-stem>.dll`), and cached in the SDK dir — never the
+    /// read-only store.
+    fn windows_ruby_dll(&self) -> Result<PathBuf, TebakoError> {
+        let store = self.runtime_path.parent().ok_or_else(|| {
+            packaging_error(
+                135,
+                Some("the runtime exe has no parent dir for the DLL search"),
+            )
+        })?;
+        // The resolver's install name: any PE dll beside the exe whose
+        // stem starts with a CHOST prefix (x64-ucrt-, i686-w64-...) —
+        // the manifest's install_as; the asset-named fallback covers a
+        // cache that kept the release spelling.
+        let exe_stem = self
+            .runtime_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        for entry in fs::read_dir(store)
+            .map_err(|e| plain_error(format!("{e} reading {}", store.display())))?
+        {
+            let name = entry.map_err(|e| plain_error(format!("{e}")))?.file_name();
+            let name = name.to_string_lossy().into_owned();
+            if name.ends_with(".dll")
+                && (name.starts_with("x64-ucrt-")
+                    || name.starts_with("x64-mingw-")
+                    || name.starts_with("i686-w64-")
+                    || name == format!("{exe_stem}.dll"))
+            {
+                return Ok(store.join(name));
+            }
+        }
+        // Not materialized: fetch from the release named by the store's
+        // origin marker (the exe's asset URL; the DLL is the sibling
+        // asset `<exe-stem>.dll`).
+        let cache = self
+            .paths()
+            .stub
+            .parent()
+            .unwrap_or(&self.sdk_root)
+            .join("ruby.dll");
+        if cache.is_file() {
+            return Ok(cache);
+        }
+        let origin = fs::read_to_string(store.join("origin"))
+            .map_err(|e| plain_error(format!("{e} reading {}/origin", store.display())))?;
+        let exe_url = origin
+            .trim()
+            .trim_end_matches(
+                &self
+                    .runtime_path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            )
+            .trim_end_matches('/')
+            .to_string();
+        let dll_url = format!("{exe_url}/{}.dll", exe_stem);
+        let bytes = crate::fetch::fetch_bytes(&dll_url).map_err(|e| {
+            packaging_error(
+                135,
+                Some(&format!("fetching the runtime DLL {dll_url}: {e}")),
+            )
+        })?;
+        if let Some(dir) = cache.parent() {
+            fs::create_dir_all(dir)
+                .map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
+        }
+        fs::write(&cache, &bytes)
+            .map_err(|e| plain_error(format!("{e} writing {}", cache.display())))?;
+        Ok(cache)
     }
 }
 
