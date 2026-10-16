@@ -26,7 +26,7 @@ tebako-json = { version = "2.0.0", path = "../tebako-json" }
 # behavioral, not library-level; a pure-Rust reader keeps consumers and CI
 # free of a native libzip build, and the v1 scope (read-only, no encryption)
 # is well inside its feature set. deflate-only keeps the staticlib lean.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # The tar backend (read-only): the `tar` crate parses headers (ustar / GNU
 # longname / pax, incl. base-256 numeric fields) during the mount-time index
 # pass; xattr is extraction-only, so default features stay off.

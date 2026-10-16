@@ -68,7 +68,11 @@ impl ZipBackend {
         let mut names = Vec::with_capacity(archive.len());
         for i in 0..archive.len() {
             let entry = archive.by_index(i).map_err(|_| libc::EINVAL)?;
-            names.push(entry.name().to_string());
+            // zip 9: `name()` returns Result<Cow<str>, ZipError> (the
+            // raw DOS-OEM decoding can fail; the UTF-8 flag rides the
+            // Ok arm) — an undecodable name is a broken entry for us.
+            let name = entry.name().map_err(|_| libc::EINVAL)?;
+            names.push(name.to_string());
         }
         Ok(ZipBackend {
             archive: Mutex::new(archive),
