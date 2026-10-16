@@ -99,4 +99,4 @@ path = "src/lib.rs"
 [dev-dependencies]
 # Install fixtures build ZIP images carrying /__tpkg__/manifest.yaml (the
 # tfs ZIP backend is pure Rust) — same crate/version as tfs itself.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
