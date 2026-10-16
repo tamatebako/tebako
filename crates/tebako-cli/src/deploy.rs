@@ -48,6 +48,18 @@ const DRIVER_IMAGE: &str = "deploy-driver.tfs";
 const DRIVER_PACKAGE: &str = "deploy-driver.pkg";
 const EMPTY_BASE: &str = "deploy-driver.base";
 const BUNDLE_EXEC_SCRIPT_NAME: &str = "bundle_exec.rb";
+/// The ruby.exe CHILD's mount for the deploy image. The child's
+/// bootstrap exports the env image at the runtime root, and a payload
+/// at the SAME point unions over it — the driver's alias boot then
+/// re-reads the env's own manifest through the union and fails closed
+/// on the authoring ambiguity (the v2.8.37 leg; probe rounds 4–6:
+/// env-only boots, payload at its own point boots, payload at the
+/// runtime root dies). The stub's /local/stub.rb entry resolves against
+/// the first image mount at ANY point; the child's `require`s resolve
+/// through ruby's load paths — the env image at the runtime root. The
+/// PARENT driver keeps the runtime-root mount (it runs WITHOUT an env
+/// image; ruby's load paths resolve into the deploy image itself).
+const DEPLOY_MOUNT: &str = "/__tebako_deploy__";
 
 /// Deploy directives (DeployHelper ops), executed in order.
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +175,11 @@ impl RuntimeDeployer {
     }
 
     fn driver_image_ref(&self) -> String {
+        // The PARENT deploy driver: the runtime runs WITHOUT an env
+        // image (TEBAKO_RUNTIME_IMAGE is unset in the deploy flow), so
+        // ruby's load paths resolve against the deploy image itself —
+        // it must sit AT the runtime root (the e2e's lesson: mounting
+        // it elsewhere breaks `require "rubygems"`).
         format!(
             "{}:0:{}",
             self.driver_package().display(),
@@ -200,6 +217,7 @@ impl RuntimeDeployer {
             &self.driver_package(),
             "tebako-deploy-driver",
             runtime_ref,
+            &crate::declared_mount(&self.fs_mount_point),
         )
     }
 
@@ -207,18 +225,26 @@ impl RuntimeDeployer {
     /// package identity `name` — the shared assembly of the driver
     /// package (empty base, runtime-exec reads the trailer) and the
     /// Windows ruby.exe vehicle (bootstrap base, the bootstrap reads the
-    /// trailer).
+    /// trailer). `mount` is the image's DECLARED mount: the runtime
+    /// root for the parent driver (ruby's load paths resolve there —
+    /// the parent runs without an env image), the dedicated
+    /// [`DEPLOY_MOUNT`] for the ruby.exe child (the bootstrap exports
+    /// the env image at the runtime root there, and a second image at
+    /// the same point unions over it — the driver's alias boot reads
+    /// the env's own manifest through the union and fails closed on the
+    /// authoring ambiguity; probe rounds 4–6: env-only boots, payload
+    /// at its own point boots, payload at the runtime root dies).
     fn stitch_deploy_package(
         &self,
         base: &Path,
         out: &Path,
         name: &str,
         runtime_ref: String,
+        mount: &str,
     ) -> Result<(), TebakoError> {
-        let declared = crate::declared_mount(&self.fs_mount_point);
         let images = [tebako_pkg::PackageImage {
             path: self.driver_image(),
-            mount_point: declared.to_string(),
+            mount_point: mount.to_string(),
             format_id: tpkg::TPKG_FORMAT_DWARFS,
         }];
         let options = tebako_pkg::PackageOptions {
@@ -253,7 +279,7 @@ impl RuntimeDeployer {
                 lock: None,
                 mounts: vec![tpkg::PackageMount {
                     slot: 0,
-                    point: declared.to_string(),
+                    point: mount.to_string(),
                     mode: tpkg::MountMode::Union,
                     precedence: Some(tpkg::Precedence::AfterEnv),
                 }],
@@ -298,6 +324,7 @@ impl RuntimeDeployer {
             &self.ruby_exe_path(),
             "tebako-deploy-ruby",
             runtime_ref,
+            DEPLOY_MOUNT,
         )
     }
 
