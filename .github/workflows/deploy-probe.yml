@@ -31,6 +31,8 @@ jobs:
           RT="$LOCALAPPDATA/tebako/runtimes/ruby-3.4.10-0.16.32-windows-ucrt64/tebako-runtime-0.16.32-3.4.10-windows-ucrt64"
           ENVIMG="$RT.tfs"
           export TEBAKO_RUNTIME_IMAGE="$ENVIMG"
+          export TEBAKO_TRACE=1
+          export MSYS2_ARG_CONV_EXCL="*"
           echo "==== child replica: ruby.exe -e puts ===="
           set +e
           "$P/ruby.exe" -e 'puts "CHILD OK"' 2>&1 | head -8
