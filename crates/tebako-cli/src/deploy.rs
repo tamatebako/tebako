@@ -217,7 +217,7 @@ impl RuntimeDeployer {
             &self.driver_package(),
             "tebako-deploy-driver",
             runtime_ref,
-            &crate::declared_mount(&self.fs_mount_point),
+            crate::declared_mount(&self.fs_mount_point),
         )
     }
 
