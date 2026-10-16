@@ -1,0 +1,34 @@
+name: deploy-probe
+on: [push, workflow_dispatch]
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - name: What import library does the env image carry?
+        shell: bash
+        run: |
+          set -euo pipefail
+          RT="$LOCALAPPDATA/tebako/runtimes/ruby-3.4.10-0.16.32-windows-ucrt64"
+          if [ ! -d "$RT" ]; then
+            echo "runtime not cached — fetching via a trivial press is needed; probing the image directly:"
+          fi
+          ENVIMG="$RT.tfs"
+          ls -la "$RT" 2>/dev/null || echo "no runtime dir"
+          # Fetch tfs tool + list the env image's lib dir
+          base="https://github.com/tamatebako/tebako/releases/download/v2.8.38"
+          mkdir -p tools && cd tools
+          curl -fsSLO "$base/tfs-2.8.38-windows-ucrt64.exe" && mv tfs-2.8.38-windows-ucrt64.exe tfs.exe
+          cd ..
+          if [ -f "$ENVIMG" ]; then
+            ./tools/tfs.exe ls "$ENVIMG" | grep -iE "dll\.a|libruby|\.dll$" | head -15
+            echo "---- bin dir ----"
+            ./tools/tfs.exe ls "$ENVIMG" | grep -E "^/bin" | head -8
+          else
+            echo "env image absent; the verdict press cached one — listing store:"
+            find "$LOCALAPPDATA/tebako" -name "*.dll.a" 2>/dev/null | head -5
+            find "$LOCALAPPDATA/tebako" -name "*.dll" 2>/dev/null | head -8
+          fi
