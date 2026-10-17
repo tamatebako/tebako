@@ -589,6 +589,32 @@ impl RuntimeSdk {
         def.push('\n');
         def.push_str("EXPORTS\n");
         for s in symbols {
+            // Sanitize to dlltool's grammar AND the CRT boundary: valid C
+            // identifiers only, never `__`-prefixed. The DLL's nm table
+            // carries ~15k COFF section labels (`.refptr.XXX`) and the
+            // CRT internals (`__acrt_iob_func`,
+            // `__dyn_tls_init_callback`, …) — dlltool accepts a poisoned
+            // .def but its thunks then CONFLICT with the real CRT at
+            // link (multiple-definition) and the whole archive falls
+            // over (the v2.8.42 leg; reproduced locally end-to-end).
+            // The shims extensions need (`localtime_r`, `gmtime_r`,
+            // `strlcpy`, …) and every `rb_*`/`ruby_*` pass this filter.
+            if !s
+                .bytes()
+                .next()
+                .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+            {
+                continue;
+            }
+            if s.starts_with("__") {
+                continue;
+            }
+            if !s
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'@')
+            {
+                continue;
+            }
             def.push_str(s);
             def.push('\n');
         }
