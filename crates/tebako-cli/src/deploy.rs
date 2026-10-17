@@ -444,9 +444,19 @@ impl RuntimeDeployer {
             "  tg_config[\"rubyarchhdrdir\"] = {}\n",
             rb_str(&sdk.archhdr.to_string_lossy())
         ));
+        // LIBRUBYARG: the DLL's import library when the SDK built one
+        // (windows dll-era — answers both __imp_ thunks and plain
+        // aliases, whichever DECLSPEC mode the probe-driven compile
+        // landed in); the symbol stub otherwise (the whole story on
+        // POSIX).
+        let librubyarg = sdk
+            .import_lib
+            .as_ref()
+            .filter(|p| p.is_file())
+            .unwrap_or(&sdk.stub);
         out.push_str(&format!(
             "  tg_config[\"LIBRUBYARG\"] = {}\n",
-            rb_str(&sdk.stub.to_string_lossy())
+            rb_str(&librubyarg.to_string_lossy())
         ));
         out.push_str("  tg_config[\"EXTDLDFLAGS\"] = \"\"\n");
         out.push_str(&cc_override());
@@ -1093,6 +1103,11 @@ mod tests {
             include: PathBuf::from("/tmp/deps/sdk/3.3.7-v0.2.1-test/include"),
             archhdr: PathBuf::from("/tmp/deps/sdk/3.3.7-v0.2.1-test/archhdr"),
             stub: PathBuf::from("/tmp/deps/sdk/3.3.7-v0.2.1-test/lib/libruby-stub.a"),
+            // POSIX host: no dll-era import lib; the stub carries
+            // LIBRUBYARG (the filter(.is_file()) guard keeps the None
+            // routing honest on the windows hosts too, before
+            // provisioning).
+            import_lib: None,
         }
     }
 
