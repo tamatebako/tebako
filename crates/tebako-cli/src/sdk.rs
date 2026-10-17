@@ -100,6 +100,15 @@ pub struct SdkPaths {
     pub include: PathBuf,
     pub archhdr: PathBuf,
     pub stub: PathBuf,
+    /// The DLL's import library (`libruby.dll.a`, dlltool-made) on the
+    /// dll-era runtimes — None on POSIX (the stub is the whole story
+    /// there) and until provisioned. The import lib answers BOTH symbol
+    /// spellings (`__imp_rb_*` thunks and plain aliases), so mkmf's link
+    /// probes resolve regardless of which DECLSPEC mode the probe-driven
+    /// compile landed in (tebako#753: two consecutive verdict legs
+    /// alternated plain/`__imp_` with the same headers — the probe
+    /// OUTCOME decides the mode, so the link surface must cover both).
+    pub import_lib: Option<PathBuf>,
 }
 
 pub struct RuntimeSdk {
@@ -146,6 +155,11 @@ impl RuntimeSdk {
             include: self.sdk_root.join("include"),
             archhdr: self.sdk_root.join("archhdr"),
             stub: self.sdk_root.join("lib").join("libruby-stub.a"),
+            import_lib: if cfg!(windows) {
+                Some(self.sdk_root.join("lib").join("libruby.dll.a"))
+            } else {
+                None
+            },
         }
     }
 
@@ -501,6 +515,7 @@ impl RuntimeSdk {
                     symbols.push(s);
                 }
             }
+            self.generate_import_lib(&dll, &symbols)?;
         }
         let asm = tmp.join("symbols.s");
         fs::write(&asm, symbol_stub_asm(&symbols))
@@ -544,6 +559,63 @@ impl RuntimeSdk {
     /// names (the exe's asset URL; the DLL's rides the same release as
     /// `<exe-stem>.dll`), and cached in the SDK dir — never the
     /// read-only store.
+    /// The DLL's import library (`libruby.dll.a`), dlltool-made from the
+    /// nm'd export list. The import lib answers BOTH spellings mkmf's
+    /// probes can produce — `__imp_rb_*` thunks (dllimport mode) and
+    /// plain aliases — so the link resolves regardless of which DECLSPEC
+    /// mode the probe-driven compile landed in (tebako#753: consecutive
+    /// verdict legs alternated plain/`__imp_` under the same headers).
+    fn generate_import_lib(&self, dll: &Path, symbols: &[String]) -> Result<(), TebakoError> {
+        let paths = self.paths();
+        let Some(out) = &paths.import_lib else {
+            return Ok(());
+        };
+        if out.is_file() {
+            return Ok(());
+        }
+        let dll_name = dll
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "ruby.dll".to_string());
+        let mut def = String::with_capacity(symbols.len() * 24 + 64);
+        def.push_str("NAME ");
+        def.push_str(&dll_name);
+        def.push('\n');
+        def.push_str("EXPORTS\n");
+        for s in symbols {
+            def.push_str(s);
+            def.push('\n');
+        }
+        let def_path = out.with_extension("def");
+        if let Some(dir) = out.parent() {
+            fs::create_dir_all(dir)
+                .map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
+        }
+        fs::write(&def_path, &def)
+            .map_err(|e| plain_error(format!("{e} writing {}", def_path.display())))?;
+        run_quiet(
+            "dlltool",
+            &[
+                "-d".to_string(),
+                def_path.to_string_lossy().into_owned(),
+                "-l".to_string(),
+                out.to_string_lossy().into_owned(),
+                "-D".to_string(),
+                dll_name,
+            ],
+            None,
+        )
+        .map_err(|e| {
+            packaging_error(
+                135,
+                Some(&format!(
+                    "dlltool failed (the mingw binutils tool must be on PATH): {e}"
+                )),
+            )
+        })?;
+        Ok(())
+    }
+
     fn windows_ruby_dll(&self) -> Result<PathBuf, TebakoError> {
         let store = self.runtime_path.parent().ok_or_else(|| {
             packaging_error(
