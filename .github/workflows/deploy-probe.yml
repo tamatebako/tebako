@@ -1,0 +1,37 @@
+name: deploy-probe
+on: [push, workflow_dispatch]
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - name: v2.8.41 press + the SDK link surface dissection
+        shell: bash
+        run: |
+          set -uo pipefail
+          devkit_ucrt="$(cygpath "$RI_DEVKIT")/ucrt64/bin"
+          export PATH="$devkit_ucrt:$PATH"
+          base="https://github.com/tamatebako/tebako/releases/download/v2.8.41"
+          mkdir -p tools && cd tools
+          curl -fsSLO "$base/tebako-2.8.41-windows-ucrt64.exe" && curl -fsSLO "$base/SHA256SUMS"
+          grep "tebako-2.8.41-windows-ucrt64.exe\$" SHA256SUMS | sha256sum -c -
+          mv tebako-2.8.41-windows-ucrt64.exe tebako.exe
+          cd ..
+          mkdir -p app && cd app
+          printf 'source "https://rubygems.org"\ngem "nio4r", "2.7.5"\n' > Gemfile
+          printf 'puts "hello"\n' > main.rb
+          ../tools/tebako.exe press --root . --entry-point main.rb --Ruby 3.4.10 --mode self-contained --output dist/app > press.out 2>&1
+          echo "press rc=$?"
+          grep -E "error|failed|undefined" press.out | head -4
+          echo "==== the SDK lib dir ===="
+          ls -la "$USERPROFILE/.tebako/deps/sdk/"*/lib/ 2>/dev/null
+          echo "==== the import lib answers the three? ===="
+          IL="$USERPROFILE/.tebako/deps/sdk/"*/lib/libruby.dll.a
+          nm $IL 2>/dev/null | grep -cE " (localtime_r|gmtime_r|strlcpy)" || echo "import lib missing or empty"
+          nm $IL 2>/dev/null | grep -E " (localtime_r|gmtime_r|strlcpy)" | head -4
+          echo "==== extconf's link line (LIBRUBYARG?) ===="
+          find "$USERPROFILE/.tebako/o/s/lib/ruby/gems" -name "gem_make.out" 2>/dev/null | head -1 | xargs cat 2>/dev/null | grep -E "LINKING|gcc.*\.so|LIBRUBYARG|\.dll\.a|libruby" | head -4
+          find "$USERPROFILE/.tebako/o/s/lib/ruby/gems" -name "Makefile" 2>/dev/null | head -1 | xargs grep -E "^LIBRUBYARG|^DLDFLAGS|^LIBS" 2>/dev/null | head -5
