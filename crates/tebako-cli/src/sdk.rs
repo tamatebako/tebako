@@ -515,7 +515,13 @@ impl RuntimeSdk {
                     symbols.push(s);
                 }
             }
-            self.generate_import_lib(&dll, &symbols)?;
+            // The import library's .def carries the DLL's FULL export
+            // surface (unfiltered): the ruby DLL exports the libc shims
+            // extensions reference (localtime_r, gmtime_r, strlcpy —
+            // outside the ruby-ABI prefixes and exactly the v2.8.41
+            // leg's last three undefineds).
+            let dll_all = parse_nm_defined_with(&out, false);
+            self.generate_import_lib(&dll, &dll_all)?;
         }
         let asm = tmp.join("symbols.s");
         fs::write(&asm, symbol_stub_asm(&symbols))
@@ -1005,6 +1011,15 @@ fn copy_dir(src: &Path, dest: &Path) -> Result<(), TebakoError> {
 /// lines (the gem's /^\h+ [A-Za-z] (\S+)$/), deduped, with the stub
 /// exclusions applied.
 fn parse_nm_defined(output: &str) -> Vec<String> {
+    parse_nm_defined_with(output, true)
+}
+
+/// `ruby_abi_only=false` takes every defined global (the windows import
+/// library's .def wants the DLL's FULL export surface — the ruby DLL
+/// also exports libc shims extensions reference: localtime_r, gmtime_r,
+/// strlcpy… the ruby-ABI prefix filter is a POSIX stub concept, and it
+/// left exactly those three unresolved on the v2.8.41 leg).
+fn parse_nm_defined_with(output: &str, ruby_abi_only: bool) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for line in output.lines() {
@@ -1018,7 +1033,8 @@ fn parse_nm_defined(output: &str) -> Vec<String> {
         if ty.len() != 1 || !ty.bytes().next().is_some_and(|b| b.is_ascii_alphabetic()) {
             continue;
         }
-        if !stub_excluded(name) && seen.insert(name.to_string()) {
+        let excluded = ruby_abi_only && stub_excluded(name);
+        if !excluded && seen.insert(name.to_string()) {
             out.push(name.to_string());
         }
     }
