@@ -1,0 +1,86 @@
+name: dep-canary
+# The dependency-drift canary: a nightly fresh resolution of the
+# workspace against the live crates.io index. The class it guards
+# against struck twice in one week (the bisync and zip-2.x mass-yanks,
+# each costing a red PR cycle before anyone knew upstream had moved):
+# a fully-yanked requirement makes `cargo update --dry-run` fail at
+# resolution with the "is yanked" signature — and the canary surfaces
+# that failure as a tracking issue BEFORE the next PR goes red.
+#
+# The canary never fails the workflow itself: a drift finding opens (or
+# comments on) the standing issue and exits zero, so the signal lands
+# in the inbox rather than in a red badge nobody reads at night.
+on:
+  schedule:
+    # 03:17 UTC — off the top of the hour, before the working day in
+    # every tebako timezone.
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+
+concurrency:
+  group: dep-canary
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      - uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@1.94.1
+
+      - name: Fresh resolution against the live index
+        id: resolve
+        working-directory: tebako-rs
+        run: |
+          set -uo pipefail
+          # A dry-run update forces full re-resolution; the lock stays
+          # untouched. The workspace lock is gitignored by policy, so
+          # there is no copy to preserve — the probe resolves from the
+          # manifests alone, exactly as the next PR will.
+          out=$(cargo update --dry-run 2>&1)
+          rc=$?
+          printf '%s\n' "$out" > /tmp/resolve.log
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          tail -5 /tmp/resolve.log
+          # The yank signature is the closure we alarm on; other
+          # failures (network, index) are retried by cargo and land in
+          # the same log for the issue body.
+          grep -qE "is yanked|failed to select a version" /tmp/resolve.log \
+            && echo "drift=true" >> "$GITHUB_OUTPUT" \
+            || echo "drift=false" >> "$GITHUB_OUTPUT"
+
+      - name: Open the drift issue (or comment on the standing one)
+        if: steps.resolve.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          label="dep-canary"
+          body="$(printf 'The nightly dependency canary found a resolution failure.\n\n\`\`\`\n%s\n\`\`\`\n\nThe failure signature is in the log above. When upstream re-publishes or the requirement moves to a live line, re-run the canary (workflow_dispatch) and close this issue on a green resolution.' "$(tail -40 /tmp/resolve.log)")"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$label" --state open --json number --jq 'length')
+          if [ "$existing" -gt 0 ]; then
+            gh issue list --repo "$GITHUB_REPOSITORY" --label "$label" --state open --json number --jq '.[0].number' \
+              | xargs -I{} gh issue comment {} --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --label "$label" \
+              --title "dependency drift: fresh workspace resolution fails (nightly canary)" \
+              --body "$body"
+          fi
+
+      - name: Green verdict
+        if: steps.resolve.outputs.rc == '0'
+        run: echo "resolution green — every live requirement resolves against today's index"
