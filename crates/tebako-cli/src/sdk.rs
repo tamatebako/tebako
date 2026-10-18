@@ -515,13 +515,23 @@ impl RuntimeSdk {
                     symbols.push(s);
                 }
             }
-            // The import library's .def carries the DLL's FULL export
-            // surface (unfiltered): the ruby DLL exports the libc shims
-            // extensions reference (localtime_r, gmtime_r, strlcpy —
-            // outside the ruby-ABI prefixes and exactly the v2.8.41
-            // leg's last three undefineds).
-            let dll_all = parse_nm_defined_with(&out, false);
-            self.generate_import_lib(&dll, &dll_all)?;
+            // The import library's .def carries the DLL's TRUE EXPORT
+            // TABLE (`objdump -p`'s [Ordinal/Name Pointer] Table) —
+            // never nm globals. nm lists ~44k defined globals of which
+            // the DLL actually exports only ~3.4k; the difference is
+            // CRT internals (memcpy, _initterm, DllMain…), and
+            // dlltool thunks for those HIJACK the extension's CRT
+            // references onto the ruby DLL at link — the runtime DLL
+            // doesn't actually export them, and Windows answers with
+            // error 127 'procedure could not be found' at load (the
+            // v2.8.43 boot; probe-proven: date_core.so's import table
+            // bound memcpy/Sleep/DllMain to x64-ucrt-ruby340.dll).
+            // Local end-to-end proof with the true-export def: the
+            // five probe symbols link, CRT names bind to
+            // api-ms-win-crt-*.dll, only genuine exports bind to the
+            // ruby DLL.
+            let exports = self.dll_export_names(&dll)?;
+            self.generate_import_lib(&dll, &exports)?;
         }
         let asm = tmp.join("symbols.s");
         fs::write(&asm, symbol_stub_asm(&symbols))
@@ -571,6 +581,65 @@ impl RuntimeSdk {
     /// plain aliases — so the link resolves regardless of which DECLSPEC
     /// mode the probe-driven compile landed in (tebako#753: consecutive
     /// verdict legs alternated plain/`__imp_` under the same headers).
+    /// The DLL's true export names, from `objdump -p`'s
+    /// `[Ordinal/Name Pointer] Table` — the loader's actual binding
+    /// surface. Filtered to valid C identifiers (the table also carries
+    /// LLVM's `.refptr.*` labels, which extensions never reference).
+    fn dll_export_names(&self, dll: &Path) -> Result<Vec<String>, TebakoError> {
+        let out = run_quiet(
+            "objdump",
+            &["-p".to_string(), dll.to_string_lossy().into_owned()],
+            None,
+        )
+        .map_err(|e| {
+            packaging_error(
+                135,
+                Some(&format!("objdump failed on {}: {e}", dll.display())),
+            )
+        })?;
+        let mut in_table = false;
+        let mut seen = std::collections::HashSet::new();
+        let mut names = Vec::new();
+        for line in out.lines() {
+            if line.contains("[Ordinal/Name Pointer] Table") {
+                in_table = true;
+                continue;
+            }
+            if !in_table {
+                continue;
+            }
+            let Some(name) = line.split_whitespace().next_back() else {
+                continue;
+            };
+            if !name
+                .bytes()
+                .next()
+                .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+            {
+                continue;
+            }
+            if !name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'@')
+            {
+                continue;
+            }
+            if seen.insert(name.to_string()) {
+                names.push(name.to_string());
+            }
+        }
+        if names.is_empty() {
+            return Err(packaging_error(
+                135,
+                Some(&format!(
+                    "no export table found in {} (objdump -p) — the import library cannot be generated",
+                    dll.display()
+                )),
+            ));
+        }
+        Ok(names)
+    }
+
     fn generate_import_lib(&self, dll: &Path, symbols: &[String]) -> Result<(), TebakoError> {
         let paths = self.paths();
         let Some(out) = &paths.import_lib else {
@@ -588,33 +657,13 @@ impl RuntimeSdk {
         def.push_str(&dll_name);
         def.push('\n');
         def.push_str("EXPORTS\n");
+        // The caller feeds the DLL's TRUE export names (dll_export_names,
+        // already identifier-filtered) — written verbatim. The nm-globals
+        // def is retired: its CRT-internal entries hijacked extension CRT
+        // references onto the ruby DLL and died at load (v2.8.42's
+        // link-time conflicts, v2.8.43's load-time error 127 — both
+        // probe-proven, both from the same root).
         for s in symbols {
-            // Sanitize to dlltool's grammar AND the CRT boundary: valid C
-            // identifiers only, never `__`-prefixed. The DLL's nm table
-            // carries ~15k COFF section labels (`.refptr.XXX`) and the
-            // CRT internals (`__acrt_iob_func`,
-            // `__dyn_tls_init_callback`, …) — dlltool accepts a poisoned
-            // .def but its thunks then CONFLICT with the real CRT at
-            // link (multiple-definition) and the whole archive falls
-            // over (the v2.8.42 leg; reproduced locally end-to-end).
-            // The shims extensions need (`localtime_r`, `gmtime_r`,
-            // `strlcpy`, …) and every `rb_*`/`ruby_*` pass this filter.
-            if !s
-                .bytes()
-                .next()
-                .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
-            {
-                continue;
-            }
-            if s.starts_with("__") {
-                continue;
-            }
-            if !s
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'@')
-            {
-                continue;
-            }
             def.push_str(s);
             def.push('\n');
         }
