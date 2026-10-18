@@ -5,13 +5,16 @@
 # boots autoloaders, initializers, and the railties — the executable
 # serving real Rails work).
 #
-# Scheduled weekly + manual dispatch — a Rails press is heavy; PR CI
-# does not carry it. The walkthrough the leg validates lives at
+# Scheduled nightly + manual dispatch — a Rails press is heavy; PR CI
+# does not carry it. Nightly (tebako#753's closing turned this leg into
+# the regression guard for the most defect-dense surface in the
+# ecosystem — twelve layers came out of it; a week of blind spots was
+# too long). The walkthrough the leg validates lives at
 # docs/rails-packaging.md.
 name: rails-windows
 on:
   schedule:
-    - cron: "23 4 * * 1"
+    - cron: "23 3 * * *"
   workflow_dispatch:
     inputs:
       tools_run:
