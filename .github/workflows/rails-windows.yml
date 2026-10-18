@@ -12,7 +12,12 @@ name: rails-windows
 on:
   schedule:
     - cron: "23 4 * * 1"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tools_run:
+        description: 'ITERATION ONLY: a release-workflow run id whose bin-windows-ucrt64 artifact carries the tebako tool to press with (leave empty for the release-pinned verdict)'
+        required: false
+        type: string
 
 concurrency:
   group: rails-windows
@@ -37,7 +42,20 @@ jobs:
           gem install rails --no-document
           rails new myapp --skip-git --skip-docker --skip-jbuilder --skip-system-test --skip-bootsnap
 
+      # The verdict path (the default, and every scheduled run): the
+      # tools come from the pinned release, sha256-verified against the
+      # release's own SHA256SUMS — a green leg here is a shippable
+      # claim. The iteration path (a dispatch with tools_run set): the
+      # tebako tool comes from that release-workflow run's staged
+      # bin-windows-ucrt64 artifact — the bytes a release WOULD ship,
+      # gated by the leg-complete marker (the build leg's own gates
+      # passed), but not yet published. Iteration turns a
+      # fix→release→verdict cycle into fix→run→verdict; the notice
+      # banner marks the run as non-shippable evidence. The shim is
+      # fetched release-pinned on both paths (the press only invokes
+      # the tebako tool).
       - name: Fetch the pinned tebako tools (sha256-verified)
+        if: inputs.tools_run == ''
         shell: bash
         run: |
           set -euo pipefail
@@ -51,6 +69,33 @@ jobs:
           grep "tebako-shim-$ver-windows-ucrt64.exe\$" SHA256SUMS | sha256sum -c -
           mv "tebako-$ver-windows-ucrt64.exe" tebako.exe
           mv "tebako-shim-$ver-windows-ucrt64.exe" tebako-shim.exe
+
+      - name: Fetch the iteration tebako tool (a release run's staged bytes)
+        if: inputs.tools_run != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-windows-ucrt64
+          path: .tools
+          run-id: ${{ inputs.tools_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Guard the iteration artifact + place the tool
+        if: inputs.tools_run != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -f .tools/.leg-complete ] || {
+            echo "::error::the bin-windows-ucrt64 artifact of run ${{ inputs.tools_run }} carries no .leg-complete marker — the build leg died before its gates passed; these bytes are not pressable"
+            exit 1
+          }
+          exe=$(ls .tools/tebako-*-windows-ucrt64.exe 2>/dev/null | head -1)
+          [ -n "$exe" ] || { echo "::error::no tebako-*-windows-ucrt64.exe in the artifact"; exit 1; }
+          mv "$exe" .tools/tebako.exe
+          ver="2.8.44"
+          base="https://github.com/tamatebako/tebako/releases/download/v$ver"
+          cd .tools
+          curl -fsSLO --retry 5 --retry-all-errors --retry-delay 3 "$base/tebako-shim-$ver-windows-ucrt64.exe"
+          echo "::notice::ITERATION RUN — pressing with unreleased tools from release run ${{ inputs.tools_run }}; a green result here is engineering evidence, not a shippable verdict"
 
       - name: Precompile assets at press time
         working-directory: myapp
