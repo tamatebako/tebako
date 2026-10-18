@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rel="v2.8.43"; ver="2.8.43"
+          rel="v2.8.44"; ver="2.8.44"
           mkdir -p .tools && cd .tools
           base="https://github.com/tamatebako/tebako/releases/download/$rel"
           for a in "tebako-$ver-windows-ucrt64.exe" "tebako-shim-$ver-windows-ucrt64.exe" SHA256SUMS; do
