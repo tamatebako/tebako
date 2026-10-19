@@ -1407,10 +1407,13 @@ jobs:
 
   # ==========================================================================
   # Windows arm64 (ucrt) — the phase-2 SHIP leg (roadmap 02 Gap 1):
-  # tfs.exe + tebako-pkg.exe + the link-unit tarball — the artifacts the
-  # runtime factories' windows-arm64 spikes consume
-  # (tebako-runtime-python#41, tebako-runtime-ruby#176), plus native
-  # authoring (tebako-pkg) so arm64 is never x64-under-emulation. Native
+  # tfs.exe + tebako-pkg.exe + tebako-runtime-launcher.exe + the
+  # link-unit tarball — the artifacts the runtime factories'
+  # windows-arm64 spikes consume (tebako-runtime-python#41,
+  # tebako-runtime-ruby#176), plus native authoring (tebako-pkg) so
+  # arm64 is never x64-under-emulation, plus the spec-29 wrapper exe the
+  # repack factories (node, bun) gate their windows-arm64 pairs on
+  # (pulled ahead of phase 3's remaining tools). Native
   # on `windows-11-arm` under msys2 clangarm64 targeting
   # aarch64-pc-windows-gnullvm — no cross proxies: the ship gate's smoke
   # is a real launch on the target arch.
@@ -1427,7 +1430,7 @@ jobs:
   # lives in ci/windows-arm64-gnullvm-ship.sh.
   # ==========================================================================
   windows-arm64-ship:
-    name: Windows arm64 (ucrt) — tfs + tebako-pkg + link-unit
+    name: Windows arm64 (ucrt) — tfs + tebako-pkg + launcher + link-unit
     permissions:
       contents: write
       # attestations/id-token: the SLSA L3 provenance arm below (gated
