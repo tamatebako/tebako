@@ -75,6 +75,16 @@ static const char *rewrite_lib(const char *name)
   }
   if (strcmp(name, "pthread") == 0 || strcmp(name, "winpthread") == 0)
     return "-l:libwinpthread.a";
+  /* gnullvm's panic=unwind references the LLVM unwinder, and rustc
+   * emits it early (-Wl,-Bdynamic -lunwind) where no trailing driver
+   * flag governs — the launcher's libunwind.dll import on the arm64
+   * leg (tebako#830 rounds 1-2: a trailing -l:libunwind.a changed
+   * nothing). clangarm64's bare -lunwind resolves to the DLL import;
+   * the archive form is stock-Windows-safe (the import gate enforces
+   * the outcome either way). No-op on gcc graphs (winpthread carries
+   * the unwinder there; nothing emits -lunwind). */
+  if (strcmp(name, "unwind") == 0)
+    return "-l:libunwind.a";
   return NULL;
 }
 
