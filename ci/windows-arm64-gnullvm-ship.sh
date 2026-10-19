@@ -136,8 +136,15 @@ export TEBAKO_LINK_WRAP_EXEC=aarch64-w64-mingw32-clang
 export TEBAKO_LINK_WRAP_STDCXX_A=libc++.a
 # Driver-level belt for clang's OWN expansions (compiler-rt builtins,
 # the -stdlib expansion on any future -lc++ path); the early-position
-# build-script emissions are the wrapper's job above.
-export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-libstdc++ -C link-arg=-static-libgcc"
+# build-script emissions are the wrapper's job above. -l:libunwind.a:
+# gnullvm's panic=unwind references the LLVM unwinder, and the bare
+# -lunwind resolves to the IMPORT lib (libunwind.dll — a clangarm64
+# runtime a stock Windows machine never has; the launcher tripped the
+# ship gate's import list on exactly this, #830 round 1). The explicit
+# archive spelling pins the static one; the bins that reference no
+# unwinder symbols simply carry an unused -l (tfs/tebako-pkg's import
+# lists are unchanged — the gate re-proves it every leg).
+export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS="-C link-arg=-static-libstdc++ -C link-arg=-static-libgcc -C link-arg=-l:libunwind.a"
 
 # botan-src's configure.py defaults to MSVC on os=windows and there is no
 # cl on the closed PATH — steer it to clangarm64's clang (the ucrt64
