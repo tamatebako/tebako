@@ -452,15 +452,21 @@ fn capture_manifest(
     mount: &tfs::context::Mount,
     what: &str,
 ) -> Result<Option<tpkg::PayloadManifest>, DriverError> {
-    let bytes = mount
-        .read_file(tpkg::PAYLOAD_MANIFEST_PATH, crate::layout::LAYOUT_MAX_BYTES)
-        .map_err(|e| {
-            manifest(format!(
+    // ENOENT is the NO-MANIFEST state (plain images mount fine — the
+    // boot.rs fixtures carry no __tpkg__ at all); every other read
+    // failure is the image lying about its self-description.
+    let bytes = match mount.read_file(tpkg::PAYLOAD_MANIFEST_PATH, crate::layout::LAYOUT_MAX_BYTES)
+    {
+        Ok(b) => b,
+        Err(libc::ENOENT) => return Ok(None),
+        Err(e) => {
+            return Err(manifest(format!(
                 "cannot read {} in {what} ({}) — the payload's self-description lies",
                 tpkg::PAYLOAD_MANIFEST_PATH,
                 errno_text(e)
-            ))
-        })?;
+            )))
+        }
+    };
     if bytes.is_empty() {
         return Ok(None);
     }
@@ -479,10 +485,27 @@ fn capture_manifest(
             }
             Ok(Some(m))
         }
-        Err(e) => Err(manifest(format!(
-            "corrupt {} in {what} ({e}) — the payload's self-description lies",
-            tpkg::PAYLOAD_MANIFEST_PATH
-        ))),
+        Err(e) => {
+            // The #666/#536 rewordings, in mounted_manifest_at's order:
+            // a manifest this runtime predates says "runtime too old",
+            // never "self-description lies", when the floor or the
+            // schema counter says so.
+            if let Some((floor, have)) = stale_floor_in_text(&text) {
+                return Err(manifest(format!(
+                    "the image in {what} declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for this payload's manifest (needs {floor}, have {have}); update the runtime — the payload is not corrupt (parse: {e})"
+                )));
+            }
+            if let Some((declared, spoken)) = schema_minor_skew_in_text(&text) {
+                return Err(manifest(format!(
+                    "the image in {what} declares identity.schema_minor {declared} but this runtime's driver speaks payload-manifest schema {major} only up to minor {spoken} — the manifest is NEWER than this runtime, not corrupt; point the payload at a newer runtime (or republish it against an older schema target) (parse: {e})",
+                    major = tpkg::PAYLOAD_SCHEMA_VERSION
+                )));
+            }
+            Err(manifest(format!(
+                "corrupt {} in {what} ({e}) — the payload's self-description lies",
+                tpkg::PAYLOAD_MANIFEST_PATH
+            )))
+        }
     }
 }
 
