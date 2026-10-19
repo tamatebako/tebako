@@ -421,12 +421,69 @@ fn resolve_image_inner(
     }
 }
 
-/// One established member of the boot's mount table: the point and a
+/// One established member of the boot's mount table: the point, a
 /// human-readable member description for the union journal (spec 17 §1:
-/// the union set — point + members + precedence — is journaled at boot).
-pub(crate) struct MountedMember {
+/// the union set — point + members + precedence — is journaled at boot),
+/// and the member's OWN payload manifest, captured at mount time from
+/// the backend BEFORE any union composites over it. The capture is the
+/// tebako#825 fix: a member mounted at a point an earlier image already
+/// holds reads its manifest from its own bytes, never through the union
+/// view (which would fall through to the earlier image's copy when this
+/// member carries none, and misattribute that image's declarations).
+pub struct MountedMember {
     pub(crate) point: String,
-    desc: String,
+    pub(crate) desc: String,
+    /// The member's OWN payload manifest, captured at mount time from
+    /// the backend BEFORE any union composites over it (the tebako#825
+    /// fix — see the struct docs above).
+    pub(crate) manifest: Option<tpkg::PayloadManifest>,
+    /// The env-image member (at most one, mounted first). The alias
+    /// boot's collection order — env first, then payload members —
+    /// keys on this flag.
+    pub(crate) is_env: bool,
+}
+
+/// Capture a member's payload manifest from the mount's OWN backend,
+/// before the mount joins the table (and before any union composites
+/// over it — the tebako#825 rule). The parse, the floor gate and the
+/// error wording are `mounted_manifest_at`'s, applied at the moment the
+/// bytes are still unambiguous.
+fn capture_manifest(
+    mount: &tfs::context::Mount,
+    what: &str,
+) -> Result<Option<tpkg::PayloadManifest>, DriverError> {
+    let bytes = mount
+        .read_file(tpkg::PAYLOAD_MANIFEST_PATH, crate::layout::LAYOUT_MAX_BYTES)
+        .map_err(|e| {
+            manifest(format!(
+                "cannot read {} in {what} ({}) — the payload's self-description lies",
+                tpkg::PAYLOAD_MANIFEST_PATH,
+                errno_text(e)
+            ))
+        })?;
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    let text = String::from_utf8(bytes).map_err(|_| {
+        manifest(format!(
+            "corrupt {} in {what} (not UTF-8) — the payload's self-description lies",
+            tpkg::PAYLOAD_MANIFEST_PATH
+        ))
+    })?;
+    match tpkg::PayloadManifest::from_yaml(&text) {
+        Ok(m) => {
+            if let Some((floor, have)) = stale_floor(&m) {
+                return Err(manifest(format!(
+                    "the image in {what} declares min_runtime_tebako {floor} but this runtime is tebako {have} — the runtime is too old for this payload's manifest (needs {floor}, have {have}); update the runtime — the payload is not at fault"
+                )));
+            }
+            Ok(Some(m))
+        }
+        Err(e) => Err(manifest(format!(
+            "corrupt {} in {what} ({e}) — the payload's self-description lies",
+            tpkg::PAYLOAD_MANIFEST_PATH
+        ))),
+    }
 }
 
 /// Map a backend-construction failure into the named boot error
@@ -486,10 +543,13 @@ fn mount_at_point(
     mounted: &mut Vec<MountedMember>,
 ) -> Result<(), DriverError> {
     if !context().read().unwrap().mount_point_taken(&spec.mount) {
+        let member_manifest = capture_manifest(&mount, what)?;
         mount_exclusive(mount, what, new_desc)?;
         mounted.push(MountedMember {
             point: spec.mount.clone(),
             desc: new_desc.to_string(),
+            manifest: member_manifest,
+            is_env: false,
         });
         return Ok(());
     }
@@ -498,6 +558,12 @@ fn mount_at_point(
     };
     match row.mode {
         tpkg::MountMode::Union => {
+            // The tebako#825 capture: read THIS member's manifest from
+            // its own backend BEFORE the union composites it over the
+            // incumbents — after mount_union the incumbent's backend is
+            // the union view, and a manifest-less member's read would
+            // fall through to an incumbent's copy.
+            let member_manifest = capture_manifest(&mount, what)?;
             context()
                 .write()
                 .unwrap()
@@ -529,6 +595,8 @@ fn mount_at_point(
                 mounted.push(MountedMember {
                     point: spec.mount.clone(),
                     desc: new_desc.to_string(),
+                    manifest: member_manifest,
+                    is_env: false,
                 });
             }
             Ok(())
@@ -640,10 +708,13 @@ fn mount_env_image(
             }
         }
     };
+    let env_manifest = capture_manifest(&mount, &desc)?;
     mount_exclusive(mount, &what, &desc)?;
     mounted.push(MountedMember {
         point: runtime_root.to_string(),
         desc,
+        manifest: env_manifest,
+        is_env: true,
     });
     Ok(())
 }
@@ -1302,7 +1373,7 @@ pub fn boot_with_mount_modes(
             // interception-free answer.
             #[cfg(windows)]
             {
-                let alias_boot = crate::alias::extract(&h.images, env, runtime_root)?;
+                let alias_boot = crate::alias::extract_from_captured(&mounted)?;
                 crate::alias::register(&alias_boot);
                 crate::alias::export_path(env, &alias_boot.dirs);
             }
@@ -1372,7 +1443,7 @@ pub fn boot_with_mount_modes(
         // byte-stable (… launcher → bins → alias dirs → inherited).
         #[cfg(windows)]
         {
-            let alias_boot = crate::alias::extract(&h.images, env, runtime_root)?;
+            let alias_boot = crate::alias::extract_from_captured(&mounted)?;
             crate::alias::register(&alias_boot);
             crate::alias::export_path(env, &alias_boot.dirs);
         }
