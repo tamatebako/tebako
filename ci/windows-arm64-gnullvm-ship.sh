@@ -12,6 +12,12 @@
 #     tfs + the link unit, and tebako-pkg makes windows-arm64 a
 #     first-class AUTHORING platform (trailer surgery, sign/verify,
 #     release-index). The other four tools are phase 3.
+#   * tebako-runtime-launcher pulled AHEAD of the rest of phase 3: the
+#     wrapper-exe runtime factories (node, bun — and the python/ruby
+#     spikes' own arm64 legs) gate their windows-arm64 pairs on this
+#     one artifact; it links the driver staticlib this leg already
+#     builds and ships, so it rides the same invocation + stage loop +
+#     ship gate.
 #   * limnifs-only — the dwarfs arm64 closure is dwarfs-t #100's
 #     milestone; the link unit carries NO mingw closure at all (the
 #     stage_link_unit --limnifs-only branch). A dwarfs read/write on
@@ -235,10 +241,12 @@ export CXX=aarch64-w64-mingw32-clang++
 # features (the dwarfs backend → dwarfs-t-sys's CMake/vcpkg build) into
 # the graph — the arm64 closure that does not exist. The explicit
 # selection matches the crates' windows-aarch64 target cfgs
-# (backend-limnifs only), so the unified tfs is limnifs-only.
+# (backend-limnifs only), so the unified tfs is limnifs-only. The
+# launcher rides the same unified graph: it links tebako-driver, which
+# links the limnifs-only tfs — exactly this platform's backend set.
 cargo build --release --target "$TARGET" \
   -p tfs --no-default-features --features backend-limnifs \
-  -p tebako-driver -p tfs-cli -p tebako-pkg
+  -p tebako-driver -p tfs-cli -p tebako-pkg -p tebako-runtime-launcher
 
 # --- 2. stage (strip, fragments) --------------------------------------------
 # stage.sh demands all six tools — unusable for this leg. Same steps by
@@ -249,8 +257,14 @@ SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
 
 # tebako-pkg rides the same graph (tebako-signer/tebako-info/tebako-
 # resolve are already arm64-clean for tfs-cli) — windows-arm64 is a
-# first-class authoring platform, never x64-under-emulation.
-TOOLS="tfs tebako-pkg"
+# first-class authoring platform, never x64-under-emulation. The
+# launcher is the wrapper-exe runtime factories' pair half (node, bun):
+# the exe booted by the spec-17 handoff, gating their windows-arm64
+# legs on exactly this artifact. The stage loop's ${tool}.exe spelling
+# fits it unchanged (target/$TARGET/release/tebako-runtime-launcher.exe),
+# and ship-gate's bare-launch smoke covers a no-args wrapper run the
+# same way it does on the seven platforms the launcher already ships.
+TOOLS="tfs tebako-pkg tebako-runtime-launcher"
 mkdir -p out "fragments/frag-$PLATFORM"
 {
   echo "| platform | binary | size (bytes) |"

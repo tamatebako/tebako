@@ -25,8 +25,9 @@ for platform_dir in "$FRAG"/frag-*; do
   platform="${platform_dir##*/frag-}"
   exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
   for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
-    # A partial platform leg (windows-ucrt-arm64 ships tfs only, roadmap
-    # 02 phase 2) carries only its own fragments.
+    # A partial platform leg (windows-ucrt-arm64 ships tfs + tebako-pkg
+    # + tebako-runtime-launcher, roadmap 02 phase 2) carries only its
+    # own fragments.
     [ -f "$platform_dir/${tool}-${platform}.sha256" ] || continue
     sha=$(cat "$platform_dir/${tool}-${platform}.sha256")
     name="${tool}-${VERSION}-${platform}${exe}"
