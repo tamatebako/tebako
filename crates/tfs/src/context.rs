@@ -97,6 +97,42 @@ pub struct Mount {
     pub mode: MountMode,
 }
 
+impl Mount {
+    /// Read a file's bytes from THIS mount's backend — never through the
+    /// context's longest-prefix union. The per-image consumers (the alias
+    /// boot's declaration capture, tebako#825) hold a specific member and
+    /// must see ITS bytes: a member unioned over an incumbent would
+    /// otherwise read the incumbent's copy through the union view when it
+    /// carries no such entry itself. `rel` is backend-relative
+    /// (`/`-separated, `""` is the mount root); `max` caps the read.
+    pub fn read_file(&self, rel: &str, max: usize) -> Result<Vec<u8>, i32> {
+        let st = self.backend.stat(rel)?;
+        if st.entry_type != EntryType::File {
+            return Err(libc::EISDIR);
+        }
+        if st.size < 0 {
+            return Err(libc::EIO);
+        }
+        let want = (st.size as usize).min(max);
+        let mut out = Vec::with_capacity(want.min(1 << 20));
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut off: u64 = 0;
+        while out.len() < want {
+            let n = self.backend.pread(rel, &mut buf, off)?;
+            if n == 0 {
+                break;
+            }
+            let take = (want - out.len()).min(n);
+            out.extend_from_slice(&buf[..take]);
+            off += n as u64;
+        }
+        if out.len() > max {
+            return Err(libc::EFBIG);
+        }
+        Ok(out)
+    }
+}
+
 /// One union member layered over a mount's incumbent: its serialization
 /// identity (the member's backend moved into the `UnionBackend`
 /// composite; only the rebuild coordinates remain here).

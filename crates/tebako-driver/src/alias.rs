@@ -66,8 +66,7 @@ use std::path::{Path, PathBuf};
 
 use tfs::context::context;
 
-use crate::driver::{env_var, errno_text, join_mount, DriverError, Env};
-use crate::handoff::ImageSpec;
+use crate::driver::{errno_text, join_mount, DriverError, Env};
 use crate::{EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 
 fn manifest_err(message: impl Into<String>) -> DriverError {
@@ -196,17 +195,6 @@ impl AliasUnion {
     }
 }
 
-/// Fold one mounted image's declarations into the union. No manifest
-/// declares nothing (plain images mount fine); a corrupt one is the
-/// image lying about its self-description — the shared named 65
-/// (`mounted_manifest_at`).
-fn collect_image(union: &mut AliasUnion, desc: &str, mount: &str) -> Result<(), DriverError> {
-    let Some(manifest) = crate::driver::mounted_manifest_at(mount)? else {
-        return Ok(());
-    };
-    union.add_image(desc, mount, &manifest)
-}
-
 /// The declaring image's identity for the ambiguity check (tebako#486):
 /// name + version + both digests. The zero-digest placeholder of
 /// unsigned manifests is included deliberately — a test fixture pair
@@ -244,25 +232,29 @@ pub struct AliasBoot {
 /// mounts, the jail, and the class-R pass, before the interpreter
 /// handoff — in both boot shapes; the call sites are windows-gated (the
 /// bare-name rule is a windows contract — POSIX boots never run this).
-pub fn extract(
-    images: &[ImageSpec],
-    env: &dyn Env,
-    runtime_root: &str,
+/// The captured-manifest form of the alias boot (tebako#825): each
+/// mounted member's declarations come from the manifest the DRIVER
+/// captured at mount time from the member's own backend, BEFORE any
+/// union composites over it. The collection order is unchanged — the
+/// env member first (the class-R precedent: the runtime's resources
+/// extract ahead of payloads), then the payload members in mount order
+/// — and the ambiguity rule (two different images declaring one name
+/// is the named 65) is unchanged; only the READ is scoped, so a member
+/// at a shared point is attributed its own declarations and nothing
+/// else's.
+pub fn extract_from_captured(
+    mounted: &[crate::driver::MountedMember],
 ) -> Result<AliasBoot, DriverError> {
     let mut union = AliasUnion::new();
-    // The env image's own declarations come first (the class-R
-    // precedent: the runtime's resources extract ahead of payloads).
-    if let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") {
-        collect_image(&mut union, &format!("env image '{image}'"), runtime_root)?;
+    for member in mounted.iter().filter(|m| m.is_env) {
+        if let Some(manifest) = &member.manifest {
+            union.add_image(&member.desc, &member.point, manifest)?;
+        }
     }
-    for spec in images {
-        let desc = match &spec.source {
-            crate::handoff::ImageSource::File(path, _) => {
-                format!("image '{}'", path.display())
-            }
-            crate::handoff::ImageSource::OwnSlot(n) => format!("own slot {n}"),
-        };
-        collect_image(&mut union, &desc, &spec.mount)?;
+    for member in mounted.iter().filter(|m| !m.is_env) {
+        if let Some(manifest) = &member.manifest {
+            union.add_image(&member.desc, &member.point, manifest)?;
+        }
     }
     let mut boot = AliasBoot::default();
     for entry in &union.entries {
@@ -415,6 +407,10 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
     use std::collections::HashMap;
+
+    /// The context-serialization lock for this binary's context-touching
+    /// tests (boot.rs's discipline: serialize + unmount around each).
+    static CTX_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     struct MapEnv(RefCell<HashMap<String, String>>);
 
@@ -652,16 +648,122 @@ mod tests {
     }
 
     #[test]
-    fn extract_without_mounted_images_extracts_nothing() {
-        // No env image handed, no payload triples: the union is empty,
-        // nothing materializes, no PATH dirs and no registration pairs
-        // arise. (The mount-dependent paths — manifest reads and
+    fn extract_from_captured_without_manifests_extracts_nothing() {
+        // No captured manifests anywhere: the union is empty, nothing
+        // materializes, no PATH dirs and no registration pairs arise.
+        // (The mount-dependent paths — the capture itself and
         // dlmap2file — are the factory dogfood's surface, mirroring
         // materialize.rs's coverage shape.)
-        let env = env_with(&[]);
-        let boot = extract(&[], &env, "/__tfs__").unwrap();
+        let boot = extract_from_captured(&[]).unwrap();
         assert!(boot.pairs.is_empty(), "{:?}", boot.pairs);
         assert!(boot.dirs.is_empty(), "{:?}", boot.dirs);
+    }
+
+    #[test]
+    fn a_manifest_less_member_at_a_shared_point_takes_nothing_from_the_incumbent() {
+        // tebako#825's first acceptance: a payload member mounted at the
+        // SAME point as the env image (the union shape) with NO manifest
+        // of its own is attributed NOTHING — the env's declarations
+        // count once, no ambiguity fires, and the boot extracts cleanly.
+        // The pre-fix code re-read the shared point through the union
+        // and died on the authoring-ambiguity named error. The declared
+        // in-image target must exist for the materialization: a host-dir
+        // mount at the runtime root serves it. The context is
+        // process-global across this test binary — boot.rs's LOCK
+        // discipline applies (serialize + unmount before and after).
+        let g = CTX_LOCK.lock().unwrap();
+        context().write().unwrap().unmount();
+        let dir = std::env::temp_dir().join(format!("driver-alias-825a-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        std::fs::write(dir.join("bin/libwinpthread-1.dll"), b"pe").unwrap();
+        context()
+            .write()
+            .unwrap()
+            .insert_mount(tfs::context::Mount {
+                handle: 0,
+                mount_point: "/__tfs__".to_string(),
+                mount_point_c: Box::new(std::ffi::CString::new("/__tfs__").unwrap()),
+                archive_path: None,
+                slot: None,
+                union_tail: Vec::new(),
+                backend: Box::new(tfs::backends_hostdir::HostDirBackend::new(&dir).unwrap()),
+                mode: tfs::mount::MountMode::ReadOnly,
+            });
+        let env_member = crate::driver::MountedMember {
+            point: "/__tfs__".to_string(),
+            desc: "env image 'rt.tfs'".to_string(),
+            manifest: Some(manifest_with_aliases(
+                "library_aliases:\n  - {name: libwinpthread-1.dll, path: /bin/libwinpthread-1.dll}\n",
+            )),
+            is_env: true,
+        };
+        let payload_member = crate::driver::MountedMember {
+            point: "/__tfs__".to_string(),
+            desc: "image 'app.tfs'".to_string(),
+            manifest: None,
+            is_env: false,
+        };
+        let boot =
+            extract_from_captured(&[env_member, payload_member]).expect("no ambiguity fires");
+        assert_eq!(boot.pairs.len(), 1, "{:?}", boot.pairs);
+        assert_eq!(boot.pairs[0].0, "libwinpthread-1.dll");
+        context().write().unwrap().unmount();
+        drop(g);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_manifest_carrying_member_at_a_shared_point_keeps_its_own_declarations() {
+        // tebako#825's second acceptance: a payload with ITS OWN manifest
+        // at the shared point is attributed ITS declarations — both
+        // members' aliases coexist, each under its own name.
+        let g = CTX_LOCK.lock().unwrap();
+        context().write().unwrap().unmount();
+        let dir = std::env::temp_dir().join(format!("driver-alias-825b-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        std::fs::create_dir_all(dir.join("vendor")).unwrap();
+        std::fs::write(dir.join("bin/libwinpthread-1.dll"), b"pe").unwrap();
+        std::fs::write(dir.join("vendor/app-only.dll"), b"pe").unwrap();
+        context()
+            .write()
+            .unwrap()
+            .insert_mount(tfs::context::Mount {
+                handle: 0,
+                mount_point: "/__tfs__".to_string(),
+                mount_point_c: Box::new(std::ffi::CString::new("/__tfs__").unwrap()),
+                archive_path: None,
+                slot: None,
+                union_tail: Vec::new(),
+                backend: Box::new(tfs::backends_hostdir::HostDirBackend::new(&dir).unwrap()),
+                mode: tfs::mount::MountMode::ReadOnly,
+            });
+        let env_member = crate::driver::MountedMember {
+            point: "/__tfs__".to_string(),
+            desc: "env image 'rt.tfs'".to_string(),
+            manifest: Some(manifest_with_aliases(
+                "library_aliases:\n  - {name: libwinpthread-1.dll, path: /bin/libwinpthread-1.dll}\n",
+            )),
+            is_env: true,
+        };
+        let payload_member = crate::driver::MountedMember {
+            point: "/__tfs__".to_string(),
+            desc: "image 'app.tfs'".to_string(),
+            manifest: Some(manifest_with_aliases_as(
+                "app",
+                "library_aliases:\n  - {name: app-only.dll, path: /vendor/app-only.dll}\n",
+            )),
+            is_env: false,
+        };
+        let boot = extract_from_captured(&[env_member, payload_member])
+            .expect("distinct declarations coexist");
+        let names: Vec<&str> = boot.pairs.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains(&"libwinpthread-1.dll"), "{names:?}");
+        assert!(names.contains(&"app-only.dll"), "{names:?}");
+        context().write().unwrap().unmount();
+        drop(g);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
