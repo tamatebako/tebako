@@ -68,7 +68,22 @@ pub fn vfs_open(path: &str, flags: i32) -> PathRoute<i32> {
     // The guard must drop BEFORE route_answer (its ENODEV branch
     // re-acquires the context): bind the answer in its own block.
     let answer = { context().write().unwrap().open(path, flags) };
-    route_answer(answer, path, need)
+    // tebako#831 (class 2): the mount ROOT claimed by an image is a
+    // directory on both sides — a read-open of it is a host-ancestor
+    // probe (V8's init walks the exe's ancestors from "/") that must
+    // not die on the image's EISDIR: the host's answer is the honest
+    // one (for the real root it is EISDIR too — the fall-through keeps
+    // the semantics, only the ATTRIBUTION moves). Non-mount-point dirs
+    // keep the image's answer (a payload reading its own dir gets the
+    // image's EISDIR, POSIX-correct).
+    match route_answer(answer, path, need) {
+        PathRoute::Denied(e)
+            if e == libc::EISDIR && context().read().unwrap().mount_point_taken(path) =>
+        {
+            PathRoute::Host
+        }
+        other => other,
+    }
 }
 
 /// stat/lstat routing. The engine has no symlink duality (memfs entries
@@ -981,6 +996,47 @@ mod tests {
             vfs_open("/etc/definitely-host", libc::O_RDONLY),
             PathRoute::Host
         );
+
+        // ---- the mount-root EISDIR fall-through (tebako#831 class 2) ----
+        // A payload mounted at the mount ROOT answers a read-open of the
+        // point with the image's EISDIR — and the host fall-through must
+        // still fire: the point exists on both sides, and a host-ancestor
+        // probe (V8's init walks the exe's ancestors from "/") dies on
+        // the image's answer otherwise (node's V8Platform::Initialize
+        // assert, reproduced against the v2.8.47 pair before this fix).
+        // Non-mount-point dirs keep the image's EISDIR (POSIX-correct).
+        let root_img = dir.join("rootimg.zip");
+        {
+            let file = std::fs::File::create(&root_img).unwrap();
+            let mut zw = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default();
+            zw.add_directory("bin/", opts).unwrap();
+            zw.start_file("bin/entry", opts).unwrap();
+            use std::io::Write as _;
+            zw.write_all(b"#!/bin/true\n").unwrap();
+            zw.finish().unwrap();
+        }
+        let root_mount = tfs::mount::build_from_file(root_img.to_str().unwrap(), "/").unwrap();
+        let root_handle = context()
+            .write()
+            .unwrap()
+            .mount_checked(root_mount)
+            .unwrap();
+        assert_eq!(
+            vfs_open("/", libc::O_RDONLY),
+            PathRoute::Host,
+            "the mount ROOT read falls through to the host (the image's EISDIR never poisons it)"
+        );
+        assert_eq!(
+            vfs_open("/bin", libc::O_RDONLY),
+            PathRoute::Denied(libc::EISDIR),
+            "a NON-mount-point dir inside the image keeps the image's EISDIR"
+        );
+        context()
+            .write()
+            .unwrap()
+            .unmount_handle(root_handle)
+            .unwrap();
 
         // ---- resolve_at ----
         assert_eq!(resolve_at(99, "/abs/p", None).unwrap(), "/abs/p");
