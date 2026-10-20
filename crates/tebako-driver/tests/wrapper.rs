@@ -277,7 +277,7 @@ fn exec_cache_composes_argv_and_bridges_the_entry() {
 
 #[cfg(unix)]
 #[test]
-fn preload_keeps_the_vfs_entry_and_arms_the_injection_env() {
+fn preload_bridges_the_entry_and_arms_the_injection_env() {
     let g = guard("pl-launch");
     let env_image = write_env_image(g.path(), PRELOAD, true);
     let app = write_app_image(g.path());
@@ -302,9 +302,23 @@ fn preload_keeps_the_vfs_entry_and_arms_the_injection_env() {
 
     assert_eq!(launch.argv[0], launch.program);
     assert_eq!(launch.argv[1], "-jar");
-    // Under preload the armed shim serves the VFS spelling — the entry
-    // is NOT bridged (spec 29 §3's interposition tier).
-    assert_eq!(launch.argv[2], "/bin/app");
+    // tebako#831: under preload the ENTRY bridges to its host twin
+    // (perms preserved — an interpreted entry stays data, not a
+    // program). Interpreters heuristic over their script argument
+    // (exec-bit probes, spawn-first file runners, shebang re-execs):
+    // bun 1.4's runner spawn-execs a VFS script, the shim's exec
+    // interposition materializes it with the exec bit forced, and the
+    // shebang then resolves through the kernel's env — the HOST PATH
+    // (a hostile interpreter first on PATH wins; none present means a
+    // named not-found; the not-found fallback reads in-process,
+    // masking the failure as a false pass). A 0644 host twin is the
+    // shape every interpreter treats as plain input — what exec-cache
+    // has always handed its interpreters.
+    assert_ne!(launch.argv[2], "/bin/app");
+    assert!(
+        Path::new(&launch.argv[2]).is_absolute(),
+        "the bridged entry is a host path"
+    );
     assert_eq!(launch.argv[3], "-version");
     assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
     // The spec-22 §3 arming already happened in the shared boot (reuse):
@@ -814,7 +828,27 @@ fn linked_and_wrapper_boots_compose_identically() {
     assert_eq!(linked_env.map(), wrapper_env.map(), "the handoff envs");
     let linked_tail: Vec<String> = linked.argv.iter().skip(1).cloned().collect();
     let wrapper_tail: Vec<String> = launch.argv.iter().skip(1).cloned().collect();
-    assert_eq!(wrapper_tail, linked_tail, "the rewritten argv tails");
+    // tebako#831's one deliberate divergence: the WRAPPER boot bridges
+    // its entry token to the host twin (interpreters heuristic over a
+    // VFS script argument — spawn-first runners, shebang re-execs —
+    // and the kernel's env resolves the shebang through the HOST
+    // PATH); the LINKED boot keeps the VFS spelling (its interpreter
+    // reads the VFS natively and spawns nothing). Parity is the tail's
+    // SHAPE with the entry identified by CONTENT, not spelling.
+    assert_eq!(wrapper_tail.len(), linked_tail.len(), "the argv tail shape");
+    for (i, (w, l)) in wrapper_tail.iter().zip(&linked_tail).enumerate() {
+        if w == l {
+            continue;
+        }
+        assert_eq!(i, 1, "only the entry token diverges: {wrapper_tail:?} vs {linked_tail:?}");
+        assert_eq!(l, "/bin/app", "the linked boot's VFS spelling");
+        assert!(Path::new(w).is_absolute(), "the bridged entry is a host path");
+        assert_eq!(
+            std::fs::read(w).unwrap(),
+            b"#!/usr/bin/env java\necho app\n",
+            "the bridged entry carries the fixture's bytes"
+        );
+    }
     assert_eq!(launch.argv[1], "-jar", "the entrypoint's args_default");
 }
 
