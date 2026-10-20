@@ -840,9 +840,15 @@ fn linked_and_wrapper_boots_compose_identically() {
         if w == l {
             continue;
         }
-        assert_eq!(i, 1, "only the entry token diverges: {wrapper_tail:?} vs {linked_tail:?}");
+        assert_eq!(
+            i, 1,
+            "only the entry token diverges: {wrapper_tail:?} vs {linked_tail:?}"
+        );
         assert_eq!(l, "/bin/app", "the linked boot's VFS spelling");
-        assert!(Path::new(w).is_absolute(), "the bridged entry is a host path");
+        assert!(
+            Path::new(w).is_absolute(),
+            "the bridged entry is a host path"
+        );
         assert_eq!(
             std::fs::read(w).unwrap(),
             b"#!/usr/bin/env java\necho app\n",
