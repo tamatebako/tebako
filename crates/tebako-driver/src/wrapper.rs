@@ -344,6 +344,50 @@ fn bridge_entry(
     let Some(index) = entry_index else {
         return Ok(());
     };
+    // tebako#831: under PRELOAD the ENTRY token bridges to its host
+    // twin too (dlmap2file preserves the image's perms — an
+    // interpreted entry stays 0644, i.e. data). Interpreters
+    // heuristic over their script argument — exec-bit probes,
+    // spawn-first file runners, shebang re-execs — and a VFS path
+    // reaches those heuristics through the shim's answers: bun 1.4's
+    // runner spawn-execs a VFS script, the shim's exec interposition
+    // materializes it with the exec bit FORCED, and the shebang then
+    // resolves through the KERNEL's env — the host PATH (a hostile
+    // `bun` first on PATH wins; none present means `env: bun: No such
+    // file or directory`; a not-found interpreter falls back to
+    // in-process reading, masking the whole failure as a false pass).
+    // A 0644 host twin is what every interpreter treats as plain
+    // input — the same shape the exec-cache mechanism has always
+    // handed its interpreters. Template tokens (spec 33 §3) stay VFS
+    // under preload: the interpreter reads them through the shim by
+    // design, and they are never spawn heuristics' subject.
+    if mech == Mechanism::Preload {
+        let Some(token) = launch.argv.get(index).cloned() else {
+            return Ok(());
+        };
+        if !context().read().unwrap().path_is_embedded(&token) {
+            return Ok(());
+        }
+        let host = {
+            let mut ctx = context().write().unwrap();
+            ctx.dlmap2file(&token)
+        };
+        launch.argv[index] = host
+            .map(|c| c.to_string_lossy().into_owned())
+            .map_err(|e| {
+                if e == libc::ENOENT {
+                    manifest(format!(
+                        "the entrypoint '{token}' does not resolve inside the mounted tree"
+                    ))
+                } else {
+                    io(format!(
+                        "cannot materialize the entrypoint '{token}' for the preloaded interpreter: {}",
+                        errno_text(e)
+                    ))
+                }
+            })?;
+        return Ok(());
+    }
     bridge_token(launch, mech, index)
 }
 
