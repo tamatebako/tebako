@@ -19,11 +19,12 @@ release_installer_count() {
 }
 
 # Files the signer signs: 6 tools x 7 platforms + 7 link-unit tarballs +
-# the windows-arm64 tfs.exe + tebako-pkg.exe + their link-unit tarball
-# (roadmap 02 phase 2) + the armed installers. (SHA256SUMS +
-# manifest.json sign separately.)
+# the windows-arm64 tfs.exe + tebako-pkg.exe + tebako-runtime-launcher.exe
+# + their link-unit tarball (roadmap 02 phase 2; the launcher joined with
+# v2.8.46 — tebako#830, the repack factories' pair half) + the armed
+# installers. (SHA256SUMS + manifest.json sign separately.)
 release_expected_parts() {
-  echo $(( 52 + $(release_installer_count) ))
+  echo $(( 53 + $(release_installer_count) ))
 }
 
 # One .asc per part + SHA256SUMS.asc + manifest.json.asc.
@@ -31,14 +32,15 @@ release_expected_sigs() {
   echo $(( $(release_expected_parts) + 2 ))
 }
 
-# Every asset on the release: the parts + the 44 per-tool .sha256
-# sidecars (tebako#493 — the link-unit tarballs have none) + the two
+# Every asset on the release: the parts + the 45 per-tool .sha256
+# sidecars (tebako#493 — the link-unit tarballs have none; the arm64
+# launcher carries one like every tool) + the two
 # indexes + one .sha256 sidecar per installer + the .asc set when the
 # signing plane is armed.
 release_expected_assets() {
   local installers n
   installers=$(release_installer_count)
-  n=$(( 52 + 44 + 2 + installers * 2 ))
+  n=$(( 53 + 45 + 2 + installers * 2 ))
   if [ "${TEBAKO_RELEASE_SIGNING_ENABLED:-}" = "true" ]; then
     n=$(( n + $(release_expected_sigs) ))
   fi
