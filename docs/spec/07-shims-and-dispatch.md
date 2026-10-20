@@ -573,3 +573,53 @@ never silent. The standalone bootstrap reads no store config — the
 managed shim owns that tier — so a stitched package's chain is process
 env over the package manifest (layers 1 and 3; layers 2 and 4 are
 absent by construction).
+
+## 10. The runtime-own command surface (DRAFT — the user-direct grammar)
+
+A runtime's own tools (the interpreter itself, its package manager, its
+loaders) are first-class commands, not only what a payload's `expose:`
+edge re-exports. The factory's env image declares the runtime's
+entrypoints (the additive entrypoints list — spec 30 §2; the node
+factory declares node/npm/npx/corepack; the bun factory bun/bunx; the
+openjdk factory java/keytool/…); the user reaches them directly:
+
+    tebako run <engine>[:<command>] [<args>…]
+
+- The bare form (`tebako run node`) runs the runtime's DEFAULT entry
+  (the interpreter — the env image's `layout.interpreter`), with the
+  args handed verbatim.
+- The command form (`tebako run node:npm`) resolves the named
+  entrypoint in the runtime image's declared entrypoints — an
+  undeclared name is a named error listing the declared set, never a
+  guess.
+
+**Resolution:** the engine resolves against the store FIRST (the
+newest compatible cached runtime), then the registries (download,
+verify, cache — the same fetch path as every payload's runtime
+requirement). The version chain per engine: `TEBAKO_<ENGINE>_VERSION`
+env → the nearest `.tebako-tools.yaml` → `~/.tebako/config.yaml`'s
+`defaults:` → the registry's newest. All local surfaces, never a
+registry-side route (the provider-routing rule above).
+
+**Dispatch:** the handoff is the spec-17 wire exactly — the wrapper exe
+with `TEBAKO_RUNTIME_IMAGE=<env image>` + `--tebako-entry <command>`
+(or the bare form's default) + the user args; the driver composes
+`[interpreter, <the entrypoint's args_default…>, <entry>, <args>…]` per
+spec 29 §1. The jail posture: the user's own policy (TEBAKO_JAIL /
+`--jail`), open by default — a runtime-own command is the user's own
+process, not a payload's.
+
+**The shim surface:** `tebako install <engine>[:<command>]` registers
+shims/<command> (the default entry's name for the bare form — `node`,
+`bun`, `java`) dispatching argv0 → the engine's runtime resolution →
+the same spec-17 wire. **Collision rule (MECE):** a PAYLOAD-provided
+name wins over a runtime-own name of the same spelling (the payload
+declared the tool; the runtime surface is the fallback when no payload
+provides it) — the provider-routing surfaces of §2 answer collisions
+locally, never by registry.
+
+**The presses stay honest:** a runtime-own shim name never ships a
+binary — the shim is the link; a press that bundles its own tool keeps
+the payload-provided name (the payload wins the name by the collision
+rule above).
+
