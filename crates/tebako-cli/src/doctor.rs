@@ -238,6 +238,22 @@ fn store_section(home: &Path) -> Section {
             if let Ok(files) = std::fs::read_dir(&dir) {
                 for f in files.flatten() {
                     let name = f.file_name().to_string_lossy().into_owned();
+                    // tebako#846: a LAZY_SEEDING entry's own layout is
+                    // not artifact material. The block store
+                    // (`<image>.tfs.blocks`) is a DIRECTORY, and the
+                    // seal's staging file (`<image>.tfs.<pid>.seal.part`)
+                    // is pid-unique and renamed into place on commit
+                    // (spec 39 §5) — a crash leaves it by design, with
+                    // the entry fully resumable. Hashing either produced
+                    // the false problems this guard retires: "unreadable:
+                    // Is a directory", and a sha256 MISMATCH advising a
+                    // reinstall of a healthy entry.
+                    if f.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        continue;
+                    }
+                    if name.ends_with(".seal.part") {
+                        continue;
+                    }
                     // The exe is
                     // `tebako-runtime-<ver>-[<lang>-]<lv>-<triplet>[.exe]`
                     // (tebako#716's dual-era grammar: the new era inserts
