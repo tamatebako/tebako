@@ -340,10 +340,18 @@ fn resolve_runtime_scoped<T: Transport + Sync>(
         Some(pick) => pick,
         None if !prefless => (pref.clone(), source),
         None => {
+            // Under TEBAKO_OFFLINE the probe never ran — name the offline
+            // rule (the spec 05 cache-or-error shape), never claim the
+            // index "did not read" when the read was forbidden.
+            let why = if offline_mode(ctx) {
+                "and TEBAKO_OFFLINE is set — no source is consulted offline".to_string()
+            } else {
+                "and no runtime preference is configured, and neither the factory registry nor the default-line release index read".to_string()
+            };
             return fail(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
-                    "no compatible runtime for {} \"{}\": {cached_note}\n  and no runtime preference is configured, and neither the factory registry nor the default-line release index read — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
+                    "no compatible runtime for {} \"{}\": {cached_note}\n  {why} — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
                     reqs.engine(),
                     described,
                     reqs.engine()

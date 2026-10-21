@@ -24,7 +24,9 @@ use crate::driver::DriverError;
 use crate::EX_TEBAKO_LAYOUT;
 
 /// The in-image path of the declaration, relative to the runtime root.
-pub const LAYOUT_IMAGE_PATH: &str = "lib/tebako/layout.yaml";
+/// The grammar value's single owner is tpkg (spec 00 §10 — every consumer
+/// flows it); this re-export keeps the module's readers on one name.
+pub use tpkg::LAYOUT_IMAGE_PATH;
 /// Sanity bound on the declaration's size (a named error, never an
 /// unbounded read).
 pub(crate) const LAYOUT_MAX_BYTES: usize = 65536;

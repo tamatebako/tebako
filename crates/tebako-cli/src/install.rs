@@ -578,10 +578,223 @@ pub fn install_with<T: Transport + Sync>(
     if looks_like_reference(target) {
         let plan = plan_from_reference(target)?;
         finish_install(home, fetcher, plan, shim_binary, &mut Vec::new())
+    } else if let Some(erf) = engine_install_target(home, target)? {
+        install_engine(home, &erf, shim_binary)
     } else {
         let plan = plan_from_nickname(home, fetcher, target, host)?;
         finish_install(home, fetcher, plan, shim_binary, &mut Vec::new())
     }
+}
+
+// ---- the engine form (spec 07 §10 — the runtime-own command surface) ----
+
+/// The install target's engine-form test (spec 07 §10): a token carrying
+/// `:` is unconditionally the engine grammar (a nickname never carries
+/// one); a bare engine-shaped token is the engine form when the engine
+/// resolves on this machine ([`crate::engine::engine_known`] — a cached
+/// runtime, a config preference, a registered registry's `kind: runtime`
+/// entry, or the ruby default), else the nickname walk decides. The
+/// engine reading WINS the bare token it answers: a payload of the same
+/// name stays reachable through its qualified forms (`alias/name`, the
+/// references).
+fn engine_install_target(home: &Path, target: &str) -> Result<Option<crate::engine::EngineRef>, TebakoError> {
+    match crate::engine::parse_engine_ref(target)? {
+        Some(erf) if erf.command.is_some() => Ok(Some(erf)),
+        Some(erf) if crate::engine::engine_known(home, &erf.engine) => Ok(Some(erf)),
+        _ => Ok(None),
+    }
+}
+
+/// The env image's declared spawn surface: the embedded manifest's
+/// runtime entrypoints. Absent manifest → `None` (the bare form still
+/// answers — the default entry's name falls back to the engine; the
+/// command form is the named error, the expose cross-check's class).
+fn runtime_entrypoints(
+    image: &Path,
+    manifest_text: Option<&str>,
+) -> Result<Option<Vec<tpkg::Entrypoint>>, TebakoError> {
+    let Some(text) = manifest_text else {
+        return Ok(None);
+    };
+    let manifest = tpkg::PayloadManifest::from_yaml(text).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the embedded manifest of {} does not parse: {e}",
+                image.display()
+            ),
+        )
+    })?;
+    match &manifest.provides {
+        tpkg::Provides::Runtime(rt) => Ok(Some(rt.entrypoints.clone())),
+        _ => Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "{} is not a runtime payload — the engine surface installs runtime entrypoints only",
+                image.display()
+            ),
+        )),
+    }
+}
+
+/// The env image's `layout.interpreter` (the wrapper pattern's default
+/// entry, spec 29 §2) — a tolerant read of the one key this surface
+/// consumes (the grammar's owner is tebako-driver::layout; unknown keys
+/// tolerated within the MAJOR, the driver's own read rule).
+fn layout_interpreter(text: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct LayoutTip {
+        interpreter: Option<String>,
+    }
+    serde_yml::from_str::<LayoutTip>(text)
+        .ok()?
+        .interpreter
+        .filter(|s| !s.is_empty())
+}
+
+/// The collision rule (spec 07 §10): a PAYLOAD-provided name wins over a
+/// runtime-own name — an install that would shadow an existing payload
+/// claim is refused by name, never a silent shadow.
+fn refuse_payload_claim(home: &Path, engine: &str, command: &str) -> Result<(), TebakoError> {
+    match tebako_shim::resolve::provider_for_bare_default(home, command).map_err(map_shim)? {
+        tebako_shim::resolve::BareProvider::None => Ok(()),
+        tebako_shim::resolve::BareProvider::One(payload) => Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the command \"{command}\" is already provided by the payload \"{payload}\" — the payload surface wins the name (spec 07 §10's collision rule); the {engine} runtime-own shim was not registered"
+            ),
+        )),
+        tebako_shim::resolve::BareProvider::Ambiguous(payloads) => Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the command \"{command}\" is already provided by the payloads {} — the payload surface wins the name (spec 07 §10's collision rule); the {engine} runtime-own shim was not registered",
+                payloads.join(", ")
+            ),
+        )),
+    }
+}
+
+/// `tebako install <engine>[:<command>]` (spec 07 §10): pre-stage the
+/// engine's runtime into the store (the same store-first resolution every
+/// payload's runtime requirement rides — the version chain per engine
+/// included), verify the asked command against the env image's declared
+/// spawn surface, register the runtime-own shim, and record the claim
+/// (the engine class + the wire token — `self` for the bare form) so the
+/// dispatcher's list/disable answer the class.
+fn install_engine(
+    home: &Path,
+    erf: &crate::engine::EngineRef,
+    shim_binary: Option<&Path>,
+) -> Result<InstallOutcome, TebakoError> {
+    let ctx = tebako_shim::Ctx {
+        home: home.to_path_buf(),
+        // A deleted cwd must not kill the install (the dispatch rule).
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
+        env: std::env::vars().collect(),
+    };
+    let engine = erf.engine.as_str();
+    // The command form's name is known upfront: a payload claim on it
+    // refuses BEFORE any download.
+    if let Some(command) = &erf.command {
+        refuse_payload_claim(home, engine, command)?;
+    }
+    // Cache-hit or download — remember which (the outcome's honesty).
+    let stood: BTreeSet<PathBuf> = tpkg::runtime_store::scan_cached(home, engine)
+        .into_iter()
+        .map(|c| c.dir)
+        .collect();
+    let rt = tebako_shim::runtime_own::engine_resolve(engine, &ctx, true).map_err(map_shim)?;
+    let status = if stood.contains(&rt.dir) {
+        InstallStatus::Hit
+    } else {
+        InstallStatus::Installed
+    };
+    journal(
+        home,
+        &format!(
+            "event=runtime-own-install engine={engine} lang_version={} tebako_version={}",
+            rt.lang_version, rt.tebako_version
+        ),
+    );
+    let image = rt
+        .image_handoff_path()
+        .expect("engine_resolve post-asserts the env image");
+    // The env image's own declarations, read through the install path's
+    // FFI seam (the image mounts, never extracts): the spawn surface (the
+    // embedded manifest's entrypoints) + the default entry
+    // (layout.interpreter).
+    let manifest_text = image_manifest::read_embedded_manifest(&image)?;
+    let layout_text =
+        image_manifest::read_embedded_file(&image, &format!("/{}", tpkg::LAYOUT_IMAGE_PATH))?;
+    let declared = runtime_entrypoints(&image, manifest_text.as_deref())?;
+    let interpreter = layout_text.as_deref().and_then(layout_interpreter);
+    let (command, token) = match &erf.command {
+        Some(command) => {
+            let entrypoints = declared.as_deref().ok_or_else(|| {
+                err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "the {engine} runtime image {} carries no embedded manifest — the command form cannot be verified against the runtime's declared spawn surface",
+                        image.display()
+                    ),
+                )
+            })?;
+            if !entrypoints.iter().any(|e| &e.name == command) {
+                return Err(err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "the {engine} runtime {} declares no entrypoint \"{command}\" (declared: {}) — the command form names one of the declared set",
+                        rt.lang_version,
+                        entrypoints
+                            .iter()
+                            .map(|e| e.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                ));
+            }
+            (command.clone(), command.clone())
+        }
+        None => {
+            // The default entry's name: the declared entrypoint whose
+            // path IS the interpreter (java/node/bun), else the engine
+            // name itself (the linked pattern — ruby).
+            let name = interpreter
+                .as_deref()
+                .zip(declared.as_deref())
+                .and_then(|(interp, entrypoints)| entrypoints.iter().find(|e| e.path == interp))
+                .map(|e| e.name.clone())
+                .unwrap_or_else(|| engine.to_string());
+            (name, "self".to_string())
+        }
+    };
+    // The derived name's collision check (the bare form's name is known
+    // only now).
+    if erf.command.is_none() {
+        refuse_payload_claim(home, engine, &command)?;
+    }
+    let binary = resolve_shim_binary(shim_binary)?;
+    // A stale runtime-own claim of ours is replaced silently — link_shims'
+    // displacement note is for the payload-wins direction only.
+    tebako_shim::runtime_own::remove(home, &command).map_err(map_shim)?;
+    let (links, notes) =
+        manage::link_shims(home, &binary, std::slice::from_ref(&command)).map_err(map_shim)?;
+    tebako_shim::runtime_own::record(home, &command, engine, &token).map_err(map_shim)?;
+    journal(
+        home,
+        &format!("event=runtime-own-shim command={command} engine={engine} entry={token}"),
+    );
+    Ok(InstallOutcome {
+        name: engine.to_string(),
+        version: rt.lang_version.clone(),
+        status,
+        path: rt.dir.clone(),
+        sha256: String::new(),
+        commands: vec![command],
+        shims: links,
+        signer: None,
+        notes,
+    })
 }
 
 /// A reference carries a scheme; a nickname never does.

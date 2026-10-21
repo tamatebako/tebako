@@ -292,6 +292,21 @@ struct PayloadRow {
     tools: Vec<String>,
 }
 
+/// One runtime-own claim row of `list` (spec 07 §10): the command, its
+/// engine class and wire token, the shim path, the cache-only resolution
+/// verdict, and the disabled marks (selectors `all` / `<engine>@all`
+/// gate the claim).
+struct RuntimeOwnRow {
+    command: String,
+    engine: String,
+    entry: String,
+    shim: PathBuf,
+    resolved: Option<(String, String)>,
+    error: Option<String>,
+    selectors: Vec<String>,
+    gated: bool,
+}
+
 fn cmd_list(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
     let mut json = false;
     for arg in args {
@@ -382,8 +397,34 @@ fn cmd_list(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
         });
     }
 
+    // spec 07 §10: the runtime-own claims — one row per recorded command,
+    // resolved cache-only (list never downloads).
+    let mut runtime_own: Vec<RuntimeOwnRow> = Vec::new();
+    for (command, claim) in crate::runtime_own::load_claims(&ctx.home)? {
+        let shim = shims_dir(&ctx.home).join(shim_file_name(&command));
+        let (resolved, error) = match crate::runtime_own::engine_resolve(&claim.engine, ctx, false)
+        {
+            Ok(rt) => (
+                Some((rt.lang_version.clone(), rt.tebako_version.clone())),
+                None,
+            ),
+            Err(e) => (None, Some(first_line(&e.message).to_string())),
+        };
+        let gated = config::claim_disabled(&disabled, &command, &claim.engine);
+        runtime_own.push(RuntimeOwnRow {
+            selectors: disabled.get(&command).cloned().unwrap_or_default(),
+            command,
+            engine: claim.engine,
+            entry: claim.entry,
+            shim,
+            resolved,
+            error,
+            gated,
+        });
+    }
+
     if json {
-        return cmd_list_json(ctx, &payloads, &commands);
+        return cmd_list_json(ctx, &payloads, &commands, &runtime_own);
     }
 
     let mut out = String::new();
@@ -440,6 +481,39 @@ fn cmd_list(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
             }
         }
     }
+    if !runtime_own.is_empty() {
+        let _ = writeln!(out, "runtime-own commands:");
+        for row in &runtime_own {
+            let gated = if row.gated { " [disabled]" } else { "" };
+            let _ = writeln!(
+                out,
+                "  command {} (engine {}){}: shim {}",
+                row.command,
+                row.engine,
+                gated,
+                if row.shim.exists() {
+                    row.shim.display().to_string()
+                } else {
+                    "(not linked)".to_string()
+                }
+            );
+            match &row.resolved {
+                Some((lang_version, tebako_version)) => {
+                    let _ = writeln!(
+                        out,
+                        "    resolved: {lang_version} (tebako {tebako_version}) [runtime-own]"
+                    );
+                }
+                None => {
+                    let _ = writeln!(
+                        out,
+                        "    resolved: (unresolvable: {})",
+                        row.error.as_deref().unwrap_or("unknown")
+                    );
+                }
+            }
+        }
+    }
     Ok(Action::Print { text: out, code: 0 })
 }
 
@@ -450,6 +524,7 @@ fn cmd_list_json(
     ctx: &Ctx,
     payloads: &[PayloadRow],
     commands: &[CommandRow],
+    runtime_own: &[RuntimeOwnRow],
 ) -> Result<Action, ShimError> {
     use tebako_json::Value as J;
 
@@ -480,7 +555,7 @@ fn cmd_list_json(
             ])
         })
         .collect();
-    let command_docs = commands
+    let command_docs: Vec<J> = commands
         .iter()
         .map(|row| {
             let mut obj = vec![
@@ -515,6 +590,50 @@ fn cmd_list_json(
             ));
             J::Object(obj)
         })
+        .collect();
+    // spec 07 §10: the runtime-own claims ride the same command list —
+    // `provider_kind: "runtime-own"` + the engine class distinguish them
+    // (additive on info_schema 1).
+    let runtime_own_docs = runtime_own
+        .iter()
+        .map(|row| {
+            let mut obj = vec![
+                ("name".to_string(), s(&row.command)),
+                ("engine".to_string(), s(&row.engine)),
+                ("entry".to_string(), s(&row.entry)),
+                ("provider_kind".to_string(), s("runtime-own")),
+                (
+                    "shim".to_string(),
+                    if row.shim.exists() {
+                        s(&row.shim.display().to_string())
+                    } else {
+                        J::Null
+                    },
+                ),
+            ];
+            match &row.resolved {
+                Some((lang_version, tebako_version)) => {
+                    obj.push(("version".to_string(), s(lang_version)));
+                    obj.push(("tebako_version".to_string(), s(tebako_version)));
+                }
+                None => {
+                    obj.push((
+                        "error".to_string(),
+                        s(row.error.as_deref().unwrap_or("unknown")),
+                    ));
+                }
+            }
+            obj.push(("gated".to_string(), J::Bool(row.gated)));
+            obj.push((
+                "disabled".to_string(),
+                J::Array(row.selectors.iter().map(|sel| s(sel)).collect()),
+            ));
+            J::Object(obj)
+        })
+        .collect::<Vec<_>>();
+    let command_docs: Vec<J> = command_docs
+        .into_iter()
+        .chain(runtime_own_docs)
         .collect();
     let doc = J::Object(vec![
         ("info_schema".to_string(), J::Number("1".to_string())),
@@ -684,8 +803,12 @@ fn cmd_enable(args: &[String], ctx: &Ctx, enable: bool) -> Result<Action, ShimEr
                     format!("cannot locate the dispatcher binary: {e}"),
                 )
             })?;
-            let (_shims, _notes) = link_shims(&ctx.home, &binary, std::slice::from_ref(&tool))?;
-            format!("{text}linked {}", link.display())
+            let (_shims, notes) = link_shims(&ctx.home, &binary, std::slice::from_ref(&tool))?;
+            let mut text = format!("{text}linked {}", link.display());
+            for note in notes {
+                text.push_str(&format!("\nnote: {note}"));
+            }
+            text
         }
     } else {
         text
@@ -844,7 +967,25 @@ pub fn doctor_report(ctx: &Ctx) -> DoctorReport {
             let name = crate::command_from_shim_name(&name).to_string();
             match resolve::resolve(&name, ctx) {
                 Ok(_) => notes.push(format!("shim {name}: ok")),
-                Err(e) => problems.push(format!("shim {name}: {}", first_line(&e.message))),
+                Err(e) => match crate::runtime_own::claim_for(&ctx.home, &name) {
+                    // spec 07 §10: a runtime-own shim's health is its
+                    // engine's cache-only resolvability, never a payload's.
+                    Ok(Some(claim)) => {
+                        match crate::runtime_own::engine_resolve(&claim.engine, ctx, false) {
+                            Ok(rt) => notes.push(format!(
+                                "shim {name}: ok (runtime-own, engine {}, runtime {} (tebako {}))",
+                                claim.engine, rt.lang_version, rt.tebako_version
+                            )),
+                            Err(re) => problems.push(format!(
+                                "shim {name}: runtime-own (engine {}) — {}",
+                                claim.engine,
+                                first_line(&re.message)
+                            )),
+                        }
+                    }
+                    Ok(None) => problems.push(format!("shim {name}: {}", first_line(&e.message))),
+                    Err(ce) => problems.push(format!("shim {name}: {}", first_line(&ce.message))),
+                },
             }
         }
     } else {
@@ -1323,6 +1464,16 @@ pub fn link_shims(
             notes.push(note);
         }
         linked.push(link);
+        // spec 07 §10's collision rule: the newly registered claim wins
+        // the name — a runtime-own claim on it is displaced, loudly (the
+        // runtime-own install path removes its own stale claim BEFORE
+        // linking, so this note only ever names a genuine displacement).
+        if let Some(claim) = crate::runtime_own::remove(home, command)? {
+            notes.push(format!(
+                "shim \"{command}\": the new claim displaces the runtime-own claim (engine {}) — the payload surface wins the name",
+                claim.engine
+            ));
+        }
     }
     Ok((linked, notes))
 }

@@ -1108,7 +1108,51 @@ fn installing_a_runtime_kind_entry_refuses_before_any_download() {
     // installable — the refusal names the remedy and fires BEFORE any
     // fetch (the mock transport answers NOTHING beyond the registry file,
     // so any download attempt would surface as a fetch error instead).
+    // The row's name is NOT its engine (ruby-ng vs ruby): spec 07 §10's
+    // engine surface claims a bare token only when the ENGINE resolves
+    // (engine_known), so this token still walks the nickname path, where
+    // the refusal lives.
     let fx = Fixture::new("runtimekind");
+    let registry_path = fx.mirror.join("tpkg-registry.yaml");
+    fs::write(
+        &registry_path,
+        "schema_version: 1\npayloads:\n  - name: ruby-ng\n    kind: runtime\n    engine: ruby\n    versions:\n      - version: 4.0.7-0.17.1\n        platforms: universal\n        release: {ref: tfs:github:acme/ruby:4.0.7-0.17.1}\n    default: 4.0.7-0.17.1\n",
+    )
+    .unwrap();
+    let t = MockTransport::new().with_file(registry_path.to_str().unwrap());
+    let fetcher = Fetcher::with_transport(t);
+    install::add_registry_with(&fx.home, &tebako_http::file_url(&registry_path), &fetcher).unwrap();
+
+    let err = install::install_with(
+        &fx.home,
+        "ruby-ng",
+        Some(Platform::Aarch64Macos),
+        Some(&fx.shim_binary),
+        &fetcher,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(err.message.contains("RuntimeKindNotInstallable"), "{err:?}");
+    assert!(err.message.contains("kind: runtime"), "{err:?}");
+    assert!(err.message.contains("tebako install <app>"), "{err:?}");
+    assert!(
+        err.message.contains("tebako use --runtime ruby@"),
+        "{err:?}"
+    );
+    // nothing entered the payload store
+    assert!(!fx.payloads_dir().join("ruby-ng").exists());
+}
+
+#[test]
+fn a_registry_carried_engine_name_takes_the_engine_surface() {
+    // spec 07 §10: a bare token a registered registry answers with a
+    // `kind: runtime` entry (matched on the row's `engine` key) is the
+    // ENGINE form of install — never the payload-store refusal of
+    // tebako#672. Here the mock serves nothing beyond the registry, so
+    // the engine surface's own channel failure (the release index the
+    // row names is unreadable) surfaces as the named unavailable class,
+    // and nothing enters the payload store.
+    let fx = Fixture::new("runtimekind-engine");
     let registry_path = fx.mirror.join("tpkg-registry.yaml");
     fs::write(
         &registry_path,
@@ -1127,15 +1171,14 @@ fn installing_a_runtime_kind_entry_refuses_before_any_download() {
         &fetcher,
     )
     .unwrap_err();
-    assert_eq!(err.code, 65, "{err:?}");
-    assert!(err.message.contains("RuntimeKindNotInstallable"), "{err:?}");
-    assert!(err.message.contains("kind: runtime"), "{err:?}");
-    assert!(err.message.contains("tebako install <app>"), "{err:?}");
+    assert_eq!(err.code, 69, "{err:?}");
     assert!(
-        err.message.contains("tebako use --runtime ruby@"),
-        "{err:?}"
+        !err.message.contains("RuntimeKindNotInstallable"),
+        "the engine surface, not the payload-store refusal: {err:?}"
     );
-    // nothing entered the payload store
+    assert!(err.message.contains("ruby"), "{err:?}");
+    assert!(err.message.contains("4.0.7-0.17.1"), "{err:?}");
+    // nothing entered the payload store — runtimes never land there
     assert!(!fx.payloads_dir().join("ruby").exists());
 }
 
@@ -3042,4 +3085,223 @@ fn entry_image(bytes: &[u8]) -> Vec<u8> {
     writer.start_file("payload", options).unwrap();
     writer.write_all(bytes).unwrap();
     writer.finish().unwrap().into_inner()
+}
+
+// ---------------------------------------------------------------------
+// the runtime-own command surface (spec 07 §10) — `tebako install
+// <engine>[:<command>]`
+// ---------------------------------------------------------------------
+
+/// A cached runtime store entry whose env image is a REAL zip image
+/// carrying a kind:runtime manifest with the given spawn entrypoints AND
+/// a /lib/tebako/layout.yaml declaring `interpreter` (the wrapper
+/// pattern's default entry — the bare install form's name source).
+fn cached_engine_runtime(
+    fx: &Fixture,
+    engine: &str,
+    entrypoints: &[&str],
+    interpreter: Option<&str>,
+) {
+    let platform = tebako_shim::runtime::platform_string();
+    let dir = fx
+        .home
+        .join("runtimes")
+        .join(format!("{engine}-21.0.8-0.3.0-{platform}"));
+    fs::create_dir_all(&dir).unwrap();
+    let exe = format!(
+        "tebako-runtime-0.3.0-21.0.8-{platform}{}",
+        tebako_shim::runtime::exe_suffix()
+    );
+    fs::write(dir.join(&exe), b"fake runtime exe\n").unwrap();
+    fs::write(
+        dir.join("sha256"),
+        format!("{}  {exe}\n", sha256_hex(b"fake runtime exe\n")),
+    )
+    .unwrap();
+    let eps: String = entrypoints
+        .iter()
+        .map(|e| format!("    - {{name: {e}, path: /bin/{e}}}\n"))
+        .collect();
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-{engine}\n  version: \"21.0.8\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-08-31T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides: {{engine: {engine}, version: \"21.0.8\", abi_line: \"21\", platform: aarch64-macos}}\n  built_from: {{src_sha256: {}, patch_set: v1}}\n  entrypoints:\n{eps}  capabilities: {{exec: true, read: true, runtime: true}}\n",
+        sha(b'a'),
+        sha(b'b'),
+        sha(b'c')
+    );
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    for dir in ["__tpkg__/", "lib/", "lib/tebako/", "bin/"] {
+        writer.add_directory(dir, options).unwrap();
+    }
+    writer
+        .start_file("__tpkg__/manifest.yaml", options)
+        .unwrap();
+    writer.write_all(manifest.as_bytes()).unwrap();
+    if let Some(interp) = interpreter {
+        writer.start_file("lib/tebako/layout.yaml", options).unwrap();
+        writer
+            .write_all(format!("interpreter: {interp}\n").as_bytes())
+            .unwrap();
+    }
+    let image = writer.finish().unwrap().into_inner();
+    let image_name = format!("tebako-runtime-0.3.0-21.0.8-{platform}.tfs");
+    fs::write(dir.join(&image_name), &image).unwrap();
+    fs::write(
+        dir.join(format!("{image_name}.sha256")),
+        format!("{}  {image_name}\n", sha256_hex(&image)),
+    )
+    .unwrap();
+}
+
+#[test]
+fn install_engine_bare_registers_the_default_entry() {
+    // spec 07 §10: the bare form registers the DEFAULT entry's name — the
+    // declared entrypoint whose path IS layout.interpreter (the openjdk
+    // shape: engine openjdk, default command java), and the wire token is
+    // the reserved `self`.
+    let fx = Fixture::new("ro-install-bare");
+    cached_engine_runtime(&fx, "openjdk", &["java", "keytool"], Some("/bin/java"));
+
+    let out = install::install(&fx.home, "openjdk", None, Some(&fx.shim_binary)).unwrap();
+
+    assert_eq!(out.name, "openjdk");
+    assert_eq!(out.version, "21.0.8");
+    assert_eq!(out.commands, vec!["java"]);
+    assert_eq!(out.status, tebako_resolve::InstallStatus::Hit);
+    assert!(shim_path(&fx.home, "java").exists());
+    assert!(
+        !shim_path(&fx.home, "keytool").exists(),
+        "only the default entry links"
+    );
+    let claim = tebako_shim::runtime_own::claim_for(&fx.home, "java")
+        .unwrap()
+        .expect("the claim is recorded");
+    assert_eq!(claim.engine, "openjdk");
+    assert_eq!(claim.entry, "self");
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(journal.contains("event=runtime-own-install engine=openjdk"), "{journal}");
+    assert!(
+        journal.contains("event=runtime-own-shim command=java engine=openjdk entry=self"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn install_engine_bare_falls_back_to_the_engine_name() {
+    // The linked pattern (no layout.interpreter — ruby's shape): the
+    // default entry's name is the engine name itself.
+    let fx = Fixture::new("ro-install-linked");
+    cached_engine_runtime(&fx, "jruby", &["jruby"], None);
+
+    let out = install::install(&fx.home, "jruby", None, Some(&fx.shim_binary)).unwrap();
+
+    assert_eq!(out.commands, vec!["jruby"]);
+    let claim = tebako_shim::runtime_own::claim_for(&fx.home, "jruby")
+        .unwrap()
+        .unwrap();
+    assert_eq!(claim.entry, "self");
+}
+
+#[test]
+fn install_engine_command_form_validates_the_spawn_surface() {
+    let fx = Fixture::new("ro-install-cmd");
+    cached_engine_runtime(&fx, "openjdk", &["java", "keytool"], Some("/bin/java"));
+
+    let out = install::install(&fx.home, "openjdk:keytool", None, Some(&fx.shim_binary)).unwrap();
+
+    assert_eq!(out.commands, vec!["keytool"]);
+    assert!(shim_path(&fx.home, "keytool").exists());
+    let claim = tebako_shim::runtime_own::claim_for(&fx.home, "keytool")
+        .unwrap()
+        .unwrap();
+    assert_eq!(claim.engine, "openjdk");
+    assert_eq!(claim.entry, "keytool", "the command form's token is the command");
+
+    // An undeclared command is the named error, listing the declared set.
+    let err = install::install(&fx.home, "openjdk:javac", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(err.message.contains("javac"), "{err:?}");
+    assert!(err.message.contains("java, keytool"), "{err:?}");
+    assert!(
+        !shim_path(&fx.home, "javac").exists(),
+        "a refused command never links"
+    );
+}
+
+#[test]
+fn install_engine_refuses_a_payload_claimed_name() {
+    // The collision rule: the command name a payload provides is refused
+    // BEFORE anything downloads or links.
+    let fx = Fixture::new("ro-install-collision");
+    cached_engine_runtime(&fx, "openjdk", &["java", "keytool"], Some("/bin/java"));
+    let app_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("keytool", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    install::install(&fx.home, "keytool", None, Some(&fx.shim_binary)).unwrap();
+
+    let err =
+        install::install(&fx.home, "openjdk:keytool", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(err.message.contains("keytool"), "{err:?}");
+    assert!(err.message.contains("payload"), "{err:?}");
+    // The payload's own shim stands (never displaced by a refusal).
+    assert!(shim_path(&fx.home, "keytool").exists());
+    assert!(
+        tebako_shim::runtime_own::claim_for(&fx.home, "keytool")
+            .unwrap()
+            .is_none(),
+        "no runtime-own claim was recorded"
+    );
+}
+
+#[test]
+fn install_engine_unknown_engine_falls_through_to_the_nickname_walk() {
+    // A bare engine-shaped token nothing answers is a payload nickname —
+    // the nickname path's named error (registered registries listed).
+    let fx = Fixture::new("ro-install-unknown");
+    let err = install::install(&fx.home, "cobol", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(
+        err.message.contains("no registered registry carries a payload named 'cobol'"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn a_later_payload_install_displaces_the_runtime_own_claim_loudly() {
+    // spec 07 §10's collision rule, install side: the payload's claim on
+    // the name displaces the runtime-own claim with a surfaced note.
+    let fx = Fixture::new("ro-displace");
+    cached_engine_runtime(&fx, "openjdk", &["java"], Some("/bin/java"));
+    install::install(&fx.home, "openjdk", None, Some(&fx.shim_binary)).unwrap();
+    assert!(
+        tebako_shim::runtime_own::claim_for(&fx.home, "java")
+            .unwrap()
+            .is_some(),
+        "the claim stands before the payload install"
+    );
+
+    let app_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("java", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    let out = install::install(&fx.home, "java", None, Some(&fx.shim_binary)).unwrap();
+
+    assert!(
+        out.notes
+            .iter()
+            .any(|n| n.contains("displaces the runtime-own claim") && n.contains("openjdk")),
+        "the displacement note surfaces: {:?}",
+        out.notes
+    );
+    assert!(
+        tebako_shim::runtime_own::claim_for(&fx.home, "java")
+            .unwrap()
+            .is_none(),
+        "the payload's claim displaced the runtime-own one"
+    );
 }
