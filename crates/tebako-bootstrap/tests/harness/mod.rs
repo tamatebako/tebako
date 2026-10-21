@@ -416,15 +416,18 @@ pub fn strip_legacy_warning(stderr: String) -> String {
 
 /// The lazy fallback's loud line: the fixtures predate the lazy wire BY
 /// DESIGN (no image.blksum row), so with the mount mode default-on every
-/// image-era fixture install emits it. Strip it for output comparison —
-/// the verbatim transcript (and the opt-out's silence) is pinned in
-/// tests/progress.rs.
+/// image-era fixture install emits it. Two spellings exist — the
+/// blksum-less fallback, and (tebako#853) the host-tier refusal, which a
+/// boot tier that cannot read a seeded entry names first on windows.
+/// Strip both for output comparison — the verbatim transcript (and the
+/// opt-out's silence) is pinned in tests/progress.rs.
 fn strip_lazy_fallback(stderr: String) -> String {
     let mut out = String::new();
     for line in stderr.lines() {
-        if line.starts_with(
+        let lazy_fallback = line.starts_with(
             "tebako-bootstrap: the lazy mount mode is on (the default) but this release does not serve the lazy wire",
-        ) {
+        ) || (line.starts_with("tebako-bootstrap: warning: ") && line.contains("cannot install lazily"));
+        if lazy_fallback {
             continue;
         }
         out.push_str(line);
