@@ -371,9 +371,10 @@ SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics
   env image FILE, and a seeded entry has none until the seal commits —
   so on windows the opt-in takes the loud eager fallback
   (`event=lazy-fallback reason=windows-materialize-tier`, the journal
-  line included) and the first run works. A seeded entry that arrives
-  on a windows store by other means still refuses by name in the
-  driver, unchanged.
+  line included) and the first run works; an OCI source names its own
+  host-independent cause first (`reason=oci-bundle-era-only`). A seeded
+  entry that arrives on a windows store by other means still refuses by
+  name in the driver, unchanged.
 - **Progress.** The loader's lazy first run renders through tebako-term
   (the spec 06 §5/§5a wiring rule — nothing else prints download
   progress): the exe's ordinary artifact bar, then one line —
