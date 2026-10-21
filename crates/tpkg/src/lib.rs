@@ -193,7 +193,7 @@ pub use manifest::{
     PayloadKind, PayloadManifest, Platform, Platforms, Producer, Provides, Requirement,
     RuntimeProvides, RuntimeRequirement, RuntimeRequirements, Sbom, Signing, SigningMechanism,
     SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides, WindowsBoot,
-    PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_MINOR, PAYLOAD_SCHEMA_VERSION, LAYOUT_IMAGE_PATH,
+    LAYOUT_IMAGE_PATH, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_MINOR, PAYLOAD_SCHEMA_VERSION,
 };
 pub use manifest::{
     shard_tag_append, shard_tag_segment_of, shard_tag_substitute, SHARD_TAG_SEGMENTS,

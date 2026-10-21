@@ -35,12 +35,7 @@ fn a_runtime_own_claim_dispatches_the_engine_boot() {
     runtime_own::record(&home, "java", "java", "self").unwrap();
     let ctx = ctx(&home, tmp.path());
 
-    let plan = dispatch::dispatch(
-        "java",
-        &["-version".into(), "--verbose".into()],
-        &ctx,
-    )
-    .unwrap();
+    let plan = dispatch::dispatch("java", &["-version".into(), "--verbose".into()], &ctx).unwrap();
 
     assert_eq!(plan.program, java);
     let expected: Vec<String> = vec![
@@ -213,7 +208,8 @@ fn an_unclaimed_name_never_enters_the_runtime_own_path() {
     let ctx = ctx(&home, tmp.path());
     let err = dispatch::dispatch("java", &[], &ctx).unwrap_err();
     assert!(
-        err.message.contains("no installed payload provides or exposes"),
+        err.message
+            .contains("no installed payload provides or exposes"),
         "the payload path's no-provider error answers: {err:?}"
     );
 }
@@ -285,11 +281,7 @@ fn list_renders_the_runtime_own_rows() {
     runtime_own::record(&home, "keytool", "java", "keytool").unwrap();
     let ctx = ctx(&home, tmp.path());
 
-    let action = tebako_shim::run(
-        &["tebako-shim".to_string(), "list".to_string()],
-        &ctx,
-    )
-    .unwrap();
+    let action = tebako_shim::run(&["tebako-shim".to_string(), "list".to_string()], &ctx).unwrap();
     let tebako_shim::Action::Print { text, code } = action else {
         panic!("list prints")
     };
@@ -300,7 +292,11 @@ fn list_renders_the_runtime_own_rows() {
 
     // The JSON shape: provider_kind runtime-own + the engine class.
     let action = tebako_shim::run(
-        &["tebako-shim".to_string(), "list".to_string(), "--json".to_string()],
+        &[
+            "tebako-shim".to_string(),
+            "list".to_string(),
+            "--json".to_string(),
+        ],
         &ctx,
     )
     .unwrap();
@@ -317,7 +313,9 @@ fn list_renders_the_runtime_own_rows() {
         .find(|r| r.find("name").and_then(|v| v.as_string()) == Some("keytool".to_string()))
         .expect("the keytool row");
     assert_eq!(
-        row.find("provider_kind").and_then(|v| v.as_string()).as_deref(),
+        row.find("provider_kind")
+            .and_then(|v| v.as_string())
+            .as_deref(),
         Some("runtime-own")
     );
     assert_eq!(
@@ -345,10 +343,15 @@ fn doctor_reports_a_runtime_own_shim_by_its_engine() {
     let mut ctx = ctx(&home, tmp.path());
     ctx.env.insert(
         "PATH".into(),
-        format!("{}:{}", home.join("shims").display(), std::env::var("PATH").unwrap_or_default()),
+        format!(
+            "{}:{}",
+            home.join("shims").display(),
+            std::env::var("PATH").unwrap_or_default()
+        ),
     );
 
-    let action = tebako_shim::run(&["tebako-shim".to_string(), "doctor".to_string()], &ctx).unwrap();
+    let action =
+        tebako_shim::run(&["tebako-shim".to_string(), "doctor".to_string()], &ctx).unwrap();
     let tebako_shim::Action::Print { text, .. } = action else {
         panic!("doctor prints")
     };

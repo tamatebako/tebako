@@ -68,7 +68,10 @@ pub fn load_claims(home: &Path) -> Result<Claims, ShimError> {
     })?;
     for (command, claim) in &claims {
         crate::manifest::check_path_component("command name", command).map_err(|e| {
-            ShimError::new(EX_TEBAKO_MANIFEST, format!("{}: {}", path.display(), e.message))
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!("{}: {}", path.display(), e.message),
+            )
         })?;
         if !valid_engine_name(&claim.engine) {
             return fail(
@@ -82,7 +85,10 @@ pub fn load_claims(home: &Path) -> Result<Claims, ShimError> {
         }
         if claim.entry != "self" {
             crate::manifest::check_path_component("entry token", &claim.entry).map_err(|e| {
-                ShimError::new(EX_TEBAKO_MANIFEST, format!("{}: {}", path.display(), e.message))
+                ShimError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!("{}: {}", path.display(), e.message),
+                )
             })?;
         }
     }
@@ -346,7 +352,9 @@ mod tests {
         for good in ["ruby", "node", "java", "python", "bun", "openjdk21"] {
             assert!(valid_engine_name(good), "{good}");
         }
-        for bad in ["", "Ruby", "1node", "no_de", "no/slash", "no:colon", "-lead"] {
+        for bad in [
+            "", "Ruby", "1node", "no_de", "no/slash", "no:colon", "-lead",
+        ] {
             assert!(!valid_engine_name(bad), "{bad}");
         }
     }

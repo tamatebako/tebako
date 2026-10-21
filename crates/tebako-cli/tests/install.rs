@@ -3138,7 +3138,9 @@ fn cached_engine_runtime(
         .unwrap();
     writer.write_all(manifest.as_bytes()).unwrap();
     if let Some(interp) = interpreter {
-        writer.start_file("lib/tebako/layout.yaml", options).unwrap();
+        writer
+            .start_file("lib/tebako/layout.yaml", options)
+            .unwrap();
         writer
             .write_all(format!("interpreter: {interp}\n").as_bytes())
             .unwrap();
@@ -3179,7 +3181,10 @@ fn install_engine_bare_registers_the_default_entry() {
     assert_eq!(claim.engine, "openjdk");
     assert_eq!(claim.entry, "self");
     let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
-    assert!(journal.contains("event=runtime-own-install engine=openjdk"), "{journal}");
+    assert!(
+        journal.contains("event=runtime-own-install engine=openjdk"),
+        "{journal}"
+    );
     assert!(
         journal.contains("event=runtime-own-shim command=java engine=openjdk entry=self"),
         "{journal}"
@@ -3215,7 +3220,10 @@ fn install_engine_command_form_validates_the_spawn_surface() {
         .unwrap()
         .unwrap();
     assert_eq!(claim.engine, "openjdk");
-    assert_eq!(claim.entry, "keytool", "the command form's token is the command");
+    assert_eq!(
+        claim.entry, "keytool",
+        "the command form's token is the command"
+    );
 
     // An undeclared command is the named error, listing the declared set.
     let err = install::install(&fx.home, "openjdk:javac", None, Some(&fx.shim_binary)).unwrap_err();
@@ -3264,7 +3272,8 @@ fn install_engine_unknown_engine_falls_through_to_the_nickname_walk() {
     let fx = Fixture::new("ro-install-unknown");
     let err = install::install(&fx.home, "cobol", None, Some(&fx.shim_binary)).unwrap_err();
     assert!(
-        err.message.contains("no registered registry carries a payload named 'cobol'"),
+        err.message
+            .contains("no registered registry carries a payload named 'cobol'"),
         "{err:?}"
     );
 }

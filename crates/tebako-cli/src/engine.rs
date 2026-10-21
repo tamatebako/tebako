@@ -136,8 +136,12 @@ pub fn engine_known(home: &Path, engine: &str) -> bool {
 /// store-first through the shim's runtime-own machinery (the version
 /// chain per engine included), the wire composed there; the CLI adapts
 /// the dispatch plan to its own exec shape (argv[0] is the program).
-pub fn run_engine_plan(erf: &EngineRef, args: &[String]) -> Result<crate::run::RunPlan, TebakoError> {
-    let ctx = tebako_shim::Ctx::from_env().map_err(|e| TebakoError::new(e.message, i32::from(e.code)))?;
+pub fn run_engine_plan(
+    erf: &EngineRef,
+    args: &[String],
+) -> Result<crate::run::RunPlan, TebakoError> {
+    let ctx =
+        tebako_shim::Ctx::from_env().map_err(|e| TebakoError::new(e.message, i32::from(e.code)))?;
     let entry = erf.command.as_deref().unwrap_or("self");
     let plan = tebako_shim::runtime_own::engine_plan(&erf.engine, entry, args, &ctx, true)
         .map_err(|e| TebakoError::new(e.message, i32::from(e.code)))?;
