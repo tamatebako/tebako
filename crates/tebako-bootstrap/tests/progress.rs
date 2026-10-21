@@ -100,8 +100,10 @@ fn image_era_fetches_report_per_artifact() {
             h.image_asset
         )
     } else {
+        // The image arm's reference carries the `;image` facet — the
+        // string the fetch names in every progress line.
         format!(
-            "tebako-bootstrap: warning: runtime \"{}\" cannot install lazily — this host's boot tier extracts a host tree from the env image file, which a seeded entry does not have until it seals; fetching the env image whole (the loud eager fallback)\n",
+            "tebako-bootstrap: warning: runtime \"{};image\" cannot install lazily — this host's boot tier extracts a host tree from the env image file, which a seeded entry does not have until it seals; fetching the env image whole (the loud eager fallback)\n",
             h.runtime_ref
         )
     };
