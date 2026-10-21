@@ -593,13 +593,35 @@ openjdk factory java/keytool/…); the user reaches them directly:
   undeclared name is a named error listing the declared set, never a
   guess.
 
+**The `run` target grammar (MECE, locked).** `tebako run` has exactly
+two target classes, decided on the first positional token, in this
+order:
+
+1. **A token naming an existing file** is a package — the §2/pkg
+   surface of this verb, unchanged. (A windows drive path always lands
+   here while the file exists; spell the engine form for the engine.)
+2. **Otherwise the token parses as `<engine>[:<command>]`** — the
+   engine grammar: `<engine>` is the runtime payload's `engine` key
+   (spec 04 §2 MINOR 1 — bare lowercase name), `<command>` one of the
+   resolved runtime's declared entrypoints. A token that is neither an
+   existing file nor a well-formed engine reference is the §7 usage
+   error, naming the token.
+
+A token is never both: the file reading is total (a file either exists
+or not), the engine reading applies only when no file answers. A bare
+engine name shadowed by a same-named file in the cwd is reached by the
+command form (`tebako run node:node`) — deterministic, journaled, never
+a silent pick.
+
 **Resolution:** the engine resolves against the store FIRST (the
 newest compatible cached runtime), then the registries (download,
 verify, cache — the same fetch path as every payload's runtime
 requirement). The version chain per engine: `TEBAKO_<ENGINE>_VERSION`
 env → the nearest `.tebako-tools.yaml` → `~/.tebako/config.yaml`'s
 `defaults:` → the registry's newest. All local surfaces, never a
-registry-side route (the provider-routing rule above).
+registry-side route (the provider-routing rule above). The engine name
+matches a registry entry's `engine` key, never a display name; no
+configured registry carrying the engine is the §7 no-such-engine error.
 
 **Dispatch:** the handoff is the spec-17 wire exactly — the wrapper exe
 with `TEBAKO_RUNTIME_IMAGE=<env image>` + `--tebako-entry <command>`
@@ -616,10 +638,27 @@ the same spec-17 wire. **Collision rule (MECE):** a PAYLOAD-provided
 name wins over a runtime-own name of the same spelling (the payload
 declared the tool; the runtime surface is the fallback when no payload
 provides it) — the provider-routing surfaces of §2 answer collisions
-locally, never by registry.
+locally, never by registry. A runtime-own shim records its engine
+class in the shim metadata, so `tebako shim list`/`disable` answer the
+class explicitly and a later payload install claiming the name displaces
+the runtime-own claim with a loud notice (never a silent shadow).
 
 **The presses stay honest:** a runtime-own shim name never ships a
 binary — the shim is the link; a press that bundles its own tool keeps
 the payload-provided name (the payload wins the name by the collision
 rule above).
+
+**Errors (named, §7's table extended):**
+
+- No configured registry carries the engine, and the store holds no
+  runtime declaring it → `EX_TEBAKO_UNAVAILABLE` (69), naming the
+  engine and every registry consulted — the no-default-service rule
+  makes "unknown engine" and "known but unreachable" the same shape.
+- The command form naming an entrypoint the resolved runtime's env
+  image does not declare → `EX_TEBAKO_MANIFEST`, naming the engine, the
+  asked command, and the declared set.
+- `TEBAKO_OFFLINE=1` with no compatible cached runtime → the spec 05
+  cache-or-error shape, naming the engine.
+- A malformed engine reference (`node:`, `:npm`, an engine name outside
+  the name grammar) → the §7 usage error, naming the token.
 
