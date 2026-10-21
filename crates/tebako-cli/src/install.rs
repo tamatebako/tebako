@@ -722,6 +722,16 @@ fn install_engine(
     let image = rt
         .image_handoff_path()
         .expect("engine_resolve post-asserts the env image");
+    // tebako#843: a LAZY_SEEDING entry has no image file until the seal
+    // commits (spec 39 §4), so the manifest read below would fail with
+    // ENOENT and surface as the format-mismatch refusal (exit 255) with
+    // the pair correctly installed. `tebako install <engine>` is an
+    // explicit pre-stage act, so the seal is synchronous here — fill the
+    // missing groups and commit, exactly as `tebako cache seal` does.
+    if rt.lazy.is_some() {
+        let mut prog = tebako_term::Progress::stderr();
+        crate::seal_one(&rt, tebako_resolve::cache::offline(), &mut prog)?;
+    }
     // The env image's own declarations, read through the install path's
     // FFI seam (the image mounts, never extracts): the spawn surface (the
     // embedded manifest's entrypoints) + the default entry
