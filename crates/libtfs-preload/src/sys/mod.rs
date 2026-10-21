@@ -2227,7 +2227,6 @@ pub unsafe extern "C" fn getcwd(buf: *mut libc::c_char, size: libc::size_t) -> *
 // ---------------------------------------------------------------------
 
 #[cfg(test)]
-
 mod tests {
     use super::*;
 
