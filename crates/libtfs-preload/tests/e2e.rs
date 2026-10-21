@@ -63,6 +63,11 @@ struct Fixtures {
     dwarfs: PathBuf,
     /// The built shim cdylib.
     shim: PathBuf,
+    /// The LAZY_SEEDING entry's image path (the image ABSENT; the seed
+    /// descriptor and blksum sidecar beside it) and the bytes its
+    /// `data/secret.txt` holds.
+    lazy: PathBuf,
+    lazy_secret: Vec<u8>,
     /// A host directory with one readable file (jail grant fixture).
     work: PathBuf,
     /// The Rust dynamic tool (roadmap 39), when rustc is available.
@@ -323,12 +328,66 @@ fn build_fixtures() -> Option<Fixtures> {
         writer.write(&dwarfs_path).expect("dwarfs writer: write");
     }
 
+    // The LAZY_SEEDING fixture (spec 39 §4): a self-contained limnifs
+    // image beside its blksum sidecar, the seed descriptor in an entry
+    // whose image is ABSENT. The secret is slab-sized (not inline) so a
+    // reading child proves the on-demand group path, and a ~5 MiB
+    // incompressible payload makes the image span block groups.
+    let (lazy, lazy_secret) = {
+        let root = dir.join("lazy-src");
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        let secret: Vec<u8> = (0..64 * 1024)
+            .map(|i| b"lazy-secret-0123456789abcdef"[i % 28])
+            .collect();
+        std::fs::write(root.join("data/secret.txt"), &secret).unwrap();
+        let mut big = vec![0u8; 20 * 1024 * 1024];
+        let mut state = 0x9E3779B97F4A7C15u64;
+        for chunk in big.chunks_mut(8) {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            let bytes = state.wrapping_mul(0x2545F4914F6CDD1D).to_le_bytes();
+            chunk.copy_from_slice(&bytes[..chunk.len()]);
+        }
+        std::fs::write(root.join("data/big.bin"), &big).unwrap();
+        let mut config = limnifs_write::WriteConfig::default_v0_1();
+        config.dictionaries.enabled = false;
+        let artifact = limnifs_write::write_directory_with_config(&root, &config).unwrap();
+        assert!(
+            artifact.metadata_sidecar.is_none(),
+            "the lazy fixture keeps its metadata inline"
+        );
+        let mut image = artifact.bytes;
+        for slab in &artifact.slabs {
+            image.extend_from_slice(&slab.bytes);
+        }
+        let origin = dir.join("lazy-origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        let origin_image = origin.join("image.tfs");
+        std::fs::write(&origin_image, &image).unwrap();
+        let blksum = tpkg::lazy::Blksum::from_image_bytes(&image);
+        std::fs::write(origin.join("image.tfs.blksum.json"), blksum.render()).unwrap();
+        let entry = dir.join("lazy-entry");
+        std::fs::create_dir_all(&entry).unwrap();
+        let seed = tpkg::lazy::LazySeed {
+            source: format!("file://{}", origin_image.display()),
+            sha256: blksum.sha256.clone(),
+            blksum_sha256: tpkg::lazy::sha256_hex(blksum.render().as_bytes()),
+            size_bytes: blksum.size_bytes,
+            group_count: blksum.group_count(),
+        };
+        tpkg::lazy::write_descriptor(&entry, "image.tfs", &seed).unwrap();
+        (entry.join("image.tfs"), secret)
+    };
+
     Some(Fixtures {
         dir,
         zip: zip_path,
         pkg: pkg_path,
         dwarfs: dwarfs_path,
         shim,
+        lazy,
+        lazy_secret,
         work,
         rust_tool,
     })
@@ -377,7 +436,9 @@ fn run_with_mounts(
         .env(preload_var(), &f.shim)
         .env("TEBAKO_TFS_MOUNTS", mounts)
         // Determinism: no inherited preload env from the test harness.
-        .env_remove("DYLD_PRINT_LIBRARIES");
+        .env_remove("DYLD_PRINT_LIBRARIES")
+        .env_remove("TEBAKO_OFFLINE")
+        .env_remove("TEBAKO_LAZY_SEAL");
     match jail {
         Some(j) => {
             cmd.env("TEBAKO_JAIL", j);
@@ -424,6 +485,58 @@ fn memfs_read_and_stat_no_extraction() {
     // /tfs does not exist on the host: byte-correct output can only have
     // come through the VFS (stat+open+read+close, no extraction).
     assert_eq!(r.stdout, SECRET, "stderr: {}", r.stderr);
+}
+
+/// tebako#848: a LAZY_SEEDING env image (image ABSENT, descriptor
+/// beside it) must serve a reading child through the shim's own mount —
+/// the interpreter's engine instance, not the driver's. Before the fix
+/// the declaration resolved to a whole-file mount of a missing file and
+/// the child exited 78 with an empty runtime root.
+#[test]
+fn a_lazy_seeding_declaration_serves_a_reading_child() {
+    let Some(f) = fixtures() else { return };
+    assert!(!f.lazy.exists(), "the fixture is LAZY_SEEDING");
+    let mounts = format!("{}:{MOUNT}", f.lazy.display());
+    let r = run_with_mounts(
+        f,
+        "print-data",
+        &[&format!("{MOUNT}/data/secret.txt")],
+        &mounts,
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(
+        r.stdout.as_bytes(),
+        f.lazy_secret.as_slice(),
+        "stderr: {}",
+        r.stderr
+    );
+    // The read stayed lazy: the entry's block directory holds fewer
+    // groups than the image spans (and fewer bytes than the image).
+    let entry_dir = f.lazy.parent().unwrap();
+    let seed = tpkg::lazy::read_descriptor(entry_dir, "image.tfs")
+        .unwrap()
+        .expect("the descriptor stays");
+    let blocks = tpkg::lazy::blocks_dir(entry_dir, "image.tfs");
+    let seeded = tpkg::lazy::scan_blocks(&blocks, seed.size_bytes).unwrap();
+    assert!(
+        (seeded.len() as u64) < seed.group_count,
+        "lazy: only the demanded groups are fetched ({seeded:?} of {})",
+        seed.group_count
+    );
+    let fetched: u64 = seeded
+        .iter()
+        .map(|g| {
+            std::fs::metadata(blocks.join(tpkg::lazy::block_name(*g)))
+                .unwrap()
+                .len()
+        })
+        .sum();
+    assert!(
+        fetched < seed.size_bytes,
+        "lazy: {fetched} of {} bytes fetched",
+        seed.size_bytes
+    );
 }
 
 #[test]

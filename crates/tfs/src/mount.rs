@@ -360,6 +360,17 @@ pub fn build_from_source(
     build_from_source_with_mode(source, mount_point, MountMode::ReadOnly, None)
 }
 
+/// Declare a non-file mount's `TEBAKO_TFS_MOUNTS` identity (spec 17
+/// §2.1's re-export rule). A lazy mount (spec 39) is built from a byte
+/// source, not a file, but its store entry path is exactly what a child
+/// shim needs: the child re-reads the state at that path (sealed file
+/// or a descriptor) and rebuilds an equivalent mount. Without this the
+/// child's re-mount sees no declaration at all and the interpreter runs
+/// with an empty runtime root (tebako#848).
+pub fn declare_archive(mount: &mut Mount, archive_path: &str) {
+    mount.archive_path = Some(cstring(archive_path));
+}
+
 /// [`build_from_source`] with an explicit mount mode (spec 11 §3): COW
 /// stacks ABOVE the format backend exactly as over a resident image
 /// (the transforms law — the overlay writes to its HostDir store and

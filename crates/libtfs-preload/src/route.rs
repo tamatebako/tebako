@@ -519,13 +519,20 @@ pub fn initialize() -> Result<(), String> {
     RESULT.get_or_init(init_inner).clone()
 }
 
-/// Build the mount for one `TEBAKO_TFS_MOUNTS` declaration. The slot form
+/// Build the mount for one `TEBAKO_TFS_MOUNTS` declaration. A bare image
+/// is state-detected exactly like the driver's env-image handoff
+/// (spec 39 §9): the file present mounts whole; the file ABSENT with a
+/// valid `<image>.lazy.json` descriptor beside it mounts the caching
+/// remote byte source — the interpreter's engine must serve a
+/// LAZY_SEEDING runtime root, or every stdlib read falls through to the
+/// host and dies (tebako#848); neither file nor descriptor keeps the
+/// ordinary named open error. The slot form
 /// (`image:slot:mount`, spec 17 §2.1) resolves the slot's byte region
 /// against the file's tpkg trailer first, so a packaged payload mounts its
 /// region — never the whole package file (whose trailer the format sniff
 /// would reject). The established mount carries the slot identity so a
 /// re-export to a spawned child keeps the slot form.
-fn build_decl(d: &spec::MountDecl) -> Result<tfs::context::Mount, String> {
+fn build_decl(d: &spec::MountDecl, offline: bool) -> Result<tfs::context::Mount, String> {
     let mount_error = |e: i32| {
         format!(
             "TEBAKO_TFS_MOUNTS: cannot mount {} at {}: {}",
@@ -535,7 +542,34 @@ fn build_decl(d: &spec::MountDecl) -> Result<tfs::context::Mount, String> {
         )
     };
     let Some(slot) = d.slot else {
-        return tfs::mount::build_from_file(&d.image, &d.mount).map_err(mount_error);
+        let state = tfs::lazy_entry::entry_state(&d.image)
+            .map_err(|e| format!("TEBAKO_TFS_MOUNTS: {}: {e}", d.image))?;
+        let tfs::lazy_entry::EntryState::Seeding {
+            entry_dir,
+            image_base,
+            seed,
+        } = state
+        else {
+            return tfs::mount::build_from_file(&d.image, &d.mount).map_err(mount_error);
+        };
+        let transport =
+            std::sync::Arc::new(crate::transport::HttpTransport::new(seed.source.clone()));
+        let source =
+            tfs::lazy_entry::open_source(&entry_dir, &image_base, &seed, offline, transport)
+                .map_err(|e| {
+                    format!(
+                        "TEBAKO_TFS_MOUNTS: cannot mount the lazy {} at {}: {e}",
+                        d.image, d.mount
+                    )
+                })?;
+        let byte_source: std::sync::Arc<dyn tfs::source::ByteSource> = source;
+        let mut mount =
+            tfs::mount::build_from_source(byte_source, &d.mount).map_err(mount_error)?;
+        // The entry path is the identity a grandchild re-declares
+        // (`tebako_fs_mounts` → the spawn hook's env): without it the
+        // next process boots with no runtime root.
+        tfs::mount::declare_archive(&mut mount, &d.image);
+        return Ok(mount);
     };
     let mut file = std::fs::File::open(&d.image)
         .map_err(|e| mount_error(e.raw_os_error().unwrap_or(libc::EIO)))?;
@@ -577,8 +611,12 @@ fn init_inner() -> Result<(), String> {
     if !mounts_spec.trim().is_empty() {
         let decls =
             spec::parse_mounts(&mounts_spec).map_err(|e| format!("TEBAKO_TFS_MOUNTS: {e}"))?;
+        // The store convention's offline spelling (spec 39 §6): a
+        // lazy declaration's cache-only arm — cached groups serve, a
+        // miss is EIO on the touching read, never a fetch.
+        let offline = tfs::lazy_entry::offline(std::env::var("TEBAKO_OFFLINE").ok().as_deref());
         for d in &decls {
-            let mount = build_decl(d)?;
+            let mount = build_decl(d, offline)?;
             let mut guard = context().write().unwrap();
             // A repeated mount point is a UNION member, not an error:
             // the driver serializes a union as the incumbent followed by
@@ -642,6 +680,103 @@ pub fn errno_text(e: i32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    /// The LAZY_SEEDING fixture (spec 39 §4): a self-contained limnifs
+    /// image over the origin (its blksum sidecar beside it), the seed
+    /// descriptor in an entry whose IMAGE IS ABSENT. The payload is
+    /// ~9 MiB of incompressible bytes so the image spans several block
+    /// groups — a fully-seeded read would prove nothing about laziness.
+    fn write_lazy_fixture(dir: &Path) -> (PathBuf, Vec<u8>, u64, u64) {
+        let root = dir.join("lazy-tree");
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        let golden = b"lazy-vfs-secret\n".to_vec();
+        std::fs::write(root.join("data/secret.txt"), &golden).unwrap();
+        let mut big = vec![0u8; 9 * 1024 * 1024];
+        let mut state = 0x9E3779B97F4A7C15u64;
+        for chunk in big.chunks_mut(8) {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            let bytes = state.wrapping_mul(0x2545F4914F6CDD1D).to_le_bytes();
+            chunk.copy_from_slice(&bytes[..chunk.len()]);
+        }
+        std::fs::write(root.join("data/big.bin"), &big).unwrap();
+        let mut config = limnifs_write::WriteConfig::default_v0_1();
+        config.dictionaries.enabled = false;
+        let artifact = limnifs_write::write_directory_with_config(&root, &config).unwrap();
+        assert!(
+            artifact.metadata_sidecar.is_none(),
+            "the fixture keeps its metadata inline"
+        );
+        let mut image = artifact.bytes;
+        for slab in &artifact.slabs {
+            image.extend_from_slice(&slab.bytes);
+        }
+        let origin = dir.join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        let origin_image = origin.join("image.tfs");
+        std::fs::write(&origin_image, &image).unwrap();
+        let blksum = tpkg::lazy::Blksum::from_image_bytes(&image);
+        std::fs::write(origin.join("image.tfs.blksum.json"), blksum.render()).unwrap();
+        let entry = dir.join("entry");
+        std::fs::create_dir_all(&entry).unwrap();
+        let seed = tpkg::lazy::LazySeed {
+            source: format!("file://{}", origin_image.display()),
+            sha256: blksum.sha256.clone(),
+            blksum_sha256: tpkg::lazy::sha256_hex(blksum.render().as_bytes()),
+            size_bytes: blksum.size_bytes,
+            group_count: blksum.group_count(),
+        };
+        tpkg::lazy::write_descriptor(&entry, "image.tfs", &seed).unwrap();
+        (
+            entry.join("image.tfs"),
+            golden,
+            blksum.group_count(),
+            blksum.size_bytes,
+        )
+    }
+
+    /// tebako#848: the child shim's re-mount knew only whole files — a
+    /// LAZY_SEEDING declaration answered the host ENOENT (and, exported
+    /// through TEBAKO_TFS_MOUNTS, exited the child 78 or left it with no
+    /// runtime root). The declaration must state-detect the descriptor
+    /// beside the absent image and mount the caching range source.
+    #[test]
+    fn a_lazy_seeding_declaration_mounts_and_reads_through_the_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let (image, golden, groups, size) = write_lazy_fixture(dir.path());
+        assert!(!image.exists(), "the fixture is LAZY_SEEDING");
+        let decl = spec::MountDecl {
+            image: image.display().to_string(),
+            slot: None,
+            mount: "/lazy".to_string(),
+        };
+        let mount = build_decl(&decl, false).expect("the lazy declaration mounts");
+        // stat + pread — the interpreter's exact read surface.
+        let st = mount.backend.stat("data/secret.txt").expect("stat");
+        assert_eq!(st.size as usize, golden.len());
+        let mut buf = vec![0u8; golden.len()];
+        let n = mount
+            .backend
+            .pread("data/secret.txt", &mut buf, 0)
+            .expect("pread");
+        assert_eq!(&buf[..n], &golden[..]);
+        // The declaration rides the mount for the next re-export (a
+        // grandchild's `tebako_fs_mounts` must name this entry).
+        assert_eq!(
+            mount.archive_path.as_ref().unwrap().to_str().unwrap(),
+            image.to_str().unwrap()
+        );
+        // The read stayed lazy: only the demanded groups were fetched.
+        let blocks = tpkg::lazy::blocks_dir(image.parent().unwrap(), "image.tfs");
+        let seeded = tpkg::lazy::scan_blocks(&blocks, size).unwrap();
+        assert!(groups > 1, "the fixture spans several groups ({groups})");
+        assert!(
+            (seeded.len() as u64) < groups,
+            "lazy: the read must not fetch the whole image ({seeded:?} of {groups})"
+        );
+    }
 
     /// The whole route matrix in ONE test function: the engine context
     /// (mounts, policy) is process-global, so context-touching assertions

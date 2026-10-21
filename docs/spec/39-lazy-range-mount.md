@@ -428,6 +428,14 @@ shape only.
 - **The mount-table law.** Longest-prefix dispatch, duplicate-point
   EEXIST, unmount-everything on failure (spec 11 §2, spec 17 §1) —
   lazy changes where bytes come from, never how mounts compose.
+- **The mount-table identity.** A lazy env-image mount serializes into
+  `TEBAKO_TFS_MOUNTS` by its entry path, exactly like a file mount. A
+  re-establishing consumer — the interpreter's preload shim, and every
+  exec'd child — state-detects that path the same way the driver does:
+  the sealed file mounts whole, the ABSENT file with a valid descriptor
+  beside it mounts the caching range source, and neither file nor
+  descriptor keeps the ordinary named open error. The lazy promise
+  holds at both layers: only the groups demand touches are fetched.
 - **The handoff grammar.** `TEBAKO_RUNTIME_IMAGE=<path>` and the
   `--tebako-image` triples are byte-identical (spec 17 §1); the path
   names the entry whose on-disk state (§4) the driver reads. No
@@ -446,6 +454,9 @@ shape only.
   resolve-install path (write the descriptor instead of streaming the
   image — a tebako-resolve plan item with a lazy commit closure); the
   CI size gate measures and enforces the delta, as always (invariant 2).
+  The same machinery is also linked into the preload shim (the
+  interpreter's own engine instance re-establishes the mount, §9's
+  identity rule), which is not size-gated either.
 
 ## 10. Test plan (the tiers of spec 14; each failure above maps to one tier)
 

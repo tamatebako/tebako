@@ -76,7 +76,11 @@ pub struct Mount {
     /// NUL-terminated mount point, boxed for a pointer stable across
     /// BTreeMap moves (tebako_get_mount_point's "valid until unmount").
     pub mount_point_c: Box<std::ffi::CString>,
-    /// Archive path on disk, when mounted from a file.
+    /// Archive path on disk, when mounted from a file — and, for a lazy
+    /// mount (spec 39), the store entry path the byte source's image
+    /// will occupy. Either way it is the mount's `TEBAKO_TFS_MOUNTS`
+    /// identity: a spawned child re-reads the state at this path and
+    /// rebuilds the same mount (spec 17 §2.1).
     pub archive_path: Option<Box<std::ffi::CString>>,
     /// The package slot the mount was established from, when the archive
     /// is a stitched tpkg package and a slot region was mounted (spec 17

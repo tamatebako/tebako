@@ -9,6 +9,13 @@
 //! is absent; the ordinary named unavailable error fires — spec 39
 //! §9's locked interaction).
 //!
+//! The state machine and the source construction are
+//! `tfs::lazy_entry`'s (the preload shim rebuilds the same mount from
+//! `TEBAKO_TFS_MOUNTS` in the interpreter's own engine instance, so
+//! both consumers share one owner); this module supplies the driver's
+//! policies: the range transport (tebako-http's one agent), the named
+//! exit codes, and the background seal thread.
+//!
 //! The failure classes (spec 39 §6's table, the driver's own codes):
 //! 65 — descriptor/blksum malformed, a malformed `TEBAKO_LAZY_SEAL`;
 //! 69 — the mount-open sidecar fetch, a cache-only (offline) open, a
@@ -18,11 +25,11 @@
 //! byte source names them on the tebako-log; this module never sees
 //! them.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tfs::source::{SourceError, SourceErrorKind};
-use tpkg::lazy::{Blksum, LazySeed, SealOutcome};
+use tpkg::lazy::SealOutcome;
 
 use crate::driver::DriverError;
 use crate::{EX_TEBAKO_MANIFEST, EX_TEBAKO_SHA, EX_TEBAKO_UNAVAILABLE};
@@ -40,61 +47,27 @@ const LAZY_SEAL: tpkg::settings::Setting = tpkg::settings::Setting {
     default: true,
 };
 
-/// The handoff path's on-disk state (spec 39 §9: the path names the
-/// entry; the driver reads the state).
-#[derive(Debug)]
-pub(crate) enum EnvImageState {
-    /// The sealed image file is present — today's whole-file mount.
-    Sealed,
-    /// LAZY_SEEDING: the image is absent and the descriptor beside it
-    /// validates.
-    Seeding {
-        /// The runtime store entry (the descriptor's directory).
-        entry_dir: PathBuf,
-        /// The env image's file name within the entry.
-        image_base: String,
-        /// The validated seed descriptor.
-        seed: LazySeed,
-    },
-    /// Neither file nor descriptor — the caller's ordinary whole-file
-    /// error path fires (the named unavailable, unchanged).
-    Absent,
-}
+/// The handoff path's on-disk state — `tfs::lazy_entry::EntryState`,
+/// the one owner of the state machine.
+pub(crate) use tfs::lazy_entry::EntryState as EnvImageState;
 
 /// State-detect the env-image handoff path. A PRESENT but torn
 /// descriptor is the named 65 (never a guess, never a silent heal —
 /// the store scan's rule at mount time); store IO keeps its 74.
 pub(crate) fn env_image_state(image_path: &str) -> Result<EnvImageState, DriverError> {
-    let path = Path::new(image_path);
-    if path.is_file() {
-        return Ok(EnvImageState::Sealed);
-    }
-    let (Some(entry_dir), Some(image_base)) =
-        (path.parent(), path.file_name().and_then(|n| n.to_str()))
-    else {
-        return Ok(EnvImageState::Absent);
-    };
-    match tpkg::lazy::read_descriptor(entry_dir, image_base) {
-        Ok(Some(seed)) => Ok(EnvImageState::Seeding {
-            entry_dir: entry_dir.to_path_buf(),
-            image_base: image_base.to_string(),
-            seed,
-        }),
-        Ok(None) => Ok(EnvImageState::Absent),
-        Err(e) => Err(DriverError::new(
+    tfs::lazy_entry::entry_state(image_path).map_err(|e| {
+        DriverError::new(
             e.exit_code(),
             format!("the lazy seed descriptor for '{image_path}': {e}"),
-        )),
-    }
+        )
+    })
 }
 
 /// `TEBAKO_OFFLINE` truthiness — the store convention's spelling
 /// (`1|true|yes`, case-insensitive; tebako-resolve's `cache::offline`
 /// owns the convention).
 pub(crate) fn offline(value: Option<String>) -> bool {
-    value
-        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
-        .unwrap_or(false)
+    tfs::lazy_entry::offline(value.as_deref())
 }
 
 /// The background-seal resolution: default ON (the setting's declared
@@ -108,6 +81,7 @@ pub(crate) fn seal_enabled(value: Option<String>) -> Result<bool, DriverError> {
 /// A byte-source failure's driver class (spec 39 §6's table).
 fn source_error(e: SourceError) -> DriverError {
     let code = match e.kind {
+        SourceErrorKind::Invalid => EX_TEBAKO_MANIFEST,
         SourceErrorKind::Fetch | SourceErrorKind::Unsupported => EX_TEBAKO_UNAVAILABLE,
         SourceErrorKind::Integrity => EX_TEBAKO_SHA,
         SourceErrorKind::Io => crate::EX_TEBAKO_IO,
@@ -115,90 +89,26 @@ fn source_error(e: SourceError) -> DriverError {
     DriverError::new(code, format!("the lazy env image: {e}"))
 }
 
-/// One small document GET for the mount-open path: `file://` reads
-/// from disk (the test/airgap spelling), everything else rides
-/// tebako-http's one agent (https + the loopback carve-out — the
-/// transport's enforcement, one layer down). A non-200 is the named
-/// 69, never a guess.
-fn get_document(url: &str) -> Result<Vec<u8>, DriverError> {
-    if let Some(path) = url.strip_prefix("file://") {
-        return std::fs::read(path)
-            .map_err(|e| DriverError::new(EX_TEBAKO_UNAVAILABLE, format!("{url}: {e}")));
-    }
-    let response = tebako_http::get_raw(url, Some("application/json"), None)
-        .map_err(|e| DriverError::new(EX_TEBAKO_UNAVAILABLE, format!("{url}: {e}")))?;
-    if response.status != 200 {
-        return Err(DriverError::new(
-            EX_TEBAKO_UNAVAILABLE,
-            format!(
-                "{url}: status {} — the blksum sidecar must be a 200",
-                response.status
-            ),
-        ));
-    }
-    Ok(response.body)
+/// The driver's lazy transport: `file://` reads from disk (the
+/// test/airgap spelling), everything else rides tebako-http's one agent
+/// (https + the loopback carve-out — the transport's enforcement, one
+/// layer down). A non-200 document GET is the named 69, never a guess.
+struct HttpTransport {
+    url: String,
 }
 
-/// Fetch and anchor the blksum sidecar at mount-open (spec 39 §3):
-/// `<source>.blksum.json`, verified against the descriptor's pins
-/// BEFORE any range read — the sidecar pin (70), the strict parse (65),
-/// the whole-image cross-check (70) are tpkg::lazy::verify_blksum's
-/// single ownership; this is the driver's transport call into it.
-///
-/// The cached-blksum arm (§3): the install-time prefetch
-/// (`<entry>/<image>.blksum.json`) is consulted FIRST — a verified hit
-/// makes the mount-open zero-network. A miss fetches and writes through
-/// (best-effort: the verified blksum is already in hand, so a cache
-/// write failure never fails the mount); a present-but-off-pin cache is
-/// the named error, never a silent drop-and-refetch.
-fn fetch_blksum(
-    entry_dir: &Path,
-    image_base: &str,
-    seed: &LazySeed,
-) -> Result<Blksum, DriverError> {
-    if let Some(sum) = tpkg::lazy::read_blksum_cache(entry_dir, image_base, seed)
-        .map_err(|e| DriverError::new(e.exit_code(), format!("the blksum cache: {e}")))?
-    {
-        return Ok(sum);
-    }
-    let url = format!("{}.blksum.json", seed.source);
-    let body = get_document(&url)?;
-    let sum = tpkg::lazy::verify_blksum(seed, &body)
-        .map_err(|e| DriverError::new(e.exit_code(), format!("{url}: {e}")))?;
-    let _ = tpkg::lazy::write_blksum_cache(entry_dir, image_base, &body);
-    Ok(sum)
-}
-
-/// Open the lazy mount's byte source. Offline (TEBAKO_OFFLINE=1): the
-/// CACHE-ONLY arm — no sidecar fetch, cached groups serve, a miss is
-/// EIO on the touching read (spec 39 §6's offline at group
-/// granularity). Online: the sidecar anchors first, then the source
-/// wraps tebako-http's `get_range` (the spec 39 §8 closure shape —
-/// the transport's retry law rides inside).
-pub(crate) fn open_lazy_source(
-    entry_dir: &Path,
-    image_base: &str,
-    seed: &LazySeed,
-    offline: bool,
-) -> Result<Arc<tfs::source_remote::RemoteByteSource>, DriverError> {
-    let blocks = tpkg::lazy::blocks_dir(entry_dir, image_base);
-    if offline {
-        return tfs::source_remote::RemoteByteSource::new_cache_only(
-            seed.size_bytes,
-            &blocks,
-            &seed.source,
-        )
-        .map(Arc::new)
-        .map_err(source_error);
-    }
-    let blksum = fetch_blksum(entry_dir, image_base, seed)?;
-    let url = seed.source.clone();
-    let fetch = move |offset: u64, len: usize, if_range: Option<&str>| {
+impl tfs::lazy_entry::LazyTransport for HttpTransport {
+    fn range(
+        &self,
+        offset: u64,
+        len: usize,
+        if_range: Option<&str>,
+    ) -> Result<tfs::source_remote::RangeFetchAnswer, String> {
         let range = tebako_http::ByteRange {
             offset,
             len: len as u64,
         };
-        match tebako_http::get_range(&url, range, if_range, None) {
+        match tebako_http::get_range(&self.url, range, if_range, None) {
             Ok(tebako_http::RangeAnswer::Partial(body)) => {
                 Ok(tfs::source_remote::RangeFetchAnswer::Partial {
                     bytes: body.bytes,
@@ -213,9 +123,40 @@ pub(crate) fn open_lazy_source(
             }
             Err(e) => Err(e.to_string()),
         }
-    };
-    tfs::source_remote::RemoteByteSource::new(Arc::new(fetch), blksum, &blocks, &seed.source)
-        .map(Arc::new)
+    }
+
+    fn document(&self, url: &str) -> Result<Vec<u8>, String> {
+        if let Some(path) = url.strip_prefix("file://") {
+            return std::fs::read(path).map_err(|e| format!("{url}: {e}"));
+        }
+        let response = tebako_http::get_raw(url, Some("application/json"), None)
+            .map_err(|e| format!("{url}: {e}"))?;
+        if response.status != 200 {
+            return Err(format!(
+                "{url}: status {} — the blksum sidecar must be a 200",
+                response.status
+            ));
+        }
+        Ok(response.body)
+    }
+}
+
+/// Open the lazy mount's byte source. Offline (TEBAKO_OFFLINE=1): the
+/// CACHE-ONLY arm — no sidecar fetch, cached groups serve, a miss is
+/// EIO on the touching read (spec 39 §6's offline at group
+/// granularity). Online: the sidecar anchors first, then the source
+/// wraps tebako-http's `get_range` (the spec 39 §8 closure shape —
+/// the transport's retry law rides inside).
+pub(crate) fn open_lazy_source(
+    entry_dir: &std::path::Path,
+    image_base: &str,
+    seed: &tpkg::lazy::LazySeed,
+    offline: bool,
+) -> Result<Arc<tfs::source_remote::RemoteByteSource>, DriverError> {
+    let transport = Arc::new(HttpTransport {
+        url: seed.source.clone(),
+    });
+    tfs::lazy_entry::open_source(entry_dir, image_base, seed, offline, transport)
         .map_err(source_error)
 }
 
@@ -283,7 +224,6 @@ pub(crate) fn spawn_seal_thread(
         }
     });
 }
-
 // ---------------------------------------------------------------------
 // the spec 39 §10 PR-4 e2e (the loader-side wire, file:// source)
 // ---------------------------------------------------------------------
@@ -291,6 +231,8 @@ pub(crate) fn spawn_seal_thread(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+    use tpkg::lazy::{Blksum, LazySeed};
 
     /// The fixture image: a small tree plus ~5 MiB of incompressible
     /// bytes (two 4 MiB groups) written as a limnifs image on disk,
@@ -562,7 +504,9 @@ mod tests {
         // consulted BEFORE any fetch — never a silent drop-and-refetch.
         let mut repin = seed.clone();
         repin.blksum_sha256 = "f".repeat(64);
-        let err = fetch_blksum(entry.path(), &image_base, &repin).unwrap_err();
+        let err = open_lazy_source(entry.path(), &image_base, &repin, false)
+            .err()
+            .expect("an off-pin blksum cache refuses the open");
         assert_eq!(err.code, 70, "{err:?}");
     }
 }

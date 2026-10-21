@@ -113,6 +113,8 @@ pub mod context;
 pub mod errno;
 pub mod exec_closure;
 pub mod journal;
+#[cfg(feature = "backend-remote")]
+pub mod lazy_entry;
 pub mod mount;
 pub mod mount_spec;
 pub mod needs;

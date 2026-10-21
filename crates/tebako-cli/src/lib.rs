@@ -1321,10 +1321,11 @@ fn seal_lazy_error(e: tpkg::lazy::LazyError) -> TebakoError {
     TebakoError::new(e.to_string(), e.exit_code())
 }
 
-/// A byte-source failure's class (spec 39 §6): fetch/unsupported 69,
-/// integrity 70, store IO 74.
+/// A byte-source failure's class (spec 39 §6): malformed lazy config 65,
+/// fetch/unsupported 69, integrity 70, store IO 74.
 fn seal_source_error(image_base: &str, e: tfs::source::SourceError) -> TebakoError {
     let code = match e.kind {
+        tfs::source::SourceErrorKind::Invalid => 65,
         tfs::source::SourceErrorKind::Fetch | tfs::source::SourceErrorKind::Unsupported => 69,
         tfs::source::SourceErrorKind::Integrity => 70,
         tfs::source::SourceErrorKind::Io => 74,

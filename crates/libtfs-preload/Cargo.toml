@@ -25,7 +25,12 @@ crate-type = ["cdylib", "rlib"]
 # ecosystem's DEFAULT image format (spec 20 §6) — a shim that cannot
 # mount a payload payload-side (ENOTSUP) is a shim that cannot do its
 # job. squashfs stays opt-in via the tfs crate's own features.
-tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs", "backend-remote"] }
+# The lazy mount's range transport (spec 39 §8): the shim rebuilds the
+# runtime's mounts in the interpreter's own engine instance, and a
+# LAZY_SEEDING env image's groups are fetched on demand from here —
+# the same one agent the driver used (never a second client).
+tebako-http = { version = "2.0.0", path = "../tebako-http" }
 # The slot form of TEBAKO_TFS_MOUNTS (spec 17 §2.1) resolves slot → byte
 # region against the tpkg trailer — the wire format's owner crate (pure
 # safe Rust, no engine dependency).
@@ -40,3 +45,7 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 # with a worker pool — the zip backend has none and cannot distinguish
 # the guard from the bug.
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
+# The LAZY_SEEDING fixture image (the lazy re-mount proof) is written
+# in-process — never a limni binary (the tfs tests' pattern).
+limnifs-write = "0.3.58"
+tempfile = "3"
