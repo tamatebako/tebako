@@ -7080,6 +7080,16 @@ mod bundle_tests {
         let _env = ENV_TEST_LOCK.lock().unwrap();
         std::env::set_var("TEBAKO_RUNTIME_LAZY", "1");
 
+        // tebako#853: the host gate outranks the opt-in, and this
+        // fixture serves NO bundle — it can only exercise the SEEDING
+        // arm, which is meaningful exactly where the host's boot tier
+        // reads a seeded entry. The windows arm (the gate yielding to
+        // the tier) is pinned by the gate's own unit test and by the
+        // engine-surface arm's eager first run.
+        if !tpkg::lazy::host_boot_reads_lazy() {
+            return;
+        }
+
         // bundle + witness + opt-in: the arm engages — the per-file exe
         // install, the image SEEDED; the mirror serves no bundle at
         // all, so any bundle fetch fails the test by name.
