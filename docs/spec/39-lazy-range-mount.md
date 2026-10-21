@@ -362,6 +362,18 @@ SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics
   rule of this section is unchanged: a missing sidecar is the loud
   eager fallback, a torn pin the named error, a mismatch exit 70. The
   eager default on bundle-era lines stays the bundle fetch.
+- **The host-tier gate (tebako#853).** The lazy wire is chosen only
+  where the HOST's boot tier can read a seeded entry
+  (`tpkg::lazy::host_boot_reads_lazy` — the single owner of that
+  answer, consulted by the shim and both bootstrap planners). The
+  POSIX tiers read through the lazy byte source and qualify; the
+  windows materialize tier (spec 17 §7) extracts a host tree from the
+  env image FILE, and a seeded entry has none until the seal commits —
+  so on windows the opt-in takes the loud eager fallback
+  (`event=lazy-fallback reason=windows-materialize-tier`, the journal
+  line included) and the first run works. A seeded entry that arrives
+  on a windows store by other means still refuses by name in the
+  driver, unchanged.
 - **Progress.** The loader's lazy first run renders through tebako-term
   (the spec 06 §5/§5a wiring rule — nothing else prints download
   progress): the exe's ordinary artifact bar, then one line —

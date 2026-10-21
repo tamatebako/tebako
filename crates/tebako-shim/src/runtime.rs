@@ -3927,7 +3927,18 @@ fn download_runtime<T: Transport + Sync>(
         )
         .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
         let per_file_assets = entry_match.map(entry_per_file_assets).unwrap_or(false);
-        let lazy_plan = if source.oci.is_some() {
+        let lazy_plan = if !tpkg::lazy::host_boot_reads_lazy() {
+            // tebako#853: the fetch planner must not choose a wire this
+            // host's boot tier cannot read. The windows materialize tier
+            // extracts a host tree from the image FILE; a seeded entry
+            // has none until a seal commits — so the opt-in degrades to
+            // the loud eager fallback here, and the first run works.
+            if lazy_opt_in {
+                LazyPlan::Fallback("windows-materialize-tier")
+            } else {
+                LazyPlan::Eager
+            }
+        } else if source.oci.is_some() {
             // spec 38 §5.4 is bundle-era only: OCI never serves the
             // per-file assets the lazy arm seeds from (no blksum
             // sidecar, no standalone image) — an opt-in falls back
@@ -4031,8 +4042,16 @@ fn download_runtime<T: Transport + Sync>(
                 } else {
                     "fetching the env image whole"
                 };
+                // tebako#853: the host-tier refusal names its own cause —
+                // the release DOES serve the lazy wire here; this boot
+                // tier just cannot read a seeded entry.
+                let cause = if *reason == "windows-materialize-tier" {
+                    "this host's boot tier extracts a host tree from the env image file, which a seeded entry does not have until it seals"
+                } else {
+                    "the release carries no blksum sidecar"
+                };
                 eprintln!(
-                    "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — the release carries no blksum sidecar; {eager} (the loud eager fallback)"
+                    "tebako-shim: warning: runtime \"{runtime_ref}\" cannot install lazily — {cause}; {eager} (the loud eager fallback)"
                 );
             }
             journal(

@@ -74,3 +74,22 @@ fn lazy_seed_render_validates_against_the_schema() {
         .replace("\"schema_version\":1", "\"schema_version\":2");
     assert!(!validator.is_valid(&instance(&bad_version)));
 }
+
+#[test]
+fn the_lazy_wire_is_host_gated_by_the_boot_tier() {
+    // tebako#853: the windows materialize tier extracts a host tree from
+    // the image FILE, so a seeded entry has nothing to mount there. The
+    // predicate is the ONE owner of that capability answer; every fetch
+    // planner consults it instead of re-deriving the platform rule.
+    if cfg!(windows) {
+        assert!(
+            !tpkg::lazy::host_boot_reads_lazy(),
+            "the windows materialize tier cannot read a seeded entry"
+        );
+    } else {
+        assert!(
+            tpkg::lazy::host_boot_reads_lazy(),
+            "the POSIX tiers read a seeded entry through the lazy byte source"
+        );
+    }
+}

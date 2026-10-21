@@ -34,6 +34,20 @@ pub const LAZY_GROUP_SIZE: u64 = 4 * 1024 * 1024;
 /// `schema_version` of both v1 documents.
 pub const LAZY_SCHEMA_VERSION: u64 = 1;
 
+/// Whether THIS host's boot tier can mount a LAZY_SEEDING env image.
+///
+/// The POSIX tiers read the image through the lazy byte source, so a
+/// seeded entry boots with no image file. The windows tier materializes
+/// a host tree from the image FILE (spec 17 §7) — a seeded entry has
+/// none until a seal commits — so a lazy fetch there breaks the first
+/// run (tebako#853). Every fetch planner consults this before choosing
+/// the lazy wire; the store policy (`runtime_lazy`) stays the user's
+/// opt-in, and an opt-in on a host that cannot read the seeded layout
+/// takes the LOUD eager fallback (`windows-materialize-tier`).
+pub const fn host_boot_reads_lazy() -> bool {
+    !cfg!(windows)
+}
+
 // ---------------------------------------------------------------------
 // errors (spec 39 §6's exit classes — named, never silent)
 // ---------------------------------------------------------------------
