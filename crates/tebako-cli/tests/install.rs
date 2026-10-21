@@ -1182,6 +1182,102 @@ fn a_registry_carried_engine_name_takes_the_engine_surface() {
     assert!(!fx.payloads_dir().join("ruby").exists());
 }
 
+/// A ZIP image shaped like a runtime env image: the runtime manifest
+/// (spawn surface declared), the layout tip naming the interpreter, and
+/// the interpreter file itself. The install path mounts ZIP images
+/// through the same reader as any other backend.
+fn zip_runtime_image(name: &str, version: &str) -> Vec<u8> {
+    let triplet = Platform::host().as_triplet();
+    let abi_line = version
+        .rsplit_once('.')
+        .map(|(line, _)| line)
+        .unwrap_or(version);
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-{name}\n  version: \"0.16.9\"\n  producer: {{tool: tebako-runtime-{name}, tool_version: \"0.16.9\"}}\n  created: \"2026-10-21T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides:\n    engine: {name}\n    version: \"{version}\"\n    abi_line: \"{abi_line}\"\n    platform: {triplet}\n  built_from:\n    src_sha256: {}\n    patch_set: fixture\n  capabilities:\n    exec: true\n    read: true\n    runtime: true\n  entrypoints:\n    - name: {name}\n      path: /bin/{name}\n",
+        sha(b'a'),
+        sha(b'b'),
+        sha(b'c'),
+    );
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    for dir in ["__tpkg__/", "bin/", "lib/", "lib/tebako/"] {
+        writer.add_directory(dir, options).unwrap();
+    }
+    writer
+        .start_file("__tpkg__/manifest.yaml", options)
+        .unwrap();
+    writer.write_all(manifest.as_bytes()).unwrap();
+    writer
+        .start_file("lib/tebako/layout.yaml", options)
+        .unwrap();
+    writer
+        .write_all(format!("interpreter: /bin/{name}\n").as_bytes())
+        .unwrap();
+    writer.start_file(format!("bin/{name}"), options).unwrap();
+    writer.write_all(b"#!/bin/sh\n").unwrap();
+    writer.finish().unwrap().into_inner()
+}
+
+#[test]
+fn engine_install_seals_a_lazy_runtime_before_reading_its_manifest() {
+    // tebako#843: a LAZY_SEEDING runtime entry has no image file until
+    // the seal commits (spec 39 §4), while the engine install reads the
+    // env image's manifest to learn the spawn surface. The read used to
+    // fail with ENOENT and surface as the exit-255 format mismatch with
+    // the pair correctly installed. The install now runs the seal pass
+    // first: a fresh lazy line installs, the image commits, and the
+    // runtime-own claim registers.
+    let fx = Fixture::new("engine-lazy");
+    let platform = tpkg::runtime_store::platform_string();
+    let entry_name = format!("ruby-3.3.12-0.16.9-{platform}");
+    let entry_dir = fx.home.join("runtimes").join(&entry_name);
+    fs::create_dir_all(&entry_dir).unwrap();
+    let (exe_name, image_base) =
+        tpkg::runtime_store::entry_asset_names(&entry_dir, "ruby", "3.3.12", "0.16.9", platform);
+    fs::write(entry_dir.join(&exe_name), b"exe").unwrap();
+    let origin = fx.dir.join("origin.tfs");
+    let bytes = zip_runtime_image("ruby", "3.3.12");
+    fs::write(&origin, &bytes).unwrap();
+    let blksum = tpkg::lazy::Blksum::from_image_bytes(&bytes);
+    let sidecar = blksum.render();
+    fs::write(format!("{}.blksum.json", origin.display()), &sidecar).unwrap();
+    let seed = tpkg::lazy::LazySeed {
+        source: format!("file://{}", origin.display()),
+        sha256: blksum.sha256.clone(),
+        blksum_sha256: tpkg::lazy::sha256_hex(sidecar.as_bytes()),
+        size_bytes: blksum.size_bytes,
+        group_count: blksum.group_count(),
+    };
+    tpkg::lazy::write_descriptor(&entry_dir, &image_base, &seed).unwrap();
+    assert!(
+        !entry_dir.join(&image_base).exists(),
+        "the fixture starts in the LAZY_SEEDING shape: no image file"
+    );
+
+    let fetcher = Fetcher::with_transport(MockTransport::new());
+    install::install_with(
+        &fx.home,
+        "ruby",
+        Some(Platform::host()),
+        Some(&fx.shim_binary),
+        &fetcher,
+    )
+    .unwrap_or_else(|e| panic!("engine install on a fresh lazy line failed: {e:?}"));
+    assert!(
+        entry_dir.join(&image_base).is_file(),
+        "the install's seal committed the image"
+    );
+    let claims = fs::read_to_string(fx.home.join("shims").join(".runtime-own.yaml")).unwrap();
+    assert!(
+        claims.contains("ruby"),
+        "the runtime-own claim registered: {claims}"
+    );
+    assert!(
+        shim_path(&fx.home, "ruby").symlink_metadata().is_ok(),
+        "the shim registered"
+    );
+}
+
 #[test]
 fn a_rows_own_release_ref_names_the_shard_tag_serving_it() {
     // tebako#711 (registry MINOR 6): when a version line unions rows from

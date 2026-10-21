@@ -1408,8 +1408,10 @@ pub fn cache_seal(selector: Option<&str>, all: bool) -> Result<(), TebakoError> 
 
 /// One entry's synchronous seal: open the descriptor's remote source
 /// (cache-only offline), fill the missing groups under the byte
-/// progress bar, then the seal commit.
-fn seal_one(
+/// progress bar, then the seal commit. `pub(crate)` for the engine
+/// install's pre-seal (tebako#843 — a LAZY_SEEDING entry has no image
+/// file until the seal commits, and the install reads the image).
+pub(crate) fn seal_one(
     rt: &tpkg::runtime_store::CachedRuntime,
     offline: bool,
     prog: &mut tebako_term::Progress<std::io::Stderr>,
