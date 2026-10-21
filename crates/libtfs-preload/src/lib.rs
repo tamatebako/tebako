@@ -153,6 +153,9 @@ pub mod spec;
 #[cfg(unix)]
 pub mod route;
 
+#[cfg(unix)]
+pub mod transport;
+
 #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
 compile_error!(
     "libtfs-preload targets macOS and linux-gnu (the tier-1 unix platforms); other unixes are untested"

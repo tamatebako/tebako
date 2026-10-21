@@ -18,6 +18,10 @@
 /// (the driver's mount-open mapping, spec 39 §6's 65/69/70/74 table).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceErrorKind {
+    /// The lazy configuration itself is malformed — a torn cached
+    /// blksum sidecar, a descriptor that fails validation. The 65 class
+    /// (spec 39 §6's usage row).
+    Invalid,
     /// A range fetch failed (transport, throttle exhaustion, offline
     /// miss) — the 69 class.
     Fetch,
@@ -44,6 +48,14 @@ pub struct SourceError {
 }
 
 impl SourceError {
+    /// A malformed lazy configuration (65 class).
+    pub fn invalid(detail: impl Into<String>) -> SourceError {
+        SourceError {
+            kind: SourceErrorKind::Invalid,
+            detail: detail.into(),
+        }
+    }
+
     /// A fetch failure (69 class).
     pub fn fetch(detail: impl Into<String>) -> SourceError {
         SourceError {
@@ -81,6 +93,7 @@ impl SourceError {
     pub fn errno(&self) -> i32 {
         match self.kind {
             SourceErrorKind::Unsupported => libc::ENOTSUP,
+            SourceErrorKind::Invalid => libc::EINVAL,
             SourceErrorKind::Fetch | SourceErrorKind::Integrity | SourceErrorKind::Io => libc::EIO,
         }
     }
@@ -89,6 +102,7 @@ impl SourceError {
 impl std::fmt::Display for SourceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self.kind {
+            SourceErrorKind::Invalid => "LazyConfigInvalid",
             SourceErrorKind::Fetch => "LazyUnavailable",
             SourceErrorKind::Integrity => "Sha256Mismatch",
             SourceErrorKind::Io => "LazyStoreIo",

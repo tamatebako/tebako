@@ -142,6 +142,47 @@ fn write_env_image_with_layout(dir: &Path, layout: Option<&str>) -> PathBuf {
     p
 }
 
+/// The LAZY_SEEDING env-image fixture (spec 39 §4): the same tree as
+/// [`write_env_image`] written as a self-contained limnifs image, its
+/// blksum sidecar beside the origin, and the seed descriptor in an
+/// entry whose image is ABSENT. Returns the entry's image path (the
+/// handoff spelling) — the file the driver must find absent.
+fn write_lazy_env_image(dir: &Path) -> PathBuf {
+    let root = dir.join("lazy-src");
+    std::fs::create_dir_all(root.join("lib/ruby")).unwrap();
+    std::fs::create_dir_all(root.join("lib/tebako")).unwrap();
+    std::fs::write(root.join("lib/ruby/rubygems.rb"), b"# rubygems core\n").unwrap();
+    std::fs::write(root.join("lib/tebako/layout.yaml"), GOOD_LAYOUT).unwrap();
+    let mut config = limnifs_write::WriteConfig::default_v0_1();
+    config.dictionaries.enabled = false;
+    let artifact = limnifs_write::write_directory_with_config(&root, &config).expect("write");
+    assert!(
+        artifact.metadata_sidecar.is_none(),
+        "the fixture keeps its metadata inline"
+    );
+    let mut image = artifact.bytes;
+    for slab in &artifact.slabs {
+        image.extend_from_slice(&slab.bytes);
+    }
+    let origin = dir.join("origin");
+    std::fs::create_dir_all(&origin).unwrap();
+    let origin_image = origin.join("runtime.tfs");
+    std::fs::write(&origin_image, &image).unwrap();
+    let blksum = tpkg::lazy::Blksum::from_image_bytes(&image);
+    std::fs::write(origin.join("runtime.tfs.blksum.json"), blksum.render()).unwrap();
+    let entry = dir.join("entry");
+    std::fs::create_dir_all(&entry).unwrap();
+    let seed = tpkg::lazy::LazySeed {
+        source: format!("file://{}", origin_image.display()),
+        sha256: blksum.sha256.clone(),
+        blksum_sha256: tpkg::lazy::sha256_hex(blksum.render().as_bytes()),
+        size_bytes: blksum.size_bytes,
+        group_count: blksum.group_count(),
+    };
+    tpkg::lazy::write_descriptor(&entry, "runtime.tfs", &seed).unwrap();
+    entry.join("runtime.tfs")
+}
+
 /// The app-payload fixture: an entrypoint and a lib.
 fn write_payload_image(dir: &Path) -> PathBuf {
     let p = dir.join("payload.tfs");
@@ -211,6 +252,41 @@ fn plain_boot_passes_argv_through_and_mounts_the_env_image() {
     assert!(context().read().unwrap().is_mounted());
     let bytes = read_file("/__tfs__/lib/ruby/rubygems.rb");
     assert_eq!(bytes, b"# rubygems core\n");
+}
+
+#[test]
+fn a_lazy_env_image_boots_and_declares_the_entry_for_the_child_shim() {
+    let g = guard("lazy-env");
+    let image = write_lazy_env_image(g.path());
+    assert!(!image.exists(), "the fixture is LAZY_SEEDING");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", image.display().to_string());
+    // No background seal: the test pins the lazy state, not the commit.
+    env.set("TEBAKO_LAZY_SEAL", "0");
+
+    let out = boot(
+        &argv(&["python", "-c", "import encodings"]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    assert_eq!(out.argv, argv(&["python", "-c", "import encodings"]));
+    // The driver's own mount serves the runtime tree.
+    let bytes = read_file("/__tfs__/lib/ruby/rubygems.rb");
+    assert_eq!(bytes, b"# rubygems core\n");
+    // The mount is DECLARED for the interpreter's preload shim — the
+    // shipped defect (tebako#848): a lazy mount carried no archive
+    // identity, `mounts_env` skipped it, and the interpreter came up
+    // with an empty runtime root.
+    let mounts = env
+        .var("TEBAKO_TFS_MOUNTS")
+        .expect("the lazy mount is declared");
+    assert!(
+        mounts.contains(&format!("{}:/__tfs__", image.display())),
+        "{mounts}"
+    );
+    // Still LAZY_SEEDING: nothing sealed the entry.
+    assert!(!image.exists(), "the boot never seals");
 }
 
 #[test]
