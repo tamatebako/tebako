@@ -1241,10 +1241,16 @@ fn registry_selected_target(
                 continue;
             };
             declared.push((row.version.clone(), row.is_withdrawn()));
+            // tebako#842: the row version is the factory's composite
+            // `<lang>[-<flavor>]-<wrapper>`, and the plain-wins rule
+            // ranks it BELOW its plain language version — so a pin
+            // anchored at a published language version must be matched
+            // against the derived language part, never the composite.
+            let line = versions::language_part(&row.version);
             let satisfied = reqs
                 .entries()
                 .iter()
-                .any(|r| versions::from_validated(&r.constraint).matches(&row.version));
+                .any(|r| versions::from_validated(&r.constraint).matches(line));
             if !satisfied {
                 continue;
             }
@@ -1755,14 +1761,18 @@ fn registry_derived_source(
             .then(|| row.alias.clone().unwrap_or_else(|| reg_ref.to_string()));
         for entry in registry.runtime_entries(engine, implementation) {
             // The newest registry version satisfying ANY entry of the
-            // `any_of` requirement answers where this engine lives.
+            // `any_of` requirement answers where this engine lives. The
+            // row version is the factory composite (`<lang>[-<flavor>]-
+            // <wrapper>`), matched by its derived language part —
+            // tebako#842, the same rule as the target pick above.
             let pick = entry
                 .versions
                 .iter()
                 .filter(|v| {
+                    let line = versions::language_part(&v.version);
                     reqs.entries()
                         .iter()
-                        .any(|r| versions::from_validated(&r.constraint).matches(&v.version))
+                        .any(|r| versions::from_validated(&r.constraint).matches(line))
                 })
                 .max_by(|a, b| versions::compare(&a.version, &b.version));
             let Some(version) = pick else { continue };
@@ -6229,6 +6239,53 @@ payloads:
         let booked = source.registry.as_ref().expect("channel-3 bookkeeping");
         assert!(!booked.channel_oci);
         assert_eq!(booked.reg_ref, reg);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// tebako#842's fixture: the rows carry the factory COMPOSITE
+    /// (`<lang>-<wrapper>`), as every published runtime registry does;
+    /// under the plain-wins rule a composite ranks BELOW its plain
+    /// language version, so a pin anchored at the published language
+    /// version matches only through the derived language part.
+    fn composite_row_registry() -> String {
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        format!(
+            "schema_version: 1\npayloads:\n  - name: tebako-runtime-openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - version: '21.0.11-2.5.0'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-temurin-21.0.11-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs+oci://reg.example/runtimes/openjdk'}}\n      - version: '21.0.12-2.5.0'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-temurin-21.0.12-{asset}.tar.gz, sha256: '{}'}}\n        release: {{ref: 'tfs+oci://reg.example/runtimes/openjdk'}}\n        signature: {{keyid: 'efc3c250f7862a48'}}\n",
+            sha64('a'),
+            sha64('b'),
+        )
+    }
+
+    #[test]
+    fn a_language_pin_matches_the_composite_registry_row() {
+        let home = temp_home("pin-composite-row");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", &composite_row_registry());
+        let cfg = UserConfig {
+            registries: vec![crate::config::RegistryBookEntry::bare(reg.clone())],
+            ..UserConfig::default()
+        };
+        // The pin anchors AT the row's published language version
+        // (`21.0.12-2.5.0`'s language part IS `21.0.12`); before the
+        // derivation every row ranked below the pin and no row matched.
+        for pin in [">= 21.0.12", "= 21.0.12", "~> 21.0.12"] {
+            let source = runtime_source(&reqs("java", pin), None, &cfg, &ctx, None)
+                .unwrap_or_else(|e| panic!("{pin}: {}", e.message));
+            assert_eq!(source.channel, "registry", "{pin}");
+            // The 21.0.12 row's signature pin (absent on the 21.0.11
+            // row) witnesses WHICH row the pick landed on.
+            assert_eq!(
+                source.signer_pin.as_deref(),
+                Some("efc3c250f7862a48"),
+                "{pin}"
+            );
+        }
+        // Control: a pin above every row finds no registry source, and
+        // the chain-empty refusal names the pin it evaluated.
+        let err = runtime_source(&reqs("java", ">= 21.0.13"), None, &cfg, &ctx, None).unwrap_err();
+        assert!(err.message.contains("\">= 21.0.13\""), "{}", err.message);
         let _ = std::fs::remove_dir_all(&home);
     }
 

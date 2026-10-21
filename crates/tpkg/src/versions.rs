@@ -94,6 +94,35 @@ pub fn compare(a: &str, b: &str) -> Ordering {
     Ordering::Equal
 }
 
+/// The language part of a composite runtime version (tebako#842). A
+/// runtime factory's registry row version is `<lang>[-<flavor>]-<wrapper>`
+/// — the factory's own tebako line trails it as a dash plus at least two
+/// dot-separated numeric components (ruby `4.0.7-0.17.1`, python
+/// `3.13.15-jit-0.2.7`). The wrapper is never part of the version a
+/// runtime constraint names, so the matcher derives the language part
+/// when a registry row does not carry `language_version` explicitly. A
+/// string without the wrapper shape returns whole: a plain `4.0.7`, a
+/// flavor label (`3.13.15-jit`), and a payload variant label
+/// (`1.16.9-ruby4.0` — the label's components are not all numeric).
+pub fn language_part(version: &str) -> &str {
+    let Some((head, tail)) = version.rsplit_once('-') else {
+        return version;
+    };
+    let mut parts = 0usize;
+    let mut numeric = true;
+    for c in tail.split('.') {
+        parts += 1;
+        if c.is_empty() || !c.bytes().all(|b| b.is_ascii_digit()) {
+            numeric = false;
+        }
+    }
+    if numeric && parts >= 2 && !head.is_empty() {
+        head
+    } else {
+        version
+    }
+}
+
 /// The payload min-runtime floor (spec 03 §2.9, schema_minor 15,
 /// tebako#666): a runtime whose own tebako version is BELOW the floor
 /// the payload declares is stale for that payload — resolution skips it
@@ -256,6 +285,54 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_part_strips_only_the_factory_wrapper() {
+        // tebako#842: a factory row version trails the factory's own
+        // tebako line — dash plus >=2 numeric dotted components.
+        assert_eq!(language_part("4.0.7-0.17.1"), "4.0.7");
+        assert_eq!(language_part("3.1.6-0.16.23"), "3.1.6");
+        assert_eq!(language_part("3.13.15-jit-0.2.7"), "3.13.15-jit");
+        assert_eq!(language_part("3.14.7-jit-0.2.0"), "3.14.7-jit");
+        assert_eq!(language_part("4.0.7-0.17"), "4.0.7");
+        // Shapes that are NOT <lang>-<wrapper> return whole: a plain
+        // version, a flavor-only label, and a payload variant label
+        // (whose components are not all numeric).
+        assert_eq!(language_part("4.0.7"), "4.0.7");
+        assert_eq!(language_part("3.13.15-jit"), "3.13.15-jit");
+        assert_eq!(language_part("1.16.9-ruby4.0"), "1.16.9-ruby4.0");
+        assert_eq!(language_part("34.0.1"), "34.0.1");
+        assert_eq!(language_part("-0.17.1"), "-0.17.1");
+    }
+
+    #[test]
+    fn a_language_pin_anchors_on_the_derived_language_part() {
+        // tebako#842's contract: the composite is LESS than its plain
+        // language version under the plain-wins rule, so a pin anchored
+        // at that version must be matched against the DERIVED part —
+        // otherwise every published row is excluded.
+        let composite = "4.0.7-0.17.1";
+        assert_eq!(compare(composite, "4.0.7"), Ordering::Less);
+        for pin in [">= 4.0.7", "= 4.0.7", "~> 4.0.7"] {
+            let c = parse_constraint(pin).unwrap();
+            assert!(
+                !c.matches(composite),
+                "{pin} must not match the raw composite"
+            );
+            assert!(
+                c.matches(language_part(composite)),
+                "{pin} must match the derived language part"
+            );
+        }
+        // The flavored row derives with its flavor, so a plain pin never
+        // matches the jit row and a jit-labeled pin does.
+        assert!(parse_constraint("~> 3.13.0")
+            .unwrap()
+            .matches(language_part("3.13.15-jit-0.2.7")));
+        assert!(!parse_constraint("= 3.13.15")
+            .unwrap()
+            .matches(language_part("3.13.15-jit-0.2.7")));
+    }
 
     #[test]
     fn compare_dotted() {
