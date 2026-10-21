@@ -1626,7 +1626,9 @@ pub fn manifest_entry_per_file_assets(entry: &ManifestEntry) -> bool {
 /// The spec 39 §7 bundle-era gate's decision — evaluated BEFORE the spec
 /// 36 §4 era branch: the bundle fetch is SKIPPED exactly when the shard
 /// declares a bundle, the lazy mode is on (the default since §10's
-/// flip), AND the shard carries the co-publish witness. The per-file exe
+/// flip), the shard carries the co-publish witness, AND this host's boot
+/// tier can read a seeded entry (`tpkg::lazy::host_boot_reads_lazy` —
+/// the windows materialize tier cannot, tebako#853). The per-file exe
 /// fetch and resolve_image's lazy seed then install the entry; the
 /// bundle is never fetched. Any other combination takes the era branch
 /// exactly as before (a bundle-declaring shard without the witness
@@ -1636,7 +1638,7 @@ fn lazy_arm_skips_bundle(
     lazy_opt_in: bool,
     per_file_assets: bool,
 ) -> bool {
-    bundle.is_some() && lazy_opt_in && per_file_assets
+    bundle.is_some() && lazy_opt_in && per_file_assets && tpkg::lazy::host_boot_reads_lazy()
 }
 
 // ---------------------------------------------------------------------
@@ -3028,7 +3030,15 @@ fn resolve_image(
             ));
         }
     };
-    if lazy_opt_in {
+    // tebako#853: the host gate — the windows materialize tier extracts a
+    // host tree from the image FILE, so a seeded entry it cannot read;
+    // an opt-in there degrades to the loud eager fetch below.
+    if lazy_opt_in && !tpkg::lazy::host_boot_reads_lazy() {
+        eprintln!(
+            "tebako-bootstrap: warning: runtime \"{runtime_ref}\" cannot install lazily — this host's boot tier extracts a host tree from the env image file, which a seeded entry does not have until it seals; fetching the env image whole (the loud eager fallback)"
+        );
+    }
+    if lazy_opt_in && tpkg::lazy::host_boot_reads_lazy() {
         let blksum_row = match entry_match.as_ref().map(manifest_entry_blksum) {
             None | Some(Ok(None)) => None,
             Some(Ok(Some(row))) => Some(row),
@@ -7349,8 +7359,13 @@ mod manifest_identity_tests {
         };
         // The four gate combinations (spec 39 §7): the bundle fetch is
         // skipped EXACTLY on a bundle-declaring shard with the opt-in
-        // AND the co-publish witness.
-        assert!(lazy_arm_skips_bundle(Some(&bundle()), true, true));
+        // AND the co-publish witness — and only where the host's boot
+        // tier can read a seeded entry (tebako#853: the windows
+        // materialize tier cannot, so it always takes the bundle).
+        assert_eq!(
+            lazy_arm_skips_bundle(Some(&bundle()), true, true),
+            tpkg::lazy::host_boot_reads_lazy()
+        );
         assert!(!lazy_arm_skips_bundle(Some(&bundle()), true, false));
         assert!(!lazy_arm_skips_bundle(Some(&bundle()), false, true));
         assert!(!lazy_arm_skips_bundle(None, true, true));
