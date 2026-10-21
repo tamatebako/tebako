@@ -62,8 +62,7 @@ pub fn read_embedded_file(path: &Path, in_image_path: &str) -> Result<Option<Str
     }
     let _unmount = Unmount;
 
-    let c_manifest =
-        std::ffi::CString::new(format!("/__tebako_install__{in_image_path}")).unwrap();
+    let c_manifest = std::ffi::CString::new(format!("/__tebako_install__{in_image_path}")).unwrap();
     let fd = unsafe { tebako_fs_open(c_manifest.as_ptr(), libc::O_RDONLY) };
     if fd < 0 {
         return Ok(None); // the image carries nothing at that path

@@ -597,7 +597,10 @@ pub fn install_with<T: Transport + Sync>(
 /// engine reading WINS the bare token it answers: a payload of the same
 /// name stays reachable through its qualified forms (`alias/name`, the
 /// references).
-fn engine_install_target(home: &Path, target: &str) -> Result<Option<crate::engine::EngineRef>, TebakoError> {
+fn engine_install_target(
+    home: &Path,
+    target: &str,
+) -> Result<Option<crate::engine::EngineRef>, TebakoError> {
     match crate::engine::parse_engine_ref(target)? {
         Some(erf) if erf.command.is_some() => Ok(Some(erf)),
         Some(erf) if crate::engine::engine_known(home, &erf.engine) => Ok(Some(erf)),

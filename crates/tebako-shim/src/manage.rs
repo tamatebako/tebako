@@ -631,10 +631,7 @@ fn cmd_list_json(
             J::Object(obj)
         })
         .collect::<Vec<_>>();
-    let command_docs: Vec<J> = command_docs
-        .into_iter()
-        .chain(runtime_own_docs)
-        .collect();
+    let command_docs: Vec<J> = command_docs.into_iter().chain(runtime_own_docs).collect();
     let doc = J::Object(vec![
         ("info_schema".to_string(), J::Number("1".to_string())),
         (
