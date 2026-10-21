@@ -4,4 +4,6 @@
 //! resolution); this module re-exports it so the shim's call sites and
 //! test surface are unchanged.
 
-pub use tpkg::versions::{compare, from_validated, newest, parse_constraint, Constraint};
+pub use tpkg::versions::{
+    compare, from_validated, language_part, newest, parse_constraint, Constraint,
+};
