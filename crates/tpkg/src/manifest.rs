@@ -25,6 +25,14 @@ use std::str::FromStr;
 /// Well-known in-image path of the payload manifest (spec 03 §1).
 pub const PAYLOAD_MANIFEST_PATH: &str = "/__tpkg__/manifest.yaml";
 
+/// The env-image layout declaration's in-image path RELATIVE to the
+/// runtime root (spec 18 C3 — `/lib/tebako/layout.yaml` once mounted).
+/// THE SINGLE OWNER: the driver (tebako-driver::layout re-exports it) and
+/// the install-time runtime-own surface (tebako-cli::engine) both flow it
+/// from here (spec 00 §10 — an in-image layout path never gets a second
+/// hand-written copy).
+pub const LAYOUT_IMAGE_PATH: &str = "lib/tebako/layout.yaml";
+
 /// The only `identity.schema_version` this implementation reads and writes.
 pub const PAYLOAD_SCHEMA_VERSION: u32 = 1;
 

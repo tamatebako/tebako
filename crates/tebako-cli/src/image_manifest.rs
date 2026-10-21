@@ -22,6 +22,14 @@ static MOUNT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// never a silent `None`, which would degrade into a synthesized manifest
 /// whose entrypoint paths the embedded manifest never declared.
 pub fn read_embedded_manifest(path: &Path) -> Result<Option<String>, TebakoError> {
+    read_embedded_file(path, tpkg::PAYLOAD_MANIFEST_PATH)
+}
+
+/// The bytes of one well-known file inside the image at `path`
+/// (`in_image_path` absolute, in-image spelling). `Ok(None)` = the image
+/// mounted cleanly and carries nothing there; an image the reader cannot
+/// OPEN is the same named format error as the manifest read (tebako#744).
+pub fn read_embedded_file(path: &Path, in_image_path: &str) -> Result<Option<String>, TebakoError> {
     use tfs::c_api::*;
 
     let _guard = MOUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -54,14 +62,11 @@ pub fn read_embedded_manifest(path: &Path) -> Result<Option<String>, TebakoError
     }
     let _unmount = Unmount;
 
-    let c_manifest = std::ffi::CString::new(format!(
-        "/__tebako_install__{}",
-        tpkg::PAYLOAD_MANIFEST_PATH
-    ))
-    .unwrap();
+    let c_manifest =
+        std::ffi::CString::new(format!("/__tebako_install__{in_image_path}")).unwrap();
     let fd = unsafe { tebako_fs_open(c_manifest.as_ptr(), libc::O_RDONLY) };
     if fd < 0 {
-        return Ok(None); // the image carries no manifest
+        return Ok(None); // the image carries nothing at that path
     }
     let mut data = Vec::new();
     let mut buf = [0u8; 65536];
@@ -70,7 +75,7 @@ pub fn read_embedded_manifest(path: &Path) -> Result<Option<String>, TebakoError
         if n < 0 {
             unsafe { tebako_fs_close(fd) };
             return Err(plain_error(format!(
-                "cannot read the embedded manifest of {}",
+                "cannot read {in_image_path} of {}",
                 path.display()
             )));
         }
@@ -82,7 +87,7 @@ pub fn read_embedded_manifest(path: &Path) -> Result<Option<String>, TebakoError
     unsafe { tebako_fs_close(fd) };
     String::from_utf8(data).map(Some).map_err(|e| {
         plain_error(format!(
-            "the embedded manifest of {} is not UTF-8: {e}",
+            "{in_image_path} of {} is not UTF-8: {e}",
             path.display()
         ))
     })

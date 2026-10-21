@@ -492,6 +492,11 @@ fn compose_spawn_lock(
 /// netconfig verdict rides the handoff env, and the java plane gets its
 /// dispatcher-side append.
 pub fn dispatch(tool: &str, user_args: &[String], ctx: &Ctx) -> Result<ExecPlan, ShimError> {
+    // spec 07 §10: a runtime-own claim answers when NO payload provides or
+    // exposes the name (the collision rule — the payload surface wins).
+    if let Some(plan) = crate::runtime_own::maybe_dispatch(tool, user_args, ctx)? {
+        return Ok(plan);
+    }
     let res = resolve::resolve(tool, ctx)?;
     let (flags, args) = parse_jail_flags(user_args)?;
     let jail_env = compose_jail_env(&res, &flags, &args, ctx)?;

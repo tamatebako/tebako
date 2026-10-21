@@ -55,6 +55,7 @@ pub mod regcache;
 pub mod resolve;
 pub mod runtime;
 mod runtime_bundle;
+pub mod runtime_own;
 pub mod shell;
 pub mod shell_windows;
 pub mod slices;

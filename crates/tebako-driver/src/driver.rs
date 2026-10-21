@@ -1290,8 +1290,14 @@ fn resolve_runtime_entrypoint(
         .iter()
         .find(|e| e.name == name)
         .ok_or_else(|| {
+            let declared = runtime
+                .entrypoints
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             manifest(format!(
-                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name — the parent's expose list outruns the runtime's spawn surface"
+                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name (declared: {declared}) — the ask outruns the runtime's spawn surface"
             ))
         })?;
     let resolved = join_mount(runtime_root, &ep.path);

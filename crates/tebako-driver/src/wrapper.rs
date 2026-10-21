@@ -544,8 +544,14 @@ fn runtime_entrypoint(runtime_root: &str, name: &str) -> Result<tpkg::Entrypoint
         .find(|e| e.name == name)
         .cloned()
         .ok_or_else(|| {
+            let declared = runtime
+                .entrypoints
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             manifest(format!(
-                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name"
+                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name (declared: {declared})"
             ))
         })
 }

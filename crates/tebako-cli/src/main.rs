@@ -22,6 +22,11 @@ const USAGE: &str = "Usage:
                one package, N commands (per-entry slots + type-2 manifest)
   tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
                [--] [<args>...]
+  tebako run <engine>[:<command>] [<args>...]
+                                       the runtime-own surface (spec 07 §10): boot the
+                                       engine's runtime directly — the bare form runs the
+                                       interpreter, :command a declared entrypoint; args
+                                       ride verbatim
   tebako trace run <pkg> [--capture <path>] [--out <path>] [--] [<args>...]
                                        run under TEBAKO_JAIL=record with the trace bus
                                        armed; synthesize a suggested manifest
@@ -77,6 +82,9 @@ const USAGE: &str = "Usage:
   tebako trust list                    list the TLS trust store's CA certificates
   tebako trust remove <name>           remove a CA certificate from the trust store
   tebako install <ref | [alias/]name[@ver]>    install a payload + register its shims
+  tebako install <engine>[:<command>]  pre-stage the engine's runtime and register the
+                                       runtime-own shim (spec 07 §10 — the bare form
+                                       registers the default entry's name)
   tebako uninstall <name>              remove a payload's shims and cache entry
   tebako bundle <name[@ver]> --output <dir> [--also <name[@ver]>]...
                [--config <org.yaml>] [--archive tar.gz]
@@ -840,7 +848,7 @@ fn run_install(args: &[String]) -> Result<(), CliExit> {
     }
     let Some(target) = target else {
         return Err(CliExit::Usage(
-            "usage: tebako install <ref | [alias/]name[@version] | ./package> [--shims]"
+            "usage: tebako install <ref | [alias/]name[@version] | ./package | engine[:command]> [--shims]"
                 .to_string(),
         ));
     };
@@ -1169,7 +1177,24 @@ fn run_publish(args: &[String]) -> Result<(), CliExit> {
 /// own `jail:` request is composed in (manifest request ∩ user policy)
 /// and the effective jail rides TEBAKO_JAIL to the package's bootstrap.
 /// Never returns on success on unix (the process is replaced).
+///
+/// spec 07 §10's second target class: a token naming NO existing file
+/// parses as `<engine>[:<command>]` — the runtime-own surface; the args
+/// after it ride verbatim (this surface owns no flags), the wire is the
+/// spec-17 handoff exactly.
 fn run_package(args: &[String]) -> Result<(), CliExit> {
+    if let Some(target) = args.first() {
+        match tebako_cli::engine::classify_run_target(target) {
+            Ok(tebako_cli::engine::RunTarget::Engine(erf)) => {
+                let plan = tebako_cli::engine::run_engine_plan(&erf, &args[1..])?;
+                let err = tebako_cli::run::exec_plan(&plan);
+                return Err(CliExit::Error(err));
+            }
+            Ok(tebako_cli::engine::RunTarget::Package) => {}
+            Err(e) if e.code == 64 => return Err(CliExit::Usage(e.message)),
+            Err(e) => return Err(CliExit::Error(e)),
+        }
+    }
     let parsed = tebako_cli::run::parse_run_args(args).map_err(CliExit::Usage)?;
     let plan = tebako_cli::run::plan_run(&parsed).map_err(CliExit::Error)?;
     let err = tebako_cli::run::exec_plan(&plan);

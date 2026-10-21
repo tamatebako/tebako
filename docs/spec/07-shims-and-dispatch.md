@@ -627,21 +627,35 @@ configured registry carrying the engine is the §7 no-such-engine error.
 with `TEBAKO_RUNTIME_IMAGE=<env image>` + `--tebako-entry <command>`
 (or the bare form's default) + the user args; the driver composes
 `[interpreter, <the entrypoint's args_default…>, <entry>, <args>…]` per
-spec 29 §1. The jail posture: the user's own policy (TEBAKO_JAIL /
-`--jail`), open by default — a runtime-own command is the user's own
-process, not a payload's.
+spec 29 §1. This surface parses NO flags: every token after the engine
+reference is the engine's own argument, verbatim (a `--jail` there
+reaches the engine, never tebako). The jail posture is the user's own
+policy riding `TEBAKO_JAIL` in the inherited environment (the driver
+enforces it per spec 17), open by default — a runtime-own command is
+the user's own process, not a payload's.
 
 **The shim surface:** `tebako install <engine>[:<command>]` registers
 shims/<command> (the default entry's name for the bare form — `node`,
 `bun`, `java`) dispatching argv0 → the engine's runtime resolution →
-the same spec-17 wire. **Collision rule (MECE):** a PAYLOAD-provided
+the same spec-17 wire. The install target's engine reading WINS a bare
+engine-shaped token it answers (a cached runtime of the engine, a
+config `runtimes:` preference, a registered registry's `kind: runtime`
+entry carrying the engine, or the ruby default); a same-named payload
+stays reachable through its qualified forms (`<alias>/<name>`, the
+reference forms). **Collision rule (MECE):** a PAYLOAD-provided
 name wins over a runtime-own name of the same spelling (the payload
 declared the tool; the runtime surface is the fallback when no payload
 provides it) — the provider-routing surfaces of §2 answer collisions
 locally, never by registry. A runtime-own shim records its engine
-class in the shim metadata, so `tebako shim list`/`disable` answer the
-class explicitly and a later payload install claiming the name displaces
-the runtime-own claim with a loud notice (never a silent shadow).
+class in the shim metadata (`shims/.runtime-own.yaml`, command →
+`{engine, entry}` — the entry is the wire token: `self` for the bare
+form, the command name otherwise), so `tebako shim list`/`disable`
+answer the class explicitly and a later payload install claiming the
+name displaces the runtime-own claim with a loud notice (never a
+silent shadow). The §0 disable selectors gate a runtime-own claim
+through the engine riding the payload slot: `all` and `<engine>@all`
+refuse the dispatch by name; a bare version selector has no axis to
+gate (the engine's version chain owns versions).
 
 **The presses stay honest:** a runtime-own shim name never ships a
 binary — the shim is the link; a press that bundles its own tool keeps
