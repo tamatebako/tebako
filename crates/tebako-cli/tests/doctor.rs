@@ -134,12 +134,75 @@ impl Fixture {
             .unwrap();
         }
     }
+
+    /// A LAZY_SEEDING runtime entry (tebako#846): the exe + markers, no
+    /// image, the seed descriptor, the block DIRECTORY, and a leftover
+    /// seal staging file — the shape a background seal leaves when the
+    /// process ends before the commit. None of it is artifact material.
+    fn lazy_runtime(&self, ver: &str, lang: &str, triplet: &str) {
+        let dir = self
+            .home
+            .join("runtimes")
+            .join(format!("{lang}-{ver}-{triplet}"));
+        fs::create_dir_all(&dir).unwrap();
+        let stem = format!("tebako-runtime-{ver}-{lang}-{triplet}");
+        let exe = dir.join(&stem);
+        fs::write(&exe, format!("the {stem} exe bytes\n")).unwrap();
+        fs::write(
+            dir.join("sha256"),
+            format!("{}\n", tebako_resolve::sha256_hex(&fs::read(&exe).unwrap())),
+        )
+        .unwrap();
+        // The image the seal will commit (never written here).
+        let image_base = format!("{stem}.tfs");
+        let image = dir.join(&image_base);
+        let bytes = format!("the {stem} image bytes\n").into_bytes();
+        let blksum = tpkg::lazy::Blksum::from_image_bytes(&bytes);
+        let sidecar = blksum.render();
+        let seed = tpkg::lazy::LazySeed {
+            source: "file:///nonexistent-origin.tfs".to_string(),
+            sha256: blksum.sha256.clone(),
+            blksum_sha256: tpkg::lazy::sha256_hex(sidecar.as_bytes()),
+            size_bytes: blksum.size_bytes,
+            group_count: blksum.group_count(),
+        };
+        tpkg::lazy::write_descriptor(&dir, &image_base, &seed).unwrap();
+        // The block store is a DIRECTORY; the seal's staging file is a
+        // leftover from an interrupted commit.
+        let blocks = tpkg::lazy::blocks_dir(&dir, &image_base);
+        fs::create_dir_all(&blocks).unwrap();
+        let (offset, len) = tpkg::lazy::group_span(bytes.len() as u64, 0).unwrap();
+        fs::write(
+            blocks.join(tpkg::lazy::block_name(0)),
+            &bytes[offset as usize..(offset + len) as usize],
+        )
+        .unwrap();
+        fs::write(dir.join(format!("{image_base}.1202.seal.part")), b"partial").unwrap();
+        let _ = image;
+    }
 }
 
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.dir);
     }
+}
+
+#[test]
+fn a_lazy_entrys_blocks_dir_and_seal_staging_are_never_problems() {
+    // tebako#846: the doctor hashed the block DIRECTORY ("unreadable:
+    // Is a directory") and the leftover `*.seal.part` against the exe's
+    // anchor ("sha256 MISMATCH … remove the entry and reinstall"), both
+    // false on a healthy, fully resumable LAZY_SEEDING entry.
+    let fx = Fixture::new("lazy-layout");
+    fx.lazy_runtime("3.3.12", "ruby", "test-triplet");
+    let (out, code) = tebako_cli::doctor::run(&fx.home, false, true, &fx.env()).unwrap();
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("tebako doctor: no problems found"), "{out}");
+    assert!(out.contains("LAZY_SEEDING"), "{out}");
+    assert!(out.contains("seal resumable"), "{out}");
+    assert!(!out.contains("Is a directory"), "{out}");
+    assert!(!out.contains("seal.part"), "{out}");
 }
 
 #[test]
