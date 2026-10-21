@@ -3,3 +3,8 @@ Cargo.lock
 **/*.rs.bk
 .DS_Store
 *.proptest-regressions
+# Build artifacts, never sources (tebako#854: a windows DLL split once
+# committed 32,762 COFF objects at the root — every clone paid for them).
+*.o
+*.obj
+_tmp_*
