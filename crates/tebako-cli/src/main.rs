@@ -10,6 +10,9 @@ use tebako_cli::runner::verbose_mode;
 use tebako_cli::{cache_list, cache_list_json, cache_prune, cache_seal, press, VERSION_BANNER};
 
 const USAGE: &str = "Usage:
+  tebako press                        detect the project in the current directory
+                                      (Gemfile: the bin/ or exe/ script, or the
+                                      single root *.rb) and derive the root + entry
   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>] [-c <cwd>]
                [-R <ruby>] [-m self-contained|shared-runtime] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
@@ -1455,6 +1458,25 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             ));
         }
     } else {
+        // Zero-ceremony press: with neither -r nor -e, detect the project
+        // in place (the gem layout's bin/exe script, or the single root
+        // script) and derive both. An ambiguous or unsupported project is
+        // a NAMED refusal that says what was found and how to be explicit
+        // — never a guess.
+        if root.is_none() && entrance.is_none() {
+            let dir = cwd
+                .as_deref()
+                .map(std::path::PathBuf::from)
+                .or_else(|| std::env::current_dir().ok())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            match tebako_cli::detect::detect(&dir) {
+                Ok(plan) => {
+                    root = Some(plan.root.to_string_lossy().into_owned());
+                    entrance = Some(plan.entry.to_string_lossy().replace('\\', "/"));
+                }
+                Err(message) => return Err(CliExit::Usage(message)),
+            }
+        }
         let mut missing = String::new();
         if root.is_none() {
             missing += " '--root'";

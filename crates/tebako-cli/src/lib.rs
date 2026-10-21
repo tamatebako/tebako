@@ -75,6 +75,7 @@ pub mod check;
 pub mod compose;
 pub mod contract;
 pub mod deploy;
+pub mod detect;
 pub mod doctor;
 pub mod engine;
 pub mod error;
