@@ -2164,11 +2164,20 @@ fn install_runtime_edge(
     if expose.is_empty() {
         return Ok(());
     }
+    // tebako#843's class on the payload edge: a LAZY_SEEDING runtime has
+    // no image file until a seal commits (spec 39 §4), and the expose
+    // cross-check below reads the runtime's embedded manifest. `install`
+    // is the explicit pre-stage act, so the seal is synchronous here —
+    // fill the missing groups and commit, exactly as the engine install
+    // and `tebako cache seal` do.
+    if rt.lazy.is_some() {
+        let mut prog = tebako_term::Progress::stderr();
+        crate::seal_one(&rt, tebako_resolve::cache::offline(), &mut prog)?;
+    }
     let image = rt
-        .image
-        .as_ref()
+        .image_handoff_path()
         .expect("edge resolution post-asserts the env image");
-    let text = image_manifest::read_embedded_manifest(image)?.ok_or_else(|| {
+    let text = image_manifest::read_embedded_manifest(&image)?.ok_or_else(|| {
         err(
             EX_TEBAKO_MANIFEST,
             format!(
