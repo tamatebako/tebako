@@ -90,11 +90,21 @@ fn image_era_fetches_report_per_artifact() {
     let image_size = std::fs::metadata(h.cache_image(&home)).unwrap().len();
     // The default lazy mode on the sidecar-less fixture: the LOUD
     // eager fallback line stands between the exe's install and the
-    // image's fetch (the release does not serve the lazy wire).
-    let fallback = format!(
-        "tebako-bootstrap: the lazy mount mode is on (the default) but this release does not serve the lazy wire (no image.blksum row/sidecar) — falling back to the eager download of {}\n",
-        h.image_asset
-    );
+    // image's fetch. Which cause it names depends on the host tier
+    // (tebako#853): a tier that cannot read a seeded entry names that
+    // reason first — the wire's absence is moot where the wire is
+    // unusable.
+    let fallback = if tpkg::lazy::host_boot_reads_lazy() {
+        format!(
+            "tebako-bootstrap: the lazy mount mode is on (the default) but this release does not serve the lazy wire (no image.blksum row/sidecar) — falling back to the eager download of {}\n",
+            h.image_asset
+        )
+    } else {
+        format!(
+            "tebako-bootstrap: warning: runtime \"{}\" cannot install lazily — this host's boot tier extracts a host tree from the env image file, which a seeded entry does not have until it seals; fetching the env image whole (the loud eager fallback)\n",
+            h.runtime_ref
+        )
+    };
     let image_lines = format!(
         "downloading {} ({})\ninstalled {} ({}) — cached at {} and shared by every tebako app on this machine\n",
         h.image_asset,
