@@ -3927,7 +3927,19 @@ fn download_runtime<T: Transport + Sync>(
         )
         .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
         let per_file_assets = entry_match.map(entry_per_file_assets).unwrap_or(false);
-        let lazy_plan = if !tpkg::lazy::host_boot_reads_lazy() {
+        let lazy_plan = if source.oci.is_some() {
+            // spec 38 §5.4 is bundle-era only: OCI never serves the
+            // per-file assets the lazy arm seeds from (no blksum
+            // sidecar, no standalone image) — an opt-in falls back
+            // loud, landing on the bundle fetch, exactly like a
+            // blksum-less release (spec 39 §7). This cause is
+            // host-independent, so it is named before the host gate.
+            if lazy_opt_in {
+                LazyPlan::Fallback("oci-bundle-era-only")
+            } else {
+                LazyPlan::Eager
+            }
+        } else if !tpkg::lazy::host_boot_reads_lazy() {
             // tebako#853: the fetch planner must not choose a wire this
             // host's boot tier cannot read. The windows materialize tier
             // extracts a host tree from the image FILE; a seeded entry
@@ -3935,17 +3947,6 @@ fn download_runtime<T: Transport + Sync>(
             // the loud eager fallback here, and the first run works.
             if lazy_opt_in {
                 LazyPlan::Fallback("windows-materialize-tier")
-            } else {
-                LazyPlan::Eager
-            }
-        } else if source.oci.is_some() {
-            // spec 38 §5.4 is bundle-era only: OCI never serves the
-            // per-file assets the lazy arm seeds from (no blksum
-            // sidecar, no standalone image) — an opt-in falls back
-            // loud, landing on the bundle fetch, exactly like a
-            // blksum-less release (spec 39 §7).
-            if lazy_opt_in {
-                LazyPlan::Fallback("oci-bundle-era-only")
             } else {
                 LazyPlan::Eager
             }
