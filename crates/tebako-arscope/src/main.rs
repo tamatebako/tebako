@@ -550,13 +550,21 @@ fn strip_scoped_drectve_exports(
 ) -> Option<Vec<u8>> {
     let text = String::from_utf8_lossy(data);
     let mut kept_parts: Vec<&str> = Vec::new();
-    for token in text.split_ascii_whitespace() {
+    // GCC pads the section with NUL bytes to a 4-byte boundary; the
+    // padding glues onto the LAST token, so NUL is a delimiter here,
+    // not token content (tebako-runtime-python#53: the NUL-glued
+    // closing quote survived trim_matches and the directive shipped).
+    for token in text.split(|c: char| c == '\0' || c.is_ascii_whitespace()) {
+        if token.is_empty() {
+            continue;
+        }
         let lower = token.to_ascii_lowercase();
         let is_export = lower.starts_with("-export:") || lower.starts_with("/export:");
         if is_export {
             // Both directive spellings share the 8-byte prefix; the
-            // name is the token past it, quotes stripped — clang quotes
-            // (`-export:"sym"`), mrt doesn't (`-export:sym`).
+            // name is the token past it, quotes stripped — clang and
+            // GCC 16.x quote (`-export:"sym"`), mrt doesn't
+            // (`-export:sym`).
             let name = token.get(8..).unwrap_or(token).trim_matches('"');
             if scoped_names.contains(name) {
                 report.drectve_stripped += 1;
@@ -2801,6 +2809,53 @@ mod tests {
         assert!(
             !obj.sections().any(|s| s.name_bytes() == Ok(b".drectve")),
             "the emptied .drectve drops"
+        );
+    }
+
+    #[test]
+    fn drectve_gcc_nul_padding_still_strips_the_scoped_export() {
+        // tebako-runtime-python#53: GCC pads the .drectve payload with
+        // NUL bytes to a 4-byte boundary. Glued onto the last token they
+        // defeat a whitespace-only tokenizer — the closing quote survives
+        // trim_matches, the name lookup misses, and the export directive
+        // ships; the consumer's link then demands an export of the
+        // pre-rename name (the python factory's windows leg).
+        let mut out = object::write::Object::new(
+            object::BinaryFormat::Coff,
+            object::Architecture::X86_64,
+            object::Endianness::Little,
+        );
+        let text = out.add_section(Vec::new(), b".text".to_vec(), object::SectionKind::Text);
+        out.section_mut(text).set_data(b"\xc3", 1);
+        out.add_symbol(object::write::Symbol {
+            name: b"jent_version".to_vec(),
+            value: 0,
+            size: 1,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        let drectve = out.add_section(Vec::new(), b".drectve".to_vec(), object::SectionKind::Other);
+        out.section_mut(drectve)
+            .set_data(b"-export:\"jent_version\"\0\0\0", 1);
+        let bytes = out.write().expect("fixture");
+
+        let mut report = Report::default();
+        let (scoped, _) = scope_object(
+            &bytes,
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            &std::collections::HashSet::new(),
+            &mut report,
+        )
+        .expect("scope");
+        assert_eq!(report.drectve_stripped, 1);
+        let obj = File::parse(&scoped[..]).expect("parse");
+        assert!(
+            !obj.sections().any(|s| s.name_bytes() == Ok(b".drectve")),
+            "the NUL-padded .drectve empties and drops"
         );
     }
 }
