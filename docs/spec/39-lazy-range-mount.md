@@ -428,6 +428,19 @@ shape only.
 - **The mount-table law.** Longest-prefix dispatch, duplicate-point
   EEXIST, unmount-everything on failure (spec 11 §2, spec 17 §1) —
   lazy changes where bytes come from, never how mounts compose.
+- **The transport window.** A demand fetch runs with the engine's read
+  lock held, and the fetch's OWN machinery may call back into the
+  interposed libc surface — on macOS the resolver reads
+  `networkd_settings` through `open`, which would re-enter the engine
+  behind the lock: a deadlock (tebako#851: one thread in the VFS read,
+  the other in `getaddrinfo → … → open_impl`). While a fetch is in
+  flight the shim therefore PASSES EVERY interposed call THROUGH to the
+  host; the window is PROCESS-WIDE (the resolver runs on its own
+  thread), not thread-local. The window is the transport's own
+  machinery, never a payload's read; a concurrent payload read on
+  another thread during a fetch is the known narrow exposure, and the
+  follow-up is a lock-free mount-prefix fast path that scopes the
+  bypass to paths outside every mount.
 - **The mount-table identity.** A lazy env-image mount serializes into
   `TEBAKO_TFS_MOUNTS` by its entry path, exactly like a file mount. A
   re-establishing consumer — the interpreter's preload shim, and every

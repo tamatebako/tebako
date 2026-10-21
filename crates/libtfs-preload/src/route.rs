@@ -29,6 +29,45 @@ use tfs::policy::{HostAccess, HostPolicy, JailSpec};
 
 use crate::spec;
 
+/// In-transport guard (tebako#851): while the shim's lazy transport
+/// performs a fetch, the process's OWN machinery may call back into the
+/// interposed libc surface — getaddrinfo reads the resolver's settings
+/// files, and that `open` would re-enter the engine while the fetch's
+/// read lock is held: a deadlock (the sampled stacks show
+/// `getaddrinfo → networkd_settings_read_from_file → open_impl` on one
+/// thread and the in-flight VFS read on the other). The guard is
+/// PROCESS-WIDE (`AtomicUsize`, not thread-local) because the resolver
+/// runs on its own thread; while it is set, every interposed call passes
+/// through to the host (`engine_call` answers None), which is exactly the
+/// transport's own machinery and never a payload's read.
+///
+/// The narrow exposure this admits — a concurrent payload read on another
+/// thread during a fetch falling through to the host — is recorded in the
+/// §9 test plan: the follow-up is a lock-free mount-prefix fast path that
+/// scopes the bypass to paths outside every mount.
+static IN_TRANSPORT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// RAII entry into the transport window.
+pub struct TransportGuard;
+
+impl TransportGuard {
+    pub fn enter() -> TransportGuard {
+        IN_TRANSPORT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        TransportGuard
+    }
+}
+
+impl Drop for TransportGuard {
+    fn drop(&mut self) {
+        IN_TRANSPORT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Is a transport fetch in flight (any thread)?
+pub fn in_transport() -> bool {
+    IN_TRANSPORT.load(std::sync::atomic::Ordering::SeqCst) > 0
+}
+
 /// The route decision for a read-class path call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PathRoute<T> {

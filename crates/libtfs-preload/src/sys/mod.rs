@@ -251,7 +251,13 @@ macro_rules! boot_arm {
 /// binaries do not interpose in-process, so only Linux CI saw them).
 pub(crate) fn engine_call<T>(f: impl FnOnce() -> T) -> Option<T> {
     engine_call_inner(
-        IN_FORK_CHILD.load(Ordering::Relaxed) || in_foreign_process() || !boot_live(),
+        IN_FORK_CHILD.load(Ordering::Relaxed)
+            || in_foreign_process()
+            || !boot_live()
+            // tebako#851: a fetch in flight owns the process's path calls —
+            // the resolver's settings reads must not re-enter the engine
+            // behind the VFS read lock (deadlock).
+            || crate::route::in_transport(),
         f,
     )
 }
@@ -2221,8 +2227,30 @@ pub unsafe extern "C" fn getcwd(buf: *mut libc::c_char, size: libc::size_t) -> *
 // ---------------------------------------------------------------------
 
 #[cfg(test)]
+
 mod tests {
     use super::*;
+
+    /// tebako#851: while a transport fetch is in flight the interposed
+    /// surface must pass straight through to the host — the process-wide
+    /// guard (not thread-local: the resolver runs on its own thread) is
+    /// the gate, and it must win over a live boot.
+    #[test]
+    fn a_transport_fetch_forces_host_passthrough() {
+        assert!(!crate::route::in_transport());
+        {
+            let _g = crate::route::TransportGuard::enter();
+            assert!(crate::route::in_transport());
+        }
+        assert!(!crate::route::in_transport());
+        // Nested entries keep the window open until the last exits.
+        let a = crate::route::TransportGuard::enter();
+        let b = crate::route::TransportGuard::enter();
+        drop(a);
+        assert!(crate::route::in_transport());
+        drop(b);
+        assert!(!crate::route::in_transport());
+    }
 
     /// The guard gate: a fork child never enters the engine (`None` is
     /// every shim's "pass through to the real libc / fail safe" answer);

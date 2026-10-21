@@ -35,6 +35,10 @@ impl tfs::lazy_entry::LazyTransport for HttpTransport {
             offset,
             len: len as u64,
         };
+        // tebako#851: the fetch's own machinery (the resolver's settings
+        // reads) must never re-enter the engine while the VFS read lock
+        // is held — the guard makes every interposed call pass through.
+        let _g = crate::route::TransportGuard::enter();
         match tebako_http::get_range(&self.url, range, if_range, None) {
             Ok(tebako_http::RangeAnswer::Partial(body)) => {
                 Ok(tfs::source_remote::RangeFetchAnswer::Partial {
@@ -56,6 +60,7 @@ impl tfs::lazy_entry::LazyTransport for HttpTransport {
         if let Some(path) = url.strip_prefix("file://") {
             return std::fs::read(path).map_err(|e| format!("{url}: {e}"));
         }
+        let _g = crate::route::TransportGuard::enter();
         let response = tebako_http::get_raw(url, Some("application/json"), None)
             .map_err(|e| format!("{url}: {e}"))?;
         if response.status != 200 {
