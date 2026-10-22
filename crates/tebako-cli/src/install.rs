@@ -1836,6 +1836,9 @@ fn finish_install<T: Transport + Sync>(
 ) -> Result<InstallOutcome, TebakoError> {
     let cache = PayloadCache::with_root(home);
     let mut notes = Vec::new();
+    // Set when a mirror served the bytes (spec 04 §2's chain, MINOR 10):
+    // the record names the locator afterwards.
+    let mut served_by_mirror: Option<Reference> = None;
 
     // Cache hit ⇒ the trust anchor stands (spec 05 §4 — verified at
     // install, never re-verified per run); a miss streams through the
@@ -1905,7 +1908,16 @@ fn finish_install<T: Transport + Sync>(
                         ) {
                             Ok(installed) => {
                                 sink.add_entry(installed);
-                                Ok(CommitReport { line: None })
+                                // A mirror-served install says so: the report
+                                // names the locator that actually served
+                                // (spec 04 §2's chain, MINOR 10).
+                                let line = (reference != &plan.reference).then(|| {
+                                    format!(
+                                        "installed {} ({} B) — served by mirror {reference}",
+                                        staged.display, staged.size
+                                    )
+                                });
+                                Ok(CommitReport { line })
                             }
                             Err(e) => Err(sink.fail(map_resolve(e))),
                         }
@@ -1932,6 +1944,9 @@ fn finish_install<T: Transport + Sync>(
                 let entry = sink.take_entry().ok_or_else(|| {
                     err(EX_TEBAKO_INSTALL, "the fetch plan ended without a commit")
                 })?;
+                if reference != &plan.reference {
+                    served_by_mirror = Some(reference.clone());
+                }
                 landed = Some((entry.0, entry.1, sink.take_signer()));
                 break;
             }
@@ -1966,6 +1981,23 @@ fn finish_install<T: Transport + Sync>(
             (entry, status, signer)
         }
     };
+
+    // A mirror-served install stays visible in the record, not only in
+    // the console line: the note names the locator, and the journal entry
+    // makes the chain's use auditable.
+    if let Some(mirror) = &served_by_mirror {
+        notes.push(format!(
+            "{} {} was served by its mirror {mirror} — the primary {} failed",
+            plan.name, plan.version, plan.reference
+        ));
+        journal(
+            home,
+            &format!(
+                "event=payload-mirror-served name={} version={} mirror={mirror} primary={}",
+                plan.name, plan.version, plan.reference
+            ),
+        );
+    }
 
     // Spec 37 §7's origin binding: a registry-resolved plan binds the
     // entry to the registry that resolved it (canonical ref, never the

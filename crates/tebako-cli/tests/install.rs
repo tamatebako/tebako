@@ -984,6 +984,17 @@ fn install_falls_through_to_a_mirror_that_serves_the_pinned_bytes() {
     let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.status, tebako_resolve::InstallStatus::Installed);
     assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"mirror-bytes"));
+    // The report names the locator that served — the acceptance's
+    // "report naming the mirror used" — and the journal records it.
+    let note = out
+        .notes
+        .iter()
+        .find(|n| n.contains("served by its mirror"))
+        .unwrap_or_else(|| panic!("no mirror note in {:?}", out.notes));
+    assert!(note.contains(&good), "{note}");
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(journal.contains("event=payload-mirror-served"), "{journal}");
+    assert!(journal.contains(&good), "{journal}");
 }
 
 /// A mirror can only serve the row's bytes: different bytes are the
