@@ -6,7 +6,7 @@
 //! host is a note, never a problem.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tebako_cli::registry::doctor;
 
@@ -26,7 +26,7 @@ fn digest(bytes: &[u8]) -> String {
 
 /// A universal-row registry over `file://`: the ref carries the pin, so
 /// `--full` exercises the bytes-vs-pin leg with no network.
-fn universal_registry(dir: &PathBuf, pin: &str, signature: Option<&str>) -> String {
+fn universal_registry(dir: &Path, pin: &str, signature: Option<&str>) -> String {
     let image = dir.join("demo.tfs");
     fs::write(&image, b"demo payload bytes").unwrap();
     let mut row = format!(

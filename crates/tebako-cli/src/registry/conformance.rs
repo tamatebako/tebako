@@ -306,13 +306,15 @@ fn doctor_registry(
             report.rows_checked += 1;
             check_row(
                 &mut report,
-                &fetcher,
-                input,
+                &RowContext {
+                    fetcher: &fetcher,
+                    input,
+                    host,
+                    full,
+                    head_key: head_key.as_deref(),
+                },
                 payload,
                 entry,
-                host,
-                full,
-                head_key.as_deref(),
             );
         }
     }
@@ -320,19 +322,32 @@ fn doctor_registry(
     (if json { report.json() } else { report.text() }, code)
 }
 
+/// The per-run facts a row walk needs (grouped so the row itself stays a
+/// three-argument call).
+struct RowContext<'a> {
+    fetcher: &'a Fetcher<tebako_resolve::HttpTransport>,
+    input: &'a str,
+    host: tpkg::Platform,
+    full: bool,
+    head_key: Option<&'a [u8]>,
+}
+
 /// One row against the host: resolve (the install's own resolver), then —
 /// with `full` — download the bytes, compare the pin, and verify the
 /// declared signature against the registry's head key.
 fn check_row(
     report: &mut Report,
-    fetcher: &Fetcher<tebako_resolve::HttpTransport>,
-    input: &str,
+    ctx: &RowContext<'_>,
     payload: &RegistryPayload,
     entry: &RegistryVersion,
-    host: tpkg::Platform,
-    full: bool,
-    head_key: Option<&[u8]>,
 ) {
+    let RowContext {
+        fetcher,
+        input,
+        host,
+        full,
+        head_key,
+    } = *ctx;
     let name = payload.name.as_str();
     let version = entry.version.as_str();
     let view = match entry.resolve_variant(payload.default_variant.as_deref()) {
