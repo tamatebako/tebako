@@ -1470,9 +1470,23 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
                 .or_else(|| std::env::current_dir().ok())
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
             match tebako_cli::detect::detect(&dir) {
-                Ok(plan) => {
+                Ok(plan) if plan.kind == tebako_cli::detect::ProjectKind::Ruby => {
                     root = Some(plan.root.to_string_lossy().into_owned());
                     entrance = Some(plan.entry.to_string_lossy().replace('\\', "/"));
+                }
+                Ok(plan) => {
+                    // The plan IS derived for this kind (package.json names
+                    // the entry and the engine requirement) — the refusal
+                    // names what was read, so the author can act on it
+                    // instead of guessing what the press wanted.
+                    return Err(CliExit::Usage(format!(
+                        "{} is a {} project (package.json): entry `{}`, engine requirement `{}` — the {} press backend is not available in this release; the pressed-package route for this engine is the feedstock model in the guides",
+                        plan.root.display(),
+                        plan.kind.as_str(),
+                        plan.entry.display(),
+                        plan.requirement.as_deref().unwrap_or("unstated"),
+                        plan.kind.as_str(),
+                    )));
                 }
                 Err(message) => return Err(CliExit::Usage(message)),
             }
