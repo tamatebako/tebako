@@ -78,6 +78,7 @@
 pub mod blksum;
 pub mod bundle;
 pub mod check;
+pub mod closure_tree;
 pub mod compose;
 pub mod contract;
 pub mod deploy;
