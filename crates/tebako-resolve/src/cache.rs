@@ -510,24 +510,28 @@ impl PayloadCache {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "payload".to_string());
             // Reuse a healthy pool entry instead of keeping the streamed
-            // copy: the staged file becomes a second link to the pool's
-            // bytes, so the name and the pool share one inode. The link is
-            // made at a SIBLING path and renamed over the staged file, so a
-            // failed link leaves the staged bytes untouched.
+            // copy: stage a LINK to the pool's bytes beside the streamed
+            // file and commit THAT, so the name and the pool end with one
+            // inode. The link is committed directly — never by renaming over
+            // an existing path, which Windows refuses — and any failure
+            // leaves the streamed copy to commit instead.
             let pool = pool_file(&self.root, &sha256);
-            let reused = pool.is_file()
+            let healthy = pool.is_file()
                 && file_sha256(&pool)
                     .map(|actual| actual.eq_ignore_ascii_case(&sha256))
-                    .unwrap_or(false)
-                && {
-                    let sibling = tmp.with_extension("pool-link");
-                    let _ = fs::remove_file(&sibling);
-                    fs::hard_link(&pool, &sibling).is_ok() && fs::rename(&sibling, tmp).is_ok()
-                };
-            if !reused {
+                    .unwrap_or(false);
+            let mut staged = tmp.to_path_buf();
+            if healthy {
+                let sibling = tmp.with_extension("pool-link");
+                let _ = fs::remove_file(&sibling);
+                if fs::hard_link(&pool, &sibling).is_ok() {
+                    let _ = fs::remove_file(tmp);
+                    staged = sibling;
+                }
+            } else {
                 publish_to_pool(&self.root, tmp, &sha256);
             }
-            self.finish_place(tmp, &file, &file_name, &sha256, &origin)?;
+            self.finish_place(&staged, &file, &file_name, &sha256, &origin)?;
             Ok((
                 CacheEntry {
                     name: name.to_string(),
