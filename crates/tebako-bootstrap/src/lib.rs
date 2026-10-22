@@ -6568,6 +6568,8 @@ mod bundle_tests {
 
     #[test]
     fn the_bundle_fetch_installs_the_store_layout() {
+        // tebako#858: this resolves, and a sibling may hold TEBAKO_OFFLINE.
+        let _env = ENV_TEST_LOCK.lock().unwrap();
         let raw_members = happy_members();
         let members: Vec<(&str, &[u8])> =
             raw_members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
@@ -6634,6 +6636,8 @@ mod bundle_tests {
 
     #[test]
     fn the_dual_era_probe_serves_a_new_era_shard() {
+        // tebako#858: this resolves, and a sibling may hold TEBAKO_OFFLINE.
+        let _env = ENV_TEST_LOCK.lock().unwrap();
         // tebako#716 (era law rule 3): the release ships its shard under
         // the NEW-era spelling only — the probe's new-era-first order
         // consumes it, and the shard's flowed spellings (exe / image /
@@ -6762,6 +6766,8 @@ mod bundle_tests {
     /// integrity class) naming the member — and nothing was installed.
     #[test]
     fn bundle_violations_are_named() {
+        // tebako#858: this resolves, and a sibling may hold TEBAKO_OFFLINE.
+        let _env = ENV_TEST_LOCK.lock().unwrap();
         let exe_asset = format!("{}{}", stem(), exe_suffix());
         type ViolationCase<'a> = (
             &'a str,
@@ -6893,6 +6899,8 @@ mod bundle_tests {
 
     #[test]
     fn bundle_sidecar_failures_are_named() {
+        // tebako#858: this resolves, and a sibling may hold TEBAKO_OFFLINE.
+        let _env = ENV_TEST_LOCK.lock().unwrap();
         let raw_members = happy_members();
         let members: Vec<(&str, &[u8])> =
             raw_members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
@@ -6933,6 +6941,8 @@ mod bundle_tests {
     #[cfg(not(feature = "openpgp-verify"))]
     #[test]
     fn a_declared_bundle_signature_is_unverified_first() {
+        // tebako#858: this resolves, and a sibling may hold TEBAKO_OFFLINE.
+        let _env = ENV_TEST_LOCK.lock().unwrap();
         let raw_members = happy_members();
         let members: Vec<(&str, &[u8])> =
             raw_members.iter().map(|(n, b)| (n.as_str(), *b)).collect();
@@ -6970,6 +6980,8 @@ mod bundle_tests {
     /// (the keep-forever rule — spec 36 §4).
     #[test]
     fn a_shard_without_the_bundle_key_fetches_per_file() {
+        // tebako#858: this resolves, and a sibling may hold TEBAKO_OFFLINE.
+        let _env = ENV_TEST_LOCK.lock().unwrap();
         let home = dir("perfile");
         let mirror = home.join("mirror").join(format!("v{TV}"));
         std::fs::create_dir_all(&mirror).unwrap();
