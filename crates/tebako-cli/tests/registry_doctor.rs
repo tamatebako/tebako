@@ -30,8 +30,8 @@ fn universal_registry(dir: &Path, pin: &str, signature: Option<&str>) -> String 
     let image = dir.join("demo.tfs");
     fs::write(&image, b"demo payload bytes").unwrap();
     let mut row = format!(
-        "payloads:\n  - name: demo\n    kind: toolkit\n    versions:\n      - version: 1.0.0\n        platforms: universal\n        release: {{ref: \"file://{}?sha256={pin}\"}}\n",
-        image.display()
+        "payloads:\n  - name: demo\n    kind: toolkit\n    versions:\n      - version: 1.0.0\n        platforms: universal\n        release: {{ref: \"{url}?sha256={pin}\"}}\n",
+        url = tebako_http::file_url(&image)
     );
     if let Some(asc) = signature {
         row.push_str(&format!(
@@ -85,7 +85,7 @@ fn a_declared_signature_with_no_asc_is_a_problem() {
     let registry = universal_registry(
         &dir,
         &digest(bytes),
-        Some(&format!("file://{}", missing.display())),
+        Some(&tebako_http::file_url(&missing)),
     );
     let path = dir.join("tpkg-registry.yaml");
     fs::write(&path, &registry).unwrap();
@@ -196,11 +196,11 @@ fn a_report_keeps_the_pass_beside_the_failure() {
     fs::write(&good, b"good").unwrap();
     fs::write(&bad, b"bad").unwrap();
     let registry = format!(
-        "schema_version: 1\npayloads:\n  - name: demo\n    kind: toolkit\n    versions:\n      - version: 1.0.0\n        platforms: universal\n        release: {{ref: \"file://{}?sha256={}\"}}\n      - version: 2.0.0\n        platforms: universal\n        release: {{ref: \"file://{}?sha256={}\"}}\n",
-        good.display(),
-        digest(b"good"),
-        bad.display(),
-        digest(b"not bad"),
+        "schema_version: 1\npayloads:\n  - name: demo\n    kind: toolkit\n    versions:\n      - version: 1.0.0\n        platforms: universal\n        release: {{ref: \"{u1}?sha256={p1}\"}}\n      - version: 2.0.0\n        platforms: universal\n        release: {{ref: \"{u2}?sha256={p2}\"}}\n",
+        u1 = tebako_http::file_url(&good),
+        p1 = digest(b"good"),
+        u2 = tebako_http::file_url(&bad),
+        p2 = digest(b"not bad"),
     );
     let path = dir.join("tpkg-registry.yaml");
     fs::write(&path, &registry).unwrap();
