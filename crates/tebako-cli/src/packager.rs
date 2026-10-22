@@ -925,7 +925,7 @@ fn ncores() -> usize {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::options::PressMode;
 
@@ -960,6 +960,7 @@ mod tests {
             carry: None,
             share: None,
             mode_explicit: false,
+            emit_recipe: None,
         }
     }
 

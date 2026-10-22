@@ -20,6 +20,8 @@ const USAGE: &str = "Usage:
                [--no-install] [--quiet-notices] [--sign[=<keyid>] | --no-sign]
                [--format dwarfs|limnifs] [--exclude <glob>]... [--compose <tebako.yaml>]
                [--carry all|none|<name,...>] [--share <name,...>]
+               [--emit-recipe[=<path>]]   render the feedstock recipe from
+                                      the press that just succeeded
                (lean/fat stay accepted as deprecated aliases)
   tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
                one package, N commands (per-entry slots + type-2 manifest)
@@ -1364,6 +1366,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut compose: Option<PathBuf> = None;
     let mut carry: Option<String> = None;
     let mut share: Option<String> = None;
+    let mut emit_recipe: Option<PathBuf> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -1435,6 +1438,14 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--compose" => compose = Some(PathBuf::from(take_value(&mut i)?)),
             "--carry" => carry = Some(take_value(&mut i)?),
             "--share" => share = Some(take_value(&mut i)?),
+            // --emit-recipe (the default path) or --emit-recipe=<path>. A
+            // bare flag never eats the next argument (the --sign rule).
+            "--emit-recipe" => {
+                emit_recipe = Some(match &inline_value {
+                    Some(path) => PathBuf::from(path),
+                    None => PathBuf::new(),
+                })
+            }
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
                 return Err(CliExit::Usage(
@@ -1537,5 +1548,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         carry,
         share,
         mode_explicit,
+        emit_recipe,
     })
 }
