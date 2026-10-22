@@ -97,6 +97,18 @@ payloads:
     default: 1.2.3
 ```
 
+- **Mirrors on the row (additive, PLANNED 2026-10-22; registry MINOR 10):**
+  a version entry, or one of its per-triplet `platforms` entries, may carry
+  `mirrors:` — an ordered list of ordinary references naming other places
+  that serve the SAME bytes. The row's `sha256` remains the only anchor:
+  the primary is tried first, each mirror afterwards, and every attempt is
+  verified against that pin, so a mirror can only serve the same bytes or
+  fail by name. This does not soften the locked rule above: a REFERENCE
+  still names exactly one location and there is still no resolver-side
+  search; the list lives in the document the publisher authored, and it is
+  read only after the primary fails. `tebako registry validate` names a
+  mirror list on a `universal` row with no pin, and a mirror whose reference
+  does not parse, as producer-gate violations.
 - The registry MIRRORS only resolution-relevant fields (spec 03 §4 tier 3)
   — the dispatcher resolves without downloading every payload.
 - **The mirror's `runtime_requirement.abi` rule (additive, 2026-10-07,
