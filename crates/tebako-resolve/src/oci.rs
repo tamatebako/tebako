@@ -85,6 +85,30 @@ impl<T: Transport> Http for OciTransport<'_, T> {
         )
     }
 
+    fn stream_from(
+        &self,
+        url: &str,
+        auth: tebako_oci::Auth<'_>,
+        have: u64,
+        path: &std::path::Path,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        // The blob URL is https-or-loopback like every other distribution
+        // edge; the truncate-on-200 decision lives in the one seam.
+        let header = tebako_oci::authorization_header(auth);
+        let answer = self.0.stream_range_to(
+            url,
+            header.as_ref().map(|(k, v)| (*k, v.as_str())),
+            have,
+            path,
+            on_progress,
+        )?;
+        Ok(match answer {
+            crate::transport::RangeStream::Partial { written }
+            | crate::transport::RangeStream::Full { written } => written,
+        })
+    }
+
     fn post(
         &self,
         url: &str,
@@ -656,6 +680,50 @@ pub(crate) fn stream_artifact<T: Transport>(
     check_byte_pin(&r, sha256.as_deref(), &artifact.layer).map_err(map)?;
     let n = client
         .stream_blob(&r, &artifact.layer, writer, Some(tick))
+        .map_err(map)?;
+    Ok((n, artifact.origin))
+}
+
+/// [`stream_artifact`] continuing at `have` into `path` — the OCI resume
+/// arm. The manifest resolution and the byte-pin check are the same; the
+/// layer streams into a FILE (the transport may replace it on a 200) and
+/// the digest is verified over the completed file, exactly as the https
+/// arm digests its part.
+#[allow(clippy::too_many_arguments)] // reference + credentials + the part + the view
+pub(crate) fn stream_artifact_from<T: Transport>(
+    transport: &T,
+    reference: &Reference,
+    alias: Option<&str>,
+    expect: ShapeExpectation,
+    have: u64,
+    path: &std::path::Path,
+    tick: &mut dyn FnMut(u64, Option<u64>) -> bool,
+) -> Result<(u64, String), ItemFail> {
+    let Reference::Oci {
+        host,
+        repo,
+        tag,
+        digest,
+        sha256,
+    } = reference
+    else {
+        return Err(ItemFail::Named(ResolveError::DownloadFailed {
+            origin: reference.to_string(),
+            reason: "the OCI adapter serves tfs+oci: references only".to_string(),
+        }));
+    };
+    let book = OciBook::new(crate::credentials::book(), alias, host);
+    let oci_transport = OciTransport(transport);
+    let client = Client::new(&oci_transport, &book);
+    let r = repo_ref(host, repo, tag.as_deref(), digest.as_deref());
+    let map = |e: OciError| match e {
+        OciError::Transport(f) => ItemFail::Transport(f),
+        other => ItemFail::Named(named(alias, book.take_looked_for(), other)),
+    };
+    let artifact = client.resolve(&r, expect).map_err(map)?;
+    check_byte_pin(&r, sha256.as_deref(), &artifact.layer).map_err(map)?;
+    let n = client
+        .stream_blob_from(&r, &artifact.layer, have, path, Some(tick))
         .map_err(map)?;
     Ok((n, artifact.origin))
 }

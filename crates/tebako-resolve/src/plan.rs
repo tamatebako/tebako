@@ -443,6 +443,44 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
                         tebako_oci::ArtifactClass::RuntimeBundle,
                     ),
                 };
+                // The resume arm, as on the https branch: a part left by
+                // an interrupted pull continues, and the completed file is
+                // digested and renamed onto the staged path so the commit
+                // and its integrity checks are untouched.
+                let resume = item.sha256_pin.as_deref().and_then(|pin| {
+                    if !crate::resume::enabled() {
+                        return None;
+                    }
+                    let part = crate::resume::part_path(&item.tmp_dir, &item.display, pin);
+                    let have = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+                    (have > 0).then_some((part, have))
+                });
+                if let Some((part, have)) = resume {
+                    crate::oci::stream_artifact_from(
+                        transport,
+                        &item.reference,
+                        item.registry_alias.as_deref(),
+                        expect,
+                        have,
+                        &part,
+                        &mut tick,
+                    )?;
+                    let (sha, size) = crate::resume::digest_file(&part).map_err(|e| {
+                        ItemFail::Named(ResolveError::CacheIo {
+                            op: "reading the resume part",
+                            path: part.clone(),
+                            reason: e.to_string(),
+                        })
+                    })?;
+                    std::fs::rename(&part, tmp).map_err(|e| {
+                        ItemFail::Named(ResolveError::CacheIo {
+                            op: "landing the resumed part",
+                            path: part.clone(),
+                            reason: e.to_string(),
+                        })
+                    })?;
+                    return Ok((sha, size, item.reference.to_string()));
+                }
                 match crate::oci::stream_artifact(
                     transport,
                     &item.reference,
