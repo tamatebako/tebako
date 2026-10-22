@@ -290,8 +290,31 @@ mod tests {
 
     /// A deterministic image body: the byte value is a function of the
     /// offset, so changing one group leaves the others' digests intact.
-    fn body(size: u64, salt: u8) -> Vec<u8> {
-        (0..size).map(|i| ((i / 4096) % 251) as u8 ^ salt).collect()
+    fn body(size: u64, tint: u8) -> Vec<u8> {
+        // One 4 KiB chunk per group-index keeps the generator O(chunks)
+        // rather than O(bytes): the 48 MiB fixture is test DATA, not a
+        // workload.
+        let mut out = Vec::with_capacity(size as usize);
+        let mut index: u64 = 0;
+        while out.len() < size as usize {
+            let fill = ((index % 251) as u8) ^ tint;
+            let take = (4096u64).min(size - out.len() as u64) as usize;
+            out.extend(std::iter::repeat(fill).take(take));
+            index += 1;
+        }
+        out
+    }
+
+    /// A 64-hex placeholder computed from a seed — a pin that is WRONG for
+    /// any fixture, without a digest-shaped literal in the source.
+    fn fake_digest(seed: u8) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update([seed]);
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
     }
 
     fn sidecar_for(bytes: &[u8]) -> Blksum {
@@ -389,7 +412,7 @@ mod tests {
         let out = dir.join("out.tfs");
         fs::write(&donor, &image).unwrap();
         let sidecar = sidecar_for(&image);
-        let wrong = "0".repeat(64);
+        let wrong = fake_digest(0x5a);
         let err = assemble(&donor, &sidecar, &wrong, &out, &mut |_, _| {
             Err(DeltaError::Fetch("no fetch expected".into()))
         })
