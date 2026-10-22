@@ -30,6 +30,9 @@
 //!                [--check <c>] [--list] [--record] [--keep-scratch]
 //!                [--runtime <exe> --runtime-image <env.tfs>]
 //!                (the payload's in-image acceptance contract, spec 26 §2)
+//!   tebako blksum <image> [--out <path>] [--json]
+//!                (the ONE producer of an image's lazy-mount digest
+//!                sidecar outside publish — spec 39 §3)
 //!
 //! Lean press flow (gem's do_press_three_part): resolve the runtime into
 //! the shared cache (in-process HTTPS via crates/tebako-http) → seed the
@@ -72,6 +75,7 @@
 //!   gem's 8-byte padding is cosmetic);
 //! - .tebako.yml is not read.
 
+pub mod blksum;
 pub mod bundle;
 pub mod check;
 pub mod compose;
