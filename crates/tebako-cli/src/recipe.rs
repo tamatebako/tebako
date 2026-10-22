@@ -410,10 +410,22 @@ mod tests {
 
     #[test]
     fn the_default_path_is_the_project_roots_tebakofile() {
+        // Platform-neutral on purpose: the root's own spelling is the
+        // platform's (`/tmp/...` on POSIX, a joined path on Windows), so
+        // the test asserts the CONTRACT — a Tebakofile directly under the
+        // press root — rather than a literal path. A literal here failed
+        // main's windows-cli leg once; the assertion must not encode one
+        // filesystem's shape.
         let opts = opts_node();
+        let path = default_path(&opts);
         assert_eq!(
-            default_path(&opts),
-            PathBuf::from("/tmp/hello-node/Tebakofile")
+            path.file_name().and_then(|n| n.to_str()),
+            Some("Tebakofile")
+        );
+        let root = opts.root();
+        assert_eq!(
+            path.parent(),
+            Some(Path::new(root.trim_end_matches(['/', '\\'])))
         );
     }
 
