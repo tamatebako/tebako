@@ -16,7 +16,7 @@
 
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 use tpkg::lazy::{group_count_for, Blksum};
@@ -231,6 +231,51 @@ fn sha256_file(path: &Path) -> Result<String, DeltaError> {
         .collect())
 }
 
+/// The store entries that can donate blocks to a target of this family:
+/// every `runtimes/<engine>-<ver>-<tebako>-<platform>/` directory holding at
+/// least one `.tfs`, most recently modified first, never the target's own
+/// entry. The shim calls this with its own `runtimes` root; the press
+/// resolver calls it with the store it resolves against.
+///
+/// The scan is deliberately dumb — a directory listing, no manifest reads —
+/// because a donor is a hint, not a trust decision: the assembler verifies
+/// every carried group against the target's sidecar, so a wrong donor costs
+/// fetches, never correctness.
+pub fn donor_images(root: &Path, engine: &str, platform: &str, exclude_dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let prefix = format!("{engine}-");
+    let suffix = format!("-{platform}");
+    let mut donors: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with(&prefix) || !name.ends_with(&suffix) {
+            continue;
+        }
+        let dir = entry.path();
+        if dir == exclude_dir || !dir.is_dir() {
+            continue;
+        }
+        let Ok(files) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for file in files.flatten() {
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("tfs") {
+                continue;
+            }
+            let modified = file
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            donors.push((modified, path));
+        }
+    }
+    donors.sort_by(|a, b| b.0.cmp(&a.0));
+    donors.into_iter().map(|(_, path)| path).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -379,6 +424,42 @@ mod tests {
     }
 
     #[test]
+    fn the_donor_scan_matches_the_family_and_never_the_target() {
+        let dir = scratch("donors");
+        let root = dir.join("runtimes");
+        let mk = |name: &str, image: Option<&str>| {
+            let entry = root.join(name);
+            fs::create_dir_all(&entry).unwrap();
+            if let Some(image) = image {
+                fs::write(entry.join(image), b"bytes").unwrap();
+            }
+        };
+        mk("node-24.9.0-2.8.10-macos-arm64", Some("a.tfs"));
+        mk("node-24.10.0-2.8.12-macos-arm64", Some("b.tfs"));
+        mk("node-24.11.0-2.8.13-macos-arm64", None); // no image: not a donor
+        mk("ruby-4.0.7-0.16.32-macos-arm64", Some("c.tfs")); // other engine
+        mk("node-24.12.0-2.8.14-linux-gnu-x86_64", Some("d.tfs")); // other platform
+        let target = root.join("node-24.13.0-2.8.56-macos-arm64");
+        fs::create_dir_all(&target).unwrap();
+
+        let donors = donor_images(&root, "node", "macos-arm64", &target);
+        let names: Vec<String> = donors
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert!(names.contains(&"a.tfs".to_string()), "{names:?}");
+        assert!(names.contains(&"b.tfs".to_string()), "{names:?}");
+
+        // The target's own entry is never a donor, even when it holds an
+        // image.
+        fs::write(target.join("self.tfs"), b"bytes").unwrap();
+        let donors = donor_images(&root, "node", "macos-arm64", &target);
+        assert!(!donors.iter().any(|p| p.starts_with(&target)), "{donors:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn assembling_over_the_donor_is_refused() {
         let dir = scratch("over");
         let image = body(5 * 1024 * 1024, 0);
@@ -399,6 +480,9 @@ mod tests {
     }
 
     #[test]
+    // Heavy on purpose: the group size is the format's fixed 4 MiB, so a
+    // <10% claim needs at least eleven groups. The wall time is debug-build
+    // sha256 (~240 MB hashed across the fixture and the assembly), not I/O.
     fn a_twelve_group_image_moves_under_ten_percent() {
         let dir = scratch("ten");
         let donor_bytes = body(12 * 4 * 1024 * 1024, 0);
