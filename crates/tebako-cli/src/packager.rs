@@ -135,7 +135,7 @@ fn write_node_manifest(opts: &PressOptions) -> Result<(), TebakoError> {
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| name.clone());
-    let version = utc_timestamp();
+    let version = crate::reproducible_stamp();
     let requirement = opts
         .engine_requirement
         .as_deref()
@@ -187,7 +187,7 @@ fn write_app_manifest(
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| name.clone());
-    let version = utc_timestamp();
+    let version = crate::reproducible_stamp();
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  \
          producer: {{tool: tebako-press, tool_version: \"{tv}\"}}\n  \
@@ -208,39 +208,6 @@ fn write_app_manifest(
     fs::create_dir_all(&dir).map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
     fs::write(dir.join("manifest.yaml"), manifest)
         .map_err(|e| plain_error(format!("{e} writing the app manifest")))
-}
-
-/// A UTC RFC3339 timestamp without pulling chrono into the CLI: the
-/// seconds-precision form the manifest grammar accepts.
-fn utc_timestamp() -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    // days-since-epoch → civil date (Howard Hinnant's algorithm, the
-    // std-lib-free spelling)
-    let days = now / 86_400;
-    let secs = now % 86_400;
-    let (y, m, d) = civil_from_days(days as i64);
-    format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
-        secs / 3600,
-        (secs % 3600) / 60,
-        secs % 60
-    )
-}
-
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
 /// Init: recreate o/{s,r,p} and seed s/ from the runtime image
