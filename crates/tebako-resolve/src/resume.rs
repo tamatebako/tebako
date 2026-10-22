@@ -79,6 +79,16 @@ pub fn seed(part: &Path) -> std::io::Result<(Sha256, u64)> {
     Ok((hasher, total))
 }
 
+/// The digest of a completed part (and its byte count): one read of the
+/// file, the same value a fresh stream's inline hash would have produced.
+/// A resumed pull re-reads its whole object here — the prefix was never in
+/// a live hasher, and persisting that hasher would make an interrupted
+/// program's crash points part of the wire format.
+pub fn digest_file(part: &Path) -> std::io::Result<(String, u64)> {
+    let (hasher, total) = seed(part)?;
+    Ok((crate::fetch::hex_digest(&hasher.finalize()), total))
+}
+
 /// Discard a part — the corrupt-join and abandoned-artifact path.
 pub fn discard(part: &Path) {
     let _ = std::fs::remove_file(part);
@@ -131,6 +141,17 @@ mod tests {
         whole.update(prefix);
         whole.update(b"abcdef");
         assert_eq!(joined, crate::fetch::hex_digest(&whole.finalize()));
+    }
+
+    #[test]
+    fn a_completed_part_hashes_to_the_same_digest_as_the_whole_object() {
+        let dir = scratch("digest");
+        let part = dir.join("x.resume");
+        let bytes = b"the whole object, byte for byte";
+        std::fs::write(&part, bytes).unwrap();
+        let (sha, size) = digest_file(&part).unwrap();
+        assert_eq!(size, bytes.len() as u64);
+        assert_eq!(sha, crate::fetch::sha256_hex(bytes));
     }
 
     #[test]

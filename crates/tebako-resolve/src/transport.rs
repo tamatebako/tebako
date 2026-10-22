@@ -110,20 +110,23 @@ pub trait Transport {
         self.stream_asset(url, accept, authenticate, writer, on_progress)
     }
 
-    /// Stream one byte range of `url` into `writer` — the resume seam.
+    /// Continue `url` into `path` from `have` — the resume seam. On a 206
+    /// the bytes APPEND (the part held the prefix); on a 200 the server
+    /// ignored the Range, so the object REPLACES the file (an append
+    /// would splice two different bodies). The file is the seam's, not an
+    /// opaque writer's, for exactly that reason.
+    ///
     /// The default is the NAMED refusal: a transport that cannot resume
     /// says so, and the caller restarts from zero rather than guessing.
-    /// Production overrides through tebako-http's range client (the same
-    /// `RangeAnswer` classifier the lazy layer uses).
-    fn stream_range(
+    fn stream_range_to(
         &self,
         url: &str,
         header: Option<(&str, &str)>,
-        offset: u64,
-        writer: &mut dyn std::io::Write,
+        have: u64,
+        path: &std::path::Path,
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<RangeStream, FetchError> {
-        let _ = (header, offset, writer, on_progress);
+        let _ = (header, have, path, on_progress);
         Err(FetchError::DownloadFailed(format!(
             "range streaming is not supported by this transport ({url})"
         )))
@@ -289,12 +292,12 @@ pub trait Transport {
 pub struct HttpTransport;
 
 impl Transport for HttpTransport {
-    fn stream_range(
+    fn stream_range_to(
         &self,
         url: &str,
         header: Option<(&str, &str)>,
-        offset: u64,
-        writer: &mut dyn std::io::Write,
+        have: u64,
+        path: &std::path::Path,
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<RangeStream, FetchError> {
         // The lazy layer's own classifier: a 206 validated against the
@@ -302,7 +305,7 @@ impl Transport for HttpTransport {
         // is Full — never silently treated as the window. The ask is
         // OPEN-ENDED: a resumed pull knows where to start, and the
         // response states how far it goes.
-        let answer = tebako_http::get_open_range(url, offset, header)?;
+        let answer = tebako_http::get_open_range(url, have, header)?;
         let (bytes, total, partial) = match answer {
             tebako_http::RangeAnswer::Partial(body) => (body.bytes, body.total, true),
             tebako_http::RangeAnswer::Full(body) => {
@@ -310,9 +313,23 @@ impl Transport for HttpTransport {
                 (body.bytes, total, false)
             }
         };
-        writer
-            .write_all(&bytes)
-            .map_err(|e| FetchError::DownloadFailed(format!("{e} writing {url}")))?;
+        let io = |e: std::io::Error| {
+            FetchError::DownloadFailed(format!("{e} writing {} for {url}", path.display()))
+        };
+        if partial {
+            // The part already holds `have` bytes; the window continues it.
+            use std::io::Write as _;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(io)?;
+            file.write_all(&bytes).map_err(io)?;
+        } else {
+            // The server ignored the Range: the object REPLACES the part
+            // (appending would splice two different bodies).
+            std::fs::write(path, &bytes).map_err(io)?;
+        }
         if let Some(cb) = on_progress {
             if !cb(bytes.len() as u64, Some(total)) {
                 return Err(FetchError::Cancelled(url.to_string()));
@@ -595,15 +612,18 @@ mod tests {
 
     #[test]
     fn the_resume_seam_refuses_by_name_when_a_transport_cannot_resume() {
-        let mut out = Vec::new();
+        let dir = std::env::temp_dir().join(format!("tebako-resolve-ns-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("x.resume");
         let err = WholeObjectOnly
-            .stream_range("https://example.invalid/blob.tfs", None, 0, &mut out, None)
+            .stream_range_to("https://example.invalid/blob.tfs", None, 0, &part, None)
             .unwrap_err();
         assert!(
             err.to_string().contains("range streaming is not supported"),
             "{err}"
         );
-        assert!(out.is_empty());
+        assert!(!part.exists(), "a refused seam writes nothing");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The production transport answers the window it was asked for: a
@@ -616,12 +636,13 @@ mod tests {
         let file = dir.join("blob.bin");
         std::fs::write(&file, b"0123456789abcdef").unwrap();
 
-        let mut out = Vec::new();
+        let part = dir.join("blob.resume");
+        std::fs::write(&part, b"0123").unwrap();
         let answer = HttpTransport
-            .stream_range(&tebako_http::file_url(&file), None, 4, &mut out, None)
+            .stream_range_to(&tebako_http::file_url(&file), None, 4, &part, None)
             .unwrap();
         assert_eq!(answer, RangeStream::Partial { written: 12 });
-        assert_eq!(out, b"456789abcdef");
+        assert_eq!(std::fs::read(&part).unwrap(), b"0123456789abcdef");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
