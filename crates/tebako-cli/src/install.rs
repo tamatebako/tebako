@@ -50,6 +50,7 @@ use tebako_shim::{manage, versions, ShimError};
 use tebako_term::set::ProgressSet;
 use tpkg::Platform;
 
+use crate::closure_tree::{ClosureTree, NodeState, TreeNode};
 use crate::error::TebakoError;
 use crate::image_manifest;
 
@@ -583,12 +584,28 @@ pub fn install_with<T: Transport + Sync>(
 ) -> Result<InstallOutcome, TebakoError> {
     if looks_like_reference(target) {
         let plan = plan_from_reference(target)?;
-        finish_install(home, fetcher, plan, shim_binary, &mut Vec::new())
+        finish_install(
+            home,
+            fetcher,
+            plan,
+            shim_binary,
+            &mut Vec::new(),
+            &mut ClosureTree::new(target.to_string()),
+            0,
+        )
     } else if let Some(erf) = engine_install_target(home, target)? {
         install_engine(home, &erf, shim_binary)
     } else {
         let plan = plan_from_nickname(home, fetcher, target, host)?;
-        finish_install(home, fetcher, plan, shim_binary, &mut Vec::new())
+        finish_install(
+            home,
+            fetcher,
+            plan,
+            shim_binary,
+            &mut Vec::new(),
+            &mut ClosureTree::new(target.to_string()),
+            0,
+        )
     }
 }
 
@@ -1833,12 +1850,42 @@ fn finish_install<T: Transport + Sync>(
     plan: InstallPlan,
     shim_binary: Option<&Path>,
     chain: &mut Vec<String>,
+    tree: &mut ClosureTree,
+    depth: usize,
 ) -> Result<InstallOutcome, TebakoError> {
     let cache = PayloadCache::with_root(home);
     let mut notes = Vec::new();
     // Set when a mirror served the bytes (spec 04 §2's chain, MINOR 10):
     // the record names the locator afterwards.
     let mut served_by_mirror: Option<Reference> = None;
+    // The closure tree (arc 03 §5): the root prints the header, every
+    // node prints its row BEFORE its own bytes move, and the root prints
+    // the tally on the way out.
+    let is_root = depth == 0;
+    if is_root {
+        eprintln!("{}", tree.header());
+    }
+    let cached_now = cache
+        .get(&plan.name, &plan.version)
+        .map_err(map_resolve)?
+        .is_some();
+    let node = tree.push(TreeNode {
+        depth,
+        name: plan.name.clone(),
+        version: plan.version.clone(),
+        kind: plan.kind,
+        edge_from: (depth > 0).then(|| chain.last().cloned().unwrap_or_default()),
+        size_hint: None,
+        state: if cached_now {
+            NodeState::Cached
+        } else {
+            NodeState::Fetching
+        },
+        skip_reason: None,
+    });
+    if let Some(line) = tree.line(node) {
+        eprintln!("{line}");
+    }
 
     // Cache hit ⇒ the trust anchor stands (spec 05 §4 — verified at
     // install, never re-verified per run); a miss streams through the
@@ -2021,6 +2068,15 @@ fn finish_install<T: Transport + Sync>(
         }
     };
 
+    tree.set_state(
+        node,
+        if cached_now {
+            NodeState::Cached
+        } else {
+            NodeState::Fetched
+        },
+    );
+
     // A mirror-served install stays visible in the record, not only in
     // the console line: the note names the locator, and the journal entry
     // makes the chain's use auditable.
@@ -2104,7 +2160,8 @@ fn finish_install<T: Transport + Sync>(
     // short-circuits on the cache check — the chain guard (S32) turns
     // a true cycle into the named error first.
     chain.push(plan.name.clone());
-    let closure = install_dependency_closure(home, fetcher, &mirror, shim_binary, chain);
+    let closure =
+        install_dependency_closure(home, fetcher, &mirror, shim_binary, chain, tree, depth);
     chain.pop();
     closure?;
 
@@ -2138,6 +2195,10 @@ fn finish_install<T: Transport + Sync>(
             entry.origin.as_deref().unwrap_or("")
         ),
     );
+
+    if is_root {
+        eprintln!("{}", tree.summary());
+    }
 
     Ok(InstallOutcome {
         name: plan.name,
@@ -2184,12 +2245,15 @@ fn landed_versions(home: &Path, name: &str) -> Result<Vec<String>, TebakoError> 
 /// ([`install_executable_edge`]). An edge naming a payload
 /// already on `chain` is a requires CYCLE (spec 18 §5.6 S32) — a named
 /// error, never the cache check's silent short-circuit.
+#[allow(clippy::too_many_arguments)] // the install plumbing + the tree view
 fn install_dependency_closure<T: Transport + Sync>(
     home: &Path,
     fetcher: &Fetcher<T>,
     mirror: &Manifest,
     shim_binary: Option<&Path>,
     chain: &mut Vec<String>,
+    tree: &mut ClosureTree,
+    depth: usize,
 ) -> Result<(), TebakoError> {
     let host = tpkg::Platform::host();
     for req in mirror.requires() {
@@ -2199,7 +2263,48 @@ fn install_dependency_closure<T: Transport + Sync>(
         // stderr), never an error.
         if !req.covers_host(host) {
             journal(home, &req.platform_skip_journal(host));
-            eprintln!("tebako: note: {}", req.platform_skip_note(host));
+            let (skip_name, skip_constraint, skip_kind) = match req {
+                tpkg::Requirement::Toolkit {
+                    name, constraint, ..
+                } => (
+                    name.as_str(),
+                    constraint.to_string(),
+                    tpkg::PayloadKind::Toolkit,
+                ),
+                tpkg::Requirement::Data {
+                    name, constraint, ..
+                } => (
+                    name.as_str(),
+                    constraint.to_string(),
+                    tpkg::PayloadKind::Data,
+                ),
+                tpkg::Requirement::Executable { name, .. } => {
+                    (name.as_str(), String::new(), tpkg::PayloadKind::Toolkit)
+                }
+                tpkg::Requirement::Runtime {
+                    engine, constraint, ..
+                } => (
+                    engine.as_str(),
+                    constraint.to_string(),
+                    tpkg::PayloadKind::Runtime,
+                ),
+                tpkg::Requirement::Language { .. } => {
+                    ("language", String::new(), tpkg::PayloadKind::Language)
+                }
+            };
+            let skip = tree.push(TreeNode {
+                depth: depth + 1,
+                name: skip_name.to_string(),
+                version: skip_constraint,
+                kind: skip_kind,
+                edge_from: Some(mirror.name().to_string()),
+                size_hint: None,
+                state: NodeState::Skipped,
+                skip_reason: Some(req.platform_skip_note(host)),
+            });
+            if let Some(line) = tree.line(skip) {
+                eprintln!("{line}");
+            }
             continue;
         }
         // spec 30 §1/§3: a spawned-runtime edge installs the RUNTIME into
@@ -2251,6 +2356,8 @@ fn install_dependency_closure<T: Transport + Sync>(
                 expose,
                 shim_binary,
                 chain,
+                tree,
+                depth,
             )?;
             continue;
         }
@@ -2275,6 +2382,38 @@ fn install_dependency_closure<T: Transport + Sync>(
                 ..
             } => ("data", name, constraint, registry.as_deref()),
         };
+        // The tree row comes BEFORE the node's bytes: a landed version
+        // is a cached node (no fetch), anything else is about to fetch.
+        let landed_cached = {
+            let eval = versions::from_validated(constraint);
+            let installed = landed_versions(home, name)?;
+            installed.iter().any(|v| eval.matches(v))
+        };
+        let kind_enum = if kind == "toolkit" {
+            tpkg::PayloadKind::Toolkit
+        } else {
+            tpkg::PayloadKind::Data
+        };
+        let node = tree.push(TreeNode {
+            depth: depth + 1,
+            name: name.clone(),
+            version: constraint.to_string(),
+            kind: kind_enum,
+            edge_from: Some(mirror.name().to_string()),
+            size_hint: None,
+            state: if landed_cached {
+                NodeState::Cached
+            } else {
+                NodeState::Fetching
+            },
+            skip_reason: None,
+        });
+        if let Some(line) = tree.line(node) {
+            eprintln!("{line}");
+        }
+        if landed_cached {
+            continue;
+        }
         if chain.iter().any(|n| n == name) {
             let start = chain
                 .iter()
@@ -2290,15 +2429,9 @@ fn install_dependency_closure<T: Transport + Sync>(
                 ),
             ));
         }
-        let eval = versions::from_validated(constraint);
-        // The pin the user installed stands — LANDED installs only (an
-        // aborted attempt's staged bytes re-run the tail and heal).
-        let installed = landed_versions(home, name)?;
-        if installed.iter().any(|v| eval.matches(v)) {
-            continue;
-        }
         let plan = plan_from_dependency_edge(home, fetcher, mirror, kind, name, constraint, scope)?;
-        finish_install(home, fetcher, plan, shim_binary, chain)?;
+        finish_install(home, fetcher, plan, shim_binary, chain, tree, depth + 1)?;
+        tree.set_state(node, NodeState::Fetched);
     }
     Ok(())
 }
@@ -2441,7 +2574,7 @@ fn install_runtime_edge(
 /// ACTIVE exposed name (spec 07's argv0 model). Without the `payload:`
 /// pin the CAPABILITY scan answers ([`capability_provider`]); the edge
 /// joins the cycle chain like any toolkit/data edge (spec 18 §5.6 S32).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // the edge fields + the install plumbing + the tree
 fn install_executable_edge<T: Transport + Sync>(
     home: &Path,
     fetcher: &Fetcher<T>,
@@ -2453,6 +2586,8 @@ fn install_executable_edge<T: Transport + Sync>(
     expose: &[String],
     shim_binary: Option<&Path>,
     chain: &mut Vec<String>,
+    tree: &mut ClosureTree,
+    depth: usize,
 ) -> Result<(), TebakoError> {
     let eval = versions::from_validated(constraint);
     let provider = match pin {
@@ -2494,7 +2629,7 @@ fn install_executable_edge<T: Transport + Sync>(
                 constraint,
                 registry,
             )?;
-            finish_install(home, fetcher, plan, shim_binary, chain)?.version
+            finish_install(home, fetcher, plan, shim_binary, chain, tree, depth + 1)?.version
         }
     };
     journal(

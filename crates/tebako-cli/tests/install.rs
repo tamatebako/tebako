@@ -2198,6 +2198,98 @@ fn dep_walk_registry_pin_unknown_alias_is_the_named_error() {
     assert!(err.message.contains("nosuch"), "{err:?}");
 }
 
+/// Arc 03 §5's ordering contract, proven through the REAL binary: every
+/// node's row is on screen before that node's bytes are fetched, and the
+/// walk closes with the tally. The tree grows as edges are discovered
+/// (edges live only in the parent's embedded manifest), so the header and
+/// the app row precede the app's download, each dependency's row precedes
+/// its own download, and the tally comes last.
+#[test]
+fn the_closure_tree_prints_each_row_before_its_bytes_and_closes_with_the_tally() {
+    let fx = Fixture::new("treeview");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n  - kind: data\n    name: fonts\n    constraint: \">= 2\"\n    mount: /opt/fonts\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    let inkscape_ref = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));
+    let inkscape_reg = fx.registry(
+        "inkscape-registry.yaml",
+        &versions_registry_yaml("inkscape", "toolkit", &[("1.4.3", &inkscape_ref)]),
+    );
+    let fonts_ref = fx.payload("fonts-2.1.tfs", &data_image("fonts", "2.1"));
+    let fonts_reg = fx.registry(
+        "fonts-registry.yaml",
+        &versions_registry_yaml("fonts", "data", &[("2.1", &fonts_ref)]),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    install::add_registry(&fx.home, &inkscape_reg).unwrap();
+    install::add_registry(&fx.home, &fonts_reg).unwrap();
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_tebako"))
+        .args(["install", "app"])
+        .env("TEBAKO_HOME", &fx.home)
+        .env("TEBAKO_SHIM_BINARY", &fx.shim_binary)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    let at = |needle: &str| {
+        stderr
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle:?} missing from:\n{stderr}"))
+    };
+    let header = at("resolving app");
+    let app_row = at("└ app app 1.0");
+    let app_download = at("downloading payload app@1.0");
+    let toolkit_row = at("└ toolkit inkscape");
+    let toolkit_download = at("downloading payload inkscape@1.4.3");
+    let data_row = at("└ data fonts");
+    let data_download = at("downloading payload fonts@2.1");
+    let tally = at("node(s):");
+
+    assert!(header < app_row, "header before the first row:\n{stderr}");
+    assert!(
+        app_row < app_download,
+        "the app's row precedes its bytes:\n{stderr}"
+    );
+    assert!(
+        app_download < toolkit_row,
+        "dependencies are discovered after the app lands:\n{stderr}"
+    );
+    assert!(
+        toolkit_row < toolkit_download,
+        "the toolkit row precedes its bytes:\n{stderr}"
+    );
+    assert!(
+        toolkit_download < data_row,
+        "the walk keeps discovery order:\n{stderr}"
+    );
+    assert!(
+        data_row < data_download,
+        "the data row precedes its bytes:\n{stderr}"
+    );
+    assert!(
+        data_download < tally,
+        "the tally closes the walk:\n{stderr}"
+    );
+    let last_line = stderr.trim_end().lines().last().unwrap_or_default();
+    assert!(
+        last_line.contains("node(s):"),
+        "the tally is the last line:\n{stderr}"
+    );
+}
+
 #[test]
 fn install_skips_an_edge_not_covering_this_host() {
     // spec 03 §2.3 (schema_minor 9): a requires edge whose triplets: list
