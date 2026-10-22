@@ -509,7 +509,24 @@ impl PayloadCache {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "payload".to_string());
-            publish_to_pool(&self.root, tmp, &sha256);
+            // Reuse a healthy pool entry instead of keeping the streamed
+            // copy: the staged file becomes a second link to the pool's
+            // bytes, so the name and the pool share one inode. The link is
+            // made at a SIBLING path and renamed over the staged file, so a
+            // failed link leaves the staged bytes untouched.
+            let pool = pool_file(&self.root, &sha256);
+            let reused = pool.is_file()
+                && file_sha256(&pool)
+                    .map(|actual| actual.eq_ignore_ascii_case(&sha256))
+                    .unwrap_or(false)
+                && {
+                    let sibling = tmp.with_extension("pool-link");
+                    let _ = fs::remove_file(&sibling);
+                    fs::hard_link(&pool, &sibling).is_ok() && fs::rename(&sibling, tmp).is_ok()
+                };
+            if !reused {
+                publish_to_pool(&self.root, tmp, &sha256);
+            }
             self.finish_place(tmp, &file, &file_name, &sha256, &origin)?;
             Ok((
                 CacheEntry {
