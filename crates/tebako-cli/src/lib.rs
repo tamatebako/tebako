@@ -1161,7 +1161,7 @@ fn press_package_manifest(
                 tool: "tebako-cli".to_string(),
                 tool_version: tebako_version.to_string(),
             },
-            created: rfc3339_now(),
+            created: reproducible_stamp(),
         },
         entries: vec![tpkg::PackageEntry {
             name: stem.clone(),
@@ -1212,11 +1212,50 @@ fn authored_interp_env(root: &Path) -> std::collections::BTreeMap<String, String
 /// chrono in the tree — the civil-from-days algorithm is Howard
 /// Hinnant's).
 fn rfc3339_now() -> String {
-    let secs = std::time::SystemTime::now()
+    rfc3339_utc(now_secs())
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
-    rfc3339_utc(secs)
+        .unwrap_or(0)
+}
+
+/// The press-time stamp every producer-made manifest reads:
+/// `SOURCE_DATE_EPOCH` when the operator set it (the reproducible-builds
+/// convention — the image writer reads the same variable), the wall clock
+/// otherwise.
+///
+/// With it set, a press of an unchanged tree reproduces byte for byte:
+/// the two values that used to read the clock (`identity.version` and
+/// `identity.created` in the app manifest, `package.created` in the
+/// trailer) all pin to the same instant. Unset, the default stands
+/// (tebako#735: every ordinary re-press differs, so install's overwrite
+/// rule keeps the newest payload).
+pub(crate) fn reproducible_stamp() -> String {
+    match std::env::var("SOURCE_DATE_EPOCH") {
+        Ok(value) => stamp_from(Some(&value)),
+        Err(_) => stamp_from(None),
+    }
+}
+
+/// [`reproducible_stamp`]'s body over an explicit value (the testable
+/// half): a parseable epoch pins the stamp, anything else falls back to
+/// the clock with the operator's error named.
+fn stamp_from(source_date_epoch: Option<&str>) -> String {
+    let Some(value) = source_date_epoch else {
+        return rfc3339_now();
+    };
+    match value.trim().parse::<u64>() {
+        Ok(secs) => rfc3339_utc(secs),
+        Err(_) => {
+            eprintln!(
+                "tebako: WARNING: SOURCE_DATE_EPOCH='{value}' is not an integer number of seconds — using the wall clock"
+            );
+            rfc3339_now()
+        }
+    }
 }
 
 fn rfc3339_utc(secs: u64) -> String {
@@ -1926,6 +1965,21 @@ fn human_age(installed_at: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_reproducible_stamp_pins_only_a_parseable_epoch() {
+        // The pin: one fixed instant for every manifest value a press
+        // writes, so an unchanged tree reproduces byte for byte.
+        assert_eq!(stamp_from(Some("1700000000")), "2023-11-14T22:13:20Z");
+        assert_eq!(stamp_from(Some(" 0 ")), "1970-01-01T00:00:00Z");
+        // A malformed value is the operator's error, named — the clock
+        // stands in, never a silent empty stamp.
+        let clock = stamp_from(Some("not-a-number"));
+        assert_ne!(clock, "2023-11-14T22:13:20Z");
+        assert!(clock.ends_with('Z'), "{clock}");
+        // Unset: the wall clock, the ordinary press.
+        assert!(stamp_from(None).ends_with('Z'));
+    }
 
     #[test]
     fn rfc3339_utc_known_dates() {

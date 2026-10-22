@@ -260,12 +260,7 @@ impl RuntimeDeployer {
                         tool: "tebako-cli".to_string(),
                         tool_version: self.tebako_version.clone(),
                     },
-                    created: crate::install::rfc3339_utc(
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0),
-                    ),
+                    created: crate::reproducible_stamp(),
                 },
                 entries: vec![tpkg::PackageEntry {
                     name: name.to_string(),
