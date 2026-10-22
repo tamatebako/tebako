@@ -332,6 +332,13 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         .unwrap_or_else(|| package.clone());
 
     let platform = host_platform()?;
+    // The node arm's FIRST gate runs before any runtime is resolved: a
+    // project without a lockfile cannot be vendored, and a download that
+    // ends in that refusal would be a wasted one.
+    if opts.engine == crate::options::PressEngine::Node {
+        crate::node::require_lockfile(Path::new(&opts.root()))?;
+    }
+
     // The bootstrap is resolved BEFORE the runtime download: the local
     // sources first, else the spec 19 §4 store flow (the CLI's own
     // release asset, downloaded once into the store). The retired v1 C++
