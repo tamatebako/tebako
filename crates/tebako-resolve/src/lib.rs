@@ -27,6 +27,7 @@ pub mod adapters;
 pub mod cache;
 pub mod contract;
 pub mod credentials;
+pub mod delta;
 pub mod error;
 pub mod fetch;
 #[cfg(feature = "git")]
