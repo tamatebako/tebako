@@ -1,0 +1,208 @@
+name: Press reproducibility
+
+# The cross-host leg of the reproducible-press covenant: the SAME commit,
+# fixture, runtime version, and SOURCE_DATE_EPOCH press on two runner
+# classes, and a compare job refuses a differing pair — naming it and the
+# first differing offset, because that offset is what makes a regression
+# debuggable. Same-host identity is unit-level (the press tests); this is
+# the only place two hosts are compared.
+#
+# What it does NOT prove: bit-identical output across ARCHITECTURES. Each
+# leg presses for its own host, so the comparison covers the triplets the
+# matrix names — a green run must never be read as more than that.
+
+on:
+  schedule:
+    # Nightly 04:43 UTC — offset from the CI nightly (03:17) so the two
+    # never contend for the macos pool.
+    - cron: "43 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: press-reproducibility-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The temporary limnifs-write [patch] rides a git fork (see workspace
+  # Cargo.toml) — use the git CLI for the fetch, matching the CI build.
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  # Must match the builtin-baseline in dwarfs-t/vcpkg.json.
+  VCPKG_COMMIT: f14401ca0f2754347c3864da7488a9b955b4e47a
+  # The pin every producer-made manifest reads; both legs MUST agree or
+  # the comparison is meaningless (the job asserts it in its log).
+  SOURCE_DATE_EPOCH: "1700000000"
+  # The one runtime line both legs press against.
+  REPRO_RUBY: "3.3.12"
+
+jobs:
+  press:
+    name: press (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: tebako-rs
+
+      # dwarfs-rs is a sibling path dependency until it has a release.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - name: Restore the vcpkg baseline (dwarfs-t is the single writer)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
+            dwarfs-rs/dwarfs-t "${{ runner.os == 'macOS' && 'arm64-osx-static' || 'x64-linux-static' }}" \
+            || echo "baseline miss — ports build normally"
+
+      - name: Cache the cargo target dir
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            tebako-rs
+          key: press-repro-${{ matrix.os }}
+
+      - name: Install toolchain (rustup)
+        uses: dtolnay/rust-toolchain@1.94.1
+
+      - name: Install native build tools (ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            autoconf automake autoconf-archive libtool \
+            curl zip unzip tar ca-certificates libbz2-dev mono-complete
+
+      - name: Install native build tools (macos)
+        if: runner.os == 'macOS'
+        run: brew install ninja autoconf automake autoconf-archive libtool
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        env:
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
+
+      # Serialized pre-install: sqfs-sys's build.rs would otherwise race
+      # dwarfs-t-sys's CMake-driven vcpkg run on the vcpkg-root lock.
+      - name: Pre-install squashfs-tools-ng (serialized)
+        working-directory: tebako-rs
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            case "${{ runner.arch }}" in
+              ARM64) TRIPLET=arm64-linux-static ;;
+              *) TRIPLET=x64-linux-static ;;
+            esac
+          else TRIPLET=arm64-osx-static; fi
+          ../.vcpkg-root/vcpkg install \
+            --vcpkg-root "${{ github.workspace }}/.vcpkg-root" \
+            --x-wait-for-lock \
+            --x-manifest-root crates/sqfs-sys \
+            --x-install-root "${{ github.workspace }}/.sqfs-installed" \
+            --triplet "$TRIPLET" \
+            --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
+            --overlay-ports crates/sqfs-sys/vcpkg_ports
+          echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/$TRIPLET" >> "$GITHUB_ENV"
+
+      - name: Build the CLI
+        working-directory: tebako-rs
+        run: cargo build -p tebako-cli
+
+      - name: Press the fixture (the one pass the comparison reads)
+        working-directory: tebako-rs
+        env:
+          # The runtime and bootstrap resolve through the store's release
+          # flow — the ambient token keeps it off the anonymous limit.
+          TEBAKO_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "inputs: commit=${{ github.sha }} ruby=$REPRO_RUBY source_date_epoch=$SOURCE_DATE_EPOCH"
+          mkdir -p out
+          ./target/debug/tebako press \
+            -r ci/fixtures/repro-app -e main.rb \
+            -o out/repro-app.tfs -R "$REPRO_RUBY"
+          sha=$(shasum -a 256 out/repro-app.tfs | cut -d' ' -f1)
+          size=$(wc -c < out/repro-app.tfs | tr -d ' ')
+          printf '{"os":"%s","runner_arch":"%s","ruby":"%s","source_date_epoch":"%s","commit":"%s","sha256":"%s","size":%s}\n' \
+            "${{ matrix.os }}" "${{ runner.arch }}" "$REPRO_RUBY" "$SOURCE_DATE_EPOCH" \
+            "${{ github.sha }}" "$sha" "$size" > out/record.json
+          cat out/record.json
+
+      - name: Upload the package and its record
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: press-${{ matrix.os }}
+          path: |
+            tebako-rs/out/repro-app.tfs
+            tebako-rs/out/record.json
+          if-no-files-found: error
+
+  compare:
+    name: compare the digests
+    needs: press
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: press-*
+          merge-multiple: false
+
+      - name: Compare (fail naming the pair and the first differing offset)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          records = []
+          for record in pathlib.Path(".").glob("press-*/record.json"):
+              records.append((record.parent.name, json.loads(record.read_text())))
+          records.sort()
+          if len(records) < 2:
+              sys.exit(f"expected at least two press legs, found {len(records)}: {[r[0] for r in records]}")
+
+          for name, rec in records:
+              print(f"{name}: sha256={rec['sha256']} size={rec['size']} ruby={rec['ruby']} "
+                    f"epoch={rec['source_date_epoch']} commit={rec['commit'][:12]} arch={rec['runner_arch']}")
+
+          # The inputs must agree, or equal output would be an accident.
+          commits = {r["commit"] for _, r in records}
+          rubies = {r["ruby"] for _, r in records}
+          epochs = {r["source_date_epoch"] for _, r in records}
+          if len(commits) != 1 or len(rubies) != 1 or len(epochs) != 1:
+              sys.exit(f"the press INPUTS differ across legs — commit={commits} ruby={rubies} epoch={epochs}")
+
+          base_name, base = records[0]
+          base_bytes = pathlib.Path(base_name, "repro-app.tfs").read_bytes()
+          failed = False
+          for name, rec in records[1:]:
+              if rec["sha256"] == base["sha256"] and rec["size"] == base["size"]:
+                  continue
+              failed = True
+              other = pathlib.Path(name, "repro-app.tfs").read_bytes()
+              first = next((i for i, (a, b) in enumerate(zip(base_bytes, other)) if a != b),
+                           min(len(base_bytes), len(other)))
+              print(f"::error::press differs: {base_name} ({base['sha256'][:12]}, {base['size']} B) vs "
+                    f"{name} ({rec['sha256'][:12]}, {rec['size']} B); first difference at offset {first}")
+          if failed:
+              sys.exit(1)
+          print(f"all {len(records)} legs pressed byte-identically: {base['sha256']}")
+          PY
