@@ -277,14 +277,14 @@ impl<T: Transport + ?Sized> Transport for CredTransport<'_, T> {
         &self,
         url: &str,
         header: Option<(&str, &str)>,
-        range: tebako_http::ByteRange,
+        offset: u64,
         writer: &mut dyn std::io::Write,
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<RangeStream, FetchError> {
         let outcome = self.decide(url);
         let decided = header.or_else(|| outcome.header_ref());
         self.inner
-            .stream_range(url, decided, range, writer, on_progress)
+            .stream_range(url, decided, offset, writer, on_progress)
             .map_err(|e| self.remap(url, &outcome, e))
     }
 }

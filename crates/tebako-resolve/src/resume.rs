@@ -26,8 +26,6 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use tebako_http::ByteRange;
-
 /// `TEBAKO_RESUME=1` opts in; anything else (including unset) keeps the
 /// current restart-from-zero behavior.
 pub fn enabled() -> bool {
@@ -57,23 +55,6 @@ pub fn part_path(tmp_dir: &Path, display: &str, pin: &str) -> PathBuf {
         .collect();
     let pin8: String = pin.chars().take(8).collect();
     tmp_dir.join(format!("{safe}.{pin8}.resume"))
-}
-
-/// The range a resumed attempt asks for: everything after `have`, up to
-/// the whole object's end. `None` when the part is already complete (the
-/// caller verifies instead of asking) or when the object's size is not
-/// known — an open-ended range has no safe `ByteRange` spelling (its
-/// inclusive end would overflow), and a resume with no size to bound is
-/// a restart, not a guess.
-pub fn resume_range(have: u64, total: Option<u64>) -> Option<ByteRange> {
-    let total = total?;
-    if have >= total {
-        return None;
-    }
-    Some(ByteRange {
-        offset: have,
-        len: total - have,
-    })
 }
 
 /// Re-enter the part's prefix into the digest: returns the hasher already
@@ -130,30 +111,6 @@ mod tests {
         // Path separators in the display never escape the tmp dir.
         let nested = part_path(&dir, "a/b\\c", &pin);
         assert_eq!(nested.parent(), Some(dir.as_path()));
-    }
-
-    #[test]
-    fn the_range_starts_after_the_part_and_stops_at_the_objects_end() {
-        assert_eq!(
-            resume_range(0, Some(100)),
-            Some(ByteRange {
-                offset: 0,
-                len: 100
-            })
-        );
-        let r = resume_range(40, Some(100)).unwrap();
-        assert_eq!(
-            r,
-            ByteRange {
-                offset: 40,
-                len: 60
-            }
-        );
-        // A complete (or over-complete) part asks for nothing.
-        assert_eq!(resume_range(100, Some(100)), None);
-        assert_eq!(resume_range(120, Some(100)), None);
-        // Unknown size: a restart, never an unbounded guess.
-        assert_eq!(resume_range(40, None), None);
     }
 
     #[test]

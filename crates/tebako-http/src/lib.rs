@@ -897,6 +897,46 @@ pub struct RangeBody {
     pub etag: Option<String>,
 }
 
+/// What a range GET asks for: a closed window (the lazy layer's group
+/// read) or the OPEN-ENDED tail `bytes=<offset>-` (the resume case — the
+/// interrupted attempt never learned the size, so the response supplies
+/// the total and the served end).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RangeAsk {
+    Closed(ByteRange),
+    Open(u64),
+}
+
+impl RangeAsk {
+    fn wire(&self) -> String {
+        match self {
+            RangeAsk::Closed(range) => range.wire(),
+            RangeAsk::Open(offset) => format!("bytes={offset}-"),
+        }
+    }
+
+    /// The 206 validation: a closed ask knows the exact window it asked
+    /// for; an open ask knows only where it started — the end and the
+    /// total are the response's to state.
+    fn served_ok(&self, served: &ContentRange) -> bool {
+        match self {
+            RangeAsk::Closed(range) => {
+                served.start == range.offset && served.end - served.start + 1 == range.len
+            }
+            RangeAsk::Open(offset) => served.start == *offset,
+        }
+    }
+
+    /// How many bytes the 206 must carry (`None` = whatever the server
+    /// said, checked against Content-Range instead).
+    fn expected_len(&self) -> Option<u64> {
+        match self {
+            RangeAsk::Closed(range) => Some(range.len),
+            RangeAsk::Open(_) => None,
+        }
+    }
+}
+
 /// The range GET's answer: the requested window, or the whole
 /// representation (the eager-fallback signal).
 #[derive(Debug, Clone)]
@@ -933,11 +973,11 @@ fn read_range_body(
 /// anyway — spec 39 §6, the pipeline's artifact rule at group scale).
 fn range_attempt(
     url: &str,
-    range: ByteRange,
+    ask: RangeAsk,
     if_range: Option<&str>,
     header: Option<(&str, &str)>,
 ) -> Result<RangeAnswer, FetchError> {
-    let mut req = raw_agent()?.get(url).header("Range", range.wire());
+    let mut req = raw_agent()?.get(url).header("Range", ask.wire());
     if let Some(validator) = if_range {
         req = req.header("If-Range", validator);
     }
@@ -975,10 +1015,10 @@ fn range_attempt(
                     "206 from {url} carries no valid Content-Range"
                 )));
             };
-            if served.start != range.offset || served.end - served.start + 1 != range.len {
+            if !ask.served_ok(&served) {
                 drain_body(&mut response);
                 return Err(FetchError::DownloadFailed(format!(
-                    "206 from {url} serves bytes {}-{} but the request was {range:?}",
+                    "206 from {url} serves bytes {}-{} but the request was {ask:?}",
                     served.start, served.end
                 )));
             }
@@ -986,12 +1026,21 @@ fn range_attempt(
             let bytes = read_range_body(url, &mut response)?;
             // A cleanly-delimited body that ends short of the window is
             // as failed as a dropped connection: retry the range from
-            // zero, never serve a short group.
-            if bytes.len() as u64 != range.len {
+            // zero, never serve a short group. An OPEN ask's window is
+            // whatever the server said it served, so the body must match
+            // Content-Range instead (a short tail is still a truncation).
+            if let Some(expected) = ask.expected_len() {
+                if bytes.len() as u64 != expected {
+                    return Err(FetchError::DownloadFailed(format!(
+                        "truncated range body from {url}: {} of {expected} bytes",
+                        bytes.len()
+                    )));
+                }
+            } else if bytes.len() as u64 != served.end - served.start + 1 {
                 return Err(FetchError::DownloadFailed(format!(
-                    "truncated range body from {url}: {} of {} bytes",
+                    "truncated range body from {url}: {} of {} served bytes",
                     bytes.len(),
-                    range.len
+                    served.end - served.start + 1
                 )));
             }
             Ok(RangeAnswer::Partial(RangeBody {
@@ -1060,11 +1109,40 @@ pub fn get_range(
             range.offset
         )));
     }
+    get_range_inner(url, RangeAsk::Closed(range), if_range, header)
+}
+
+/// The OPEN-ENDED tail `bytes=<offset>-`: everything from `offset` to the
+/// object's end. The resume case — the interrupted attempt never learned
+/// the size, so the 206's Content-Range supplies it, and a 200 (no range
+/// support / validator change) is the same loud eager fallback.
+pub fn get_open_range(
+    url: &str,
+    offset: u64,
+    header: Option<(&str, &str)>,
+) -> Result<RangeAnswer, FetchError> {
+    get_range_inner(url, RangeAsk::Open(offset), None, header)
+}
+
+fn get_range_inner(
+    url: &str,
+    ask: RangeAsk,
+    if_range: Option<&str>,
+    header: Option<(&str, &str)>,
+) -> Result<RangeAnswer, FetchError> {
     if let Some(path) = url.strip_prefix("file://") {
         let bytes = read_file_url(file_path_from_url(path))?;
         let total = bytes.len() as u64;
-        let start = (range.offset as usize).min(bytes.len());
-        let end = (start + (range.len as usize).min(bytes.len() - start)).min(bytes.len());
+        let (start, end) = match ask {
+            RangeAsk::Closed(range) => {
+                let start = (range.offset as usize).min(bytes.len());
+                (
+                    start,
+                    (start + (range.len as usize).min(bytes.len() - start)).min(bytes.len()),
+                )
+            }
+            RangeAsk::Open(offset) => ((offset as usize).min(bytes.len()), bytes.len()),
+        };
         return Ok(RangeAnswer::Partial(RangeBody {
             bytes: bytes[start..end].to_vec(),
             total,
@@ -1076,7 +1154,7 @@ pub fn get_range(
     let mut attempts = 0;
     let mut throttles = 0;
     loop {
-        match range_attempt(url, range, if_range, header) {
+        match range_attempt(url, ask, if_range, header) {
             Ok(answer) => return Ok(answer),
             Err(FetchError::Throttled {
                 retry_after,
@@ -1095,7 +1173,7 @@ pub fn get_range(
                 attempts += 1;
                 if attempts >= RANGE_ATTEMPTS {
                     return Err(FetchError::DownloadFailed(format!(
-                        "failed to fetch the range {range:?} of {url} after {RANGE_ATTEMPTS} attempts: {msg}"
+                        "failed to fetch the range {ask:?} of {url} after {RANGE_ATTEMPTS} attempts: {msg}"
                     )));
                 }
                 std::thread::sleep(RANGE_RETRY_DELAY);
@@ -2345,6 +2423,26 @@ mod range_tests {
         })
     }
 
+    /// The open-ended ask's responder: `bytes=<start>-` (no end) serves
+    /// the tail and states the total, exactly as a resume's 206 does.
+    fn open_range_responder(data: Arc<Vec<u8>>, etag: &str) -> Handler {
+        let etag = etag.to_string();
+        Arc::new(move |_, heard| match &heard.range {
+            Some(range) => {
+                let span = range.strip_prefix("bytes=").unwrap();
+                let (start, end) = span.split_once('-').unwrap();
+                assert!(end.is_empty(), "an open ask carries no end: {range}");
+                let start: usize = start.parse().unwrap();
+                let last = data.len() - 1;
+                Reply::whole(206, "Partial Content", data[start..].to_vec()).header(
+                    "content-range",
+                    format!("bytes {start}-{last}/{}", data.len()),
+                )
+            }
+            None => Reply::whole(200, "OK", data.as_ref().clone()).header("etag", etag.clone()),
+        })
+    }
+
     // ----------------------- contract legs (§10) -----------------------
 
     #[test]
@@ -2376,6 +2474,50 @@ mod range_tests {
         assert_eq!(body.bytes.as_slice(), &data[768..]);
         assert_eq!(body.total, 1000);
         assert_eq!(server.heard()[0].range.as_deref(), Some("bytes=768-999"));
+    }
+
+    #[test]
+    fn an_open_range_answers_the_tail_the_server_bounds() {
+        let data = Arc::new(patterned(64));
+        let server = RangeServer::start(open_range_responder(Arc::clone(&data), "\"v1\""));
+        let answer = get_open_range(&server.url, 40, None).unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial")
+        };
+        assert_eq!(body.bytes.as_slice(), &data[40..]);
+        assert_eq!(body.total, 64, "the 206's Content-Range supplies the size");
+        // The wire form is open-ended: the interrupted attempt does not
+        // know (and must not guess) how far the object runs.
+        assert_eq!(server.heard()[0].range.as_deref(), Some("bytes=40-"));
+    }
+
+    #[test]
+    fn an_open_range_falls_back_loudly_when_the_server_ignores_it() {
+        let data = Arc::new(patterned(300));
+        let whole = Arc::clone(&data);
+        let server = RangeServer::start(Arc::new(move |_, _| {
+            Reply::whole(200, "OK", whole.as_ref().clone())
+        }));
+        let answer = get_open_range(&server.url, 8, None).unwrap();
+        let RangeAnswer::Full(body) = answer else {
+            panic!("a 200 must never pose as the window")
+        };
+        assert_eq!(body.bytes.as_slice(), data.as_slice());
+    }
+
+    #[test]
+    fn an_open_file_range_serves_the_tail_with_the_whole_total() {
+        let dir = std::env::temp_dir().join(format!("tebako-http-open-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("blob.bin");
+        std::fs::write(&file, b"0123456789").unwrap();
+        let answer = get_open_range(&file_url(&file), 4, None).unwrap();
+        let RangeAnswer::Partial(body) = answer else {
+            panic!("expected Partial")
+        };
+        assert_eq!(body.bytes, b"456789");
+        assert_eq!(body.total, 10);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

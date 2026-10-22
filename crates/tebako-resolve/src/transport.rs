@@ -119,11 +119,11 @@ pub trait Transport {
         &self,
         url: &str,
         header: Option<(&str, &str)>,
-        range: tebako_http::ByteRange,
+        offset: u64,
         writer: &mut dyn std::io::Write,
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<RangeStream, FetchError> {
-        let _ = (header, range, writer, on_progress);
+        let _ = (header, offset, writer, on_progress);
         Err(FetchError::DownloadFailed(format!(
             "range streaming is not supported by this transport ({url})"
         )))
@@ -293,14 +293,16 @@ impl Transport for HttpTransport {
         &self,
         url: &str,
         header: Option<(&str, &str)>,
-        range: tebako_http::ByteRange,
+        offset: u64,
         writer: &mut dyn std::io::Write,
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<RangeStream, FetchError> {
         // The lazy layer's own classifier: a 206 validated against the
         // request is Partial, a 200 (no range support / validator change)
-        // is Full — never silently treated as the window.
-        let answer = tebako_http::get_range(url, range, None, header)?;
+        // is Full — never silently treated as the window. The ask is
+        // OPEN-ENDED: a resumed pull knows where to start, and the
+        // response states how far it goes.
+        let answer = tebako_http::get_open_range(url, offset, header)?;
         let (bytes, total, partial) = match answer {
             tebako_http::RangeAnswer::Partial(body) => (body.bytes, body.total, true),
             tebako_http::RangeAnswer::Full(body) => {
@@ -595,13 +597,7 @@ mod tests {
     fn the_resume_seam_refuses_by_name_when_a_transport_cannot_resume() {
         let mut out = Vec::new();
         let err = WholeObjectOnly
-            .stream_range(
-                "https://example.invalid/blob.tfs",
-                None,
-                tebako_http::ByteRange { offset: 0, len: 16 },
-                &mut out,
-                None,
-            )
+            .stream_range("https://example.invalid/blob.tfs", None, 0, &mut out, None)
             .unwrap_err();
         assert!(
             err.to_string().contains("range streaming is not supported"),
@@ -622,16 +618,10 @@ mod tests {
 
         let mut out = Vec::new();
         let answer = HttpTransport
-            .stream_range(
-                &tebako_http::file_url(&file),
-                None,
-                tebako_http::ByteRange { offset: 4, len: 6 },
-                &mut out,
-                None,
-            )
+            .stream_range(&tebako_http::file_url(&file), None, 4, &mut out, None)
             .unwrap();
-        assert_eq!(answer, RangeStream::Partial { written: 6 });
-        assert_eq!(out, b"456789");
+        assert_eq!(answer, RangeStream::Partial { written: 12 });
+        assert_eq!(out, b"456789abcdef");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
