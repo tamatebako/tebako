@@ -43,6 +43,22 @@ pub fn stage_project(project: &Path, entry: &Path, stage: &Path) -> Result<PathB
             project.display()
         )));
     }
+    // The staging tree must live OUTSIDE the project: inside it, the copy
+    // would walk the stage it is writing (the real-pair test found this as
+    // an ENAMETOOLONG on the first run). Refuse by name instead of
+    // silently skipping — a press whose staging dir is inside the payload
+    // would leak the stage into itself.
+    if let (Ok(project_abs), Some(stage_abs)) =
+        (std::fs::canonicalize(project), canonical_prefix(stage))
+    {
+        if stage_abs.starts_with(&project_abs) {
+            return Err(plain_error(format!(
+                "the staging tree {} sits inside the project {} — stage outside the project so the payload cannot copy itself",
+                stage.display(),
+                project.display()
+            )));
+        }
+    }
     if stage.exists() {
         std::fs::remove_dir_all(stage).map_err(|e| {
             plain_error(format!("{e} clearing the staging tree {}", stage.display()))
@@ -60,6 +76,31 @@ pub fn stage_project(project: &Path, entry: &Path, stage: &Path) -> Result<PathB
         )));
     }
     Ok(staged_entry)
+}
+
+/// The canonical spelling of `path` even when it does not exist yet:
+/// canonicalize the longest existing ancestor and append the rest. Plain
+/// `canonicalize` fails on a missing path, and macOS temp dirs are
+/// symlinked (`/var` → `/private/var`), so a lexical join would compare
+/// two different spellings of the same place.
+fn canonical_prefix(path: &Path) -> Option<PathBuf> {
+    let mut existing = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    loop {
+        if let Ok(canonical) = std::fs::canonicalize(&existing) {
+            let mut out = canonical;
+            for part in tail.iter().rev() {
+                out.push(part);
+            }
+            return Some(out);
+        }
+        tail.push(existing.file_name()?.to_os_string());
+        existing = existing.parent()?.to_path_buf();
+    }
 }
 
 fn copy_tree(from: &Path, to: &Path) -> Result<(), TebakoError> {
@@ -260,6 +301,58 @@ mod tests {
         );
         let handed = std::fs::read_to_string(stage.join("image.txt")).unwrap();
         assert_eq!(handed.trim(), image.to_string_lossy());
+    }
+
+    /// The same contract against a REAL pair, opt-in: set
+    /// `TEBAKO_NODE_PAIR` (the runtime exe) and `TEBAKO_NODE_IMAGE` (its env
+    /// image) from an installed store entry, then
+    /// `cargo test -p tebako-cli --lib node:: -- --ignored`.
+    ///
+    /// This is the test the stand-in cannot be: it proves the argv spelling
+    /// against the driver that will actually run it (the mount-relative
+    /// entry was discovered exactly this way).
+    #[test]
+    #[ignore = "needs TEBAKO_NODE_PAIR and TEBAKO_NODE_IMAGE (a real installed node pair)"]
+    fn a_real_pair_installs_a_zero_dependency_closure() {
+        let (Ok(pair), Ok(image)) = (
+            std::env::var("TEBAKO_NODE_PAIR"),
+            std::env::var("TEBAKO_NODE_IMAGE"),
+        ) else {
+            panic!("set TEBAKO_NODE_PAIR and TEBAKO_NODE_IMAGE to a real installed node pair");
+        };
+        let dir = temp("real-pair");
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"name":"hello","version":"1.0.0","bin":{"hello":"cli.js"},"engines":{"node":">=24"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("package-lock.json"),
+            r#"{"name":"hello","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"hello","version":"1.0.0"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join("cli.js"), "console.log('hi')\n").unwrap();
+        let stage = temp("real-pair-stage");
+        stage_project(&dir, Path::new("cli.js"), &stage).unwrap();
+        let out = npm_ci(&PathBuf::from(pair), &PathBuf::from(image), &stage, false).unwrap();
+        // An empty closure: npm reports it and creates no node_modules.
+        assert!(!out.is_empty(), "npm said nothing");
+    }
+
+    #[test]
+    fn a_stage_inside_the_project_is_refused_by_name() {
+        // The real-pair run found this as an ENAMETOOLONG: a stage under the
+        // project makes the copy walk the tree it is writing.
+        let project = temp("stage-inside");
+        fixture(&project);
+        let stage = project.join("out").join("stage");
+        let err = stage_project(&project, Path::new("cli.js"), &stage).unwrap_err();
+        assert!(
+            err.message.contains("sits inside the project"),
+            "{}",
+            err.message
+        );
+        assert!(!stage.exists(), "nothing was created");
     }
 
     #[cfg(unix)]
