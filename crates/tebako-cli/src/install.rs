@@ -1680,8 +1680,7 @@ pub(crate) fn resolve_row_reference(
                 };
                 let reference = Reference::parse(locator)
                     .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
-                let mirrors =
-                    parse_mirrors(reg_ref, name, &entry.version, row_mirrors)?;
+                let mirrors = parse_mirrors(reg_ref, name, &entry.version, row_mirrors)?;
                 (reference, Some(sha256.to_string()), mirrors)
             } else {
                 // tebako#711 (registry MINOR 6): the row's additive
@@ -1711,8 +1710,7 @@ pub(crate) fn resolve_row_reference(
                     }
                     _ => {}
                 }
-                let mirrors =
-                    parse_mirrors(reg_ref, name, &entry.version, row_mirrors)?;
+                let mirrors = parse_mirrors(reg_ref, name, &entry.version, row_mirrors)?;
                 (reference, Some(sha256.to_string()), mirrors)
             }
         }
@@ -1873,8 +1871,7 @@ fn finish_install<T: Transport + Sync>(
             let progress = ProgressSet::stderr();
             let title = format!("payload {}@{}", plan.name, plan.version);
             let mut failures: Vec<(i32, String)> = Vec::new();
-            let mut landed: Option<(CacheEntry, InstallStatus, Option<String>)> =
-                None;
+            let mut landed: Option<(CacheEntry, InstallStatus, Option<String>)> = None;
             for reference in &attempts {
                 let sink = InstallSink::default();
                 let item = FetchItem {
@@ -1932,9 +1929,9 @@ fn finish_install<T: Transport + Sync>(
                     failures.push((e.code, format!("{reference}: {e}")));
                     continue;
                 }
-                let entry = sink
-                    .take_entry()
-                    .ok_or_else(|| err(EX_TEBAKO_INSTALL, "the fetch plan ended without a commit"))?;
+                let entry = sink.take_entry().ok_or_else(|| {
+                    err(EX_TEBAKO_INSTALL, "the fetch plan ended without a commit")
+                })?;
                 landed = Some((entry.0, entry.1, sink.take_signer()));
                 break;
             }

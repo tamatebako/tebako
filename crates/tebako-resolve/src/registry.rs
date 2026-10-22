@@ -408,9 +408,8 @@ fn check_mirror_list(what: &str, mirrors: &[String]) -> Result<(), RegistryError
         if mirror.trim().is_empty() {
             return Err(invalid_entry(format!("{what}[{i}] must not be empty")));
         }
-        Reference::parse(mirror).map_err(|e| {
-            invalid_entry(format!("{what}[{i}] '{mirror}' does not parse: {e}"))
-        })?;
+        Reference::parse(mirror)
+            .map_err(|e| invalid_entry(format!("{what}[{i}] '{mirror}' does not parse: {e}")))?;
     }
     Ok(())
 }
@@ -1976,11 +1975,7 @@ payloads:
 
         let unpinned = universal.replace(&format!("?sha256={whole}"), "");
         let err = Registry::from_yaml(&unpinned).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("carries no ?sha256= pin"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("carries no ?sha256= pin"), "{err}");
 
         // The version-level spelling on a per-triplet row duplicates the
         // platforms map's job — refused by name.

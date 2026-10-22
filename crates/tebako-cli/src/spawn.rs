@@ -565,7 +565,13 @@ fn spawned_payload_row<T: Transport>(
             // spec 09 §4's press-time point: the declared signature
             // verifies BEFORE the bytes enter the cache and before the
             // lock row pins their digest (the compose closure's rule).
-            install::verify_signature(home, fetcher, &fetched, &install_plan, &install_plan.reference)?;
+            install::verify_signature(
+                home,
+                fetcher,
+                &fetched,
+                &install_plan,
+                &install_plan.reference,
+            )?;
             let (cached, _status) = cache
                 .install(
                     &install_plan.name,
