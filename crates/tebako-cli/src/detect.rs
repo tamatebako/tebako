@@ -12,36 +12,41 @@
 
 use std::path::{Path, PathBuf};
 
-/// What the project is — the engine axis the press will target. Today the
-/// press engine is the Ruby scenario machinery; the other project kinds
-/// are recognized so the refusal can name them instead of calling an
-/// unknown directory empty.
+/// What the project is — the engine axis the press targets. Ruby is the
+/// engine the press backend implements today; Node's plan is DERIVED (so
+/// the refusal can name the entry and the requirement it read) while its
+/// vendoring backend is still to come; python and rust are recognized so
+/// the refusal names them instead of calling the directory empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectKind {
     Ruby,
+    Node,
 }
 
 impl ProjectKind {
     pub fn as_str(self) -> &'static str {
         match self {
             ProjectKind::Ruby => "ruby",
+            ProjectKind::Node => "node",
         }
     }
 }
 
 /// A detected project: the press root (absolute, as given), the entry
-/// point relative to it (the spelling `--entry-point` takes), and what the
-/// project is.
+/// point relative to it (the spelling `--entry-point` takes), what the
+/// project is, and — where the engine's manifest declares one — the
+/// engine requirement the runtime must satisfy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectPlan {
     pub root: PathBuf,
     pub entry: PathBuf,
     pub kind: ProjectKind,
+    pub requirement: Option<String>,
 }
 
-/// The marker files probed, in order. The order IS the priority: a
-/// directory carrying both a Gemfile and a package.json is a Ruby project
-/// with node tooling, which is how the Ruby press reads it today.
+/// The marker files probed for the RUBY layout, in order. A directory
+/// carrying both a Gemfile and a package.json is a Ruby project with node
+/// tooling, which is how the Ruby press reads it today.
 const MARKERS: &[(&str, ProjectKind)] = &[("Gemfile", ProjectKind::Ruby)];
 
 /// Detect the project rooted at `dir`. `Err` carries the complete named
@@ -56,14 +61,23 @@ pub fn detect(dir: &Path) -> Result<ProjectPlan, String> {
     let (marker_name, kind) = match marker {
         Some((name, kind)) => (*name, *kind),
         None => {
-            // Recognized-but-unsupported projects get their own sentence:
-            // an author whose python project is refused should not be told
-            // the directory is empty.
-            for (name, engine) in [
-                ("package.json", "node"),
-                ("pyproject.toml", "python"),
-                ("Cargo.toml", "rust"),
-            ] {
+            // A node project's plan IS derivable (package.json carries the
+            // entry and the engine requirement), so it is derived here and
+            // refused at the BACKEND, where the message can name what was
+            // read. The kinds whose mainfest the press cannot yet read at
+            // all keep the recognized-but-unsupported sentence: an author
+            // whose python project is refused should not be told the
+            // directory is empty.
+            if dir.join("package.json").is_file() {
+                let (entry, requirement) = node_plan(&dir)?;
+                return Ok(ProjectPlan {
+                    root: dir,
+                    entry,
+                    kind: ProjectKind::Node,
+                    requirement,
+                });
+            }
+            for (name, engine) in [("pyproject.toml", "python"), ("Cargo.toml", "rust")] {
                 if dir.join(name).is_file() {
                     return Err(format!(
                         "this directory is a {engine} project ({name}): the {engine} press backend is not available in this release — the project-kind detection ships for ruby first; press a ruby project, or see the feedstock model in the guides for other engines"
@@ -93,7 +107,70 @@ pub fn detect(dir: &Path) -> Result<ProjectPlan, String> {
         root: dir,
         entry,
         kind,
+        requirement: None,
     })
+}
+
+/// The entry point and engine requirement of a node project, read from
+/// `package.json`: `bin` (the string form, or the map's entry — the one
+/// named like the package wins, else a single key, else the entry is
+/// ambiguous), else `main`, else `index.js` when it exists. `engines.node`
+/// is the requirement the runtime must satisfy. Anything unreadable or
+/// ambiguous is refused by name — a guessed entry is a broken package the
+/// author only meets later.
+fn node_plan(dir: &Path) -> Result<(PathBuf, Option<String>), String> {
+    let path = dir.join("package.json");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("its package.json cannot be read: {e}"))?;
+    let parsed =
+        tebako_json::parse(&text).map_err(|e| format!("its package.json does not parse: {e}"))?;
+    let requirement = parsed
+        .find("engines")
+        .and_then(|e| e.find("node"))
+        .and_then(|v| v.as_string());
+    let package_name = parsed.find("name").and_then(|v| v.as_string());
+
+    if let Some(bin) = parsed.find("bin") {
+        match bin {
+            tebako_json::Value::String(s) => return Ok((PathBuf::from(s), requirement)),
+            tebako_json::Value::Object(entries) => {
+                if let Some((_, value)) = package_name
+                    .as_ref()
+                    .and_then(|name| entries.iter().find(|(k, _)| k == name))
+                {
+                    if let Some(spelled) = value.as_string() {
+                        return Ok((PathBuf::from(spelled), requirement));
+                    }
+                }
+                match entries.as_slice() {
+                    [(_, value)] => {
+                        if let Some(spelled) = value.as_string() {
+                            return Ok((PathBuf::from(spelled), requirement));
+                        }
+                    }
+                    [] => {}
+                    _ => {
+                        return Err(format!(
+                            "its package.json declares several bin commands ({}) and none is named like the package — pass -e <entry> to name the entry point",
+                            entries
+                                .iter()
+                                .map(|(k, _)| k.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ))
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if let Some(main) = parsed.find("main").and_then(|v| v.as_string()) {
+        return Ok((PathBuf::from(main), requirement));
+    }
+    if dir.join("index.js").is_file() {
+        return Ok((PathBuf::from("index.js"), requirement));
+    }
+    Err("its package.json declares no bin/main script and the root holds no index.js".to_string())
 }
 
 /// The entry point of a Ruby project: the single executable script under
@@ -269,19 +346,70 @@ mod tests {
     }
 
     #[test]
-    fn a_non_ruby_project_names_its_engine_and_the_current_limit() {
-        let dir = temp("node");
+    fn a_node_project_plan_is_derived_from_package_json() {
+        let dir = temp("node-bin");
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"name":"hello","bin":{"hello":"cli.js","other":"x.js"},"engines":{"node":">=24"}}"#,
+        )
+        .unwrap();
+        let plan = detect(&dir).unwrap();
+        assert_eq!(plan.kind, ProjectKind::Node);
+        assert_eq!(plan.entry, PathBuf::from("cli.js"));
+        assert_eq!(plan.requirement.as_deref(), Some(">=24"));
+
+        // The bin string form, and the single-key map's fallback.
+        let one = temp("node-bin-string");
+        std::fs::write(one.join("package.json"), r#"{"bin":"run.js"}"#).unwrap();
+        assert_eq!(detect(&one).unwrap().entry, PathBuf::from("run.js"));
+
+        let single = temp("node-bin-single");
+        std::fs::write(single.join("package.json"), r#"{"bin":{"tool":"t.js"}}"#).unwrap();
+        assert_eq!(detect(&single).unwrap().entry, PathBuf::from("t.js"));
+        assert_eq!(detect(&single).unwrap().requirement, None);
+
+        // `main`, then the root index.js.
+        let main = temp("node-main");
+        std::fs::write(main.join("package.json"), r#"{"main":"lib/app.js"}"#).unwrap();
+        assert_eq!(detect(&main).unwrap().entry, PathBuf::from("lib/app.js"));
+
+        let index = temp("node-index");
+        std::fs::write(index.join("package.json"), "{}").unwrap();
+        std::fs::write(index.join("index.js"), "\n").unwrap();
+        assert_eq!(detect(&index).unwrap().entry, PathBuf::from("index.js"));
+    }
+
+    #[test]
+    fn a_node_project_with_no_derivable_entry_is_refused_by_name() {
+        let dir = temp("node-empty");
         std::fs::write(dir.join("package.json"), "{}").unwrap();
         let err = detect(&dir).unwrap_err();
-        assert!(
-            err.contains("node") && err.contains("package.json"),
-            "{err}"
-        );
-        assert!(!err.contains("no project detected"), "{err}");
+        assert!(err.contains("no bin/main script"), "{err}");
 
+        let ambiguous = temp("node-ambiguous");
+        std::fs::write(
+            ambiguous.join("package.json"),
+            r#"{"name":"hello","bin":{"one":"a.js","two":"b.js"}}"#,
+        )
+        .unwrap();
+        let err = detect(&ambiguous).unwrap_err();
+        assert!(err.contains("several bin commands"), "{err}");
+        assert!(err.contains("one, two"), "{err}");
+
+        let broken = temp("node-broken");
+        std::fs::write(broken.join("package.json"), "{not json").unwrap();
+        assert!(detect(&broken).unwrap_err().contains("does not parse"));
+    }
+
+    #[test]
+    fn the_kinds_with_no_manifest_reader_still_name_their_engine() {
         let py = temp("python");
         std::fs::write(py.join("pyproject.toml"), "").unwrap();
         assert!(detect(&py).unwrap_err().contains("python"));
+
+        let rs = temp("rust");
+        std::fs::write(rs.join("Cargo.toml"), "").unwrap();
+        assert!(detect(&rs).unwrap_err().contains("rust"));
     }
 
     #[test]
