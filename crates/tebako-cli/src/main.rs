@@ -78,6 +78,11 @@ const USAGE: &str = "Usage:
                                        edge strands, the default would dangle, or
                                        the row is the payload's last (--force
                                        overrides, loudly)
+  tebako registry doctor <path-or-url> [--full] [--sample <n>] [--json]
+                                       conformance against the HOST: the document
+                                       gate plus row resolution, and with --full the
+                                       served bytes vs the pin and the declared
+                                       signatures (exit 0 conformant / 1 problems)
   tebako setup                         seed the official registry into the config
                                        (installer flow; idempotent, user-removable)
   tebako keys import <file>            register a public key into the trusted keyring
@@ -168,7 +173,11 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     // `doctor` is read-only end to end (spec 35 §1) and this install
     // JOURNALS, so the verb skips it — the network section reports the
     // effective configuration instead of installing it.
-    let read_only = args.first().map(|a| a.as_str()) == Some("doctor");
+    let read_only = args.first().map(|a| a.as_str()) == Some("doctor")
+        // `registry doctor` judges a HOST, never the local store: it must
+        // not install network config or stamp the layout on the way in.
+        || (args.first().map(|a| a.as_str()) == Some("registry")
+            && args.get(1).map(|a| a.as_str()) == Some("doctor"));
     if !read_only {
         if let Some(home) = tfs::journal::tebako_home_dir() {
             tebako_shim::config::install_network_config(&home)
@@ -198,7 +207,10 @@ fn run(args: &[String]) -> Result<(), CliExit> {
             ))
         || (subcommand == "doctor" && rest.iter().any(|a| a == "--json"))
         || (subcommand == "registry"
-            && rest.first().map(|a| a.as_str()) == Some("validate")
+            && matches!(
+                rest.first().map(|a| a.as_str()),
+                Some("validate" | "doctor")
+            )
             && rest.iter().any(|a| a == "--json"));
     if machine_stdout {
         eprintln!("{VERSION_BANNER}");
@@ -526,7 +538,7 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
 fn run_registry(args: &[String]) -> Result<(), CliExit> {
     let Some(verb) = args.first() else {
         return Err(CliExit::Usage(
-            "usage: tebako registry <validate|retire> …".to_string(),
+            "usage: tebako registry <validate|retire|doctor> …".to_string(),
         ));
     };
     match verb.as_str() {
@@ -550,6 +562,61 @@ fn run_registry(args: &[String]) -> Result<(), CliExit> {
                 ));
             };
             let (out, code) = tebako_cli::registry::validate(input, json)?;
+            print!("{out}");
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
+        "doctor" => {
+            const FORM: &str =
+                "usage: tebako registry doctor <path-or-url> [--full] [--sample <n>] [--json]";
+            let mut input: Option<&str> = None;
+            let mut json = false;
+            let mut full = false;
+            let mut sample: Option<usize> = None;
+            let mut i = 1;
+            while i < args.len() {
+                let arg = &args[i];
+                let (flag, inline) = match arg.split_once('=') {
+                    Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+                    _ => (arg.as_str(), None),
+                };
+                match flag {
+                    "--json" => json = true,
+                    "--full" => full = true,
+                    "--sample" => {
+                        let value = match inline {
+                            Some(v) => v,
+                            None => {
+                                i += 1;
+                                args.get(i).cloned().ok_or_else(|| {
+                                    CliExit::Usage(format!(
+                                        "option '--sample' requires a value\n{FORM}"
+                                    ))
+                                })?
+                            }
+                        };
+                        sample = Some(value.parse::<usize>().map_err(|_| {
+                            CliExit::Usage(format!(
+                                "--sample takes a positive count, not '{value}'\n{FORM}"
+                            ))
+                        })?);
+                        if sample == Some(0) {
+                            return Err(CliExit::Usage(format!(
+                                "--sample 0 would check nothing\n{FORM}"
+                            )));
+                        }
+                    }
+                    other if input.is_none() && !other.starts_with('-') => input = Some(other),
+                    _ => return Err(CliExit::Usage(FORM.to_string())),
+                }
+                i += 1;
+            }
+            let Some(input) = input else {
+                return Err(CliExit::Usage(FORM.to_string()));
+            };
+            let (out, code) = tebako_cli::registry::doctor(input, full, sample, json)?;
             print!("{out}");
             if code != 0 {
                 std::process::exit(code);
@@ -592,7 +659,7 @@ fn run_registry(args: &[String]) -> Result<(), CliExit> {
             Ok(())
         }
         other => Err(CliExit::Usage(format!(
-            "unknown registry verb '{other}' — usage: tebako registry <validate|retire> …"
+            "unknown registry verb '{other}' — usage: tebako registry <validate|retire|doctor> …"
         ))),
     }
 }
