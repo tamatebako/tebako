@@ -24,6 +24,19 @@ pub const NPM_CLI: &str = "/lib/node_modules/npm/bin/npm-cli.js";
 /// the vendor step, and the VCS metadata is not payload material.
 const SKIP: &[&str] = &["node_modules", ".git", ".gitignore", ".npmrc"];
 
+/// The press's FIRST node gate: the closure is vendored lockfile-true, so
+/// a project without `package-lock.json` is refused by name — before any
+/// runtime is resolved or downloaded.
+pub fn require_lockfile(project: &Path) -> Result<(), TebakoError> {
+    if project.join("package-lock.json").is_file() {
+        return Ok(());
+    }
+    Err(plain_error(format!(
+        "{} holds no package-lock.json — the press vendors the closure lockfile-true; commit the lockfile (npm install --package-lock-only) and press again",
+        project.display()
+    )))
+}
+
 /// Copy `project` into `stage`, refusing a project whose closure cannot be
 /// reproduced: `package-lock.json` is required (a press with no lockfile is
 /// a NAMED error naming the missing file — never a floating resolve), and
@@ -36,13 +49,7 @@ pub fn stage_project(project: &Path, entry: &Path, stage: &Path) -> Result<PathB
             project.display()
         )));
     }
-    let lock = project.join("package-lock.json");
-    if !lock.is_file() {
-        return Err(plain_error(format!(
-            "{} holds no package-lock.json — the press vendors the closure lockfile-true; commit the lockfile (npm install --package-lock-only) and press again",
-            project.display()
-        )));
-    }
+    require_lockfile(project)?;
     // The staging tree must live OUTSIDE the project: inside it, the copy
     // would walk the stage it is writing (the real-pair test found this as
     // an ENAMETOOLONG on the first run). Refuse by name instead of
