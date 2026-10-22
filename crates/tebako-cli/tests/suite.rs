@@ -20,6 +20,8 @@ fn opts() -> PressOptions {
         prefix: PathBuf::from("/tmp/prefix"),
         cwd: None,
         ruby_requested: Some("3.3.7".to_string()),
+        engine: Default::default(),
+        engine_requirement: None,
         mode: PressMode::Lean,
         embed: None,
         log_level: "error".to_string(),
