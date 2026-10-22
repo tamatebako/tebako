@@ -86,6 +86,7 @@ pub mod info;
 pub mod inspect;
 pub mod install;
 pub mod keys;
+pub mod node;
 pub mod options;
 pub mod packager;
 pub mod publish;
