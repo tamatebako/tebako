@@ -37,6 +37,7 @@ pub mod oci;
 pub mod plan;
 pub mod reference;
 pub mod registry;
+pub mod resume;
 pub mod store;
 pub mod transport;
 
