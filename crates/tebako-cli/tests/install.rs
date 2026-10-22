@@ -1841,6 +1841,32 @@ fn embedded_manifest_mismatch_with_the_registry_is_a_named_error() {
     let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
     assert!(err.message.contains("inconsistent"), "{err:?}");
     assert!(err.message.contains("9.9"), "{err:?}");
+
+    // tebako#872: the refusal places NOTHING — the payload and its trust
+    // anchor are absent, so a retry is a real fetch, never a cache HIT
+    // on bytes the install already refused.
+    let store = fx.payloads_dir().join("app");
+    assert!(!store.join("1.0.tfs").exists(), "the payload was placed");
+    assert!(
+        !store.join("1.0.tfs.sha256").exists(),
+        "the trust anchor was placed"
+    );
+    assert!(
+        !store.join("1.0.manifest.yaml").exists(),
+        "the mirror was written"
+    );
+
+    // The retry against a truthful row fetches and installs: the refusal
+    // left no state that blocks or shortcuts it.
+    let corrected = fx.payload("app-1.0.tfs", &image);
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("app", "9.9", &corrected, Some("9.9")),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+    let out = install::install(&fx.home, "app@9.9", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.status, tebako_resolve::InstallStatus::Installed);
+    assert_eq!(fs::read(&out.path).unwrap(), image);
 }
 
 #[test]
