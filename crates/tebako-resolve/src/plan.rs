@@ -310,6 +310,43 @@ fn stream_once<T: Transport, W: std::io::Write + Send>(
                 None,
                 None,
             );
+            // The resume arm (spec 04 §2's chain of work): a part left by
+            // an interrupted pull continues instead of restarting. It
+            // needs a digest anchor to verify the join, so a pull with no
+            // pin never resumes; the part is named for the artifact AND
+            // its pin, so two artifacts can never splice.
+            let resume = item.sha256_pin.as_deref().and_then(|pin| {
+                if !crate::resume::enabled() || !crate::resume::transport_resumes(url) {
+                    return None;
+                }
+                let part = crate::resume::part_path(&item.tmp_dir, &item.display, pin);
+                let have = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+                (have > 0).then_some((part, have))
+            });
+            if let Some((part, have)) = resume {
+                let answer = scoped.stream_range_to(url, None, have, &part, Some(&mut tick));
+                // A range failure keeps the part: the pipeline's retry
+                // re-attempts the resume, and a later run picks it up.
+                answer.map_err(ItemFail::Transport)?;
+                let (sha, size) = crate::resume::digest_file(&part).map_err(|e| {
+                    ItemFail::Named(ResolveError::CacheIo {
+                        op: "reading the resume part",
+                        path: part.clone(),
+                        reason: e.to_string(),
+                    })
+                })?;
+                // The commit consumes `tmp` as it always has; moving the
+                // completed part into place keeps the rest of the
+                // pipeline untouched.
+                std::fs::rename(&part, tmp).map_err(|e| {
+                    ItemFail::Named(ResolveError::CacheIo {
+                        op: "landing the resumed part",
+                        path: part.clone(),
+                        reason: e.to_string(),
+                    })
+                })?;
+                return Ok((sha, size, url.clone()));
+            }
             let r = scoped.stream(url, &mut out, Some(&mut tick));
             (r, url.clone())
         }
@@ -781,6 +818,22 @@ mod tests {
         execute_plan(&t, FetchPlan::new("test plan", items), jobs, Some(&sink))
     }
 
+    /// The same plan over an injected transport (the resume arm's mock).
+    fn run_plan_with_transport<T: Transport + Sync>(
+        _dir: &Path,
+        items: Vec<FetchItem<'static>>,
+        jobs: usize,
+        transport: T,
+    ) -> Result<(), ResolveError> {
+        let sink = ProgressSet::new(Vec::new(), false);
+        execute_plan(
+            &transport,
+            FetchPlan::new("test plan", items),
+            jobs,
+            Some(&sink),
+        )
+    }
+
     /// The engine reads the process-wide TEBAKO_OFFLINE gate; every plan
     /// test serializes on the crate-wide env mutex so the offline test
     /// never races a sibling's fetch.
@@ -1036,6 +1089,135 @@ mod tests {
         let err = run_plan(&dir, vec![item], 1).unwrap_err();
         std::env::remove_var("TEBAKO_OFFLINE");
         assert!(matches!(err, ResolveError::Offline { .. }), "{err:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // -------------------------------------------------------------
+    // the resume arm (spec 04 §2's interrupted-transfer case)
+    // -------------------------------------------------------------
+
+    /// A transport whose whole GET serves the object and whose range seam
+    /// serves the tail from the offset it was handed — and records that
+    /// offset, which is the property under test.
+    struct RangeMock {
+        whole: Vec<u8>,
+        seen_offset: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    }
+
+    impl Transport for RangeMock {
+        fn get(&self, _url: &str) -> Result<Vec<u8>, FetchError> {
+            Ok(self.whole.clone())
+        }
+
+        fn stream(
+            &self,
+            _url: &str,
+            writer: &mut dyn std::io::Write,
+            on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+        ) -> Result<u64, FetchError> {
+            writer.write_all(&self.whole).unwrap();
+            if let Some(cb) = on_progress {
+                cb(self.whole.len() as u64, Some(self.whole.len() as u64));
+            }
+            Ok(self.whole.len() as u64)
+        }
+
+        fn stream_range_to(
+            &self,
+            _url: &str,
+            _header: Option<(&str, &str)>,
+            have: u64,
+            path: &Path,
+            on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+        ) -> Result<crate::transport::RangeStream, FetchError> {
+            self.seen_offset
+                .store(have, std::sync::atomic::Ordering::SeqCst);
+            use std::io::Write as _;
+            let tail = &self.whole[have as usize..];
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .unwrap();
+            file.write_all(tail).unwrap();
+            if let Some(cb) = on_progress {
+                cb(tail.len() as u64, Some(self.whole.len() as u64));
+            }
+            Ok(crate::transport::RangeStream::Partial {
+                written: tail.len() as u64,
+            })
+        }
+    }
+
+    #[test]
+    fn a_part_left_by_an_interrupted_pull_is_continued_not_restarted() {
+        let _guard = env_guard();
+        std::env::set_var("TEBAKO_RESUME", "1");
+        let dir = scratch("resume");
+        std::fs::create_dir_all(dir.join("tmp")).unwrap();
+        let whole = b"0123456789abcdef".to_vec();
+        let pin = crate::fetch::sha256_hex(&whole);
+        // The interrupted attempt left six bytes behind, named for the
+        // artifact and its pin.
+        let part = crate::resume::part_path(dir.join("tmp").as_path(), "resumed", &pin);
+        std::fs::write(&part, &whole[..6]).unwrap();
+
+        let dest = dir.join("out-resumed");
+        let item = https_item(
+            &dir,
+            "resumed",
+            "https://example.invalid/blob.bin",
+            Some(pin),
+        );
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let transport = RangeMock {
+            whole: whole.clone(),
+            seen_offset: std::sync::Arc::clone(&seen),
+        };
+        run_plan_with_transport(&dir, vec![item], 1, transport).unwrap();
+        std::env::remove_var("TEBAKO_RESUME");
+
+        assert_eq!(
+            seen.load(std::sync::atomic::Ordering::SeqCst),
+            6,
+            "the range asked for the remainder, not the object"
+        );
+        assert_eq!(std::fs::read(&dest).unwrap(), whole);
+        assert!(!part.exists(), "the part is consumed by the commit");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn without_the_opt_in_the_pull_restarts_from_zero() {
+        let _guard = env_guard();
+        std::env::remove_var("TEBAKO_RESUME");
+        let dir = scratch("noresume");
+        std::fs::create_dir_all(dir.join("tmp")).unwrap();
+        let whole = b"0123456789abcdef".to_vec();
+        let pin = crate::fetch::sha256_hex(&whole);
+        let part = crate::resume::part_path(dir.join("tmp").as_path(), "resumed", &pin);
+        std::fs::write(&part, &whole[..6]).unwrap();
+
+        let dest = dir.join("out-resumed");
+        let item = https_item(
+            &dir,
+            "resumed",
+            "https://example.invalid/blob.bin",
+            Some(pin),
+        );
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let transport = RangeMock {
+            whole: whole.clone(),
+            seen_offset: std::sync::Arc::clone(&seen),
+        };
+        run_plan_with_transport(&dir, vec![item], 1, transport).unwrap();
+
+        assert_eq!(
+            seen.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "the range seam was never asked"
+        );
+        assert_eq!(std::fs::read(&dest).unwrap(), whole);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

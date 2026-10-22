@@ -1930,7 +1930,10 @@ fn finish_install<T: Transport + Sync>(
                     // The declared signature verifies BEFORE the sha pin
                     // (spec 09 §4's order); `install_staged` re-checks the
                     // pin against the caller's anchor inside the commit.
-                    sha256_pin: None,
+                    // The item ALSO carries the anchor so the stream can
+                    // verify inline (spec 05 §6) and, with it, resume an
+                    // interrupted pull (a join needs something to verify).
+                    sha256_pin: anchor.clone(),
                     size_hint: None,
                     tmp_dir: cache.root().join("tmp"),
                     registry_alias: plan.registry_alias.clone(),

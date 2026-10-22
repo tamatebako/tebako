@@ -273,18 +273,18 @@ impl<T: Transport + ?Sized> Transport for CredTransport<'_, T> {
             .map_err(|e| self.remap(url, &outcome, e))
     }
 
-    fn stream_range(
+    fn stream_range_to(
         &self,
         url: &str,
         header: Option<(&str, &str)>,
-        offset: u64,
-        writer: &mut dyn std::io::Write,
+        have: u64,
+        path: &std::path::Path,
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<RangeStream, FetchError> {
         let outcome = self.decide(url);
         let decided = header.or_else(|| outcome.header_ref());
         self.inner
-            .stream_range(url, decided, offset, writer, on_progress)
+            .stream_range_to(url, decided, have, path, on_progress)
             .map_err(|e| self.remap(url, &outcome, e))
     }
 }
