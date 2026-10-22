@@ -366,7 +366,7 @@ pub fn resolve_closure<T: Transport>(
                 let fetched = fetcher
                     .fetch_scoped(&plan.reference, plan.registry_alias.as_deref())
                     .map_err(install::map_resolve)?;
-                install::verify_signature(home, fetcher, &fetched, &plan)?;
+                install::verify_signature(home, fetcher, &fetched, &plan, &plan.reference)?;
                 let (cached, _status) = cache
                     .install(
                         &plan.name,
