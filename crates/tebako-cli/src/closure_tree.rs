@@ -89,6 +89,11 @@ impl ClosureTree {
         }
     }
 
+    /// The rendered row for one node (the walk prints it as it moves).
+    pub fn line(&self, index: usize) -> Option<String> {
+        self.nodes.get(index).map(row)
+    }
+
     pub fn nodes(&self) -> &[TreeNode] {
         &self.nodes
     }
