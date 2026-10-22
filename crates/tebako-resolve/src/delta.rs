@@ -119,6 +119,22 @@ pub fn assemble(
             sidecar.size_bytes
         )));
     }
+    // Assembling over the donor would destroy the very bytes the copy arm
+    // reads; the caller's tmp naming never does this, and a direct call
+    // that tries is refused by name rather than corrupting a store entry.
+    if out.exists() {
+        let same = fs::canonicalize(out)
+            .ok()
+            .zip(fs::canonicalize(donor).ok())
+            .map(|(a, b)| a == b)
+            .unwrap_or(false);
+        if same {
+            return Err(DeltaError::Donor(
+                "the output path is the donor image itself — refusing to assemble over the source"
+                    .to_string(),
+            ));
+        }
+    }
     let mut donor_file = File::open(donor).ok();
     let donor_len = donor_file
         .as_ref()
@@ -359,6 +375,26 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, DeltaError::Fetch(_)), "{err:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn assembling_over_the_donor_is_refused() {
+        let dir = scratch("over");
+        let image = body(5 * 1024 * 1024, 0);
+        let donor = dir.join("donor.tfs");
+        fs::write(&donor, &image).unwrap();
+        let sidecar = sidecar_for(&image);
+        let err = assemble(&donor, &sidecar, &sidecar.sha256, &donor, &mut |_, _| {
+            Err(DeltaError::Fetch("no fetch expected".into()))
+        })
+        .unwrap_err();
+        assert!(matches!(err, DeltaError::Donor(_)), "{err:?}");
+        assert_eq!(
+            fs::read(&donor).unwrap(),
+            image,
+            "the donor must be untouched"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
