@@ -524,6 +524,12 @@ pub(crate) struct InstallPlan {
     /// app — its mirror falls back to the entrypoint convention).
     pub(crate) kind: tpkg::PayloadKind,
     pub(crate) reference: Reference,
+    /// The row's ordered fallback locators (spec 04 §2, registry MINOR
+    /// 10): ordinary references served AFTER `reference` fails, each
+    /// attempt held to `expected_sha256` — the row's digest is the only
+    /// anchor, so a mirror can only serve those bytes or fail by name.
+    /// Empty for the ref form and for rows that declare none.
+    pub(crate) mirrors: Vec<Reference>,
     /// The registry per-triplet sha256 anchor (the cache's expected
     /// digest; the reference's own pin is verified at the fetch boundary).
     pub(crate) expected_sha256: Option<String>,
@@ -1170,6 +1176,7 @@ fn plan_from_reference(target: &str) -> Result<InstallPlan, TebakoError> {
         version,
         kind: tpkg::PayloadKind::App,
         reference,
+        mirrors: Vec::new(),
         expected_sha256: None,
         signature: None,
         require_signed: None,
@@ -1589,7 +1596,7 @@ pub(crate) fn plan_from_registry_entry(
         Some(h) => h,
         None => host_platform()?,
     };
-    let (reference, expected_sha256) =
+    let (reference, expected_sha256, mirrors) =
         resolve_row_reference(reg_ref, payload, entry, &view, host, hit.channel_oci)?;
 
     Ok(InstallPlan {
@@ -1597,6 +1604,7 @@ pub(crate) fn plan_from_registry_entry(
         version: entry.version.clone(),
         kind: payload.kind,
         reference,
+        mirrors,
         expected_sha256,
         signature: entry.signature.clone(),
         require_signed: hit.require_signed.clone(),
@@ -1618,8 +1626,10 @@ pub(crate) fn plan_from_registry_entry(
 /// The reference a registry row resolves to for `host` — the ONE row
 /// resolver `tebako install` and `tebako registry doctor` share
 /// (spec 04 §2's host selection, spec 38 §11's declared OCI channel,
-/// tebako#711's per-row shard ref). Returns the reference and the row's
-/// sha256 pin; the universal arm pins only through the ref's `?sha256=`.
+/// tebako#711's per-row shard ref). Returns the reference, the row's
+/// sha256 pin, and the row's ordered fallback locators (spec 04 §2,
+/// MINOR 10); the universal arm pins only through the ref's `?sha256=`,
+/// which the producer gate requires when the arm declares mirrors.
 pub(crate) fn resolve_row_reference(
     reg_ref: &str,
     payload: &RegistryPayload,
@@ -1627,7 +1637,7 @@ pub(crate) fn resolve_row_reference(
     view: &VariantView<'_>,
     host: Platform,
     channel_oci: bool,
-) -> Result<(Reference, Option<String>), TebakoError> {
+) -> Result<(Reference, Option<String>, Vec<Reference>), TebakoError> {
     let name = &payload.name;
     let reference = Reference::parse(&entry.release.r#ref)
         .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
@@ -1642,13 +1652,15 @@ pub(crate) fn resolve_row_reference(
                     ),
                 ));
             }
-            (reference, None)
+            let mirrors = parse_mirrors(reg_ref, name, &entry.version, entry.mirrors.as_deref())?;
+            (reference, None, mirrors)
         }
         Some(PlatformSelection::Selected {
             artifact,
             sha256,
             oci,
             release: row_release,
+            mirrors: row_mirrors,
         }) => {
             if channel_oci {
                 // spec 38 §11: the channel is DECLARED, never probed —
@@ -1668,7 +1680,9 @@ pub(crate) fn resolve_row_reference(
                 };
                 let reference = Reference::parse(locator)
                     .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
-                (reference, Some(sha256.to_string()))
+                let mirrors =
+                    parse_mirrors(reg_ref, name, &entry.version, row_mirrors)?;
+                (reference, Some(sha256.to_string()), mirrors)
             } else {
                 // tebako#711 (registry MINOR 6): the row's additive
                 // `release.ref` names the shard tag carrying THIS row's
@@ -1697,7 +1711,9 @@ pub(crate) fn resolve_row_reference(
                     }
                     _ => {}
                 }
-                (reference, Some(sha256.to_string()))
+                let mirrors =
+                    parse_mirrors(reg_ref, name, &entry.version, row_mirrors)?;
+                (reference, Some(sha256.to_string()), mirrors)
             }
         }
         None => {
@@ -1716,6 +1732,35 @@ pub(crate) fn resolve_row_reference(
             ));
         }
     })
+}
+
+/// The row's ordered fallback locators, parsed (spec 04 §2, registry
+/// MINOR 10). Validation already refused an unparsable member; the parse
+/// here is the plan's own gate (a row that reached the resolver without
+/// validation still fails by name, never by losing a fallback silently).
+fn parse_mirrors(
+    reg_ref: &str,
+    name: &str,
+    version: &str,
+    mirrors: Option<&[String]>,
+) -> Result<Vec<Reference>, TebakoError> {
+    let Some(mirrors) = mirrors else {
+        return Ok(Vec::new());
+    };
+    mirrors
+        .iter()
+        .enumerate()
+        .map(|(i, mirror)| {
+            Reference::parse(mirror).map_err(|e| {
+                err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "registry {reg_ref} row {name} {version} mirrors[{i}] '{mirror}' does not parse: {e}"
+                    ),
+                )
+            })
+        })
+        .collect()
 }
 
 /// The host platform as a tpkg [`Platform`] (spec 03 §3: ONE type owns
@@ -1806,63 +1851,122 @@ fn finish_install<T: Transport + Sync>(
                     what: format!("payload {}@{}", plan.name, plan.version),
                 }));
             }
-            let sink = InstallSink::default();
-            let item = FetchItem {
-                display: format!("{}@{}", plan.name, plan.version),
-                reference: plan.reference.clone(),
-                // The declared signature verifies BEFORE the sha pin
-                // (spec 09 §4's order); `install_staged` re-checks the
-                // pin against the caller's anchor inside the commit.
-                sha256_pin: None,
-                size_hint: None,
-                tmp_dir: cache.root().join("tmp"),
-                registry_alias: plan.registry_alias.clone(),
-                oci_class: OciClass::Payload,
-                lazy: false,
-                commit: Box::new(|staged: &StagedArtifact| {
-                    match verify_signature_staged(home, fetcher, staged, &plan) {
-                        Ok(Some(signer)) => sink.add_signer(signer),
-                        Ok(None) => {}
-                        Err(e) => return Err(sink.fail(e)),
-                    }
-                    match cache.install_staged(
-                        &plan.name,
-                        &plan.version,
-                        // The registry pin or — a verbatim `?sha256=`
-                        // reference — the content address itself (spec 16
-                        // §3.3); checked AFTER the signature (spec 09 §4).
-                        plan.expected_sha256
-                            .as_deref()
-                            .or_else(|| plan.reference.sha256()),
-                        staged.tmp,
-                        staged.sha256,
-                        staged.origin,
-                    ) {
-                        Ok(installed) => {
-                            sink.add_entry(installed);
-                            Ok(CommitReport { line: None })
-                        }
-                        Err(e) => Err(sink.fail(map_resolve(e))),
-                    }
-                }),
-            };
+            // The row's ordered locators (spec 04 §2, registry MINOR 10):
+            // the primary first, each mirror afterwards. Every attempt is
+            // verified against the SAME pin — the row's sha256, or the
+            // reference's own `?sha256=` on a universal row — so a mirror
+            // can only serve those bytes or fail by name.
+            let mut attempts: Vec<Reference> = Vec::with_capacity(1 + plan.mirrors.len());
+            attempts.push(plan.reference.clone());
+            attempts.extend(plan.mirrors.iter().cloned());
+            let total = attempts.len();
+            // The row's anchor, computed ONCE from the primary: the
+            // registry pin, else the primary's own `?sha256=` (a
+            // universal row pins only there). Every attempt — mirror
+            // included — is held to it; a mirror's own ref can never
+            // weaken or replace the row's digest.
+            let anchor: Option<String> = plan
+                .expected_sha256
+                .clone()
+                .or_else(|| plan.reference.sha256().map(str::to_string));
             let jobs = crate::resolve::fetch_jobs(home)?;
             let progress = ProgressSet::stderr();
             let title = format!("payload {}@{}", plan.name, plan.version);
-            let result = execute_plan(
-                fetcher.transport(),
-                FetchPlan::new(title, vec![item]),
-                jobs,
-                Some(&progress),
-            );
-            if let Some(e) = sink.take_error() {
-                return Err(e);
+            let mut failures: Vec<(i32, String)> = Vec::new();
+            let mut landed: Option<(CacheEntry, InstallStatus, Option<String>)> =
+                None;
+            for reference in &attempts {
+                let sink = InstallSink::default();
+                let item = FetchItem {
+                    display: title.clone(),
+                    reference: reference.clone(),
+                    // The declared signature verifies BEFORE the sha pin
+                    // (spec 09 §4's order); `install_staged` re-checks the
+                    // pin against the caller's anchor inside the commit.
+                    sha256_pin: None,
+                    size_hint: None,
+                    tmp_dir: cache.root().join("tmp"),
+                    registry_alias: plan.registry_alias.clone(),
+                    oci_class: OciClass::Payload,
+                    lazy: false,
+                    commit: Box::new(|staged: &StagedArtifact| {
+                        match verify_signature_staged(home, fetcher, staged, &plan, reference) {
+                            Ok(Some(signer)) => sink.add_signer(signer),
+                            Ok(None) => {}
+                            Err(e) => return Err(sink.fail(e)),
+                        }
+                        match cache.install_staged(
+                            &plan.name,
+                            &plan.version,
+                            // The registry pin or — a verbatim `?sha256=`
+                            // reference — the content address itself (spec 16
+                            // §3.3); checked AFTER the signature (spec 09 §4).
+                            anchor.as_deref(),
+                            staged.tmp,
+                            staged.sha256,
+                            staged.origin,
+                        ) {
+                            Ok(installed) => {
+                                sink.add_entry(installed);
+                                Ok(CommitReport { line: None })
+                            }
+                            Err(e) => Err(sink.fail(map_resolve(e))),
+                        }
+                    }),
+                };
+                let result = execute_plan(
+                    fetcher.transport(),
+                    FetchPlan::new(title.clone(), vec![item]),
+                    jobs,
+                    Some(&progress),
+                );
+                if let Some(e) = sink.take_error() {
+                    failures.push((e.code, format!("{reference}: {e}")));
+                    continue;
+                }
+                if let Err(e) = result {
+                    // A transport-level failure (a 404, a dead mirror)
+                    // never reaches the commit closure — it still names
+                    // THIS locator and advances the chain.
+                    let e = map_resolve(e);
+                    failures.push((e.code, format!("{reference}: {e}")));
+                    continue;
+                }
+                let entry = sink
+                    .take_entry()
+                    .ok_or_else(|| err(EX_TEBAKO_INSTALL, "the fetch plan ended without a commit"))?;
+                landed = Some((entry.0, entry.1, sink.take_signer()));
+                break;
             }
-            result.map_err(map_resolve)?;
-            let (entry, status) = sink
-                .take_entry()
-                .ok_or_else(|| err(EX_TEBAKO_INSTALL, "the fetch plan ended without a commit"))?;
-            (entry, status, sink.take_signer())
+            let Some((entry, status, signer)) = landed else {
+                // One locator: the error is the attempt's own — same
+                // class, same wording as a no-mirrors row. Several: a
+                // named aggregate listing every attempt, with the most
+                // specific failure class (a trust refusal outranks a
+                // plain unavailability).
+                if failures.len() == 1 {
+                    let (code, line) = &failures[0];
+                    return Err(err(*code, line.clone()));
+                }
+                let code = failures
+                    .iter()
+                    .map(|(c, _)| *c)
+                    .find(|c| *c != EX_TEBAKO_UNAVAILABLE)
+                    .unwrap_or(EX_TEBAKO_UNAVAILABLE);
+                let lines = failures
+                    .iter()
+                    .map(|(_, line)| format!("    - {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(err(
+                    code,
+                    format!(
+                        "{} {} could not be fetched from any of its {total} locators (the primary and its mirrors):\n{lines}",
+                        plan.name, plan.version
+                    ),
+                ));
+            };
+            (entry, status, signer)
         }
     };
 
@@ -2529,7 +2633,7 @@ fn capability_provider<T: Transport>(
 /// jvm.cfg miss, dogfood-found 2026-08-10).
 fn materialize_zero_runtime(
     home: &Path,
-    entry: &tebako_resolve::CacheEntry,
+    entry: &CacheEntry,
     mirror: &Manifest,
 ) -> Result<(), TebakoError> {
     let zero: Vec<String> = mirror
@@ -2589,7 +2693,7 @@ fn materialize_zero_runtime(
 /// from the registry's tier-3 fields (ref form: the payload name) with
 /// the `/<command>` entry-path convention — LOUD, never silent.
 fn build_mirror(
-    entry: &tebako_resolve::CacheEntry,
+    entry: &CacheEntry,
     plan: &InstallPlan,
     notes: &mut Vec<String>,
 ) -> Result<Manifest, TebakoError> {
@@ -2634,7 +2738,7 @@ fn build_mirror(
 /// placeholder — the fixed-point rule (spec 03 §7) keeps real digests one
 /// tier out, and `blob_sha256` carries the payload's verified digest.
 fn synthesize_manifest(
-    entry: &tebako_resolve::CacheEntry,
+    entry: &CacheEntry,
     plan: &InstallPlan,
 ) -> Result<tpkg::PayloadManifest, TebakoError> {
     let requirement = match &plan.runtime_requirement {
@@ -2837,11 +2941,17 @@ fn resolve_shim_binary(explicit: Option<&Path>) -> Result<PathBuf, TebakoError> 
 /// (spec 09 §4): `finish_install` runs it at install time; the press
 /// paths (compose.rs's closure, spawn.rs's provider fetch) run it before
 /// the bytes enter the cache and before the lock pins their digest.
+///
+/// `release` is the reference the bytes actually came from — the
+/// plan's primary, or one of its mirrors (spec 04 §2, MINOR 10). The
+/// `.asc` derives from THIS ref, so a mirror serves the signature beside
+/// the bytes it mirrors.
 pub(crate) fn verify_signature<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     fetched: &FetchedPayload,
     plan: &InstallPlan,
+    release: &Reference,
 ) -> Result<Option<String>, TebakoError> {
     let Some(sig) = &plan.signature else {
         if let Some(registry) = &plan.require_signed {
@@ -2873,7 +2983,7 @@ pub(crate) fn verify_signature<T: Transport>(
         return Ok(None);
     };
 
-    let asc_ref = signature_reference(sig, &plan.reference, &fetched.sha256)?;
+    let asc_ref = signature_reference(sig, release, &fetched.sha256)?;
     // The `.asc` rides the same credential scope as the payload it
     // signs (spec 37 §5 — the registry row directed both fetches).
     let asc = fetcher
@@ -3009,6 +3119,7 @@ fn verify_signature_staged<T: Transport>(
     fetcher: &Fetcher<T>,
     staged: &StagedArtifact,
     plan: &InstallPlan,
+    release: &Reference,
 ) -> Result<Option<String>, TebakoError> {
     let bytes = if plan.signature.is_some() {
         std::fs::read(staged.tmp).map_err(|e| {
@@ -3028,7 +3139,7 @@ fn verify_signature_staged<T: Transport>(
         origin: staged.origin.to_string(),
         sha256: staged.sha256.to_string(),
     };
-    verify_signature(home, fetcher, &fetched, plan)
+    verify_signature(home, fetcher, &fetched, plan, release)
 }
 
 /// The `.asc` of a signature pin: a full reference, or an asset name

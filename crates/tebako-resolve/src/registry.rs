@@ -138,6 +138,18 @@ pub struct RegistryVersion {
     /// named error there too.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blksum: Option<BlksumPin>,
+    /// The row's ordered fallback locators (spec 04 §2, additive —
+    /// registry MINOR 10): ordinary references naming other places that
+    /// serve the SAME bytes. The row's `sha256` stays the only anchor —
+    /// the primary is tried first, each mirror afterwards, and every
+    /// attempt is verified against that pin, so a mirror can only serve
+    /// those bytes or fail by name. Valid on a `platforms: universal`
+    /// shorthand row ONLY (a per-triplet row carries its list on the
+    /// platform entry), and only when the release ref pins `?sha256=` —
+    /// an unanchored mirror list is a named authoring error, never a
+    /// search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirrors: Option<Vec<String>>,
     /// The payload's release home — a spec 04 §1 reference (any class;
     /// per-triplet `platforms` require a service release, since artifact
     /// names only exist there).
@@ -232,6 +244,14 @@ pub struct PlatformArtifact {
     pub oci: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blksum: Option<BlksumPin>,
+    /// The row's ordered fallback locators (spec 04 §2, additive —
+    /// registry MINOR 10): ordinary references serving the SAME bytes as
+    /// the primary, tried in order after it and held to this row's
+    /// `sha256` (the only anchor). A mirror that serves different bytes
+    /// fails by name; a mirror whose reference does not parse is a
+    /// producer-gate violation, never a silent skip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mirrors: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<ReleaseRef>,
 }
@@ -372,6 +392,27 @@ fn check_blksum_pin(what: &str, pin: &BlksumPin) -> Result<(), RegistryError> {
         return Err(invalid_entry(format!("{what}.filename must not be empty")));
     }
     check_sha256(&format!("{what}.sha256"), &pin.sha256)
+}
+
+/// The row's ordered mirror list (spec 04 §2, MINOR 10): non-empty, and
+/// every entry parses as an ordinary reference. The list is a fallback
+/// chain, not a search — an unparsable member is a named authoring
+/// error, never skipped at read time.
+fn check_mirror_list(what: &str, mirrors: &[String]) -> Result<(), RegistryError> {
+    if mirrors.is_empty() {
+        return Err(invalid_entry(format!(
+            "{what} lists no mirrors — drop the key or name at least one"
+        )));
+    }
+    for (i, mirror) in mirrors.iter().enumerate() {
+        if mirror.trim().is_empty() {
+            return Err(invalid_entry(format!("{what}[{i}] must not be empty")));
+        }
+        Reference::parse(mirror).map_err(|e| {
+            invalid_entry(format!("{what}[{i}] '{mirror}' does not parse: {e}"))
+        })?;
+    }
+    Ok(())
 }
 
 impl Registry {
@@ -769,6 +810,37 @@ impl RegistryVersion {
         // The additive per-row OCI mirror / blksum pin / shard release
         // ref checks run inside validate_platforms_map (per shorthand map
         // and per variant arm's map).
+        // The row's ordered mirrors list (spec 04 §2, MINOR 10): the same
+        // one-location discipline as `blksum` — a universal shorthand row
+        // carries it at the version level; per-triplet rows and variant
+        // arms carry it inside their platforms maps. A universal row
+        // pins nothing but its ref's `?sha256=`, so an unanchored list is
+        // the named authoring error (a mirror holds to that pin or the
+        // install has nothing to hold it to).
+        if let Some(mirrors) = &self.mirrors {
+            if self.variants.is_some() {
+                return Err(invalid_entry(format!(
+                    "payload '{}' {} mirrors at the version level has no meaning on a variants entry — each arm's platforms map entries carry their own lists",
+                    payload.name, self.version
+                )));
+            }
+            if !matches!(self.platforms, Some(RegistryPlatforms::Universal)) {
+                return Err(invalid_entry(format!(
+                    "payload '{}' {} mirrors at the version level names the universal payload's single artifact — per-triplet lists live in platforms[<triplet>].mirrors",
+                    payload.name, self.version
+                )));
+            }
+            if release.sha256().is_none() {
+                return Err(invalid_entry(format!(
+                    "payload '{}' {} mirrors is declared on a universal row whose release.ref carries no ?sha256= pin — a mirror list needs the row's digest as its only anchor",
+                    payload.name, self.version
+                )));
+            }
+            check_mirror_list(
+                &format!("payload '{}' {} mirrors", payload.name, self.version),
+                mirrors,
+            )?;
+        }
         if let Some(sig) = &self.signature {
             let keyid_ok = sig.keyid.len() == 16
                 && sig
@@ -1007,6 +1079,7 @@ impl VariantView<'_> {
                     sha256: e.sha256.as_str(),
                     oci: e.oci.as_deref(),
                     release: e.release.as_ref().map(|r| r.r#ref.as_str()),
+                    mirrors: e.mirrors.as_deref(),
                 })
             }
         }
@@ -1196,6 +1269,15 @@ fn validate_platforms_map(
                     blksum,
                 )?;
             }
+            // The row's ordered mirrors list (spec 04 §2, MINOR 10):
+            // anchored by this entry's own `sha256` (checked above), so
+            // the list needs no separate pin.
+            if let Some(mirrors) = &entry.mirrors {
+                check_mirror_list(
+                    &format!("payload '{payload_name}' {version} {loc}[{platform}].mirrors"),
+                    mirrors,
+                )?;
+            }
             // The additive per-row shard release ref (spec 04 §2,
             // MINOR 6; tebako#711): the same grammar discipline as the
             // version-level ref under per-triplet platforms — no
@@ -1262,6 +1344,9 @@ pub enum PlatformSelection<'a> {
         sha256: &'a str,
         oci: Option<&'a str>,
         release: Option<&'a str>,
+        /// The entry's ordered fallback locators (spec 04 §2, MINOR
+        /// 10) — tried after the primary, held to `sha256`.
+        mirrors: Option<&'a [String]>,
     },
 }
 
@@ -1741,6 +1826,7 @@ payloads:
                 sha256: &"b".repeat(64),
                 oci: None,
                 release: None,
+                mirrors: None,
             })
         );
         assert_eq!(
@@ -1750,6 +1836,7 @@ payloads:
                 sha256: &"a".repeat(64),
                 oci: None,
                 release: None,
+                mirrors: None,
             })
         );
         // a triplet the registry does not publish → None (the caller's
@@ -1855,6 +1942,78 @@ payloads:
     }
 
     #[test]
+    fn the_row_mirrors_list_round_trips_and_bad_lists_are_named() {
+        // spec 04 §2's additive mirrors list (MINOR 10): ordered fallback
+        // locators held to the row's sha256 — one location per form (the
+        // version level on a universal shorthand row, the platforms map
+        // entry on a per-triplet row).
+        let whole = "a".repeat(64);
+        let per_triplet = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos:\n            artifact: a.tfs\n            sha256: \"{whole}\"\n            mirrors:\n              - tfs:gitlab:o/x:1.0#a.tfs\n              - https://mirror.example/a.tfs?sha256={whole}\n        release: {{ref: tfs:github:o/x:1.0}}\n        entrypoints: [x]\n"
+        );
+        let registry = Registry::from_yaml(&per_triplet).unwrap();
+        let v = registry.payload("x").unwrap().version("1.0").unwrap();
+        let Some(RegistryPlatforms::PerTriplet(map)) = &v.platforms else {
+            panic!("per-triplet platforms");
+        };
+        let mirrors = map[&Platform::Aarch64Macos].mirrors.as_ref().unwrap();
+        assert_eq!(mirrors.len(), 2);
+        assert_eq!(mirrors[0], "tfs:gitlab:o/x:1.0#a.tfs");
+        // round-trip identity with the list present
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+
+        // A universal row pins only through its ref; the list is valid
+        // exactly when that pin exists.
+        let universal = format!(
+            "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: tfs:github:o/x:1.0?sha256={whole}}}\n        mirrors:\n          - tfs:gitlab:o/x:1.0#x-1.0.tfs\n        entrypoints: [x]\n"
+        );
+        let registry = Registry::from_yaml(&universal).unwrap();
+        let v = registry.payload("x").unwrap().version("1.0").unwrap();
+        assert_eq!(v.mirrors.as_ref().unwrap().len(), 1);
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+
+        let unpinned = universal.replace(&format!("?sha256={whole}"), "");
+        let err = Registry::from_yaml(&unpinned).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("carries no ?sha256= pin"),
+            "{err}"
+        );
+
+        // The version-level spelling on a per-triplet row duplicates the
+        // platforms map's job — refused by name.
+        let misplaced = per_triplet.replace(
+            "        release:",
+            "        mirrors:\n          - tfs:gitlab:o/x:1.0#a.tfs\n        release:",
+        );
+        let err = Registry::from_yaml(&misplaced).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("per-triplet lists live in platforms[<triplet>].mirrors"),
+            "{err}"
+        );
+
+        // An unparsable member is a producer-gate refusal, never skipped.
+        let unparsable = per_triplet.replace("tfs:gitlab:o/x:1.0#a.tfs", "not a reference");
+        let err = Registry::from_yaml(&unparsable).unwrap_err();
+        assert!(err.to_string().contains("does not parse"), "{err}");
+
+        // An empty list is meaningless — name it.
+        let empty = per_triplet.replace(
+            "            mirrors:\n              - tfs:gitlab:o/x:1.0#a.tfs\n              - https://mirror.example/a.tfs?sha256=",
+            "            mirrors: []\n            #",
+        );
+        let err = Registry::from_yaml(&empty).unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("lists no mirrors") || matches!(err, RegistryError::Yaml { .. }),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn the_per_row_shard_release_ref_round_trips_and_torn_refs_are_named() {
         // spec 04 §2 (MINOR 6; tebako#711): a version line unioning rows
         // from several per-platform shard tags carries the serving tag on
@@ -1879,6 +2038,7 @@ payloads:
                 sha256: &whole,
                 oci: None,
                 release: Some("tfs:github:o/ruby:v0.17.1-ruby4.0-macos"),
+                mirrors: None,
             })
         );
         // … and the unsharded row flows None (the version-level ref
@@ -1890,6 +2050,7 @@ payloads:
                 sha256: &whole,
                 oci: None,
                 release: None,
+                mirrors: None,
             })
         );
         // round-trip identity with the field present
@@ -2523,6 +2684,7 @@ payloads:
                 sha256: &"b".repeat(64),
                 oci: None,
                 release: None,
+                mirrors: None,
             })
         );
         // …scoped to the variant: the 4.0 arm is not published for linux.

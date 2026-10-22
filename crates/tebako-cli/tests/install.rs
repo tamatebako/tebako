@@ -963,6 +963,57 @@ fn install_nickname_without_default_needs_an_explicit_version() {
     assert_eq!(out.version, "1.0");
 }
 
+/// Spec 04 §2's mirrors list (MINOR 10): the primary locator is tried
+/// first; when it fails, each mirror afterwards. The row's digest is the
+/// only anchor, so a mirror serving the pinned bytes installs exactly as
+/// the primary would have.
+#[test]
+fn install_falls_through_to_a_mirror_that_serves_the_pinned_bytes() {
+    let fx = Fixture::new("mirrorfall");
+    let good = fx.payload("app-1.0.tfs", b"mirror-bytes");
+    let pin = sha256_hex(&entry_image(b"mirror-bytes"));
+    let missing = format!(
+        "{}?sha256={pin}",
+        tebako_http::file_url(&fx.mirror.join("missing-1.0.tfs"))
+    );
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {missing}}}\n        mirrors:\n          - {good}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n"
+    );
+    install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
+
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.status, tebako_resolve::InstallStatus::Installed);
+    assert_eq!(fs::read(&out.path).unwrap(), entry_image(b"mirror-bytes"));
+}
+
+/// A mirror can only serve the row's bytes: different bytes are the
+/// named refusal, never a silent accept, and the error lists every
+/// locator that was tried.
+#[test]
+fn install_refuses_a_mirror_that_serves_different_bytes() {
+    let fx = Fixture::new("mirrorwrong");
+    let wrong = fx.payload("app-1.0.tfs", b"not-the-pinned-bytes");
+    let pin = sha256_hex(&entry_image(b"the-real-bytes"));
+    let missing = format!(
+        "{}?sha256={pin}",
+        tebako_http::file_url(&fx.mirror.join("missing-1.0.tfs"))
+    );
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {missing}}}\n        mirrors:\n          - {wrong}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n"
+    );
+    install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 70, "{err:?}");
+    assert!(
+        err.message
+            .contains("could not be fetched from any of its 2 locators"),
+        "{err:?}"
+    );
+    // nothing entered the store
+    assert!(!fx.payloads_dir().join("app/1.0.tfs").is_file());
+}
+
 // ---------------------------------------------------------------------
 // host-triplet selection (declarative; mock transports for the service leg)
 // ---------------------------------------------------------------------

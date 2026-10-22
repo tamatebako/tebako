@@ -362,7 +362,7 @@ fn check_row(
             return;
         }
     };
-    let (reference, pin) =
+    let (reference, pin, _mirrors) =
         match crate::install::resolve_row_reference(input, payload, entry, &view, host, false) {
             Ok(pair) => pair,
             Err(e) => {

@@ -1415,6 +1415,10 @@ pub fn publish_full_with_oci_sink(
                         )
                     }),
                     blksum: Some(pin),
+                    // The row's mirrors list (spec 04 §2, MINOR 10) is
+                    // authored by the publisher against its own hosting;
+                    // `tebako publish` writes one home per release.
+                    mirrors: None,
                     // tebako#711's per-row shard ref (MINOR 6) is a
                     // factory-side authoring concern — `tebako publish`
                     // writes one release per version, so the
@@ -1492,6 +1496,10 @@ pub fn publish_full_with_oci_sink(
         // The universal row's sidecar pin (spec 39 §3); per-triplet rows
         // carry theirs in the platforms map entries above.
         blksum: universal.then(|| blksum_pin(0)),
+        // Mirrors are authored, never published blind (spec 04 §2,
+        // MINOR 10): a publisher that hosts a copy adds the list to its
+        // registry by hand.
+        mirrors: None,
         release: ReleaseRef {
             r#ref: release_ref.clone(),
         },
