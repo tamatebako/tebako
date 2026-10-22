@@ -813,6 +813,78 @@ pub fn stream_raw(
 }
 
 // ---------------------------------------------------------------------
+// The open-ended streaming range (the resume surface)
+// ---------------------------------------------------------------------
+
+/// A ranged response whose body has NOT been read yet: the caller reads
+/// the status and `Content-Range` first, decides whether the window
+/// appends to a part (206) or replaces it (200), and only then streams.
+/// That ordering is the whole point — a writer handed to a function that
+/// streams as it learns cannot un-write a 200's body.
+pub struct RangedStream {
+    url: String,
+    response: ureq::http::Response<ureq::Body>,
+}
+
+impl RangedStream {
+    pub fn status(&self) -> u16 {
+        self.response.status().as_u16()
+    }
+
+    /// The validated `Content-Range` of a 206 (the object's total comes
+    /// from here — the interrupted attempt never knew it).
+    pub fn content_range(&self) -> Option<ContentRange> {
+        self.response
+            .headers()
+            .get("content-range")
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_content_range)
+    }
+
+    /// Stream the body into `writer`, reporting progress. The caller has
+    /// already chosen the writer for this status.
+    pub fn stream_into(
+        self,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        stream_response(&self.url, self.response, writer, on_progress)
+    }
+}
+
+/// Open an OPEN-ENDED ranged GET (`Range: bytes=<offset>-`): the resume
+/// seam's streaming shape. Only 206 and 200 are answers; every other
+/// status is classified by name. No retry loop here — the caller owns the
+/// schedule (the pipeline already retries from the part).
+pub fn stream_range_open(
+    url: &str,
+    accept: Option<&str>,
+    header: Option<(&str, &str)>,
+    offset: u64,
+) -> Result<RangedStream, FetchError> {
+    require_https_or_loopback(url)?;
+    network_guard()?;
+    let request = raw_agent()?
+        .get(url)
+        .header("Range", format!("bytes={offset}-"));
+    let response = apply_explicit(url, request, accept, header)
+        .call()
+        .map_err(map_ureq_error(url))?;
+    let status = response.status().as_u16();
+    if status != 206 && status != 200 {
+        let response = classify(response, url)?;
+        let _ = response;
+        return Err(FetchError::DownloadFailed(format!(
+            "{status} fetching {url} — a ranged GET answers 206, 200, or an error"
+        )));
+    }
+    Ok(RangedStream {
+        url: url.to_string(),
+        response,
+    })
+}
+
+// ---------------------------------------------------------------------
 // The range-fetch surface (spec 39 §2's transport half): positioned
 // Range GETs for the lazy mount-source byte layer
 // ---------------------------------------------------------------------
@@ -2489,6 +2561,48 @@ mod range_tests {
         // The wire form is open-ended: the interrupted attempt does not
         // know (and must not guess) how far the object runs.
         assert_eq!(server.heard()[0].range.as_deref(), Some("bytes=40-"));
+    }
+
+    #[test]
+    fn the_streaming_open_range_lets_the_caller_choose_append_or_replace() {
+        let data = Arc::new(patterned(64));
+        // 206: the caller appends the tail to the part it already holds.
+        let server = RangeServer::start(open_range_responder(Arc::clone(&data), "\"v1\""));
+        let answer = stream_range_open(&server.url, None, None, 40).unwrap();
+        assert_eq!(answer.status(), 206);
+        let served = answer.content_range().expect("a 206 carries Content-Range");
+        assert_eq!(served.start, 40);
+        assert_eq!(served.total, 64);
+        let dir = std::env::temp_dir().join(format!("tebako-http-ranged-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("part.bin");
+        std::fs::write(&part, &data[..40]).unwrap();
+        {
+            use std::io::Write as _;
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&part)
+                .unwrap();
+            answer.stream_into(&mut file, None).unwrap();
+        }
+        assert_eq!(std::fs::read(&part).unwrap(), data.as_slice());
+
+        // 200: the server ignored the Range, so the caller REPLACES.
+        let whole = Arc::clone(&data);
+        let server = RangeServer::start(Arc::new(move |_, _| {
+            Reply::whole(200, "OK", whole.as_ref().clone())
+        }));
+        let answer = stream_range_open(&server.url, None, None, 40).unwrap();
+        assert_eq!(answer.status(), 200);
+        assert!(answer.content_range().is_none());
+        let replaced = dir.join("replaced.bin");
+        std::fs::write(&replaced, b"stale prefix").unwrap();
+        {
+            let mut file = std::fs::File::create(&replaced).unwrap();
+            answer.stream_into(&mut file, None).unwrap();
+        }
+        assert_eq!(std::fs::read(&replaced).unwrap(), data.as_slice());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
