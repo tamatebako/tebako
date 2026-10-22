@@ -272,7 +272,7 @@ pub fn donor_images(root: &Path, engine: &str, platform: &str, exclude_dir: &Pat
             donors.push((modified, path));
         }
     }
-    donors.sort_by(|a, b| b.0.cmp(&a.0));
+    donors.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
     donors.into_iter().map(|(_, path)| path).collect()
 }
 
@@ -299,7 +299,7 @@ mod tests {
         while out.len() < size as usize {
             let fill = ((index % 251) as u8) ^ tint;
             let take = (4096u64).min(size - out.len() as u64) as usize;
-            out.extend(std::iter::repeat(fill).take(take));
+            out.extend(std::iter::repeat_n(fill, take));
             index += 1;
         }
         out
