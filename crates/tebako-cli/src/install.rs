@@ -1895,6 +1895,45 @@ fn finish_install<T: Transport + Sync>(
                             Ok(None) => {}
                             Err(e) => return Err(sink.fail(e)),
                         }
+                        // The identity gate runs BEFORE the commit (tebako#872):
+                        // a refusal after placement leaves the payload plus its
+                        // trust anchor in the store, so the retry becomes a
+                        // cache HIT on bytes the install just refused. Reading
+                        // the staged image's embedded manifest here keeps the
+                        // store clean — a mismatch places nothing.
+                        if plan.strict_identity {
+                            match image_manifest::read_embedded_manifest(staged.tmp) {
+                                Ok(Some(text)) => match tpkg::PayloadManifest::from_yaml(&text) {
+                                    Ok(embedded) => {
+                                        if embedded.identity.name != plan.name
+                                            || embedded.identity.version != plan.version
+                                        {
+                                            return Err(sink.fail(err(
+                                                EX_TEBAKO_MANIFEST,
+                                                format!(
+                                                    "the embedded manifest declares {} {} but the install named {} {} — the registry entry is inconsistent with the payload it names",
+                                                    embedded.identity.name,
+                                                    embedded.identity.version,
+                                                    plan.name,
+                                                    plan.version
+                                                ),
+                                            )));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        return Err(sink.fail(err(
+                                            EX_TEBAKO_MANIFEST,
+                                            format!(
+                                                "the embedded manifest of the incoming {} {} does not parse: {e}",
+                                                plan.name, plan.version
+                                            ),
+                                        )));
+                                    }
+                                },
+                                Ok(None) => {}
+                                Err(e) => return Err(sink.fail(e)),
+                            }
+                        }
                         match cache.install_staged(
                             &plan.name,
                             &plan.version,
