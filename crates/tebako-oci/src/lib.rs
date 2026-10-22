@@ -130,6 +130,25 @@ pub trait Http {
         on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
     ) -> Result<u64, FetchError>;
 
+    /// [`Http::stream`] continuing at `have` into `path` — the resume
+    /// seam. On a 206 the bytes append to the part; on a 200 (the range
+    /// was ignored) the object REPLACES the file, which is why the seam
+    /// owns the path rather than an opaque writer. DEFAULTED: a transport
+    /// that cannot resume says so by name, and the caller restarts.
+    fn stream_from(
+        &self,
+        url: &str,
+        auth: Auth<'_>,
+        have: u64,
+        path: &std::path::Path,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, FetchError> {
+        let _ = (url, auth, have, path, on_progress);
+        Err(FetchError::DownloadFailed(
+            "this OCI transport cannot resume a blob transfer".to_string(),
+        ))
+    }
+
     /// A buffered, UNCLASSIFIED positioned GET (spec 39 §8's closure
     /// arm): `Range: bytes=<offset>-<end>` plus the caller's `If-Range`
     /// validator, any status returning with headers and body exactly
@@ -932,6 +951,74 @@ impl<'a, H: Http, C: CredentialSource> Client<'a, H, C> {
     }
 }
 
+impl<H: Http, C: CredentialSource> Client<'_, H, C> {
+    /// [`Client::stream_blob`] continuing at `have` into `path` — the
+    /// resume arm. The dance is the same (a blob URL may demand a token
+    /// mid-transfer); the difference is that the bytes land in a FILE the
+    /// transport may replace on a 200, and the digest is verified over the
+    /// completed file rather than over a live hasher (the part's prefix
+    /// was written by an earlier process).
+    pub fn stream_blob_from(
+        &self,
+        r: &RepoRef<'_>,
+        layer: &Descriptor,
+        have: u64,
+        path: &std::path::Path,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<u64, OciError> {
+        let url = self.blob_url(r, layer)?;
+        let scope = scope_for(r.repo);
+        let class = self.registry_class()?;
+        let mut token = auth::cached_token_for_host(r.host, &scope, &class);
+        let mut dances = 0u8;
+        let mut noop = |_: u64, _: Option<u64>| true;
+        let progress: &mut dyn FnMut(u64, Option<u64>) -> bool = match on_progress {
+            Some(p) => p,
+            None => &mut noop,
+        };
+        loop {
+            let presentation = match &token {
+                Some(token) => Auth::Bearer(token),
+                None => Auth::Anonymous,
+            };
+            match self
+                .http
+                .stream_from(&url, presentation, have, path, Some(&mut *progress))
+            {
+                Ok(n) => {
+                    let bytes = std::fs::read(path).map_err(|e| {
+                        OciError::Transport(FetchError::DownloadFailed(format!(
+                            "{e} reading the resumed blob {}",
+                            path.display()
+                        )))
+                    })?;
+                    let mut hasher = Sha256::new();
+                    hasher.update(&bytes);
+                    self.verify_blob(r, layer, &format!("{:x}", hasher.finalize()))?;
+                    return Ok(n);
+                }
+                Err(FetchError::AuthRejected { .. }) => match dances {
+                    0 | 1 => {
+                        if token.is_some() {
+                            auth::evict_token_for_host(r.host, &scope, &class);
+                        }
+                        let probe = self.http.get(&url, None, Auth::Anonymous)?;
+                        token = Some(self.dance(r, probe.header("www-authenticate"), &scope)?);
+                        dances += 1;
+                    }
+                    _ => {
+                        return Err(OciError::CredentialRequired {
+                            host: r.host.to_string(),
+                            looked_for: Some(class),
+                        })
+                    }
+                },
+                Err(e) => return Err(OciError::Transport(e)),
+            }
+        }
+    }
+}
+
 /// The stream's hashing wrapper: every byte the transport writes also
 /// feeds the artifact-digest verification.
 struct HashingWriter<'a> {
@@ -1227,6 +1314,40 @@ pub(crate) mod tests {
                         assert!(progress(bytes.len() as u64, Some(bytes.len() as u64)));
                     }
                     Ok(bytes.len() as u64)
+                }
+            }
+        }
+
+        fn stream_from(
+            &self,
+            url: &str,
+            auth: Auth<'_>,
+            have: u64,
+            path: &std::path::Path,
+            _on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+        ) -> Result<u64, FetchError> {
+            self.record(url, auth);
+            let next = self
+                .streams
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| panic!("no scripted stream left for {url}"));
+            match next {
+                ScriptedStream::AuthRejected => Err(FetchError::AuthRejected {
+                    url: url.to_string(),
+                    status: 401,
+                }),
+                ScriptedStream::Bytes(bytes) => {
+                    use std::io::Write as _;
+                    let tail = &bytes[have as usize..];
+                    let mut file = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                        .unwrap();
+                    file.write_all(tail).unwrap();
+                    Ok(tail.len() as u64)
                 }
             }
         }
@@ -1766,6 +1887,37 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(n, BLOB.len() as u64);
         assert_eq!(out, BLOB);
+    }
+
+    #[test]
+    fn the_blob_resume_appends_the_tail_and_verifies_the_whole_file() {
+        let _guard = token_guard();
+        let (http, artifact) = resolve_ok(ShapeExpectation::Class(ArtifactClass::Payload));
+        http.streams
+            .lock()
+            .unwrap()
+            .push_back(ScriptedStream::Bytes(BLOB.to_vec()));
+        let dir = std::env::temp_dir().join(format!("tebako-oci-resume-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("blob.resume");
+        let have = 8u64;
+        std::fs::write(&part, &BLOB[..have as usize]).unwrap();
+
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        let n = client
+            .stream_blob_from(
+                &repo(Selector::Tag("1.0")),
+                &artifact.layer,
+                have,
+                &part,
+                None,
+            )
+            .unwrap();
+        assert_eq!(n, BLOB.len() as u64 - have);
+        // The joined file IS the artifact — the digest check proved it.
+        assert_eq!(std::fs::read(&part).unwrap(), BLOB);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
