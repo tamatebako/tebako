@@ -13,7 +13,7 @@ use crate::error::ResolveError;
 #[cfg(feature = "git")]
 use crate::git;
 use crate::reference::{Reference, Service};
-use crate::transport::{HttpTransport, Transport};
+use crate::transport::{HttpTransport, RangeStream, Transport};
 
 /// A fetched payload: the bytes, where they came from, and their digest
 /// (always computed — the cache marker is the trust anchor, spec 05 §4).
@@ -270,6 +270,21 @@ impl<T: Transport + ?Sized> Transport for CredTransport<'_, T> {
                 writer,
                 on_progress,
             )
+            .map_err(|e| self.remap(url, &outcome, e))
+    }
+
+    fn stream_range(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+        range: tebako_http::ByteRange,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<RangeStream, FetchError> {
+        let outcome = self.decide(url);
+        let decided = header.or_else(|| outcome.header_ref());
+        self.inner
+            .stream_range(url, decided, range, writer, on_progress)
             .map_err(|e| self.remap(url, &outcome, e))
     }
 }
