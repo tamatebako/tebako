@@ -463,6 +463,7 @@ impl PayloadCache {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "payload".to_string());
+            publish_to_pool(&self.root, tmp, &sha256);
             self.finish_place(tmp, &file, &file_name, &sha256, &origin)?;
             Ok((
                 CacheEntry {
@@ -596,7 +597,22 @@ impl PayloadCache {
     fn place(&self, file: &Path, fetched: &FetchedPayload) -> Result<(), ResolveError> {
         let (tmp, file_name) = self.tmp_path(file)?;
         let result = (|| {
-            fs::write(&tmp, &fetched.bytes).map_err(|e| cache_io("writing", &tmp, e))?;
+            let pool = pool_file(&self.root, &fetched.sha256);
+            // A verified pool entry serves the bytes without touching the
+            // wire twice: link it into the tmp path and let finish_place
+            // rename it into the name's slot (one inode, two names).
+            let reused = if pool.is_file() {
+                file_sha256(&pool)
+                    .map(|actual| actual.eq_ignore_ascii_case(&fetched.sha256))
+                    .unwrap_or(false)
+                    && fs::hard_link(&pool, &tmp).is_ok()
+            } else {
+                false
+            };
+            if !reused {
+                fs::write(&tmp, &fetched.bytes).map_err(|e| cache_io("writing", &tmp, e))?;
+                publish_to_pool(&self.root, &tmp, &fetched.sha256);
+            }
             self.finish_place(&tmp, file, &file_name, &fetched.sha256, &fetched.origin)
         })();
         if result.is_err() {
@@ -662,6 +678,66 @@ impl Default for PayloadCache {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The content pool's path for a verified digest: one copy per digest,
+/// independent of the payload name. A pool entry is never a trust anchor on
+/// its own — the name's `.sha256` marker stays the anchor, and an install
+/// that reuses a pool entry re-verifies it first.
+fn pool_dir(root: &Path) -> PathBuf {
+    root.join("pool").join("sha256")
+}
+
+fn pool_file(root: &Path, sha256: &str) -> PathBuf {
+    pool_dir(root).join(sha256.to_ascii_lowercase())
+}
+
+/// The streaming sha256 of a file — the pool entry's own verification
+/// (hashing the bytes we are about to link is what keeps a pool entry from
+/// ever becoming a second, weaker trust source).
+fn file_sha256(path: &Path) -> Option<String> {
+    use std::io::Read as _;
+    let mut file = fs::File::open(path).ok()?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).ok()?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Some(
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+    )
+}
+
+/// Link `file` into the pool under its digest (best effort: an install must
+/// not fail because the pool is unwritable). The link shares the inode, so
+/// the caller's later chmod applies to both — intended, both are immutable.
+fn publish_to_pool(root: &Path, file: &Path, sha256: &str) {
+    let dir = pool_dir(root);
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let target = pool_file(root, sha256);
+    if target.exists() {
+        // A pool entry that does not hash to its own name is corruption, not
+        // data: repair it from the bytes we just verified rather than leaving
+        // every later install to fall back.
+        let healthy = file_sha256(&target)
+            .map(|actual| actual.eq_ignore_ascii_case(sha256))
+            .unwrap_or(false);
+        if healthy {
+            return;
+        }
+        let _ = fs::remove_file(&target);
+    }
+    let _ = fs::hard_link(file, &target);
 }
 
 fn sha_marker(file: &Path) -> PathBuf {
@@ -903,6 +979,65 @@ mod tests {
         // SAFETY: a live handle.
         unsafe { CloseHandle(handle) };
         assert_ne!(rc, 0, "SetFileTime failed for {}", path.display());
+    }
+
+    /// Two names, one inode: the pool is the observable proof (stat, not a
+    /// log line), and a reinstall of the SAME name still hits.
+    #[cfg(unix)]
+    #[test]
+    fn identical_bytes_under_two_names_share_one_inode() {
+        use std::os::unix::fs::MetadataExt as _;
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Its OWN subdirectory: the module's shared scratch dir is fine for
+        // serialized tests, but this one removes files to stage the corrupt
+        // pool case and must not touch another test's tree.
+        let dir = scratch().join("pool-sharing");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let cache = PayloadCache::with_root(&dir);
+        let bytes = b"the same bytes, two names";
+
+        let (a, status_a) = cache
+            .install("alpha", "1.0.0", None, || Ok(fetched(bytes)))
+            .unwrap();
+        assert_eq!(status_a, InstallStatus::Installed);
+        let (b, _) = cache
+            .install("beta", "2.0.0", None, || Ok(fetched(bytes)))
+            .unwrap();
+
+        let ino_a = fs::metadata(&a.path).unwrap().ino();
+        let ino_b = fs::metadata(&b.path).unwrap().ino();
+        assert_eq!(ino_a, ino_b, "the pool must serve the second name");
+
+        let pool = pool_file(&dir, &crate::fetch::sha256_hex(bytes));
+        assert!(pool.is_file(), "the verified bytes must land in the pool");
+        assert_eq!(fs::metadata(&pool).unwrap().ino(), ino_a);
+
+        // A different payload gets its own inode and its own pool entry.
+        let other = cache
+            .install("gamma", "3.0.0", None, || Ok(fetched(b"other bytes")))
+            .unwrap()
+            .0;
+        assert_ne!(fs::metadata(&other.path).unwrap().ino(), ino_a);
+
+        // A fresh name whose pool entry exists but whose bytes are corrupted
+        // must NOT link the corrupt entry: the pin decides.
+        let _ = fs::remove_file(&pool);
+        fs::write(&pool, b"corrupted pool entry").unwrap();
+        let delta = cache
+            .install("delta", "4.0.0", None, || Ok(fetched(bytes)))
+            .unwrap()
+            .0;
+        assert_eq!(fs::read(&delta.path).unwrap(), bytes);
+        // ...and the corrupt entry is repaired, so the NEXT install dedups
+        // again instead of falling back forever.
+        assert_eq!(fs::read(&pool).unwrap(), bytes);
+        assert_eq!(
+            fs::metadata(&pool).unwrap().ino(),
+            fs::metadata(&delta.path).unwrap().ino()
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     fn install_aged(
