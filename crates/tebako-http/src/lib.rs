@@ -2578,7 +2578,6 @@ mod range_tests {
         let part = dir.join("part.bin");
         std::fs::write(&part, &data[..40]).unwrap();
         {
-            use std::io::Write as _;
             let mut file = std::fs::OpenOptions::new()
                 .append(true)
                 .open(&part)
