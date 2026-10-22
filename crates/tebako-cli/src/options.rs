@@ -240,6 +240,10 @@ pub struct PressOptions {
     /// explicit --mode OVERRIDES the compose document's preset — the
     /// invocation beats authored defaults; a defaulted mode never does).
     pub mode_explicit: bool,
+    /// --emit-recipe [<path>]: render the feedstock recipe from the press
+    /// that just succeeded (the graduation path — the no-cliff property).
+    /// An empty path means the default: `Tebakofile` at the project root.
+    pub emit_recipe: Option<PathBuf>,
 }
 
 impl PressOptions {

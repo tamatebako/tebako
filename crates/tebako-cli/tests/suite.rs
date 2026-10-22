@@ -43,6 +43,7 @@ fn opts() -> PressOptions {
         carry: None,
         share: None,
         mode_explicit: false,
+        emit_recipe: None,
     }
 }
 

@@ -5,7 +5,9 @@
 //!                [--cwd <dir>] [-R <ruby>] [-m self-contained|shared-runtime]
 //!                [--compose <tebako.yaml>] [--carry ...] [--share ...]
 //!                [--image <path>:<mount>]... [--bootstrap <path>]
-//!                [--tebako-version <v>]
+//!                [--tebako-version <v>] [--emit-recipe [<path>]]
+//!                (--emit-recipe: render the feedstock recipe from the
+//!                press that just succeeded — the graduation path)
 //!   tebako press --suite <suite.yaml>   (one package, N commands —
 //!                per-entry imaging + slots + the type-2 package manifest,
 //!                spec 03 §6)
@@ -90,6 +92,7 @@ pub mod node;
 pub mod options;
 pub mod packager;
 pub mod publish;
+pub mod recipe;
 pub mod registry;
 pub mod resolve;
 pub mod run;
@@ -660,6 +663,45 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         },
     )?;
     println!("Created tebako package at \"{package}\"");
+    // The graduation path: the recipe renders from the press that just
+    // succeeded, so it can never describe a press that did not run.
+    if let Some(recipe_path) = &opts.emit_recipe {
+        let path = if recipe_path.as_os_str().is_empty() {
+            recipe::default_path(opts)
+        } else {
+            recipe_path.clone()
+        };
+        let slices: Vec<(String, Option<String>)> = compose_slices
+            .iter()
+            .map(|s| (s.name.clone(), s.mount.clone()))
+            .collect();
+        let in_image_entry = if opts.engine == crate::options::PressEngine::Node {
+            format!("/local/{}", opts.entrance)
+        } else {
+            scenario.fs_entry_point.clone()
+        };
+        let lockfile = if opts.engine == crate::options::PressEngine::Node {
+            Some("package-lock.json".to_string())
+        } else {
+            Path::new(&scenario.gemfile_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        };
+        recipe::emit(
+            &recipe::RecipeInputs {
+                opts,
+                resolved: &resolved,
+                lang_version: &ruby_ver,
+                runtime_tebako: &runtime_tebako_version,
+                platform: &platform,
+                package: Path::new(&package),
+                entry_path: &in_image_entry,
+                lockfile,
+                slices: &slices,
+            },
+            &path,
+        )?;
+    }
     ensure_version_file(opts);
     Ok(PathBuf::from(package))
 }
@@ -2543,6 +2585,7 @@ mod tests {
             carry: None,
             share: None,
             mode_explicit: false,
+            emit_recipe: None,
         }
     }
 
