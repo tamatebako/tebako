@@ -15,6 +15,18 @@ pub const DOWNLOAD_ATTEMPTS: u32 = 3;
 /// Delay between attempts (tebako-cli::fetch::RETRY_DELAY).
 pub const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// The resume seam's answer (spec 04 §2's chain of work — the pull's
+/// interrupted-transfer case). `Partial` appended the requested window;
+/// `Full` wrote the whole representation because the server ignored the
+/// Range header or an `If-Range` validator changed (the loud
+/// eager-fallback signal — the caller restarts its accounting from zero,
+/// never treats the window as whole).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RangeStream {
+    Partial { written: u64 },
+    Full { written: u64 },
+}
+
 /// GET `url` (`https://` or `file://`) and return the body.
 pub trait Transport {
     fn get(&self, url: &str) -> Result<Vec<u8>, FetchError>;
@@ -96,6 +108,25 @@ pub trait Transport {
     ) -> Result<u64, FetchError> {
         let _ = header;
         self.stream_asset(url, accept, authenticate, writer, on_progress)
+    }
+
+    /// Stream one byte range of `url` into `writer` — the resume seam.
+    /// The default is the NAMED refusal: a transport that cannot resume
+    /// says so, and the caller restarts from zero rather than guessing.
+    /// Production overrides through tebako-http's range client (the same
+    /// `RangeAnswer` classifier the lazy layer uses).
+    fn stream_range(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+        range: tebako_http::ByteRange,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<RangeStream, FetchError> {
+        let _ = (header, range, writer, on_progress);
+        Err(FetchError::DownloadFailed(format!(
+            "range streaming is not supported by this transport ({url})"
+        )))
     }
 
     /// A raw, UNCLASSIFIED GET for the OCI distribution adapter (spec
@@ -258,6 +289,41 @@ pub trait Transport {
 pub struct HttpTransport;
 
 impl Transport for HttpTransport {
+    fn stream_range(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+        range: tebako_http::ByteRange,
+        writer: &mut dyn std::io::Write,
+        on_progress: Option<&mut dyn FnMut(u64, Option<u64>) -> bool>,
+    ) -> Result<RangeStream, FetchError> {
+        // The lazy layer's own classifier: a 206 validated against the
+        // request is Partial, a 200 (no range support / validator change)
+        // is Full — never silently treated as the window.
+        let answer = tebako_http::get_range(url, range, None, header)?;
+        let (bytes, total, partial) = match answer {
+            tebako_http::RangeAnswer::Partial(body) => (body.bytes, body.total, true),
+            tebako_http::RangeAnswer::Full(body) => {
+                let total = body.bytes.len() as u64;
+                (body.bytes, total, false)
+            }
+        };
+        writer
+            .write_all(&bytes)
+            .map_err(|e| FetchError::DownloadFailed(format!("{e} writing {url}")))?;
+        if let Some(cb) = on_progress {
+            if !cb(bytes.len() as u64, Some(total)) {
+                return Err(FetchError::Cancelled(url.to_string()));
+            }
+        }
+        let written = bytes.len() as u64;
+        Ok(if partial {
+            RangeStream::Partial { written }
+        } else {
+            RangeStream::Full { written }
+        })
+    }
+
     fn authenticated(&self) -> bool {
         tebako_http::github_token_from_env().is_some()
     }
@@ -512,6 +578,60 @@ mod tests {
             HttpTransport.get(&tebako_http::file_url(&dir.join("missing"))),
             Err(FetchError::IndexUnavailable(_))
         ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A transport that implements nothing but the whole-object GET: the
+    /// resume seam's default must refuse by NAME, never pretend.
+    struct WholeObjectOnly;
+
+    impl Transport for WholeObjectOnly {
+        fn get(&self, _url: &str) -> Result<Vec<u8>, FetchError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn the_resume_seam_refuses_by_name_when_a_transport_cannot_resume() {
+        let mut out = Vec::new();
+        let err = WholeObjectOnly
+            .stream_range(
+                "https://example.invalid/blob.tfs",
+                None,
+                tebako_http::ByteRange { offset: 0, len: 16 },
+                &mut out,
+                None,
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("range streaming is not supported"),
+            "{err}"
+        );
+        assert!(out.is_empty());
+    }
+
+    /// The production transport answers the window it was asked for: a
+    /// `file://` object (the same classifier the https path rides) comes
+    /// back Partial, with exactly the requested bytes.
+    #[test]
+    fn a_range_stream_answers_partial_with_the_requested_window() {
+        let dir = std::env::temp_dir().join(format!("tebako-resolve-r-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("blob.bin");
+        std::fs::write(&file, b"0123456789abcdef").unwrap();
+
+        let mut out = Vec::new();
+        let answer = HttpTransport
+            .stream_range(
+                &tebako_http::file_url(&file),
+                None,
+                tebako_http::ByteRange { offset: 4, len: 6 },
+                &mut out,
+                None,
+            )
+            .unwrap();
+        assert_eq!(answer, RangeStream::Partial { written: 6 });
+        assert_eq!(out, b"456789");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
