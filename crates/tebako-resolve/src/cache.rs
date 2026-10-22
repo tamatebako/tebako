@@ -284,7 +284,53 @@ impl PayloadCache {
             let _ = fs::remove_dir(&dir);
             removed.push(key);
         }
+        self.collect_pool_garbage();
         Ok(removed)
+    }
+
+    /// Drop pool entries no surviving payload references. A pool entry is a
+    /// second LINK to bytes a name also holds, so pruning a name never
+    /// deletes the bytes the pool keeps — without this pass they would
+    /// accumulate for the life of the store.
+    ///
+    /// The reference set is read from the `.sha256` markers (the anchor
+    /// `get` trusts), not from the pool: a marker whose bytes were pruned
+    /// mid-pass simply removes one more entry on the next prune. A race with
+    /// an in-flight install can cost that install its pool entry (it keeps
+    /// its own file link), never correctness.
+    fn collect_pool_garbage(&self) {
+        let dir = pool_dir(&self.root);
+        let Ok(entries) = fs::read_dir(&dir) else {
+            return;
+        };
+        let mut referenced: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        if let Ok(names) = fs::read_dir(self.root.join("payloads")) {
+            for name in names.flatten() {
+                let Ok(files) = fs::read_dir(name.path()) else {
+                    continue;
+                };
+                for file in files.flatten() {
+                    let path = file.path();
+                    if path.extension().and_then(|e| e.to_str()) != Some("sha256") {
+                        continue;
+                    }
+                    if let Ok(text) = fs::read_to_string(&path) {
+                        if let Some(digest) = text.split_whitespace().next() {
+                            referenced.insert(digest.to_ascii_lowercase());
+                        }
+                    }
+                }
+            }
+        }
+        for entry in entries.flatten() {
+            let digest = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if referenced.contains(&digest) {
+                continue;
+            }
+            let path = entry.path();
+            let _ = make_writable(&path);
+            let _ = fs::remove_file(&path);
+        }
     }
 
     /// Spec 37 §7's origin binding: record WHICH registry resolved the
@@ -1035,6 +1081,45 @@ mod tests {
         assert_eq!(
             fs::metadata(&pool).unwrap().ino(),
             fs::metadata(&delta.path).unwrap().ino()
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Pruning reclaims a pool entry only when no surviving name references
+    /// the digest — the pool is a second link, not a leak.
+    #[cfg(unix)]
+    #[test]
+    fn prune_collects_pool_entries_no_name_references() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = scratch().join("pool-gc");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let cache = PayloadCache::with_root(&dir);
+        let bytes = b"shared bytes across two names";
+        cache
+            .install("alpha", "1.0.0", None, || Ok(fetched(bytes)))
+            .unwrap();
+        cache
+            .install("beta", "2.0.0", None, || Ok(fetched(bytes)))
+            .unwrap();
+        let pool = pool_file(&dir, &crate::fetch::sha256_hex(bytes));
+        assert!(pool.is_file());
+
+        // Protect beta: alpha is pruned, beta still references the digest, so
+        // the pool entry must survive.
+        let mut keep: ProtectedSet = std::collections::BTreeSet::new();
+        keep.insert(("beta".to_string(), "2.0.0".to_string()));
+        let removed = cache.prune(true, None, &keep).unwrap();
+        assert_eq!(removed, vec![("alpha".to_string(), "1.0.0".to_string())]);
+        assert!(pool.is_file(), "beta still references the digest");
+
+        // Nothing is protected now: both names go, and the pool entry with
+        // them — no reference remains.
+        cache.prune(true, None, &ProtectedSet::new()).unwrap();
+        assert!(
+            !pool.exists(),
+            "an unreferenced pool entry must be collected"
         );
 
         let _ = fs::remove_dir_all(&dir);
