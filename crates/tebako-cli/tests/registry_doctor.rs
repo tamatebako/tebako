@@ -82,11 +82,7 @@ fn a_declared_signature_with_no_asc_is_a_problem() {
     let dir = scratch("noasc");
     let bytes = b"demo payload bytes";
     let missing = dir.join("missing.asc");
-    let registry = universal_registry(
-        &dir,
-        &digest(bytes),
-        Some(&tebako_http::file_url(&missing)),
-    );
+    let registry = universal_registry(&dir, &digest(bytes), Some(&tebako_http::file_url(&missing)));
     let path = dir.join("tpkg-registry.yaml");
     fs::write(&path, &registry).unwrap();
 
