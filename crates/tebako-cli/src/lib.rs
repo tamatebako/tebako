@@ -215,6 +215,15 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     }
     // --suite: one package, N entries (spec 03 §6 — src/suite.rs).
     if let Some(suite_path) = &opts.suite {
+        // The graduation path renders a SINGLE project's recipe; a suite
+        // already carries its own composition document, and a suite-shaped
+        // recipe is a different grammar. Refuse by name rather than emit
+        // half a document or ignore the flag.
+        if opts.emit_recipe.is_some() {
+            return Err(plain_error(
+                "--emit-recipe renders the recipe for ONE pressed project; a suite press carries its own suite document, so the two do not combine",
+            ));
+        }
         if opts.compose.is_some() || opts.carry.is_some() || opts.share.is_some() {
             return Err(packaging_error(
                 130,
@@ -2534,6 +2543,20 @@ mod tests {
         assert!(m.package_flags & tpkg::TPKG_FLAG_LEAN != 0);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_suite_press_refuses_emit_recipe() {
+        // The graduation path renders ONE project's recipe; a suite
+        // carries its own document. The refusal lands before the suite
+        // file is read, so a stray flag cannot cost a store visit.
+        let mut opts = press_opts(None);
+        opts.suite = Some(PathBuf::from("/nonexistent/suite.yaml"));
+        opts.emit_recipe = Some(PathBuf::new());
+        let err = press(&opts).expect_err("suite + emit-recipe refuses");
+        let text = err.to_string();
+        assert!(text.contains("--emit-recipe"), "{text}");
+        assert!(text.contains("suite"), "{text}");
     }
 
     #[test]
