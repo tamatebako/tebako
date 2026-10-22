@@ -132,6 +132,25 @@ impl PressImageFormat {
     }
 }
 
+/// The engine a press targets. Ruby is the historical path (the scenario
+/// machinery + bundler deploy); Node stages the project and vendors its
+/// closure through the RESOLVED node pair instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PressEngine {
+    #[default]
+    Ruby,
+    Node,
+}
+
+impl PressEngine {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PressEngine::Ruby => "ruby",
+            PressEngine::Node => "node",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PressOptions {
     /// Root folder as given on the command line, made absolute
@@ -144,6 +163,13 @@ pub struct PressOptions {
     pub cwd: Option<String>,
     /// --Ruby value (validated/resolved against the Gemfile later).
     pub ruby_requested: Option<String>,
+    /// The engine the press targets (detection sets it; ruby is the
+    /// default, so an explicit -r/-e press keeps the historical path).
+    pub engine: PressEngine,
+    /// The engine requirement the project declared (`engines.node`), when
+    /// the engine's manifest names one. Ruby carries None: its directive
+    /// is resolved from the Gemfile by the scenario machinery.
+    pub engine_requirement: Option<String>,
     pub mode: PressMode,
     /// tebako#460 (spec 19 §6a): the embed dial; None = the mode preset governs.
     pub embed: Option<EmbedSet>,
@@ -311,10 +337,17 @@ impl PressOptions {
     }
 
     pub fn press_announce(&self, ruby_ver: &str) -> String {
+        // The engine's own name on the version line: a node press announces
+        // a node line, never "Ruby version".
+        let version_label = match self.engine {
+            PressEngine::Ruby => "Ruby version:",
+            PressEngine::Node => "Node version:",
+        };
         format!(
-            "Running tebako press at {}\n   Mode:                      '{}'\n   Ruby version:              '{}'\n   Project root:              '{}'\n   Application entry point:   '{}'\n   Package file name:         '{}'\n   Loging level:              '{}'\n   Package working directory: '{}'",
+            "Running tebako press at {}\n   Mode:                      '{}'\n   {:<26}'{}'\n   Project root:              '{}'\n   Application entry point:   '{}'\n   Package file name:         '{}'\n   Loging level:              '{}'\n   Package working directory: '{}'",
             self.prefix.display(),
             self.mode.name(),
+            version_label,
             ruby_ver,
             self.root(),
             self.entrance,

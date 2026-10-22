@@ -1447,6 +1447,10 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         i += 1;
     }
 
+    // The zero-ceremony detection's plan, when -r/-e were absent: the
+    // engine it names drives the press path, and its requirement rides
+    // into the payload manifest.
+    let mut detected: Option<tebako_cli::detect::ProjectPlan> = None;
     // Thor's required-options check, message shape included. A suite
     // carries its own roots/entries, so -r/-e are neither required nor
     // accepted with --suite.
@@ -1470,23 +1474,10 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
                 .or_else(|| std::env::current_dir().ok())
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
             match tebako_cli::detect::detect(&dir) {
-                Ok(plan) if plan.kind == tebako_cli::detect::ProjectKind::Ruby => {
+                Ok(plan) => {
                     root = Some(plan.root.to_string_lossy().into_owned());
                     entrance = Some(plan.entry.to_string_lossy().replace('\\', "/"));
-                }
-                Ok(plan) => {
-                    // The plan IS derived for this kind (package.json names
-                    // the entry and the engine requirement) — the refusal
-                    // names what was read, so the author can act on it
-                    // instead of guessing what the press wanted.
-                    return Err(CliExit::Usage(format!(
-                        "{} is a {} project (package.json): entry `{}`, engine requirement `{}` — the {} press backend is not available in this release; the pressed-package route for this engine is the feedstock model in the guides",
-                        plan.root.display(),
-                        plan.kind.as_str(),
-                        plan.entry.display(),
-                        plan.requirement.as_deref().unwrap_or("unstated"),
-                        plan.kind.as_str(),
-                    )));
+                    detected = Some(plan);
                 }
                 Err(message) => return Err(CliExit::Usage(message)),
             }
@@ -1520,6 +1511,11 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         prefix: resolve_prefix(prefix.as_deref()),
         cwd: cwd.map(|c| c.replace('\\', "/")),
         ruby_requested: ruby,
+        engine: match detected.as_ref().map(|p| p.kind) {
+            Some(tebako_cli::detect::ProjectKind::Node) => tebako_cli::options::PressEngine::Node,
+            _ => tebako_cli::options::PressEngine::Ruby,
+        },
+        engine_requirement: detected.as_ref().and_then(|p| p.requirement.clone()),
         mode,
         embed,
         log_level,

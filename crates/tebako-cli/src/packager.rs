@@ -24,6 +24,9 @@ pub fn build_app_image(
     ruby_ver: &str,
     bootstrap_path: &Path,
 ) -> Result<PathBuf, TebakoError> {
+    if opts.engine == crate::options::PressEngine::Node {
+        return build_node_image(opts, resolved);
+    }
     let runtime_path = &resolved.executable;
     // Layout source (item 30b): the runtime image when the release is
     // image-era (extracted in-process into the packaging environment —
@@ -82,6 +85,89 @@ pub fn build_app_image(
         &excludes,
     )?;
     Ok(opts.data_bundle_file())
+}
+
+/// The node arm of `build_app_image` (arc 02's Stage B): the payload is
+/// the project COPY plus its vendored closure — no runtime tree, no
+/// dispatcher script (the driver composes `node <entry>` at run time).
+/// The vendoring runs through the RESOLVED pair, never the host's node.
+fn build_node_image(opts: &PressOptions, resolved: &Resolved) -> Result<PathBuf, TebakoError> {
+    println!("-- Running the node staging step");
+    let src = opts.data_src_dir();
+    for dir in [src.clone(), opts.data_pre_dir(), opts.data_bin_dir()] {
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir)
+            .map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
+    }
+    let app_root = src.join("local");
+    fs::create_dir_all(&app_root)
+        .map_err(|e| plain_error(format!("{e} creating {}", app_root.display())))?;
+    let entry = Path::new(&opts.entrance);
+    crate::node::stage_project(Path::new(&opts.root()), entry, &app_root)?;
+    let image = resolved.image.as_ref().ok_or_else(|| {
+        plain_error(
+            "the resolved node runtime carries no env image — the vendor step mounts it for npm; press against an image-era node release",
+        )
+    })?;
+    let image_path = resolved
+        .executable
+        .parent()
+        .map(|dir| dir.join(&image.filename))
+        .unwrap_or_else(|| PathBuf::from(&image.filename));
+    crate::node::npm_ci(&resolved.executable, &image_path, &app_root, opts.verbose)?;
+    write_node_manifest(opts)?;
+    let excludes = tpkg::exclude::ExcludeSet::parse(&opts.exclude)
+        .map_err(|e| plain_error(format!("invalid --exclude: {e}")))?;
+    build_image(&opts.data_bundle_file(), &src, opts.format, &excludes)?;
+    Ok(opts.data_bundle_file())
+}
+
+/// The node payload's L1 identity: name from the output, entry from the
+/// app slice's mount (`/local/<entry>`, the same convention the ruby arm
+/// uses), and `engines.node` recorded as the runtime requirement when the
+/// project declared one.
+fn write_node_manifest(opts: &PressOptions) -> Result<(), TebakoError> {
+    let name = Path::new(&opts.package())
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "app".to_string());
+    let stem = Path::new(&opts.entrance)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| name.clone());
+    let version = utc_timestamp();
+    let requirement = opts
+        .engine_requirement
+        .as_deref()
+        .filter(|spelled| !spelled.trim().is_empty())
+        .map(|spelled| {
+            format!(
+                ", runtime_requirement: {{engine: node, constraint: \"{}\"}}",
+                spelled.replace('"', "")
+            )
+        })
+        .unwrap_or_default();
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  \
+         producer: {{tool: tebako-press, tool_version: \"{tv}\"}}\n  \
+         created: \"{version}\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  \
+         entrypoints: [{{name: {stem}, path: /local/{entry}{requirement}}}]\n  \
+         platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        name = name,
+        version = version,
+        tv = env!("CARGO_PKG_VERSION"),
+        z = "0".repeat(64),
+        stem = stem,
+        entry = opts.entrance,
+        requirement = requirement,
+    );
+    let dir = opts.data_src_dir().join(tpkg::merkle::MANIFEST_DIR);
+    fs::create_dir_all(&dir).map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
+    fs::write(dir.join("manifest.yaml"), manifest)
+        .map_err(|e| plain_error(format!("{e} writing the app manifest")))
 }
 
 /// tebako#735: the app payload's own L1 manifest. The name is the
@@ -851,6 +937,8 @@ mod tests {
             prefix: PathBuf::from("/tmp/prefix"),
             cwd: None,
             ruby_requested: None,
+            engine: Default::default(),
+            engine_requirement: None,
             mode: PressMode::Lean,
             embed: None,
             log_level: "error".to_string(),

@@ -318,7 +318,12 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     };
 
     check_warnings(opts);
-    println!("{}", opts.press_announce(&ruby_ver));
+    // The banner names the language version the press will use. Ruby's is
+    // known before resolution (the chain picks by requirement); node's IS
+    // the resolved pair, so its banner waits for the resolution below.
+    if opts.engine == crate::options::PressEngine::Ruby {
+        println!("{}", opts.press_announce(&ruby_ver));
+    }
 
     let package = format!("{}{}", opts.package(), scenario.exe_suffix);
     let stem = Path::new(&package)
@@ -334,11 +339,49 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     let bootstrap_path = press_bootstrap(opts, &platform)?;
 
     let runtime_resolver = Resolver::new();
-    let resolved = runtime_resolver.resolve_runtime(&ruby_ver, &platform, &opts.tebako_version)?;
+    // The engine axis (arc 02's node backend): ruby resolves through the
+    // store's ruby-pair resolver; node resolves through the SAME chain the
+    // managed dispatch uses (the factory registries), so a press and a
+    // `tebako run node` pick the same pair by construction.
+    let (resolved, resolved_dll) = if opts.engine == crate::options::PressEngine::Node {
+        let pair = resolve_node_pair(opts)?;
+        let image = pair.image.as_ref().map(|path| resolve::ImageRef {
+            filename: path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            sha256: resolve::sha256_file_hex(path).unwrap_or_default(),
+            signature: None,
+        });
+        (
+            resolve::Resolved {
+                executable: pair.exe.clone(),
+                image,
+            },
+            None,
+        )
+    } else {
+        let resolved =
+            runtime_resolver.resolve_runtime(&ruby_ver, &platform, &opts.tebako_version)?;
+        // The windows dll-era facet (tebako-runtime-ruby#40), when the
+        // resolved release carries one — a carried runtime's third slot.
+        let dll = runtime_resolver.resolved_dll(&ruby_ver, &platform, &opts.tebako_version);
+        (resolved, dll)
+    };
     let runtime_path = resolved.executable.clone();
-    // The windows dll-era facet (tebako-runtime-ruby#40), when the
-    // resolved release carries one — a carried runtime's third slot.
-    let resolved_dll = runtime_resolver.resolved_dll(&ruby_ver, &platform, &opts.tebako_version);
+    // The engine's language version, from the pair that was actually
+    // resolved: for ruby the pre-resolution value and the pair agree by
+    // construction; for node the pair IS the authority (the press never
+    // guesses a node line).
+    let (ruby_ver, runtime_tebako_version) = if opts.engine == crate::options::PressEngine::Node {
+        let (lv, ver) = node_pair_versions(&runtime_path)?;
+        (lv, ver)
+    } else {
+        (ruby_ver, opts.tebako_version.clone())
+    };
+    if opts.engine == crate::options::PressEngine::Node {
+        println!("{}", opts.press_announce(&ruby_ver));
+    }
 
     let app_image =
         packager::build_app_image(opts, &mut scenario, &resolved, &ruby_ver, &bootstrap_path)?;
@@ -554,7 +597,11 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         spawned: spawn.rows,
     };
 
-    let mut runtime_ref = format!("ruby@{ruby_ver};tebako={}", opts.tebako_version);
+    let mut runtime_ref = format!(
+        "{}@{ruby_ver};tebako={}",
+        opts.engine.as_str(),
+        runtime_tebako_version
+    );
     if resolved.image.is_some() {
         // item 30b: the runtime is image-era — the bootstrap resolves
         // the .tfs alongside the interpreter at first run.
@@ -569,14 +616,28 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // the app image merges over it). A --jail press composes the policy
     // into the SAME block (spec 08 §4 — one manifest, never two paths).
     // The lock (spec 23 §4) rides the same manifest.
+    // The entry the package boots: ruby's dispatcher (which composes the
+    // scenario's entry) or, on the node arm, the app's own script — the
+    // driver composes `node <entry>` from the runtime's argv contract.
+    let entrypoint = if opts.engine == crate::options::PressEngine::Node {
+        format!("/local/{}", opts.entrance)
+    } else {
+        "/local/stub.rb".to_string()
+    };
+    let interp_env = if opts.engine == crate::options::PressEngine::Node {
+        Default::default()
+    } else {
+        authored_interp_env(&PathBuf::from(opts.root()))
+    };
     let package_manifest = press_package_manifest(
         &package,
         &runtime_ref,
         &opts.tebako_version,
         declared_mount(&scenario.fs_mount_point),
+        &entrypoint,
         jail,
         Some(lock),
-        authored_interp_env(&PathBuf::from(opts.root())),
+        interp_env,
     );
     stitch(
         &bootstrap_path,
@@ -594,6 +655,86 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     println!("Created tebako package at \"{package}\"");
     ensure_version_file(opts);
     Ok(PathBuf::from(package))
+}
+
+/// Resolve the node runtime pair through the managed dispatch chain (the
+/// configured factory registries) — the arc's rule: a press and a
+/// `tebako run node` must pick the same pair, because they are the same
+/// resolver. The requirement (`engines.node`) becomes the constraint when
+/// the project declared one; a project that declared none takes the
+/// registry's newest line, exactly like a bare `tebako run node`.
+fn resolve_node_pair(
+    opts: &PressOptions,
+) -> Result<tpkg::runtime_store::CachedRuntime, TebakoError> {
+    let constraint = match opts.engine_requirement.as_deref() {
+        Some(spelled) if !spelled.trim().is_empty() => {
+            tpkg::Constraint::new(spelled).map_err(|e| {
+                packaging_error(
+                    130,
+                    Some(&format!(
+                        "engines.node \"{spelled}\" is not a constraint this press can honour: {e}"
+                    )),
+                )
+            })?
+        }
+        _ => tpkg::Constraint::new("*").expect("the any constraint parses"),
+    };
+    let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    let home = tebako_shim::tebako_home(&env)
+        .map_err(|e| plain_error(format!("cannot resolve $TEBAKO_HOME: {}", e.message)))?;
+    let ctx = tebako_shim::Ctx {
+        home,
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
+        env,
+    };
+    tebako_shim::runtime::resolve_runtime_edge("node", None, &constraint, None, None, true, &ctx)
+        .map_err(|e| {
+            plain_error(format!(
+                "cannot resolve the node runtime pair: {}",
+                e.message
+            ))
+        })
+}
+
+/// The language version of an installed runtime pair, read from its store
+/// entry name (`<engine>-<lv>-<ver>-<triplet>`): the press's node arm
+/// names the payload's runtime ref from the pair it vendored with.
+fn node_pair_versions(exe: &Path) -> Result<(String, String), TebakoError> {
+    let dir = exe.parent().unwrap_or_else(|| Path::new("."));
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            plain_error(format!(
+                "cannot read the pair's entry name from {}",
+                dir.display()
+            ))
+        })?;
+    let platform = host_platform()?;
+    let rest = name
+        .strip_suffix(&platform)
+        .and_then(|s| s.strip_suffix('-'))
+        .ok_or_else(|| {
+            plain_error(format!(
+                "the pair's entry {name} does not end in {platform}"
+            ))
+        })?;
+    let (engine, tail) = rest.split_once('-').ok_or_else(|| {
+        plain_error(format!(
+            "the pair's entry {name} is not <engine>-<lv>-<ver>"
+        ))
+    })?;
+    let (lv, ver) = tail.rsplit_once('-').ok_or_else(|| {
+        plain_error(format!(
+            "the pair's entry {name} is not <engine>-<lv>-<ver>"
+        ))
+    })?;
+    if engine != "node" {
+        return Err(plain_error(format!(
+            "the pair's entry {name} names engine {engine}, not node"
+        )));
+    }
+    Ok((lv.to_string(), ver.to_string()))
 }
 
 fn check_warnings(opts: &PressOptions) {
@@ -933,11 +1074,13 @@ pub(crate) fn declared_mount(mount_point: &str) -> &str {
 /// the same block — the package's host-access REQUEST the bootstrap
 /// tightens at handoff (spec 08 §2). `lock` is the press-time
 /// composition lock (spec 23 §4/§13) — baked by every runnable press.
+#[allow(clippy::too_many_arguments)]
 fn press_package_manifest(
     package: &str,
     runtime_ref: &str,
     tebako_version: &str,
     mount_point: &str,
+    entrypoint: &str,
     jail: Option<tpkg::HostJail>,
     lock: Option<tpkg::PackageLock>,
     interp_env: std::collections::BTreeMap<String, String>,
@@ -960,7 +1103,7 @@ fn press_package_manifest(
         entries: vec![tpkg::PackageEntry {
             name: stem.clone(),
             slot: Some(0),
-            entrypoint: "/local/stub.rb".to_string(),
+            entrypoint: entrypoint.to_string(),
             runtime_ref: runtime_ref.to_string(),
             interp_env,
         }],
@@ -1781,6 +1924,7 @@ mod tests {
             "ruby@3.4.2;tebako=0.15.9;image",
             "0.15.9",
             "/__tfs__",
+            "/local/stub.rb",
             Some(jail),
             None,
             Default::default(),
@@ -1818,6 +1962,7 @@ mod tests {
             "ruby@3.4.2;tebako=0.15.9;image",
             "0.15.9",
             "/__tfs__",
+            "/local/stub.rb",
             None,
             None,
             Default::default(),
@@ -2265,6 +2410,7 @@ mod tests {
             "ruby@3.3.7;tebako=0.15.9;image",
             "0.15.9",
             "/__tfs__",
+            "/local/stub.rb",
             None,
             Some(lock.clone()),
             Default::default(),
@@ -2367,6 +2513,8 @@ mod tests {
             prefix: PathBuf::from("/tmp/prefix"),
             cwd: None,
             ruby_requested: None,
+            engine: Default::default(),
+            engine_requirement: None,
             mode: PressMode::Lean,
             embed: None,
             log_level: "error".to_string(),
