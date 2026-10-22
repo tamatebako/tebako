@@ -38,7 +38,7 @@ use tebako_resolve::plan::{
     execute_plan, CommitReport, FetchItem, FetchPlan, OciClass, StagedArtifact,
 };
 use tebako_resolve::registry::{
-    PlatformSelection, RegistryPayload, RegistryRef, RegistryVersion, SignaturePin,
+    PlatformSelection, RegistryPayload, RegistryRef, RegistryVersion, SignaturePin, VariantView,
 };
 use tebako_resolve::{
     CacheEntry, FetchedPayload, Fetcher, InstallStatus, PayloadCache, Reference, RegistryError,
@@ -1579,9 +1579,6 @@ pub(crate) fn plan_from_registry_entry(
         ));
     }
 
-    let reference = Reference::parse(&entry.release.r#ref)
-        .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
-
     // The declarative host-triplet selection (spec 04 §2), scoped to the
     // no-selector variant pick (spec 28 §4 rule 1): the payload's declared
     // default_variant, else the newest requirement line.
@@ -1592,9 +1589,51 @@ pub(crate) fn plan_from_registry_entry(
         Some(h) => h,
         None => host_platform()?,
     };
-    let (reference, expected_sha256) = match view.select(host) {
+    let (reference, expected_sha256) =
+        resolve_row_reference(reg_ref, payload, entry, &view, host, hit.channel_oci)?;
+
+    Ok(InstallPlan {
+        name: name.clone(),
+        version: entry.version.clone(),
+        kind: payload.kind,
+        reference,
+        expected_sha256,
+        signature: entry.signature.clone(),
+        require_signed: hit.require_signed.clone(),
+        origin_registry: Some(hit.reference.clone()),
+        registry_alias: hit.alias.clone(),
+        entrypoints: entry.entrypoints.clone(),
+        runtime_requirement: view.runtime_requirement.map(|r| {
+            (
+                r.engine.clone(),
+                r.constraint.clone(),
+                r.implementation.clone(),
+                r.abi.clone(),
+            )
+        }),
+        strict_identity: true,
+    })
+}
+
+/// The reference a registry row resolves to for `host` — the ONE row
+/// resolver `tebako install` and `tebako registry doctor` share
+/// (spec 04 §2's host selection, spec 38 §11's declared OCI channel,
+/// tebako#711's per-row shard ref). Returns the reference and the row's
+/// sha256 pin; the universal arm pins only through the ref's `?sha256=`.
+pub(crate) fn resolve_row_reference(
+    reg_ref: &str,
+    payload: &RegistryPayload,
+    entry: &RegistryVersion,
+    view: &VariantView<'_>,
+    host: Platform,
+    channel_oci: bool,
+) -> Result<(Reference, Option<String>), TebakoError> {
+    let name = &payload.name;
+    let reference = Reference::parse(&entry.release.r#ref)
+        .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;
+    Ok(match view.select(host) {
         Some(PlatformSelection::Universal) => {
-            if hit.channel_oci {
+            if channel_oci {
                 return Err(err(
                     EX_TEBAKO_MANIFEST,
                     format!(
@@ -1611,7 +1650,7 @@ pub(crate) fn plan_from_registry_entry(
             oci,
             release: row_release,
         }) => {
-            if hit.channel_oci {
+            if channel_oci {
                 // spec 38 §11: the channel is DECLARED, never probed —
                 // the row's `oci:` field resolves; a row lacking one is
                 // a named error naming the row (fail-closed, never a
@@ -1676,28 +1715,6 @@ pub(crate) fn plan_from_registry_entry(
                 ),
             ));
         }
-    };
-
-    Ok(InstallPlan {
-        name: name.clone(),
-        version: entry.version.clone(),
-        kind: payload.kind,
-        reference,
-        expected_sha256,
-        signature: entry.signature.clone(),
-        require_signed: hit.require_signed.clone(),
-        origin_registry: Some(hit.reference.clone()),
-        registry_alias: hit.alias.clone(),
-        entrypoints: entry.entrypoints.clone(),
-        runtime_requirement: view.runtime_requirement.map(|r| {
-            (
-                r.engine.clone(),
-                r.constraint.clone(),
-                r.implementation.clone(),
-                r.abi.clone(),
-            )
-        }),
-        strict_identity: true,
     })
 }
 
@@ -3027,7 +3044,7 @@ fn verify_signature_staged<T: Transport>(
 /// the shape the registry's spec example documents. On a `tfs+oci:`
 /// release there is no authored asc: the locator DERIVES from the signed
 /// blob's digest (spec 38 §3's `sha256-<hex>.asc` sibling tag).
-fn signature_reference(
+pub(crate) fn signature_reference(
     sig: &SignaturePin,
     release: &Reference,
     signed_blob_sha256: &str,

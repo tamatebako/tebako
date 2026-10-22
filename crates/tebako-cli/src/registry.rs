@@ -2,6 +2,7 @@
 //!
 //!   tebako registry validate <path-or-url> [--json]
 //!   tebako registry retire <registry-file> <name>@<version> [--force]
+//!   tebako registry doctor <path-or-url> [--full] [--sample <n>] [--json]
 //!
 //! `validate` (tebako#680) runs the EXACT client-side parse
 //! ([`Registry::from_yaml`] — the fail-closed reader every install and
@@ -13,6 +14,10 @@
 //! per-triplet row (tebako#440's mirror rule), and the tebako#549
 //! one-grammar classes — a version-level `implementation`, a mix of both
 //! spellings, and the parse-dropped version-level `engine` key.
+//! `doctor` (TODO.sota/03 arc 1) is the CONFORMANCE half: the document
+//! gate plus row resolution against the host that serves the file, and
+//! with `--full` the served bytes against the rows' pins and the declared
+//! signatures against the registry's head key.
 //! `retire` (tebako#675) removes one version row
 //! from a LOCAL registry file through the publish flow's own discipline
 //! (spec 18 C12: parse → mutate → re-validate → atomic write), refusing
@@ -27,6 +32,10 @@ use tebako_resolve::registry::{Registry, RegistryRef};
 use tebako_resolve::Fetcher;
 
 use crate::error::TebakoError;
+
+mod conformance;
+
+pub use conformance::{doctor, Finding, Report, Severity};
 
 const EX_TEBAKO_MANIFEST: i32 = 65;
 const EX_TEBAKO_IO: i32 = 74;
