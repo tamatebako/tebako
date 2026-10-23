@@ -52,7 +52,14 @@ targets:
   - id: v2-shim
     kind: v2-managed
     payload: "metanorma@1.16.9"
-    registries: ["tfs:github:tebako-packages/metanorma"]
+    # The payload's registry AND the runtime factories: the priming dispatch
+    # resolves the payload's runtime through the registered registries, and a
+    # home carrying only the payload's registry has none to resolve from
+    # (tebako#901 — every v2 cell was `unavailable` for exactly this).
+    registries:
+      - "tfs:github:tebako-packages/metanorma"
+      - "tfs:github:tamatebako/tebako-runtime-ruby"
+      - "tfs:github:tamatebako/tebako-runtime-openjdk"
 
   # New world, one-file contract: a fat tpkg carrying the payload image +
   # the runtime slot. Built in-leg from sha256-verified published artifacts;
@@ -62,6 +69,13 @@ targets:
     kind: v2-press
     payload: "metanorma@1.16.9"
     fat: true
-    registries: ["tfs:github:tebako-packages/metanorma"]
+    # The payload's registry AND the runtime factories: the priming dispatch
+    # resolves the payload's runtime through the registered registries, and a
+    # home carrying only the payload's registry has none to resolve from
+    # (tebako#901 — every v2 cell was `unavailable` for exactly this).
+    registries:
+      - "tfs:github:tebako-packages/metanorma"
+      - "tfs:github:tamatebako/tebako-runtime-ruby"
+      - "tfs:github:tamatebako/tebako-runtime-openjdk"
 
 run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }
