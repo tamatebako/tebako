@@ -758,11 +758,20 @@ impl FsContext {
     /// A symlink is followed (spec 11 §9) unless `O_NOFOLLOW` is set;
     /// the target is then opened as if the caller had named it.
     pub fn open(&mut self, path: &str, flags: i32) -> Result<i32, i32> {
-        let resolved = if flags & O_NOFOLLOW != 0 {
-            Self::normalize(path)
-        } else {
-            self.follow_links(path)?
-        };
+        if flags & O_NOFOLLOW != 0 {
+            let path = Self::normalize(path);
+            // POSIX: O_NOFOLLOW makes a final-component link fail ELOOP
+            // rather than a link entry opening as a zero-length file.
+            if let Some(mount) = self.find_mount(&path) {
+                let rel = Self::relative_path(mount, &path);
+                if matches!(mount.backend.stat(rel), Ok(st) if st.entry_type == EntryType::Symlink)
+                {
+                    return Err(libc::ELOOP);
+                }
+            }
+            return self.open_entry(&path, flags);
+        }
+        let resolved = self.follow_links(path)?;
         self.open_entry(&resolved, flags)
     }
 
