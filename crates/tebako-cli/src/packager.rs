@@ -61,6 +61,7 @@ pub fn build_app_image(
         ruby_ver,
         rbconfig_source,
         bootstrap_path,
+        image_path.clone(),
     )?;
     if let Some(layout_dir) = &layout_dir {
         // Image-era seeds come from the runtime's own image, so the arch
@@ -395,6 +396,7 @@ fn deploy(
     ruby_ver: &str,
     rbconfig_source: Option<crate::sdk::RbconfigSource>,
     bootstrap_path: &Path,
+    runtime_image: Option<PathBuf>,
 ) -> Result<(), TebakoError> {
     println!("-- Running deploy script");
     let target = opts.data_src_dir();
@@ -494,6 +496,7 @@ fn deploy(
             verbose: opts.verbose,
             sdk,
             bootstrap_path: bootstrap_path.to_path_buf(),
+            runtime_image,
         };
         deployer.execute(&ops, &deploy_env(&target, &api), &target)?;
     }
