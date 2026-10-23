@@ -130,10 +130,10 @@ The composition model is cheap to state and expensive to get right; the numbers
 below are the ones this repository can defend.
 
 - A five-level nested composition, pressed and executed, serves every level from
-  its own mount (reference-suite fixture, run 39907456088).
+  its own mount.
 - A re-press of an unchanged project takes 4.6 to 5.0 seconds on a release build
   once the deploy driver's image is cached by content, against 9.7 to 10.5
-  seconds before that cache existed (tebako#864).
+  seconds before that cache existed.
 - A cold press, including a 28.4 MB runtime download, takes 31.7 seconds on the
   same machine, of which the download is 7.2 seconds.
 - A delta between two consecutive runtime images moved 100 percent of the bytes,
