@@ -1525,6 +1525,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut image_specs: Vec<String> = Vec::new();
     let mut bootstrap: Option<PathBuf> = None;
     let mut tebako_version = tebako_cli::DEFAULT_TEBAKO_VERSION.to_string();
+    let mut tebako_version_explicit = false;
     let mut prefer_local = false;
     let mut devmode = false;
     let mut suite: Option<PathBuf> = None;
@@ -1581,7 +1582,10 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "-l" | "--log-level" => log_level = take_value(&mut i)?,
             "--image" => image_specs.push(take_value(&mut i)?),
             "--bootstrap" => bootstrap = Some(PathBuf::from(take_value(&mut i)?)),
-            "--tebako-version" => tebako_version = take_value(&mut i)?,
+            "--tebako-version" => {
+                tebako_version = take_value(&mut i)?;
+                tebako_version_explicit = true;
+            }
             "--prefer-local" => prefer_local = true,
             "--suite" => suite = Some(PathBuf::from(take_value(&mut i)?)),
             "--jail" => jail = Some(take_value(&mut i)?),
@@ -1704,6 +1708,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         image_specs,
         bootstrap,
         tebako_version,
+        tebako_version_explicit,
         prefer_local,
         verbose: verbose_mode(),
         devmode,

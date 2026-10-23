@@ -330,7 +330,21 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     let mut scenario = ScenarioManager::new(&opts.root(), &opts.fs_entrance())?;
     scenario.configure_scenario()?;
 
-    let ruby_ver = if scenario.with_gemfile {
+    // tebako#895: a press that names no ruby and no tebako version takes the
+    // registries' default pair — the same resolver `tebako install` and the
+    // node arm use — rather than the crate constants. Otherwise a machine
+    // that just installed a runtime presses on a different one: two
+    // runtimes, a second download, and a package running on a Ruby the
+    // author never chose.
+    let default_pair = if ruby_takes_registry_default(opts, scenario.with_gemfile) {
+        Some(resolve_ruby_pair(opts)?)
+    } else {
+        None
+    };
+
+    let ruby_ver = if let Some(pair) = &default_pair {
+        pair_versions(&pair.exe, "ruby")?.0
+    } else if scenario.with_gemfile {
         ruby_version_with_gemfile(opts.ruby_requested.as_deref(), &scenario.gemfile_path)?
     } else {
         opts.ruby_requested
@@ -370,24 +384,14 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // The engine axis (arc 02's node backend): ruby resolves through the
     // store's ruby-pair resolver; node resolves through the SAME chain the
     // managed dispatch uses (the factory registries), so a press and a
-    // `tebako run node` pick the same pair by construction.
+    // `tebako run node` pick the same pair by construction. An
+    // unconstrained ruby press takes that same chain (tebako#895) — the
+    // pair it resolved above is already in the store.
     let (resolved, resolved_dll) = if opts.engine == crate::options::PressEngine::Node {
         let pair = resolve_node_pair(opts)?;
-        let image = pair.image.as_ref().map(|path| resolve::ImageRef {
-            filename: path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            sha256: resolve::sha256_file_hex(path).unwrap_or_default(),
-            signature: None,
-        });
-        (
-            resolve::Resolved {
-                executable: pair.exe.clone(),
-                image,
-            },
-            None,
-        )
+        (pair_resolved(&pair), None)
+    } else if let Some(pair) = &default_pair {
+        (pair_resolved(pair), None)
     } else {
         let resolved =
             runtime_resolver.resolve_runtime(&ruby_ver, &platform, &opts.tebako_version)?;
@@ -401,7 +405,9 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // resolved: for ruby the pre-resolution value and the pair agree by
     // construction; for node the pair IS the authority (the press never
     // guesses a node line).
-    let (ruby_ver, runtime_tebako_version) = if opts.engine == crate::options::PressEngine::Node {
+    let (ruby_ver, runtime_tebako_version) = if let Some(pair) = &default_pair {
+        pair_versions(&pair.exe, opts.engine.as_str())?
+    } else if opts.engine == crate::options::PressEngine::Node {
         let (lv, ver) = pair_versions(&runtime_path, "node")?;
         (lv, ver)
     } else {
@@ -746,7 +752,12 @@ fn resolve_node_pair(
         }
         _ => any_constraint(),
     };
-    let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    // A press bakes the runtime's FILES into the package, so it needs the
+    // whole env image on disk: the lazy install (spec 39 §10's default) seeds
+    // 4 MiB groups on demand at RUN time and leaves no whole image for the
+    // press to read. Force the eager install for the resolution.
+    let mut env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    env.insert("TEBAKO_RUNTIME_LAZY".to_string(), "0".to_string());
     let home = tebako_shim::tebako_home(&env)
         .map_err(|e| plain_error(format!("cannot resolve $TEBAKO_HOME: {}", e.message)))?;
     let ctx = tebako_shim::Ctx {
@@ -758,6 +769,76 @@ fn resolve_node_pair(
         .map_err(|e| {
             plain_error(format!(
                 "cannot resolve the node runtime pair: {}",
+                e.message
+            ))
+        })
+}
+
+/// A resolved runtime pair, as the press's image slot describes it.
+fn pair_resolved(pair: &tpkg::runtime_store::CachedRuntime) -> resolve::Resolved {
+    let image = pair.image.as_ref().map(|path| resolve::ImageRef {
+        filename: path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        sha256: resolve::sha256_file_hex(path).unwrap_or_default(),
+        signature: None,
+    });
+    resolve::Resolved {
+        executable: pair.exe.clone(),
+        image,
+    }
+}
+
+/// tebako#895: does this press take the registries' default runtime pair?
+/// Only when it named nothing that picks a runtime by itself — no `-R`, no
+/// Gemfile `ruby` directive, no `--tebako-version`. Anything the author
+/// named wins, as it always has.
+fn ruby_takes_registry_default(opts: &PressOptions, with_gemfile: bool) -> bool {
+    opts.engine == crate::options::PressEngine::Ruby
+        && opts.ruby_requested.is_none()
+        && !with_gemfile
+        && !opts.tebako_version_explicit
+}
+
+/// Resolve the ruby runtime pair through the managed dispatch chain — the
+/// same resolver `tebako install` uses, so the pair a press bakes is the
+/// pair the machine already has (tebako#895). A project that declared
+/// `ruby` in its Gemfile never reaches here: it keeps the store resolver,
+/// which maps the requirement onto a line.
+fn resolve_ruby_pair(
+    opts: &PressOptions,
+) -> Result<tpkg::runtime_store::CachedRuntime, TebakoError> {
+    let constraint = match opts.engine_requirement.as_deref() {
+        Some(spelled) if !spelled.trim().is_empty() => {
+            tpkg::Constraint::new(spelled).map_err(|e| {
+                packaging_error(
+                    130,
+                    Some(&format!(
+                        "the declared ruby requirement \"{spelled}\" is not a constraint this press can honour: {e}"
+                    )),
+                )
+            })?
+        }
+        _ => any_constraint(),
+    };
+    // A press bakes the runtime's FILES into the package, so it needs the
+    // whole env image on disk: the lazy install (spec 39 §10's default) seeds
+    // 4 MiB groups on demand at RUN time and leaves no whole image for the
+    // press to read. Force the eager install for the resolution.
+    let mut env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    env.insert("TEBAKO_RUNTIME_LAZY".to_string(), "0".to_string());
+    let home = tebako_shim::tebako_home(&env)
+        .map_err(|e| plain_error(format!("cannot resolve $TEBAKO_HOME: {}", e.message)))?;
+    let ctx = tebako_shim::Ctx {
+        home,
+        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
+        env,
+    };
+    tebako_shim::runtime::resolve_runtime_edge("ruby", None, &constraint, None, None, true, &ctx)
+        .map_err(|e| {
+            plain_error(format!(
+                "cannot resolve the ruby runtime pair: {}",
                 e.message
             ))
         })
@@ -1983,6 +2064,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_unconstrained_ruby_press_takes_the_registry_pair() {
+        // tebako#895: press and `tebako install` must answer "which
+        // runtime?" the same way. The registry default governs only when
+        // the press named nothing — anything the author named wins.
+        let mut opts = press_opts(None);
+        opts.tebako_version_explicit = false;
+        assert!(ruby_takes_registry_default(&opts, false));
+        // -R names a ruby.
+        opts.ruby_requested = Some("3.3.12".to_string());
+        assert!(!ruby_takes_registry_default(&opts, false));
+        let mut opts = press_opts(None);
+        opts.tebako_version_explicit = false;
+        // a Gemfile directive names one.
+        assert!(!ruby_takes_registry_default(&opts, true));
+        // --tebako-version names a runtime line.
+        opts.tebako_version_explicit = true;
+        assert!(!ruby_takes_registry_default(&opts, false));
+        // the node arm has its own resolver and never takes this path.
+        let mut opts = press_opts(None);
+        opts.tebako_version_explicit = false;
+        opts.engine = crate::options::PressEngine::Node;
+        assert!(!ruby_takes_registry_default(&opts, false));
+    }
+
+    #[test]
     fn the_any_constraint_is_a_parseable_clause() {
         // A bare project's press asks the resolver for "any version". The
         // grammar has no `*`; `>= 0` is the clause that parses and matches
@@ -2678,6 +2784,7 @@ mod tests {
             image_specs: Vec::new(),
             bootstrap,
             tebako_version: DEFAULT_TEBAKO_VERSION.to_string(),
+            tebako_version_explicit: true,
             prefer_local: false,
             verbose: false,
             devmode: true,

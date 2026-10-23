@@ -232,7 +232,13 @@ fn press_command(env: &PressEnv, entry: &str, output: &Path) -> Command {
         .arg("-o")
         .arg(output)
         .arg("-p")
-        .arg(&env.prefix);
+        .arg(&env.prefix)
+        // These fixtures pin the era-1 line they were authored against on
+        // purpose: an unconstrained press now takes the registries' default
+        // pair (tebako#895), which is a moving target. The default's own
+        // behavior is exercised by `press_unconstrained_takes_the_registry_pair`.
+        .arg("--tebako-version")
+        .arg(tebako_cli::DEFAULT_TEBAKO_VERSION);
     // Dogfood the in-workspace Rust bootstrap (required — without it the
     // press falls to the spec 19 §4 store flow instead of dogfooding).
     cmd.env("TEBAKO_BOOTSTRAP", dogfood_bootstrap());
@@ -426,6 +432,57 @@ fn press_gemfile_nokogiri_precompiled_runs() {
         assert_eq!(code, 0, "packaged binary failed:\n{out}");
         assert_eq!(out, "Hello from nokogiri app with nokogiri 1.19.4\n");
     }
+}
+
+/// tebako#895: a press that names no version takes the registries' default
+/// pair — the same one `tebako install` resolves — instead of the crate
+/// constants. The proof is the store: an empty `TEBAKO_HOME` ends up with
+/// ONE runtime entry for the press, and it is not the pinned era-1 line.
+#[test]
+fn press_unconstrained_takes_the_registry_pair() {
+    let _guard = press_lock().lock().unwrap();
+    let Some(env) = press_env("default-pair", "test-00") else {
+        return;
+    };
+    let home = env.work.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let package = env.work.join("test-00");
+    let mut cmd = Command::new(tebako_bin());
+    cmd.arg("press")
+        .arg("-r")
+        .arg(&env.root)
+        .arg("-e")
+        .arg("test.rb")
+        .arg("-o")
+        .arg(&package)
+        .arg("-p")
+        .arg(&env.prefix)
+        .env("TEBAKO_BOOTSTRAP", dogfood_bootstrap())
+        .env("TEBAKO_HOME", &home);
+    let (code, log) = run(&mut cmd);
+    assert!(code == 0, "unconstrained press failed:\n{log}");
+
+    let runtimes: Vec<String> = fs::read_dir(home.join("runtimes"))
+        .expect("the press installed a runtime into TEBAKO_HOME")
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("ruby-"))
+        .collect();
+    assert_eq!(
+        runtimes.len(),
+        1,
+        "one press must leave one runtime entry, got {runtimes:?}"
+    );
+    let entry = &runtimes[0];
+    assert!(
+        !entry.contains(&format!("-{}-", tebako_cli::DEFAULT_TEBAKO_VERSION)),
+        "the unconstrained press still took the compile-time line {entry}: \
+         it must resolve the registries' default pair instead"
+    );
+    assert!(
+        log.contains("Ruby version:")
+            && !log.contains(&format!("'{}'", tebako_cli::scenario::DEFAULT_RUBY_VERSION)),
+        "the press announced the pinned ruby instead of the resolved one:\n{log}"
+    );
 }
 
 #[test]
