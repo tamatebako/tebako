@@ -28,6 +28,7 @@ fn opts() -> PressOptions {
         image_specs: Vec::new(),
         bootstrap: None,
         tebako_version: tebako_cli::DEFAULT_TEBAKO_VERSION.to_string(),
+        tebako_version_explicit: true,
         prefer_local: false,
         verbose: false,
         devmode: true,

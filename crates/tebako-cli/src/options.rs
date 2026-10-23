@@ -180,6 +180,12 @@ pub struct PressOptions {
     pub bootstrap: Option<PathBuf>,
     /// tebako version (runtime release + runtime_ref), default crate const.
     pub tebako_version: String,
+    /// True when --tebako-version was named on the command line. A press
+    /// that names no version (and no ruby) takes the registries' default
+    /// pair instead of the crate constants: press and `tebako install` must
+    /// answer "which runtime?" the same way, or one machine ends up with
+    /// two runtimes (tebako#895).
+    pub tebako_version_explicit: bool,
     /// --prefer-local: restore the gem-era `bundle install --prefer-local`
     /// (resolution prefers the runtime's own gems — bundled/default gems
     /// are used in place). Off by default: a remote (re)resolution under

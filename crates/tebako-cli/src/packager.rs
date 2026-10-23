@@ -915,6 +915,7 @@ pub(crate) mod tests {
             image_specs: Vec::new(),
             bootstrap: None,
             tebako_version: crate::DEFAULT_TEBAKO_VERSION.to_string(),
+            tebako_version_explicit: true,
             prefer_local,
             verbose: false,
             devmode: false,
