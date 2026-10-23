@@ -265,9 +265,11 @@ upward.
 A jail is only as good as the attacks it has been shown to stop. Every
 vector below is either **blocked and proven by a named test**, or
 **named out of scope with the reason** — there is no third state. The
-suite is `crates/tfs/tests/jails.rs`, so it runs on every platform leg
-of every CI run and therefore on every release: a regression reddens
-the release matrix, not a dashboard nobody reads.
+host-filesystem vectors live in `crates/tfs/tests/jails.rs`; the
+environment vector lives beside its implementation
+(`crates/tebako-driver/src/env_scrub.rs`). Both run on every platform
+leg of every CI run and therefore on every release: a regression
+reddens the release matrix, not a dashboard nobody reads.
 
 | # | vector | verdict | the proof |
 |---|--------|---------|-----------|
@@ -285,12 +287,13 @@ the release matrix, not a dashboard nobody reads.
 | 12 | unmount under a live policy | fail-closed | `policy_survives_unmount_fail_closed` |
 | 13 | malformed policy spec | fail-closed (named) | `policy_install_validates_its_arguments` |
 | 14 | argument-file grant: only the declared file, nothing beside it | blocked | `tight_jail_allows_only_the_argument_file` |
-| 15 | Windows alternate data stream (`file.txt:stream`) on a denied base | PLANNED — the decision rides the base path (a stream suffix is not a path component), and the proof lands with the windows leg that can exercise it | — (named, not claimed) |
-| 16 | statically-linked binary, or raw `syscall(2)` IO | OUT OF SCOPE — no interposition point; §5 states it in the manifest and the docs | §5 |
-| 17 | fortify open family still uncovered (`__open_2`/`__open64_2`/`__openat64_2`) | OUT OF SCOPE — no importer observed in the shipped runtimes; the symbol list is the interposed surface's SSOT | §5 |
-| 18 | the runtime EXE's own statically-linked stat/open definitions | OUT OF SCOPE today — gated only for the symbols the exe defines (spec 22 §2); follow-up wiring lives in the runtime factory | §5 |
-| 19 | a payload's own sockets (network confinement) | OUT OF SCOPE today — `capabilities.network` is advisory metadata; the network axis is SOTA arc 05's second item, not a claim of this spec | §5 |
+| 15 | packager/CI credentials reaching the payload: `TEBAKO_GITHUB_TOKEN` and every other packager-side `TEBAKO_*` variable past the handoff | blocked (blanked, never logged; `env_pass` is the explicit opt-in) | `the_packager_token_is_scrubbed_and_the_contract_kept`, `the_env_pass_opt_in_carries_its_declared_names`, `the_factory_smoke_contract_survives_the_scrub` (spec 03 §2.10, tebako#737) |
+| 16 | Windows alternate data stream (`file.txt:stream`) on a denied base | PLANNED — the decision rides the base path (a stream suffix is not a path component), and the proof lands with the windows leg that can exercise it | — (named, not claimed) |
+| 17 | statically-linked binary, or raw `syscall(2)` IO | OUT OF SCOPE — no interposition point; §5 states it in the manifest and the docs | §5 |
+| 18 | fortify open family still uncovered (`__open_2`/`__open64_2`/`__openat64_2`) | OUT OF SCOPE — no importer observed in the shipped runtimes; the symbol list is the interposed surface's SSOT | §5 |
+| 19 | the runtime EXE's own statically-linked stat/open definitions | OUT OF SCOPE today — gated only for the symbols the exe defines (spec 22 §2); follow-up wiring lives in the runtime factory | §5 |
+| 20 | a payload's own sockets (network confinement) | OUT OF SCOPE today — `capabilities.network` is advisory metadata; the network axis is SOTA arc 05's second item, not a claim of this spec | §5 |
 
-Row 15 is the one open vector that is IN scope and not yet proven: it is
+Row 16 is the one open vector that is IN scope and not yet proven: it is
 named here so nobody reads the matrix as "done", and it does not close
 until a windows test stands behind it.
