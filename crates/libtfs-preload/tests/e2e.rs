@@ -1562,6 +1562,65 @@ fn realpath_under_symlinked_mount_keeps_the_vfs_spelling() {
     assert_eq!(r.stdout, format!("{host}\n"), "NULL-arm host passthrough");
 }
 
+/// An in-image link resolves to its target's spelling (spec 11 §9). The
+/// C ABI learned the three link verbs in 2.8.60, so `realpath` must now
+/// answer the target: the link's own spelling is what the pre-link shim
+/// could only answer, and it made `File.getCanonicalFile` disagree with
+/// the following `stat` about one file. A dangling link answers ENOENT
+/// and a cycle ELOOP, as POSIX does; both used to succeed with the link
+/// spelling, because the routing stat was the lstat form.
+#[test]
+fn realpath_resolves_an_in_image_link() {
+    let Some(f) = fixtures() else { return };
+    // The image: a relative link (stays in its own directory), a dangling
+    // one, and a two-hop cycle.
+    let tree = f.dir.join("linktree");
+    std::fs::create_dir_all(tree.join("data")).unwrap();
+    std::fs::create_dir_all(tree.join("bin")).unwrap();
+    std::fs::write(tree.join("data/value.txt"), b"VALUE\n").unwrap();
+    std::os::unix::fs::symlink("../data/value.txt", tree.join("bin/alias")).unwrap();
+    std::os::unix::fs::symlink("../missing", tree.join("data/dangling")).unwrap();
+    std::os::unix::fs::symlink("loop-b", tree.join("data/loop-a")).unwrap();
+    std::os::unix::fs::symlink("loop-a", tree.join("data/loop-b")).unwrap();
+    let mut config = limnifs_write::WriteConfig::default_v0_1();
+    config.dictionaries.enabled = false;
+    let artifact = limnifs_write::write_directory_with_config(&tree, &config).unwrap();
+    assert!(
+        artifact.metadata_sidecar.is_none(),
+        "the link fixture keeps its metadata inline"
+    );
+    let mut image = artifact.bytes;
+    for slab in &artifact.slabs {
+        image.extend_from_slice(&slab.bytes);
+    }
+    let image_path = f.dir.join("linktree.tfs");
+    std::fs::write(&image_path, image).unwrap();
+    let mounts = format!("{}:/link", image_path.display());
+
+    let r = run_with_mounts(f, "realpath-probe", &["/link/bin/alias"], &mounts, None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(
+        r.stdout, "/link/data/value.txt\n",
+        "the target's spelling, not the link's"
+    );
+
+    let r = run_with_mounts(f, "realpath-probe", &["/link/data/dangling"], &mounts, None);
+    assert_eq!(r.rc, 1, "stderr: {}", r.stderr);
+    assert_eq!(
+        r.stdout,
+        format!("ERR {}\n", libc::ENOENT),
+        "a dangling link has no canonical form"
+    );
+
+    let r = run_with_mounts(f, "realpath-probe", &["/link/data/loop-a"], &mounts, None);
+    assert_eq!(r.rc, 1, "stderr: {}", r.stderr);
+    assert_eq!(
+        r.stdout,
+        format!("ERR {}\n", libc::ELOOP),
+        "a cycle is ELOOP, never a hang"
+    );
+}
+
 /// The vfork arm of the fork guard: pthread_atfork handlers do NOT run
 /// for vfork(2), so the atfork guard alone never armed in a vfork child
 /// — and a vfork child shares the parent's whole address space with the
