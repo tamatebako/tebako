@@ -259,3 +259,38 @@ have to become the executor or the kernel to hold the same position,
 and both are outside the jail's threat model by definition. Jails bind
 the CHILD downward; they claim nothing about the executor or kernel
 upward.
+
+## 7. Conformance: the attack matrix (locked 2026-10-23)
+
+A jail is only as good as the attacks it has been shown to stop. Every
+vector below is either **blocked and proven by a named test**, or
+**named out of scope with the reason** — there is no third state. The
+suite is `crates/tfs/tests/jails.rs`, so it runs on every platform leg
+of every CI run and therefore on every release: a regression reddens
+the release matrix, not a dashboard nobody reads.
+
+| # | vector | verdict | the proof |
+|---|--------|---------|-----------|
+| 1 | lexical escape: `..`, doubled separators, `.` components inside a grant | blocked | `dot_dot_paths_normalize_lexically` |
+| 2 | symlink escape: a link inside a granted tree pointing at a denied sibling (directory and file level) | blocked (EPERM) | `symlink_escape_attempt_fails` |
+| 3 | TOCTOU: the tree is swapped for a symlink AFTER the policy was bound | blocked (EPERM) | `symlink_swap_after_bind_fails_on_revalidation` — every open re-validates through realpath |
+| 4 | case folding: a denied path asked for with different case on a case-insensitive host | blocked (EPERM) | `case_variants_of_a_denied_path_are_denied` — the decision is taken on the canonical path (macOS `realpath` returns the on-disk case), so it never depends on what the filesystem thinks about case |
+| 5 | write into a held (image) tree | blocked (EROFS) | `ro_mount_refuses_writes_with_erofs` |
+| 6 | write outside every grant under an rw mount | blocked (EPERM) | `directory_scoped_mount_rw_works_and_sibling_denies` |
+| 7 | enumeration of a denied host directory | blocked (EPERM, nothing listed) | `deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected` |
+| 8 | reads/stats of a denied host file | blocked (EPERM, never ENOENT — the denial is a decision, not a miss) | `deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected` |
+| 9 | extract-all as an ungated host write | blocked (gated) | `extract_all_is_a_gated_host_write` |
+| 10 | covered-but-not-held path under a `/` mount (the mount must not become a hole) | gated (the host decision runs) | `covered_but_not_held_paths_fall_through_to_the_host_decision` |
+| 11 | image reads through the policy | gated | `mount_family_reads_the_image_through_the_policy` |
+| 12 | unmount under a live policy | fail-closed | `policy_survives_unmount_fail_closed` |
+| 13 | malformed policy spec | fail-closed (named) | `policy_install_validates_its_arguments` |
+| 14 | argument-file grant: only the declared file, nothing beside it | blocked | `tight_jail_allows_only_the_argument_file` |
+| 15 | Windows alternate data stream (`file.txt:stream`) on a denied base | PLANNED — the decision rides the base path (a stream suffix is not a path component), and the proof lands with the windows leg that can exercise it | — (named, not claimed) |
+| 16 | statically-linked binary, or raw `syscall(2)` IO | OUT OF SCOPE — no interposition point; §5 states it in the manifest and the docs | §5 |
+| 17 | fortify open family still uncovered (`__open_2`/`__open64_2`/`__openat64_2`) | OUT OF SCOPE — no importer observed in the shipped runtimes; the symbol list is the interposed surface's SSOT | §5 |
+| 18 | the runtime EXE's own statically-linked stat/open definitions | OUT OF SCOPE today — gated only for the symbols the exe defines (spec 22 §2); follow-up wiring lives in the runtime factory | §5 |
+| 19 | a payload's own sockets (network confinement) | OUT OF SCOPE today — `capabilities.network` is advisory metadata; the network axis is SOTA arc 05's second item, not a claim of this spec | §5 |
+
+Row 15 is the one open vector that is IN scope and not yet proven: it is
+named here so nobody reads the matrix as "done", and it does not close
+until a windows test stands behind it.
