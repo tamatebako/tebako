@@ -540,8 +540,40 @@ jobs:
   # real ucrt64 toolchain. All logic lives in ci/windows-gnu-bootstrap.sh
   # (closed PATH, RUSTFLAGS, serialized tests, size gate) — never inline
   # run-blocks.
+  # tebako#869: a green PR could still redden main, because the job that
+  # CAN fail (the windows-gnu legs) only ran after the merge. They now
+  # also run on a PR that touches the Rust sources those legs compile; a
+  # docs-only or recipe-only PR still skips them, so tebako#279's cost
+  # decision stands where it matters.
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      rust: ${{ steps.scan.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scan
+        run: |
+          set -euo pipefail
+          # Non-PR events answer true: the gate below is a PR-only
+          # narrowing, never a second decision.
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          # ci/ is in the scan because the legs' own logic lives there: a
+          # PR editing ci/windows-gnu-cli.sh must run the job it drives.
+          if git diff --name-only "$base...HEAD" | grep -qE '^(crates/|ci/|include/|\.github/workflows/ci\.yml|Cargo\.(toml|lock)|rust-toolchain)'; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test-windows-gnu-bootstrap:
-    if: github.event_name != 'pull_request'  # tebako#279: the windows gnu legs ride the nightly/main matrix (PR smoke keeps the pure-cargo windows leg below).
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'  # tebako#869: main + nightly always (the scanner answers true off-PR), and a PR that touches the crates these legs compile.
     name: test (windows-latest, x86_64-pc-windows-gnu, tebako-bootstrap)
     runs-on: windows-latest
     steps:
@@ -582,7 +614,8 @@ jobs:
   # mingw — the tebako-http provider split, commit 8de4335), proven here
   # on the real toolchain. All logic lives in ci/windows-gnu-shim.sh.
   test-windows-gnu-shim:
-    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier.
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'  # tebako#869: main + nightly always (the scanner answers true off-PR), and a PR that touches the crates these legs compile.
     name: test (windows-latest, x86_64-pc-windows-gnu, tebako-shim)
     runs-on: windows-latest
     steps:
@@ -631,7 +664,8 @@ jobs:
   # cache mirrors the release link-unit leg; all build/test logic lives
   # in ci/windows-gnu-cli.sh.
   test-windows-gnu-cli:
-    if: github.event_name != 'pull_request'  # tebako#279: nightly/main tier.
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'  # tebako#869: main + nightly always (the scanner answers true off-PR), and a PR that touches the crates these legs compile.
     name: test (windows-latest, x86_64-pc-windows-gnu, tebako-cli + tfs-cli + tebako-pkg + tebako-driver)
     runs-on: windows-latest
     permissions:
