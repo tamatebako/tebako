@@ -175,6 +175,11 @@ real_fn!(
     unsafe extern "C" fn(c_int, *mut libc::stat) -> c_int
 );
 real_fn!(
+    real_readlink,
+    c"readlink",
+    unsafe extern "C" fn(*const c_char, *mut c_char, libc::size_t) -> libc::ssize_t
+);
+real_fn!(
     real_access,
     c"access",
     unsafe extern "C" fn(*const c_char, c_int) -> c_int
@@ -704,6 +709,16 @@ pub(super) unsafe fn raw_lstat(path: *const c_char, st: *mut libc::stat) -> c_in
 #[cfg(target_pointer_width = "64")]
 pub(super) unsafe fn raw_fstat(fd: c_int, st: *mut libc::stat) -> c_int {
     unsafe { libc::syscall(libc::SYS_fstat, fd, st) as c_int }
+}
+
+/// `readlink` via SYS_readlink: the boot arm needs no glibc wrapper.
+#[cfg(target_pointer_width = "64")]
+pub(super) unsafe fn raw_readlink(
+    path: *const c_char,
+    buf: *mut c_char,
+    size: libc::size_t,
+) -> libc::ssize_t {
+    unsafe { libc::syscall(libc::SYS_readlink, path, buf, size) as libc::ssize_t }
 }
 
 /// `fstatat` via SYS_newfstatat. The versioned `__xstat`/`__lxstat`/

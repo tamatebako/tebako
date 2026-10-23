@@ -553,9 +553,10 @@ void tebako_fs_seekdir(tebako_dir_t dir, long pos);
  * ============================================================ */
 
 /**
- * @brief Get file status
+ * @brief Get file status (following symlinks)
  *
- * Fills in a stat structure with file metadata. Behaves like POSIX stat(2).
+ * Fills in a stat structure with file metadata. Behaves like POSIX stat(2):
+ * a symbolic link entry is resolved and the target's metadata answers.
  *
  * @param path File path
  * @param st Pointer to tebako_stat structure to fill
@@ -563,6 +564,8 @@ void tebako_fs_seekdir(tebako_dir_t dir, long pos);
  *
  * @note Populates: st_mode, st_size, st_mtime
  * @note Other fields may be zero or undefined
+ * @note A link that cannot be resolved answers -1 with errno=ELOOP past
+ *       the hop bound (32), and with the target's own error otherwise
  *
  * @example
  * @code
@@ -576,6 +579,47 @@ void tebako_fs_seekdir(tebako_dir_t dir, long pos);
  * @endcode
  */
 int tebako_fs_stat(const char* path, struct tebako_stat* st);
+
+/**
+ * @brief Get file status (not following symlinks)
+ *
+ * Behaves like POSIX lstat(2): the entry itself answers. A symbolic link
+ * reports S_ISLNK(st.st_mode) with st_size set to the length of its target
+ * — read the target with tebako_fs_readlink().
+ *
+ * @param path File path
+ * @param st Pointer to tebako_stat structure to fill
+ * @return 0 on success, -1 on error
+ *
+ * @note Populates: st_mode, st_size, st_mtime
+ */
+int tebako_fs_lstat(const char* path, struct tebako_stat* st);
+
+/**
+ * @brief Read a symbolic link's target
+ *
+ * Copies the stored target into buf as a NUL-terminated string and returns
+ * its length in bytes (excluding the NUL). Behaves like POSIX readlink(2),
+ * except that an undersized buffer is an error rather than a truncation.
+ *
+ * @param path Path to the link
+ * @param buf Buffer to fill
+ * @param size Capacity of buf in bytes (must exceed the target length)
+ * @return Target length in bytes, or -1 on error
+ *
+ * @note errno=EINVAL when path is not a symlink, ENOENT when missing,
+ *       ERANGE when buf cannot hold the target and its NUL
+ *
+ * @example
+ * @code
+ * char target[4096];
+ * ssize_t n = tebako_fs_readlink("/__tebako__/bin/tool", target, sizeof target);
+ * if (n >= 0) {
+ *     target[n] = '\0';
+ * }
+ * @endcode
+ */
+ssize_t tebako_fs_readlink(const char* path, char* buf, size_t size);
 
 /**
  * @brief Get file status via file descriptor

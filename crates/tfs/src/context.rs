@@ -22,6 +22,10 @@ pub const TEBAKO_FD_FLAG: i32 = 0x4000_0000;
 /// Maximum internal FD value.
 pub const TEBAKO_FD_MAX: i32 = 0x0FFF_FFFF;
 
+/// The hop bound of one symlink resolution (spec 11 §9): past it the
+/// call answers `ELOOP`, matching the kernel's own bound.
+pub const SYMLINK_MAX_HOPS: usize = 32;
+
 /// The access-mode mask of open flags: `O_ACCMODE` on unix, spelled out
 /// on Windows (the libc crate carries no O_ACCMODE there; the three
 /// access modes are the whole set).
@@ -29,6 +33,15 @@ pub const TEBAKO_FD_MAX: i32 = 0x0FFF_FFFF;
 pub(crate) const O_ACCMODE: i32 = libc::O_ACCMODE;
 #[cfg(windows)]
 pub(crate) const O_ACCMODE: i32 = libc::O_RDONLY | libc::O_WRONLY | libc::O_RDWR;
+
+/// `O_NOFOLLOW` — the "do not follow the final link" open flag. Windows
+/// has no such flag (and the libc crate carries none there), so the
+/// constant is zero and `open` always follows; the VFS's links are an
+/// image notion, not a host one.
+#[cfg(unix)]
+pub(crate) const O_NOFOLLOW: i32 = libc::O_NOFOLLOW;
+#[cfg(windows)]
+pub(crate) const O_NOFOLLOW: i32 = 0;
 
 /// Directory entry type constant (POSIX DT_REG).
 pub const DT_REG: u8 = 8;
@@ -741,8 +754,20 @@ impl FsContext {
     /// redirect served a raw host fd — the §4 materialize-candidate
     /// signal), `host` (passthrough), `denied:<rule>` (jail source or
     /// the spec 24 §5 write gate), or `error:<errno>`.
+    ///
+    /// A symlink is followed (spec 11 §9) unless `O_NOFOLLOW` is set;
+    /// the target is then opened as if the caller had named it.
     pub fn open(&mut self, path: &str, flags: i32) -> Result<i32, i32> {
-        let path = &Self::normalize(path);
+        let resolved = if flags & O_NOFOLLOW != 0 {
+            Self::normalize(path)
+        } else {
+            self.follow_links(path)?
+        };
+        self.open_entry(&resolved, flags)
+    }
+
+    /// `open`'s dispatch body: the path is already symlink-resolved.
+    fn open_entry(&mut self, path: &str, flags: i32) -> Result<i32, i32> {
         let trace_start = trace::Start::now();
         if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
             eprintln!("[tfs] open: {path}");
@@ -1176,8 +1201,15 @@ impl FsContext {
     // Directory operations
     // ---------------------------------------------------------------
 
-    /// tebako_fs_opendir. Returns the raw dir-handle id.
+    /// tebako_fs_opendir. Returns the raw dir-handle id. A symlink to a
+    /// directory is followed (spec 11 §9), as POSIX opendir(3) does.
     pub fn opendir(&mut self, path: &str) -> Result<usize, i32> {
+        let resolved = self.follow_links(path)?;
+        self.opendir_entry(&resolved)
+    }
+
+    /// `opendir`'s body: the path is already symlink-resolved.
+    fn opendir_entry(&mut self, path: &str) -> Result<usize, i32> {
         let path = &Self::normalize(path);
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
@@ -1343,10 +1375,68 @@ impl FsContext {
     }
 
     // ---------------------------------------------------------------
+    // Symlinks (spec 11 §9)
+    // ---------------------------------------------------------------
+
+    /// Read a symlink entry's stored target. Never followed: `EINVAL`
+    /// when `path` holds an entry that is not a link, `ENOENT` when no
+    /// mount owns the path or the entry is missing.
+    pub fn readlink(&self, path: &str) -> Result<String, i32> {
+        let path = Self::normalize(path);
+        let mount = self.find_mount(&path).ok_or(libc::ENOENT)?;
+        let rel = Self::relative_path(mount, &path);
+        mount.backend.read_link(rel)
+    }
+
+    /// Where a link at `link` points: a relative target joins the link's
+    /// own directory, an absolute one keeps its root (a drive-qualified
+    /// link stays in its drive — `/y` inside `A:/t` means `A:/y`).
+    fn link_destination(link: &str, target: &str) -> String {
+        if target.starts_with('/') {
+            let drive = drive_prefix(link);
+            return Self::normalize(&format!("{drive}{target}"));
+        }
+        if !drive_prefix(target).is_empty() {
+            return Self::normalize(target);
+        }
+        let dir = link.rsplit_once('/').map_or("", |(d, _)| d);
+        Self::normalize(&format!("{dir}/{target}"))
+    }
+
+    /// Resolve `path` through its symlink hops (spec 11 §9): relative
+    /// targets stay in the link's tree, absolute targets go through the
+    /// router, so a cross-mount link lands in the mount that owns its
+    /// target. A target outside every mount is a host path and is left
+    /// to the caller's ordinary routing (and the jail). `ELOOP` past
+    /// [`SYMLINK_MAX_HOPS`], like POSIX.
+    fn follow_links(&self, path: &str) -> Result<String, i32> {
+        let mut current = Self::normalize(path);
+        for _ in 0..SYMLINK_MAX_HOPS {
+            let Some(mount) = self.find_mount(&current) else {
+                return Ok(current);
+            };
+            let rel = Self::relative_path(mount, &current);
+            match mount.backend.stat(rel) {
+                Ok(st) if st.entry_type == EntryType::Symlink => {}
+                _ => return Ok(current),
+            }
+            let target = mount.backend.read_link(rel)?;
+            current = Self::link_destination(&current, &target);
+        }
+        Err(libc::ELOOP)
+    }
+
+    /// tebako_fs_stat: POSIX stat — the link is followed.
+    pub fn stat_following(&self, path: &str) -> Result<RawStat, i32> {
+        let resolved = self.follow_links(path)?;
+        self.stat(&resolved)
+    }
+
+    // ---------------------------------------------------------------
     // Metadata
     // ---------------------------------------------------------------
 
-    /// tebako_fs_stat.
+    /// tebako_fs_lstat: the entry itself, links never followed.
     pub fn stat(&self, path: &str) -> Result<RawStat, i32> {
         let path = &Self::normalize(path);
         let trace_start = trace::Start::now();

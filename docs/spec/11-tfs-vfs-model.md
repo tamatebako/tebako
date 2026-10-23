@@ -167,6 +167,17 @@ Images contain symlinks; resolution is rule-bound:
 - Backends without symlink notions (zip-era) treat links as regular
   entries (stat serves the target per the stat-serves-lstat rule).
 
+**The ABI surface for links** (three verbs, POSIX-shaped): `lstat`
+reports the entry itself (`S_IFLNK`, `st_size` = target length),
+`readlink` returns the stored target verbatim (relative stays
+relative; an undersized buffer is `ERANGE`, never a silent
+truncation), and `stat` follows. `open` follows unless `O_NOFOLLOW`
+is set; `opendir` follows a link to a directory; `access` follows.
+Resolution is bounded at 32 hops with `ELOOP`, in-process and
+per-call. The preload shim maps the libc spellings onto these verbs —
+`stat`/`stat64`/`__xstat` follow, `lstat`/`lstat64`/`__lxstat` and
+`readlink` do not.
+
 ## 10. Whiteout journal format (v1, locked)
 
 The COW overlay's `.tfs-whiteouts` (spec 11 §4): strict v1 text, one

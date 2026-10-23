@@ -135,6 +135,41 @@ fn stat_raw(path: &str) -> Result<TebakoStat, i32> {
     Ok(st)
 }
 
+/// The entry itself, never following a link (POSIX lstat).
+fn lstat_raw(path: &str) -> Result<TebakoStat, i32> {
+    let cpath = cstring(path).map_err(|_| libc::EINVAL)?;
+    let mut st: TebakoStat = unsafe { std::mem::zeroed() };
+    let rc = unsafe { tebako_fs_lstat(cpath.as_ptr(), &mut st) };
+    if rc != 0 {
+        return Err(unsafe { tebako_get_errno() });
+    }
+    Ok(st)
+}
+
+/// A link entry's stored target.
+fn read_link(path: &str) -> Result<String, i32> {
+    let cpath = cstring(path).map_err(|_| libc::EINVAL)?;
+    let mut buf = vec![0u8; 4096];
+    let n = unsafe { tebako_fs_readlink(cpath.as_ptr(), buf.as_mut_ptr().cast(), buf.len()) };
+    if n < 0 {
+        return Err(unsafe { tebako_get_errno() });
+    }
+    buf.truncate(n as usize);
+    String::from_utf8(buf).map_err(|_| libc::EINVAL)
+}
+
+// The same st_mode/S_IF* width story as is_file/is_directory above: the
+// casts are required on macOS (u16) and identities on Linux, so the lint
+// is allowed here deliberately.
+#[allow(clippy::unnecessary_cast)]
+fn entry_type(st: &TebakoStat) -> u32 {
+    st.st_mode as u32 & libc::S_IFMT as u32
+}
+
+fn is_symlink(path: &str) -> bool {
+    lstat_raw(path).is_ok_and(|st| entry_type(&st) == tfs::backend::S_IFLNK)
+}
+
 fn exists(path: &str) -> bool {
     stat_raw(path).is_ok()
 }
@@ -263,21 +298,16 @@ pub fn cmd_ls(image: &Path, path: &str, opts: &ListOptions) -> Result<String, (S
     }
 
     let mut out = String::new();
-    if is_file(&full) {
+    if is_file(&full) || is_symlink(&full) {
         let name = path
             .rsplit('/')
             .next()
             .filter(|s| !s.is_empty())
             .unwrap_or(path);
-        let st = stat_raw(&full).map_err(|e| (format!("Error: stat failed ({e})"), 1))?;
-        out.push_str(&print_entry(
-            name,
-            path,
-            false,
-            st.st_size,
-            st.st_mtime,
-            opts.long_format,
-        ));
+        let dir = full.rsplit_once('/').map_or("/mnt", |(d, _)| d);
+        let mut entry = entry_info(dir, name);
+        entry.name = name.to_string();
+        out.push_str(&print_entry(&entry, path, opts.long_format));
         return Ok(out);
     }
 
@@ -292,22 +322,11 @@ pub fn cmd_ls(image: &Path, path: &str, opts: &ListOptions) -> Result<String, (S
             } else {
                 format!("{path}/{}", e.name)
             };
-            let (size, mtime) = entry_meta(&full, &e.name);
-            out.push_str(&print_entry(
-                &e.name,
-                &display,
-                e.is_dir,
-                size,
-                mtime,
-                opts.long_format,
-            ));
+            let entry = entry_info(&full, &e.name);
+            out.push_str(&print_entry(&entry, &display, opts.long_format));
         }
     }
     Ok(out)
-}
-
-fn entry_meta(dir: &str, name: &str) -> (i64, i64) {
-    stat_raw(&format!("{dir}/{name}")).map_or((0, 0), |st| (st.st_size, st.st_mtime))
 }
 
 fn list_recursive(dir: &str, out: &mut String, long_format: bool) -> Result<(), (String, i32)> {
@@ -319,15 +338,8 @@ fn list_recursive(dir: &str, out: &mut String, long_format: bool) -> Result<(), 
             .strip_prefix("/mnt")
             .unwrap_or(&entry_path)
             .to_string();
-        let (size, mtime) = entry_meta(dir, &e.name);
-        out.push_str(&print_entry(
-            &e.name,
-            &display,
-            e.is_dir,
-            size,
-            mtime,
-            long_format,
-        ));
+        let entry = entry_info(dir, &e.name);
+        out.push_str(&print_entry(&entry, &display, long_format));
         if e.is_dir {
             list_recursive(&entry_path, out, long_format)?;
         }
@@ -335,23 +347,60 @@ fn list_recursive(dir: &str, out: &mut String, long_format: bool) -> Result<(), 
     Ok(())
 }
 
-fn print_entry(
-    _name: &str,
-    display_path: &str,
+/// One directory entry's lstat answer — what `ls` prints. A symlink
+/// shows as a link with its target (spec 11 §9), never as a 0-byte file.
+struct EntryInfo {
+    name: String,
     is_dir: bool,
+    is_link: bool,
     size: i64,
     mtime: i64,
-    long_format: bool,
-) -> String {
+    target: Option<String>,
+}
+
+fn entry_info(dir: &str, name: &str) -> EntryInfo {
+    let path = if dir.ends_with('/') {
+        format!("{dir}{name}")
+    } else {
+        format!("{dir}/{name}")
+    };
+    let (size, mtime, is_link) = lstat_raw(&path).map_or((0, 0, false), |st| {
+        (
+            st.st_size,
+            st.st_mtime,
+            entry_type(&st) == tfs::backend::S_IFLNK,
+        )
+    });
+    EntryInfo {
+        name: name.to_string(),
+        is_dir: is_directory(&path),
+        is_link,
+        size,
+        mtime,
+        target: if is_link { read_link(&path).ok() } else { None },
+    }
+}
+
+fn print_entry(entry: &EntryInfo, display_path: &str, long_format: bool) -> String {
     if long_format {
+        let suffix = match &entry.target {
+            Some(target) => format!(" -> {target}"),
+            None => String::new(),
+        };
         format!(
-            "{}  {:>10}  {}  {}\n",
-            format_permissions(is_dir),
-            format_size(size),
-            format_time(mtime),
-            display_path
+            "{}  {:>10}  {}  {}{}\n",
+            if entry.is_link {
+                "lrwxrwxrwx".to_string()
+            } else {
+                format_permissions(entry.is_dir)
+            },
+            format_size(entry.size),
+            format_time(entry.mtime),
+            display_path,
+            suffix
         )
     } else {
+        let _ = &entry.name;
         format!("{display_path}\n")
     }
 }
@@ -386,6 +435,8 @@ fn print_tree(dir: &str, prefix: &str, out: &mut String) {
         out.push_str(&e.name);
         if e.is_dir {
             out.push('/');
+        } else if let Some(target) = entry_info(dir, &e.name).target {
+            out.push_str(&format!(" -> {target}"));
         }
         out.push('\n');
         if e.is_dir {
@@ -436,17 +487,33 @@ pub fn cmd_cat(image: &Path, file: &str, out: &mut dyn Write) -> Result<(), (Str
 // stat
 // ---------------------------------------------------------------------
 
-/// `tfs stat` — the C++ stat output.
+/// `tfs stat` — the C++ stat output, extended with the symlink answer
+/// (spec 11 §9): the entry itself, so a link reports its target rather
+/// than disappearing behind a failed follow.
 pub fn cmd_stat(image: &Path, path: &str) -> Result<String, (String, i32)> {
     let _guard = MountGuard::mount(image).map_err(|e| (format!("Error: {e}"), 1))?;
     let full = full_path(path);
 
-    if full != "/mnt" && !exists(&full) {
+    if full != "/mnt" && !exists(&full) && lstat_raw(&full).is_err() {
         return Err((format!("Error: Path does not exist: {path}"), 1));
     }
 
     let mut out = format!("File: {path}\n");
-    if is_directory(&full) {
+    if is_symlink(&full) {
+        out.push_str("Type: symlink\n");
+        if let Ok(st) = lstat_raw(&full) {
+            out.push_str(&format!(
+                "Size: {} ({} bytes)\n",
+                format_size(st.st_size),
+                st.st_size
+            ));
+            out.push_str(&format!("Modified: {}\n", format_time(st.st_mtime)));
+        }
+        match read_link(&full) {
+            Ok(target) => out.push_str(&format!("Target: {target}\n")),
+            Err(e) => out.push_str(&format!("Target: <unreadable: {e}>\n")),
+        }
+    } else if is_directory(&full) {
         out.push_str("Type: directory\n");
     } else {
         out.push_str("Type: file\n");

@@ -436,8 +436,12 @@ fn fill_stat(st: *mut TebakoStat, raw: &crate::backend::RawStat) -> i32 {
     let type_bits: u32 = match raw.entry_type {
         EntryType::File => libc::S_IFREG as u32,
         EntryType::Directory => libc::S_IFDIR as u32,
-        // C++ returns EINVAL for anything that is neither file nor dir.
-        _ => return libc::EINVAL,
+        // A link is a stat-able entry (spec 11 §9): S_IFLNK with the
+        // target's length as st_size, the way POSIX lstat reports it.
+        EntryType::Symlink => crate::backend::S_IFLNK,
+        // Still EINVAL for devices/pipes: the VFS holds no such entries
+        // for a consumer to act on.
+        EntryType::Other => return libc::EINVAL,
     };
     // st_mode is mode_t on unix, u16 in the pinned windows tebako_stat.
     #[cfg(unix)]
@@ -454,12 +458,42 @@ fn fill_stat(st: *mut TebakoStat, raw: &crate::backend::RawStat) -> i32 {
     0
 }
 
-/// `tebako_fs_stat`.
+/// `tebako_fs_stat`. POSIX stat: a symlink entry is followed (spec 11
+/// §9) and the target's metadata answers. `ELOOP` past the hop bound.
 ///
 /// # Safety
 /// `path` must be a valid C string; `st` must point to a valid struct tebako_stat.
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_stat(path: *const c_char, st: *mut TebakoStat) -> libc::c_int {
+    if st.is_null() {
+        return fail(libc::EINVAL);
+    }
+    let path = match unsafe { path_arg(path) } {
+        Ok(p) => p,
+        Err(e) => return fail(e),
+    };
+    match context().read().unwrap().stat_following(path) {
+        Ok(raw) => {
+            let rc = fill_stat(st, &raw);
+            set_errno(rc);
+            if rc == 0 {
+                0
+            } else {
+                -1
+            }
+        }
+        Err(e) => fail(e),
+    }
+}
+
+/// `tebako_fs_lstat`. POSIX lstat: the entry itself answers — a symlink
+/// reports `S_IFLNK` with the target's length as `st_size`, never the
+/// target's metadata.
+///
+/// # Safety
+/// `path` must be a valid C string; `st` must point to a valid struct tebako_stat.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_lstat(path: *const c_char, st: *mut TebakoStat) -> libc::c_int {
     if st.is_null() {
         return fail(libc::EINVAL);
     }
@@ -478,6 +512,46 @@ pub unsafe extern "C" fn tebako_fs_stat(path: *const c_char, st: *mut TebakoStat
             }
         }
         Err(e) => fail(e),
+    }
+}
+
+/// `tebako_fs_readlink`. Copies a symlink's stored target into `buf`
+/// (NUL-terminated) and answers the target's length, or -1 with EINVAL
+/// when the entry is not a link. A buffer that cannot hold the target
+/// and its NUL answers -1 with ERANGE — never a silent truncation, so
+/// a caller that trusts the answer cannot act on a path that is not
+/// the stored one.
+///
+/// # Safety
+/// `path` must be a valid C string; `buf` must point to `size` writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_readlink(
+    path: *const c_char,
+    buf: *mut c_char,
+    size: usize,
+) -> libc::ssize_t {
+    if buf.is_null() {
+        return fail(libc::EINVAL) as libc::ssize_t;
+    }
+    let path = match unsafe { path_arg(path) } {
+        Ok(p) => p,
+        Err(e) => return fail(e) as libc::ssize_t,
+    };
+    match context().read().unwrap().readlink(path) {
+        Ok(target) => {
+            let len = target.len();
+            if len >= size {
+                return fail(libc::ERANGE) as libc::ssize_t;
+            }
+            // SAFETY: the caller guarantees `buf` holds `size` writable
+            // bytes and `len < size`, so the copy and its NUL fit.
+            unsafe {
+                std::ptr::copy_nonoverlapping(target.as_ptr(), buf.cast::<u8>(), len);
+                *buf.add(len) = 0;
+            }
+            len as libc::ssize_t
+        }
+        Err(e) => fail(e) as libc::ssize_t,
     }
 }
 

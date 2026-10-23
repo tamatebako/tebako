@@ -148,6 +148,13 @@ interpose!(
     unsafe extern "C" fn(c_int, *mut libc::stat) -> c_int
 );
 interpose!(
+    INTERPOSE_READLINK,
+    real_readlink,
+    super::readlink,
+    libc::readlink,
+    unsafe extern "C" fn(*const c_char, *mut c_char, libc::size_t) -> libc::ssize_t
+);
+interpose!(
     INTERPOSE_ACCESS,
     real_access,
     super::access,

@@ -45,6 +45,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Mutex;
 
+use tfs::backend::RawStat;
 use tfs::context::TebakoCDirent;
 
 use crate::route::{self, PathRoute};
@@ -362,7 +363,9 @@ unsafe fn fill_stat(raw: &tfs::backend::RawStat) -> Result<libc::stat, i32> {
     let type_bits: u32 = match raw.entry_type {
         EntryType::File => libc::S_IFREG as u32,
         EntryType::Directory => libc::S_IFDIR as u32,
-        _ => return Err(libc::EINVAL),
+        // A link in an image is a stat-able entry (spec 11 §9).
+        EntryType::Symlink => tfs::backend::S_IFLNK,
+        EntryType::Other => return Err(libc::EINVAL),
     };
     out.st_mode = (type_bits | raw.perms) as libc::mode_t;
     out.st_size = raw.size as libc::off_t;
@@ -568,6 +571,9 @@ pub unsafe extern "C" fn openat_impl(
 
 /// Shared body of stat/lstat.
 ///
+/// `route` is the engine call for the flavour: [`route::vfs_stat`] follows
+/// symlink hops (POSIX stat), [`route::vfs_lstat`] does not (POSIX lstat).
+///
 /// # Safety
 /// `orig`/`st` follow the intercepted-call contract; `real` is the
 /// platform's original implementation.
@@ -575,6 +581,7 @@ unsafe fn stat_via(
     p: Option<&str>,
     orig: *const c_char,
     st: *mut libc::stat,
+    route_fn: impl FnOnce(&str) -> PathRoute<RawStat>,
     real: impl FnOnce(*const c_char, *mut libc::stat) -> c_int,
 ) -> c_int {
     let Some(p) = p else {
@@ -583,7 +590,7 @@ unsafe fn stat_via(
     if st.is_null() {
         return real(orig, st);
     }
-    match engine_call(|| route::vfs_stat(p)) {
+    match engine_call(|| route_fn(p)) {
         // SAFETY: st is a valid struct stat pointer per the call contract.
         Some(PathRoute::Vfs(raw)) => match unsafe { fill_stat(&raw) } {
             Ok(s) => {
@@ -607,14 +614,72 @@ unsafe fn stat_via(
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn stat(path: *const c_char, st: *mut libc::stat) -> c_int {
     boot_arm!(plat::raw_stat, (path, st));
-    unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_stat()(o, s)) }
+    unsafe {
+        stat_via(c_path(path), path, st, route::vfs_stat, |o, s| {
+            plat::real_stat()(o, s)
+        })
+    }
 }
 
-/// Interposed `lstat` (memfs has no symlink duality: lstat == stat).
+/// Interposed `lstat`: the entry itself, links never followed.
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn lstat(path: *const c_char, st: *mut libc::stat) -> c_int {
     boot_arm!(plat::raw_lstat, (path, st));
-    unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_lstat()(o, s)) }
+    unsafe {
+        stat_via(c_path(path), path, st, route::vfs_lstat, |o, s| {
+            plat::real_lstat()(o, s)
+        })
+    }
+}
+
+/// Shared body of readlink/readlinkat (spec 11 §9): the stored target,
+/// never followed. The engine's answer is copied out; a buffer shorter
+/// than the target truncates, exactly as POSIX readlink(2) specifies.
+///
+/// # Safety
+/// `orig`/`buf`/`size` follow the intercepted-call contract.
+unsafe fn readlink_via(
+    p: Option<&str>,
+    orig: *const c_char,
+    buf: *mut c_char,
+    size: libc::size_t,
+    real: impl FnOnce(*const c_char, *mut c_char, libc::size_t) -> libc::ssize_t,
+) -> libc::ssize_t {
+    let Some(p) = p else {
+        return real(orig, buf, size);
+    };
+    if buf.is_null() || size == 0 {
+        return real(orig, buf, size);
+    }
+    match engine_call(|| route::vfs_readlink(p)) {
+        Some(PathRoute::Vfs(target)) => {
+            let bytes = target.as_bytes();
+            let n = bytes.len().min(size);
+            // SAFETY: buf holds `size` writable bytes and n <= size.
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast::<u8>(), n) };
+            n as libc::ssize_t
+        }
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(PathRoute::Host) | None => real(orig, buf, size),
+    }
+}
+
+/// Interposed `readlink`.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn readlink(
+    path: *const c_char,
+    buf: *mut c_char,
+    size: libc::size_t,
+) -> libc::ssize_t {
+    boot_arm!(plat::raw_readlink, (path, buf, size));
+    unsafe {
+        readlink_via(c_path(path), path, buf, size, |o, b, n| {
+            plat::real_readlink()(o, b, n)
+        })
+    }
 }
 
 /// Interposed `fstat` (fd-flag dispatch, no path).
@@ -946,7 +1011,11 @@ pub unsafe extern "C" fn __openat_2(dirfd: c_int, path: *const c_char, flags: c_
 #[no_mangle]
 pub unsafe extern "C" fn stat64(path: *const c_char, st: *mut libc::stat) -> c_int {
     boot_arm!(plat::raw_stat, (path, st));
-    unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_stat64()(o, s)) }
+    unsafe {
+        stat_via(c_path(path), path, st, route::vfs_stat, |o, s| {
+            plat::real_stat64()(o, s)
+        })
+    }
 }
 
 /// Linux: `lstat64` (the LFS alias of `lstat`).
@@ -954,7 +1023,11 @@ pub unsafe extern "C" fn stat64(path: *const c_char, st: *mut libc::stat) -> c_i
 #[no_mangle]
 pub unsafe extern "C" fn lstat64(path: *const c_char, st: *mut libc::stat) -> c_int {
     boot_arm!(plat::raw_lstat, (path, st));
-    unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_lstat64()(o, s)) }
+    unsafe {
+        stat_via(c_path(path), path, st, route::vfs_lstat, |o, s| {
+            plat::real_lstat64()(o, s)
+        })
+    }
 }
 
 /// Linux: `fstat64` (the LFS alias of `fstat`).
@@ -1792,7 +1865,7 @@ pub unsafe extern "C" fn __xstat(ver: c_int, path: *const c_char, st: *mut libc:
     // answer.
     boot_arm!(plat::raw_stat, (path, st));
     unsafe {
-        stat_via(c_path(path), path, st, |o, s| {
+        stat_via(c_path(path), path, st, route::vfs_stat, |o, s| {
             plat::real___xstat()(ver, o, s)
         })
     }
@@ -1804,7 +1877,7 @@ pub unsafe extern "C" fn __xstat(ver: c_int, path: *const c_char, st: *mut libc:
 pub unsafe extern "C" fn __lxstat(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
     boot_arm!(plat::raw_lstat, (path, st));
     unsafe {
-        stat_via(c_path(path), path, st, |o, s| {
+        stat_via(c_path(path), path, st, route::vfs_lstat, |o, s| {
             plat::real___lxstat()(ver, o, s)
         })
     }
