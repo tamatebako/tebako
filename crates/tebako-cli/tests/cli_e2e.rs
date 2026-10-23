@@ -116,9 +116,11 @@ fn strip_progress(text: &str) -> String {
     out
 }
 
-/// Item 29 v1-legacy rule: packages built unsigned (the default, per the
-/// opt-in rule) make the bootstrap print a loud warning on stderr BY
-/// DESIGN (two lines). Strip it for output comparison — the warning's
+/// Unsigned packages (the default, per the opt-in rule) make the bootstrap
+/// print a loud warning on stderr BY DESIGN (two lines). Since tebako#856
+/// the wording distinguishes the two shapes — "no signature (unsigned
+/// package)" for an era-2 press, the v1 trailer sentence for a legacy
+/// one — and both are stripped here for output comparison. The warning's
 /// emission is covered by the bootstrap chain tests.
 fn strip_legacy_warning(text: &str) -> String {
     let mut out = String::new();
@@ -129,7 +131,8 @@ fn strip_legacy_warning(text: &str) -> String {
             continue;
         }
         if line.starts_with("tebako-bootstrap: WARNING: ")
-            && line.contains("unsigned v1 (legacy) tpkg trailer")
+            && (line.contains("unsigned v1 (legacy) tpkg trailer")
+                || line.contains("no signature (unsigned package)"))
         {
             skip_next = true;
             continue;
