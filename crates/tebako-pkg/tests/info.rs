@@ -696,7 +696,7 @@ fn validate_unsigned_require_signed_is_71() {
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
     assert_eq!(rc, 0, "{out}");
     assert!(
-        out.contains("  signature: skip — unsigned (v1 legacy trailer)\n"),
+        out.contains("  signature: skip — unsigned (no signature block)\n"),
         "{out}"
     );
 }

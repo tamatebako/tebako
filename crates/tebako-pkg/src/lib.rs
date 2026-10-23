@@ -1229,7 +1229,13 @@ pub fn format_size(size: i64) -> String {
 /// against the local trusted keyring; v1 → legacy unsigned notice.
 fn signature_status(archive: &Path, m: &Manifest) -> String {
     let Some(v2) = &m.v2 else {
-        return "Signature: none (v1 legacy trailer — unsigned)\n".to_string();
+        // An era-2 package is unsigned, not v1: it carries the package
+        // manifest block and only lacks the signature (tebako#856).
+        return if m.carries_package_manifest() {
+            "Signature: none (unsigned package — no signature block)\n".to_string()
+        } else {
+            "Signature: none (v1 legacy trailer — unsigned)\n".to_string()
+        };
     };
 
     let keyid_hex = v2.signer_keyid_hex();

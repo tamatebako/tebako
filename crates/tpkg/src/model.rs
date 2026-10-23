@@ -135,6 +135,18 @@ pub struct Manifest {
     pub v2: Option<V2Extension>,
 }
 
+impl Manifest {
+    /// Does the package carry the era-2 package-manifest block (spec 02
+    /// §5b's type 2)? That block — not the signature — is what makes an
+    /// UNSIGNED package era 2. A package without it is the v1 shape, and
+    /// only then is "re-bundle it" the right advice.
+    pub fn carries_package_manifest(&self) -> bool {
+        self.ext_blocks.iter().any(|b| {
+            b.block_type & !crate::TPKG_EXT_FLAG_CRITICAL == crate::TPKG_EXT_TYPE_PACKAGE_MANIFEST
+        })
+    }
+}
+
 impl Default for Manifest {
     fn default() -> Self {
         Manifest {
@@ -262,4 +274,44 @@ pub(crate) fn put_str(field: &mut [u8], s: &[u8]) {
     field.fill(0);
     let n = strnlen(s).min(field.len());
     field[..n].copy_from_slice(&s[..n]);
+}
+
+#[cfg(test)]
+mod carries_package_manifest_tests {
+    use super::*;
+
+    fn manifest() -> Manifest {
+        Manifest {
+            version: crate::TPKG_VERSION,
+            launcher_abi: 1,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_manifest_block_marks_the_era2_shape() {
+        let mut m = manifest();
+        assert!(!m.carries_package_manifest(), "no blocks = the v1 shape");
+        m.ext_blocks.push(
+            crate::ExtBlock::new(
+                crate::TPKG_EXT_TYPE_PACKAGE_MANIFEST,
+                b"schema: 1\n".to_vec(),
+            )
+            .expect("type 2 is free"),
+        );
+        assert!(m.carries_package_manifest());
+    }
+
+    #[test]
+    fn the_critical_flag_does_not_hide_the_block() {
+        let mut m = manifest();
+        m.ext_blocks.push(
+            crate::ExtBlock::new(
+                crate::TPKG_EXT_TYPE_PACKAGE_MANIFEST | crate::TPKG_EXT_FLAG_CRITICAL,
+                b"schema: 1\n".to_vec(),
+            )
+            .expect("the critical bit rides the type word"),
+        );
+        assert!(m.carries_package_manifest());
+    }
 }

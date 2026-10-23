@@ -98,6 +98,12 @@ impl PackageInspection {
     pub fn trust(&self) -> (String, Option<String>) {
         match &self.trailer.v2 {
             Some(v2) => ("v2-signed".to_string(), Some(v2.signer_keyid_hex())),
+            // "unsigned" is the whole finding for an era-2 package: its
+            // signature is the only missing axis. Only a package with no
+            // era-2 manifest block is the v1 shape (tebako#856).
+            None if self.trailer.carries_package_manifest() => {
+                ("unsigned (no signature block)".to_string(), None)
+            }
             None => ("unsigned (v1 legacy trailer)".to_string(), None),
         }
     }
