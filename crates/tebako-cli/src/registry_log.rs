@@ -393,10 +393,18 @@ pub fn verify_chain(heads: &[Head], keyring: &[u8]) -> ChainReport {
         }
         if let Ok(sig) = from_hex(&head.sig) {
             match tebako_signer::verify_detached_full(keyring, head.payload().as_bytes(), &sig) {
-                Ok(tebako_signer::VerifyOutcome::Invalid(_)) => report.problems.push(format!(
-                    "head {}: the SIGNATURE DOES NOT VALIDATE — the head was re-written",
-                    head.seq
-                )),
+                Ok(tebako_signer::VerifyOutcome::Invalid(_)) => {
+                    // The signature class keeps its own exit (spec 41 §7):
+                    // a forged head is a different finding from a broken
+                    // chain, and a script must be able to tell them apart.
+                    if i + 1 == heads.len() {
+                        report.signature = "invalid";
+                    }
+                    report.problems.push(format!(
+                        "head {}: the SIGNATURE DOES NOT VALIDATE — the head was re-written",
+                        head.seq
+                    ));
+                }
                 Ok(tebako_signer::VerifyOutcome::Trusted(_)) if i + 1 == heads.len() => {
                     report.signature = "valid"
                 }
@@ -577,6 +585,338 @@ pub fn verify_registry_against_log(
         root_match,
         detail,
     })
+}
+
+// -------------------------------------------------------------- the verbs
+
+const EX_TEBAKO_IO: i32 = 74;
+const EX_TEBAKO_SIGNATURE: i32 = 71;
+
+/// `tebako registry snapshot <alias|path> [--json] [--out <path>]`.
+pub fn snapshot(input: &str, json: bool, out: Option<&str>) -> Result<(String, i32), TebakoError> {
+    let registry = crate::registry::load(input)?;
+    let lines = canonical_lines(&registry)?;
+    let root = hex(&tree_root(&lines));
+
+    if let Some(path) = out {
+        let body = format!(
+            "# tebako registry snapshot — {} row(s), root {}\n{}\n",
+            lines.len(),
+            root,
+            lines.join("\n")
+        );
+        std::fs::write(path, body)
+            .map_err(|e| TebakoError::new(format!("cannot write {path}: {e}"), EX_TEBAKO_IO))?;
+    }
+
+    if json {
+        let doc = tebako_json::Value::Object(vec![
+            (
+                "registry_log_schema".to_string(),
+                tebako_json::Value::Number("1".to_string()),
+            ),
+            (
+                "registry".to_string(),
+                tebako_json::Value::String(input.to_string()),
+            ),
+            (
+                "rows".to_string(),
+                tebako_json::Value::Number(lines.len().to_string()),
+            ),
+            ("root".to_string(), tebako_json::Value::String(root)),
+            (
+                "lines".to_string(),
+                tebako_json::Value::Array(
+                    lines
+                        .iter()
+                        .map(|l| tebako_json::Value::String(l.clone()))
+                        .collect(),
+                ),
+            ),
+        ]);
+        return Ok((format!("{}\n", tebako_json::to_string(&doc)), 0));
+    }
+    let mut out_text = String::new();
+    for line in &lines {
+        out_text.push_str(line);
+        out_text.push('\n');
+    }
+    Ok((
+        format!("{out_text}snapshot: {} row(s), root {root}\n", lines.len()),
+        0,
+    ))
+}
+
+/// `tebako registry log verify <log> [--registry <path>] [--json]`.
+pub fn log_verify(
+    log: &str,
+    registry: Option<&str>,
+    json: bool,
+) -> Result<(String, i32), TebakoError> {
+    let heads = read_heads(log)?;
+    let keyring = match tfs::journal::tebako_home_dir() {
+        Some(home) => tebako_signer::verification_keyring(&home).unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let chain = verify_chain(&heads, &keyring);
+    let check = match registry {
+        Some(path) => Some(verify_registry_against_log(
+            &crate::registry::load(path)?,
+            &heads,
+        )?),
+        None => None,
+    };
+    let ok = chain.sound() && check.as_ref().map(|c| c.root_match).unwrap_or(true);
+    let code = if chain.signature == "invalid" {
+        EX_TEBAKO_SIGNATURE
+    } else if ok {
+        0
+    } else {
+        EX_TEBAKO_LEDGER
+    };
+
+    if json {
+        let mut members = vec![
+            (
+                "registry_log_schema".to_string(),
+                tebako_json::Value::Number("1".to_string()),
+            ),
+            (
+                "log".to_string(),
+                tebako_json::Value::String(log.to_string()),
+            ),
+            (
+                "heads".to_string(),
+                tebako_json::Value::Number(chain.heads.to_string()),
+            ),
+            ("sound".to_string(), tebako_json::Value::Bool(chain.sound())),
+            (
+                "signature".to_string(),
+                tebako_json::Value::String(chain.signature.to_string()),
+            ),
+            (
+                "problems".to_string(),
+                tebako_json::Value::Array(
+                    chain
+                        .problems
+                        .iter()
+                        .map(|p| tebako_json::Value::String(p.clone()))
+                        .collect(),
+                ),
+            ),
+            (
+                "row_drops".to_string(),
+                tebako_json::Value::Array(
+                    chain
+                        .row_drops
+                        .iter()
+                        .map(|p| tebako_json::Value::String(p.clone()))
+                        .collect(),
+                ),
+            ),
+        ];
+        if let Some(c) = &check {
+            members.push((
+                "registry".to_string(),
+                tebako_json::Value::Object(vec![
+                    (
+                        "rows".to_string(),
+                        tebako_json::Value::Number(c.registry_rows.to_string()),
+                    ),
+                    (
+                        "sealed_rows".to_string(),
+                        tebako_json::Value::Number(c.sealed_rows.to_string()),
+                    ),
+                    (
+                        "root_match".to_string(),
+                        tebako_json::Value::Bool(c.root_match),
+                    ),
+                    (
+                        "detail".to_string(),
+                        tebako_json::Value::String(c.detail.clone()),
+                    ),
+                ]),
+            ));
+        }
+        return Ok((
+            format!(
+                "{}\n",
+                tebako_json::to_string(&tebako_json::Value::Object(members))
+            ),
+            code,
+        ));
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{log}: {} head(s), signature {}\n",
+        chain.heads, chain.signature
+    ));
+    for problem in &chain.problems {
+        out.push_str(&format!("  {problem}\n"));
+    }
+    for drop in &chain.row_drops {
+        out.push_str(&format!("  row drop: {drop}\n"));
+    }
+    if let Some(c) = &check {
+        out.push_str(&format!("  {}\n", c.detail));
+    }
+    out.push_str(if ok {
+        "log verify: sound\n"
+    } else {
+        "log verify: PROBLEMS (see above)\n"
+    });
+    Ok((out, code))
+}
+
+/// `tebako registry log prove <log> --registry <path> --row <name>@<version>
+/// [--json] [--verify-root <hex>]`.
+pub fn log_prove(
+    log: &str,
+    registry: &str,
+    row: &str,
+    json: bool,
+    verify_root: Option<&str>,
+) -> Result<(String, i32), TebakoError> {
+    let heads = read_heads(log)?;
+    let document = crate::registry::load(registry)?;
+    let lines = canonical_lines(&document)?;
+    let indices: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.split(' ').nth(1) == Some(row))
+        .map(|(i, _)| i)
+        .collect();
+    if indices.is_empty() {
+        return Err(TebakoError::new(
+            format!("the registry holds no row named {row}"),
+            EX_USAGE,
+        ));
+    }
+    // The root the proof speaks for: the newest head, or the caller's own
+    // (a root obtained out of band — the whole point of a proof).
+    let (root, trust) = match verify_root {
+        Some(hex_root) => (hex_root.to_ascii_lowercase(), "caller-supplied"),
+        None => {
+            let newest = heads.last().ok_or_else(|| {
+                TebakoError::new(
+                    "the log holds no heads — nothing to prove against".to_string(),
+                    EX_TEBAKO_LEDGER,
+                )
+            })?;
+            (newest.root.clone(), "newest head")
+        }
+    };
+
+    let mut proofs = Vec::new();
+    for index in &indices {
+        let proof = inclusion_proof(&lines, *index)?;
+        let rebuilt = hex(&verify_inclusion(
+            lines[*index].as_bytes(),
+            *index,
+            lines.len(),
+            &proof,
+        )?);
+        proofs.push((index, proof, rebuilt));
+    }
+    let ok = proofs.iter().all(|(_, _, rebuilt)| *rebuilt == root);
+    let code = if ok { 0 } else { EX_TEBAKO_LEDGER };
+
+    if json {
+        let rows: Vec<tebako_json::Value> = proofs
+            .iter()
+            .map(|(index, proof, rebuilt)| {
+                tebako_json::Value::Object(vec![
+                    (
+                        "line".to_string(),
+                        tebako_json::Value::String(lines[**index].clone()),
+                    ),
+                    (
+                        "index".to_string(),
+                        tebako_json::Value::Number(index.to_string()),
+                    ),
+                    (
+                        "total".to_string(),
+                        tebako_json::Value::Number(lines.len().to_string()),
+                    ),
+                    (
+                        "proof".to_string(),
+                        tebako_json::Value::Array(
+                            proof
+                                .iter()
+                                .map(|h| tebako_json::Value::String(hex(h)))
+                                .collect(),
+                        ),
+                    ),
+                    (
+                        "root".to_string(),
+                        tebako_json::Value::String(rebuilt.clone()),
+                    ),
+                    (
+                        "verifies".to_string(),
+                        tebako_json::Value::Bool(*rebuilt == root),
+                    ),
+                ])
+            })
+            .collect();
+        let doc = tebako_json::Value::Object(vec![
+            (
+                "registry_log_schema".to_string(),
+                tebako_json::Value::Number("1".to_string()),
+            ),
+            (
+                "log".to_string(),
+                tebako_json::Value::String(log.to_string()),
+            ),
+            (
+                "row".to_string(),
+                tebako_json::Value::String(row.to_string()),
+            ),
+            (
+                "against".to_string(),
+                tebako_json::Value::String(trust.to_string()),
+            ),
+            (
+                "expected_root".to_string(),
+                tebako_json::Value::String(root),
+            ),
+            ("proofs".to_string(), tebako_json::Value::Array(rows)),
+        ]);
+        return Ok((format!("{}\n", tebako_json::to_string(&doc)), code));
+    }
+
+    let mut out = String::new();
+    for (index, proof, rebuilt) in &proofs {
+        out.push_str(&format!(
+            "{}: {} level(s), root {rebuilt}{}\n",
+            lines[**index],
+            proof.len(),
+            if *rebuilt == root {
+                ""
+            } else {
+                " — DOES NOT MATCH"
+            }
+        ));
+    }
+    out.push_str(&format!(
+        "proof against the {trust} root {root}: {}\n",
+        if ok { "verified" } else { "FAILED" }
+    ));
+    Ok((out, code))
+}
+
+fn read_heads(log: &str) -> Result<Vec<Head>, TebakoError> {
+    match std::fs::read_to_string(log) {
+        Ok(text) => parse_heads(&text).map_err(|(_, msg)| TebakoError::new(msg, EX_TEBAKO_LEDGER)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(TebakoError::new(
+            format!("no log at {log} — a registry publishes one beside it (spec 41 §5)"),
+            EX_TEBAKO_IO,
+        )),
+        Err(e) => Err(TebakoError::new(
+            format!("cannot read the log {log}: {e}"),
+            EX_TEBAKO_IO,
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -899,6 +1239,52 @@ payloads:
         assert_eq!(check.registry_rows, 1);
         assert_eq!(check.sealed_rows, 2);
         assert!(check.detail.contains("NOT what head 4 sealed"));
+    }
+
+    #[test]
+    fn a_signed_head_verifies_and_a_forged_one_is_the_signature_class() {
+        // A real key store: the verdict for a KNOWN signer can only be
+        // reached with the key in the keyring.
+        let dir =
+            std::env::temp_dir().join(format!("tebako-registry-log-sig-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = tebako_signer::press_local_key(&dir).expect("a press-local key");
+        tebako_signer::register_trusted(&dir, &key.public_key).expect("registered");
+        let keyring = tebako_signer::verification_keyring(&dir).expect("keyring");
+
+        let lines = lines(3);
+        let mut head = Head {
+            seq: 0,
+            ts: 1_761_000_000,
+            root: hex(&tree_root(&lines)),
+            rows: 3,
+            prev: "-".to_string(),
+            key: key.keyid_hex(),
+            sig: String::new(),
+            line: 1,
+        };
+        head.sig = hex(&tebako_signer::sign_detached(
+            head.payload().as_bytes(),
+            &key.secret_key,
+            &key.fingerprint,
+        )
+        .expect("signed"));
+        let report = verify_chain(std::slice::from_ref(&head), &keyring);
+        assert_eq!(report.signature, "valid", "{:?}", report.problems);
+
+        // Any edit after signing breaks the signature: the chain is what
+        // the head SAYS, and the signature is what makes saying it cost
+        // something. This is the 71 class, not the 80 one.
+        let mut forged = head.clone();
+        forged.rows = 1;
+        let report = verify_chain(std::slice::from_ref(&forged), &keyring);
+        assert_eq!(report.signature, "invalid");
+        assert!(report
+            .problems
+            .iter()
+            .any(|p| p.contains("DOES NOT VALIDATE")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

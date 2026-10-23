@@ -221,7 +221,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         || (subcommand == "registry"
             && matches!(
                 rest.first().map(|a| a.as_str()),
-                Some("validate" | "doctor")
+                Some("validate" | "doctor" | "snapshot" | "log")
             )
             && rest.iter().any(|a| a == "--json"));
     if machine_stdout {
@@ -672,8 +672,97 @@ fn run_registry(args: &[String]) -> Result<(), CliExit> {
             print!("{report}");
             Ok(())
         }
+        "snapshot" => {
+            const FORM: &str =
+                "usage: tebako registry snapshot <path-or-url> [--json] [--out <path>]";
+            let mut input: Option<&str> = None;
+            let mut json = false;
+            let mut out: Option<&str> = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--json" => json = true,
+                    "--out" => {
+                        i += 1;
+                        out = Some(args.get(i).ok_or_else(|| {
+                            CliExit::Usage(FORM.to_string())
+                        })?);
+                    }
+                    other if input.is_none() && !other.starts_with('-') => input = Some(other),
+                    _ => return Err(CliExit::Usage(FORM.to_string())),
+                }
+                i += 1;
+            }
+            let Some(input) = input else {
+                return Err(CliExit::Usage(FORM.to_string()));
+            };
+            let (text, code) = tebako_cli::registry_log::snapshot(input, json, out)
+                .map_err(CliExit::Error)?;
+            print!("{text}");
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
+        "log" => {
+            const FORM: &str = "usage: tebako registry log <verify <log> [--registry <path>] | \
+prove <log> --registry <path> --row <name>@<version>> [--json]";
+            let verb = args.get(1).map(|s| s.as_str()).unwrap_or("");
+            let mut log: Option<&str> = None;
+            let mut registry: Option<&str> = None;
+            let mut row: Option<&str> = None;
+            let mut verify_root: Option<&str> = None;
+            let mut json = false;
+            let mut i = 2;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--json" => json = true,
+                    "--registry" => {
+                        i += 1;
+                        registry =
+                            Some(args.get(i).ok_or_else(|| CliExit::Usage(FORM.to_string()))?);
+                    }
+                    "--row" => {
+                        i += 1;
+                        row = Some(args.get(i).ok_or_else(|| CliExit::Usage(FORM.to_string()))?);
+                    }
+                    "--verify-root" => {
+                        i += 1;
+                        verify_root =
+                            Some(args.get(i).ok_or_else(|| CliExit::Usage(FORM.to_string()))?);
+                    }
+                    other if log.is_none() && !other.starts_with('-') => log = Some(other),
+                    _ => return Err(CliExit::Usage(FORM.to_string())),
+                }
+                i += 1;
+            }
+            let Some(log) = log else {
+                return Err(CliExit::Usage(FORM.to_string()));
+            };
+            let (text, code) = match verb {
+                "verify" => tebako_cli::registry_log::log_verify(log, registry, json)
+                    .map_err(CliExit::Error)?,
+                "prove" => {
+                    let (Some(registry), Some(row)) = (registry, row) else {
+                        return Err(CliExit::Usage(FORM.to_string()));
+                    };
+                    tebako_cli::registry_log::log_prove(log, registry, row, json, verify_root)
+                        .map_err(CliExit::Error)?
+                }
+                other => {
+                    return Err(CliExit::Usage(format!(
+                        "unknown registry log verb '{other}' ({FORM})"
+                    )))
+                }
+            };
+            print!("{text}");
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
         other => Err(CliExit::Usage(format!(
-            "unknown registry verb '{other}' — usage: tebako registry <validate|retire|doctor> …"
+            "unknown registry verb '{other}' — usage: tebako registry <validate|retire|doctor|snapshot|log> …"
         ))),
     }
 }
