@@ -158,13 +158,58 @@ fn check_locks(section: &mut Section, home: &Path) {
             .and_then(|t| now.duration_since(t).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        if age > 120 {
+        if age <= 120 {
+            continue;
+        }
+        // A leftover flock file is NORMAL: flock(2) lives on the descriptor
+        // and dies when the install's process does, so the file outlives the
+        // lock it named. Age alone therefore says nothing — the answer is one
+        // syscall away, so ask it instead of asking the user (tebako#900).
+        if lock_is_free(&lock) {
+            section.ok(format!(
+                "lock {}: {}s old, no holder — leftover from a finished run, safe to remove",
+                lock.display(),
+                age
+            ));
+        } else {
             section.problem(format!(
-                "stale lock {} ({}s old — the install flock is 120 s): remove it if no tebako process holds it",
+                "lock {} held for {}s (the install flock is 120 s): a tebako process is still working, or died without closing it",
                 lock.display(),
                 age
             ));
         }
+    }
+}
+
+/// True when nothing holds the lock: the probe takes the exclusive flock
+/// non-blocking and releases it at once. An unreadable or unopenable file is
+/// reported as free — a lock nobody can open cannot be holding anything, and
+/// doctor's job is to avoid a false alarm (tebako#900).
+fn lock_is_free(lock: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        let Ok(file) = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(lock)
+        else {
+            return true;
+        };
+        let fd = file.as_raw_fd();
+        let rc = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+        if rc == 0 {
+            unsafe { libc::flock(fd, libc::LOCK_UN) };
+            true
+        } else {
+            false
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows: the install lock is a file held open exclusively; being able
+        // to open it for writing is the same evidence.
+        std::fs::OpenOptions::new().write(true).open(lock).is_ok()
     }
 }
 
@@ -654,4 +699,37 @@ pub fn run(
         }
     }
     Ok((out, if problems == 0 { 0 } else { 1 }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// tebako#900: the probe must answer what the age cannot. A leftover file
+    /// nobody holds is free; the same file with a live flock is not.
+    #[test]
+    fn the_lock_probe_tells_an_orphan_from_a_holder() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("entry.lock");
+        std::fs::write(&lock, b"").unwrap();
+        assert!(lock_is_free(&lock), "an unheld lock must read as free");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            let held = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&lock)
+                .unwrap();
+            let rc = unsafe { libc::flock(held.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            assert_eq!(rc, 0, "the test could not take the lock");
+            assert!(
+                !lock_is_free(&lock),
+                "a held lock must NOT read as free — that is the whole point"
+            );
+            unsafe { libc::flock(held.as_raw_fd(), libc::LOCK_UN) };
+            assert!(lock_is_free(&lock), "released again, it is free again");
+        }
+    }
 }
