@@ -31,6 +31,7 @@
 //!                [--runtime <exe> --runtime-image <env.tfs>]
 //!                (the payload's in-image acceptance contract, spec 26 §2)
 //!   tebako blksum <image> [--out <path>] [--json]
+//!   tebako solve <request.yaml> --registry <path|ref> [--lock <path>] [--locked]
 //!                (the ONE producer of an image's lazy-mount digest
 //!                sidecar outside publish — spec 39 §3)
 //!
@@ -107,6 +108,7 @@ pub mod runner;
 pub mod runtime_bundle;
 pub mod scenario;
 pub mod sdk;
+pub mod solve;
 pub mod spawn;
 pub mod strip;
 pub mod suite;

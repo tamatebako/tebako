@@ -81,6 +81,7 @@ republish of v1-era runtimes needed.
 | 76 | `EX_TEBAKO_INSTALL` | `--tebako-install` refused (`TPKG_FLAG_NO_INSTALL`) or needs the CLI |
 | 79 | `EX_TEBAKO_CHECK` | a payload check FAILed — the `tebako check` aggregate (spec 26 §2; code constant `tpkg::EX_TEBAKO_CHECK`) |
 | 80 | `EX_TEBAKO_LEDGER` | a ledger finding — `tebako audit --verify` met a chain mismatch or an invalid seal signature, the seal file holds an unparseable record, or `--strict` met unparseable journal lines (spec 40 §6; code constant `tpkg::EX_TEBAKO_LEDGER`) |
+| 81 | `EX_TEBAKO_SOLVE` | a tree-solve finding — a named conflict, lockfile drift under `--locked`, an open runtime seam, or a malformed requirement set (spec 42 §5; code constant `tebako_cli::solve::EX_TEBAKO_SOLVE`) |
 
 stderr body: `tebako-bootstrap: <message>\n` — message bodies match the
 C++ reference bootstrap 1:1 (golden parity).
