@@ -31,7 +31,7 @@ concurrency:
 env:
   # The tfs CLI release both legs image with — the SAME version, or the
   # comparison means nothing (the job asserts it).
-  TFS_VERSION: "2.8.56"
+  TFS_VERSION: "2.8.57"
   # The reproducible-builds pin; both legs must agree (asserted).
   SOURCE_DATE_EPOCH: "1700000000"
 
