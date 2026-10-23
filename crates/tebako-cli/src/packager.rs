@@ -240,7 +240,7 @@ fn init(
 /// Mount the runtime image through the tfs C ABI and extract it into the
 /// packaging environment (in-process; the image itself stays immutable
 /// in the cache).
-fn extract_runtime_image(image: &Path, dest: &Path) -> Result<(), TebakoError> {
+pub(crate) fn extract_runtime_image(image: &Path, dest: &Path) -> Result<(), TebakoError> {
     use tfs::c_api::*;
 
     let path = std::ffi::CString::new(image.to_string_lossy().as_bytes())
