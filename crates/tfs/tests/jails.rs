@@ -530,6 +530,45 @@ fn symlink_swap_after_bind_fails_on_revalidation() {
     assert_eq!(errno(), libc::EPERM);
 }
 
+/// Case folding is a FILESYSTEM property, never a policy bypass. A denial
+/// is decided on the canonical path, so asking for a denied path with its
+/// case changed answers the same denial whatever the host filesystem
+/// thinks about case — under deny-all the decision never reaches the
+/// filesystem at all, and under a grant the canonical path decides
+/// (macOS `realpath` returns the on-disk case: `/ETC/PASSWD` resolves to
+/// `/private/etc/passwd`).
+#[test]
+fn case_variants_of_a_denied_path_are_denied() {
+    let f = setup("casefold");
+    assert_eq!(install_policy(0, &[], &[]), 0);
+
+    let upper = |p: &std::path::Path| {
+        std::path::PathBuf::from(p.to_string_lossy().to_uppercase()).join("secret.txt")
+    };
+    // The sibling directory holds secret.txt; ask for it with every
+    // component upper-cased. A case-insensitive host would happily open
+    // it if the policy compared pre-canonical strings.
+    assert_eq!(open(&upper(&f.sibling), libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::EPERM);
+    assert_eq!(stat(&upper(&f.sibling)), -1);
+    assert_eq!(errno(), libc::EPERM);
+
+    // Under a grant, a case variant of a path INSIDE the grant is the
+    // granted file on a case-insensitive host (allowed, when it exists)
+    // and absent on a case-sensitive one (ENOENT) — either way it is the
+    // canonical decision, and the sibling secret stays unreachable.
+    assert_eq!(install_policy(0, &[(&f.work, "/work", 1)], &[]), 0);
+    assert_eq!(open(&upper(&f.sibling), libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::EPERM);
+    if cfg!(target_os = "macos") {
+        // The granted file is reachable through its case variant because
+        // it IS that file; the check is that the answer came from the
+        // grant, never from a denial loosened by case.
+        assert_eq!(open(&upper(&f.work), libc::O_RDONLY), -1);
+        assert_eq!(errno(), libc::ENOENT, "hello.txt is not secret.txt");
+    }
+}
+
 #[test]
 fn extract_all_is_a_gated_host_write() {
     let f = setup("extract");
