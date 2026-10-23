@@ -59,10 +59,10 @@ pub fn node_hash(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
 /// the defined root `SHA-256("")` — named, never a panic, because a
 /// registry with no rows is a legitimate state and its root must still be
 /// a value the log can chain.
-pub fn tree_root(lines: &[Vec<u8>]) -> [u8; 32] {
+pub fn tree_root<T: AsRef<[u8]>>(lines: &[T]) -> [u8; 32] {
     match lines.len() {
         0 => Sha256::digest([]).into(),
-        1 => leaf_hash(&lines[0]),
+        1 => leaf_hash(lines[0].as_ref()),
         n => {
             let k = largest_pow2_lt(n);
             node_hash(&tree_root(&lines[..k]), &tree_root(&lines[k..]))
@@ -81,7 +81,10 @@ fn largest_pow2_lt(n: usize) -> usize {
 
 /// The inclusion proof for `index` (RFC 6962 §2.1.1), leaf-to-root: the
 /// sibling hash of each level, innermost first.
-pub fn inclusion_proof(lines: &[Vec<u8>], index: usize) -> Result<Vec<[u8; 32]>, TebakoError> {
+pub fn inclusion_proof<T: AsRef<[u8]>>(
+    lines: &[T],
+    index: usize,
+) -> Result<Vec<[u8; 32]>, TebakoError> {
     if lines.is_empty() {
         return Err(TebakoError::new(
             "an empty registry has no rows to prove — publish the snapshot first",
@@ -100,7 +103,7 @@ pub fn inclusion_proof(lines: &[Vec<u8>], index: usize) -> Result<Vec<[u8; 32]>,
     Ok(path(lines, index))
 }
 
-fn path(lines: &[Vec<u8>], m: usize) -> Vec<[u8; 32]> {
+fn path<T: AsRef<[u8]>>(lines: &[T], m: usize) -> Vec<[u8; 32]> {
     let n = lines.len();
     if n == 1 {
         return Vec::new();
@@ -513,6 +516,69 @@ fn kind_str(kind: &tpkg::PayloadKind) -> &'static str {
     }
 }
 
+// ------------------------------------------------- registry vs. the log
+
+/// What `registry log verify --registry <path>` reports (spec 41 §5): the
+/// registry in hand either IS the row set the newest head sealed, or the
+/// difference is named.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryCheck {
+    /// Rows the registry document holds.
+    pub registry_rows: usize,
+    /// Rows the newest head was sealed over.
+    pub sealed_rows: usize,
+    /// The recomputed root equals the newest head's root.
+    pub root_match: bool,
+    /// One sentence a human can act on.
+    pub detail: String,
+}
+
+/// Compare a registry document against a log. Recomputing the tree from
+/// the document's canonical rows and comparing the ROOT is both the
+/// membership check and the completeness check in one number: if the roots
+/// agree, the row set is exactly what was sealed, and no row could have
+/// been added or removed without moving it.
+pub fn verify_registry_against_log(
+    registry: &tebako_resolve::registry::Registry,
+    heads: &[Head],
+) -> Result<RegistryCheck, TebakoError> {
+    let lines = canonical_lines(registry)?;
+    let registry_rows = lines.len();
+    let Some(newest) = heads.last() else {
+        return Err(TebakoError::new(
+            "the log holds no heads — publish a snapshot before verifying a registry against it"
+                .to_string(),
+            EX_TEBAKO_LEDGER,
+        ));
+    };
+    let root = hex(&tree_root(&lines));
+    let root_match = root == newest.root;
+    let detail = if root_match && registry_rows == newest.rows {
+        format!(
+            "the registry IS head {}: {registry_rows} rows, root {root}",
+            newest.seq
+        )
+    } else if root_match {
+        // Same tree, different declared count: the head's own number is
+        // wrong, which is a producer bug rather than a yank — say which.
+        format!(
+            "the roots agree but head {} declares {} rows while the registry holds {registry_rows} — the head's count is wrong",
+            newest.seq, newest.rows
+        )
+    } else {
+        format!(
+            "the registry is NOT what head {} sealed: it holds {registry_rows} rows (root {root}) but the head was sealed over {} rows (root {}) — a row was added, removed or edited after the seal",
+            newest.seq, newest.rows, newest.root
+        )
+    };
+    Ok(RegistryCheck {
+        registry_rows,
+        sealed_rows: newest.rows,
+        root_match,
+        detail,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,7 +591,8 @@ mod tests {
 
     #[test]
     fn the_empty_tree_has_its_defined_root() {
-        assert_eq!(tree_root(&[]), {
+        let none: [Vec<u8>; 0] = [];
+        assert_eq!(tree_root(&none), {
             let d: [u8; 32] = Sha256::digest([]).into();
             d
         });
@@ -752,6 +819,86 @@ payloads:
         );
         // A snapshot that collapsed the two arms would hide one build.
         assert_ne!(rows[0].split(' ').nth(2), rows[1].split(' ').nth(2));
+    }
+
+    fn head_over(registry: &tebako_resolve::registry::Registry, seq: u64) -> Head {
+        let lines = canonical_lines(registry).unwrap();
+        Head {
+            seq,
+            ts: 1_761_000_000,
+            root: hex(&tree_root(&lines)),
+            rows: lines.len(),
+            prev: if seq == 0 {
+                "-".to_string()
+            } else {
+                "0".repeat(64)
+            },
+            key: "-".to_string(),
+            sig: "-".to_string(),
+            line: 1,
+        }
+    }
+
+    #[test]
+    fn a_registry_verifies_against_the_head_that_sealed_it() {
+        let yaml = "\
+schema_version: 1
+payloads:
+  - name: hello
+    kind: app
+    versions:
+      - version: 1.0.0
+        platforms: universal
+        release: {ref: \"tfs:github:acme/hello:1.0.0\"}
+        entrypoints: [hello]
+    default: 1.0.0
+";
+        let reg = registry(yaml);
+        let head = head_over(&reg, 0);
+        let check = verify_registry_against_log(&reg, std::slice::from_ref(&head)).unwrap();
+        assert!(check.root_match);
+        assert_eq!(check.registry_rows, 1);
+        assert!(check.detail.contains("IS head 0"), "{}", check.detail);
+    }
+
+    #[test]
+    fn a_yank_after_the_seal_is_named_not_shrugged_off() {
+        let one = "\
+schema_version: 1
+payloads:
+  - name: hello
+    kind: app
+    versions:
+      - version: 1.0.0
+        platforms: universal
+        release: {ref: \"tfs:github:acme/hello:1.0.0\"}
+        entrypoints: [hello]
+    default: 1.0.0
+";
+        let two = "\
+schema_version: 1
+payloads:
+  - name: hello
+    kind: app
+    versions:
+      - version: 1.0.0
+        platforms: universal
+        release: {ref: \"tfs:github:acme/hello:1.0.0\"}
+        entrypoints: [hello]
+      - version: 2.0.0
+        platforms: universal
+        release: {ref: \"tfs:github:acme/hello:2.0.0\"}
+        entrypoints: [hello]
+    default: 2.0.0
+";
+        // The head sealed the TWO-row registry; the file in hand has one.
+        let head = head_over(&registry(two), 4);
+        let check =
+            verify_registry_against_log(&registry(one), std::slice::from_ref(&head)).unwrap();
+        assert!(!check.root_match);
+        assert_eq!(check.registry_rows, 1);
+        assert_eq!(check.sealed_rows, 2);
+        assert!(check.detail.contains("NOT what head 4 sealed"));
     }
 
     #[test]
