@@ -280,6 +280,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "inspect" => run_inspect(rest),
         "publish" => run_publish(rest),
         "blksum" => tebako_cli::blksum::run(rest).map_err(CliExit::Error),
+        "solve" => tebako_cli::solve::run(rest.to_vec()).map_err(CliExit::Error),
         "clean" | "hash" => Err(CliExit::Usage(format!(
             "'tebako {subcommand}' is a later tebako-rs milestone"
         ))),
