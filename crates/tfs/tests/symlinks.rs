@@ -326,3 +326,32 @@ fn an_undersized_readlink_buffer_is_erange_not_truncation() {
     assert_eq!(n, -1, "a short buffer must fail, never silently truncate");
     assert_eq!(unsafe { c_api::tebako_get_errno() }, libc::ERANGE);
 }
+
+#[test]
+fn open_with_o_nofollow_refuses_the_link() {
+    let _f = Fixture::mount(
+        "nofollow",
+        &[("real.txt", "payload"), ("link.txt", "@real.txt")],
+    );
+
+    // POSIX: the final component is a link and the caller said not to
+    // follow it, so the answer is ELOOP — not an fd over a link entry.
+    let fd = unsafe {
+        c_api::tebako_fs_open(
+            c_str("/app/link.txt").as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW,
+        )
+    };
+    assert_eq!(fd, -1, "O_NOFOLLOW on a link must not hand out an fd");
+    assert_eq!(unsafe { c_api::tebako_get_errno() }, libc::ELOOP);
+
+    // A regular file is unaffected by the flag.
+    let fd = unsafe {
+        c_api::tebako_fs_open(
+            c_str("/app/real.txt").as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW,
+        )
+    };
+    assert!(fd >= 0, "O_NOFOLLOW on a regular file must open it");
+    unsafe { c_api::tebako_fs_close(fd) };
+}
