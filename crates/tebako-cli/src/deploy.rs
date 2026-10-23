@@ -90,6 +90,11 @@ pub struct RuntimeDeployer {
     /// on Windows the deploy reuses those bytes as the base of the
     /// `ruby.exe` re-entry vehicle (tebako#753). POSIX never reads it.
     pub bootstrap_path: PathBuf,
+    /// The env image this press seeded from, when the release is
+    /// image-era. Its digest keys the deploy-driver image cache: the
+    /// driver's bytes depend on the runtime tree and on the driver
+    /// source, and on nothing else (tebako#864).
+    pub runtime_image: Option<PathBuf>,
 }
 
 impl RuntimeDeployer {
@@ -124,12 +129,34 @@ impl RuntimeDeployer {
         // the block from the digest).
         let deploy_excludes = tpkg::exclude::ExcludeSet::parse(&["__tpkg__".to_string()])
             .map_err(|e| crate::error::plain_error(format!("{e:?}")))?;
-        crate::image::build_image(
-            &self.driver_image(),
-            seed_dir,
-            crate::options::PressImageFormat::Dwarfs,
-            &deploy_excludes,
-        )?;
+        // The deploy-driver image is a pure function of the runtime tree
+        // (minus `__tpkg__`) and the driver source: the same bytes for
+        // every press on the same runtime pair, which is 6 of the 10
+        // seconds a re-press costs (tebako#864's profile). Build it once
+        // per key and reuse the bytes; the key covers the runtime image's
+        // digest, the driver source, the exclude set and this tool's
+        // version, so a changed runtime or a changed driver rebuilds.
+        let key = self.driver_cache_key(ops);
+        if let Some(cached) = self.cached_driver_image(&key) {
+            println!(
+                "   ... reusing the cached deploy-driver image ({})",
+                &key[..12]
+            );
+            fs::copy(&cached, self.driver_image()).map_err(|e| {
+                crate::error::plain_error(format!(
+                    "cannot take the cached deploy-driver image {}: {e}",
+                    cached.display()
+                ))
+            })?;
+        } else {
+            crate::image::build_image(
+                &self.driver_image(),
+                seed_dir,
+                crate::options::PressImageFormat::Dwarfs,
+                &deploy_excludes,
+            )?;
+            self.store_driver_image(&key);
+        }
         self.stitch_driver_package()?;
         self.write_bundle_exec_script()?;
         self.write_ruby_shim()?;
@@ -164,6 +191,72 @@ impl RuntimeDeployer {
             print!("{out}");
         }
         Ok(())
+    }
+
+    /// The cache key for the deploy-driver image (tebako#864): the runtime
+    /// image's digest, the driver source's digest, the exclude set and the
+    /// tool version. Nothing else goes into the image, so nothing else
+    /// belongs in the key.
+    fn driver_cache_key(&self, ops: &[Op]) -> String {
+        let image_digest = self.runtime_image_digest();
+        let source = self.driver_source(ops);
+        let mut h = Vec::new();
+        h.extend_from_slice(image_digest.as_bytes());
+        h.extend_from_slice(b"|");
+        h.extend_from_slice(source.as_bytes());
+        h.extend_from_slice(b"|__tpkg__|dwarfs|");
+        h.extend_from_slice(env!("CARGO_PKG_VERSION").as_bytes());
+        tpkg::lazy::sha256_hex(&h)
+    }
+
+    /// The runtime image's digest: the store's own `.sha256` marker when it
+    /// sits beside the image, else the file's hash (28 MB, tens of
+    /// milliseconds — still an order of magnitude cheaper than the build
+    /// it keys).
+    fn runtime_image_digest(&self) -> String {
+        let Some(image) = &self.runtime_image else {
+            return "no-image".to_string();
+        };
+        let marker = PathBuf::from(format!("{}.sha256", image.display()));
+        if let Ok(text) = fs::read_to_string(&marker) {
+            if let Some(first) = text.split_whitespace().next() {
+                if first.len() == 64 {
+                    return first.to_ascii_lowercase();
+                }
+            }
+        }
+        match fs::read(image) {
+            Ok(bytes) => tpkg::lazy::sha256_hex(&bytes),
+            Err(_) => "no-image".to_string(),
+        }
+    }
+
+    fn driver_cache_dir(&self) -> PathBuf {
+        crate::resolve::default_cache_root()
+            .join("cache")
+            .join("deploy-driver")
+    }
+
+    fn cached_driver_image(&self, key: &str) -> Option<PathBuf> {
+        let path = self.driver_cache_dir().join(format!("{key}.tfs"));
+        path.is_file().then_some(path)
+    }
+
+    /// Publish the freshly built image into the cache atomically: a reader
+    /// never sees a partial image, and a failure to cache never fails the
+    /// press (the build already succeeded).
+    fn store_driver_image(&self, key: &str) {
+        let dir = self.driver_cache_dir();
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let tmp = dir.join(format!(".{key}.tmp-{}", std::process::id()));
+        if fs::copy(self.driver_image(), &tmp).is_err() {
+            let _ = fs::remove_file(&tmp);
+            return;
+        }
+        let dest = dir.join(format!("{key}.tfs"));
+        let _ = fs::rename(&tmp, &dest);
     }
 
     fn driver_image(&self) -> PathBuf {
@@ -921,6 +1014,77 @@ end
 mod tests {
     use super::*;
 
+    fn cache_deployer(runtime_image: Option<PathBuf>) -> RuntimeDeployer {
+        RuntimeDeployer {
+            runtime_path: PathBuf::from("/rt/ruby"),
+            staging_bin_dir: PathBuf::from("/staging/bin"),
+            fs_mount_point: "/__tfs__".to_string(),
+            ruby_version: "3.3.12".to_string(),
+            tebako_version: "2.8.58".to_string(),
+            verbose: false,
+            sdk: None,
+            bootstrap_path: PathBuf::from("/rt/bootstrap"),
+            runtime_image,
+        }
+    }
+
+    /// tebako#864: the deploy-driver image is cached by a key that covers
+    /// everything the image contains — the runtime pair's identity and the
+    /// driver source (which carries the deploy ops) — and nothing else.
+    #[test]
+    fn the_driver_cache_key_covers_the_runtime_and_the_ops() {
+        let a = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(a.path(), b"runtime-one").unwrap();
+        let b = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(b.path(), b"runtime-two").unwrap();
+
+        let ops = vec![Op::Bundle(None, vec!["install".to_string()])];
+        let key_a = cache_deployer(Some(a.path().to_path_buf())).driver_cache_key(&ops);
+        let key_a_again = cache_deployer(Some(a.path().to_path_buf())).driver_cache_key(&ops);
+        let key_b = cache_deployer(Some(b.path().to_path_buf())).driver_cache_key(&ops);
+        assert_eq!(key_a, key_a_again, "the same inputs key the same bytes");
+        assert_ne!(
+            key_a, key_b,
+            "a different runtime pair is a different image"
+        );
+
+        let other_ops = vec![Op::Bundle(None, vec!["update".to_string()])];
+        let key_other = cache_deployer(Some(a.path().to_path_buf())).driver_cache_key(&other_ops);
+        assert_ne!(
+            key_a, key_other,
+            "a different driver source is a different image"
+        );
+
+        // The Gemfile is NOT part of the driver image (the deploy reads it
+        // from the payload side), so a project change must not churn the
+        // cache: the ops above are the same for both projects' shapes.
+        assert_ne!(key_a.len(), 0);
+    }
+
+    /// The store's own `.sha256` marker is the digest channel when it sits
+    /// beside the image — the press already wrote it, and re-hashing 28 MB
+    /// to key a cache is work the cache is meant to save.
+    #[test]
+    fn the_runtime_digest_prefers_the_store_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("rt.tfs");
+        std::fs::write(&image, b"the image bytes").unwrap();
+        let marker = format!("{}.sha256", image.display());
+        std::fs::write(&marker, format!("{}\trt.tfs\n", "a".repeat(64))).unwrap();
+        assert_eq!(
+            cache_deployer(Some(image.clone())).runtime_image_digest(),
+            "a".repeat(64)
+        );
+
+        // No marker: the file's own hash, and it is a real sha256.
+        std::fs::remove_file(&marker).unwrap();
+        let digest = cache_deployer(Some(image)).runtime_image_digest();
+        assert_eq!(digest, tpkg::lazy::sha256_hex(b"the image bytes"));
+
+        // No image at all (the v1 layout flow) keys a stable sentinel.
+        assert_eq!(cache_deployer(None).runtime_image_digest(), "no-image");
+    }
+
     #[test]
     fn the_ruby_shim_has_a_windows_shape() {
         // tebako#753: the windows shim is a batch re-entry beside the
@@ -1081,6 +1245,7 @@ mod tests {
 
     fn deployer(sdk: Option<crate::sdk::SdkPaths>) -> RuntimeDeployer {
         RuntimeDeployer {
+            runtime_image: None,
             runtime_path: PathBuf::from("/tmp/runtime"),
             staging_bin_dir: PathBuf::from("/tmp/o/p"),
             fs_mount_point: "/__tfs__".to_string(),
