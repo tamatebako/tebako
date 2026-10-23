@@ -400,11 +400,13 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    canonicalize_file_name and the fortified __realpath_chk on linux):
    glibc's realpath(3) walks the path with libc-INTERNAL stat/readlink
    aliases no PLT interpose sees, so a covered path MUST be answered by
-   the shim with the MOUNT spelling, lexically normalized — the host
-   resolver's canonicalization must never rewrite a VFS path (the
-   2026-09-03 dogfood linux-gnu jing ClassNotFound: usrmerge
-   /lib→usr/lib leaked into the JDK's URLClassPath on a root-mounted
-   payload, and the jar lookup silently dropped a byte-perfect jar);
+   the shim with the MOUNT spelling — the in-image link hops resolved
+   (spec 11 §9's rule: ELOOP past 32, a dangling link ENOENT) and the
+   result lexically normalized. The host resolver's canonicalization must
+   never rewrite a VFS path (the 2026-09-03 dogfood linux-gnu jing
+   ClassNotFound: usrmerge /lib→usr/lib leaked into the JDK's
+   URLClassPath on a root-mounted payload, and the jar lookup silently
+   dropped a byte-perfect jar);
    covered-but-not-held paths still pass to the host realpath (the
    /etc/localtime discipline);
    `TEBAKO_JAIL` carries the spec 08 §1 env form (`open|deny` +

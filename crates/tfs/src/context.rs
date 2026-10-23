@@ -1435,6 +1435,18 @@ impl FsContext {
         Err(libc::ELOOP)
     }
 
+    /// The canonical spelling of `path` (spec 11 §9): the link hops are
+    /// followed — `stat`'s resolution — and the RESOLVED spelling is
+    /// returned rather than the link's. A dangling link answers `ENOENT`
+    /// (its target does not exist) and a cycle `ELOOP`, which is what
+    /// `realpath(3)` owes its callers. A path outside every mount comes
+    /// back unchanged, so the caller's host routing still applies.
+    pub fn canonical(&self, path: &str) -> Result<String, i32> {
+        let resolved = self.follow_links(path)?;
+        self.stat(&resolved)?;
+        Ok(resolved)
+    }
+
     /// tebako_fs_stat: POSIX stat — the link is followed.
     pub fn stat_following(&self, path: &str) -> Result<RawStat, i32> {
         let resolved = self.follow_links(path)?;

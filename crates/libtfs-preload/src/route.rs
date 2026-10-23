@@ -301,13 +301,14 @@ pub fn vfs_dirfd_path(_fd: libc::c_int) -> Option<String> {
 /// ClassNotFoundException, 2026-09-03;).
 ///
 /// The discipline: a path that EXISTS in the VFS is answered with its
-/// lexically normalized VFS spelling — the host walk never runs, so no
-/// host symlink prefix can leak into it. A path the VFS lacks (a legit
-/// host file sitting under a `/` mount, `/etc/…` style) forwards to the
-/// real realpath, exactly like the open/stat passthrough. VFS symlink
-/// resolution: none (memfs has no symlink duality, and image backends
-/// resolve in-image links at lookup), so the normalized spelling IS the
-/// honest VFS canonical form.
+/// LINK-RESOLVED, lexically normalized VFS spelling — the host walk never
+/// runs, so no host symlink prefix can leak into it, and an in-image link
+/// answers its target's spelling, which is what `realpath(3)` owes its
+/// callers (spec 11 §9: the same `follow_links` resolution `stat` uses,
+/// bounded at 32 hops). A dangling link answers `ENOENT` and a cycle
+/// `ELOOP`, as POSIX does. A path the VFS lacks (a legit host file
+/// sitting under a `/` mount, `/etc/…` style) forwards to the real
+/// realpath, exactly like the open/stat passthrough.
 pub fn vfs_realpath(path: &str) -> PathRoute<std::ffi::CString> {
     // realpath(3) on an empty path answers ENOENT.
     if path.is_empty() {
@@ -318,12 +319,12 @@ pub fn vfs_realpath(path: &str) -> PathRoute<std::ffi::CString> {
     // VFS has no host directory entries), so the cwd is always host.
     let absolute = resolve_cwd_relative(path);
     let normalized = normalize_lexical(&absolute);
-    let st = { context().read().unwrap().stat(&normalized) };
-    match route_answer(st, &normalized, HostAccess::Ro) {
-        PathRoute::Vfs(_) => match std::ffi::CString::new(normalized) {
+    let resolved = { context().read().unwrap().canonical(&normalized) };
+    match route_answer(resolved, &normalized, HostAccess::Ro) {
+        PathRoute::Vfs(resolved) => match std::ffi::CString::new(resolved) {
             Ok(c) => PathRoute::Vfs(c),
-            // Unreachable: `normalized` derives from a NUL-free C string
-            // and the transform never introduces one.
+            // Unreachable: the resolved spelling derives from a NUL-free
+            // C string and the transform never introduces one.
             Err(_) => PathRoute::Denied(libc::EINVAL),
         },
         PathRoute::Host => PathRoute::Host,
