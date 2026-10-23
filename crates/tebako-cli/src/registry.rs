@@ -274,6 +274,20 @@ struct Violation {
 /// one line per violation; the `--json` form is a
 /// `registry_validate_schema: 1` document on stdout (the banner moves to
 /// stderr in main, so scripts read stdout alone).
+/// Load a registry document from a local path or a registry reference.
+/// The transparency verbs need the DOCUMENT (not just its verdict), and
+/// they must read it exactly the way `validate` does.
+pub fn load(input: &str) -> Result<tebako_resolve::registry::Registry, TebakoError> {
+    let bytes = read_registry_bytes(input)?;
+    let text = String::from_utf8_lossy(&bytes);
+    tebako_resolve::registry::Registry::from_yaml(&text).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!("{input} is not a valid registry: {e}"),
+        )
+    })
+}
+
 pub fn validate(input: &str, json: bool) -> Result<(String, i32), TebakoError> {
     let bytes = read_registry_bytes(input)?;
     let text = String::from_utf8(bytes).map_err(|e| {
