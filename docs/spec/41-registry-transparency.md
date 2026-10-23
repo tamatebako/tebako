@@ -132,8 +132,8 @@ The log file is a head record per line, in `seq` order:
 ```
 tebako registry snapshot <alias|path> [--json] [--out <path>]
 tebako registry log verify <log> [--registry <path>] [--json]
-tebako registry log prove <log> --row <name>@<version> [--json]
-               [--verify-proof <hex-root>]
+tebako registry log prove <log> --registry <path> --row <name>@<version>
+               [--json] [--verify-root <hex>]
 ```
 
 - **`snapshot`** renders §2's lines and root. `--out` writes them beside
@@ -141,15 +141,20 @@ tebako registry log prove <log> --row <name>@<version> [--json]
   emits the document).
 - **`log verify`** checks, in order: every head's signature; the `seq`
   continuity; the `prev` chain (a fork is named at the head where it
-  happens); `rows` monotonicity against the tombstones; and — when
-  `--registry` is given — that the CURRENT registry's every row appears in
-  the newest head's tree (a row present in the file but absent from the
-  tree is a named inconsistency; a row absent from the file but present in
-  the tree without a tombstone is **the mass-yank alarm**).
+  happens); and — when `--registry` is given — whether the document IS the
+  row set the newest head sealed, by RECOMPUTING THE ROOT from the
+  document's canonical rows. One number answers both halves: if the roots
+  agree, no row could have been added, removed or edited without moving it.
+  A `rows` decrease is reported separately (the chain alone cannot see
+  tombstones), and a forced deletion therefore surfaces by name.
 - **`log prove`** emits the inclusion proof for `--row` against the newest
-  head. `--verify-proof <root>` checks the proof against a root the caller
-  obtained out of band: a user holding ONE 32-byte value can prove a row's
-  membership without trusting the download that carried it.
+  head, and one proof per matching row: a version is often several rows (one
+  per platform), and hiding all but one would understate what the registry
+  says. It needs `--registry` as well as `--row`, because the canonical line
+  cannot be reconstructed from a name alone — the line IS what is proved.
+  `--verify-root <hex>` checks the proof against a root the caller obtained
+  out of band: a user holding ONE 32-byte value can prove a row's membership
+  without trusting the download that carried it.
 
 Output discipline follows the toolchain's rule: `--json` documents on
 stdout alone (banner to stderr), human lines on stdout otherwise, exit
