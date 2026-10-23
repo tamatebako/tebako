@@ -75,6 +75,7 @@
 //!   gem's 8-byte padding is cosmetic);
 //! - .tebako.yml is not read.
 
+pub mod audit;
 pub mod blksum;
 pub mod bundle;
 pub mod check;

@@ -1,0 +1,163 @@
+# =============================================================================
+# audit-ledger.yaml — the audit ledger's grammar (spec 40)
+#
+# Two artifacts, one SSOT:
+#   journal.log       — the append-only record stream every tebako process writes
+#   journal.log.seal  — the anchor: one chained-digest record per seal
+#
+# THIS FILE owns the grammars: the line shape, the chain definition, the
+# seal payload, the filter vocabulary and the `audit_schema: 1` document.
+# The writers mirror the LINE shape (crates/tebako-bootstrap/src/lib.rs for
+# the loader's decisions, crates/tfs/src/journal.rs for the driver's and
+# preload's policy/VFS/overlay/decrypt decisions); the READER mirrors
+# everything (crates/tebako-cli/src/audit.rs). Keep them in sync in the same
+# PR; the reader's unit tests drive synthetic journals against this grammar.
+# =============================================================================
+
+schema: audit-ledger
+schema_version: 1 # MAJOR — the JSON document's `audit_schema`; additive-only
+schema_minor: 0 # MINOR — additive counter (new keys, new events)
+status: normative
+owner: tebako-cli (crates/tebako-cli/src/audit.rs) in tamatebako/tebako
+spec: docs/spec/40-audit-ledger.md
+
+# ── the journal line ─────────────────────────────────────────────────────
+journal:
+  path: $TEBAKO_HOME/journal.log
+  override: TEBAKO_JAIL_JOURNAL (explicit path; the test seam)
+  append_only: >-
+    Writers open once (at policy-install / boot, before any context guard)
+    and append one write(2) per decision. The tools never rewrite, rotate or
+    truncate the file; an operator may, and a seal before rotation is the
+    discipline that keeps the seam auditable.
+  line:
+    grammar: "<unix seconds> event=<name> [<key>=<value> …]"
+    timestamp: >-
+      First space-delimited token, decimal unix seconds. 0 is legitimate (a
+      clock failure never fails the audited operation).
+    keys: >-
+      Every following token is key=value, split at the FIRST '='; a value may
+      contain '='. Tokens are separated by single spaces.
+    continuation: >-
+      A token carrying no '=' continues the previous value, joined by one
+      space — writers record paths, and paths contain spaces, so
+      `path=/a b/c` must stay one value. A token without '=' before any key
+      exists is damage.
+    required: [event]
+    duplicates: first statement wins (the document's fields_map_rule)
+    termination: >-
+      A trailing newline ends the record. A final record without its newline
+      is read as complete (the bytes are the record).
+    malformed_lines: >-
+      Counted, numbered, and reported with their raw bytes — never dropped.
+      A malformed line still occupies a line: the anchor covers it like any
+      other, so "record" and "line" are interchangeable in the anchor's
+      vocabulary.
+    forward_compatibility: >-
+      An unknown event= or an unknown key is a first-class record: readers
+      preserve raw bytes and never drop what they do not understand. This is
+      the property that lets a v1 reader audit a v9 host.
+
+# ── the seal ─────────────────────────────────────────────────────────────
+seal:
+  path: "<journal>.seal (beside the journal it covers; default $TEBAKO_HOME/journal.log.seal)"
+  why_beside: >-
+    The journal stays a pure record stream (every reader of it keeps
+    working), and an explicit TEBAKO_JAIL_JOURNAL override carries its seal
+    along instead of splitting the pair across two homes.
+  line: "<unix seconds> head=<sha256 hex> lines=<n> key=<keyid hex|-> sig=<hex|->"
+  chain:
+    notation: "h_i = SHA-256(h_{i-1} ‖ line_i)"
+    seed: 'h_0 = SHA-256("tebako-ledger-v1\n")'
+    inputs: >-
+      h_{i-1} as its RAW 32 BYTES, then line_i's exact bytes INCLUDING its
+      terminating newline. Exact bytes are the whole point: any edit,
+      deletion or insertion shifts every following digest, so a sealed head
+      that still matches is evidence the prefix is untouched.
+    terminator_normalized: >-
+      The final record's newline is normalized (chained as present even when
+      absent): an editor adding or stripping it changes nothing an auditor
+      reads, and it is the only edit the anchor does not report.
+  signed_payload: |
+    tebako-ledger-seal-v1
+    <head>
+    <lines>
+    <ts>
+  signature:
+    when_present: >-
+      The machine's press-local key (spec 09) — detached OpenPGP over the
+      canonical payload, armored bytes hex-encoded into sig=. Unless the run
+      opted out with TEBAKO_SIGN=0/false/no/off.
+    when_absent: >-
+      key=- sig=- . The verb warns on stderr that the seal detects edits but
+      not forgery. A key store that refuses yields the same LOUD unsigned
+      seal, never a failed seal: an unanchorable ledger is worse than an
+      unsigned anchor.
+    malformed_env: >-
+      TEBAKO_SIGN with a non-boolean value is a named usage error (64), never
+      a silent choice.
+  authority: >-
+    Only the LAST seal speaks for the current file. Earlier seals LOCATE
+    damage: the newest one that still matches marks the end of the known-good
+    prefix. No tool deletes a seal.
+
+# ── the filters (spec 40 §3.1) ───────────────────────────────────────────
+filters:
+  since: {field: ts, op: ">=", grammar: "unix seconds | RFC 3339 UTC (YYYY-MM-DDTHH:MM:SSZ)"}
+  until: {field: ts, op: "<=", grammar: "unix seconds | RFC 3339 UTC (YYYY-MM-DDTHH:MM:SSZ)"}
+  event: {field: "event=", op: exact_one_of, repeatable: true, case: sensitive}
+  artifact: {field: "body (after the timestamp)", op: contains, case: sensitive}
+  tail: {field: "post-filter order", op: last_n, order: "file order — never re-sorted"}
+  compose: "AND across flags, OR within --event; no filter = the whole ledger"
+  with_seal: "--seal takes no filters (an anchor covers the whole file)"
+  with_verify: "--seal together with --verify is refused by name"
+
+# ── the documents (spec 40 §5) ───────────────────────────────────────────
+documents:
+  query:
+    audit_schema: 1
+    keys: [audit_schema, journal, matched, total, records, malformed, verify]
+    verify: "null on a plain query"
+  seal:
+    audit_schema: 1
+    keys: [audit_schema, journal, seal]
+    seal_keys: [path, ts, head, lines, signer]
+    signer: "keyid hex, or null when unsigned"
+  verify:
+    audit_schema: 1
+    keys: [audit_schema, journal, total, verify]
+    verify_keys:
+      - outcome
+      - seal_ts
+      - sealed_lines
+      - head
+      - tail
+      - divergence
+      - signer
+      - signature
+      - detail
+  records:
+    shape: "array of {line:int, ts:int, event:string, fields:map<string,string>, raw:string}"
+    fields_map_rule: "first-wins on duplicate keys — the writer's first statement stands"
+    raw_rule: "the record's exact bytes without the newline"
+  malformed:
+    shape: "array of {line:int, raw:string} — always present, empty when clean"
+  divergence:
+    shape: '{"from_line":int,"to_line":int} | null'
+    rule: >-
+      from_line = known_good_prefix + 1 (1 when no seal still matches);
+      to_line = the failing seal's coverage. A failing seal covering more
+      lines than the file holds is a REMOVAL, reported through the same
+      interval.
+  evolution: >-
+    audit_schema is 1 forever: extensions add keys, never retype or rename
+    one. `total` is never filtered, so a filtered document can never be
+    mistaken for the whole ledger.
+
+# ── outcomes (spec 40 §4.3, §6) ──────────────────────────────────────────
+outcomes:
+  sealed: {exit: 0, meaning: "the last seal's chain matches (unknown-key and unsigned are named in `signature`)"}
+  tampered: {exit: 80, meaning: "chain mismatch, or a signed seal whose signature does not validate"}
+  unsealed: {exit: 74, meaning: "no seal yet — named, with the remedy (`tebako audit --seal`)"}
+  strict_malformed: {exit: 80, meaning: "--strict and the journal holds unparseable lines"}
+  usage: {exit: 64, meaning: "unparseable filter/time, unknown flag, --seal with filters or with --verify"}
