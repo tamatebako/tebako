@@ -1,0 +1,17 @@
+identity:
+  schema_version: 1
+  kind: app
+  name: repro-app
+  version: "0.0.0"
+  producer: {tool: tebako-ci-fixture, tool_version: "1"}
+  created: "2023-11-14T22:13:20Z"
+  digest:
+    tree_hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    blob_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  signing: {state: unsigned}
+  encryption: {state: none}
+provides:
+  entrypoints:
+    - {name: repro-app, path: /local/main.rb}
+  platforms: universal
+  capabilities: {exec: true, read: true}
