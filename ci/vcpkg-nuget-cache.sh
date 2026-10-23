@@ -50,8 +50,11 @@
 #   of a new package id cannot be done by GITHUB_TOKEN (403 Forbidden on
 #   creation — proven on tebako run 30989981488's ubuntu leg). Set the
 #   org secret TEBAKO_PACKAGES_PAT (classic PAT, write:packages) and the
-#   workflow's GH_TOKEN prefers it; GITHUB_TOKEN remains the read path
-#   and the fallback while the secret is absent.
+#   workflow's GH_TOKEN prefers it, then the org's classic CI PAT
+#   (TEBAKO_CI_PAT_TOKEN — a classic PAT carries write:packages when it was
+#   minted for cross-repo work), then GITHUB_TOKEN as the read path and the
+#   last resort. Whichever is used, a rejected push is a note, not a red
+#   leg: a cold feed builds from source, exactly the pre-cache behavior.
 set -euo pipefail
 
 : "${GH_TOKEN:?set GH_TOKEN to secrets.GITHUB_TOKEN}"
