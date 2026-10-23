@@ -1239,6 +1239,83 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The link surface at the SHIM's own seam (spec 11 §9): a runtime's
+    /// libc call arrives as `stat`/`lstat`/`readlink`, which the interposed
+    /// symbols map onto `vfs_stat`/`vfs_lstat`/`vfs_readlink`. The C ABI's
+    /// three verbs are pinned in tfs's own suite; this pins the layer the
+    /// preload actually calls, so a regression in the mapping (rather than
+    /// in the engine) cannot slip between the two suites.
+    #[test]
+    fn symlinks_route_through_the_shim_seam() {
+        crate::sys::engine_call(symlink_route_body);
+    }
+
+    fn symlink_route_body() {
+        let dir = std::env::temp_dir().join(format!("libtfs-preload-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let root = dir.join("tree");
+        std::fs::create_dir_all(root.join("lib/tool")).unwrap();
+        std::fs::write(root.join("lib/tool/run.sh"), b"#!/bin/sh\necho link-ok\n").unwrap();
+        std::os::unix::fs::symlink("../lib/tool/run.sh", root.join("bin-tool-link")).unwrap();
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::os::unix::fs::symlink("../lib/tool/run.sh", root.join("bin/tool")).unwrap();
+        // A cycle, so the ELOOP path is the shim's answer too.
+        std::os::unix::fs::symlink("loop-b", root.join("loop-a")).unwrap();
+        std::os::unix::fs::symlink("loop-a", root.join("loop-b")).unwrap();
+
+        let artifact = limnifs_write::write_directory_with_config(
+            &root,
+            &limnifs_write::WriteConfig::default_v0_1(),
+        )
+        .unwrap();
+        let mut image = artifact.bytes;
+        for slab in &artifact.slabs {
+            image.extend_from_slice(&slab.bytes);
+        }
+        let img = dir.join("links.tfs");
+        std::fs::write(&img, &image).unwrap();
+
+        let mp = format!("/tfslink{}", std::process::id());
+        let mount = tfs::mount::build_from_file(img.to_str().unwrap(), &mp).unwrap();
+        let handle = context().write().unwrap().mount_checked(mount).unwrap();
+        let link = format!("{mp}/bin/tool");
+
+        let payload = "#!/bin/sh\necho link-ok\n";
+        // stat follows: the target's metadata.
+        match vfs_stat(&link) {
+            PathRoute::Vfs(st) => {
+                assert_eq!(st.entry_type, tfs::backend::EntryType::File);
+                assert_eq!(st.size, payload.len() as i64);
+            }
+            other => panic!("stat through a link must route Vfs, got {other:?}"),
+        }
+        // lstat reports the entry itself.
+        match vfs_lstat(&link) {
+            PathRoute::Vfs(st) => assert_eq!(st.entry_type, tfs::backend::EntryType::Symlink),
+            other => panic!("lstat must report the link, got {other:?}"),
+        }
+        // readlink returns the stored target, verbatim.
+        assert_eq!(
+            vfs_readlink(&link),
+            PathRoute::Vfs("../lib/tool/run.sh".to_string())
+        );
+        // open follows, and the bytes are the target's.
+        let PathRoute::Vfs(fd) = vfs_open(&link, libc::O_RDONLY) else {
+            panic!("open through a link must route Vfs");
+        };
+        let mut buf = [0u8; 64];
+        let n = vfs_read(fd, &mut buf).unwrap();
+        assert!(std::str::from_utf8(&buf[..n]).unwrap().contains("link-ok"));
+        // A cycle is ELOOP, never a hang.
+        assert_eq!(
+            vfs_stat(&format!("{mp}/loop-a")),
+            PathRoute::Denied(libc::ELOOP)
+        );
+
+        context().write().unwrap().unmount_handle(handle).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The AT_FDCWD regression pin: `AT_FDCWD` is -100, whose
     /// two's-complement form has the `TEBAKO_FD_FLAG` bit set — a bare
     /// `is_memfs_fd` bit test therefore lies for every *at shim. The fd
