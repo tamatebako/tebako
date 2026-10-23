@@ -323,6 +323,14 @@ pub const EX_TEBAKO_OVERLAY: i32 = 68;
 /// install path) — one code, one class; the check class takes the next
 /// free code in the loader block.
 pub const EX_TEBAKO_CHECK: i32 = 79;
+/// The spec-40 §6 exit code (spec 06 §4 table row) for a LEDGER finding:
+/// `tebako audit --verify` found a chain mismatch, an invalid seal
+/// signature or an unparseable seal record, or `--strict` met unparseable
+/// journal lines. 80 is the first code above the loader block: the ledger
+/// is a tool-side surface, but it reports through the same named-code
+/// discipline, so a script cannot mistake a tampered ledger for a clean
+/// one.
+pub const EX_TEBAKO_LEDGER: i32 = 80;
 
 // ---------------------------------------------------------------------
 // v2 chain-of-trust extension (all v2-extension numerics BIG-ENDIAN;

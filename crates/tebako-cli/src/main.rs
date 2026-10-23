@@ -110,6 +110,12 @@ const USAGE: &str = "Usage:
   tebako doctor [--json]               the diagnostics surface (store / dispatch /
                                        network / trust / registries — read-only;
                                        exit 0 healthy / 1 problems)
+  tebako audit [--since <t>] [--until <t>] [--event <e,…>] [--artifact <needle>]
+               [--tail <n>] [--count] [--json] [--strict] [--seal] [--verify]
+                                       the audit ledger: query what this host
+                                       fetched, verified, mounted and ran (read-only),
+                                       or anchor it (--seal) and check the anchor
+                                       (--verify; exit 0 sealed / 80 tampered)
   tebako inspect <artifact> [flags]    payload/package introspection;
                                        --contract prints the contract card
                                        (era, contract versions, mount_root, abi, trust + verdict)
@@ -174,6 +180,11 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     // JOURNALS, so the verb skips it — the network section reports the
     // effective configuration instead of installing it.
     let read_only = args.first().map(|a| a.as_str()) == Some("doctor")
+        // `audit` reads the ledger and nothing else: it must not stamp the
+        // store or install network config (spec 40 §1's read-only law).
+        // `--seal` is the one writing form, and it writes only the seal.
+        || (args.first().map(|a| a.as_str()) == Some("audit")
+            && !tebako_cli::audit::writes(&args[1..]))
         // `registry doctor` judges a HOST, never the local store: it must
         // not install network config or stamp the layout on the way in.
         || (args.first().map(|a| a.as_str()) == Some("registry")
@@ -206,6 +217,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
                 Some("cover" | "import" | "explain")
             ))
         || (subcommand == "doctor" && rest.iter().any(|a| a == "--json"))
+        || (subcommand == "audit" && tebako_cli::audit::wants_json(rest))
         || (subcommand == "registry"
             && matches!(
                 rest.first().map(|a| a.as_str()),
@@ -264,6 +276,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "shim" => run_shim(rest),
         "info" => run_info(rest),
         "doctor" => run_doctor(rest),
+        "audit" => tebako_cli::audit::run(rest).map_err(CliExit::Error),
         "inspect" => run_inspect(rest),
         "publish" => run_publish(rest),
         "blksum" => tebako_cli::blksum::run(rest).map_err(CliExit::Error),

@@ -179,6 +179,7 @@ payloads (inkscape & co.) are feedstocks in the
 | `tebako info [topic]` | the store/system surface: system, runtimes, payloads, shims, registries, store (`--remote` adds what the world offers; `--json` everywhere) |
 | `tebako inspect <artifact>` | payload/package introspection: manifest, provides, requires, platforms, verify (strict), JSON |
 | `tebako doctor [--json]` | the diagnostics surface: store / dispatch / network / trust / registries — read-only, exit 0 healthy / 1 problems (spec 35) |
+| `tebako audit` | the audit ledger: query what this host fetched, verified, mounted and ran (`--since`/`--until`/`--event`/`--artifact`/`--tail`, `--json`); `--seal`/`--verify` anchor it with a chained digest signed by the press-local key, exit 80 on a tamper finding (spec 40) |
 | `tebako use / list / doctor` | manage shims, versions, and health |
 | `tebako publish` | press → sign → upload → registry → tap formula (developer flow) |
 | `tebako-pkg` | tpkg trailer surgery: bundle/unbundle/reassemble/insert/remove/info/validate/sign/verify |

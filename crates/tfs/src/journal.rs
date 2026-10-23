@@ -78,7 +78,7 @@ pub const PRESS_SIGN_OPT_OUT_EVENT: &str = "press-sign-opt-out";
 /// when no home resolves or the open fails (journaling then simply stays
 /// silent — the jail's answers are unaffected).
 pub fn open_journal() -> Option<std::fs::File> {
-    let journal = journal_path(|k| std::env::var(k).ok())?;
+    let journal = journal_file()?;
     if let Some(dir) = journal.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -243,6 +243,27 @@ fn journal_fields(file: &std::fs::File, fields: &str) {
 /// The journal file under a tebako home (the bootstrap's convention).
 pub fn journal_file_of(home: &Path) -> PathBuf {
     home.join("journal.log")
+}
+
+/// The journal's anchor file (spec 40 §4): beside the journal it covers,
+/// named by it — `<journal>.seal`. Beside, not inside: the journal stays a
+/// pure record stream (every reader of it keeps working), and an explicit
+/// `TEBAKO_JAIL_JOURNAL` override carries its seal along instead of
+/// splitting the pair across two homes.
+pub fn seal_file_of(journal: &Path) -> PathBuf {
+    let mut name = journal.file_name().unwrap_or_default().to_os_string();
+    name.push(".seal");
+    journal.with_file_name(name)
+}
+
+/// The journal this process writes and audits (see [`journal_path`]).
+pub fn journal_file() -> Option<PathBuf> {
+    journal_path(|k| std::env::var(k).ok())
+}
+
+/// The anchor of the journal this process writes and audits.
+pub fn seal_file() -> Option<PathBuf> {
+    journal_file().as_deref().map(seal_file_of)
 }
 
 /// The resolved tebako home for this process (the cache-root rule shared
