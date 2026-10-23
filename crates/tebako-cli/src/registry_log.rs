@@ -411,6 +411,108 @@ pub fn verify_chain(heads: &[Head], keyring: &[u8]) -> ChainReport {
     report
 }
 
+// ------------------------------------------------------- canonical rows
+
+/// One registry row, rendered canonically (spec 41 §2): the sort key and
+/// the line are the same string, so the order is a pure function of the
+/// row set — an author may reindent, reorder or re-comment the YAML and
+/// the snapshot does not move.
+///
+/// ```text
+/// <kind> <name>@<version> <platform> <sha256|-> <state> <keyid|->
+/// ```
+pub fn canonical_lines(
+    registry: &tebako_resolve::registry::Registry,
+) -> Result<Vec<String>, TebakoError> {
+    let mut rows: Vec<String> = Vec::new();
+    for payload in &registry.payloads {
+        let kind = kind_str(&payload.kind);
+        for version in &payload.versions {
+            let state = version
+                .status
+                .clone()
+                .unwrap_or_else(|| "active".to_string());
+            let keyid = version
+                .signature
+                .as_ref()
+                .map(|s| s.keyid.clone())
+                .unwrap_or_else(|| "-".to_string());
+            let head = format!("{kind} {}@{} ", payload.name, version.version);
+            match (&version.platforms, &version.variants) {
+                (Some(platforms), None) => match platforms {
+                    tebako_resolve::registry::RegistryPlatforms::Universal => {
+                        rows.push(format!("{head}universal {} {state} {keyid}", "-"));
+                    }
+                    tebako_resolve::registry::RegistryPlatforms::PerTriplet(map) => {
+                        for (triplet, artifact) in map {
+                            rows.push(format!(
+                                "{head}{triplet} {} {state} {keyid}",
+                                artifact.sha256
+                            ));
+                        }
+                    }
+                },
+                (None, Some(variants)) => {
+                    for arm in variants {
+                        let id = tebako_resolve::registry::variant_id(
+                            arm.runtime_requirement.as_ref(),
+                        )
+                        .map_err(|e| {
+                            TebakoError::new(
+                                format!(
+                                    "the variant arm of {} {} has no derivable id: {e}",
+                                    payload.name, version.version
+                                ),
+                                EX_TEBAKO_LEDGER,
+                            )
+                        })?;
+                        match &arm.platforms {
+                            // The arm id never stands alone: `<id>:<universal
+                            // |triplet>` keeps one reading of the platform
+                            // column across both forms, so a universal arm is
+                            // never mistaken for a triplet.
+                            tebako_resolve::registry::RegistryPlatforms::Universal => {
+                                rows.push(format!("{head}{id}:universal {} {state} {keyid}", "-"));
+                            }
+                            tebako_resolve::registry::RegistryPlatforms::PerTriplet(map) => {
+                                for (triplet, artifact) in map {
+                                    rows.push(format!(
+                                        "{head}{id}:{triplet} {} {state} {keyid}",
+                                        artifact.sha256
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                // The registry validator refuses both/neither (spec 28 §10);
+                // reaching here means a document bypassed validation.
+                _ => {
+                    return Err(TebakoError::new(
+                        format!(
+                            "{} {} carries neither exactly one of platforms:/variants: — the registry is not validated",
+                            payload.name, version.version
+                        ),
+                        EX_TEBAKO_LEDGER,
+                    ))
+                }
+            }
+        }
+    }
+    rows.sort();
+    Ok(rows)
+}
+
+fn kind_str(kind: &tpkg::PayloadKind) -> &'static str {
+    match kind {
+        tpkg::PayloadKind::App => "app",
+        tpkg::PayloadKind::Data => "data",
+        tpkg::PayloadKind::Toolkit => "toolkit",
+        tpkg::PayloadKind::Runtime => "runtime",
+        tpkg::PayloadKind::Language => "language",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,6 +637,121 @@ mod tests {
         assert!(report.sound(), "the chain itself is sound");
         assert_eq!(report.row_drops.len(), 1);
         assert!(report.row_drops[0].contains("tombstone"));
+    }
+
+    fn registry(yaml: &str) -> tebako_resolve::registry::Registry {
+        tebako_resolve::registry::Registry::from_yaml(yaml)
+            .unwrap_or_else(|e| panic!("fixture must validate: {e}"))
+    }
+
+    #[test]
+    fn canonical_rows_are_a_pure_function_of_the_row_set() {
+        let yaml = "\
+schema_version: 1
+payloads:
+  - name: hello
+    kind: app
+    versions:
+      - version: 1.0.0
+        platforms: universal
+        release: {ref: \"tfs:github:acme/hello:1.0.0\"}
+        entrypoints: [hello]
+    default: 1.0.0
+";
+        let rows = canonical_lines(&registry(yaml)).unwrap();
+        // A universal row carries no digest of its own: the release's
+        // SHA256SUMS anchors the bytes, this log anchors the row set.
+        assert_eq!(rows, vec!["app hello@1.0.0 universal - active -"]);
+    }
+
+    #[test]
+    fn per_triplet_rows_render_their_triplet_and_digest_and_sort() {
+        let digest = "a".repeat(64);
+        let yaml = format!(
+            "\
+schema_version: 1
+payloads:
+  - name: hello
+    kind: app
+    versions:
+      - version: 1.0.0
+        platforms:
+          x86_64-linux-gnu: {{artifact: hello.tfs, sha256: \"{digest}\"}}
+          aarch64-macos: {{artifact: hello.tfs, sha256: \"{digest}\"}}
+        release: {{ref: \"tfs:github:acme/hello:1.0.0\"}}
+        entrypoints: [hello]
+    default: 1.0.0
+"
+        );
+        let rows = canonical_lines(&registry(&yaml)).unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                format!("app hello@1.0.0 aarch64-macos {digest} active -"),
+                format!("app hello@1.0.0 x86_64-linux-gnu {digest} active -"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_withdrawn_row_keeps_its_place_with_the_status_verbatim() {
+        let yaml = "\
+schema_version: 1
+payloads:
+  - name: hello
+    kind: app
+    versions:
+      - version: 1.0.0
+        platforms: universal
+        release: {ref: \"tfs:github:acme/hello:1.0.0\"}
+        entrypoints: [hello]
+        status: withdrawn
+    default: 1.0.0
+";
+        let rows = canonical_lines(&registry(yaml)).unwrap();
+        assert_eq!(rows, vec!["app hello@1.0.0 universal - withdrawn -"]);
+    }
+
+    #[test]
+    fn a_variant_arm_renders_its_derived_id_and_triplet() {
+        let digest = "b".repeat(64);
+        // The id derives from implementation + ABI line (spec 28 §2): a
+        // pure-language requirement does not fork a variant at all, which
+        // is why the fixture carries two implementations.
+        let yaml = format!(
+            "\
+schema_version: 1
+payloads:
+  - name: hello
+    kind: app
+    default_variant: java-temurin-21.0
+    versions:
+      - version: 1.0.0
+        variants:
+          - runtime_requirement: {{engine: java, implementation: temurin, constraint: \"~> 21.0\"}}
+            platforms: universal
+          - runtime_requirement: {{engine: java, implementation: graalvm, constraint: \"~> 24.0\"}}
+            platforms:
+              x86_64-linux-gnu: {{artifact: hello.tfs, sha256: \"{digest}\"}}
+        release: {{ref: \"tfs:github:acme/hello:1.0.0\"}}
+        entrypoints: [hello]
+    default: 1.0.0
+"
+        );
+        let rows = canonical_lines(&registry(&yaml)).unwrap();
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("java-graalvm-24.0:x86_64-linux-gnu ")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("java-temurin-21.0:universal - active -")),
+            "{rows:?}"
+        );
+        // A snapshot that collapsed the two arms would hide one build.
+        assert_ne!(rows[0].split(' ').nth(2), rows[1].split(' ').nth(2));
     }
 
     #[test]
