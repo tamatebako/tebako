@@ -135,13 +135,7 @@ fn read_file(path: &str) -> Option<String> {
         return None;
     }
     let mut buf = vec![0u8; 256];
-    let n = unsafe {
-        c_api::tebako_fs_read(
-            fd,
-            buf.as_mut_ptr().cast::<c_void>(),
-            buf.len(),
-        )
-    };
+    let n = unsafe { c_api::tebako_fs_read(fd, buf.as_mut_ptr().cast::<c_void>(), buf.len()) };
     unsafe { c_api::tebako_fs_close(fd) };
     if n < 0 {
         return None;
