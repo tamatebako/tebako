@@ -100,6 +100,7 @@ pub mod packager;
 pub mod publish;
 pub mod recipe;
 pub mod registry;
+pub mod registry_log;
 pub mod resolve;
 pub mod run;
 pub mod runner;
