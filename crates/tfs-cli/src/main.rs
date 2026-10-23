@@ -63,6 +63,7 @@ fn main() -> ExitCode {
         "mkimage" => cmd_mkimage_main(rest),
         "exec" => cmd_exec_main(rest),
         "needs" => cmd_needs_main(rest),
+        "blksum" => cmd_blksum_main(rest),
         "encrypt" => cmd_encrypt_main(rest),
         "decrypt" => cmd_decrypt_main(rest),
         "mount" => cmd_mount_main(rest),
@@ -678,6 +679,70 @@ fn cmd_needs_main(rest: &[String]) -> ExitCode {
     }
 }
 
+/// `tfs blksum <image> [--out <path>]` — the image's lazy-mount digest
+/// sidecar (spec 39 §3), derived from the image's OWN bytes through the
+/// shared emitter (`tpkg::lazy::write_sidecar`), the same one
+/// `tebako blksum` and `tebako publish` use.
+///
+/// It exists here because the runtime factories image with `tfs` on every
+/// platform the product ships, and a factory that images a runtime pair
+/// must publish the sidecar beside it or lazy seeding and delta can never
+/// engage (tebako#868). One emitter, three callers — never a second
+/// implementation of the group scheme.
+fn cmd_blksum_main(rest: &[String]) -> ExitCode {
+    const USAGE: &str = "tfs blksum <image> [--out <path>]";
+    let mut image: Option<PathBuf> = None;
+    let mut out: Option<PathBuf> = None;
+    let mut i = 0;
+    while i < rest.len() {
+        let arg = rest[i].as_str();
+        let (name, mut value) = match arg.split_once('=') {
+            Some((n, v)) => (n, Some(v.to_string())),
+            None => (arg, None),
+        };
+        match name {
+            "--out" => {
+                let path = match value.take() {
+                    Some(v) => v,
+                    None => {
+                        i += 1;
+                        match rest.get(i) {
+                            Some(v) => v.clone(),
+                            None => return fail("Error: missing value for --out"),
+                        }
+                    }
+                };
+                out = Some(PathBuf::from(path));
+            }
+            flag if flag.starts_with('-') => {
+                return fail(&format!("Error: unknown option: {arg}\nusage: {USAGE}"));
+            }
+            _ => {
+                if image.is_some() {
+                    return fail(&format!(
+                        "Error: tfs blksum takes exactly one image\nusage: {USAGE}"
+                    ));
+                }
+                image = Some(PathBuf::from(arg));
+            }
+        }
+        i += 1;
+    }
+    let Some(image) = image else {
+        return fail(&format!("Error: missing <image>\nusage: {USAGE}"));
+    };
+    match tpkg::lazy::write_sidecar(&image, out.as_deref()) {
+        Ok(sidecar) => {
+            println!("{}  {}", sidecar.sha256, sidecar.filename);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::from(e.exit_code() as u8)
+        }
+    }
+}
+
 fn print_help() {
     println!("tfs - generic VFS image tool (tebako)\n");
     println!("Usage: tfs <command> [options]\n");
@@ -699,6 +764,8 @@ fn print_help() {
     println!("           --compose <file.yaml> takes the whole composition)");
     println!("  needs    Draft a payload needs: block from a record-mode journal");
     println!("           (--from-journal <log>)");
+    println!("  blksum   Write an image's lazy-mount digest sidecar (<image>.blksum.json,");
+    println!("           spec 39 §3; --out <path> places it elsewhere)");
     println!("  encrypt  Encrypt an image to recipients (-o, --recipient, --subtree;");
     println!("           --rewrap --key rotates grants without touching the bulk)");
     println!("  decrypt  Decrypt an image to a plaintext tar (-o, --key)");

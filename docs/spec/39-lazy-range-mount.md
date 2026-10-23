@@ -140,6 +140,13 @@ whose ids match its own evil metadata.)
   `group_size`, `size_bytes`, the whole-image `sha256`, and one sha256
   per group. A resolver NEVER derives it (derivation would require the
   whole file — pointless — and would arrive unanchored).
+  Three callers reach the ONE emitter (`tpkg::lazy::write_sidecar`):
+  `tebako publish` (in-process, for payloads it stages), `tebako blksum`
+  and `tfs blksum`. The last two exist because a runtime factory images
+  with `tfs` and publishes through its own tooling — without a verb on
+  the binary the leg already runs, a runtime pair can ship with no
+  sidecar and lazy seeding can never engage (tebako#868). No second
+  implementation of the group scheme exists, by construction.
 - **The sidecar's own anchor** rides the existing channel, additively:
   the release shard/registry row gains `image.blksum: {filename,
   sha256}` (mirror-only, spec 03 §4's tier-3 rule); where the index is
