@@ -868,6 +868,16 @@ impl Resolver {
         fs::create_dir_all(&layout_dir).map_err(|e| {
             crate::error::plain_error(format!("cannot create {}: {e}", layout_dir.display()))
         })?;
+        // Image-era pairs keep their files in the env image beside the
+        // executable, and their driver leaves `--tebako-extract` to the
+        // interpreter, which does not answer it in a linked build. Mount
+        // the image in-process instead (the same tfs C ABI the press uses
+        // to seed its staging tree). An era-1 package has no image and
+        // keeps the interpreter's own extract mode.
+        if let Some(image) = runtime_image_beside(runtime_path) {
+            crate::packager::extract_runtime_image(&image, &layout_dir)?;
+            return Ok(layout_dir);
+        }
         run_with_capture_v(
             runtime_path,
             &[
@@ -2873,6 +2883,16 @@ fn dir_size(path: &Path) -> u64 {
         }
     }
     total
+}
+
+/// The env image a store entry carries beside its executable, when it has
+/// one: `<stem>.tfs`, with any `.exe` suffix dropped (the store's naming —
+/// the image never carries the executable's extension).
+fn runtime_image_beside(runtime_path: &Path) -> Option<PathBuf> {
+    let name = runtime_path.file_name()?.to_string_lossy().into_owned();
+    let stem = name.strip_suffix(".exe").unwrap_or(&name);
+    let image = runtime_path.with_file_name(format!("{stem}.tfs"));
+    image.is_file().then_some(image)
 }
 
 #[cfg(test)]
