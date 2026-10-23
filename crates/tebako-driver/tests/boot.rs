@@ -3047,3 +3047,64 @@ fn a_tampered_extracted_resource_fails_verification() {
     );
     let _ = std::fs::remove_dir_all(&resources);
 }
+
+/// Spec 23's composition at DEPTH, through the driver's own argv surface:
+/// five `--tebako-image` triples mount once, in order, and the table
+/// dispatches by longest prefix. The tfs-level suite pins the same
+/// property on the mount table; this proves the path a package actually
+/// takes — argv parsing, the mount loop, the entry resolution.
+#[test]
+fn five_image_triples_mount_in_order_and_dispatch_by_longest_prefix() {
+    let g = guard("nested-five");
+    let env_image = write_env_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    // Every level carries content/same.txt with distinct bytes, so a
+    // table that resolved by mount ORDER instead of prefix length would
+    // answer with a shallower level's content.
+    let mounts = ["/a", "/a/b", "/a/b/c", "/a/b/c/d", "/a/b/c/d/e"];
+    let bodies: Vec<Vec<u8>> = (1..=mounts.len())
+        .map(|level| format!("level-{level}").into_bytes())
+        .collect();
+    let mut images = Vec::new();
+    for (idx, _) in mounts.iter().enumerate() {
+        let path = g.path().join(format!("level{}.tfs", idx + 1));
+        let body = bodies[idx].as_slice();
+        if idx == 0 {
+            // The entry resolves against the FIRST image's mount (spec 17).
+            build_zip(
+                &path,
+                &["content/", "bin/"],
+                &[("content/same.txt", body), ("bin/app", b"#!/bin/x\n")],
+            );
+        } else {
+            build_zip(&path, &["content/"], &[("content/same.txt", body)]);
+        }
+        images.push(path);
+    }
+
+    let mut args: Vec<String> = vec!["ruby".to_string()];
+    for (image, mount) in images.iter().zip(mounts.iter()) {
+        args.push("--tebako-image".to_string());
+        args.push(format!("{}:0:{mount}", image.display()));
+    }
+    args.push("--tebako-entry".to_string());
+    args.push("/bin/app".to_string());
+
+    boot(&args, "/__tfs__", &env).expect("five nested triples must boot");
+
+    // Each prefix serves its own level…
+    for (idx, mount) in mounts.iter().enumerate() {
+        let got = read_file(&format!("{mount}/content/same.txt"));
+        assert_eq!(
+            got,
+            bodies[idx],
+            "{mount}/content/same.txt must serve level {}",
+            idx + 1
+        );
+    }
+    // …and the deepest path is not shadowed by any shallower mount.
+    assert_eq!(read_file("/a/b/c/d/e/content/same.txt"), b"level-5");
+    assert_eq!(read_file("/a/b/c/content/same.txt"), b"level-3");
+}
