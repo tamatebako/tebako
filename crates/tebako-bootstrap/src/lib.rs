@@ -2158,6 +2158,29 @@ fn legacy_warn_marker(home: &Path, self_path: &Path) -> PathBuf {
     home.join("warned-legacy").join(sha::hex(&h.finalize()))
 }
 
+/// The shared predicate's local name (the bootstrap reads it through
+/// [`tpkg::Manifest::carries_package_manifest`] — one definition, four
+/// callers: this file, `tebako info`, `tebako-pkg` and the verify card).
+fn has_era2_block(m: &tpkg::Manifest) -> bool {
+    m.carries_package_manifest()
+}
+
+/// What the unsigned-acceptance notice says about the package in hand
+/// (spec 09 §3), and the remedy it offers.
+fn unsigned_notice(m: &tpkg::Manifest) -> (&'static str, &'static str) {
+    if has_era2_block(m) {
+        (
+            "no signature (unsigned package)",
+            "sign it with `tebako press --sign` when a publisher key is available",
+        )
+    } else {
+        (
+            "an unsigned v1 (legacy) tpkg trailer",
+            "re-bundle the package to give it an era-2 manifest",
+        )
+    }
+}
+
 /// The home-parameterized core of [`verify_chain`] (tests inject a temp
 /// home; production resolves it through `cache_root()`).
 pub fn verify_chain_with_home(
@@ -2166,12 +2189,18 @@ pub fn verify_chain_with_home(
     home: &Path,
 ) -> Result<(), BootError> {
     let Some(v2) = &m.v2 else {
-        // v1 legacy rule (item 29 point 8)
+        // Unsigned rule (spec 09 §3). An era-2 package carries its type-2
+        // package-manifest block and no signature block; calling that a
+        // "v1 (legacy) trailer" was wrong and told an author to re-bundle
+        // a package that is already era 2 — the arc-02 stranger
+        // walkthrough hit it on the very first press. Only a package with
+        // no era-2 block is genuinely v1.
+        let (what, hint) = unsigned_notice(m);
         if require_signed_mode() {
             return fail(
                 EX_TEBAKO_SIGNATURE,
                 format!(
-                    "{} carries an unsigned v1 (legacy) tpkg trailer and TEBAKO_REQUIRE_SIGNED=1 is set — refusing to execute\n  re-bundle the package to sign it, or unset TEBAKO_REQUIRE_SIGNED",
+                    "{} carries {what} and TEBAKO_REQUIRE_SIGNED=1 is set — refusing to execute\n  sign the package, or unset TEBAKO_REQUIRE_SIGNED",
                     self_path.display()
                 ),
             );
@@ -2183,13 +2212,21 @@ pub fn verify_chain_with_home(
         // is journaled either way.
         if !m.is_quiet_notices() && legacy_warn_due(home, self_path) {
             eprintln!(
-                "tebako-bootstrap: WARNING: {} carries an unsigned v1 (legacy) tpkg trailer\n  — accepted for compatibility; re-bundle the package for integrity protection",
+                "tebako-bootstrap: WARNING: {} carries {what}\n  — accepted; {hint}",
                 self_path.display()
             );
         }
+        // The ledger's vocabulary is spec 09 §3's (`legacy-unsigned-accepted`,
+        // the name every other reader already journals — spec 40 §5 lists
+        // it, and the shim/CLI/doctor all emit it). `era=` says which shape
+        // was accepted, so an auditor never has to infer it from the path.
         journal(
             home,
-            &format!("event=legacy-v1-accepted package={}", self_path.display()),
+            &format!(
+                "event=legacy-unsigned-accepted package={} era={}",
+                self_path.display(),
+                if has_era2_block(m) { 2 } else { 1 }
+            ),
         );
         return Ok(());
     };
@@ -7833,5 +7870,56 @@ mod interp_env_tests {
     #[test]
     fn no_selection_exports_nothing() {
         assert!(interp_env_exports(None).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod unsigned_notice_tests {
+    use super::*;
+
+    fn manifest_with_era2() -> tpkg::Manifest {
+        let mut m = tpkg::Manifest {
+            version: tpkg::TPKG_VERSION,
+            package_flags: 0,
+            launcher_abi: 1,
+            ..Default::default()
+        };
+        m.ext_blocks.push(
+            tpkg::ExtBlock::new(
+                tpkg::TPKG_EXT_TYPE_PACKAGE_MANIFEST,
+                b"schema: 1\n".to_vec(),
+            )
+            .expect("a free block type"),
+        );
+        m
+    }
+
+    #[test]
+    fn an_era2_unsigned_package_is_not_called_a_v1_trailer() {
+        let m = manifest_with_era2();
+        assert!(has_era2_block(&m));
+        let (what, hint) = unsigned_notice(&m);
+        assert!(!what.contains("v1"), "{what}");
+        assert!(what.contains("unsigned package"), "{what}");
+        assert!(hint.contains("--sign"), "{hint}");
+    }
+
+    #[test]
+    fn a_package_with_no_era2_block_keeps_the_v1_wording() {
+        let m = tpkg::Manifest {
+            version: tpkg::TPKG_VERSION,
+            launcher_abi: 1,
+            ..Default::default()
+        };
+        assert!(!has_era2_block(&m));
+        let (what, _) = unsigned_notice(&m);
+        assert!(what.contains("v1 (legacy)"), "{what}");
+    }
+
+    #[test]
+    fn the_critical_bit_does_not_hide_the_era2_block() {
+        let mut m = manifest_with_era2();
+        m.ext_blocks[0].block_type |= tpkg::TPKG_EXT_FLAG_CRITICAL;
+        assert!(has_era2_block(&m));
     }
 }

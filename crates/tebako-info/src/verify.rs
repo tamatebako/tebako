@@ -329,7 +329,14 @@ pub fn verify_package(
                     exit_code::SIGNATURE,
                 ));
             } else {
-                checks.push(Check::skip("signature", "unsigned (v1 legacy trailer)"));
+                checks.push(Check::skip(
+                    "signature",
+                    if trailer.carries_package_manifest() {
+                        "unsigned (no signature block)"
+                    } else {
+                        "unsigned (v1 legacy trailer)"
+                    },
+                ));
             }
         }
     }

@@ -84,6 +84,20 @@ pub fn detect(dir: &Path) -> Result<ProjectPlan, String> {
                     ));
                 }
             }
+            // The usage line promises "the single root *.rb": a directory
+            // with no marker but exactly one executable script (bin/, exe/,
+            // or one root *.rb) IS a ruby project. Refusing it made the
+            // shortest stranger path — write main.rb, press it — fail with a
+            // message that contradicted our own help (arc 02's ten-minute
+            // walkthrough found it on the first command).
+            if let Ok(entry) = ruby_entry(&dir) {
+                return Ok(ProjectPlan {
+                    root: dir,
+                    entry,
+                    kind: ProjectKind::Ruby,
+                    requirement: None,
+                });
+            }
             return Err(format!(
                 "no project detected in {} — looked for {}; press with -r <root> -e <entry> to state the root and entry point explicitly",
                 dir.display(),
@@ -302,6 +316,43 @@ mod tests {
             perms.set_mode(0o755);
             std::fs::set_permissions(path, perms).unwrap();
         }
+    }
+
+    #[test]
+    fn a_bare_root_script_is_detected_without_a_marker() {
+        // The usage line's own promise: "the single root *.rb".
+        let dir = temp("bare");
+        std::fs::write(dir.join("main.rb"), "puts :ok\n").unwrap();
+        let plan = detect(&dir).unwrap();
+        assert_eq!(plan.kind, ProjectKind::Ruby);
+        assert_eq!(plan.entry, PathBuf::from("main.rb"));
+        assert_eq!(plan.requirement, None);
+    }
+
+    #[test]
+    fn a_bare_bin_script_is_detected_without_a_marker() {
+        let dir = temp("bare-bin");
+        script(&dir.join("bin").join("cli"));
+        let plan = detect(&dir).unwrap();
+        assert_eq!(plan.kind, ProjectKind::Ruby);
+        assert_eq!(plan.entry, PathBuf::from("bin/cli"));
+    }
+
+    #[test]
+    fn an_empty_directory_keeps_the_named_refusal() {
+        let dir = temp("empty");
+        let err = detect(&dir).unwrap_err();
+        assert!(err.contains("no project detected"), "{err}");
+        assert!(err.contains("-r <root> -e <entry>"), "{err}");
+    }
+
+    #[test]
+    fn two_root_scripts_without_a_marker_are_not_guessed() {
+        let dir = temp("ambiguous");
+        std::fs::write(dir.join("one.rb"), "puts 1\n").unwrap();
+        std::fs::write(dir.join("two.rb"), "puts 2\n").unwrap();
+        let err = detect(&dir).unwrap_err();
+        assert!(err.contains("no project detected"), "{err}");
     }
 
     #[test]

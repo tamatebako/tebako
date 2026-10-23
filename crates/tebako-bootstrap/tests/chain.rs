@@ -210,7 +210,7 @@ fn v1_legacy_accepted_with_journal_record() {
     let (pkg, m) = make_package(&dir, &home, b"the app image payload", true);
 
     verify_chain_with_home(&pkg, &m, &home).expect("legacy accepted");
-    assert!(journal(&home).contains("event=legacy-v1-accepted"));
+    assert!(journal(&home).contains("event=legacy-unsigned-accepted"));
 }
 
 #[test]
@@ -239,7 +239,9 @@ fn v1_legacy_warns_once_per_package_per_machine() {
     verify_chain_with_home(&pkg, &m, &home).expect("legacy accepted");
     verify_chain_with_home(&pkg, &m, &home).expect("legacy accepted again");
     assert_eq!(
-        journal(&home).matches("event=legacy-v1-accepted").count(),
+        journal(&home)
+            .matches("event=legacy-unsigned-accepted")
+            .count(),
         2,
         "every acceptance is journaled"
     );
@@ -292,7 +294,9 @@ fn v1_quiet_notices_bit_suppresses_the_warning_but_journals_and_require_signed_w
     verify_chain_with_home(&pkg, &m, &home).expect("quiet legacy accepted");
     verify_chain_with_home(&pkg, &m, &home).expect("quiet legacy accepted again");
     assert_eq!(
-        journal(&home).matches("event=legacy-v1-accepted").count(),
+        journal(&home)
+            .matches("event=legacy-unsigned-accepted")
+            .count(),
         2,
         "every acceptance is journaled, bit or no bit"
     );

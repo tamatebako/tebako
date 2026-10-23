@@ -101,7 +101,7 @@ fn unsigned_bundle_is_deterministic_and_creates_no_keys() {
             "legacy acceptance must be journaled"
         );
         let j = std::fs::read_to_string(home.join("journal.log")).unwrap();
-        assert!(j.contains("legacy-v1-accepted"), "{j}");
+        assert!(j.contains("legacy-unsigned-accepted"), "{j}");
     });
 }
 
