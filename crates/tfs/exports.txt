@@ -17,6 +17,7 @@ tebako_fs_init
 tebako_fs_init_from_file
 tebako_fs_init_from_file_at
 tebako_fs_lseek
+tebako_fs_lstat
 tebako_fs_mount_from_file
 tebako_fs_mount_from_file_at
 tebako_fs_mount_from_file_at_with_mode
@@ -30,6 +31,7 @@ tebako_fs_opendir
 tebako_fs_pread
 tebako_fs_read
 tebako_fs_readdir
+tebako_fs_readlink
 tebako_fs_rewinddir
 tebako_fs_seekdir
 tebako_fs_stat

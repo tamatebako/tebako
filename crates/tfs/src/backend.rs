@@ -19,6 +19,12 @@ pub enum EntryType {
     Other,
 }
 
+/// The POSIX symlink type bits (`S_IFLNK`). Spelled here rather than read
+/// from `libc` because the libc crate carries no `S_IFLNK` on Windows —
+/// and the VFS reports links in its `st_mode` with the POSIX spelling on
+/// every platform.
+pub const S_IFLNK: u32 = 0o120_000;
+
 /// Stat-equivalent info returned by [`Backend::stat`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RawStat {

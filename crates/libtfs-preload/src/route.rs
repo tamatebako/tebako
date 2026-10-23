@@ -125,10 +125,23 @@ pub fn vfs_open(path: &str, flags: i32) -> PathRoute<i32> {
     }
 }
 
-/// stat/lstat routing. The engine has no symlink duality (memfs entries
-/// are files or dirs), so lstat == stat.
+/// stat routing: the engine follows symlink hops (spec 11 §9), the way
+/// POSIX stat(2) does.
 pub fn vfs_stat(path: &str) -> PathRoute<RawStat> {
+    let answer = { context().read().unwrap().stat_following(path) };
+    route_answer(answer, path, HostAccess::Ro)
+}
+
+/// lstat routing: the entry itself answers — a link reports `Symlink`
+/// with its target's length as `size`, never the target's metadata.
+pub fn vfs_lstat(path: &str) -> PathRoute<RawStat> {
     let answer = { context().read().unwrap().stat(path) };
+    route_answer(answer, path, HostAccess::Ro)
+}
+
+/// readlink routing: the stored target, never followed.
+pub fn vfs_readlink(path: &str) -> PathRoute<String> {
+    let answer = { context().read().unwrap().readlink(path) };
     route_answer(answer, path, HostAccess::Ro)
 }
 
@@ -145,10 +158,11 @@ pub fn vfs_opendir(path: &str) -> PathRoute<usize> {
 }
 
 /// access/faccessat routing. Read-class: existence/mode answered from the
-/// memfs stat. W_OK against a memfs entry is EROFS (payload images are
-/// always ro, spec 11); X_OK honors the entry's permission bits.
+/// memfs stat (a symlink is followed, as POSIX access(2) does). W_OK
+/// against a memfs entry is EROFS (payload images are always ro, spec 11);
+/// X_OK honors the entry's permission bits.
 pub fn vfs_access(path: &str, mode: i32) -> PathRoute<()> {
-    let st = context().read().unwrap().stat(path);
+    let st = context().read().unwrap().stat_following(path);
     match st {
         Ok(raw) => {
             if mode == libc::F_OK {
