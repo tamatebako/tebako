@@ -402,7 +402,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // construction; for node the pair IS the authority (the press never
     // guesses a node line).
     let (ruby_ver, runtime_tebako_version) = if opts.engine == crate::options::PressEngine::Node {
-        let (lv, ver) = node_pair_versions(&runtime_path)?;
+        let (lv, ver) = pair_versions(&runtime_path, "node")?;
         (lv, ver)
     } else {
         (ruby_ver, opts.tebako_version.clone())
@@ -744,7 +744,7 @@ fn resolve_node_pair(
                 )
             })?
         }
-        _ => tpkg::Constraint::new("*").expect("the any constraint parses"),
+        _ => any_constraint(),
     };
     let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
     let home = tebako_shim::tebako_home(&env)
@@ -763,10 +763,22 @@ fn resolve_node_pair(
         })
 }
 
+/// The "any version" constraint — what an unconstrained press asks the
+/// resolver for. There is no `*` spelling in the manifest grammar (it is a
+/// named parse error: a clause version must be dot-separated components), so
+/// `>= 0` carries the meaning: every published version satisfies it. A wrong
+/// spelling here is a PANIC on the ordinary bare-project press rather than an
+/// error a user can read, which is why it is pinned by a unit test.
+fn any_constraint() -> tpkg::Constraint {
+    tpkg::Constraint::new(">= 0").expect(">= 0 parses")
+}
+
 /// The language version of an installed runtime pair, read from its store
-/// entry name (`<engine>-<lv>-<ver>-<triplet>`): the press's node arm
-/// names the payload's runtime ref from the pair it vendored with.
-fn node_pair_versions(exe: &Path) -> Result<(String, String), TebakoError> {
+/// entry name (`<engine>-<lv>-<ver>-<triplet>`): the press names the
+/// payload's runtime ref from the pair it vendored with. The expected engine
+/// is the caller's; a name that belongs to another engine is a named error
+/// rather than a silent misparse.
+fn pair_versions(exe: &Path, expected_engine: &str) -> Result<(String, String), TebakoError> {
     let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     let name = dir
         .file_name()
@@ -796,9 +808,9 @@ fn node_pair_versions(exe: &Path) -> Result<(String, String), TebakoError> {
             "the pair's entry {name} is not <engine>-<lv>-<ver>"
         ))
     })?;
-    if engine != "node" {
+    if engine != expected_engine {
         return Err(plain_error(format!(
-            "the pair's entry {name} names engine {engine}, not node"
+            "the pair's entry {name} names engine {engine}, not {expected_engine}"
         )));
     }
     Ok((lv.to_string(), ver.to_string()))
@@ -1969,6 +1981,16 @@ fn human_age(installed_at: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_any_constraint_is_a_parseable_clause() {
+        // A bare project's press asks the resolver for "any version". The
+        // grammar has no `*`; `>= 0` is the clause that parses and matches
+        // everything. Before this, that request panicked.
+        let any = tpkg::versions::from_validated(&any_constraint());
+        assert!(any.matches("3.3.12"), ">= 0 must match an ordinary version");
+        assert!(any.matches("4.0.7"), ">= 0 must match the newest line too");
+    }
 
     #[test]
     fn the_reproducible_stamp_pins_only_a_parseable_epoch() {
