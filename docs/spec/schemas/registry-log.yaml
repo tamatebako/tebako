@@ -1,0 +1,111 @@
+# =============================================================================
+# registry-log.yaml — the registry transparency grammar (spec 41)
+#
+# Three artifacts, one SSOT:
+#   <registry>            the document (spec 04) whose rows are the leaves
+#   <registry>.rows       the published canonical snapshot (one line per row)
+#   <registry>.log        the head log: one signed head per line
+#
+# THIS FILE owns the grammars: the canonical row line, the tree, the head
+# wire format, the proof shape and the `registry_log_schema: 1` documents.
+# The reader/writer is crates/tebako-cli/src/registry_log.rs; the row model
+# and the variant-id derivation are tebako-resolve's (spec 04, spec 28).
+# =============================================================================
+
+schema: registry-log
+schema_version: 1 # MAJOR — the JSON documents' `registry_log_schema`; additive-only
+schema_minor: 0
+status: normative
+owner: tebako-cli (crates/tebako-cli/src/registry_log.rs) in tamatebako/tebako
+spec: docs/spec/41-registry-transparency.md
+
+# ── the canonical row (spec 41 §2) ───────────────────────────────────────
+row:
+  line: "<kind> <name>@<version> <platform> <sha256|-> <state> <keyid|->"
+  ordering: >-
+    Byte order of the rendered line. Never document order: an author may
+    reindent, reorder or re-comment the YAML and the snapshot does not move.
+  columns:
+    kind: "the document's kind:, lowercased (app|data|toolkit|runtime|language)"
+    name_version: "verbatim; @ is the separator (a version never contains one)"
+    platform: >-
+      A shorthand row: `universal` or the vcpkg triplet (x86_64-linux-gnu —
+      the REGISTRY's spelling, not the release asset's). A variants: arm
+      renders `<variant-id>:<universal|triplet>` from
+      tebako_resolve::registry::variant_id() — the arm id never stands alone,
+      so a universal arm can never be read as a triplet.
+    sha256: >-
+      The platform row's own digest. A `platforms: universal` row renders
+      `-`: the registry model carries no hash there (ReleaseRef is a
+      reference), and the bytes are anchored by the release's SHA256SUMS and
+      attestation. This log proves the ROW SET; those prove the BYTES.
+    state: "spec 04's status: verbatim (withdrawn when yanked), active when absent"
+    keyid: "the row's declared signer (signature.keyid), else -"
+  withdrawn: >-
+    A withdrawn row STAYS in the snapshot forever (spec 41 §6). Withdrawal is
+    the only legal way for a name to vanish; registry retire sets the status
+    instead of deleting, and --force deletion is reported by log verify.
+
+# ── the tree (spec 41 §3) ────────────────────────────────────────────────
+tree:
+  hash: SHA-256
+  leaf: "H(0x00 ‖ line bytes)"
+  node: "H(0x01 ‖ left(32) ‖ right(32))"
+  empty: 'H("")  — a registry with no rows has a defined root'
+  fold: >-
+    RFC 6962: split at the largest power of two STRICTLY smaller than the
+    leaf count, recurse, carry an odd tail up. Never pad — padding is what
+    breaks third-party verifiers.
+  proof:
+    order: "leaf-to-root: the innermost sibling first, the outermost last"
+    length: "per LEAF, not per tree (n=3: two levels for rows 0–1, one for row 2)"
+    shape: "array of 32-byte hashes, lowercase hex on the wire"
+    verify: >-
+      RFC 6962 §2.1.2's recursion: the LAST element belongs to the OUTERMOST
+      split, so the orientation comes from the level being combined.
+
+# ── the head (spec 41 §4) ────────────────────────────────────────────────
+head:
+  line: "<seq> ts=<unix> root=<sha256 hex> rows=<n> prev=<sha256 hex|-> key=<keyid hex|-> sig=<hex|->"
+  payload: |
+    tebako-registry-log-1
+    <seq>
+    <ts>
+    <root>
+    <rows>
+    <prev>
+  chain_law:
+    seq: "contiguous from the first head; a gap is an edited log"
+    prev: "the previous head's root (`-` for the first); a mismatch is a FORK, named at that head"
+    rows: >-
+      non-decreasing unless a tombstone accounts for the drop. The chain alone
+      cannot see tombstones, so a drop is REPORTED (row_drops) rather than
+      accepted or refused: a chain that silently accepted one would be the
+      mass-yank alarm switched off.
+  signature: >-
+    Detached OpenPGP over the canonical payload, signed by the registry's
+    declared head key (spec 09 §9.1's signing: block — no new key class).
+    An unknown signer is reported as `unknown-key` and the chain still reads
+    sound; an INVALID signature is the 71 class, never a chain finding.
+
+# ── the documents (spec 41 §5) ───────────────────────────────────────────
+documents:
+  snapshot:
+    registry_log_schema: 1
+    keys: [registry_log_schema, registry, rows, root, lines]
+  verify:
+    registry_log_schema: 1
+    keys: [registry_log_schema, log, heads, sound, signature, problems, row_drops, registry?]
+    registry_keys: [rows, sealed_rows, root_match, detail]
+  prove:
+    registry_log_schema: 1
+    keys: [registry_log_schema, log, row, against, expected_root, proofs]
+    proof_keys: [line, index, total, proof, root, verifies]
+
+# ── outcomes (spec 41 §7) ────────────────────────────────────────────────
+outcomes:
+  sound: {exit: 0, meaning: "the chain holds and, with a registry, its root equals the newest head's"}
+  signature: {exit: 71, meaning: "the newest head's signature does not validate — a forged head, not a chain finding"}
+  finding: {exit: 80, meaning: "seq gap, fork, prev mismatch, unparseable head, a row set that is not what was sealed, or a proof that does not verify"}
+  io: {exit: 74, meaning: "the log or registry cannot be read; a log with no heads"}
+  usage: {exit: 64, meaning: "unknown verb/flag, a row that does not exist, --verify-root without a proof source"}
