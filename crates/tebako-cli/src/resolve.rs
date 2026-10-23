@@ -862,8 +862,31 @@ impl Resolver {
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .join("layout");
+        // The layout is derived from ONE image. The entry directory is
+        // per-version and its bytes are digest-pinned, but a re-install can
+        // replace the image under a reused directory, so the derivation
+        // records what it was made from: a matching marker short-circuits,
+        // a missing or different one rebuilds.
+        let image = runtime_image_beside(runtime_path);
+        // The marker sits BESIDE the layout, never inside it: the press copies
+        // the layout wholesale into its staging tree, so a file in there would
+        // ship inside every pressed payload (it did, until this was seen).
+        let marker = layout_dir
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(".layout-source-sha256");
+        let provenance = image
+            .as_ref()
+            .and_then(|p| sha256_file_hex(p))
+            .unwrap_or_default();
         if layout_dir.join("lib").is_dir() {
-            return Ok(layout_dir);
+            let recorded = fs::read_to_string(&marker).unwrap_or_default();
+            if recorded.trim() == provenance || (provenance.is_empty() && recorded.is_empty()) {
+                return Ok(layout_dir);
+            }
+            // Stale derivation: rebuild it rather than serve another image's
+            // files.
+            let _ = fs::remove_dir_all(&layout_dir);
         }
         fs::create_dir_all(&layout_dir).map_err(|e| {
             crate::error::plain_error(format!("cannot create {}: {e}", layout_dir.display()))
@@ -874,8 +897,12 @@ impl Resolver {
         // the image in-process instead (the same tfs C ABI the press uses
         // to seed its staging tree). An era-1 package has no image and
         // keeps the interpreter's own extract mode.
-        if let Some(image) = runtime_image_beside(runtime_path) {
+        if let Some(image) = image {
             crate::packager::extract_runtime_image(&image, &layout_dir)?;
+            // The marker goes in LAST: an interrupted extraction leaves no
+            // marker, so the next press rebuilds instead of trusting a
+            // half-written tree.
+            let _ = fs::write(&marker, format!("{provenance}\n"));
             return Ok(layout_dir);
         }
         run_with_capture_v(

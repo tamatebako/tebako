@@ -28,10 +28,13 @@ pub fn build_app_image(
         return build_node_image(opts, resolved);
     }
     let runtime_path = &resolved.executable;
-    // Layout source (item 30b): the runtime image when the release is
-    // image-era (extracted in-process into the packaging environment —
-    // no extracted tree in the cache); otherwise the runtime's own
-    // extracted layout (v1 flow, byte-identical to the gem).
+    // Layout source, both eras: the runtime's extracted layout in the store.
+    // An image-era pair has no layout until the resolver makes one — it
+    // mounts the env image in-process and extracts it beside the pair, once,
+    // keyed by the image's digest (tebako#903: expanding an unchanged image
+    // on every press measured 4.3-4.5 s of a 6.2-7.1 s loop, while copying
+    // the expanded tree measured 2.4 s). The image itself stays the
+    // immutable artifact; the layout is derived data beside it.
     let image_path = resolved.image.as_ref().map(|img| {
         resolved
             .executable
@@ -39,16 +42,12 @@ pub fn build_app_image(
             .unwrap_or_else(|| Path::new("."))
             .join(&img.filename)
     });
-    let layout_dir = if image_path.is_none() {
-        let resolver = crate::resolve::Resolver::new();
-        Some(resolver.layout(runtime_path, opts.verbose)?)
-    } else {
-        None
-    };
-    init(layout_dir.as_deref(), image_path.as_deref(), opts)?;
-    // RuntimeSdk provenance (native-extension deploy): the runtime's
-    // rbconfig comes from the mounted image (image-era — no extraction)
-    // or the extracted layout (v1, the gem's flow).
+    let resolver = crate::resolve::Resolver::new();
+    let layout_dir = Some(resolver.layout(runtime_path, opts.verbose)?);
+    init(layout_dir.as_deref(), None, opts)?;
+    // RuntimeSdk provenance (native-extension deploy): an image-era pair
+    // reads its rbconfig straight from the mount (one file, no extraction);
+    // an era-1 pair reads it from the extracted layout, as the gem did.
     let rbconfig_source = match (image_path.as_deref(), layout_dir.as_deref()) {
         (Some(image), _) => Some(crate::sdk::RbconfigSource::Image(image.to_path_buf())),
         (None, Some(layout)) => Some(crate::sdk::RbconfigSource::Layout(layout.to_path_buf())),
