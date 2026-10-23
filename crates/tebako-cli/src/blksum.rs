@@ -16,72 +16,16 @@ const EX_USAGE: i32 = 64;
 const EX_TEBAKO_MANIFEST: i32 = 65;
 const EX_TEBAKO_IO: i32 = 74;
 
-/// What one derivation produced: where the sidecar landed, the asset name
-/// a shard declares, the sidecar's own sha256 (the value a registry row
-/// pins), and the geometry that proves the derivation covered the image.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlksumReport {
-    pub path: PathBuf,
-    pub filename: String,
-    pub sha256: String,
-    pub size_bytes: u64,
-    pub group_count: u64,
-}
-
-/// The sidecar's conventional name: `<image>.blksum.json`, beside the
-/// image it describes (spec 39 §3).
-pub fn sidecar_path(image: &Path) -> PathBuf {
-    let mut name = image.file_name().unwrap_or_default().to_os_string();
-    name.push(".blksum.json");
-    image.with_file_name(name)
-}
-
 /// Derive the sidecar for `image` and write it (to `out` when given, else
-/// beside the image). A 0-byte file has no blksum and is refused by name —
-/// the same refusal `tebako publish` applies to a 0-byte payload.
-pub fn write_sidecar(image: &Path, out: Option<&Path>) -> Result<BlksumReport, TebakoError> {
-    let bytes = std::fs::read(image).map_err(|e| {
-        TebakoError::new(
-            format!("cannot read {}: {e}", image.display()),
-            EX_TEBAKO_IO,
-        )
-    })?;
-    if bytes.is_empty() {
-        return Err(TebakoError::new(
-            format!(
-                "{} is empty — a 0-byte image has no blksum and is not a publishable .tfs",
-                image.display()
-            ),
-            EX_TEBAKO_MANIFEST,
-        ));
-    }
-    let blksum = tpkg::lazy::Blksum::from_image_bytes(&bytes);
-    let rendered = blksum.render();
-    let path = out
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| sidecar_path(image));
-    let filename = path
-        .file_name()
-        .ok_or_else(|| {
-            TebakoError::new(
-                format!("the sidecar path {} names no file", path.display()),
-                EX_USAGE,
-            )
-        })?
-        .to_string_lossy()
-        .into_owned();
-    std::fs::write(&path, rendered.as_bytes()).map_err(|e| {
-        TebakoError::new(
-            format!("cannot write the sidecar {}: {e}", path.display()),
-            EX_TEBAKO_IO,
-        )
-    })?;
-    Ok(BlksumReport {
-        path,
-        filename,
-        sha256: tebako_resolve::sha256_hex(rendered.as_bytes()),
-        size_bytes: bytes.len() as u64,
-        group_count: blksum.group_count(),
+/// beside the image), mapping the shared emitter's named errors onto this
+/// CLI's exit classes.
+pub fn write_sidecar(image: &Path, out: Option<&Path>) -> Result<tpkg::lazy::Sidecar, TebakoError> {
+    tpkg::lazy::write_sidecar(image, out).map_err(|e| {
+        let code = match e {
+            tpkg::lazy::LazyError::BlksumInvalid(_) => EX_TEBAKO_MANIFEST,
+            _ => EX_TEBAKO_IO,
+        };
+        TebakoError::new(e.to_string(), code)
     })
 }
 

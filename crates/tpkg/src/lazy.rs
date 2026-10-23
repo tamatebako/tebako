@@ -128,6 +128,70 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     hex_lower(&sha2::Sha256::digest(bytes))
 }
 
+/// What one blksum-sidecar derivation produced (spec 39 §3): where the
+/// sidecar landed, the asset name a shard declares, the sidecar's own
+/// sha256 (the value a registry row pins), and the geometry that proves
+/// the derivation covered the image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sidecar {
+    pub path: std::path::PathBuf,
+    pub filename: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+    pub group_count: u64,
+}
+
+/// The sidecar's conventional name: `<image>.blksum.json`, beside the
+/// image it describes (spec 39 §3).
+pub fn sidecar_name(image_name: &str) -> String {
+    format!("{image_name}.blksum.json")
+}
+
+/// Derive the sidecar from `image`'s OWN bytes and write it (to `out`
+/// when given, else beside the image). A 0-byte file has no blksum and is
+/// refused by name — the same refusal `tebako publish` applies to a
+/// 0-byte payload.
+///
+/// This is the ONE emitter: `tebako blksum`, `tfs blksum` and
+/// `tebako publish` all reach `Blksum::from_image_bytes` through here, so
+/// a factory cannot produce a sidecar the loader would read differently.
+pub fn write_sidecar(
+    image: &std::path::Path,
+    out: Option<&std::path::Path>,
+) -> Result<Sidecar, LazyError> {
+    let bytes = std::fs::read(image)
+        .map_err(|e| LazyError::LazyStoreIo(format!("cannot read {}: {e}", image.display())))?;
+    if bytes.is_empty() {
+        return Err(LazyError::BlksumInvalid(format!(
+            "{} is empty — a 0-byte image has no blksum and is not a publishable .tfs",
+            image.display()
+        )));
+    }
+    let blksum = Blksum::from_image_bytes(&bytes);
+    let rendered = blksum.render();
+    let path = out.map(std::path::Path::to_path_buf).unwrap_or_else(|| {
+        let name = image.file_name().unwrap_or_default().to_string_lossy();
+        image.with_file_name(sidecar_name(&name))
+    });
+    let filename = path
+        .file_name()
+        .ok_or_else(|| {
+            LazyError::LazyStoreIo(format!("the sidecar path {} names no file", path.display()))
+        })?
+        .to_string_lossy()
+        .into_owned();
+    std::fs::write(&path, rendered.as_bytes()).map_err(|e| {
+        LazyError::LazyStoreIo(format!("cannot write the sidecar {}: {e}", path.display()))
+    })?;
+    Ok(Sidecar {
+        path,
+        filename,
+        sha256: sha256_hex(rendered.as_bytes()),
+        size_bytes: bytes.len() as u64,
+        group_count: blksum.group_count(),
+    })
+}
+
 /// The group count of a `size_bytes` image: ceil(size / group size).
 pub fn group_count_for(size_bytes: u64) -> u64 {
     size_bytes.div_ceil(LAZY_GROUP_SIZE)
