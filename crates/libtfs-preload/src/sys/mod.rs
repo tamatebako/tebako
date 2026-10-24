@@ -2330,13 +2330,14 @@ mod tests {
         crate::route::clear_virtual_cwd();
         let mut buf = [0 as libc::c_char; 4096];
         let answered = unsafe { getcwd(buf.as_mut_ptr(), buf.len()) };
-        assert!(!answered.is_null(), "getcwd answered null: errno {}", errno());
+        assert!(
+            !answered.is_null(),
+            "getcwd answered null: errno {}",
+            errno()
+        );
         let answered = unsafe { std::ffi::CStr::from_ptr(answered) };
         let answered = answered.to_str().expect("a cwd is UTF-8 here");
-        assert!(
-            answered.starts_with('/'),
-            "the cwd is absolute: {answered}"
-        );
+        assert!(answered.starts_with('/'), "the cwd is absolute: {answered}");
         // The answer NAMES the directory the process is in (dev/ino, not a
         // string compare against another resolver).
         use std::os::unix::fs::MetadataExt;
@@ -2358,7 +2359,11 @@ mod tests {
         crate::route::set_virtual_cwd("/__tfs__/work");
         let mut buf = [0 as libc::c_char; 64];
         let answered = unsafe { getcwd(buf.as_mut_ptr(), buf.len()) };
-        assert!(!answered.is_null(), "getcwd answered null: errno {}", errno());
+        assert!(
+            !answered.is_null(),
+            "getcwd answered null: errno {}",
+            errno()
+        );
         let answered = unsafe { std::ffi::CStr::from_ptr(answered) };
         assert_eq!(answered.to_str().unwrap(), "/__tfs__/work");
         // ERANGE when the buffer cannot hold it, never a truncation.

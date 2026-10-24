@@ -267,7 +267,10 @@ unsafe extern "C" fn kernel_getcwd(buf: *mut c_char, size: libc::size_t) -> *mut
         return std::ptr::null_mut();
     }
     let field = &info[VIP_PATH_OFFSET..VIP_PATH_OFFSET + VIP_PATH_CAPACITY];
-    let len = field.iter().position(|&b| b == 0).unwrap_or(VIP_PATH_CAPACITY);
+    let len = field
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(VIP_PATH_CAPACITY);
     if len == 0 {
         super::set_errno(libc::ENOENT);
         return std::ptr::null_mut();
