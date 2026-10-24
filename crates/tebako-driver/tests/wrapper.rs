@@ -1495,6 +1495,14 @@ fn an_entrypoint_that_links_to_the_interpreter_takes_the_direct_form() {
 
 #[test]
 fn a_link_entry_stays_a_vfs_spelling_under_preload() {
+    // Preload is a POSIX mechanism (dyld interpose / LD_PRELOAD); the
+    // driver refuses a `visibility: preload` layout on windows with a named
+    // 65 — "windows has no interposition API" — which is the right answer
+    // there and not what this test is about.
+    if cfg!(windows) {
+        eprintln!("skip: preload visibility is POSIX-only");
+        return;
+    }
     let g = guard("rt-entry-link-preload");
     // Node's shape under the PRELOAD mechanism: `bin/npm` is a link to
     // `npm-cli.js`. Materializing the entry would hand the interpreter the
