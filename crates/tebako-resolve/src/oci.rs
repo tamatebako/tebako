@@ -291,9 +291,26 @@ impl CredentialSource for OciBook<'_> {
         match self.docker() {
             Err(e) => Err(OciError::DockerConfig(e.clone())),
             Ok(Some(config)) => {
-                let pair = config
-                    .credential_for(self.registry_host)
-                    .map_err(OciError::DockerConfig)?;
+                let pair = match config.credential_for(self.registry_host) {
+                    Ok(pair) => pair,
+                    // A helper covering the host is not a credential this
+                    // client can read (helpers are shell-outs — forbidden),
+                    // and it is not a reason to refuse a PUBLIC repository,
+                    // which answers without one. Ride anonymous and record
+                    // what was unusable, so a 401 names it with the remedy
+                    // (tebako#928). Every other docker-config error still
+                    // propagates: a malformed config is the user's problem
+                    // to see.
+                    Err(DockerConfigError::HelperUnsupported { host, helper }) => {
+                        *self.looked_for.lock().unwrap_or_else(|e| e.into_inner()) = Some(format!(
+                            "the docker config's '{helper}' helper for {host} — helpers are \
+                             shell-outs, forbidden by the no-shell-outs law; set a `credentials:` \
+                             entry's env token in ~/.tebako/config.yaml"
+                        ));
+                        None
+                    }
+                    Err(e) => return Err(OciError::DockerConfig(e)),
+                };
                 Ok(pair.map(|user_pass| {
                     let class = format!("token:docker-config:{}", self.registry_host);
                     self.journal(&class);
@@ -558,6 +575,39 @@ pub fn resolve_manifest_digest<T: Transport>(
     let r = repo_ref(host, repo, tag.as_deref(), digest.as_deref());
     client
         .resolve(&r, ShapeExpectation::Class(ArtifactClass::RegistryIndex))
+        .map(|a| a.manifest_digest)
+        .map_err(|e| named(alias, book.take_looked_for(), e))
+}
+
+/// The manifest digest of a PAYLOAD mirror (spec 38 §3's five classes):
+/// a row's `oci:` mirror names a TFS image, a runtime bundle or an index
+/// depending on what the row is, so the shape expectation is `AnyTebako`
+/// — the question is only whether the registry answers the manifest at
+/// all, which is what a conformance probe asks (tebako#928's companion).
+pub fn resolve_payload_manifest_digest<T: Transport>(
+    transport: &T,
+    reference: &Reference,
+    alias: Option<&str>,
+) -> Result<String, ResolveError> {
+    let Reference::Oci {
+        host,
+        repo,
+        tag,
+        digest,
+        ..
+    } = reference
+    else {
+        return Err(ResolveError::DownloadFailed {
+            origin: reference.to_string(),
+            reason: "the OCI adapter serves tfs+oci: references only".to_string(),
+        });
+    };
+    let book = OciBook::new(crate::credentials::book(), alias, host);
+    let oci_transport = OciTransport(transport);
+    let client = Client::new(&oci_transport, &book);
+    let r = repo_ref(host, repo, tag.as_deref(), digest.as_deref());
+    client
+        .resolve(&r, ShapeExpectation::AnyTebako)
         .map(|a| a.manifest_digest)
         .map_err(|e| named(alias, book.take_looked_for(), e))
 }
@@ -1008,6 +1058,34 @@ mod tests {
         // neither: anonymous
         let src = OciBook::with_docker(CredentialBook::default(), None, "other.example", Ok(None));
         assert_eq!(src.registry_credential().unwrap(), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// tebako#928: a helper covering the host is NOT a refusal to read a
+    /// public repository. The client rides anonymous and records what was
+    /// unusable, so a 401 names it with the remedy.
+    #[test]
+    fn a_covering_helper_rides_anonymous_with_the_reason_kept() {
+        let _guard = env_guard();
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-oci-helper-fallback-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, r#"{"credHelpers":{"ghcr.io":"desktop"}}"#).unwrap();
+        let docker = DockerConfig::load_from(path).unwrap();
+        let src = OciBook::with_docker(CredentialBook::default(), None, "ghcr.io", Ok(docker));
+        assert_eq!(
+            src.registry_credential().unwrap(),
+            None,
+            "a helper-only config must ride anonymous, not refuse"
+        );
+        let looked_for = src.take_looked_for().expect("the refusal names it");
+        assert!(looked_for.contains("desktop"), "{looked_for}");
+        assert!(looked_for.contains("no-shell-outs law"), "{looked_for}");
+        assert!(looked_for.contains("credentials:"), "{looked_for}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
