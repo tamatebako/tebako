@@ -16,6 +16,12 @@ name: benchmark
 # are the SSOT).
 
 on:
+  # The release pipeline dispatches this explicitly from release.yml's
+  # finalize (tebako#913). `release: published` cannot carry that job:
+  # the release object is created with GITHUB_TOKEN, and that token's
+  # events fan out to no workflow. The release trigger stays for the
+  # human path — a release published or repaired through the UI carries
+  # a user's token and does fire.
   workflow_dispatch:
   release:
     types: [published]

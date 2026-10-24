@@ -46,10 +46,14 @@ artifacts implement.
   build in the pure-Rust CI legs (the `test-windows` package set) —
   it never links dwarfs-t, sqfs, or rnp. It *drives* the product
   binaries; it does not link them.
-- **Never per-PR.** Benchmarks run on `workflow_dispatch` and on
-  `release: published` only. A per-PR benchmark would be noise (shared
+- **Never per-PR.** Benchmarks run on `workflow_dispatch` and on a
+  released tag only. A per-PR benchmark would be noise (shared
   runners) and a cost bomb, and it would put the harness on the merge
-  critical path where it does not belong.
+  critical path where it does not belong. The released-tag arm is a
+  dispatch from `release.yml`'s `finalize`, not the `release:
+  published` event: the release object is created with the job's
+  `GITHUB_TOKEN`, and that token's events fan out to no workflow
+  (tebako#913).
 - The harness **reports**; it does not gate. There is no performance
   regression refusal in this spec. Named gaps (§6) are data, not
   failures of the product under test.
