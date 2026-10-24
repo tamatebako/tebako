@@ -97,27 +97,76 @@ fn a_row_the_host_is_not_published_for_is_a_note_not_a_problem() {
     let dir = scratch("hostnote");
     // The artifact-name grammar only exists on service releases, so the
     // per-triplet row rides a tfs:github: ref — the resolver refuses it
-    // for THIS host before any fetch (the default pass downloads nothing,
-    // so the fixture stays offline).
+    // for THIS host before any fetch. The published triplet is chosen to
+    // differ from the running host, so the note is the outcome on every
+    // machine and the fixture stays offline (the probe never runs).
+    let host = tebako_cli::options::host_platform().unwrap();
+    let other = if host.as_str() == "x86_64-linux-gnu" {
+        "aarch64-windows-ucrt"
+    } else {
+        "x86_64-linux-gnu"
+    };
     let registry = format!(
-        "schema_version: 1\npayloads:\n  - name: demo\n    kind: toolkit\n    versions:\n      - version: 1.0.0\n        platforms:\n          x86_64-linux-gnu:\n            artifact: demo-linux.tfs\n            sha256: \"{}\"\n        release: {{ref: \"tfs:github:o/demo:1.0.0\"}}\n",
+        "schema_version: 1\npayloads:\n  - name: demo\n    kind: toolkit\n    versions:\n      - version: 1.0.0\n        platforms:\n          {other}:\n            artifact: demo-linux.tfs\n            sha256: \"{}\"\n        release: {{ref: \"tfs:github:o/demo:1.0.0\"}}\n",
         "a".repeat(64)
     );
     let path = dir.join("tpkg-registry.yaml");
     fs::write(&path, &registry).unwrap();
 
     let (report, code) = doctor(path.to_str().unwrap(), false, None, false).unwrap();
-    let host_is_linux_x86 = cfg!(all(target_os = "linux", target_arch = "x86_64"));
     assert_eq!(code, 0, "{report}");
-    if host_is_linux_x86 {
-        assert!(report.contains("resolves to"), "{report}");
-    } else {
-        assert!(report.contains("note"), "{report}");
-        assert!(
-            report.contains("not published for the host triplet"),
-            "{report}"
-        );
-    }
+    assert!(report.contains("note"), "{report}");
+    assert!(
+        report.contains("not published for the host triplet"),
+        "{report}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_intact_mirror_serves_its_rows_without_a_download() {
+    let dir = scratch("serves");
+    let bytes = b"demo payload bytes";
+    let registry = universal_registry(&dir, &digest(bytes), None);
+    let path = dir.join("tpkg-registry.yaml");
+    fs::write(&path, &registry).unwrap();
+
+    // The metadata pass is the conformance claim: the row resolves AND the
+    // host answers for the artifact. One byte of the answer is enough.
+    let (report, code) = doctor(path.to_str().unwrap(), false, None, false).unwrap();
+    assert_eq!(code, 0, "{report}");
+    assert!(
+        report.contains("and serves it (18 bytes)"),
+        "digest-verified absence of a probe: {report}"
+    );
+    assert!(
+        report.contains("1 probed, 0 artifact(s) downloaded"),
+        "{report}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_row_whose_artifact_is_gone_is_a_problem_without_a_download() {
+    let dir = scratch("gone");
+    // The registry still names the file and the pin still parses: only the
+    // bytes are gone, which is exactly the rot a document gate cannot see.
+    let registry = universal_registry(&dir, &"a".repeat(64), None);
+    fs::remove_file(dir.join("demo.tfs")).unwrap();
+    let path = dir.join("tpkg-registry.yaml");
+    fs::write(&path, &registry).unwrap();
+
+    let (report, code) = doctor(path.to_str().unwrap(), false, None, false).unwrap();
+    assert_eq!(code, 1, "{report}");
+    assert!(
+        report.contains("but the host does not serve it"),
+        "{report}"
+    );
+    assert!(
+        report.contains("0 artifact(s) downloaded"),
+        "the verdict must not need the bytes: {report}"
+    );
+    assert!(report.contains("1 problem(s)"), "{report}");
     let _ = fs::remove_dir_all(&dir);
 }
 

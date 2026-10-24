@@ -1,9 +1,10 @@
 //! The conformance half of `tebako registry doctor` (arc 03): the document
 //! gate proves a registry FILE is well formed; this proves a registry HOST
 //! answers the vocabulary the file declares — the transport class the ref
-//! names is the parsed one, every row resolves for the host platform, and
-//! (with `--full`) the served bytes match the row's pin and the declared
-//! signatures verify.
+//! names is the parsed one, every row resolves for the host platform, every
+//! artifact the row names is PROVED SERVED by a ranged request whose body is
+//! dropped unread, and (with `--full`) the downloaded bytes match the row's
+//! pin and the declared signatures verify.
 //!
 //! The row resolution is `install::resolve_row_reference` — the same
 //! function `tebako install` runs — so the doctor can never bless a row an
@@ -73,6 +74,9 @@ pub struct Report {
     pub payloads: usize,
     pub versions: usize,
     pub rows_checked: usize,
+    /// Rows the metadata pass proved SERVED (a ranged probe against the
+    /// host, no artifact downloaded). Disjoint from `artifacts_fetched`.
+    pub rows_probed: usize,
     pub artifacts_fetched: usize,
     pub document_ok: bool,
     pub findings: Vec<Finding>,
@@ -103,8 +107,9 @@ impl Report {
             out.push_str("document: refused\n");
         }
         out.push_str(&format!(
-            "rows checked: {} ({} artifact(s) downloaded{})\n",
+            "rows checked: {} ({} probed, {} artifact(s) downloaded{})\n",
             self.rows_checked,
+            self.rows_probed,
             self.artifacts_fetched,
             if self.full { ", --full" } else { "" }
         ));
@@ -177,6 +182,7 @@ impl Report {
                 "rows".to_string(),
                 J::Object(vec![
                     ("checked".to_string(), n(self.rows_checked as u64)),
+                    ("probed".to_string(), n(self.rows_probed as u64)),
                     (
                         "artifacts_fetched".to_string(),
                         n(self.artifacts_fetched as u64),
@@ -236,6 +242,7 @@ pub fn doctor(
                 payloads: 0,
                 versions: 0,
                 rows_checked: 0,
+                rows_probed: 0,
                 artifacts_fetched: 0,
                 document_ok: false,
                 findings: vec![Finding::new(Severity::Problem, None, None, e.to_string())],
@@ -269,6 +276,7 @@ fn doctor_registry(
                 payloads: registry.payloads.len(),
                 versions: registry.payloads.iter().map(|p| p.versions.len()).sum(),
                 rows_checked: 0,
+                rows_probed: 0,
                 artifacts_fetched: 0,
                 document_ok: true,
                 findings: vec![Finding::new(Severity::Problem, None, None, e.message)],
@@ -284,6 +292,7 @@ fn doctor_registry(
         payloads: registry.payloads.len(),
         versions: registry.payloads.iter().map(|p| p.versions.len()).sum(),
         rows_checked: 0,
+        rows_probed: 0,
         artifacts_fetched: 0,
         document_ok: true,
         findings: Vec::new(),
@@ -400,12 +409,35 @@ fn check_row(
     }
     if !full {
         let described = describe_reference(&reference);
-        report.findings.push(Finding::new(
-            Severity::Ok,
-            Some(name),
-            Some(version),
-            format!("resolves to {described}"),
-        ));
+        let probe = probe_served(&reference);
+        // A probe that ran counts whether it was answered or refused; only a
+        // skipped class (no direct URL to ask) leaves the count alone.
+        if !matches!(probe, Probe::Skipped(_)) {
+            report.rows_probed += 1;
+        }
+        let (severity, message) = match probe {
+            Probe::Served { bytes: Some(total) } => (
+                Severity::Ok,
+                format!("resolves to {described} and serves it ({total} bytes)"),
+            ),
+            Probe::Served { bytes: None } => (
+                Severity::Ok,
+                format!(
+                    "resolves to {described} and serves it (length unreported: the host ignored the ranged probe)"
+                ),
+            ),
+            Probe::Refused(why) => (
+                Severity::Problem,
+                format!("resolves to {described} but the host does not serve it: {why}"),
+            ),
+            Probe::Skipped(why) => (
+                Severity::Note,
+                format!("resolves to {described}; not probed ({why})"),
+            ),
+        };
+        report
+            .findings
+            .push(Finding::new(severity, Some(name), Some(version), message));
         return;
     }
     // The ref's own `?sha256=` is the same pin the comparison below
@@ -522,6 +554,77 @@ fn without_pin(reference: &Reference) -> Reference {
         | Reference::File { sha256, .. } => *sha256 = None,
     }
     reference
+}
+
+/// What a metadata-mode probe learned about the row's served artifact.
+enum Probe {
+    /// The host answered for the artifact; the total size when it stated one
+    /// (a server that ignores the range answers 200 and states none).
+    Served { bytes: Option<u64> },
+    /// The host refused the artifact — the row claims what the host does not
+    /// serve, and that is the whole point of the verb.
+    Refused(String),
+    /// The row's transport has no direct artifact URL to probe; the class is
+    /// named, never guessed.
+    Skipped(&'static str),
+}
+
+/// The wire half of the probe: one open-ended ranged GET whose stream is
+/// dropped unread, so a host that ignores the range never hands us the whole
+/// artifact. A 206 states the object's total; a 200 says only that the host
+/// serves it.
+fn probe_https(url: &str) -> Probe {
+    match tebako_http::stream_range_open(url, None, None, 0) {
+        Ok(stream) => {
+            let status = stream.status();
+            let total = stream.content_range().map(|range| range.total);
+            drop(stream);
+            match status {
+                206 => Probe::Served { bytes: total },
+                200 => Probe::Served { bytes: None },
+                other => Probe::Refused(format!("the host answered {other} to a ranged GET")),
+            }
+        }
+        Err(e) => Probe::Refused(e.to_string()),
+    }
+}
+
+/// Prove the host SERVES the row's artifact without downloading it: one
+/// ranged GET whose body is dropped unread, or the file's own length on a
+/// `file://` mirror.
+///
+/// Resolution alone does not separate the three ways a registry rots — a
+/// deleted release asset, a repository that turned private, and a CDN path
+/// that no longer exists all resolve to a URL and none of them serve it.
+/// The probe is the half of the conformance claim the document gate cannot
+/// make, and it costs one request per row rather than one artifact.
+fn probe_served(reference: &Reference) -> Probe {
+    match reference {
+        Reference::File { path, .. } => match std::fs::metadata(path) {
+            Ok(meta) if meta.is_file() => Probe::Served {
+                bytes: Some(meta.len()),
+            },
+            Ok(_) => Probe::Refused(format!("{path} is not a file")),
+            Err(e) => Probe::Refused(format!("{path}: {e}")),
+        },
+        Reference::Https { url, .. } => probe_https(url),
+        // A service row that NAMES its asset has a download URL without an
+        // API call: the release directory plus the artifact the row chose.
+        // The single-`.tfs` shape names none — its asset is discovered by a
+        // release listing, which is the adapter's job, not the probe's.
+        Reference::Service {
+            artifact: Some(name),
+            ..
+        } => match release_download_locator(reference).and_then(|locator| locator.dir_url()) {
+            Some(dir) => probe_https(&format!("{dir}/{name}")),
+            None => Probe::Skipped("a service row whose release has no download locator"),
+        },
+        Reference::Service { artifact: None, .. } => {
+            Probe::Skipped("a service row that names no asset (the single-image rule)")
+        }
+        Reference::Git { .. } => Probe::Skipped("a git-adapter row, not a direct URL"),
+        Reference::Oci { .. } => Probe::Skipped("a distribution row; --full resolves its manifest"),
+    }
 }
 
 /// The transport class a registry ref names, for the report header.
