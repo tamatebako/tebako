@@ -23,6 +23,7 @@ mod tests {
 
     #[test]
     fn reexports_resolve() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let decls = parse_mounts("/a/img.zip:/tfs").unwrap();
         assert_eq!(to_env_spec(&decls), "/a/img.zip:/tfs");
         // a `/` mount is legitimate (the app payload mounts there; the
@@ -39,6 +40,7 @@ mod tests {
 
     #[test]
     fn ex_config_is_sysexits_78() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(EX_CONFIG, 78);
     }
 }

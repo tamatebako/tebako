@@ -163,3 +163,12 @@ compile_error!(
 
 #[cfg(unix)]
 mod sys;
+
+/// The crate's tests share one process-global context: the mount table and the
+/// host-access policy. Two of them race — the route matrix installs and resets
+/// policies, and the symlink seam mounts an image through the policy-gated
+/// mount family — so on a slow container leg the mount answered EPERM from a
+/// policy another test had installed (tebako#922). One lock, taken by every
+/// test in the crate, through the poison so a failure cannot cascade.
+#[cfg(test)]
+pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
