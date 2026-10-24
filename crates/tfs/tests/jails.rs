@@ -836,3 +836,27 @@ fn host_guard_names_whether_the_policy_judges_uncovered_paths() {
     assert_eq!(install_policy(1, &[], &[]), 0);
     assert_eq!(unsafe { c_api::tebako_fs_host_guard() }, 0);
 }
+
+#[test]
+fn a_relative_path_is_anchored_at_the_working_directory() {
+    let _f = setup("cwd-anchor");
+    let cwd = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();
+    let probe = cwd.join("cwd-anchor-probe.txt");
+    std::fs::write(&probe, b"probe").unwrap();
+    // The cwd granted read-only: a relative spelling of a file inside it is
+    // judged against the grant instead of matching nothing (tebako#921).
+    assert_eq!(install_policy(0, &[(&cwd, "/cwd", 0)], &[]), 0);
+    assert_eq!(open(Path::new("cwd-anchor-probe.txt"), libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::ENOENT, "granted: the host answers");
+    assert_eq!(stat(Path::new("cwd-anchor-probe.txt")), -1);
+    assert_eq!(errno(), libc::ENOENT);
+    // A relative escape leaves the grant and is denied.
+    assert_eq!(open(Path::new("../outside.txt"), libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::EPERM);
+    assert_eq!(stat(Path::new("../outside.txt")), -1);
+    assert_eq!(errno(), libc::EPERM);
+    // An absolute spelling of the same file keeps its answer.
+    assert_eq!(open(&probe, libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::ENOENT);
+    std::fs::remove_file(&probe).unwrap();
+}

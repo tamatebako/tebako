@@ -31,6 +31,33 @@ unsafe fn path_arg<'a>(ptr: *const c_char) -> Result<&'a str, i32> {
     cstr.to_str().map_err(|_| libc::EINVAL)
 }
 
+/// Anchor a VFS path at the caller's working directory (spec 08 §3).
+///
+/// Grants bind canonical and are therefore absolute, so a relative spelling
+/// matched none of them: under a deny default a payload's own
+/// `File.write("out.adoc")` was refused while the same file named absolutely
+/// was allowed (tebako#921). The anchor lives HERE, at the ABI entry, and
+/// never inside the policy check: a linked runtime reaches this surface with
+/// no interposition armed, while a process with the preload shim cannot call
+/// `getcwd` at all without recursing into the shim's own replacement
+/// (tebako#920).
+///
+/// Windows drive-relative spellings ("C:foo") stay untouched — they name a
+/// directory on that drive, not a file under the cwd, and the engine's own
+/// normalization owns that grammar.
+fn anchor_vfs_path(path: &str) -> std::borrow::Cow<'_, str> {
+    let absolute = path.starts_with('/')
+        || path.starts_with('\\')
+        || (cfg!(windows) && path.as_bytes().get(1) == Some(&b':'));
+    if absolute {
+        return std::borrow::Cow::Borrowed(path);
+    }
+    match std::env::current_dir() {
+        Ok(cwd) => std::borrow::Cow::Owned(cwd.join(path).to_string_lossy().into_owned()),
+        Err(_) => std::borrow::Cow::Borrowed(path),
+    }
+}
+
 /// Convert an OPTIONAL borrowed C string argument to Option<&str>
 /// (NULL → None; non-UTF-8 → EINVAL).
 ///
@@ -186,9 +213,10 @@ pub unsafe extern "C" fn tebako_is_initialized() -> libc::c_int {
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_open(path: *const c_char, flags: libc::c_int) -> libc::c_int {
     let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
+        Ok(p) => anchor_vfs_path(p),
         Err(e) => return fail(e),
     };
+    let path = path.as_ref();
     match context().write().unwrap().open(path, flags) {
         Ok(fd) => {
             set_errno(0);
@@ -302,12 +330,13 @@ pub unsafe extern "C" fn tebako_fs_close(fd: libc::c_int) -> libc::c_int {
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_opendir(path: *const c_char) -> *mut c_void {
     let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
+        Ok(p) => anchor_vfs_path(p),
         Err(e) => {
             fail(e);
             return std::ptr::null_mut();
         }
     };
+    let path = path.as_ref();
     match context().write().unwrap().opendir(path) {
         Ok(id) => {
             set_errno(0);
@@ -469,9 +498,10 @@ pub unsafe extern "C" fn tebako_fs_stat(path: *const c_char, st: *mut TebakoStat
         return fail(libc::EINVAL);
     }
     let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
+        Ok(p) => anchor_vfs_path(p),
         Err(e) => return fail(e),
     };
+    let path = path.as_ref();
     match context().read().unwrap().stat_following(path) {
         Ok(raw) => {
             let rc = fill_stat(st, &raw);
@@ -498,9 +528,10 @@ pub unsafe extern "C" fn tebako_fs_lstat(path: *const c_char, st: *mut TebakoSta
         return fail(libc::EINVAL);
     }
     let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
+        Ok(p) => anchor_vfs_path(p),
         Err(e) => return fail(e),
     };
+    let path = path.as_ref();
     match context().read().unwrap().stat(path) {
         Ok(raw) => {
             let rc = fill_stat(st, &raw);
@@ -534,9 +565,10 @@ pub unsafe extern "C" fn tebako_fs_readlink(
         return fail(libc::EINVAL) as libc::ssize_t;
     }
     let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
+        Ok(p) => anchor_vfs_path(p),
         Err(e) => return fail(e) as libc::ssize_t,
     };
+    let path = path.as_ref();
     match context().read().unwrap().readlink(path) {
         Ok(target) => {
             let len = target.len();
@@ -1097,12 +1129,13 @@ pub unsafe extern "C" fn tebako_fs_dlalias2file(name: *const c_char) -> *mut c_c
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_char {
     let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
+        Ok(p) => anchor_vfs_path(p),
         Err(e) => {
             fail(e);
             return std::ptr::null_mut();
         }
     };
+    let path = path.as_ref();
     let host = match context().write().unwrap().dlmap2file(path) {
         Ok(h) => h,
         Err(e) => {
@@ -1139,12 +1172,13 @@ pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_cha
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_exec_materialize(path: *const c_char) -> *mut c_char {
     let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
+        Ok(p) => anchor_vfs_path(p),
         Err(e) => {
             fail(e);
             return std::ptr::null_mut();
         }
     };
+    let path = path.as_ref();
     let host = match context().write().unwrap().exec_materialize(path) {
         Ok(h) => h,
         Err(e) => {
@@ -1178,12 +1212,13 @@ pub unsafe extern "C" fn tebako_fs_exec_materialize(path: *const c_char) -> *mut
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_mount_of(path: *const c_char) -> *mut c_char {
     let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
+        Ok(p) => anchor_vfs_path(p),
         Err(e) => {
             fail(e);
             return std::ptr::null_mut();
         }
     };
+    let path = path.as_ref();
     let Some(mount_point) = context().read().unwrap().mount_point_of(path) else {
         fail(libc::ENOENT);
         return std::ptr::null_mut();
