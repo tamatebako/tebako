@@ -471,8 +471,20 @@ pub enum AtRoute {
 /// (its own path, resolved by the sys layer); any other negative dirfd
 /// passes through untouched.
 pub fn resolve_at_strict(dirfd: i32, path: &str, base: Option<PathBuf>) -> Result<AtRoute, i32> {
-    if path.starts_with('/') || dirfd == libc::AT_FDCWD {
+    if path.starts_with('/') {
         return Ok(AtRoute::Routed(path.to_string()));
+    }
+    if dirfd == libc::AT_FDCWD {
+        // A virtual cwd (the process chdir'd into the image) makes the
+        // spelling absolute, which is what the engine judges against the
+        // policy's grants (tebako#921). With no virtual cwd the path stays
+        // relative and a deny policy fails closed on it — the shim cannot
+        // ask the host for its cwd from inside this library (tebako#920:
+        // `getcwd` recurses through the interposed replacement).
+        return Ok(AtRoute::Routed(match virtual_cwd() {
+            Some(cwd) => normalize_lexical(&format!("{cwd}/{path}")),
+            None => path.to_string(),
+        }));
     }
     if dirfd < 0 {
         return Ok(AtRoute::Real);
@@ -1371,4 +1383,31 @@ mod tests {
             assert!(!fopen_mode_is_readonly(w), "{w:?} is write-ish");
         }
     }
+}
+
+#[test]
+fn at_fdcwd_anchors_at_the_virtual_cwd_only() {
+    let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // No virtual cwd: the spelling stays relative and a deny policy fails
+    // closed on it (the shim cannot ask the host from inside this library,
+    // tebako#920).
+    clear_virtual_cwd();
+    assert_eq!(
+        resolve_at_strict(libc::AT_FDCWD, "rel/x", None).unwrap(),
+        AtRoute::Routed("rel/x".to_string())
+    );
+    // A process chdir'd into the image: the spelling becomes absolute
+    // against the virtual cwd, which is what the policy judges
+    // (tebako#921).
+    set_virtual_cwd("/__tfs__/work");
+    assert_eq!(
+        resolve_at_strict(libc::AT_FDCWD, "rel/x", None).unwrap(),
+        AtRoute::Routed("/__tfs__/work/rel/x".to_string())
+    );
+    // Lexical normalization applies to the joined form.
+    assert_eq!(
+        resolve_at_strict(libc::AT_FDCWD, "../y", None).unwrap(),
+        AtRoute::Routed("/__tfs__/y".to_string())
+    );
+    clear_virtual_cwd();
 }
