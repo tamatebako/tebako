@@ -9,25 +9,25 @@ Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 103.671 | 102.224 | 105.610 | 1.569 | 103.957 | 120.596 | 1149.7 | 1.00× |
+| v1-packed-mn | 5 | 106.076 | 104.881 | 109.307 | 1.717 | 106.392 | 123.153 | 1153.7 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 110.325 | 109.857 | 110.793 | 0.662 | 110.325 | 128.016 | 1245.0 | 1.00× |
+| v1-packed-mn | 2 | 116.258 | 112.893 | 119.623 | 4.758 | 116.258 | 129.922 | 1266.4 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 50.475 | 50.244 | 51.332 | 0.461 | 50.706 | 62.531 | 839.3 | 1.00× |
+| v1-packed-mn | 5 | 51.264 | 50.935 | 51.949 | 0.420 | 51.415 | 63.046 | 838.5 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 55.514 | 55.470 | 55.557 | 0.061 | 55.514 | 67.486 | 841.4 | 1.00× |
+| v1-packed-mn | 2 | 56.869 | 56.079 | 57.659 | 1.117 | 56.869 | 67.404 | 839.1 | 1.00× |
 
 Unavailable arms:
 
@@ -39,42 +39,45 @@ Unavailable arms:
 ## linux-gnu-x86_64
 
 Runner: ubuntu-24.04 · x86_64 · 4 cpus · 15989.7 GiB
-Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
+Versions: tebako 2.8.61 · runtime 0.17.3-3.3.12 · payload 1.16.9-17 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image dwarfs
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 94.014 | 91.239 | 95.262 | 1.510 | 93.755 | 113.228 | 1204.6 | 1.00× |
+| v1-packed-mn | 5 | 125.868 | 122.437 | 127.317 | 1.876 | 125.589 | 154.818 | 1204.0 | 1.00× |
+| v2-fat | 5 | 115.043 | 114.304 | 115.824 | 0.640 | 114.926 | 130.764 | 1450.4 | 1.09× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 101.065 | 100.198 | 101.932 | 1.226 | 101.065 | 120.625 | 1307.6 | 1.00× |
+| v1-packed-mn | 2 | 129.679 | 128.719 | 130.638 | 1.357 | 129.679 | 158.434 | 1307.0 | 1.00× |
+| v2-fat | 2 | 134.483 | 133.011 | 135.955 | 2.082 | 134.483 | 155.393 | 1499.9 | 0.96× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 45.488 | 44.484 | 45.639 | 0.465 | 45.259 | 59.174 | 894.1 | 1.00× |
+| v1-packed-mn | 5 | 62.359 | 60.368 | 64.298 | 1.501 | 62.540 | 81.678 | 907.4 | 1.00× |
+| v2-fat | 5 | 47.699 | 46.384 | 48.395 | 0.780 | 47.487 | 69.900 | 838.2 | 1.31× |
+| v2-shim | 5 | 49.238 | 45.398 | 51.068 | 2.197 | 48.681 | 71.504 | 973.6 | 1.27× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 51.154 | 50.941 | 51.367 | 0.301 | 51.154 | 64.336 | 893.7 | 1.00× |
+| v1-packed-mn | 2 | 69.483 | 68.545 | 70.422 | 1.327 | 69.483 | 90.675 | 901.4 | 1.00× |
+| v2-fat | 2 | 60.253 | 59.954 | 60.553 | 0.424 | 60.253 | 81.465 | 816.2 | 1.15× |
+| v2-shim | 2 | 64.022 | 63.619 | 64.425 | 0.570 | 64.022 | 84.314 | 946.7 | 1.09× |
 
-Unavailable arms:
+Failed runs:
 
-- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-gnu-x86_64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log
-- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-gnu-x86_64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log
-- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-gnu-x86_64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log
-- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-gnu-x86_64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log
+- compile-medium-rice / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
 
 ## linux-musl-arm64
 
-Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15947.4 GiB
+Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15947.3 GiB
 
 Unavailable arms:
 
@@ -105,38 +108,41 @@ Failed runs:
 ## macos-arm64
 
 Runner: macos-14 · aarch64 · 3 cpus · 7168.0 GiB
-Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
+Versions: tebako 2.8.61 · runtime 0.17.3-3.3.12 · payload 1.16.9-17 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image dwarfs
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 181.947 | 158.689 | 211.291 | 20.425 | 181.133 | 189.805 | 2033.4 | 1.00× |
+| v1-packed-mn | 5 | 150.772 | 140.992 | 157.646 | 6.541 | 150.292 | 155.169 | 2078.9 | 1.00× |
+| v2-fat | 5 | 91.737 | 82.021 | 96.718 | 5.581 | 90.977 | 99.685 | 1692.7 | 1.64× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 195.121 | 177.485 | 212.758 | 24.942 | 195.121 | 201.963 | 2056.3 | 1.00× |
+| v1-packed-mn | 2 | 250.226 | 189.780 | 310.673 | 85.484 | 250.226 | 259.645 | 2098.4 | 1.00× |
+| v2-fat | 2 | 125.946 | 118.358 | 133.534 | 10.731 | 125.946 | 132.370 | 1683.6 | 1.99× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 108.638 | 104.792 | 113.555 | 3.147 | 109.121 | 111.886 | 1563.0 | 1.00× |
+| v1-packed-mn | 5 | 115.555 | 90.568 | 124.384 | 13.142 | 112.035 | 119.650 | 1596.1 | 1.00× |
+| v2-fat | 5 | 53.105 | 43.156 | 55.418 | 5.370 | 50.471 | 63.052 | 995.0 | 2.18× |
+| v2-shim | 5 | 52.458 | 39.748 | 53.073 | 6.270 | 48.233 | 61.770 | 1146.3 | 2.20× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 109.153 | 98.011 | 120.294 | 15.757 | 109.153 | 112.951 | 1660.8 | 1.00× |
+| v1-packed-mn | 2 | 100.976 | 93.708 | 108.243 | 10.278 | 100.976 | 105.230 | 1687.2 | 1.00× |
+| v2-fat | 2 | 58.292 | 57.960 | 58.624 | 0.469 | 58.292 | 68.925 | 962.1 | 1.73× |
+| v2-shim | 2 | 51.703 | 47.127 | 56.280 | 6.472 | 51.703 | 58.887 | 1130.1 | 1.95× |
 
-Unavailable arms:
+Failed runs:
 
-- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for macos-arm64 in /Users/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log
-- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for macos-arm64 in /Users/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log
-- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for macos-arm64 in /Users/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log
-- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for macos-arm64 in /Users/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log
+- compile-medium-rice / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
 
 ## macos-x86_64
 
@@ -154,45 +160,45 @@ Unavailable arms:
 ## windows-ucrt64
 
 Runner: windows-latest · x86_64 · 4 cpus · 16378.7 GiB
-Versions: tebako 2.8.26 · runtime 0.17.1-3.3.12 · payload 1.16.9-17 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image dwarfs
+Versions: tebako 2.8.61 · runtime 0.17.3-3.3.12 · payload 1.16.9-17 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image dwarfs
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 139.721 | 135.862 | 150.036 | 5.367 | 141.090 | 14.312 | 642.2 | 1.00× |
+| v1-packed-mn | 5 | 140.682 | 136.838 | 144.874 | 2.877 | 140.695 | 14.234 | 642.2 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 140.359 | 140.092 | 140.625 | 0.377 | 140.359 | 13.891 | 642.2 | 1.00× |
+| v1-packed-mn | 2 | 149.419 | 146.410 | 152.428 | 4.256 | 149.419 | 14.328 | 642.2 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 67.661 | 65.920 | 70.096 | 1.631 | 67.692 | 13.938 | 642.2 | 1.00× |
-| v2-fat | 5 | 52.688 | 51.350 | 53.901 | 1.016 | 52.536 | 0.016 | 5.7 | 1.28× |
-| v2-shim | 5 | 55.578 | 53.200 | 58.224 | 1.898 | 55.836 | 0.031 | 8.6 | 1.22× |
+| v1-packed-mn | 5 | 68.960 | 67.380 | 72.163 | 2.125 | 69.702 | 14.156 | 642.2 | 1.00× |
+| v2-fat | 5 | 54.775 | 53.091 | 55.657 | 1.019 | 54.407 | 0.016 | 5.8 | 1.26× |
+| v2-shim | 5 | 56.507 | 54.255 | 59.002 | 1.846 | 56.578 | 0.047 | 8.8 | 1.22× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 78.237 | 75.862 | 80.613 | 3.360 | 78.237 | 14.203 | 642.2 | 1.00× |
-| v2-shim | 2 | 62.571 | 62.131 | 63.012 | 0.623 | 62.571 | 0.570 | 111.7 | 1.25× |
+| v1-packed-mn | 2 | 77.402 | 77.012 | 77.791 | 0.551 | 77.402 | 14.219 | 642.2 | 1.00× |
+| v2-shim | 2 | 62.548 | 61.732 | 63.363 | 1.153 | 62.548 | 0.539 | 113.5 | 1.24× |
 
 Failed runs:
 
-- compile-small-iso / v2-fat [cold] #1 (exit 75): failed — exit 75 (expected 0)
-- compile-small-iso / v2-fat [cold] #2 (exit 75): failed — exit 75 (expected 0)
+- compile-small-iso / v2-fat [cold] #1 (exit -1073741511): failed — exit -1073741511 (expected 0)
+- compile-small-iso / v2-fat [cold] #2 (exit -1073741511): failed — exit -1073741511 (expected 0)
 - compile-medium-rice / v2-shim [warm] #0 (exit -1073741511): failed — warmup: exit -1073741511 (expected 0)
-- compile-medium-rice / v2-fat [warm] #0 (exit 75): failed — warmup: exit 75 (expected 0)
+- compile-medium-rice / v2-fat [warm] #0 (exit -1073741511): failed — warmup: exit -1073741511 (expected 0)
 
 ---
 
-Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15947.4 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15989.7 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15947.4 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15989.7 GiB; macos-arm64 = macos-14 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
+Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15947.4 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15989.7 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15947.3 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15989.7 GiB; macos-arm64 = macos-14 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
 
 GitHub-hosted runners are shared, multi-tenant machines; treat differences under ~10% as noise and read min alongside median — min is the cross-noise-comparable figure (noise inflates, never deflates).
 
