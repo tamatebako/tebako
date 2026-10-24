@@ -1617,6 +1617,33 @@ fn parse_hosted_service_registry(
 // Resolution
 // ---------------------------------------------------------------------
 
+/// The registry document's fixed name inside a library directory (spec 37
+/// §2; the guides' `file:///opt/my-library` form).
+pub const REGISTRY_DOCUMENT_NAME: &str = "tpkg-registry.yaml";
+
+/// A `file://` registry ref that names a DIRECTORY resolves to the registry
+/// document inside it (tebako#916): a library is a directory by design, the
+/// document's name there is fixed, and the guide's first command is
+/// `tebako add-registry file:///opt/my-library`. A path that is not a
+/// directory — a file, or one that does not exist — is returned as written,
+/// so a missing file's error still names exactly what was tried.
+fn reference_in_directory(reference: &Reference) -> Reference {
+    let Reference::File { path, sha256 } = reference else {
+        return reference.clone();
+    };
+    let p = std::path::Path::new(path);
+    if !p.is_dir() {
+        return reference.clone();
+    }
+    Reference::File {
+        path: p
+            .join(REGISTRY_DOCUMENT_NAME)
+            .to_string_lossy()
+            .into_owned(),
+        sha256: sha256.clone(),
+    }
+}
+
 impl<T: Transport> Fetcher<T> {
     /// Fetch the registry file a [`RegistryRef`] names (spec 04 §2).
     /// `TEBAKO_OFFLINE=1`: only `file://` mirrors resolve — anything
@@ -1653,10 +1680,15 @@ impl<T: Transport> Fetcher<T> {
                 }
                 Ok(bytes)
             }
+            // tebako#916: a `file://` ref naming a directory is the
+            // registry document inside it.
+            RegistryRef::File(reference) => {
+                let resolved = reference_in_directory(reference);
+                Ok(self.fetch_scoped(&resolved, alias.as_deref())?.bytes)
+            }
             RegistryRef::ReleaseArtifact(reference)
             | RegistryRef::GitBlob(reference)
-            | RegistryRef::Https(reference)
-            | RegistryRef::File(reference) => {
+            | RegistryRef::Https(reference) => {
                 Ok(self.fetch_scoped(reference, alias.as_deref())?.bytes)
             }
             RegistryRef::Oci(reference) => {
@@ -1750,6 +1782,43 @@ impl<T: Transport> Fetcher<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// tebako#916: the guides' first command is
+    /// `tebako add-registry file:///opt/my-library`, and a library is a
+    /// directory — the fetch resolves the document inside it instead of
+    /// handing the directory to the reader (`Is a directory (os error 21)`).
+    #[test]
+    fn a_directory_registry_ref_resolves_its_document() {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-resolve-registry-dir-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(REGISTRY_DOCUMENT_NAME),
+            "schema_version: 1\npayloads: []\n",
+        )
+        .unwrap();
+
+        let r = RegistryRef::parse(&format!("file://{}", dir.display())).unwrap();
+        let bytes = Fetcher::new()
+            .fetch_registry(&r)
+            .expect("a directory ref resolves its document");
+        assert!(
+            String::from_utf8_lossy(&bytes).contains("schema_version"),
+            "read the document, not the directory"
+        );
+
+        // An empty directory still fails, and the error names the document
+        // it looked for — never a bare "Is a directory".
+        let empty = dir.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        let r = RegistryRef::parse(&format!("file://{}", empty.display())).unwrap();
+        let err = Fetcher::new().fetch_registry(&r).unwrap_err();
+        assert!(err.to_string().contains(REGISTRY_DOCUMENT_NAME), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     const EXAMPLE: &str = r#"
 schema_version: 1
