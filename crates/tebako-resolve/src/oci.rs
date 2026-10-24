@@ -1067,10 +1067,8 @@ mod tests {
     #[test]
     fn a_covering_helper_rides_anonymous_with_the_reason_kept() {
         let _guard = env_guard();
-        let dir = std::env::temp_dir().join(format!(
-            "tebako-oci-helper-fallback-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("tebako-oci-helper-fallback-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("config.json");
