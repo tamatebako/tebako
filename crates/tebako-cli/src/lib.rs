@@ -204,6 +204,42 @@ fn signed_pkg_floor_gate(
     )))
 }
 
+/// Refuse an entry that is a native executable image (tebako#925).
+///
+/// A payload entry is a program the INTERPRETER runs, so a native binary has
+/// no interpreter to hand off to: the press resolved a runtime nobody asked
+/// for and emitted a package whose first execution died at mount with
+/// `EINVAL`. Refusing here, before the runtime is resolved and before any
+/// image is written, costs nothing and names both remedies.
+fn refuse_native_entry(root: &Path, entrance: &str) -> Result<(), TebakoError> {
+    use std::io::Read;
+    let path = root.join(entrance);
+    let Ok(mut f) = std::fs::File::open(&path) else {
+        return Ok(());
+    };
+    let mut magic = [0u8; 4];
+    if f.read_exact(&mut magic).is_err() {
+        return Ok(());
+    }
+    let format = match magic {
+        [0x7f, b'E', b'L', b'F'] => Some("ELF"),
+        [0xcf, 0xfa, 0xed, 0xfe] | [0xce, 0xfa, 0xed, 0xfe] => Some("Mach-O"),
+        [0xfe, 0xed, 0xfa, 0xcf] | [0xfe, 0xed, 0xfa, 0xce] => Some("Mach-O"),
+        [b'M', b'Z', ..] => Some("PE"),
+        _ => None,
+    };
+    match format {
+        None => Ok(()),
+        Some(format) => Err(packaging_error(
+            144,
+            Some(&format!(
+                "'{}' is a {format} image — say which interpreter runs it (a script entry, or --compose for a payload slice), or wait for the native payload kind: pressing it today would resolve a runtime nobody asked for and emit a package that dies at mount",
+                path.display()
+            )),
+        )),
+    }
+}
+
 pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // tebako#460 (spec 19 §6a): the named embed dial is the compose
     // surface's — refuse BEFORE any bootstrap/deploy work when no compose
@@ -329,6 +365,9 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
 
     let mut scenario = ScenarioManager::new(&opts.root(), &opts.fs_entrance())?;
     scenario.configure_scenario()?;
+
+    // tebako#925: refuse a native executable entry before any heavy work.
+    refuse_native_entry(Path::new(&opts.root()), &opts.fs_entrance())?;
 
     // tebako#895: a press that names no ruby and no tebako version takes the
     // registries' default pair — the same resolver `tebako install` and the
@@ -2902,4 +2941,40 @@ mod tests {
             std::env::set_var("TEBAKO_BOOTSTRAP", v);
         }
     }
+}
+
+#[test]
+fn a_native_executable_entry_is_refused_by_name() {
+    let dir = std::env::temp_dir().join(format!("tebako-native-entry-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let write = |name: &str, bytes: &[u8]| {
+        std::fs::write(dir.join(name), bytes).unwrap();
+    };
+
+    // A script entry — what a payload actually runs — passes.
+    write("app.rb", b"#!/usr/bin/env ruby\nputs 1\n");
+    assert!(refuse_native_entry(&dir, "app.rb").is_ok());
+
+    // Every native image format the three shipped platforms produce is
+    // refused, and the message names the file and the format.
+    for (name, magic, format) in [
+        ("elf", &[0x7f, b'E', b'L', b'F', 0x02, 0x01][..], "ELF"),
+        ("macho64", &[0xcf, 0xfa, 0xed, 0xfe, 0x0c][..], "Mach-O"),
+        ("macho32", &[0xce, 0xfa, 0xed, 0xfe, 0x07][..], "Mach-O"),
+        ("pe", &[b'M', b'Z', 0x90, 0x00][..], "PE"),
+    ] {
+        write(name, magic);
+        let err = refuse_native_entry(&dir, name).unwrap_err();
+        assert_eq!(err.code, 144, "{name}");
+        assert!(err.message.contains(format), "{}: {}", name, err.message);
+        assert!(err.message.contains(name), "{}: {}", name, err.message);
+    }
+
+    // A short file and a missing one are somebody else's error, not the
+    // native-entry refusal (the press names those itself).
+    write("short", b"ab");
+    assert!(refuse_native_entry(&dir, "short").is_ok());
+    assert!(refuse_native_entry(&dir, "absent.rb").is_ok());
+    let _ = std::fs::remove_dir_all(&dir);
 }
