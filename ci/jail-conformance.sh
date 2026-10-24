@@ -10,15 +10,13 @@
 #     2  File.open            6  File.binread         10  host dir listing
 #     3  File.stat            7  IO.binread           11  a GRANT read
 #     4  File.exist?          8  read(realpath)       12  a path outside it
+#     5  File.readlines        9  shell-out read      13  a payload-MADE link
+#     6  File.binread         10  host dir listing
 #
 #   not covered by this cut, named rather than implied
 #     a `..` escape out of a grant (the jail's namespace is lexical: an
 #     escape lands in VFS space, where only mounts exist, so the vector
 #     measures path arithmetic rather than the policy)
-#     a payload-made link pointing at a host path (its target is judged by
-#     the host guard, which needs its own arm and a spelling the policy
-#     answers EPERM on rather than ENOENT — the two vectors disagree today
-#     and neither is evidence until that is settled)
 #     case folding (needs a case-insensitive host file system: macOS)
 #     alternate data streams (needs NTFS)
 #     TOCTOU on materialization (needs a race harness)
@@ -81,6 +79,7 @@ printf 'granted-bytes\n' > "$WORK/host/granted/ok.txt"
 # The listing vector's target: a sibling of the grant, so the answer is
 # about the policy and not about traversal into the granted directory.
 mkdir -p "$WORK/otherdir"
+printf 'link-target-bytes\n' > "$WORK/otherdir/target.txt"
 printf 'other\n' > "$WORK/otherdir/one.txt"
 
 cat > "$WORK/app/probe.rb" <<'RUBY'
@@ -143,6 +142,26 @@ line("outside") do
   outside.empty? ? "SKIPPED:no-grant-arm" : verdict { File.read(outside) }
 end
 
+# A link the payload MAKES inside its grant, pointing at a file outside it:
+# reading through the link must be judged by the TARGET's policy, not by
+# where the link was made.
+line("madetlink") do
+  if outside.empty? || ARGV[4].to_s.empty?
+    "SKIPPED:no-grant-arm"
+  else
+    verdict do
+      link = File.join(ARGV[4], "escape")
+      begin
+        File.unlink(link)
+      rescue SystemCallError
+        nil
+      end
+      File.symlink(outside, link)
+      File.read(link)
+    end
+  end
+end
+
 RUBY
 
 if [ -n "$PAIR" ]; then
@@ -169,14 +188,20 @@ else
   echo "   pressed: $EXE"
 fi
 
-VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir granted outside"
+VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir granted outside madetlink"
 
 arm() {
   local label="$1"; local jail="$2"
-  local granted="" outside=""
+  local granted="" outside="" linkdir=""
   if [ "$label" = "deny-grant" ]; then
     granted="$WORK/host/granted/ok.txt"
     outside="$WORK/host/secret.txt"
+    linkdir="$WORK/host/granted"
+  elif [ "$label" = "open" ]; then
+    # No policy: the payload may write anywhere, so make the link in the
+    # scratch dir the harness owns.
+    outside="$WORK/otherdir/target.txt"
+    linkdir="$WORK/scratch"
   fi
   echo "== $label"
   local -a envs=()
@@ -187,7 +212,7 @@ arm() {
     envs+=("TEBAKO_JAIL_JOURNAL=$WORK/journal.log")
   fi
   env "${envs[@]}" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
-    2>"$WORK/$label.err" | tee "$WORK/$label.out" | sed 's/^/   /'
+    "$linkdir" 2>"$WORK/$label.err" | tee "$WORK/$label.out" | sed 's/^/   /'
 }
 
 arm open ""
@@ -205,9 +230,21 @@ for v in $VECTORS; do
   g=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/deny-grant.out")
   r=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/record.out")
   case "$v" in
-    granted|outside)
+    granted|outside|madetlink)
       # Grant-arm-only vectors: the other arms skip them by design.
-      if [ "$v" = "granted" ]; then
+      if [ "$v" = "madetlink" ]; then
+        # Live under the open arm (the link is made and followed) and
+        # refused in the grant arm — the target's policy, not the link's.
+        if [ "${o#READ-OK}" != "" ]; then
+          verdict="probe not live under open ($o)"; incomplete=$((incomplete + 1))
+        else
+          case "$g" in
+            READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
+            DENIED:EACCES|DENIED:EPERM) verdict="link judged by its target" ;;
+            *) verdict="not a refusal ($g)"; incomplete=$((incomplete + 1)) ;;
+          esac
+        fi
+      elif [ "$v" = "granted" ]; then
         case "$g" in
           READ-OK) verdict="grant honours" ;;
           *) verdict="grant does not admit ($g)"; incomplete=$((incomplete + 1)) ;;
