@@ -432,9 +432,7 @@ fn check_row(
                         ),
                         Err(e) => (
                             Severity::Problem,
-                            format!(
-                                "its oci: mirror {locator} does not answer its manifest: {e}"
-                            ),
+                            format!("its oci: mirror {locator} does not answer its manifest: {e}"),
                         ),
                     }
                 }
