@@ -1,0 +1,90 @@
+# The benchmark covenant (TODO.sota/07, spec 27 §11).
+#
+# A cell is a budget: a metric id the run must produce, the comparison it
+# must satisfy, and the bound. A release fails on any `over`; an `absent`
+# cell is a coverage gap — reported loudly, never silently satisfied and
+# never a false red.
+#
+# The bands are stated as ratios against the native interpreter on the same
+# host, measured by the same harness in the same run, because an absolute
+# latency is a property of the runner and a ratio is a property of tebako.
+# The two author-loop bounds are the exception: they are wall-clock seconds,
+# anchored on the published walkthrough (4.0-5.0 s and 1.2-1.6 s) with
+# headroom for a slow day.
+#
+# The metrics producer lands with the report wiring; until it does, every
+# cell answers `absent`, which is the honest state: the covenant exists and
+# nothing is yet measured against it.
+schema_version: 1
+cells:
+  # -- first response: the wrapper + mount + boot budget a user feels once.
+  - id: first-response.cold.p95
+    bound: 1.5
+    comparison: le
+    unit: ratio-to-native
+    note: time to first output, cold, against the native interpreter in the same run
+  - id: first-response.warm.p95
+    bound: 1.5
+    comparison: le
+    unit: ratio-to-native
+    note: time to first output, warm, against the native interpreter in the same run
+
+  # -- steady state: interposition is per open, not per byte.
+  - id: steady.cpu.throughput
+    bound: 0.85
+    comparison: ge
+    unit: ratio-to-native
+    note: a CPU-bound workload must keep at least this share of native throughput
+  - id: steady.io.throughput
+    bound: 0.85
+    comparison: ge
+    unit: ratio-to-native
+    note: an IO-bound workload, where the mount tax is visible first
+
+  # -- filesystem: the preload tax lives here and nowhere else.
+  - id: filesystem.stat.p95
+    bound: 2.0
+    comparison: le
+    unit: ratio-to-native
+    note: stat through the mount router, warm cache, 95th percentile
+  - id: filesystem.stat.p50
+    bound: 1.2
+    comparison: le
+    unit: ratio-to-native
+    note: the median is where a regression hides; the tail is where it shows
+  - id: filesystem.read.throughput
+    bound: 0.85
+    comparison: ge
+    unit: ratio-to-native
+    note: sequential read bandwidth through the image
+
+  # -- memory: mounted indices and page cache are real costs, bounded.
+  - id: memory.rss.ratio
+    bound: 1.25
+    comparison: le
+    unit: ratio-to-native
+    note: resident set at steady state, per runtime, per backend
+
+  # -- teardown and lifecycle.
+  - id: teardown.exit_seconds
+    bound: 0.5
+    comparison: le
+    unit: s
+    note: exit latency of a finished dispatch
+  - id: teardown.materialize_vs_extract
+    bound: 1.0
+    comparison: le
+    unit: ratio
+    note: exec-cache materialization must never be slower than whole-image extraction
+
+  # -- the author loop: the two numbers the walkthrough publishes.
+  - id: author-loop.repress.median
+    bound: 6.0
+    comparison: le
+    unit: s
+    note: median of five re-presses of an unchanged project
+  - id: author-loop.first_run.median
+    bound: 2.5
+    comparison: le
+    unit: s
+    note: median of five first executions of a pressed package

@@ -20,6 +20,7 @@
 //!   (including the not-implemented stubs).
 
 pub mod acquire;
+pub mod covenant;
 pub mod engine;
 pub mod error;
 pub mod lazy_server;

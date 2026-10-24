@@ -92,6 +92,21 @@ enum Command {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Evaluate the benchmark covenant against a run's metrics: exit 0 when
+    /// every cell passes (an `absent` cell is a coverage gap, reported and
+    /// not failing), 1 on any breach. `TEBAKO_BENCH_INJECT=<cell-or-axis>:
+    /// <factor>` multiplies a matching cell — the trip proof's mechanism.
+    Covenant {
+        /// The metrics document(s) the run produced; several are merged.
+        #[arg(long, required = true)]
+        metrics: Vec<PathBuf>,
+        /// The authored covenant.
+        #[arg(long, default_value = "benchmarks/covenant.yaml")]
+        covenant: PathBuf,
+        /// Write the verdict document here for the release gate to copy.
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
     /// Schema-check a suite or result document (both gates: the versioned
     /// JSON Schema + the serde model, then the semantic rules).
     Validate {
@@ -116,6 +131,95 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<u8, BenchError> {
     match cli.command {
+        Command::Covenant {
+            metrics,
+            covenant,
+            json,
+        } => {
+            let covenant = tebako_bench::covenant::CovenantFile::load(&covenant)?;
+            let mut merged = tebako_bench::covenant::MetricsFile {
+                schema_version: 1,
+                release: None,
+                metrics: Default::default(),
+            };
+            for path in &metrics {
+                let text = std::fs::read_to_string(path).map_err(|e| {
+                    BenchError::operational(format!("cannot read {}: {e}", path.display()))
+                })?;
+                let doc = tebako_bench::covenant::MetricsFile::from_json(&text)?;
+                for id in merged.merge(&doc) {
+                    eprintln!(
+                        "{}: metric {id} appears in more than one file; the last wins",
+                        path.display()
+                    );
+                }
+            }
+            let inject = match std::env::var("TEBAKO_BENCH_INJECT") {
+                Ok(spec) if !spec.is_empty() => {
+                    let (key, factor) = tebako_bench::covenant::parse_inject(&spec)?;
+                    eprintln!("covenant: INJECTING {key} x{factor} (the trip proof)");
+                    Some((key, factor))
+                }
+                _ => None,
+            };
+            let report = tebako_bench::covenant::evaluate(
+                &covenant,
+                &merged,
+                inject.as_ref().map(|(k, f)| (k.as_str(), *f)),
+            );
+            for cell in &report.cells {
+                match cell.state {
+                    tebako_bench::covenant::State::Pass => println!(
+                        "PASS  {} {:.3} {} {:.3}",
+                        cell.id,
+                        cell.measured.unwrap_or_default(),
+                        cell.comparison,
+                        cell.bound
+                    ),
+                    tebako_bench::covenant::State::Over => println!(
+                        "OVER  {} {:.3} {} {:.3}{}",
+                        cell.id,
+                        cell.measured.unwrap_or_default(),
+                        cell.comparison,
+                        cell.bound,
+                        match cell.injected {
+                            Some(v) => format!(" (injected: measured {v:.3})"),
+                            None => String::new(),
+                        }
+                    ),
+                    tebako_bench::covenant::State::Absent => {
+                        println!("ABSENT {} — the run carries no sample", cell.id)
+                    }
+                }
+            }
+            if let Some(path) = &json {
+                let text = serde_json::to_string_pretty(&report).map_err(|e| {
+                    BenchError::operational(format!("cannot render the verdict: {e}"))
+                })?;
+                std::fs::write(path, text).map_err(|e| {
+                    BenchError::operational(format!("cannot write {}: {e}", path.display()))
+                })?;
+            }
+            println!(
+                "covenant: {} ({} over, {} absent)",
+                report.verdict.to_uppercase(),
+                report
+                    .cells
+                    .iter()
+                    .filter(|c| c.state == tebako_bench::covenant::State::Over)
+                    .count(),
+                report
+                    .cells
+                    .iter()
+                    .filter(|c| c.state == tebako_bench::covenant::State::Absent)
+                    .count()
+            );
+            Ok(if report.passes() {
+                exit::OK
+            } else {
+                exit::INVALID
+            })
+        }
         Command::Validate { kind, file } => {
             let violations = validate::validate_file(kind, &file)?;
             if violations.is_empty() {
