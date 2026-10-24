@@ -165,6 +165,16 @@ int tebako_fs_host_policy(int default_open /* 0 = deny */,
   mount, or covered by a mount but absent from its image (spec 11 §2):
   the app payload mounts at `/` and the host filesystem stays
   reachable exactly through this rule.
+- **The consumer must route, not just the engine** (tebako#917): a
+  runtime whose IO shims call this family only for the paths the mounts
+  COVER hands every uncovered path to the kernel, where this policy
+  cannot see it. Such a shim asks `int tebako_fs_host_guard(void)` — 1
+  when the installed policy judges an uncovered path (a deny or record
+  default) — and routes every absolute path through the family while it
+  answers 1. An allowed path still answers ENOENT, the pass-through
+  signal these shims already honour, so an unguarded run is unchanged
+  and a guarded one denies where it said it would. Coverage is a
+  namespace test; a namespace test is not an enforcement point.
 - A mount's access bit applies even under an `open` default (an ro bind
   is ro in an otherwise open namespace, docker-style); longest host
   prefix wins on path-component boundaries; argument files are an exact

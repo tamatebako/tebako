@@ -133,6 +133,10 @@ Current: mount/multi-mount family, stat/pread/dir family (incl.
 `extract_all`, `dlmap2file` (memfs path → host cache for dlopen),
 `tebako_fs_host_policy` + `tebako_host_mount_t` (spec 08 jails — gates
 the host-passthrough path of every IO route; additive),
+`tebako_fs_host_guard` (spec 08 §3 — answers whether the installed
+policy judges an UNCOVERED host path, so a runtime's IO shim can widen
+its route predicate from coverage to "coverage, or the host namespace is
+guarded"; additive),
 `abi_version()` = 1, plus the additive mount-with-mode entry points
 (`tebako_fs_mount_from_{file,file_at,memory}_with_mode` taking
 `TEBAKO_MOUNT_RO`/`_COW`/`_RW`; SHIPPED — RO semantics unchanged, COW

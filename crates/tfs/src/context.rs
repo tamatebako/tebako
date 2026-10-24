@@ -296,6 +296,15 @@ impl FsContext {
         self.journal = journal;
     }
 
+    /// Whether the installed policy decides an UNCOVERED host path's fate
+    /// (see [`HostPolicy::guards_uncovered`]). A consumer that routes IO
+    /// through this ABI only for paths the mounts cover asks this to widen
+    /// its predicate while a jail is installed — otherwise the policy
+    /// never sees the paths it exists to judge.
+    pub fn host_guarded(&self) -> bool {
+        self.host_policy.guards_uncovered()
+    }
+
     /// Gate one host-passthrough path decision against the policy.
     /// Ok(()) = allowed (answer ENOENT, the consumer passes through to the
     /// host fs as today); Err(EPERM)/Err(EROFS) = the jail's answer.

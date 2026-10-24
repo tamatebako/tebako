@@ -1359,3 +1359,24 @@ pub unsafe extern "C" fn tebako_fs_host_policy(
     set_errno(0);
     0
 }
+
+/// `tebako_fs_host_guard`: 1 when the installed host-access policy decides
+/// what an UNCOVERED host path may do, 0 otherwise.
+///
+/// A runtime's IO shims call the `tebako_fs_*` family for the paths the
+/// mounts COVER, and hand every other path to the kernel. Coverage is a
+/// namespace test, so under that predicate a deny policy never sees a host
+/// path outside the mounts — it denies image-adjacent lookups and permits
+/// every real host read (tebako#917). The shims ask this function and widen
+/// their predicate to every absolute path while it answers 1; the allowed
+/// case still answers ENOENT, which they already treat as host passthrough,
+/// so an unguarded run is unchanged.
+///
+/// # Safety
+/// Process-global state only; no pointers are taken.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_host_guard() -> libc::c_int {
+    let guarded = context().read().unwrap().host_guarded();
+    set_errno(0);
+    libc::c_int::from(guarded)
+}

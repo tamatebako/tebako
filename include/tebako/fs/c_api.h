@@ -826,6 +826,57 @@ char* tebako_fs_exec_materialize(const char* path);
 char* tebako_fs_mounts(void);
 
 /* ============================================================
+ * Host-Access Policy (Jails, spec 08)
+ * ============================================================ */
+
+/**
+ * @brief One host-mount grant: expose a host directory at a VFS mount point
+ */
+typedef struct tebako_host_mount {
+    const char* host;   /**< Host directory; canonicalized at bind time */
+    const char* mount;  /**< VFS mount point; must be absolute */
+    int access;         /**< 0 = read-only, 1 = read-write */
+} tebako_host_mount_t;
+
+/**
+ * @brief Install the host-access policy, replacing any previous one
+ *
+ * @param default_open Nonzero keeps pass-through as the namespace default;
+ *                     zero denies every host path not covered by a mount
+ *                     grant, an argument file, or the platform floor
+ * @param mounts       Host-mount grants (may be NULL when n_mounts is 0)
+ * @param n_mounts     Number of grants
+ * @param arg_files    Absolute paths an external caller already resolved
+ *                     and passed as arguments; always readable (may be
+ *                     NULL when n_arg_files is 0)
+ * @param n_arg_files  Number of argument files
+ *
+ * @return 0 on success, -1 with errno on failure
+ *
+ * @note The policy is process state: unmounting does not reset it.
+ *       A mount source or argument file that does not exist fails the call
+ *       with its own errno — a jail bound against a missing grant is never
+ *       silently narrower than the caller asked for.
+ */
+int tebako_fs_host_policy(int default_open, const tebako_host_mount_t* mounts, size_t n_mounts,
+                          const char* const* arg_files, size_t n_arg_files);
+
+/**
+ * @brief Whether the installed policy decides an UNCOVERED host path
+ *
+ * The `tebako_fs_*` family answers for the paths the mounts cover; an
+ * integrator's IO shims hand every other path to the kernel. Under a
+ * deniable or recording policy that hand-off is what makes a jail
+ * unenforceable — the policy never sees the paths it exists to judge.
+ * Ask this before bypassing the router: 1 means route the path through the
+ * family anyway (an allowed path answers ENOENT, which is already the
+ * pass-through signal), 0 means coverage alone is the whole predicate.
+ *
+ * @return 1 when the policy guards uncovered paths, 0 otherwise
+ */
+int tebako_fs_host_guard(void);
+
+/* ============================================================
  * Utility Functions
  * ============================================================ */
 
