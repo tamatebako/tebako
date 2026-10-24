@@ -452,6 +452,78 @@ fn the_runtime_entrypoint_execs_directly() {
 }
 
 #[test]
+fn a_runtime_entrypoint_that_is_not_the_interpreter_is_composed() {
+    let g = guard("rt-entry-composed");
+    // The node runtime's shape: the env image declares its own command
+    // surface, and exactly one of those entrypoints is the interpreter.
+    // `npm` is a shebang script — bytes no kernel can exec — so the
+    // wrapper must run it THROUGH the interpreter (spec 07 §10's
+    // composition), never materialize it as the program. The
+    // dereference-era bug this pins is the reverse: a payload that
+    // flattened `bin/npm` into a copy broke its own relative requires.
+    let layout = format!("{}{EXEC_CACHE}", good_layout());
+    let manifest = payload_manifest(
+        "runtime",
+        "provides:\n  \
+         provides: [{engine: node, version: \"24.22.1\", abi_line: \"24\", platform: aarch64-macos}]\n  \
+         built_from: {src_sha256: 0000000000000000000000000000000000000000000000000000000000000000, patch_set: base}\n  \
+         entrypoints: [{name: node, path: /bin/stub}, {name: npm, path: /bin/npm, args_default: [\"--version\"]}]\n  \
+         capabilities: {exec: true, read: true, runtime: true}",
+    );
+    let env_image = g.path().join("env.tfs");
+    build_zip(
+        &env_image,
+        &["bin/", "lib/", "lib/tebako/", "__tpkg__/"],
+        &[
+            ("lib/tebako/layout.yaml", layout.as_bytes()),
+            ("bin/stub", STUB),
+            (
+                "bin/npm",
+                b"#!/usr/bin/env node\nconsole.log('11.6.2')\n".as_slice(),
+            ),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "npm",
+                "--version",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+    // The program is the INTERPRETER, and the entry rides the argv as the
+    // script — after the declaration's args_default, before the user's.
+    // Under exec-cache the entry token is bridged to its materialized
+    // host twin (spec 29 §3), so the assertion is on the shape and the
+    // suffix rather than on a temp path.
+    assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
+    assert_eq!(launch.argv[0], launch.program);
+    assert_eq!(
+        launch.argv[1], "--version",
+        "the declaration's args_default"
+    );
+    assert!(
+        launch.argv[2].ends_with("/__tfs__/bin/npm"),
+        "the entry rides the argv as the script: {:?}",
+        launch.argv
+    );
+    assert_eq!(launch.argv[3], "--version", "the user's args");
+    assert_eq!(launch.argv.len(), 4, "{:?}", launch.argv);
+}
+
+#[test]
 fn an_undeclared_runtime_entrypoint_is_a_named_65() {
     let g = guard("rt-entry-65");
     let env_image = write_env_image(g.path(), EXEC_CACHE, false);

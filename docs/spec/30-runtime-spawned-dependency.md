@@ -141,7 +141,13 @@ bare-name rule): the declared `args_default` composes, the declared
 path is verified against the child boot's own mounts, and an
 undeclared name is the named error 65 — the runtime-side plan already
 checked the declaration against the store image's manifest, so a 65
-here means the store entry changed under a lock (§5).
+here means the store entry changed under a lock (§5). The composition
+is spec 07 §10's: `[interpreter, args_default…, <the declared path>,
+<user args…>]`. Only an entrypoint whose declared path IS the
+`layout.interpreter` is started directly in its place (the bare
+`node` / `java` keyword); every other declared name is a program the
+interpreter runs, which is what makes a shebang script such as `npm`
+work at all.
 
 **The child environment (locked).** The parent's whole
 runtime-injection surface is stripped from the child's env:
