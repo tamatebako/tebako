@@ -117,6 +117,23 @@ impl Env for MapEnv {
     }
 }
 
+/// A symbolic link, spelled for the host. A Windows test that cannot
+/// create one (no privilege: `SeCreateSymbolicLinkPrivilege` or Developer
+/// Mode) SKIPS — the environment is not the thing under test, and a red
+/// leg from a missing privilege would hide the real ones.
+fn symlink_or_skip(target: &str, link: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        // Both shapes here are FILE links; windows distinguishes file from
+        // directory links, and the target spelling (relative) is the same.
+        std::os::windows::fs::symlink_file(target, link).is_ok()
+    }
+}
+
 /// Build a limnifs image from a directory tree (the lazy-mount e2e's
 /// pattern). Links are real entries here — the zip fixture writer cannot
 /// express one, and the link identity is the point of its own test.
@@ -1437,7 +1454,10 @@ fn an_entrypoint_that_links_to_the_interpreter_takes_the_direct_form() {
     std::fs::create_dir_all(tree.join("__tpkg__")).unwrap();
     std::fs::write(tree.join("lib/tebako/layout.yaml"), layout.as_bytes()).unwrap();
     std::fs::write(tree.join("bin/stub"), STUB).unwrap();
-    std::os::unix::fs::symlink("stub", tree.join("bin/bunx")).unwrap();
+    if !symlink_or_skip("stub", &tree.join("bin/bunx")) {
+        eprintln!("skip: this host cannot create a symlink for the bunx shape");
+        return;
+    }
     std::fs::write(tree.join("__tpkg__/manifest.yaml"), manifest.as_bytes()).unwrap();
     let env_image = g.path().join("env.tfs");
     build_limnifs_from_tree(&tree, &env_image);
@@ -1513,11 +1533,13 @@ fn a_link_entry_stays_a_vfs_spelling_under_preload() {
         b"#!/usr/bin/env node\nconsole.log('11.6.2')\n",
     )
     .unwrap();
-    std::os::unix::fs::symlink(
+    if !symlink_or_skip(
         "../lib/node_modules/npm/bin/npm-cli.js",
-        tree.join("bin/npm"),
-    )
-    .unwrap();
+        &tree.join("bin/npm"),
+    ) {
+        eprintln!("skip: this host cannot create a symlink for the npm shape");
+        return;
+    }
     std::fs::write(tree.join("__tpkg__/manifest.yaml"), manifest.as_bytes()).unwrap();
     let env_image = g.path().join("env.tfs");
     build_limnifs_from_tree(&tree, &env_image);
