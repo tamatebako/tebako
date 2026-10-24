@@ -26,6 +26,13 @@ technologies genuinely win. Honest throughout — but complete.
   *today* — installs are not reproducible across time or across machines,
   and everything mutates the system.
 
+The declarative package managers — Nix, Guix and conda — are not members
+of that list, because they do not promise "run anywhere": they promise a
+hermetic store, and they keep it. They are compared on their own axis in
+section 9, since a reader who has used one of them will ask the question
+first, and the answer turns on where the hermeticity is enforced rather
+than on which system is stronger.
+
 Tebako removes the asterisks by making three properties true at once —
 no other system has all three:
 
@@ -268,3 +275,117 @@ it strictly exceeds them.
 7. A packaging system whose every artifact (sources, runtimes, payloads,
    packages) is produced by its own factory repos and consumed through
    one coherent signed-image algebra — the same `.tfs` at every level.
+
+## 9. The declarative-store family: Nix, Guix, conda
+
+The systems in this section share tebako's premise that a package must
+carry its own dependencies rather than borrow the host's. They differ in
+where the hermeticity is established, which is the axis a reader
+evaluating them should hold in view, because a store that is hermetic at
+BUILD time and a store that is hermetic at RUN time are different
+guarantees.
+
+| axis | tebako | Nix | Guix | conda |
+|------|--------|-----|------|-------|
+| unit of distribution | payload image (`.tfs`) or stitched binary | derivation output in `/nix/store` | derivation output in `/gnu/store` | relocatable package in an environment prefix |
+| where hermeticity is enforced | at run time: in-process VFS mount, no extraction, no daemon | at build time: sandboxed builds; run time reads the store path | at build time, with a bootstrappable chain from source | weak at run time: a mutable environment directory plus `PATH` activation |
+| content addressing | per-image sha256 plus per-group digests for range reads | input-hash store paths | input-hash store paths | channel metadata hashes, no per-file addressing |
+| cross-platform reach | native macOS, Linux and Windows per triplet | Linux and macOS; Windows through WSL | Linux and macOS; Hurd in progress | native macOS, Linux and Windows |
+| runtime breadth | any runtime the ecosystem ships a factory for | any packaged software | any packaged software | strongest breadth of prebuilt scientific binaries |
+| daemon requirement | none | daemon for multi-user stores | `guix-daemon` required | none |
+| host mutation | `~/.tebako` plus one `PATH` entry | `/nix/store` plus profile symlinks | `/gnu/store` plus profiles | the environment prefix |
+| object authenticity | opt-in OpenPGP over the artifact, per-slot digests, signed index | nar hashes, signed binary caches | nar hashes, signed substitutes | channel metadata signing |
+| distribution sovereignty | each developer's own releases act as the registry | self-hosted binary caches | self-hosted substitutes | self-hosted channels |
+| learning cost | a project file, or none | the Nix language and derivations | the Scheme DSL and the bootstrapping model | environment files and channel management |
+
+The distinction that matters for an application author is where the
+hermeticity is enforced. A Nix user proves that a build was reproducible,
+and the run then depends on a store that the host maintains; a tebako user
+proves that a run is closed over its own bytes, and the store is a cache
+rather than a requirement. Neither guarantee contains the other.
+
+## 10. The single-file bundlers: Warp and Bun
+
+The single-file bundlers share tebako's headline shape — one executable —
+and stop at a different boundary, which is the runtime and the
+filesystem.
+
+| axis | tebako | Warp (Ruby) | Bun `--compile` |
+|------|--------|-------------|-----------------|
+| what is embedded | a payload image mounted in process, plus a stub that resolves its runtime | a Ruby interpreter with the application packed | the Bun runtime with the JavaScript bundle |
+| extraction | none; the image is read through the mount | a temporary extraction directory | a temporary extraction directory for assets |
+| runtime breadth | every runtime with a factory: Ruby, Python, Java, JRuby, TruffleRuby, Node, Bun | Ruby only | JavaScript and TypeScript only |
+| composition across packages | recursive payload mounts with a provides/requires graph | none | none |
+| artifact trust | opt-in OpenPGP, per-slot digests, signed index, encrypted volumes | none standard | none standard |
+| platforms | per-triplet native builds including Windows | Linux and macOS | Linux, macOS and Windows |
+| system mutation | `~/.tebako` plus one `PATH` entry | none | none |
+
+The bundlers answer the question "how does one file ship this program".
+Tebako answers the further question "how does one file ship this program
+together with a runtime the machine has never had, another package it
+composes, and a policy over what it may read".
+
+## 11. Where the declarative family wins
+
+The honesty rule of this document applies without exception. Each system
+below does something tebako does not attempt, and a reader choosing
+between them should weigh these lines as heavily as the tables above.
+
+- **Nix** wins on the reproducibility of arbitrary software: a build is a
+  function of declared inputs, binary caches serve those builds at scale,
+  and the ecosystem contains tens of thousands of derivations that no
+  application-packaging system will ever carry. Tebako reproduces its own
+  artifacts, not the world's.
+- **Guix** wins on auditability of provenance: the bootstrap chain from a
+  minimal seed is the strongest published answer to trusting-compilers,
+  and `guix pack` emits container and archive formats that tebako does not
+  produce.
+- **conda** wins on the breadth of prebuilt native binaries, Windows
+  included, and on the scientific ecosystem that maintains them. A team
+  that needs a library matrix rather than an application should use it.
+- **Warp** wins on the simplicity of a Ruby-only bundler with no store, no
+  cache and no registry.
+- **Bun `--compile`** wins on producing a JavaScript executable with one
+  command and no packaging concepts at all.
+
+## 12. Two lanes, never one: the dish and the kitchen
+
+A distribution decision that this document records as a design law, not as
+a preference. There are two legitimate ways to deliver a toolchain, and
+they serve different users:
+
+- the **kitchen lane** ships the full apparatus — a base image, the
+  language manager, `bundle`, a writable Gemfile — so that a user can cook:
+  add a gem, change a version, rebuild an extension;
+- the **dish lane** ships the sealed result — one executable, no
+  compiler, no package manager, no interpreter on `PATH` — so that a user
+  receives a fixed toolchain that cannot drift.
+
+Both lanes are necessary, and neither is a promotion of the other. The
+law is that a product must occupy one lane explicitly and never absorb the
+other by accident, because the failure mode is silent: the image keeps
+building, the tag keeps moving, and the users who needed the other lane
+discover the substitution only when their workflow stops.
+
+The lesson is recorded because it happened, with its names. In September
+2026 the `metanorma/metanorma` container image was replaced in place by a
+pressed package — the dish served where the kitchen had been — in
+`metanorma/metanorma-docker` pull request 244, and the change removed two
+properties at once: the image lost its `arm64` leg, and the documented
+workflow of overriding a `Gemfile` became impossible, because the runtime
+was sealed inside the package. Pull request 248 reverted the substitution,
+and the two lanes were separated by a written treaty: the container lane
+builds from source on an official language base image with the toolchain
+on `PATH`, the packaging lane publishes its own artifacts under its own
+names, and the two share a wire protocol and nothing else.
+
+Two rules follow, and they apply to every composition story in this
+ecosystem:
+
+1. A packed flavor of an existing product is published under a name and a
+   tag that cannot collide with the product's own, and it states in its
+   first paragraph that the toolchain inside is fixed.
+2. A payload image never becomes the content of a container image that
+   advertises a toolchain, and a container image never becomes the
+   runtime of a pressed package. The formats may meet on the network; the
+   contents do not meet in one artifact.
