@@ -385,6 +385,20 @@ fn bridge_entry(
         let Some(token) = launch.argv.get(index).cloned() else {
             return Ok(());
         };
+        // A LINK entry is not a file to materialize. Node's `bin/npm` is a
+        // link to `npm-cli.js`, and a twin carries the target's BYTES at a
+        // temp path — so the script's own relative requires (`../lib/cli.js`)
+        // would resolve outside the image, which is the very failure the
+        // link reader and the composition were fixed for (tebako#926).
+        // A VFS spelling is what the interpreter reads through the shim,
+        // and there the link resolves: realpath answers the canonical
+        // target, which is what node's module resolution asks for.
+        if matches!(
+            context().read().unwrap().stat(&token),
+            Ok(st) if st.entry_type == tfs::backend::EntryType::Symlink
+        ) {
+            return Ok(());
+        }
         if !context().read().unwrap().path_is_embedded(&token) {
             return Ok(());
         }
