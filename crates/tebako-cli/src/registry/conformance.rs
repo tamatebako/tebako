@@ -409,6 +409,37 @@ fn check_row(
     }
     if !full {
         let described = describe_reference(&reference);
+        // The row's `oci:` mirror, when it declares one, is a SECOND claim:
+        // the same bytes are served by a distribution registry. Resolving
+        // its manifest digest is the cheap proof that the mirror answers at
+        // all (the blob pull is what the install later does).
+        let mut mirror_report = None;
+        if let Some(locator) = &mirror {
+            mirror_report = Some(match Reference::parse(locator) {
+                Err(e) => (
+                    Severity::Problem,
+                    format!("resolves to {locator} but the row's oci: mirror does not parse: {e}"),
+                ),
+                Ok(reference) => {
+                    match tebako_resolve::oci::resolve_manifest_digest(
+                        fetcher.transport(),
+                        &reference,
+                        None,
+                    ) {
+                        Ok(digest) => (
+                            Severity::Ok,
+                            format!("its oci: mirror answers manifest {digest}"),
+                        ),
+                        Err(e) => (
+                            Severity::Problem,
+                            format!(
+                                "its oci: mirror {locator} does not answer its manifest: {e}"
+                            ),
+                        ),
+                    }
+                }
+            });
+        }
         let probe = probe_served(&reference);
         // A probe that ran counts whether it was answered or refused; only a
         // skipped class (no direct URL to ask) leaves the count alone.
@@ -438,6 +469,14 @@ fn check_row(
         report
             .findings
             .push(Finding::new(severity, Some(name), Some(version), message));
+        if let Some((mirror_severity, mirror_message)) = mirror_report {
+            report.findings.push(Finding::new(
+                mirror_severity,
+                Some(name),
+                Some(version),
+                mirror_message,
+            ));
+        }
         return;
     }
     // The ref's own `?sha256=` is the same pin the comparison below
