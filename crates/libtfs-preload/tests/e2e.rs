@@ -172,6 +172,7 @@ fn build_fixtures() -> Option<Fixtures> {
         "fork-exec",
         "alias-probe",
         "realpath-probe",
+        "getcwd-probe",
         "vfork-probe",
     ] {
         let src = src_dir.join(format!("{name}.c"));
@@ -1567,6 +1568,22 @@ fn realpath_under_symlinked_mount_keeps_the_vfs_spelling() {
 /// answer the target: the link's own spelling is what the pre-link shim
 /// could only answer, and it made `File.getCanonicalFile` disagree with
 /// the following `stat` about one file. A dangling link answers ENOENT
+/// tebako#920: `getcwd` from the shim's constructor and from a plain
+/// call answers the HOST directory in a preloaded process. Before the
+/// fix this died with 506 frames of the same `getcwd` image offset; the
+/// probe is the reproduction, and its two lines are the contract (the
+/// constructor's answer equals main's, and both name the directory the
+/// child was started in).
+#[test]
+fn getcwd_answers_from_preloaded_code() {
+    let Some(f) = fixtures() else { return };
+    let here = std::env::current_dir().expect("the test process has a cwd");
+    let r = run_with_mounts(f, "getcwd-probe", &[], "", None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    let want = format!("ctor:{}\nmain:{}\n", here.display(), here.display());
+    assert_eq!(r.stdout, want, "stderr: {}", r.stderr);
+}
+
 /// and a cycle ELOOP, as POSIX does; both used to succeed with the link
 /// spelling, because the routing stat was the lstat form.
 #[test]

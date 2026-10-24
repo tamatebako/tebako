@@ -2306,6 +2306,68 @@ pub unsafe extern "C" fn getcwd(buf: *mut libc::c_char, size: libc::size_t) -> *
 mod tests {
     use super::*;
 
+    /// The thread's errno cell, read the same way the shims set it.
+    #[cfg(target_os = "macos")]
+    fn errno() -> c_int {
+        // SAFETY: __error() returns the thread's errno cell.
+        unsafe { *libc::__error() }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn errno() -> c_int {
+        // SAFETY: __errno_location() returns the thread's errno cell.
+        unsafe { *libc::__errno_location() }
+    }
+
+    /// tebako#920: `getcwd` called from inside this library must answer,
+    /// not recurse. In-process the shim IS the process's `getcwd`, so this
+    /// exercises exactly the path that died with 506 frames of the same
+    /// image offset: the tuple's readback is null here (no injection) and
+    /// the kernel spelling answers instead.
+    #[test]
+    fn getcwd_answers_without_a_virtual_cwd() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        crate::route::clear_virtual_cwd();
+        let mut buf = [0 as libc::c_char; 4096];
+        let answered = unsafe { getcwd(buf.as_mut_ptr(), buf.len()) };
+        assert!(!answered.is_null(), "getcwd answered null: errno {}", errno());
+        let answered = unsafe { std::ffi::CStr::from_ptr(answered) };
+        let answered = answered.to_str().expect("a cwd is UTF-8 here");
+        assert!(
+            answered.starts_with('/'),
+            "the cwd is absolute: {answered}"
+        );
+        // The answer NAMES the directory the process is in (dev/ino, not a
+        // string compare against another resolver).
+        use std::os::unix::fs::MetadataExt;
+        let named = std::fs::metadata(answered).expect("the answered path exists");
+        let here = std::fs::metadata(".").expect("the process cwd exists");
+        assert_eq!(
+            (named.dev(), named.ino()),
+            (here.dev(), here.ino()),
+            "getcwd answered {answered}, which is not the process cwd"
+        );
+    }
+
+    /// The same call must keep answering the VIRTUAL cwd once a chdir into
+    /// the image set one — the fix must not trade one wrong answer for the
+    /// other.
+    #[test]
+    fn getcwd_answers_the_virtual_cwd_when_one_is_set() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        crate::route::set_virtual_cwd("/__tfs__/work");
+        let mut buf = [0 as libc::c_char; 64];
+        let answered = unsafe { getcwd(buf.as_mut_ptr(), buf.len()) };
+        assert!(!answered.is_null(), "getcwd answered null: errno {}", errno());
+        let answered = unsafe { std::ffi::CStr::from_ptr(answered) };
+        assert_eq!(answered.to_str().unwrap(), "/__tfs__/work");
+        // ERANGE when the buffer cannot hold it, never a truncation.
+        let mut small = [0 as libc::c_char; 4];
+        assert!(unsafe { getcwd(small.as_mut_ptr(), small.len()) }.is_null());
+        assert_eq!(errno(), libc::ERANGE);
+        crate::route::clear_virtual_cwd();
+    }
+
     /// tebako#851: while a transport fetch is in flight the interposed
     /// surface must pass straight through to the host — the process-wide
     /// guard (not thread-local: the resolver runs on its own thread) is

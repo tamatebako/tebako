@@ -28,6 +28,30 @@ unsafe impl Sync for InterposeTuple {}
 extern "C" {
     fn faccessat(dirfd: c_int, path: *const c_char, mode: c_int, flags: c_int) -> c_int;
     fn fstatat(dirfd: c_int, path: *const c_char, st: *mut libc::stat, flags: c_int) -> c_int;
+    /// The kernel's per-process path answer (`libproc.h`): the channel
+    /// that stays honest when the interpose readback does not (tebako#920).
+    fn proc_pidinfo(
+        pid: c_int,
+        flavor: c_int,
+        arg: u64,
+        buffer: *mut c_void,
+        buffersize: c_int,
+    ) -> c_int;
+}
+
+/// The tuple alone, for a symbol whose original is resolved by hand. The
+/// generated readback is right for every replacement that delegates
+/// straight through; `getcwd` needs more, because dyld has been observed
+/// handing ITS tuple the replacement rather than the original (tebako#920).
+macro_rules! interpose_tuple {
+    ($name:ident, $replacement:expr, $replacee:expr) => {
+        #[used]
+        #[link_section = "__DATA,__interpose"]
+        static $name: InterposeTuple = InterposeTuple {
+            replacement: $replacement as *const c_void,
+            replacee: $replacee as *const c_void,
+        };
+    };
 }
 
 macro_rules! interpose {
@@ -182,13 +206,84 @@ interpose!(
     libc::fchdir,
     unsafe extern "C" fn(c_int) -> c_int
 );
-interpose!(
-    INTERPOSE_GETCWD,
-    real_getcwd,
-    super::getcwd,
-    libc::getcwd,
-    unsafe extern "C" fn(*mut c_char, libc::size_t) -> *mut c_char
-);
+interpose_tuple!(INTERPOSE_GETCWD, super::getcwd, libc::getcwd);
+
+/// `getcwd`'s original, resolved through the tuple and checked before it
+/// is believed.
+///
+/// dyld has been observed handing this one tuple the REPLACEMENT (a
+/// crash report with 506 frames of the same `libtfs_preload:getcwd`
+/// image offset, reproduced from the library's own constructor before
+/// any mount or policy existed — tebako#920). An address that is null or
+/// is our own shim is not the original, and the kernel spelling is then
+/// the only honest channel: `__getcwd` cannot re-enter the replacement.
+pub(super) fn real_getcwd() -> unsafe extern "C" fn(*mut c_char, libc::size_t) -> *mut c_char {
+    // SAFETY: the tuple is initialized statically and written by dyld
+    // before any user code runs; volatile because dyld's write is
+    // invisible to the compiler.
+    let p = unsafe { std::ptr::read_volatile(std::ptr::addr_of!(INTERPOSE_GETCWD.replacee)) };
+    if p.is_null() || std::ptr::eq(p, super::getcwd as *const c_void) {
+        return kernel_getcwd;
+    }
+    // SAFETY: the tuple's replacee is the original getcwd, of this type.
+    unsafe { std::mem::transmute::<*const c_void, _>(p) }
+}
+
+/// `proc_pidinfo`'s flavor for the process's vnode paths (`sys/proc_info.h`).
+const PROC_PIDVNODEPATHINFO: c_int = 9;
+/// `sizeof(struct proc_vnodepathinfo)` and the offset of
+/// `pvi_cdir.vip_path` inside it, both read from the SDK header and
+/// measured on macOS arm64 with `sizeof`/`offsetof` in C. A different
+/// kernel layout is caught at runtime by the answered-size check below
+/// rather than trusted.
+const VNODEPATHINFO_SIZE: usize = 2352;
+const VIP_PATH_OFFSET: usize = 152;
+/// `MAXPATHLEN` on darwin: the `vip_path` field's capacity.
+const VIP_PATH_CAPACITY: usize = 1024;
+
+/// The kernel spelling: no tuple, no replacement, no recursion.
+///
+/// `proc_pidinfo(PROC_PIDVNODEPATHINFO)` asks the kernel for the process's
+/// working directory directly, so it cannot re-enter the shim. The answer
+/// is copied with `getcwd`'s own contract — `ERANGE` when the buffer is
+/// too small, `ENOENT` when the directory has no path any more — never a
+/// truncated path.
+unsafe extern "C" fn kernel_getcwd(buf: *mut c_char, size: libc::size_t) -> *mut c_char {
+    let mut info = [0u8; VNODEPATHINFO_SIZE];
+    let asked = VNODEPATHINFO_SIZE;
+    // SAFETY: the buffer is VNODEPATHINFO_SIZE bytes and the flavor fills
+    // exactly that struct on success (the answered size proves it).
+    let answered = unsafe {
+        proc_pidinfo(
+            libc::getpid(),
+            PROC_PIDVNODEPATHINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            asked as c_int,
+        )
+    };
+    if answered as usize != asked {
+        super::set_errno(libc::ENOENT);
+        return std::ptr::null_mut();
+    }
+    let field = &info[VIP_PATH_OFFSET..VIP_PATH_OFFSET + VIP_PATH_CAPACITY];
+    let len = field.iter().position(|&b| b == 0).unwrap_or(VIP_PATH_CAPACITY);
+    if len == 0 {
+        super::set_errno(libc::ENOENT);
+        return std::ptr::null_mut();
+    }
+    if size < len + 1 {
+        super::set_errno(libc::ERANGE);
+        return std::ptr::null_mut();
+    }
+    // SAFETY: the caller guarantees `buf` holds `size` bytes, and the
+    // length check above proved len + 1 of them fit.
+    unsafe {
+        std::ptr::copy_nonoverlapping(field.as_ptr().cast::<c_char>(), buf, len);
+        *buf.add(len) = 0;
+    }
+    buf
+}
 interpose!(
     INTERPOSE_OPENDIR,
     real_opendir,

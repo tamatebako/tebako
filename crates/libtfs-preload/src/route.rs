@@ -475,16 +475,14 @@ pub fn resolve_at_strict(dirfd: i32, path: &str, base: Option<PathBuf>) -> Resul
         return Ok(AtRoute::Routed(path.to_string()));
     }
     if dirfd == libc::AT_FDCWD {
-        // A virtual cwd (the process chdir'd into the image) makes the
-        // spelling absolute, which is what the engine judges against the
-        // policy's grants (tebako#921). With no virtual cwd the path stays
-        // relative and a deny policy fails closed on it — the shim cannot
-        // ask the host for its cwd from inside this library (tebako#920:
-        // `getcwd` recurses through the interposed replacement).
-        return Ok(AtRoute::Routed(match virtual_cwd() {
-            Some(cwd) => normalize_lexical(&format!("{cwd}/{path}")),
-            None => path.to_string(),
-        }));
+        // A relative `*at` spelling names a path beside the process's
+        // working directory: the virtual one after a chdir into the image,
+        // the host's otherwise. Either way the engine judges an ABSOLUTE
+        // spelling, which is what the policy's grants are keyed by
+        // (tebako#921). `resolve_cwd_relative` owns that decision, and it
+        // can ask for the host cwd because `getcwd` no longer re-enters
+        // the shim (tebako#920).
+        return Ok(AtRoute::Routed(resolve_cwd_relative(path)));
     }
     if dirfd < 0 {
         return Ok(AtRoute::Real);
@@ -1243,7 +1241,13 @@ mod tests {
 
         // ---- resolve_at ----
         assert_eq!(resolve_at(99, "/abs/p", None).unwrap(), "/abs/p");
-        assert_eq!(resolve_at(libc::AT_FDCWD, "rel/p", None).unwrap(), "rel/p");
+        // AT_FDCWD anchors at the effective cwd — the host's when no
+        // virtual one is set (tebako#921/#920).
+        let anchored = resolve_at(libc::AT_FDCWD, "rel/p", None).unwrap();
+        assert!(
+            anchored.ends_with("/rel/p") && anchored.starts_with('/'),
+            "AT_FDCWD anchors: {anchored}"
+        );
         assert_eq!(
             resolve_at(5, "rel/p", Some(PathBuf::from(&mp))).unwrap(),
             format!("{mp}/rel/p")
@@ -1345,11 +1349,13 @@ mod tests {
         assert_eq!(libc::AT_FDCWD & TEBAKO_FD_FLAG, TEBAKO_FD_FLAG);
         assert!(is_memfs_fd(libc::AT_FDCWD), "the bit test alone lies");
         // …so the *at resolution special-cases AT_FDCWD BEFORE any bit
-        // test: cwd-relative routing, never ENOTDIR.
-        assert_eq!(
-            resolve_at_strict(libc::AT_FDCWD, "rel/x", None).unwrap(),
-            AtRoute::Routed("rel/x".to_string())
-        );
+        // test: cwd-relative routing (anchored at the effective cwd, never
+        // ENOTDIR and never the fd table).
+        let routed = resolve_at_strict(libc::AT_FDCWD, "rel/x", None).unwrap();
+        let AtRoute::Routed(path) = routed else {
+            panic!("AT_FDCWD must route, got {routed:?}");
+        };
+        assert!(path.starts_with('/') && path.ends_with("/rel/x"), "{path}");
         // Other negative dirfds pass through to the real call (the kernel
         // answers EBADF) — never near the fd table either.
         assert_eq!(resolve_at_strict(-5, "rel/x", None).unwrap(), AtRoute::Real);
@@ -1386,16 +1392,23 @@ mod tests {
 }
 
 #[test]
-fn at_fdcwd_anchors_at_the_virtual_cwd_only() {
+fn at_fdcwd_anchors_at_the_effective_cwd() {
     let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    // No virtual cwd: the spelling stays relative and a deny policy fails
-    // closed on it (the shim cannot ask the host from inside this library,
-    // tebako#920).
+    // No virtual cwd: the spelling anchors at the HOST cwd, because that is
+    // the directory the process is in — the same absolute form the policy's
+    // grants are keyed by (tebako#921). Asking for it is only possible
+    // because `getcwd` no longer recurses (tebako#920).
     clear_virtual_cwd();
-    assert_eq!(
-        resolve_at_strict(libc::AT_FDCWD, "rel/x", None).unwrap(),
-        AtRoute::Routed("rel/x".to_string())
+    let host = std::env::current_dir().expect("the host cwd answers in-process");
+    let anchored = resolve_at_strict(libc::AT_FDCWD, "rel/x", None).unwrap();
+    let AtRoute::Routed(path) = anchored else {
+        panic!("AT_FDCWD must route, got {anchored:?}");
+    };
+    assert!(
+        path.starts_with(&format!("{}/", host.to_string_lossy())),
+        "anchored at {path} rather than under {host:?}"
     );
+    assert!(path.ends_with("/rel/x"), "the tail is the spelling: {path}");
     // A process chdir'd into the image: the spelling becomes absolute
     // against the virtual cwd, which is what the policy judges
     // (tebako#921).
