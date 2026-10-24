@@ -35,7 +35,9 @@ impl Guard {
 }
 
 fn guard(tag: &str) -> Guard {
-    let g = LOCK.lock().unwrap();
+    // A poisoned lock means an earlier test panicked; that is its
+    // failure, not this one's. Take the guard through the poison.
+    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = TempDir::new(tag);
     context().write().unwrap().unmount();
     context()
@@ -506,17 +508,23 @@ fn a_runtime_entrypoint_that_is_not_the_interpreter_is_composed() {
     // The program is the INTERPRETER, and the entry rides the argv as the
     // script — after the declaration's args_default, before the user's.
     // Under exec-cache the entry token is bridged to its materialized
-    // host twin (spec 29 §3), so the assertion is on the shape and the
-    // suffix rather than on a temp path.
+    // host twin (spec 29 §3) and the separator is the platform's, so the
+    // assertion is on the shape rather than on a temp path or a `/`.
     assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
     assert_eq!(launch.argv[0], launch.program);
     assert_eq!(
         launch.argv[1], "--version",
         "the declaration's args_default"
     );
+    let token = launch.argv[2].replace('\\', "/");
     assert!(
-        launch.argv[2].ends_with("/__tfs__/bin/npm"),
+        token.ends_with("bin/npm"),
         "the entry rides the argv as the script: {:?}",
+        launch.argv
+    );
+    assert!(
+        !token.eq_ignore_ascii_case(&launch.program.replace('\\', "/")),
+        "the entry is not the program: {:?}",
         launch.argv
     );
     assert_eq!(launch.argv[3], "--version", "the user's args");

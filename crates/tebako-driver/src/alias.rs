@@ -675,7 +675,7 @@ mod tests {
         // mount at the runtime root serves it. The context is
         // process-global across this test binary — boot.rs's LOCK
         // discipline applies (serialize + unmount before and after).
-        let g = CTX_LOCK.lock().unwrap();
+        let g = CTX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         context().write().unwrap().unmount();
         let dir = std::env::temp_dir().join(format!("driver-alias-825a-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -722,7 +722,7 @@ mod tests {
         // tebako#825's second acceptance: a payload with ITS OWN manifest
         // at the shared point is attributed ITS declarations — both
         // members' aliases coexist, each under its own name.
-        let g = CTX_LOCK.lock().unwrap();
+        let g = CTX_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         context().write().unwrap().unmount();
         let dir = std::env::temp_dir().join(format!("driver-alias-825b-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
