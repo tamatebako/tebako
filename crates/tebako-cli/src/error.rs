@@ -86,6 +86,9 @@ pub fn packaging_message(code: i32) -> Option<&'static str> {
         // IS the dispatcher's reserved slot would be clobbered by it and
         // then re-`load` itself forever; refuse at press, never hang.
         143 => "Entry point collides with the tebako entry dispatcher path (/local/stub.rb)",
+        // 144: a payload entry is a program the INTERPRETER runs, so a native
+        // executable image has no interpreter to hand off to (tebako#925).
+        144 => "The entry point is a native executable image, which a payload cannot execute under an interpreter",
         201 => "Warning. Could not create cache version file",
         _ => return None,
     })
