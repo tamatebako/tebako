@@ -117,6 +117,22 @@ impl Env for MapEnv {
     }
 }
 
+/// Build a limnifs image from a directory tree (the lazy-mount e2e's
+/// pattern). Links are real entries here — the zip fixture writer cannot
+/// express one, and the link identity is the point of its own test.
+fn build_limnifs_from_tree(dir: &Path, out: &Path) {
+    let artifact = limnifs_write::write_directory_with_config(
+        dir,
+        &limnifs_write::WriteConfig::default_v0_1(),
+    )
+    .expect("limnifs fixture");
+    let mut image = artifact.bytes;
+    for slab in &artifact.slabs {
+        image.extend_from_slice(&slab.bytes);
+    }
+    std::fs::write(out, &image).expect("write limnifs fixture");
+}
+
 fn build_zip(path: &Path, dirs: &[&str], files: &[(&str, &[u8])]) {
     let file = std::fs::File::create(path).expect("create zip");
     let mut w = zip::ZipWriter::new(file);
@@ -1396,4 +1412,63 @@ fn on_runtime_compound_token_without_the_home_annotation_is_a_named_error() {
     assert_eq!(err.code, 65, "{err}");
     assert!(err.message.contains("argv_template"), "{err}");
     assert!(err.message.contains("java_home"), "{err}");
+}
+
+#[test]
+fn an_entrypoint_that_links_to_the_interpreter_takes_the_direct_form() {
+    let g = guard("rt-entry-link");
+    // The bun distribution's shape: `bunx` is a LINK to the `bun` binary,
+    // not a script. Spelling comparison sees two paths and composes it as
+    // a script — bun then reads its own ELF and prints the bytes
+    // (tebako#923). Identity is the resolved target.
+    let layout = format!("{}{EXEC_CACHE}", good_layout());
+    let manifest = payload_manifest(
+        "runtime",
+        "provides:\n  \
+         provides: [{engine: bun, version: \"1.4.4\", abi_line: \"1\", platform: aarch64-macos}]\n  \
+         built_from: {src_sha256: 0000000000000000000000000000000000000000000000000000000000000000, patch_set: base}\n  \
+         entrypoints: [{name: bun, path: /bin/stub}, {name: bunx, path: /bin/bunx}]\n  \
+         capabilities: {exec: true, read: true, runtime: true}",
+    );
+    // A real tree, so `bin/bunx` is a real symlink to the interpreter.
+    let tree = g.path().join("tree");
+    std::fs::create_dir_all(tree.join("bin")).unwrap();
+    std::fs::create_dir_all(tree.join("lib/tebako")).unwrap();
+    std::fs::create_dir_all(tree.join("__tpkg__")).unwrap();
+    std::fs::write(tree.join("lib/tebako/layout.yaml"), layout.as_bytes()).unwrap();
+    std::fs::write(tree.join("bin/stub"), STUB).unwrap();
+    std::os::unix::fs::symlink("stub", tree.join("bin/bunx")).unwrap();
+    std::fs::write(tree.join("__tpkg__/manifest.yaml"), manifest.as_bytes()).unwrap();
+    let env_image = g.path().join("env.tfs");
+    build_limnifs_from_tree(&tree, &env_image);
+
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "bunx",
+                "--version",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+    // The link resolves to the interpreter, so the kernel execs the
+    // interpreter's bytes and the entry never rides the argv.
+    assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
+    assert_eq!(launch.argv[0], launch.program);
+    assert_eq!(
+        launch.argv[1], "--version",
+        "the user's args: {:?}",
+        launch.argv
+    );
+    assert_eq!(launch.argv.len(), 2, "{:?}", launch.argv);
 }
