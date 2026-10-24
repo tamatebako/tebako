@@ -1,0 +1,156 @@
+name: storage-hygiene
+
+# Artifact and cache storage is billed for EVERY repository, public or
+# not, while Actions minutes are free for public ones. That asymmetry is
+# the trap this job exists for: a busy repo accumulates build
+# intermediates nobody reads, the account crosses its storage
+# allowance, and GitHub stops SCHEDULING work. The 2026-10-24 strike:
+# every job in one organization sat queued for hours with zero running,
+# the status page reported no incident, and a feedstock's Windows MSI
+# job died at actions/upload-artifact with a quota refusal — all of it
+# reading as a platform outage.
+#
+# So the retention policy, the pruning and the budget gate are one job,
+# run on a cadence, and the gate is hard: drifting over budget is loud
+# on purpose. Reusable, because the policy belongs to the account and
+# must not be re-typed per repository (one implementation; every caller
+# pins the tag it consumes, the same rule the artifacts themselves
+# follow).
+
+on:
+  workflow_call:
+    inputs:
+      artifact_days:
+        description: Delete artifacts older than this many days.
+        type: number
+        default: 14
+      cache_days:
+        description: Delete caches untouched for this many days.
+        type: number
+        default: 14
+      retention_days:
+        description: Artifact and log retention to stamp on the repository.
+        type: number
+        default: 14
+      budget_gb:
+        description: Fail the job when artifacts plus caches exceed this.
+        type: number
+        default: 10
+  schedule:
+    # 04:41 UTC — after the canaries, before any working day starts.
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+    inputs:
+      budget_gb:
+        description: Override the budget for one run.
+        type: number
+        default: 10
+
+permissions:
+  # Deleting artifacts and caches is a write to the repository's Actions
+  # surface. Nothing here touches contents.
+  actions: write
+  contents: read
+
+concurrency:
+  group: storage-hygiene
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: retention, prune, budget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      ARTIFACT_DAYS: ${{ inputs.artifact_days || 14 }}
+      CACHE_DAYS: ${{ inputs.cache_days || 14 }}
+      RETENTION_DAYS: ${{ inputs.retention_days || 14 }}
+      BUDGET_GB: ${{ inputs.budget_gb || 10 }}
+    steps:
+      - name: Stamp the retention policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          # New artifacts inherit this; the prune below handles the rest.
+          # One day is the API's floor and ninety its ceiling.
+          if gh api -X PUT \
+              "/repos/$REPO/actions/permissions/artifact-and-log-retention" \
+              -F days="$RETENTION_DAYS" >/dev/null 2>&1; then
+            echo "retention: $RETENTION_DAYS day(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            # A plan that caps retention keeps its own value; the prune
+            # below still bounds the account.
+            echo "retention: left as-is (the API refused $RETENTION_DAYS days)" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Prune stale artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cutoff() {
+            python3 -c 'import datetime,sys; d=int(sys.argv[1]); print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=d)).strftime("%Y-%m-%dT%H:%M:%SZ"))' "$1"
+          }
+          CUTOFF="$(cutoff "$ARTIFACT_DAYS")"
+          # An artifact created after the cutoff is never touched: that is
+          # what keeps a running release's intermediates alive.
+          LIST="$(gh api --paginate "/repos/$REPO/actions/artifacts?per_page=100" \
+            --jq ".artifacts[] | select(.created_at < \"$CUTOFF\") | \"\(.id) \(.size_in_bytes)\"" || true)"
+          if [ -z "$LIST" ]; then
+            echo "artifacts: nothing older than $ARTIFACT_DAYS day(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          COUNT="$(printf '%s\n' "$LIST" | wc -l | tr -d ' ')"
+          BYTES="$(printf '%s\n' "$LIST" | awk '{s+=$2} END {print s+0}')"
+          printf '%s\n' "$LIST" | awk '{print $1}' | xargs -P 4 -n 1 \
+            sh -c 'gh api -X DELETE "/repos/$REPO/actions/artifacts/$0" >/dev/null 2>&1 || echo "kept:$0"'
+          awk -v n="$COUNT" -v d="$ARTIFACT_DAYS" -v b="$BYTES" \
+            'BEGIN{printf "artifacts: pruned %d older than %d day(s), %.2f GiB\n", n, d, b/1073741824}' \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Prune idle caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          cutoff() {
+            python3 -c 'import datetime,sys; d=int(sys.argv[1]); print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=d)).strftime("%Y-%m-%dT%H:%M:%SZ"))' "$1"
+          }
+          CUTOFF="$(cutoff "$CACHE_DAYS")"
+          # last_accessed_at is null for a cache no run has restored; its
+          # creation date is the honest fallback.
+          LIST="$(gh api --paginate "/repos/$REPO/actions/caches?per_page=100" \
+            --jq ".actions_caches[] | select((.last_accessed_at // .created_at) < \"$CUTOFF\") | \"\(.id) \(.size_in_bytes)\"" || true)"
+          if [ -z "$LIST" ]; then
+            echo "caches: nothing idle for $CACHE_DAYS day(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          COUNT="$(printf '%s\n' "$LIST" | wc -l | tr -d ' ')"
+          BYTES="$(printf '%s\n' "$LIST" | awk '{s+=$2} END {print s+0}')"
+          printf '%s\n' "$LIST" | awk '{print $1}' | xargs -P 4 -n 1 \
+            sh -c 'gh api -X DELETE "/repos/$REPO/actions/caches/$0" >/dev/null 2>&1 || echo "kept:$0"'
+          awk -v n="$COUNT" -v d="$CACHE_DAYS" -v b="$BYTES" \
+            'BEGIN{printf "caches: pruned %d idle for %d day(s), %.2f GiB\n", n, d, b/1073741824}' \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Hold the budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          ART="$(gh api --paginate "/repos/$REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts[].size_in_bytes' 2>/dev/null | awk '{s+=$1} END {print s+0}')"
+          CACHE="$(gh api "/repos/$REPO/actions/cache/usage" \
+            --jq '.active_caches_size_in_bytes' 2>/dev/null || echo 0)"
+          TOTAL_GB="$(awk -v a="$ART" -v c="$CACHE" 'BEGIN{printf "%.2f", (a+c)/1073741824}')"
+          printf 'storage: %s GiB held (budget %s GiB)\n' "$TOTAL_GB" "$BUDGET_GB" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          # Over budget means the policy above stopped holding — a lane
+          # uploading gigabytes per run, or a retention change. Either way
+          # it is a decision for a human, and it must not wait for the
+          # account to stop scheduling jobs.
+          if awk -v t="$TOTAL_GB" -v b="$BUDGET_GB" 'BEGIN{exit !(t>b)}'; then
+            printf '::error title=storage budget exceeded::%s GiB held, budget %s GiB — the retention policy is not holding\n' \
+              "$TOTAL_GB" "$BUDGET_GB"
+            exit 1
+          fi
