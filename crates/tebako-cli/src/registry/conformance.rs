@@ -421,7 +421,7 @@ fn check_row(
                     format!("resolves to {locator} but the row's oci: mirror does not parse: {e}"),
                 ),
                 Ok(reference) => {
-                    match tebako_resolve::oci::resolve_manifest_digest(
+                    match tebako_resolve::oci::resolve_payload_manifest_digest(
                         fetcher.transport(),
                         &reference,
                         None,
