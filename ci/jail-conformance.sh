@@ -34,7 +34,12 @@
 # the engine passed the path to the host and the host had nothing there,
 # which is a different answer and never counts as a block.
 #
-# Usage: jail-conformance.sh <tebako-cli> [workdir]
+# Usage: jail-conformance.sh [--pair <exe-prefix> --tfs <tfs>] <tebako-cli> [workdir]
+#
+#   default        press the probe with the CLI (the pair it resolves)
+#   --pair P       run a CANDIDATE pair directly — `P` is the runtime
+#                  executable, `P.tfs` its env image — which is how a
+#                  release gate uses this suite before a pair is published
 #   exit 0  every covered vector live under `open` and refused under deny
 #   exit 1  at least one vector leaked (the matrix names it)
 #   exit 2  the harness could not run (press, runtime, or a broken probe)
@@ -45,7 +50,16 @@
 # either way.
 set -uo pipefail
 
-TEBAKO="${1:?usage: jail-conformance.sh <tebako-cli> [workdir]}"
+PAIR=""
+TFS_BIN=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --pair) PAIR="${2:?--pair needs the runtime executable}"; shift 2 ;;
+    --tfs) TFS_BIN="${2:?--tfs needs a tfs binary}"; shift 2 ;;
+    *) break ;;
+  esac
+done
+TEBAKO="${1:?usage: jail-conformance.sh [--pair <exe> --tfs <tfs>] <tebako-cli> [workdir]}"
 WORK="${2:-/tmp/jail-conformance}"
 rm -rf "$WORK"
 mkdir -p "$WORK/app" "$WORK/home" "$WORK/host/private" "$WORK/scratch"
@@ -78,23 +92,56 @@ end
 line("read")        { verdict { File.read(secret) } }
 line("open")        { verdict { File.open(secret) { |f| f.read } } }
 line("stat")        { verdict { File.stat(secret) } }
-line("exist?")      { verdict { File.exist?(secret) ? true : raise(Errno::ENOENT) } }
+# `exist?` cannot raise: a denied stat comes back as false. Rendering that
+# as EACCES is the POSIX reading of the same judgement (and the only one
+# the API offers), so the harness's single refusal rule still applies.
+line("exist?")      { verdict { File.exist?(secret) ? true : raise(Errno::EACCES) } }
 line("readlines")   { verdict { File.readlines(secret) } }
 line("binread")     { verdict { File.binread(secret) } }
 line("IO.binread")  { verdict { IO.binread(secret) } }
 line("realpath")    { verdict { File.read(File.realpath(secret)) } }
-line("shellout")    { verdict { IO.popen(["cat", secret], &:read).empty? ? raise(Errno::ENOENT) : true } }
+# The shell-out vector reads through a CHILD process: `cat` prints
+# nothing when its own read is refused, and the payload only sees an empty
+# string. An empty read with a failed child is the refusal, rendered as
+# EACCES; an empty read with a successful child would be a broken probe.
+line("shellout") do
+  verdict do
+    out = IO.popen(["cat", secret], &:read)
+    status = $?
+    next true unless out.to_s.empty?
+
+    raise Errno::EACCES if status && !status.success?
+
+    raise "cat succeeded but printed nothing"
+  end
+end
 line("hostdir")     { verdict { raise Errno::ENOENT if Dir.children(hostdir).empty? } }
 
 RUBY
 
-echo "== press"
-( cd "$WORK/app" && "$TEBAKO" press -r . -e probe.rb -o "$WORK/pkg" ) || {
-  echo "   PRESS FAILED"; exit 2;
-}
-EXE=$(find "$WORK/pkg" -maxdepth 1 -type f -perm -u+x | head -1)
-[ -n "$EXE" ] || { echo "   no pressed executable"; exit 2; }
-echo "   pressed: $EXE"
+if [ -n "$PAIR" ]; then
+  [ -f "$PAIR" ] || { echo "no runtime executable at $PAIR"; exit 2; }
+  [ -f "$PAIR.tfs" ] || { echo "no env image at $PAIR.tfs"; exit 2; }
+  [ -n "$TFS_BIN" ] || { echo "--pair needs --tfs (the image writer)"; exit 2; }
+  echo "== pair"
+  "$TFS_BIN" mkimage "$WORK/app" -o "$WORK/app.tfs" >/dev/null || {
+    echo "   app image FAILED"; exit 2;
+  }
+  EXE="$PAIR"
+  TEBAKO_RUNTIME_IMAGE="$PAIR.tfs"
+  export TEBAKO_RUNTIME_IMAGE
+  ENTRY=(--tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /probe.rb)
+  echo "   pair: $PAIR (+ .tfs)"
+else
+  echo "== press"
+  ( cd "$WORK/app" && "$TEBAKO" press -r . -e probe.rb -o "$WORK/pkg" ) || {
+    echo "   PRESS FAILED"; exit 2;
+  }
+  EXE=$(find "$WORK/pkg" -maxdepth 1 -type f -perm -u+x | head -1)
+  [ -n "$EXE" ] || { echo "   no pressed executable"; exit 2; }
+  ENTRY=()
+  echo "   pressed: $EXE"
+fi
 
 VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir"
 
@@ -102,10 +149,10 @@ arm() {
   local label="$1"; local jail="$2"
   echo "== $label"
   if [ -n "$jail" ]; then
-    TEBAKO_JAIL="$jail" "$EXE" "$SECRET" "$WORK/host" 2>"$WORK/$label.err" \
+    TEBAKO_JAIL="$jail" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/host" 2>"$WORK/$label.err" \
       | tee "$WORK/$label.out" | sed 's/^/   /'
   else
-    "$EXE" "$SECRET" "$WORK/host" 2>"$WORK/$label.err" \
+    "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/host" 2>"$WORK/$label.err" \
       | tee "$WORK/$label.out" | sed 's/^/   /'
   fi
 }
@@ -127,8 +174,20 @@ for v in $VECTORS; do
     verdict="probe not live"; incomplete=$((incomplete + 1))
   else
     case "$d" in
-      DENIED:EACCES|DENIED:EPERM) verdict="blocked" ;;
       READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
+      DENIED:EACCES|DENIED:EPERM) verdict="blocked" ;;
+      DENIED:*)
+        # A refused SPAWN is a refusal too: `IO.popen` of a host binary
+        # under a deny policy fails before any byte is read, and POSIX
+        # exec conventionally answers ENOENT rather than disclosing that
+        # the binary exists. Only the shell-out vector can meet that
+        # shape — every direct read must answer EACCES/EPERM, because
+        # there ENOENT would mean the path was handed to the host.
+        case "$v" in
+          shellout) verdict="blocked (spawn refused: $d)" ;;
+          *) verdict="not a refusal ($d)"; incomplete=$((incomplete + 1)) ;;
+        esac
+        ;;
       *) verdict="not a refusal ($d)"; incomplete=$((incomplete + 1)) ;;
     esac
   fi
