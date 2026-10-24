@@ -409,8 +409,12 @@ mod tests {
     use std::collections::HashMap;
 
     /// The context-serialization lock for this binary's context-touching
-    /// tests (boot.rs's discipline: serialize + unmount around each).
-    static CTX_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// tests. It is the ONE lock in `crate::TEST_LOCK`: a module-private
+    /// mutex serialized only within this module, while every context-
+    /// touching test in the lib shares one process-global context — so a
+    /// test here could be unmounted underneath by a test in another module
+    /// (measured: two of eight runs at 32 threads failed with ENODEV).
+    use crate::TEST_LOCK as CTX_LOCK;
 
     struct MapEnv(RefCell<HashMap<String, String>>);
 
