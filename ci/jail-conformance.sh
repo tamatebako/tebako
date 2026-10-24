@@ -8,8 +8,8 @@
 #   covered
 #     1  File.read            5  File.readlines        9  shell-out read
 #     2  File.open            6  File.binread         10  host dir listing
-#     3  File.stat            7  IO.binread
-#     4  File.exist?          8  read(realpath)
+#     3  File.stat            7  IO.binread           11  a GRANT read
+#     4  File.exist?          8  read(realpath)       12  a path outside it
 #
 #   not covered by this cut, named rather than implied
 #     a `..` escape out of a grant (the jail's namespace is lexical: an
@@ -29,6 +29,11 @@
 #                 A vector that cannot read it here proves nothing later.
 #   deny          `TEBAKO_JAIL=deny`, no grants: the plain vectors and the
 #                 shell-out must be refused.
+#
+# A third arm runs `deny` WITH a grant, because a policy that refuses
+# everything is not a jail — it is a wall. The granted directory must be
+# READABLE there and a path outside it must be refused, so the suite
+# proves the policy DISCRIMINATES rather than merely closing.
 #
 # Every refusal must be EACCES/EPERM. ENOENT is NOT a refusal: it means
 # the engine passed the path to the host and the host had nothing there,
@@ -68,6 +73,12 @@ export HOME="$WORK/home"
 SECRET="$WORK/host/secret.txt"
 printf 'secret-bytes\n' > "$SECRET"
 printf 'inner\n' > "$WORK/host/private/inner.txt"
+mkdir -p "$WORK/host/granted"
+printf 'granted-bytes\n' > "$WORK/host/granted/ok.txt"
+# The listing vector's target: a sibling of the grant, so the answer is
+# about the policy and not about traversal into the granted directory.
+mkdir -p "$WORK/otherdir"
+printf 'other\n' > "$WORK/otherdir/one.txt"
 
 cat > "$WORK/app/probe.rb" <<'RUBY'
 # One line per vector: NAME<TAB>verdict. READ-OK means the byte (or the
@@ -76,6 +87,8 @@ cat > "$WORK/app/probe.rb" <<'RUBY'
 # means the probe itself failed and the vector proves nothing.
 secret = ARGV[0]
 hostdir = ARGV[1]
+granted = ARGV[2].to_s
+outside = ARGV[3].to_s
 def verdict
   yield
   "READ-OK"
@@ -117,6 +130,16 @@ line("shellout") do
 end
 line("hostdir")     { verdict { raise Errno::ENOENT if Dir.children(hostdir).empty? } }
 
+# The grant arm's two vectors: the granted directory must be readable
+# (the positive control a deny-only suite cannot have) and a sibling
+# outside it must be refused.
+line("granted") do
+  granted.empty? ? "SKIPPED:no-grant-arm" : verdict { File.read(granted) }
+end
+line("outside") do
+  outside.empty? ? "SKIPPED:no-grant-arm" : verdict { File.read(outside) }
+end
+
 RUBY
 
 if [ -n "$PAIR" ]; then
@@ -143,55 +166,74 @@ else
   echo "   pressed: $EXE"
 fi
 
-VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir"
+VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir granted outside"
 
 arm() {
   local label="$1"; local jail="$2"
+  local granted="" outside=""
+  if [ "$label" = "deny-grant" ]; then
+    granted="$WORK/host/granted/ok.txt"
+    outside="$WORK/host/secret.txt"
+  fi
   echo "== $label"
   if [ -n "$jail" ]; then
-    TEBAKO_JAIL="$jail" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/host" 2>"$WORK/$label.err" \
-      | tee "$WORK/$label.out" | sed 's/^/   /'
+    TEBAKO_JAIL="$jail" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
+      2>"$WORK/$label.err" | tee "$WORK/$label.out" | sed 's/^/   /'
   else
-    "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/host" 2>"$WORK/$label.err" \
-      | tee "$WORK/$label.out" | sed 's/^/   /'
+    "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
+      2>"$WORK/$label.err" | tee "$WORK/$label.out" | sed 's/^/   /'
   fi
 }
 
 arm open ""
 arm deny "deny"
+arm deny-grant "deny;$WORK/host/granted:/grant:ro"
 
 leaks=0
 incomplete=0
 echo "== matrix"
-printf '   %-11s %-11s %-16s %s\n' vector open deny verdict
+printf '   %-11s %-11s %-16s %-16s %s\n' vector open deny deny+grant verdict
 for v in $VECTORS; do
   o=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/open.out")
   d=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/deny.out")
-  if [ -z "$o" ] || [ -z "$d" ]; then
-    verdict="MISSING"; incomplete=$((incomplete + 1))
-  elif [ "${o#READ-OK}" != "" ]; then
-    # The open arm must read the byte, or the deny arm proves nothing.
-    verdict="probe not live"; incomplete=$((incomplete + 1))
-  else
-    case "$d" in
-      READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
-      DENIED:EACCES|DENIED:EPERM) verdict="blocked" ;;
-      DENIED:*)
-        # A refused SPAWN is a refusal too: `IO.popen` of a host binary
-        # under a deny policy fails before any byte is read, and POSIX
-        # exec conventionally answers ENOENT rather than disclosing that
-        # the binary exists. Only the shell-out vector can meet that
-        # shape — every direct read must answer EACCES/EPERM, because
-        # there ENOENT would mean the path was handed to the host.
-        case "$v" in
-          shellout) verdict="blocked (spawn refused: $d)" ;;
+  g=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/deny-grant.out")
+  case "$v" in
+    granted)
+      # The positive control: the grant must ADMIT its own bytes.
+      case "$g" in
+        READ-OK) verdict="grant honours" ;;
+        *) verdict="grant does not admit ($g)"; incomplete=$((incomplete + 1)) ;;
+      esac
+      ;;
+    outside)
+      # And must refuse a neighbour.
+      case "$g" in
+        READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
+        DENIED:EACCES|DENIED:EPERM) verdict="grant boundary holds" ;;
+        *) verdict="not a refusal ($g)"; incomplete=$((incomplete + 1)) ;;
+      esac
+      ;;
+    *)
+      if [ -z "$o" ] || [ -z "$d" ]; then
+        verdict="MISSING"; incomplete=$((incomplete + 1))
+      elif [ "${o#READ-OK}" != "" ]; then
+        verdict="probe not live"; incomplete=$((incomplete + 1))
+      else
+        case "$d" in
+          READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
+          DENIED:EACCES|DENIED:EPERM) verdict="blocked" ;;
+          DENIED:*)
+            case "$v" in
+              shellout) verdict="blocked (spawn refused: $d)" ;;
+              *) verdict="not a refusal ($d)"; incomplete=$((incomplete + 1)) ;;
+            esac
+            ;;
           *) verdict="not a refusal ($d)"; incomplete=$((incomplete + 1)) ;;
         esac
-        ;;
-      *) verdict="not a refusal ($d)"; incomplete=$((incomplete + 1)) ;;
-    esac
-  fi
-  printf '   %-11s %-11s %-16s %s\n' "$v" "${o:-?}" "${d:-?}" "$verdict"
+      fi
+      ;;
+  esac
+  printf '   %-11s %-11s %-16s %-16s %s\n' "$v" "${o:-?}" "${d:-?}" "${g:-?}" "$verdict"
 done
 
 echo "== verdict"
@@ -200,7 +242,7 @@ if [ "$incomplete" -ne 0 ]; then
   exit 2
 fi
 if [ "$leaks" -ne 0 ]; then
-  echo "   LEAK: $leaks vector(s) read a byte the policy denied"
+  echo "   LEAK: $leaks vector(s) reached a byte the policy did not grant"
   exit 1
 fi
-echo "   CONFORMANT: every covered vector is live under the open policy and refused (EACCES/EPERM) under deny"
+echo "   CONFORMANT: every covered vector live under the open policy, refused under deny, and the grant admits its own directory while refusing its neighbour"
