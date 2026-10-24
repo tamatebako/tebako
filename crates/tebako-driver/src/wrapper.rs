@@ -283,6 +283,26 @@ pub(crate) fn args_default(h: &Handoff, runtime_root: &str) -> Result<Vec<String
 /// in the entry case, the interpreter's own args in the bare/smoke
 /// forms, the user args in the interpreter-keyword form (the keyword
 /// itself was dropped by the boot).
+/// True when two in-image paths name the same file, following links.
+///
+/// The direct-program form is about identity, not spelling: bun's `bunx`
+/// is a LINK to the `bun` binary, so it must take the direct form — the
+/// kernel execs the interpreter — while node's `bin/npm` is a link to a
+/// shebang script and must compose through the interpreter (tebako#923;
+/// #915 for the script side). The engine already owns link resolution
+/// (spec 11 §9: the chain follows through the mount router, `ELOOP` at
+/// 32 hops), so this asks it rather than walking the chain again.
+fn same_image_file(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let ctx = context().read().unwrap();
+    match (ctx.canonical(a), ctx.canonical(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
+}
+
 fn compose(program: String, outcome: &BootOutcome) -> Launch {
     let rest = outcome.argv.get(1..).unwrap_or(&[]);
     let mut argv = Vec::with_capacity(1 + rest.len());
@@ -365,6 +385,20 @@ fn bridge_entry(
         let Some(token) = launch.argv.get(index).cloned() else {
             return Ok(());
         };
+        // A LINK entry is not a file to materialize. Node's `bin/npm` is a
+        // link to `npm-cli.js`, and a twin carries the target's BYTES at a
+        // temp path — so the script's own relative requires (`../lib/cli.js`)
+        // would resolve outside the image, which is the very failure the
+        // link reader and the composition were fixed for (tebako#926).
+        // A VFS spelling is what the interpreter reads through the shim,
+        // and there the link resolves: realpath answers the canonical
+        // target, which is what node's module resolution asks for.
+        if matches!(
+            context().read().unwrap().stat(&token),
+            Ok(st) if st.entry_type == tfs::backend::EntryType::Symlink
+        ) {
+            return Ok(());
+        }
         if !context().read().unwrap().path_is_embedded(&token) {
             return Ok(());
         }
@@ -625,7 +659,7 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
                 && payload_entrypoint(h, &outcome.runtime_root, name)?.is_none()
             {
                 let ep = runtime_entrypoint(&outcome.runtime_root, name)?;
-                if join_mount(&outcome.runtime_root, &ep.path) == vfs {
+                if same_image_file(&join_mount(&outcome.runtime_root, &ep.path), &vfs) {
                     let program = materialize(&vfs, mech, &outcome.runtime_root)?;
                     let mut argv =
                         Vec::with_capacity(1 + ep.args_default.len() + h.user_args.len());

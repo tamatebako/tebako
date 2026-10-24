@@ -117,6 +117,39 @@ impl Env for MapEnv {
     }
 }
 
+/// A symbolic link, spelled for the host. A Windows test that cannot
+/// create one (no privilege: `SeCreateSymbolicLinkPrivilege` or Developer
+/// Mode) SKIPS — the environment is not the thing under test, and a red
+/// leg from a missing privilege would hide the real ones.
+fn symlink_or_skip(target: &str, link: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        // Both shapes here are FILE links; windows distinguishes file from
+        // directory links, and the target spelling (relative) is the same.
+        std::os::windows::fs::symlink_file(target, link).is_ok()
+    }
+}
+
+/// Build a limnifs image from a directory tree (the lazy-mount e2e's
+/// pattern). Links are real entries here — the zip fixture writer cannot
+/// express one, and the link identity is the point of its own test.
+fn build_limnifs_from_tree(dir: &Path, out: &Path) {
+    let artifact = limnifs_write::write_directory_with_config(
+        dir,
+        &limnifs_write::WriteConfig::default_v0_1(),
+    )
+    .expect("limnifs fixture");
+    let mut image = artifact.bytes;
+    for slab in &artifact.slabs {
+        image.extend_from_slice(&slab.bytes);
+    }
+    std::fs::write(out, &image).expect("write limnifs fixture");
+}
+
 fn build_zip(path: &Path, dirs: &[&str], files: &[(&str, &[u8])]) {
     let file = std::fs::File::create(path).expect("create zip");
     let mut w = zip::ZipWriter::new(file);
@@ -1396,4 +1429,159 @@ fn on_runtime_compound_token_without_the_home_annotation_is_a_named_error() {
     assert_eq!(err.code, 65, "{err}");
     assert!(err.message.contains("argv_template"), "{err}");
     assert!(err.message.contains("java_home"), "{err}");
+}
+
+#[test]
+fn an_entrypoint_that_links_to_the_interpreter_takes_the_direct_form() {
+    let g = guard("rt-entry-link");
+    // The bun distribution's shape: `bunx` is a LINK to the `bun` binary,
+    // not a script. Spelling comparison sees two paths and composes it as
+    // a script — bun then reads its own ELF and prints the bytes
+    // (tebako#923). Identity is the resolved target.
+    let layout = format!("{}{EXEC_CACHE}", good_layout());
+    let manifest = payload_manifest(
+        "runtime",
+        "provides:\n  \
+         provides: [{engine: bun, version: \"1.4.4\", abi_line: \"1\", platform: aarch64-macos}]\n  \
+         built_from: {src_sha256: 0000000000000000000000000000000000000000000000000000000000000000, patch_set: base}\n  \
+         entrypoints: [{name: bun, path: /bin/stub}, {name: bunx, path: /bin/bunx}]\n  \
+         capabilities: {exec: true, read: true, runtime: true}",
+    );
+    // A real tree, so `bin/bunx` is a real symlink to the interpreter.
+    let tree = g.path().join("tree");
+    std::fs::create_dir_all(tree.join("bin")).unwrap();
+    std::fs::create_dir_all(tree.join("lib/tebako")).unwrap();
+    std::fs::create_dir_all(tree.join("__tpkg__")).unwrap();
+    std::fs::write(tree.join("lib/tebako/layout.yaml"), layout.as_bytes()).unwrap();
+    std::fs::write(tree.join("bin/stub"), STUB).unwrap();
+    if !symlink_or_skip("stub", &tree.join("bin/bunx")) {
+        eprintln!("skip: this host cannot create a symlink for the bunx shape");
+        return;
+    }
+    std::fs::write(tree.join("__tpkg__/manifest.yaml"), manifest.as_bytes()).unwrap();
+    let env_image = g.path().join("env.tfs");
+    build_limnifs_from_tree(&tree, &env_image);
+
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "bunx",
+                "--version",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+    // The link resolves to the interpreter, so the kernel execs the
+    // interpreter's bytes and the entry never rides the argv.
+    assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
+    assert_eq!(launch.argv[0], launch.program);
+    assert_eq!(
+        launch.argv[1], "--version",
+        "the user's args: {:?}",
+        launch.argv
+    );
+    assert_eq!(launch.argv.len(), 2, "{:?}", launch.argv);
+}
+
+#[test]
+fn a_link_entry_stays_a_vfs_spelling_under_preload() {
+    // Preload is a POSIX mechanism (dyld interpose / LD_PRELOAD); the
+    // driver refuses a `visibility: preload` layout on windows with a named
+    // 65 — "windows has no interposition API" — which is the right answer
+    // there and not what this test is about.
+    if cfg!(windows) {
+        eprintln!("skip: preload visibility is POSIX-only");
+        return;
+    }
+    let g = guard("rt-entry-link-preload");
+    // Node's shape under the PRELOAD mechanism: `bin/npm` is a link to
+    // `npm-cli.js`. Materializing the entry would hand the interpreter the
+    // target's BYTES at a temp path, so npm's own `../lib/cli.js` would
+    // resolve outside the image — the factory's macOS smoke answered
+    // "cannot materialize the entrypoint '/__tfs__/bin/npm' … Is a
+    // directory" instead (tebako#926). A link entry therefore stays the
+    // VFS spelling, which the armed shim serves and whose realpath answers
+    // the canonical target.
+    let manifest = payload_manifest(
+        "runtime",
+        "provides:\n  \
+         provides: [{engine: node, version: \"24.22.1\", abi_line: \"137\", platform: aarch64-macos}]\n  \
+         built_from: {src_sha256: 0000000000000000000000000000000000000000000000000000000000000000, patch_set: base}\n  \
+         entrypoints: [{name: node, path: /bin/stub}, {name: npm, path: /bin/npm}]\n  \
+         capabilities: {exec: true, read: true, runtime: true}",
+    );
+    let tree = g.path().join("tree");
+    std::fs::create_dir_all(tree.join("bin")).unwrap();
+    std::fs::create_dir_all(tree.join("lib/tebako")).unwrap();
+    std::fs::create_dir_all(tree.join("lib/node_modules/npm/bin")).unwrap();
+    std::fs::create_dir_all(tree.join("__tpkg__")).unwrap();
+    std::fs::write(
+        tree.join("lib/tebako/layout.yaml"),
+        format!("{}{PRELOAD}", good_layout()).as_bytes(),
+    )
+    .unwrap();
+    std::fs::write(
+        tree.join("lib/tebako/libtfs_preload.so"),
+        b"ELF pretend shim\n",
+    )
+    .unwrap();
+    std::fs::write(tree.join("bin/stub"), STUB).unwrap();
+    std::fs::write(
+        tree.join("lib/node_modules/npm/bin/npm-cli.js"),
+        b"#!/usr/bin/env node\nconsole.log('11.6.2')\n",
+    )
+    .unwrap();
+    if !symlink_or_skip(
+        "../lib/node_modules/npm/bin/npm-cli.js",
+        &tree.join("bin/npm"),
+    ) {
+        eprintln!("skip: this host cannot create a symlink for the npm shape");
+        return;
+    }
+    std::fs::write(tree.join("__tpkg__/manifest.yaml"), manifest.as_bytes()).unwrap();
+    let env_image = g.path().join("env.tfs");
+    build_limnifs_from_tree(&tree, &env_image);
+
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "npm",
+                "--version",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+    // The program is the interpreter; the entry rides as the VFS spelling.
+    assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
+    let token = launch.argv[1].replace('\\', "/");
+    assert!(
+        token.ends_with("/bin/npm"),
+        "the link entry keeps its VFS spelling: {:?}",
+        launch.argv
+    );
+    assert_eq!(
+        launch.argv[2], "--version",
+        "the user's args: {:?}",
+        launch.argv
+    );
 }
