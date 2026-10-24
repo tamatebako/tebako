@@ -198,6 +198,11 @@ Releasing across the repos: **[docs/release-train.md](docs/release-train.md)**
 recovery playbook (finalize wedge, orphaned releases, mirror 404s,
 toolchain-format skew, stale registry serve).
 
+Keeping continuous integration schedulable:
+**[docs/ci-storage-budget.md](docs/ci-storage-budget.md)** — the account's
+artifact and cache allowance, the reusable job that holds it, and the
+recovery procedure for an account that has already crossed it.
+
 ## Status
 
 - **Shipped**: the full Rust stack — packager, loader (macOS, Linux, and
