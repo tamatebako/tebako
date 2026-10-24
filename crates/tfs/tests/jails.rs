@@ -814,3 +814,25 @@ fn no_policy_no_journal_and_the_journal_never_fails_the_op() {
     std::env::remove_var("TEBAKO_JAIL_JOURNAL");
     std::env::remove_var("TEBAKO_JAIL_SOURCE");
 }
+
+#[test]
+fn host_guard_names_whether_the_policy_judges_uncovered_paths() {
+    let _f = setup("guard");
+
+    // The initial policy is open: coverage alone is the whole predicate,
+    // so an integrator's shim has no reason to route an uncovered path.
+    assert_eq!(unsafe { c_api::tebako_fs_host_guard() }, 0);
+
+    // Profile 1 spelled explicitly — still nothing to judge.
+    assert_eq!(install_policy(1, &[], &[]), 0);
+    assert_eq!(unsafe { c_api::tebako_fs_host_guard() }, 0);
+
+    // The deny default judges an uncovered path, which is exactly the
+    // case a coverage predicate cannot see (tebako#917).
+    assert_eq!(install_policy(0, &[], &[]), 0);
+    assert_eq!(unsafe { c_api::tebako_fs_host_guard() }, 1);
+
+    // Replacing the policy moves the answer with it.
+    assert_eq!(install_policy(1, &[], &[]), 0);
+    assert_eq!(unsafe { c_api::tebako_fs_host_guard() }, 0);
+}

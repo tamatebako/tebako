@@ -229,6 +229,19 @@ impl HostPolicy {
         self.default == PolicyDefault::Record
     }
 
+    /// True when an uncovered host path's access is an event this policy
+    /// must see. A deny default decides whether the host may answer at
+    /// all; a record default writes the line that says it did; an open
+    /// default's grants only ever ALLOW, so nothing needs consulting.
+    ///
+    /// This is the predicate a consumer's IO shim asks before it decides
+    /// to bypass the router for a path no mount covers: coverage alone is
+    /// a namespace test, and a namespace test cannot enforce a policy
+    /// (tebako#917 — an uncovered read went straight to the kernel).
+    pub fn guards_uncovered(&self) -> bool {
+        self.default != PolicyDefault::Open
+    }
+
     /// Bind a policy: canonicalize every host path (mount sources and
     /// argument files) NOW, so later checks compare canonical forms.
     ///
