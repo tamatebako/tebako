@@ -2309,6 +2309,7 @@ mod tests {
     /// the gate, and it must win over a live boot.
     #[test]
     fn a_transport_fetch_forces_host_passthrough() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         assert!(!crate::route::in_transport());
         {
             let _g = crate::route::TransportGuard::enter();
@@ -2333,6 +2334,7 @@ mod tests {
     /// through `engine_call`).
     #[test]
     fn fork_child_gate_short_circuits_engine_call() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(engine_call_inner(true, || 42), None);
         assert_eq!(engine_call_inner(false, || 42), Some(42));
     }
@@ -2347,6 +2349,7 @@ mod tests {
     /// the same flag, and nothing else in this process forks).
     #[test]
     fn atfork_child_handler_arms_the_flag() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         register_fork_guard();
         // SAFETY: plain fork; the child's post-fork work is an atomic
         // load + _exit, both safe after fork in a threaded process.

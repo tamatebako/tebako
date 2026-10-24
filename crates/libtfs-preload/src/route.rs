@@ -798,6 +798,7 @@ mod tests {
     /// beside the absent image and mount the caching range source.
     #[test]
     fn a_lazy_seeding_declaration_mounts_and_reads_through_the_source() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         let (image, golden, groups, size) = write_lazy_fixture(dir.path());
         assert!(!image.exists(), "the fixture is LAZY_SEEDING");
@@ -837,6 +838,7 @@ mod tests {
     /// must not race parallel tests.
     #[test]
     fn route_matrix() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // The 2026-09-02 discipline (supersedes the 08-21 per-call wraps):
         // the WHOLE matrix runs inside ONE engine_call — the production
         // re-entrancy guard. Route calls inside then behave exactly like a
@@ -1248,6 +1250,7 @@ mod tests {
     /// in the engine) cannot slip between the two suites.
     #[test]
     fn symlinks_route_through_the_shim_seam() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         crate::sys::engine_call(symlink_route_body);
     }
 
@@ -1324,6 +1327,7 @@ mod tests {
     /// cwd-relative, never into the memfs fd table.
     #[test]
     fn at_fdcwd_is_not_a_memfs_fd() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // The trap itself: the bit IS set (this is exactly what made a
         // naive `tebako_fd_is_embedded(dirfd)` branch misroute).
         assert_eq!(libc::AT_FDCWD & TEBAKO_FD_FLAG, TEBAKO_FD_FLAG);
@@ -1357,6 +1361,7 @@ mod tests {
     /// read (under an open policy the real fopen answers EINVAL itself).
     #[test]
     fn fopen_mode_classification() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         for ro in ["r", "rb", "re", "rm", "rbe", "r,ccs=UTF-8"] {
             assert!(fopen_mode_is_readonly(ro), "{ro:?} is read-only");
         }
