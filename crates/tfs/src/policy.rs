@@ -579,7 +579,19 @@ fn canonicalize(path: &Path) -> Result<PathBuf, i32> {
 /// missing tail with lexical `.`/`..` normalization. The resolved ancestor
 /// chain is fully symlink-expanded either way, so escapes are caught; a
 /// nonexistent tail cannot contain a symlink.
+///
+/// A RELATIVE spelling names a path under the caller's working directory,
+/// so it is anchored first: every grant is canonical at bind time and
+/// therefore absolute, and an unanchored relative path matches none of
+/// them — under a deny default that refused the working directory's own
+/// files (a payload's `File.write("out.adoc")`), which is not what the
+/// policy was asked for.
 fn canonicalize_lenient(path: &Path) -> PathBuf {
+    if path.is_relative() {
+        if let Ok(cwd) = std::env::current_dir() {
+            return canonicalize_lenient(&cwd.join(path));
+        }
+    }
     if let Ok(c) = std::fs::canonicalize(path) {
         return c;
     }
@@ -1294,5 +1306,45 @@ mod tests {
         let parsed = JailSpec::parse(&p.to_env_spec()).unwrap();
         let p2 = HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files).unwrap();
         assert_eq!(p, p2);
+    }
+
+    #[test]
+    fn a_relative_path_is_anchored_to_the_working_directory() {
+        let tree = Tree::new("relative");
+        let cwd = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();
+        std::fs::write(cwd.join("relative-probe.txt"), b"probe").unwrap();
+        let p = HostPolicy::bind(
+            PolicyDefault::Deny,
+            vec![tree.spec(&cwd, "/cwd", HostAccess::Rw)],
+            vec![],
+        )
+        .unwrap();
+        // The grant covers the working directory, so a relative spelling of
+        // a file IN it is granted — before the anchor it stayed relative,
+        // matched no canonical grant, and answered EPERM under deny.
+        assert_eq!(
+            p.check(Path::new("relative-probe.txt"), HostAccess::Ro),
+            Ok(())
+        );
+        assert_eq!(
+            p.check(Path::new("./relative-probe.txt"), HostAccess::Ro),
+            Ok(())
+        );
+        // A create target that does not exist yet follows the same anchor.
+        assert_eq!(
+            p.check(Path::new("relative-out.adoc"), HostAccess::Rw),
+            Ok(())
+        );
+        // A relative escape leaves the grant and is denied.
+        assert_eq!(
+            p.check(Path::new("../outside.txt"), HostAccess::Ro),
+            Err(libc::EPERM)
+        );
+        // And a directory the grant does not name, reached relatively.
+        if let Some(name) = tree.sibling.file_name() {
+            let rel = PathBuf::from("..").join(name).join("secret.txt");
+            assert_eq!(p.check(&rel, HostAccess::Ro), Err(libc::EPERM));
+        }
+        std::fs::remove_file(cwd.join("relative-probe.txt")).unwrap();
     }
 }
