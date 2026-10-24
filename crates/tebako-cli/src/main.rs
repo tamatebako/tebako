@@ -80,9 +80,11 @@ const USAGE: &str = "Usage:
                                        overrides, loudly)
   tebako registry doctor <path-or-url> [--full] [--sample <n>] [--json]
                                        conformance against the HOST: the document
-                                       gate plus row resolution, and with --full the
-                                       served bytes vs the pin and the declared
-                                       signatures (exit 0 conformant / 1 problems)
+                                       gate, row resolution, and a ranged probe that
+                                       proves the host SERVES each artifact; --full
+                                       downloads them and checks the pin and the
+                                       declared signatures (exit 0 conformant /
+                                       1 problems)
   tebako setup                         seed the official registry into the config
                                        (installer flow; idempotent, user-removable)
   tebako keys import <file>            register a public key into the trusted keyring

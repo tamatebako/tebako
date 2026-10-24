@@ -14,10 +14,12 @@
 //! per-triplet row (tebako#440's mirror rule), and the tebako#549
 //! one-grammar classes — a version-level `implementation`, a mix of both
 //! spellings, and the parse-dropped version-level `engine` key.
-//! `doctor` (TODO.sota/03 arc 1) is the CONFORMANCE half: the document
-//! gate plus row resolution against the host that serves the file, and
-//! with `--full` the served bytes against the rows' pins and the declared
-//! signatures against the registry's head key.
+//! `doctor` is the CONFORMANCE half: the document gate, row resolution
+//! against the host that serves the file, and a ranged request per row
+//! that proves the host SERVES the artifact the row names (the body is
+//! dropped unread, so the default pass downloads nothing); with `--full`
+//! the downloaded bytes are checked against the rows' pins and the
+//! declared signatures against the registry's head key.
 //! `retire` (tebako#675) removes one version row
 //! from a LOCAL registry file through the publish flow's own discipline
 //! (spec 18 C12: parse → mutate → re-validate → atomic write), refusing
