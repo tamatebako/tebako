@@ -122,9 +122,59 @@ fn walk(dir: &Path, f: &mut dyn FnMut(&Path)) {
     for child in children.filter_map(|c| c.ok()) {
         let path = child.path();
         if path.is_dir() {
+            // A `.dSYM` bundle is debug information for the build host.
+            // Its DWARF files carry the same `.bundle` extension the macOS
+            // strip list looks for, so walking in hands strip(1) a file it
+            // cannot process and warns about on every press; the package
+            // drops the bundle whole instead (measured on a 2.8.60 press:
+            // six such warnings, one per precompiled platform gem).
+            if path
+                .file_name()
+                .map(|n| n.to_string_lossy().ends_with(".dSYM"))
+                .unwrap_or(false)
+            {
+                let _ = std::fs::remove_dir_all(&path);
+                continue;
+            }
             walk(&path, f);
         } else {
             f(&path);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tree(root: &Path) {
+        let dsym = root.join("lib/gems/ext/debug.bundle.dSYM/Contents/Resources/DWARF");
+        std::fs::create_dir_all(&dsym).unwrap();
+        std::fs::write(dsym.join("debug.bundle"), b"not an object file\n").unwrap();
+        let keep = root.join("lib/gems/ext/keep");
+        std::fs::create_dir_all(&keep).unwrap();
+        std::fs::write(keep.join("empty.so"), b"").unwrap();
+    }
+
+    #[test]
+    fn dsym_bundles_are_pruned_never_stripped() {
+        // The DWARF file inside a `.dSYM` carries the same `.bundle`
+        // extension the macOS strip list looks for, so it was handed to
+        // strip(1), which cannot process a debug file and warned on every
+        // macOS press. A debug bundle is build-host material; the package
+        // drops it whole.
+        let dir = std::env::temp_dir().join(format!("tebako-strip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        tree(&dir);
+        strip_li(&dir);
+        assert!(
+            !dir.join("lib/gems/ext/debug.bundle.dSYM").exists(),
+            "the .dSYM bundle is pruned"
+        );
+        assert!(
+            dir.join("lib/gems/ext/keep/empty.so").exists(),
+            "an ordinary .so beside it is still walked"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
