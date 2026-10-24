@@ -146,7 +146,7 @@ mod tests {
         // Nothing mounted: the mounts list stays unset too (the context
         // serializes only file-backed mounts). The unmount touches the
         // process-global context, so it takes the binary's one lock.
-        let _g = crate::TEST_LOCK.lock().unwrap();
+        let _g = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         context().write().unwrap().unmount();
         let env = MapEnv(RefCell::new(HashMap::new()));
         let delivered = export(&env, None, "/__tfs__").unwrap();
