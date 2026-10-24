@@ -1472,3 +1472,86 @@ fn an_entrypoint_that_links_to_the_interpreter_takes_the_direct_form() {
     );
     assert_eq!(launch.argv.len(), 2, "{:?}", launch.argv);
 }
+
+#[test]
+fn a_link_entry_stays_a_vfs_spelling_under_preload() {
+    let g = guard("rt-entry-link-preload");
+    // Node's shape under the PRELOAD mechanism: `bin/npm` is a link to
+    // `npm-cli.js`. Materializing the entry would hand the interpreter the
+    // target's BYTES at a temp path, so npm's own `../lib/cli.js` would
+    // resolve outside the image — the factory's macOS smoke answered
+    // "cannot materialize the entrypoint '/__tfs__/bin/npm' … Is a
+    // directory" instead (tebako#926). A link entry therefore stays the
+    // VFS spelling, which the armed shim serves and whose realpath answers
+    // the canonical target.
+    let manifest = payload_manifest(
+        "runtime",
+        "provides:\n  \
+         provides: [{engine: node, version: \"24.22.1\", abi_line: \"137\", platform: aarch64-macos}]\n  \
+         built_from: {src_sha256: 0000000000000000000000000000000000000000000000000000000000000000, patch_set: base}\n  \
+         entrypoints: [{name: node, path: /bin/stub}, {name: npm, path: /bin/npm}]\n  \
+         capabilities: {exec: true, read: true, runtime: true}",
+    );
+    let tree = g.path().join("tree");
+    std::fs::create_dir_all(tree.join("bin")).unwrap();
+    std::fs::create_dir_all(tree.join("lib/tebako")).unwrap();
+    std::fs::create_dir_all(tree.join("lib/node_modules/npm/bin")).unwrap();
+    std::fs::create_dir_all(tree.join("__tpkg__")).unwrap();
+    std::fs::write(
+        tree.join("lib/tebako/layout.yaml"),
+        format!("{}{PRELOAD}", good_layout()).as_bytes(),
+    )
+    .unwrap();
+    std::fs::write(
+        tree.join("lib/tebako/libtfs_preload.so"),
+        b"ELF pretend shim\n",
+    )
+    .unwrap();
+    std::fs::write(tree.join("bin/stub"), STUB).unwrap();
+    std::fs::write(
+        tree.join("lib/node_modules/npm/bin/npm-cli.js"),
+        b"#!/usr/bin/env node\nconsole.log('11.6.2')\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(
+        "../lib/node_modules/npm/bin/npm-cli.js",
+        tree.join("bin/npm"),
+    )
+    .unwrap();
+    std::fs::write(tree.join("__tpkg__/manifest.yaml"), manifest.as_bytes()).unwrap();
+    let env_image = g.path().join("env.tfs");
+    build_limnifs_from_tree(&tree, &env_image);
+
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "npm",
+                "--version",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+    // The program is the interpreter; the entry rides as the VFS spelling.
+    assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
+    let token = launch.argv[1].replace('\\', "/");
+    assert!(
+        token.ends_with("/bin/npm"),
+        "the link entry keeps its VFS spelling: {:?}",
+        launch.argv
+    );
+    assert_eq!(
+        launch.argv[2], "--version",
+        "the user's args: {:?}",
+        launch.argv
+    );
+}
