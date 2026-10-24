@@ -44,14 +44,16 @@ workloads:
 targets:
   # Old world: the packed-mn release executable (per-triplet asset from
   # platforms.yaml). Frozen at metanorma-cli 1.14.4 — the version skew
-  # against the v2 payload (1.16.9) is accepted and reported (spec 27 §1).
+  # against the v2 payload (1.17.0) is accepted and reported (spec 27 §1).
+  # The skew is conservative: the older metanorma does less work, so it reads
+  # faster than a v1 package of 1.17.0 would, and the v2 ratio is understated.
   - id: v1-packed-mn
     kind: v1-exe
 
   # New world, primary form: managed install + shim dispatch, warm store.
   - id: v2-shim
     kind: v2-managed
-    payload: "metanorma@1.16.9"
+    payload: "metanorma@1.17.0"
     # The payload's registry AND the runtime factories: the priming dispatch
     # resolves the payload's runtime through the registered registries, and a
     # home carrying only the payload's registry has none to resolve from
@@ -67,7 +69,7 @@ targets:
   # (spec 27 §9 spike b).
   - id: v2-fat
     kind: v2-press
-    payload: "metanorma@1.16.9"
+    payload: "metanorma@1.17.0"
     fat: true
     # The payload's registry AND the runtime factories: the priming dispatch
     # resolves the payload's runtime through the registered registries, and a

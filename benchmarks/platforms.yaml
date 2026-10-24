@@ -9,10 +9,10 @@ schema_version: 1
 # metanorma-cli: this tag IS the v1 arm's metanorma version (1.14.4).
 packed_mn: { repo: metanorma/packed-metanorma, tag: v1.14.4 }
 
-# v2_payload: whether the metanorma payload (suite targets' metanorma@1.16.9)
-# is published for the triplet. Payload 1.16.9 (release 1.16.9-16) ships 3 of
-# 7 triplets: macos-arm64, linux-gnu-x86_64, windows-ucrt64. The runtime
-# catalog covers all 7.
+# v2_payload: whether the metanorma payload the suite pins (its targets read
+# metanorma@1.17.0) is published for the triplet. Payload 1.17.0 (release
+# 1.17.0-6) ships all 7 triplets, so every cell carries both arms except where
+# the v1 asset names a gap. The runtime catalog covers all 7.
 #
 # runtime_gaps (spec 27 §10.4): the runtime comparison suite's DECLARED gaps
 # (language → reason); a declared gap gaps BOTH arms of the language pair —
@@ -25,17 +25,17 @@ triplets:
   linux-gnu-arm64:
     runner: ubuntu-24.04-arm
     v1_asset: metanorma-linux-aarch64.tgz
-    v2_payload: false # no published payload — v2 arms are named gaps here
+    v2_payload: true
   linux-musl-x86_64:
     runner: ubuntu-24.04
     container: alpine:3.21
     v1_asset: metanorma-linux-musl-x86_64.tgz
-    v2_payload: false
+    v2_payload: true
   linux-musl-arm64:
     runner: ubuntu-24.04-arm
     container: alpine:3.21
-    v1_asset: null # packed-mn never shipped musl-arm64 — gap both sides
-    v2_payload: false
+    v1_asset: null # packed-mn never shipped musl-arm64 — the v1 arm is the gap
+    v2_payload: true
   macos-arm64:
     runner: macos-14
     v1_asset: metanorma-darwin-arm64.tgz # NOTE: AMFI-killed on a local macOS
@@ -43,8 +43,8 @@ triplets:
     v2_payload: true
   macos-x86_64:
     runner: macos-15-intel
-    v1_asset: null # packed-mn dropped darwin-x86_64 after ~v1.13 — gap both sides
-    v2_payload: false
+    v1_asset: null # packed-mn dropped darwin-x86_64 after ~v1.13 — the v1 arm is the gap
+    v2_payload: true
   windows-ucrt64:
     runner: windows-latest
     v1_asset: metanorma-windows-x86_64.exe

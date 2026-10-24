@@ -83,9 +83,12 @@ kind unless an arm is genuinely meaningless for the suite.
   what users actually downloaded.
 - **Version skew is accepted and documented**: the old world is frozen
   at the packed-mn tag's metanorma-cli (v1.14.4 ↔ metanorma-cli 1.14.4)
-  while the v2 payload is current (1.16.9). Rebuilding a v1 package of
-  a current metanorma resurrects retired tooling and is forbidden
-  (AGENTS.md §10). Every report footer carries the skew note.
+  while the v2 payload the suite pins is 1.17.0. Rebuilding a v1 package
+  of a current metanorma resurrects retired tooling and is forbidden
+  (AGENTS.md §10). The skew is conservative in the v2 arms' favour: the
+  older metanorma does less work than a 1.17.0 package would, so the v1
+  timings read faster than a same-version v1 package and the reported v2
+  ratio is understated. Every report footer carries the skew note.
 - The v2 image format (`dwarfs` today, `limnifs` when the writer can
   carry the tree — §9 spike b) is recorded per result
   (`versions.image_format`); numbers across formats are never mixed in
@@ -124,9 +127,9 @@ workloads:
     timeout_s: 900
 targets:
   - {id: v1-packed-mn, kind: v1-exe}
-  - {id: v2-shim, kind: v2-managed, payload: "metanorma@1.16.9",
+  - {id: v2-shim, kind: v2-managed, payload: "metanorma@1.17.0",
      registries: ["tfs:github:tebako-packages/metanorma"]}
-  - {id: v2-fat, kind: v2-press, payload: "metanorma@1.16.9", fat: true,
+  - {id: v2-fat, kind: v2-press, payload: "metanorma@1.17.0", fat: true,
      registries: ["tfs:github:tebako-packages/metanorma"]}
 run_policy: {warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true}
 ```
@@ -207,14 +210,14 @@ a later schema revision).
 
 ```yaml
 schema_version: 1
-packed_mn: {repo: metanorma/packed-mn, tag: v1.14.4}
+packed_mn: {repo: metanorma/packed-metanorma, tag: v1.14.4}
 triplets:
   linux-gnu-x86_64:  {runner: ubuntu-24.04,     v1_asset: metanorma-linux-x86_64.tgz,      v2_payload: true}
-  linux-gnu-arm64:   {runner: ubuntu-24.04-arm, v1_asset: metanorma-linux-aarch64.tgz,     v2_payload: false}
-  linux-musl-x86_64: {runner: ubuntu-24.04, container: alpine:3.21, v1_asset: metanorma-linux-musl-x86_64.tgz, v2_payload: false}
-  linux-musl-arm64:  {runner: ubuntu-24.04-arm, container: alpine:3.21, v1_asset: null,    v2_payload: false}   # gap both sides
+  linux-gnu-arm64:   {runner: ubuntu-24.04-arm, v1_asset: metanorma-linux-aarch64.tgz,     v2_payload: true}
+  linux-musl-x86_64: {runner: ubuntu-24.04, container: alpine:3.21, v1_asset: metanorma-linux-musl-x86_64.tgz, v2_payload: true}
+  linux-musl-arm64:  {runner: ubuntu-24.04-arm, container: alpine:3.21, v1_asset: null,    v2_payload: true}   # v1 arm is the gap
   macos-arm64:       {runner: macos-14,         v1_asset: metanorma-darwin-arm64.tgz,      v2_payload: true}
-  macos-x86_64:      {runner: macos-15-intel,   v1_asset: null,                            v2_payload: false}   # gap both sides (v1 dropped after ~v1.13)
+  macos-x86_64:      {runner: macos-15-intel,   v1_asset: null,                            v2_payload: true}   # v1 arm is the gap (dropped after ~v1.13)
   windows-ucrt64:    {runner: windows-latest,   v1_asset: metanorma-windows-x86_64.exe,    v2_payload: true, v1_note: aibika-packed}
 ```
 
