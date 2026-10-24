@@ -331,3 +331,54 @@ A paper of this kind earns its credibility by its exclusions.
 The appendix is the specification set itself, not a restatement of it. A
 reader who wants to audit a proposition follows the row to the document,
 and then to the falsifier named beside it.
+
+## 10. References and the submission shape
+
+The paper's own claims are grounded in the specification set named in
+section 9. The references below are the external works a reviewer will
+expect it to engage, and they are listed because the comparison in
+section 8 is only credible when the systems being compared are cited
+rather than described.
+
+1. E. Dolstra, A. Löh and N. Pierron, "NixOS: A Purely Functional Linux
+   Distribution", *ACM SIGPLAN International Conference on Functional
+   Programming (ICFP)*, 2008. The content-addressed store and the
+   derivation model that section 9 compares against.
+2. L. Courtès, "Functional Package Management with Guix", *European Lisp
+   Symposium (ELS)*, 2013. The Scheme-embedded form of the same model,
+   with the bootstrap chain that section 11 credits.
+3. A. Mokhov, N. Mitchell and S. Peyton Jones, "Build Systems à la
+   Carte", *Proceedings of the ACM on Programming Languages (ICFP)*,
+   2018. The taxonomy of build systems that this paper's dispatch and
+   resolution separation follows.
+4. U. Drepper, "Static Linking Considered Harmful", 2003. The cost of the
+   first escape in section 1, stated by the person who maintained the
+   dynamic loader.
+5. Open Container Initiative, "OCI Image Format Specification", current
+   revision. The image and distribution vocabulary that section 1 and
+   section 8 use as the point of contrast.
+6. The Reproducible Builds project, `reproducible-builds.org`, and the
+   in-toto framework (S. Torres-Arias et al., *USENIX Security*, 2019)
+   for supply-chain attestation. Both are the standard against which
+   Proposition 8's scope is drawn: tebako verifies what it fetched, and
+   attestation of how it was built is a separate, complementary claim.
+7. The AppImage documentation and the `conda` channel specification, for
+   the two comparators in sections 9 and 10 whose behaviour is defined by
+   their own documents rather than in the literature.
+
+**Submission shape.** The draft is roughly three thousand words across ten
+sections, which maps to a ten-to-twelve page workshop submission with the
+specification set as an appendix and the falsifier table as an artifact
+appendix. The
+target venues are the ones a systems reader would look for this argument
+in: a workshop adjacent to HotOS or SOSP, or the REBLS workshop for the
+language-oriented framing. The choice between them turns on whether the
+reviewers weight the algebra or the systems evidence, and the draft is
+deliberately written to serve either.
+
+**What a submission would still need.** A bibliography pass against each
+venue's style, a review by a reader who has not seen the system, and a
+decision on whether the falsifier table belongs in the paper or in an
+artifact appendix. None of these change the content, and all of them are
+outside what this queue can produce without an author who is not its
+implementer.
