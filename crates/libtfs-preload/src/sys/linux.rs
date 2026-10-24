@@ -711,14 +711,18 @@ pub(super) unsafe fn raw_fstat(fd: c_int, st: *mut libc::stat) -> c_int {
     unsafe { libc::syscall(libc::SYS_fstat, fd, st) as c_int }
 }
 
-/// `readlink` via SYS_readlink: the boot arm needs no glibc wrapper.
+/// `readlink` via SYS_readlinkat(AT_FDCWD, …): the boot arm needs no
+/// glibc wrapper, and readlinkat is the spelling every Linux arch has —
+/// aarch64 has no plain `readlink` syscall at all, so `SYS_readlink`
+/// does not exist there (the v2.8.60 release legs caught exactly that:
+/// both aarch64 legs failed to compile while both x86_64 legs passed).
 #[cfg(target_pointer_width = "64")]
 pub(super) unsafe fn raw_readlink(
     path: *const c_char,
     buf: *mut c_char,
     size: libc::size_t,
 ) -> libc::ssize_t {
-    unsafe { libc::syscall(libc::SYS_readlink, path, buf, size) as libc::ssize_t }
+    unsafe { libc::syscall(libc::SYS_readlinkat, libc::AT_FDCWD, path, buf, size) as libc::ssize_t }
 }
 
 /// `fstatat` via SYS_newfstatat. The versioned `__xstat`/`__lxstat`/
