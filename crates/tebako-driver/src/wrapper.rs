@@ -599,6 +599,16 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
     // default and the boot's resolved-entry token entirely (the
     // declaration is the single owner; the linked pattern's boot arm
     // already composed the same resolution for the in-process case).
+    //
+    // That direct form is the INTERPRETER's own case and only that one:
+    // an entrypoint whose resolved path is the layout.interpreter (the
+    // bare `node` / `java` keyword) is the program this wrapper exists
+    // to start. Every other declared entrypoint is a program the
+    // INTERPRETER runs — npm, npx and corepack are shebang scripts, not
+    // executables the kernel can start — and spec 07 §10 composes them
+    // as `[interpreter, args_default…, entry, args…]`. Falling through
+    // is that composition: the boot already resolved the entry against
+    // this image and composed the declaration's args_default.
     // spec 32 §2: the name the FIRST payload image's own App manifest
     // declares is NOT this case — the spawned-payload child's entry is
     // an in-image script the INTERPRETER runs, so it falls through to
@@ -615,16 +625,18 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
                 && payload_entrypoint(h, &outcome.runtime_root, name)?.is_none()
             {
                 let ep = runtime_entrypoint(&outcome.runtime_root, name)?;
-                let program = materialize(
-                    &join_mount(&outcome.runtime_root, &ep.path),
-                    mech,
-                    &outcome.runtime_root,
-                )?;
-                let mut argv = Vec::with_capacity(1 + ep.args_default.len() + h.user_args.len());
-                argv.push(program.clone());
-                argv.extend(ep.args_default.iter().cloned());
-                argv.extend(h.user_args.iter().cloned());
-                return Ok(BootAction::Launch(Launch { program, argv }));
+                if join_mount(&outcome.runtime_root, &ep.path) == vfs {
+                    let program = materialize(&vfs, mech, &outcome.runtime_root)?;
+                    let mut argv =
+                        Vec::with_capacity(1 + ep.args_default.len() + h.user_args.len());
+                    argv.push(program.clone());
+                    argv.extend(ep.args_default.iter().cloned());
+                    argv.extend(h.user_args.iter().cloned());
+                    return Ok(BootAction::Launch(Launch { program, argv }));
+                }
+                // A declared entrypoint that is not the interpreter is a
+                // program the interpreter runs: fall through, where the
+                // boot's composition already carries it.
             }
         }
     }
