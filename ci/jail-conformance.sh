@@ -33,7 +33,10 @@
 # A third arm runs `deny` WITH a grant, because a policy that refuses
 # everything is not a jail — it is a wall. The granted directory must be
 # READABLE there and a path outside it must be refused, so the suite
-# proves the policy DISCRIMINATES rather than merely closing.
+# proves the policy DISCRIMINATES rather than merely closing. A fourth arm
+# runs `record`: every vector must READ (record allows and journals) and
+# the journal must carry lines — a record mode that denies, or that allows
+# silently, is broken in the direction the audit trail depends on.
 #
 # Every refusal must be EACCES/EPERM. ENOENT is NOT a refusal: it means
 # the engine passed the path to the host and the host had nothing there,
@@ -176,48 +179,55 @@ arm() {
     outside="$WORK/host/secret.txt"
   fi
   echo "== $label"
+  local -a envs=()
   if [ -n "$jail" ]; then
-    TEBAKO_JAIL="$jail" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
-      2>"$WORK/$label.err" | tee "$WORK/$label.out" | sed 's/^/   /'
-  else
-    "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
-      2>"$WORK/$label.err" | tee "$WORK/$label.out" | sed 's/^/   /'
+    envs+=("TEBAKO_JAIL=$jail")
   fi
+  if [ "$label" = "record" ]; then
+    envs+=("TEBAKO_JAIL_JOURNAL=$WORK/journal.log")
+  fi
+  env "${envs[@]}" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
+    2>"$WORK/$label.err" | tee "$WORK/$label.out" | sed 's/^/   /'
 }
 
 arm open ""
 arm deny "deny"
 arm deny-grant "deny;$WORK/host/granted:/grant:ro"
+arm record "record"
 
 leaks=0
 incomplete=0
 echo "== matrix"
-printf '   %-11s %-11s %-16s %-16s %s\n' vector open deny deny+grant verdict
+printf '   %-11s %-11s %-16s %-16s %-9s %s\n' vector open deny deny+grant record verdict
 for v in $VECTORS; do
   o=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/open.out")
   d=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/deny.out")
   g=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/deny-grant.out")
+  r=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/record.out")
   case "$v" in
-    granted)
-      # The positive control: the grant must ADMIT its own bytes.
-      case "$g" in
-        READ-OK) verdict="grant honours" ;;
-        *) verdict="grant does not admit ($g)"; incomplete=$((incomplete + 1)) ;;
-      esac
-      ;;
-    outside)
-      # And must refuse a neighbour.
-      case "$g" in
-        READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
-        DENIED:EACCES|DENIED:EPERM) verdict="grant boundary holds" ;;
-        *) verdict="not a refusal ($g)"; incomplete=$((incomplete + 1)) ;;
-      esac
+    granted|outside)
+      # Grant-arm-only vectors: the other arms skip them by design.
+      if [ "$v" = "granted" ]; then
+        case "$g" in
+          READ-OK) verdict="grant honours" ;;
+          *) verdict="grant does not admit ($g)"; incomplete=$((incomplete + 1)) ;;
+        esac
+      else
+        case "$g" in
+          READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
+          DENIED:EACCES|DENIED:EPERM) verdict="grant boundary holds" ;;
+          *) verdict="not a refusal ($g)"; incomplete=$((incomplete + 1)) ;;
+        esac
+      fi
       ;;
     *)
-      if [ -z "$o" ] || [ -z "$d" ]; then
+      if [ -z "$o" ] || [ -z "$d" ] || [ -z "$r" ]; then
         verdict="MISSING"; incomplete=$((incomplete + 1))
       elif [ "${o#READ-OK}" != "" ]; then
         verdict="probe not live"; incomplete=$((incomplete + 1))
+      elif [ "${r#READ-OK}" != "" ]; then
+        # record allows and journals: a vector it refuses is a broken mode.
+        verdict="record did not allow ($r)"; incomplete=$((incomplete + 1))
       else
         case "$d" in
           READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
@@ -233,16 +243,32 @@ for v in $VECTORS; do
       fi
       ;;
   esac
-  printf '   %-11s %-11s %-16s %-16s %s\n' "$v" "${o:-?}" "${d:-?}" "${g:-?}" "$verdict"
+  printf '   %-11s %-11s %-16s %-16s %-9s %s\n' "$v" "${o:-?}" "${d:-?}" "${g:-?}" "${r:-?}" "$verdict"
 done
 
-echo "== verdict"
-if [ "$incomplete" -ne 0 ]; then
-  echo "   INCOMPLETE: $incomplete vector(s) missing, not live, or answered without a refusal — the harness or the engine, never counted as a block"
-  exit 2
+echo "== record journal"
+journal_bad=0
+if [ -s "$WORK/journal.log" ]; then
+  echo "   $(wc -l < "$WORK/journal.log" | tr -d ' ') line(s), $(wc -c < "$WORK/journal.log" | tr -d ' ') bytes"
+else
+  echo "   EMPTY — a record policy that allows silently is not an audit trail"
+  journal_bad=1
 fi
+
+echo "== verdict"
+# A leak outranks an empty journal: bytes reached a payload the policy
+# refused is the harm; the missing trail is how it went unseen.
 if [ "$leaks" -ne 0 ]; then
   echo "   LEAK: $leaks vector(s) reached a byte the policy did not grant"
+  [ "$journal_bad" -ne 0 ] && echo "   and the record journal stayed empty — the same blind spot, seen from the audit side"
   exit 1
 fi
-echo "   CONFORMANT: every covered vector live under the open policy, refused under deny, and the grant admits its own directory while refusing its neighbour"
+if [ "$journal_bad" -ne 0 ]; then
+  echo "   INCOMPLETE: the record journal is empty — a record policy that allows silently is not an audit trail"
+  exit 2
+fi
+if [ "$incomplete" -ne 0 ]; then
+  echo "   INCOMPLETE: $incomplete vector(s) missing, not live, refused under record, or answered without a refusal — the harness or the engine, never counted as a block"
+  exit 2
+fi
+echo "   CONFORMANT: every covered vector live under the open policy, refused under deny, the grant admits its own directory while refusing its neighbour, and record allows while journaling"
