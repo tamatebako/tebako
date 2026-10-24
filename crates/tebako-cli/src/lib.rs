@@ -225,6 +225,11 @@ fn refuse_native_entry(root: &Path, entrance: &str) -> Result<(), TebakoError> {
         [0x7f, b'E', b'L', b'F'] => Some("ELF"),
         [0xcf, 0xfa, 0xed, 0xfe] | [0xce, 0xfa, 0xed, 0xfe] => Some("Mach-O"),
         [0xfe, 0xed, 0xfa, 0xcf] | [0xfe, 0xed, 0xfa, 0xce] => Some("Mach-O"),
+        // A FAT/universal Mach-O — every system binary on macOS arm64 is
+        // one, so this is the shape a user is likeliest to press. Its magic
+        // is a count + fat_arch table, not a thin header (tebako#925).
+        [0xca, 0xfe, 0xba, 0xbe] | [0xca, 0xfe, 0xba, 0xbf] => Some("Mach-O universal"),
+        [0xbe, 0xba, 0xfe, 0xca] | [0xbf, 0xba, 0xfe, 0xca] => Some("Mach-O universal"),
         [b'M', b'Z', ..] => Some("PE"),
         _ => None,
     };
@@ -2963,6 +2968,18 @@ fn a_native_executable_entry_is_refused_by_name() {
         ("macho64", &[0xcf, 0xfa, 0xed, 0xfe, 0x0c][..], "Mach-O"),
         ("macho32", &[0xce, 0xfa, 0xed, 0xfe, 0x07][..], "Mach-O"),
         ("pe", &[b'M', b'Z', 0x90, 0x00][..], "PE"),
+        // The lipo/fat shape: every macOS system binary is one, so it is the
+        // likeliest native entry a user presses.
+        (
+            "universal",
+            &[0xca, 0xfe, 0xba, 0xbe, 0x00, 0x00, 0x00, 0x02][..],
+            "Mach-O universal",
+        ),
+        (
+            "universal64",
+            &[0xca, 0xfe, 0xba, 0xbf, 0x00, 0x00, 0x00, 0x01][..],
+            "Mach-O universal",
+        ),
     ] {
         write(name, magic);
         let err = refuse_native_entry(&dir, name).unwrap_err();
