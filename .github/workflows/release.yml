@@ -763,6 +763,9 @@ jobs:
       # manifest.json (the trust-anchor pair every consumer verifies).
       attestations: write
       id-token: write
+      # actions: the benchmark fan-out below dispatches a workflow run;
+      # a GITHUB_TOKEN-created release event fans out to nobody (tebako#913).
+      actions: write
     runs-on: ubuntu-24.04
     # tebako#649: finalize waits on the PUBLISH jobs, not the build legs —
     # the release's asset set is what the completeness gate counts, and
@@ -871,6 +874,24 @@ jobs:
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort
           test "$COUNT" -eq "$EXPECTED"
+
+      # The benchmark suite listens on `release: published`, and that event
+      # never fires for this pipeline: the release object is created with the
+      # job's GITHUB_TOKEN, and workflow runs created by GITHUB_TOKEN do not
+      # fan out to other workflows (tebako#913 — four releases shipped with
+      # no run of the suite, so the published v2 column stayed empty). The
+      # dispatch is explicit for that reason, gated to a real tag push so a
+      # rehearsal on a branch wakes nothing.
+      - name: Wake the benchmark suite (release fan-out)
+        if: github.event_name == 'push' && needs.prepare.outputs.upload_url != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run benchmark.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo "dispatched benchmark.yml for ${{ needs.prepare.outputs.tag_name }}"
 
   # ==========================================================================
   # Windows (ucrt64) — the link-unit leg. The staticlibs build and scope
