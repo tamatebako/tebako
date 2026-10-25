@@ -67,7 +67,7 @@ fn seed_entry(home: &Path, origin: &Path) -> (String, String) {
     let sidecar = blksum.render();
     fs::write(format!("{}.blksum.json", origin.display()), &sidecar).unwrap();
     let seed = tpkg::lazy::LazySeed {
-        source: format!("file://{}", origin.display()),
+        source: tebako_http::file_url(&origin),
         sha256: blksum.sha256.clone(),
         blksum_sha256: tpkg::lazy::sha256_hex(sidecar.as_bytes()),
         size_bytes: blksum.size_bytes,
