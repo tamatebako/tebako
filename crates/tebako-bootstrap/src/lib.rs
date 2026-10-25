@@ -6288,7 +6288,7 @@ mod dll_tests {
         let dll_sha = sha256_file_hex(&mirror.join(DLL)).unwrap();
         let text = manifest(&dll_key(INSTALL_AS, &dll_sha));
         let (layout, rr) = dll_layout(&home, Some(&text));
-        let base = format!("file://{}", home.join("mirror").display());
+        let base = tebako_http::file_url(&home.join("mirror"));
 
         // fresh install: the dll lands AS install_as with trusted markers
         let mut ux = BootUx::new();
@@ -6559,7 +6559,7 @@ mod bundle_tests {
         )
         .unwrap();
         let (layout, rr) = bundle_layout(&home);
-        let base = format!("file://{}", home.join("mirror").display());
+        let base = tebako_http::file_url(&home.join("mirror"));
         (home, layout, rr, base)
     }
 
@@ -6706,7 +6706,7 @@ mod bundle_tests {
         );
         std::fs::write(mirror.join(format!("{stem_n}.manifest.json")), shard).unwrap();
         let (layout, rr) = bundle_layout(&home);
-        let base = format!("file://{}", home.join("mirror").display());
+        let base = tebako_http::file_url(&home.join("mirror"));
         let mut ux = BootUx::new();
         let exe = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
         assert_eq!(
@@ -6745,7 +6745,7 @@ mod bundle_tests {
         );
         std::fs::write(mirror.join(format!("{stem_n}.manifest.json")), shard).unwrap();
         let (layout, rr) = bundle_layout(&home);
-        let base = format!("file://{}", home.join("mirror").display());
+        let base = tebako_http::file_url(&home.join("mirror"));
         let mut ux = BootUx::new();
         let exe = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), EXE_BYTES);
@@ -7042,7 +7042,7 @@ mod bundle_tests {
         assert!(!shard.contains("bundle"), "{shard}");
         std::fs::write(mirror.join(format!("{}.manifest.json", stem())), shard).unwrap();
         let (layout, rr) = bundle_layout(&home);
-        let base = format!("file://{}", home.join("mirror").display());
+        let base = tebako_http::file_url(&home.join("mirror"));
         let mut ux = BootUx::new();
         let exe = download_executable(&runtime_ref(), &rr, &layout, &mut ux, &base).unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), EXE_BYTES);
@@ -7111,7 +7111,7 @@ mod bundle_tests {
         );
         std::fs::write(mirror.join(format!("{}.manifest.json", stem())), shard).unwrap();
         let (layout, rr) = bundle_layout(&home);
-        let base = format!("file://{}", home.join("mirror").display());
+        let base = tebako_http::file_url(&home.join("mirror"));
         (home, layout, rr, base)
     }
 

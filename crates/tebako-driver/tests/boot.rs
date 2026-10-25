@@ -173,7 +173,7 @@ fn write_lazy_env_image(dir: &Path) -> PathBuf {
     let entry = dir.join("entry");
     std::fs::create_dir_all(&entry).unwrap();
     let seed = tpkg::lazy::LazySeed {
-        source: format!("file://{}", origin_image.display()),
+        source: tebako_http::file_url(&origin_image),
         sha256: blksum.sha256.clone(),
         blksum_sha256: tpkg::lazy::sha256_hex(blksum.render().as_bytes()),
         size_bytes: blksum.size_bytes,

@@ -277,7 +277,7 @@ mod tests {
     fn seed_entry(image_path: &Path, blksum: &Blksum) -> (tempfile::TempDir, String, LazySeed) {
         let entry = tempfile::tempdir().expect("entry");
         let seed = LazySeed {
-            source: format!("file://{}", image_path.display()),
+            source: tebako_http::file_url(image_path),
             sha256: blksum.sha256.clone(),
             blksum_sha256: tpkg::lazy::sha256_hex(blksum.render().as_bytes()),
             size_bytes: blksum.size_bytes,

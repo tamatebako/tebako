@@ -1819,7 +1819,7 @@ mod tests {
         // it looked for — never a bare "Is a directory".
         let empty = dir.join("empty");
         std::fs::create_dir_all(&empty).unwrap();
-        let r = RegistryRef::parse(&format!("file://{}", empty.display())).unwrap();
+        let r = RegistryRef::parse(&tebako_http::file_url(&empty)).unwrap();
         let err = Fetcher::new().fetch_registry(&r).unwrap_err();
         assert!(err.to_string().contains(REGISTRY_DOCUMENT_NAME), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
