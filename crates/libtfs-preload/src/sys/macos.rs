@@ -277,6 +277,30 @@ interpose!(
     close_plain,
     unsafe extern "C" fn(c_int) -> c_int
 );
+// The SAME split exists in the other direction on arm64: there
+// `libc::close` is plain `close`, and the NOCANCEL spelling is a separate
+// import that libc never names — so node's libuv (`uv__close_nocancel`,
+// used by every internal file operation) reached the KERNEL with a
+// flagged fd and got EBADF, which node turns into
+// `Assertion failed: (0) == (uv_fs_close(...))` and an abort. The
+// observable was a `readFileSync` of an in-image file dying at close.
+// Declare the NOCANCEL spelling here so both arches route both spellings
+// to the shim: on x86_64 the main tuple already covers NOCANCEL and the
+// plain twin above covers C binaries; on arm64 the main tuple covers
+// plain and this twin covers NOCANCEL.
+#[cfg(target_arch = "aarch64")]
+unsafe extern "C" {
+    #[link_name = "close$NOCANCEL"]
+    fn close_nocancel(fd: c_int) -> c_int;
+}
+#[cfg(target_arch = "aarch64")]
+interpose!(
+    INTERPOSE_CLOSE_NOCANCEL,
+    real_close_nocancel,
+    super::close,
+    close_nocancel,
+    unsafe extern "C" fn(c_int) -> c_int
+);
 // fcntl is variadic (a cmd-dependent third argument) — the open/openat
 // trampoline note applies verbatim on arm64. No $NOCANCEL twin exists.
 interpose!(
