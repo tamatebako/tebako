@@ -100,8 +100,15 @@ fn a_row_the_host_is_not_published_for_is_a_note_not_a_problem() {
     // for THIS host before any fetch. The published triplet is chosen to
     // differ from the running host, so the note is the outcome on every
     // machine and the fixture stays offline (the probe never runs).
-    let host = tebako_cli::options::host_platform().unwrap();
-    let other = if host.as_str() == "x86_64-linux-gnu" {
+    //
+    // The comparison is on the TRIPLET, not on the release-asset
+    // spelling: `host_platform()` answers `linux-gnu-x86_64`, which never
+    // equals `x86_64-linux-gnu`, so an earlier cut of this fixture
+    // declared the host's own platform on linux and asserted a note for a
+    // row that was published for the host — a test bug wearing the
+    // product's clothes, green on macOS and red on the linux leg.
+    let host = tpkg::Platform::host().as_triplet();
+    let other = if host == "x86_64-linux-gnu" {
         "aarch64-windows-ucrt"
     } else {
         "x86_64-linux-gnu"
