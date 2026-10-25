@@ -1669,6 +1669,22 @@ pub fn delete(url: &str, bearer: Option<&str>) -> Result<(), FetchError> {
 
 #[cfg(test)]
 mod tests {
+    /// The constructor and the inverse are one pair: a path written and
+    /// read back is the same path, on every platform. The four call sites
+    /// that hand-rolled the peel each broke a different platform, because
+    /// on windows the remainder carries an authority slash that is not
+    /// part of the path.
+    #[test]
+    fn a_file_url_round_trips_to_its_own_path() {
+        let path = std::env::temp_dir().join("tebako-file-url-roundtrip.tfs");
+        let url = file_url(&path);
+        let rest = url.strip_prefix("file://").expect("the scheme");
+        assert_eq!(
+            std::path::Path::new(file_path_from_url(rest)),
+            path.as_path()
+        );
+    }
+
     use super::*;
 
     #[test]
