@@ -118,19 +118,23 @@ tebako-driver: failed to mount image '/private/tmp/nativetool/pkg'
 Tebako intialization failed.
 ```
 
-The press and the boot disagree about what the artifact is: every payload
+The press and the boot disagreed about what the artifact is: every payload
 entry the driver runs today is a program the **interpreter** runs, so the
-press treats the entry as a script under a provided runtime while the boot
-tries to mount a runtime image that does not exist. A CLI payload has no
-interpreter at all, which makes the disagreement fatal rather than unlucky.
+press used to treat the entry as a script under a provided runtime while the
+boot tried to mount a runtime image that does not exist. A CLI payload has no
+interpreter at all, which made the disagreement fatal rather than unlucky.
 
 What self-hosting therefore needs is a payload **kind**, not a flag on the
 existing one: the manifest declares an entrypoint the bootstrap materializes
 and executes directly, with the same digest verification, mount discipline
 and jail the interpreter path already has, and the trailer carries no runtime
-slot. Until that kind exists the honest behaviour is a refusal at press time
-with a name that says which shape was expected — filed as tebako#925, whose
-report carries this transcript.
+slot. Until that kind exists the behaviour is a refusal at press time, and the
+press now performs it: it reads the entry's first four bytes and refuses ELF,
+Mach-O in both byte orders and PE — including the FAT/universal header that
+every macOS system binary carries — with the registered code **144** and a
+message naming the file, the format and both remedies. The report that led to
+the refusal is tebako#925, and its transcript is the shape the regression test
+pins.
 
 "tebako-cli stitched" is therefore a plan with a name, and this document
 says so rather than implying the box is ticked.
