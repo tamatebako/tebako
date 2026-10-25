@@ -371,6 +371,36 @@ fn check_row(
             return;
         }
     };
+    // The platform matrix is per payload, so a host this row does not
+    // publish is a NOTE and the probe never runs. Asking a host to serve
+    // an artifact the registry never promised would manufacture a 404 as
+    // a verdict, and the row's own matrix is the authority: deciding it
+    // here rather than after a resolver fallback keeps the answer the
+    // same on every machine. (An earlier cut of this pass resolved first
+    // and probed whatever the fallback returned, which reported a clean
+    // registry as broken on exactly the hosts the row excludes.)
+    if view.select(host).is_none() {
+        let published: Vec<&str> = view
+            .published_triplets()
+            .iter()
+            .map(|p| p.as_triplet())
+            .collect();
+        report.findings.push(Finding::new(
+            Severity::Note,
+            Some(name),
+            Some(version),
+            format!(
+                "not published for the host triplet {} (published: {})",
+                host.as_triplet(),
+                if published.is_empty() {
+                    "none".to_string()
+                } else {
+                    published.join(", ")
+                }
+            ),
+        ));
+        return;
+    }
     let (reference, pin, _mirrors) =
         match crate::install::resolve_row_reference(input, payload, entry, &view, host, false) {
             Ok(pair) => pair,
