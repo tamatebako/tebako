@@ -1801,7 +1801,12 @@ mod tests {
         )
         .unwrap();
 
-        let r = RegistryRef::parse(&format!("file://{}", dir.display())).unwrap();
+        // `file_url` owns the RFC 8089 spelling — three slashes when the
+        // path is a Windows drive path (`file:///C:/…`), two on POSIX.
+        // Building it by hand with `file://{display}` produced
+        // `file://C:\…`, which the grammar refuses by name, and only the
+        // windows leg could see it.
+        let r = RegistryRef::parse(&tebako_http::file_url(&dir)).unwrap();
         let bytes = Fetcher::new()
             .fetch_registry(&r)
             .expect("a directory ref resolves its document");
