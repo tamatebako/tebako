@@ -46,7 +46,7 @@ use crate::driver::{
     DriverError, Env,
 };
 use crate::handoff::Handoff;
-use crate::layout::ImageLayout;
+use crate::layout::{EntryDelivery, ImageLayout};
 use crate::{EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 
 /// The wrapper pattern's baked runtime root. Spec 17 §1's "per-platform
@@ -360,10 +360,24 @@ fn bridge_entry(
     launch: &mut Launch,
     mech: Mechanism,
     entry_index: Option<usize>,
+    delivery: EntryDelivery,
 ) -> Result<(), DriverError> {
     let Some(index) = entry_index else {
         return Ok(());
     };
+    // The entry's DELIVERY is the runtime's declaration, not a guess about
+    // the file (spec 29 §3, schema_minor 5). `read` keeps the VFS
+    // spelling, so the interpreter opens the entry through the shim and
+    // every relative include the program performs resolves INSIDE the
+    // image — the node factory's `npm` entry is a 54-byte script whose
+    // whole body is `require('../lib/cli.js')`, and a twin put it in an
+    // empty directory where that require could not resolve. `exec`
+    // materializes the twin, which is what a runtime whose file-runner
+    // spawn-execs its entry needs, because the spawned shebang would
+    // otherwise resolve through the kernel's PATH (tebako#831).
+    if delivery == EntryDelivery::Read && mech == Mechanism::Preload {
+        return Ok(());
+    }
     // tebako#831: under PRELOAD the ENTRY token bridges to its host
     // twin too (dlmap2file preserves the image's perms — an
     // interpreted entry stays 0644, i.e. data). Interpreters
@@ -695,7 +709,7 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
             }
         }
     }
-    bridge_entry(&mut launch, mech, outcome.entry_index)?;
+    bridge_entry(&mut launch, mech, outcome.entry_index, layout.entry_delivery)?;
     Ok(BootAction::Launch(launch))
 }
 
