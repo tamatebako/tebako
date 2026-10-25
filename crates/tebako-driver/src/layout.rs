@@ -41,6 +41,25 @@ fn layout(message: impl Into<String>) -> DriverError {
     DriverError::new(EX_TEBAKO_LAYOUT, message.into())
 }
 
+/// How the child reaches its ENTRY under a mechanism that can serve
+/// virtual paths (spec 29 §3, schema_minor 5).
+///
+/// `Read` keeps the entry's VFS spelling, so the interpreter reads it
+/// through the shim and any relative include the program performs
+/// resolves inside the image. `Exec` materializes a host twin, which is
+/// what a runtime whose file-runner SPAWN-EXECS its entry needs, because
+/// a spawned shebang would otherwise resolve through the kernel's PATH.
+/// The distinction is the runtime's, never the file's: every entry in an
+/// image is 0644 data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EntryDelivery {
+    /// The interpreter reads the entry through the mount.
+    #[default]
+    Read,
+    /// The interpreter execs the entry; give it a host twin.
+    Exec,
+}
+
 /// The parsed declaration — every field required by the grammar
 /// (`docs/spec/schemas/layout.yaml`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +110,13 @@ pub struct ImageLayout {
     /// `exec-cache`. Absent ⇒ the spec's locked default order. Flowed
     /// verbatim; the wrapper maps and honors it (or fails closed).
     pub visibility: Option<String>,
+    /// How the child reaches its entry (additive, schema_minor 5 — spec
+    /// 29 §3): `read` keeps the VFS spelling so relative includes
+    /// resolve inside the image; `exec` materializes a host twin for a
+    /// runtime that spawn-execs its entry. Absent ⇒ `read`, because an
+    /// image's entries are data and a twin is the exception that a
+    /// runtime must ask for.
+    pub entry_delivery: EntryDelivery,
 }
 
 /// The tolerant serde view: every field optional so the checks below can
@@ -108,6 +134,7 @@ struct LayoutView {
     runtime_dll: Option<String>,
     interpreter: Option<String>,
     visibility: Option<String>,
+    entry_delivery: Option<String>,
 }
 
 impl ImageLayout {
@@ -191,6 +218,16 @@ impl ImageLayout {
             runtime_dll,
             interpreter: view.interpreter.filter(|s| !s.is_empty()),
             visibility: view.visibility.filter(|s| !s.is_empty()),
+            entry_delivery: match view.entry_delivery.as_deref() {
+                None | Some("") => EntryDelivery::Read,
+                Some("read") => EntryDelivery::Read,
+                Some("exec") => EntryDelivery::Exec,
+                Some(other) => {
+                    return Err(layout(format!(
+                        "env image '{image}' layout.yaml declares entry_delivery '{other}' — the grammar is read | exec (spec 29 §3)"
+                    )))
+                }
+            },
         })
     }
 }
@@ -217,6 +254,7 @@ mod tests {
                 runtime_dll: None,
                 interpreter: None,
                 visibility: None,
+                entry_delivery: EntryDelivery::Read,
             }
         );
         // unknown keys within the MAJOR are tolerated (spec 18 §3.2 / S57)
