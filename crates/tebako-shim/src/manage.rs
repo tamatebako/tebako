@@ -1023,7 +1023,10 @@ pub fn doctor_report(ctx: &Ctx) -> DoctorReport {
                 let reg = entry.reference();
                 match regcache::freshness(&ctx.home, reg) {
                     regcache::RegistryFreshness::Local => {
-                        let path = reg.strip_prefix("file://").unwrap_or(reg);
+                        let path = reg
+                            .strip_prefix("file://")
+                            .map(tebako_http::file_path_from_url)
+                            .unwrap_or(reg);
                         if !std::path::Path::new(path).is_file() {
                             problems.push(format!("registry {reg}: file not found"));
                         }

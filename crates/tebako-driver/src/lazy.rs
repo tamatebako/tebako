@@ -127,7 +127,10 @@ impl tfs::lazy_entry::LazyTransport for HttpTransport {
 
     fn document(&self, url: &str) -> Result<Vec<u8>, String> {
         if let Some(path) = url.strip_prefix("file://") {
-            return std::fs::read(path).map_err(|e| format!("{url}: {e}"));
+            // The remainder is not always a path: RFC 8089 makes a windows
+            // drive spelling `/C:/x`, so the one inverse owns the peel.
+            return std::fs::read(tebako_http::file_path_from_url(path))
+                .map_err(|e| format!("{url}: {e}"));
         }
         let response = tebako_http::get_raw(url, Some("application/json"), None)
             .map_err(|e| format!("{url}: {e}"))?;

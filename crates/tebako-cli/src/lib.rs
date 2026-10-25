@@ -1682,7 +1682,11 @@ fn seal_source_error(image_base: &str, e: tfs::source::SourceError) -> TebakoErr
 /// carve-out); a non-200 is the named 69, never a guess.
 fn get_sidecar(url: &str) -> Result<Vec<u8>, TebakoError> {
     if let Some(path) = url.strip_prefix("file://") {
-        return fs::read(path).map_err(|e| TebakoError::new(format!("{url}: {e}"), 69));
+        // RFC 8089 leaves a windows drive spelling as `/C:/x`; the one
+        // inverse owns the peel, and hand-rolling it here is what made the
+        // OFF-SPEC `file://C:/x` spelling the only one this verb accepted.
+        return fs::read(tebako_http::file_path_from_url(path))
+            .map_err(|e| TebakoError::new(format!("{url}: {e}"), 69));
     }
     let response = tebako_http::get_raw(url, Some("application/json"), None)
         .map_err(|e| TebakoError::new(format!("{url}: {e}"), 69))?;

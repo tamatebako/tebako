@@ -411,7 +411,7 @@ fn dispatch_section(ctx: &tebako_shim::Ctx) -> Section {
 /// host, the path verbatim for the `file:` spelling.
 fn seed_source_host(source: &str) -> String {
     if let Some(rest) = source.strip_prefix("file://") {
-        return rest.to_string();
+        return tebako_http::file_path_from_url(rest).to_string();
     }
     source
         .split("://")
