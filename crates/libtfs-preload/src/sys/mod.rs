@@ -1339,7 +1339,6 @@ pub unsafe extern "C" fn close(fd: c_int) -> c_int {
             Some(Ok(())) => 0,
             Some(Err(e)) => {
                 if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-                    #[allow(clippy::eprintln)]
                     eprintln!("[preload] close fd={fd} -> errno={e}");
                 }
                 set_errno(e);
