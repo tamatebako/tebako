@@ -559,19 +559,12 @@ real_fn!(
     c"execve",
     unsafe extern "C" fn(*const c_char, *const *mut c_char, *const *mut c_char) -> c_int
 );
-// The real `syscall(2)` entry, resolved past the shim's own export of the
-// symbol (tebako#935: libuv reaches statx through `syscall`, so a libc
-// wrapper interposition never sees a node stat). Fixed arity, not
-// variadic: Linux caps a syscall's argument count at six, so
-// `syscall(nr, a1..a6)` is ABI-identical to the variadic original for
-// every call the kernel can answer — and a variadic DEFINITION is not
-// expressible on stable Rust.
-#[cfg(target_pointer_width = "64")]
-real_fn!(
-    real_syscall,
-    c"syscall",
-    unsafe extern "C" fn(libc::c_long, usize, usize, usize, usize, usize, usize) -> libc::c_long
-);
+// The `syscall(2)` forward is the INSTRUCTION itself (see `instruction`
+// below): no libc wrapper to resolve and no dlsym on the intercepted path.
+// Fixed arity, not variadic — Linux caps a syscall's arguments at six, so
+// `syscall(nr, a1..a6)` is ABI-identical to the variadic original for every
+// call the kernel can answer, and a variadic DEFINITION is not expressible
+// on stable Rust.
 real_fn!(
     real_posix_spawn,
     c"posix_spawn",
@@ -858,5 +851,84 @@ pub(super) unsafe extern "C" fn raw_syscall(
     arg5: usize,
     arg6: usize,
 ) -> libc::c_long {
-    unsafe { real_syscall()(number, arg1, arg2, arg3, arg4, arg5, arg6) }
+    let ret = unsafe { instruction(number, arg1, arg2, arg3, arg4, arg5, arg6) };
+    // The kernel's convention: a negative return in the errno window IS the
+    // error, and every caller of `syscall(2)` expects libc's canonical form
+    // (-1 with `errno` set), so that form is produced here.
+    if (-4095..0).contains(&ret) {
+        unsafe { *libc::__errno_location() = (-ret) as libc::c_int };
+        -1
+    } else {
+        ret
+    }
+}
+
+/// The kernel entry itself — no libc, no allocation, no loader lock.
+///
+/// `libc::syscall` cannot be called from inside the interposition (it
+/// resolves to this very symbol), and `dlsym(RTLD_NEXT, "syscall")`
+/// ALLOCATES under the loader lock — the tebako#527 hazard the statx layer
+/// was built to avoid. The first intercepted call can land in a process's
+/// earliest startup, where that allocation deadlocks it silently: a
+/// statically-linked interpreter whose first `syscall()` lands there hangs
+/// with no output at all (tebako-runtime-python#71's 60-second boot
+/// timeouts). The instruction is the ABI on both shipped arches, so this is
+/// the same code the kernel sees from libc.
+#[cfg(target_arch = "aarch64")]
+unsafe fn instruction(
+    number: libc::c_long,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+    arg4: usize,
+    arg5: usize,
+    arg6: usize,
+) -> libc::c_long {
+    let ret: libc::c_long;
+    unsafe {
+        core::arch::asm!(
+            "svc 0",
+            in("x8") number,
+            inlateout("x0") arg1 => ret,
+            in("x1") arg2,
+            in("x2") arg3,
+            in("x3") arg4,
+            in("x4") arg5,
+            in("x5") arg6,
+            options(nostack)
+        );
+    }
+    ret
+}
+
+/// x86_64's `syscall` instruction: the number in `rax`, arguments in
+/// `rdi`/`rsi`/`rdx`/`r10`/`r8`/`r9`, with `rcx`/`r11` clobbered by the
+/// instruction itself.
+#[cfg(target_arch = "x86_64")]
+unsafe fn instruction(
+    number: libc::c_long,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+    arg4: usize,
+    arg5: usize,
+    arg6: usize,
+) -> libc::c_long {
+    let ret: libc::c_long;
+    unsafe {
+        core::arch::asm!(
+            "syscall",
+            inlateout("rax") number => ret,
+            in("rdi") arg1,
+            in("rsi") arg2,
+            in("rdx") arg3,
+            in("r10") arg4,
+            in("r8") arg5,
+            in("r9") arg6,
+            lateout("rcx") _,
+            lateout("r11") _,
+            options(nostack)
+        );
+    }
+    ret
 }
