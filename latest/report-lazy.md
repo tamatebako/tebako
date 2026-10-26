@@ -3,433 +3,387 @@
 ## linux-gnu-arm64
 
 Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15947.3 GiB
-Versions: tebako 2.8.63
+Versions: tebako 2.8.64
 
 ### boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.235 | 0.227 | 0.237 | 0.004 | 0.234 | 0.234 | 108.3 | 1.00× |
-| lazy-ruby | 5 | 0.235 | 0.231 | 0.239 | 0.003 | 0.236 | 0.234 | 108.3 | 1.00× |
+| eager-ruby | 5 | 0.225 | 0.225 | 0.227 | 0.001 | 0.225 | 0.224 | 108.3 | 1.00× |
+| lazy-ruby | 5 | 0.227 | 0.225 | 0.229 | 0.002 | 0.226 | 0.225 | 108.3 | 0.99× |
 
 ### boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.239 | 0.237 | 0.239 | 0.001 | 0.238 | 0.237 | 108.3 | 1.00× |
-| lazy-ruby | 3 | 2.386 | 2.371 | 2.396 | 0.012 | 2.384 | 2.518 | 108.3 | 0.10× |
+| eager-ruby | 3 | 0.225 | 0.225 | 0.227 | 0.001 | 0.225 | 0.223 | 108.3 | 1.00× |
+| lazy-ruby | 3 | 2.362 | 2.354 | 2.362 | 0.005 | 2.359 | 2.493 | 108.3 | 0.10× |
 
 ### fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.437 | 0.434 | 0.437 | 0.001 | 0.436 | 0.434 | 108.3 | 1.00× |
-| lazy-ruby | 5 | 0.438 | 0.437 | 0.439 | 0.001 | 0.438 | 0.436 | 108.3 | 1.00× |
+| eager-ruby | 5 | 0.430 | 0.426 | 0.441 | 0.006 | 0.432 | 0.429 | 108.3 | 1.00× |
+| lazy-ruby | 5 | 0.432 | 0.424 | 0.439 | 0.006 | 0.432 | 0.430 | 108.3 | 1.00× |
 
 ### fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.439 | 0.439 | 0.439 | 0.000 | 0.439 | 0.438 | 108.3 | 1.00× |
-| lazy-ruby | 3 | 2.582 | 2.581 | 2.589 | 0.004 | 2.584 | 2.715 | 108.3 | 0.17× |
+| eager-ruby | 3 | 0.430 | 0.426 | 0.432 | 0.003 | 0.430 | 0.429 | 108.3 | 1.00× |
+| lazy-ruby | 3 | 2.578 | 2.555 | 2.578 | 0.013 | 2.571 | 2.709 | 108.3 | 0.17× |
 
 ### ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.262 | 0.260 | 0.264 | 0.002 | 0.262 | 0.261 | 180.2 | 1.00× |
-| lazy-ruby | 5 | 0.264 | 0.262 | 0.264 | 0.001 | 0.263 | 0.262 | 180.2 | 0.99× |
+| eager-ruby | 5 | 0.251 | 0.245 | 0.272 | 0.011 | 0.256 | 0.251 | 180.2 | 1.00× |
+| lazy-ruby | 5 | 0.249 | 0.247 | 0.262 | 0.006 | 0.253 | 0.248 | 180.3 | 1.01× |
 
 ### ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.260 | 0.260 | 0.260 | 0.000 | 0.260 | 0.259 | 180.2 | 1.00× |
-| lazy-ruby | 3 | 2.402 | 2.398 | 2.404 | 0.003 | 2.401 | 2.536 | 156.9 | 0.11× |
+| eager-ruby | 3 | 0.251 | 0.251 | 0.251 | 0.000 | 0.251 | 0.250 | 180.2 | 1.00× |
+| lazy-ruby | 3 | 2.378 | 2.376 | 2.391 | 0.008 | 2.382 | 2.511 | 154.8 | 0.11× |
 
 ### treewalk — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.412 | 0.412 | 0.414 | 0.001 | 0.413 | 0.411 | 108.3 | 1.00× |
-| lazy-ruby | 5 | 0.414 | 0.412 | 0.416 | 0.002 | 0.414 | 0.412 | 108.3 | 1.00× |
+| eager-ruby | 5 | 0.406 | 0.401 | 0.410 | 0.003 | 0.405 | 0.404 | 108.3 | 1.00× |
+| lazy-ruby | 5 | 0.404 | 0.403 | 0.410 | 0.003 | 0.406 | 0.403 | 108.3 | 1.00× |
 
 ### treewalk — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.412 | 0.408 | 0.412 | 0.002 | 0.410 | 0.410 | 108.3 | 1.00× |
-| lazy-ruby | 3 | 2.556 | 2.535 | 2.585 | 0.025 | 2.559 | 2.671 | 108.3 | 0.16× |
+| eager-ruby | 3 | 0.410 | 0.403 | 0.414 | 0.005 | 0.409 | 0.408 | 108.3 | 1.00× |
+| lazy-ruby | 3 | 2.539 | 2.535 | 2.549 | 0.007 | 2.541 | 2.671 | 108.3 | 0.16× |
 
 ## linux-gnu-x86_64
 
 Runner: ubuntu-24.04 · x86_64 · 4 cpus · 15989.7 GiB
-Versions: tebako 2.8.63
+Versions: tebako 2.8.64
 
 ### boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.186 | 0.184 | 0.192 | 0.003 | 0.187 | 0.184 | 113.7 | 1.00× |
-| lazy-ruby | 5 | 0.186 | 0.184 | 0.192 | 0.003 | 0.187 | 0.185 | 113.7 | 1.00× |
+| eager-ruby | 5 | 0.213 | 0.213 | 0.219 | 0.003 | 0.215 | 0.212 | 116.0 | 1.00× |
+| lazy-ruby | 5 | 0.217 | 0.209 | 0.219 | 0.004 | 0.215 | 0.215 | 116.0 | 0.98× |
 
 ### boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.184 | 0.181 | 0.206 | 0.013 | 0.190 | 0.183 | 113.7 | 1.00× |
-| lazy-ruby | 3 | 4.805 | 4.787 | 4.819 | 0.016 | 4.804 | 4.861 | 113.7 | 0.04× |
+| eager-ruby | 3 | 0.215 | 0.211 | 0.217 | 0.003 | 0.214 | 0.214 | 116.0 | 1.00× |
+| lazy-ruby | 3 | 5.639 | 5.549 | 5.641 | 0.052 | 5.610 | 5.687 | 116.0 | 0.04× |
 
 ### fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.309 | 0.305 | 0.323 | 0.007 | 0.312 | 0.308 | 113.7 | 1.00× |
-| lazy-ruby | 5 | 0.291 | 0.285 | 0.305 | 0.009 | 0.292 | 0.289 | 113.7 | 1.06× |
+| eager-ruby | 5 | 0.406 | 0.386 | 0.406 | 0.009 | 0.400 | 0.404 | 116.0 | 1.00× |
+| lazy-ruby | 5 | 0.395 | 0.391 | 0.401 | 0.005 | 0.396 | 0.394 | 116.0 | 1.03× |
 
 ### fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.309 | 0.307 | 0.309 | 0.001 | 0.309 | 0.308 | 113.7 | 1.00× |
-| lazy-ruby | 3 | 4.862 | 4.837 | 4.940 | 0.054 | 4.880 | 4.922 | 113.7 | 0.06× |
+| eager-ruby | 3 | 0.395 | 0.391 | 0.395 | 0.002 | 0.394 | 0.393 | 116.0 | 1.00× |
+| lazy-ruby | 3 | 5.972 | 5.823 | 6.115 | 0.146 | 5.970 | 6.023 | 116.0 | 0.07× |
 
 ### ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.204 | 0.200 | 0.204 | 0.002 | 0.203 | 0.202 | 193.7 | 1.00× |
-| lazy-ruby | 5 | 0.204 | 0.200 | 0.213 | 0.005 | 0.206 | 0.203 | 195.4 | 1.00× |
+| eager-ruby | 5 | 0.258 | 0.254 | 0.264 | 0.005 | 0.259 | 0.258 | 195.6 | 1.00× |
+| lazy-ruby | 5 | 0.256 | 0.250 | 0.257 | 0.003 | 0.254 | 0.254 | 195.3 | 1.01× |
 
 ### ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.202 | 0.200 | 0.202 | 0.001 | 0.201 | 0.201 | 194.1 | 1.00× |
-| lazy-ruby | 3 | 4.795 | 4.782 | 4.816 | 0.017 | 4.798 | 4.858 | 166.4 | 0.04× |
+| eager-ruby | 3 | 0.260 | 0.259 | 0.260 | 0.001 | 0.260 | 0.260 | 195.4 | 1.00× |
+| lazy-ruby | 3 | 5.628 | 5.594 | 5.775 | 0.096 | 5.666 | 5.694 | 166.1 | 0.05× |
 
 ### treewalk — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.319 | 0.317 | 0.326 | 0.003 | 0.320 | 0.318 | 117.7 | 1.00× |
-| lazy-ruby | 5 | 0.318 | 0.317 | 0.326 | 0.004 | 0.320 | 0.317 | 117.5 | 1.01× |
+| eager-ruby | 5 | 0.396 | 0.388 | 0.407 | 0.007 | 0.398 | 0.396 | 117.1 | 1.00× |
+| lazy-ruby | 5 | 0.398 | 0.390 | 0.411 | 0.008 | 0.399 | 0.396 | 117.3 | 1.00× |
 
 ### treewalk — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.320 | 0.318 | 0.320 | 0.001 | 0.319 | 0.318 | 117.7 | 1.00× |
-| lazy-ruby | 3 | 4.879 | 4.853 | 4.928 | 0.038 | 4.887 | 4.940 | 113.7 | 0.07× |
+| eager-ruby | 3 | 0.401 | 0.393 | 0.413 | 0.010 | 0.402 | 0.400 | 117.4 | 1.00× |
+| lazy-ruby | 3 | 5.960 | 5.720 | 6.129 | 0.206 | 5.936 | 6.026 | 116.0 | 0.07× |
 
 ## linux-musl-arm64
 
-Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15947.3 GiB
-Versions: tebako 2.8.63
+Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15947.4 GiB
+Versions: tebako 2.8.64
 
 ### boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.231 | 0.225 | 0.231 | 0.003 | 0.230 | 0.229 | 74.4 | 1.00× |
-| lazy-ruby | 5 | 0.231 | 0.229 | 0.233 | 0.001 | 0.231 | 0.230 | 74.4 | 1.00× |
+| eager-ruby | 5 | 0.233 | 0.233 | 0.235 | 0.001 | 0.234 | 0.232 | 74.8 | 1.00× |
+| lazy-ruby | 5 | 0.233 | 0.231 | 0.235 | 0.002 | 0.233 | 0.232 | 74.8 | 1.00× |
 
 ### boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.231 | 0.229 | 0.231 | 0.001 | 0.230 | 0.229 | 74.4 | 1.00× |
-| lazy-ruby | 3 | 2.224 | 2.222 | 2.241 | 0.010 | 2.229 | 2.337 | 74.4 | 0.10× |
+| eager-ruby | 3 | 0.233 | 0.231 | 0.233 | 0.001 | 0.232 | 0.232 | 74.8 | 1.00× |
+| lazy-ruby | 3 | 2.241 | 2.239 | 2.253 | 0.008 | 2.244 | 2.355 | 74.8 | 0.10× |
 
 ### fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.441 | 0.440 | 0.447 | 0.003 | 0.442 | 0.440 | 74.4 | 1.00× |
-| lazy-ruby | 5 | 0.439 | 0.437 | 0.441 | 0.001 | 0.439 | 0.437 | 74.4 | 1.00× |
+| eager-ruby | 5 | 0.443 | 0.439 | 0.445 | 0.003 | 0.442 | 0.441 | 74.8 | 1.00× |
+| lazy-ruby | 5 | 0.441 | 0.439 | 0.443 | 0.002 | 0.441 | 0.440 | 74.8 | 1.00× |
 
 ### fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.443 | 0.441 | 0.443 | 0.001 | 0.442 | 0.440 | 74.4 | 1.00× |
-| lazy-ruby | 3 | 2.436 | 2.423 | 2.444 | 0.011 | 2.434 | 2.550 | 74.4 | 0.18× |
+| eager-ruby | 3 | 0.441 | 0.441 | 0.441 | 0.000 | 0.441 | 0.440 | 74.8 | 1.00× |
+| lazy-ruby | 3 | 2.443 | 2.433 | 2.447 | 0.007 | 2.441 | 2.558 | 74.8 | 0.18× |
 
 ### ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.255 | 0.255 | 0.257 | 0.001 | 0.256 | 0.254 | 182.4 | 1.00× |
-| lazy-ruby | 5 | 0.255 | 0.255 | 0.259 | 0.002 | 0.256 | 0.254 | 182.4 | 1.00× |
+| eager-ruby | 5 | 0.256 | 0.253 | 0.260 | 0.002 | 0.256 | 0.255 | 182.5 | 1.00× |
+| lazy-ruby | 5 | 0.256 | 0.255 | 0.258 | 0.001 | 0.256 | 0.255 | 182.3 | 1.00× |
 
 ### ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.255 | 0.253 | 0.257 | 0.002 | 0.255 | 0.254 | 182.3 | 1.00× |
-| lazy-ruby | 3 | 2.256 | 2.250 | 2.265 | 0.007 | 2.257 | 2.371 | 156.0 | 0.11× |
+| eager-ruby | 3 | 0.256 | 0.256 | 0.258 | 0.001 | 0.256 | 0.255 | 182.4 | 1.00× |
+| lazy-ruby | 3 | 2.257 | 2.255 | 2.267 | 0.007 | 2.260 | 2.373 | 156.4 | 0.11× |
 
 ### treewalk — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.426 | 0.420 | 0.426 | 0.003 | 0.425 | 0.425 | 101.6 | 1.00× |
-| lazy-ruby | 5 | 0.426 | 0.424 | 0.426 | 0.001 | 0.425 | 0.424 | 101.7 | 1.00× |
+| eager-ruby | 5 | 0.424 | 0.420 | 0.441 | 0.008 | 0.426 | 0.422 | 101.6 | 1.00× |
+| lazy-ruby | 5 | 0.424 | 0.422 | 0.432 | 0.004 | 0.425 | 0.423 | 101.7 | 1.00× |
 
 ### treewalk — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.428 | 0.426 | 0.430 | 0.002 | 0.428 | 0.426 | 101.7 | 1.00× |
-| lazy-ruby | 3 | 2.421 | 2.419 | 2.423 | 0.002 | 2.421 | 2.535 | 74.4 | 0.18× |
+| eager-ruby | 3 | 0.422 | 0.422 | 0.424 | 0.001 | 0.423 | 0.421 | 101.7 | 1.00× |
+| lazy-ruby | 3 | 2.428 | 2.426 | 2.438 | 0.007 | 2.431 | 2.539 | 74.8 | 0.17× |
 
 ## linux-musl-x86_64
 
 Runner: ubuntu-24.04 · x86_64 · 4 cpus · 15989.7 GiB
-Versions: tebako 2.8.63
+Versions: tebako 2.8.64
 
 ### boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.288 | 0.288 | 0.291 | 0.002 | 0.289 | 0.287 | 82.4 | 1.00× |
-| lazy-ruby | 5 | 0.290 | 0.286 | 0.295 | 0.003 | 0.290 | 0.289 | 82.5 | 0.99× |
+| eager-ruby | 5 | 0.291 | 0.290 | 0.294 | 0.002 | 0.292 | 0.290 | 82.5 | 1.00× |
+| lazy-ruby | 5 | 0.293 | 0.290 | 0.294 | 0.002 | 0.292 | 0.291 | 82.6 | 0.99× |
 
 ### boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.287 | 0.285 | 0.290 | 0.003 | 0.288 | 0.285 | 82.4 | 1.00× |
-| lazy-ruby | 3 | 7.479 | 7.340 | 7.583 | 0.122 | 7.467 | 7.531 | 80.1 | 0.04× |
+| eager-ruby | 3 | 0.291 | 0.289 | 0.293 | 0.002 | 0.291 | 0.290 | 82.5 | 1.00× |
+| lazy-ruby | 3 | 7.410 | 7.387 | 7.424 | 0.019 | 7.407 | 7.446 | 80.6 | 0.04× |
 
 ### fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.502 | 0.497 | 0.505 | 0.003 | 0.502 | 0.501 | 82.4 | 1.00× |
-| lazy-ruby | 5 | 0.500 | 0.498 | 0.504 | 0.003 | 0.501 | 0.499 | 82.4 | 1.01× |
+| eager-ruby | 5 | 0.522 | 0.512 | 0.528 | 0.007 | 0.521 | 0.521 | 82.4 | 1.00× |
+| lazy-ruby | 5 | 0.521 | 0.519 | 0.535 | 0.007 | 0.524 | 0.519 | 82.3 | 1.00× |
 
 ### fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.502 | 0.501 | 0.503 | 0.002 | 0.502 | 0.500 | 84.2 | 1.00× |
-| lazy-ruby | 3 | 7.546 | 7.494 | 7.558 | 0.034 | 7.533 | 7.600 | 80.1 | 0.07× |
+| eager-ruby | 3 | 0.520 | 0.519 | 0.525 | 0.003 | 0.521 | 0.520 | 82.5 | 1.00× |
+| lazy-ruby | 3 | 7.624 | 7.620 | 7.630 | 0.005 | 7.625 | 7.697 | 80.6 | 0.07× |
 
 ### ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.327 | 0.326 | 0.329 | 0.001 | 0.328 | 0.326 | 191.7 | 1.00× |
-| lazy-ruby | 5 | 0.326 | 0.325 | 0.329 | 0.001 | 0.327 | 0.324 | 192.2 | 1.00× |
+| eager-ruby | 5 | 0.325 | 0.324 | 0.326 | 0.001 | 0.325 | 0.324 | 192.5 | 1.00× |
+| lazy-ruby | 5 | 0.326 | 0.324 | 0.326 | 0.001 | 0.325 | 0.325 | 191.6 | 1.00× |
 
 ### ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.327 | 0.323 | 0.327 | 0.003 | 0.326 | 0.326 | 191.5 | 1.00× |
-| lazy-ruby | 3 | 7.489 | 7.473 | 7.606 | 0.073 | 7.523 | 7.541 | 166.8 | 0.04× |
+| eager-ruby | 3 | 0.326 | 0.326 | 0.329 | 0.002 | 0.327 | 0.324 | 192.2 | 1.00× |
+| lazy-ruby | 3 | 7.447 | 7.441 | 7.476 | 0.019 | 7.454 | 7.514 | 168.0 | 0.04× |
 
 ### treewalk — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.537 | 0.535 | 0.538 | 0.001 | 0.537 | 0.535 | 112.2 | 1.00× |
-| lazy-ruby | 5 | 0.532 | 0.530 | 0.534 | 0.001 | 0.532 | 0.531 | 112.8 | 1.01× |
+| eager-ruby | 5 | 0.541 | 0.539 | 0.543 | 0.002 | 0.541 | 0.540 | 112.5 | 1.00× |
+| lazy-ruby | 5 | 0.542 | 0.541 | 0.546 | 0.002 | 0.543 | 0.540 | 112.4 | 1.00× |
 
 ### treewalk — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.533 | 0.530 | 0.535 | 0.002 | 0.533 | 0.531 | 112.6 | 1.00× |
-| lazy-ruby | 3 | 7.876 | 7.771 | 7.902 | 0.069 | 7.850 | 7.964 | 80.1 | 0.07× |
+| eager-ruby | 3 | 0.544 | 0.542 | 0.547 | 0.003 | 0.544 | 0.542 | 112.6 | 1.00× |
+| lazy-ruby | 3 | 7.687 | 7.665 | 7.694 | 0.015 | 7.682 | 7.739 | 80.6 | 0.07× |
 
 ## macos-arm64
 
 Runner: macos-14 · aarch64 · 3 cpus · 7168.0 GiB
-Versions: tebako 2.8.63
+Versions: tebako 2.8.64
 
 ### boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.180 | 0.168 | 0.183 | 0.006 | 0.177 | 0.163 | 65.1 | 1.00× |
-| lazy-ruby | 5 | 0.182 | 0.167 | 0.185 | 0.007 | 0.179 | 0.163 | 64.9 | 0.99× |
+| eager-ruby | 5 | 0.239 | 0.222 | 0.248 | 0.012 | 0.237 | 0.229 | 66.2 | 1.00× |
+| lazy-ruby | 5 | 0.241 | 0.211 | 0.274 | 0.023 | 0.242 | 0.229 | 65.4 | 0.99× |
 
 ### boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.179 | 0.175 | 0.184 | 0.005 | 0.179 | 0.164 | 66.2 | 1.00× |
-| lazy-ruby | 3 | 0.793 | 0.791 | 0.799 | 0.004 | 0.794 | 0.856 | 53.7 | 0.23× |
+| eager-ruby | 3 | 0.282 | 0.255 | 0.310 | 0.028 | 0.283 | 0.272 | 65.7 | 1.00× |
+| lazy-ruby | 3 | 1.054 | 1.032 | 1.238 | 0.113 | 1.108 | 1.160 | 51.9 | 0.27× |
 
 ### fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.363 | 0.354 | 0.381 | 0.011 | 0.365 | 0.353 | 65.8 | 1.00× |
-| lazy-ruby | 5 | 0.372 | 0.357 | 0.375 | 0.007 | 0.370 | 0.353 | 65.4 | 0.98× |
+| eager-ruby | 5 | 0.441 | 0.428 | 0.468 | 0.019 | 0.448 | 0.420 | 64.5 | 1.00× |
+| lazy-ruby | 5 | 0.464 | 0.440 | 0.516 | 0.031 | 0.465 | 0.444 | 65.5 | 0.95× |
 
 ### fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.369 | 0.356 | 0.372 | 0.008 | 0.366 | 0.351 | 66.4 | 1.00× |
-| lazy-ruby | 3 | 0.992 | 0.992 | 0.995 | 0.002 | 0.993 | 1.044 | 54.5 | 0.37× |
+| eager-ruby | 3 | 0.459 | 0.420 | 0.462 | 0.024 | 0.447 | 0.443 | 64.0 | 1.00× |
+| lazy-ruby | 3 | 1.177 | 1.095 | 1.267 | 0.086 | 1.179 | 1.243 | 54.7 | 0.39× |
 
 ### ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.198 | 0.193 | 0.205 | 0.005 | 0.198 | 0.179 | 167.7 | 1.00× |
-| lazy-ruby | 5 | 0.200 | 0.193 | 0.203 | 0.004 | 0.199 | 0.182 | 166.5 | 0.99× |
+| eager-ruby | 5 | 0.219 | 0.204 | 0.230 | 0.010 | 0.218 | 0.202 | 166.2 | 1.00× |
+| lazy-ruby | 5 | 0.221 | 0.214 | 0.236 | 0.009 | 0.221 | 0.203 | 165.3 | 0.99× |
 
 ### ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.198 | 0.197 | 0.201 | 0.002 | 0.199 | 0.177 | 167.0 | 1.00× |
-| lazy-ruby | 3 | 0.828 | 0.823 | 0.856 | 0.018 | 0.836 | 0.899 | 153.4 | 0.24× |
+| eager-ruby | 3 | 0.235 | 0.221 | 0.238 | 0.009 | 0.231 | 0.208 | 168.3 | 1.00× |
+| lazy-ruby | 3 | 0.996 | 0.991 | 1.039 | 0.027 | 1.009 | 1.099 | 150.8 | 0.24× |
 
 ### treewalk — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.351 | 0.339 | 0.355 | 0.007 | 0.348 | 0.333 | 94.8 | 1.00× |
-| lazy-ruby | 5 | 0.352 | 0.345 | 0.360 | 0.006 | 0.351 | 0.333 | 95.6 | 1.00× |
+| eager-ruby | 5 | 0.431 | 0.395 | 0.451 | 0.022 | 0.428 | 0.413 | 98.2 | 1.00× |
+| lazy-ruby | 5 | 0.427 | 0.390 | 0.434 | 0.018 | 0.420 | 0.409 | 94.9 | 1.01× |
 
 ### treewalk — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.354 | 0.349 | 0.357 | 0.004 | 0.353 | 0.334 | 94.5 | 1.00× |
-| lazy-ruby | 3 | 1.001 | 0.967 | 1.013 | 0.024 | 0.994 | 1.047 | 67.0 | 0.35× |
+| eager-ruby | 3 | 0.427 | 0.395 | 0.430 | 0.019 | 0.418 | 0.406 | 92.7 | 1.00× |
+| lazy-ruby | 3 | 1.161 | 1.129 | 1.209 | 0.040 | 1.166 | 1.226 | 67.1 | 0.37× |
 
 ## macos-x86_64
 
 Runner: macos-15-intel · x86_64 · 4 cpus · 14336.0 GiB
-Versions: tebako 2.8.63
 
-### boot — warm
+Unavailable arms:
 
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.451 | 0.402 | 0.582 | 0.070 | 0.475 | 0.443 | 57.0 | 1.00× |
-| lazy-ruby | 5 | 0.448 | 0.419 | 0.472 | 0.021 | 0.449 | 0.443 | 57.2 | 1.01× |
-
-### boot — cold (install/first-boot)
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.476 | 0.466 | 1.026 | 0.321 | 0.656 | 0.464 | 57.3 | 1.00× |
-| lazy-ruby | 3 | 3.453 | 3.189 | 3.658 | 0.235 | 3.433 | 3.558 | 42.8 | 0.14× |
-
-### fib — warm
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.738 | 0.678 | 0.852 | 0.066 | 0.751 | 0.726 | 57.2 | 1.00× |
-| lazy-ruby | 5 | 0.769 | 0.704 | 0.882 | 0.071 | 0.768 | 0.748 | 57.5 | 0.96× |
-
-### fib — cold (install/first-boot)
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.878 | 0.867 | 0.908 | 0.021 | 0.884 | 0.867 | 57.2 | 1.00× |
-| lazy-ruby | 3 | 4.426 | 4.195 | 5.048 | 0.441 | 4.556 | 4.573 | 43.0 | 0.20× |
-
-### ioread — warm
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.400 | 0.396 | 0.412 | 0.006 | 0.402 | 0.391 | 141.7 | 1.00× |
-| lazy-ruby | 5 | 0.398 | 0.396 | 0.411 | 0.006 | 0.402 | 0.388 | 141.7 | 1.00× |
-
-### ioread — cold (install/first-boot)
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.394 | 0.394 | 0.406 | 0.007 | 0.398 | 0.386 | 141.6 | 1.00× |
-| lazy-ruby | 3 | 3.305 | 3.229 | 3.360 | 0.066 | 3.298 | 3.410 | 126.7 | 0.12× |
-
-### treewalk — warm
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.676 | 0.641 | 0.736 | 0.038 | 0.688 | 0.660 | 82.9 | 1.00× |
-| lazy-ruby | 5 | 0.700 | 0.633 | 0.736 | 0.038 | 0.692 | 0.688 | 83.3 | 0.97× |
-
-### treewalk — cold (install/first-boot)
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.666 | 0.660 | 0.694 | 0.018 | 0.673 | 0.649 | 82.6 | 1.00× |
-| lazy-ruby | 3 | 4.128 | 3.563 | 5.115 | 0.785 | 4.269 | 4.239 | 46.6 | 0.16× |
+- boot / eager-ruby: unavailable — the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS
+- boot / lazy-ruby: unavailable — the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS
+- fib / eager-ruby: unavailable — the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS
+- fib / lazy-ruby: unavailable — the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS
+- ioread / eager-ruby: unavailable — the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS
+- ioread / lazy-ruby: unavailable — the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS
+- treewalk / eager-ruby: unavailable — the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS
+- treewalk / lazy-ruby: unavailable — the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/latest/download/SHA256SUMS
 
 ## windows-ucrt64
 
 Runner: windows-latest · x86_64 · 4 cpus · 16378.7 GiB
-Versions: tebako 2.8.63
+Versions: tebako 2.8.64
 
 ### boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.235 | 0.233 | 0.247 | 0.007 | 0.239 | 0.234 | 33.3 | 1.00× |
-| lazy-ruby | 5 | 0.234 | 0.233 | 0.241 | 0.003 | 0.235 | 0.234 | 33.4 | 1.01× |
+| eager-ruby | 5 | 0.240 | 0.235 | 0.242 | 0.002 | 0.239 | 0.250 | 33.4 | 1.00× |
+| lazy-ruby | 5 | 0.238 | 0.236 | 0.247 | 0.004 | 0.240 | 0.234 | 33.6 | 1.01× |
 
 ### boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.241 | 0.234 | 0.243 | 0.005 | 0.239 | 0.234 | 33.5 | 1.00× |
-| lazy-ruby | 3 | 0.806 | 0.803 | 0.809 | 0.003 | 0.806 | 0.828 | 25.6 | 0.30× |
+| eager-ruby | 3 | 0.244 | 0.237 | 0.246 | 0.005 | 0.242 | 0.234 | 33.5 | 1.00× |
+| lazy-ruby | 3 | 0.823 | 0.821 | 0.826 | 0.002 | 0.823 | 0.844 | 25.7 | 0.30× |
 
 ### fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.463 | 0.461 | 0.469 | 0.003 | 0.464 | 0.453 | 33.3 | 1.00× |
-| lazy-ruby | 5 | 0.459 | 0.458 | 0.462 | 0.002 | 0.459 | 0.453 | 33.6 | 1.01× |
+| eager-ruby | 5 | 0.460 | 0.454 | 0.469 | 0.007 | 0.462 | 0.453 | 33.3 | 1.00× |
+| lazy-ruby | 5 | 0.468 | 0.458 | 0.470 | 0.006 | 0.465 | 0.453 | 33.3 | 0.98× |
 
 ### fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.462 | 0.459 | 0.472 | 0.007 | 0.464 | 0.453 | 33.9 | 1.00× |
-| lazy-ruby | 3 | 1.033 | 1.027 | 1.041 | 0.007 | 1.034 | 1.047 | 25.5 | 0.45× |
+| eager-ruby | 3 | 0.459 | 0.458 | 0.462 | 0.002 | 0.460 | 0.453 | 33.5 | 1.00× |
+| lazy-ruby | 3 | 1.033 | 1.027 | 1.049 | 0.011 | 1.036 | 1.094 | 25.6 | 0.44× |
 
 ### ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.290 | 0.284 | 0.293 | 0.004 | 0.288 | 0.281 | 140.9 | 1.00× |
-| lazy-ruby | 5 | 0.283 | 0.282 | 0.292 | 0.004 | 0.286 | 0.297 | 140.6 | 1.03× |
+| eager-ruby | 5 | 0.289 | 0.284 | 0.297 | 0.005 | 0.290 | 0.297 | 140.6 | 1.00× |
+| lazy-ruby | 5 | 0.289 | 0.285 | 0.298 | 0.005 | 0.291 | 0.281 | 140.8 | 1.00× |
 
 ### ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.286 | 0.284 | 0.290 | 0.003 | 0.286 | 0.281 | 141.0 | 1.00× |
-| lazy-ruby | 3 | 0.852 | 0.843 | 0.867 | 0.012 | 0.854 | 0.891 | 132.5 | 0.34× |
+| eager-ruby | 3 | 0.289 | 0.283 | 0.292 | 0.005 | 0.288 | 0.297 | 141.1 | 1.00× |
+| lazy-ruby | 3 | 0.853 | 0.851 | 0.861 | 0.005 | 0.855 | 0.875 | 132.8 | 0.34× |
 
 ### treewalk — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 5 | 0.508 | 0.494 | 0.518 | 0.009 | 0.507 | 0.500 | 75.1 | 1.00× |
-| lazy-ruby | 5 | 0.501 | 0.494 | 0.510 | 0.006 | 0.502 | 0.500 | 75.2 | 1.02× |
+| eager-ruby | 5 | 0.501 | 0.499 | 0.521 | 0.010 | 0.506 | 0.500 | 75.3 | 1.00× |
+| lazy-ruby | 5 | 0.503 | 0.501 | 0.506 | 0.002 | 0.503 | 0.516 | 75.4 | 0.99× |
 
 ### treewalk — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| eager-ruby | 3 | 0.504 | 0.503 | 0.504 | 0.001 | 0.504 | 0.500 | 75.4 | 1.00× |
-| lazy-ruby | 3 | 1.070 | 1.065 | 1.071 | 0.003 | 1.069 | 1.109 | 50.6 | 0.47× |
+| eager-ruby | 3 | 0.504 | 0.503 | 0.512 | 0.005 | 0.507 | 0.516 | 75.4 | 1.00× |
+| lazy-ruby | 3 | 1.066 | 1.061 | 1.073 | 0.006 | 1.067 | 1.109 | 50.8 | 0.47× |
 
 ---
 
-Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15947.3 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15989.7 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15947.3 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15989.7 GiB; macos-arm64 = macos-14 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
+Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15947.3 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15989.7 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15947.4 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15989.7 GiB; macos-arm64 = macos-14 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
 
 GitHub-hosted runners are shared, multi-tenant machines; treat differences under ~10% as noise and read min alongside median — min is the cross-noise-comparable figure (noise inflates, never deflates).
 
