@@ -131,6 +131,38 @@ honors it or fails closed — never a silent fallback (invariant 9):
 | `seccomp-notify` (tier 2a — **PLANNED**: a declared `seccomp-notify` is a named boot error 65 until the tier lands) | the wrapper-as-executor installs the `SECCOMP_RET_USER_NOTIF` filter at spawn and serves the static interpreter's file syscalls from the mounts, enforcing the same `host_policy` | linux only; statically-linked interpreters |
 | `exec-cache` (tier 2b — THE windows DEFAULT, universal fallback) | materialize the interpreter home tree from the mounted env image into the content-addressed exec cache (spec 22 §6), then spawn the host copy (a JVM needs no VFS once its home is materialized) | universal; the only windows answer (no interposition API) and the POSIX answer for statics without tier 2a |
 
+### 3.1 The entry's delivery — `read` or `exec` (MINOR 5)
+
+A mechanism answers "how do the interpreter's reads reach the mounts".
+It does not answer the narrower question the ENTRY raises: the wrapper
+must hand the interpreter its entrypoint, and there are two ways to do
+it, which are not interchangeable.
+
+- **`read` (the default).** The entry keeps its VFS spelling. The
+  interpreter opens it through the armed shim, so the entry's own
+  relative includes — `require('../lib/cli.js')` in node's 54-byte
+  `bin/npm`, a `require_relative` beside a pressed script — resolve
+  INSIDE the image, which is where their targets live.
+- **`exec`.** The entry is materialized to a host twin and the twin
+  spelling replaces it in argv. This is required by a runtime whose
+  file-runner SPAWN-EXECS its entry: the spawned shebang resolves
+  through the kernel's environment, and the host `PATH` decides the
+  interpreter — the failure tebako#831 recorded, where a hostile `bun`
+  earlier on `PATH` won.
+
+The choice is the RUNTIME's, never the file's. Every entry inside an
+image is `0644` data, so no property of the file can decide it; an
+image that does not declare `layout.entry_delivery` is read by
+default, and a runtime that needs a twin asks for it. The declaration
+is honoured under `preload`, which has an interposition able to read a
+virtual path; an `exec-cache` image materializes regardless, because
+it has none.
+
+Named errors: a value outside `read | exec` is exit 78 at layout
+parse, naming the image and the value. No other behaviour changes:
+both deliveries carry the same verified bytes, and the twin remains a
+derived, disposable artifact.
+
 - The store artifact stays pristine in every mechanism: the exec cache
   is DERIVED, content-keyed, disposable (the spec 22 §6 exception —
   execution materialization is not extraction of the store image).

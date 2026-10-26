@@ -729,6 +729,10 @@ mod tests {
             runtime_dll: None,
             interpreter: interpreter.map(str::to_string),
             visibility: visibility.map(str::to_string),
+            // The preload+link cases this suite already carries are the
+            // `read` shape; the exec arm is exercised by the factory's bun
+            // smoke, which is the runtime that needs it (tebako#831).
+            entry_delivery: EntryDelivery::Read,
         }
     }
 

@@ -283,6 +283,26 @@ mod tests {
     }
 
     #[test]
+    fn the_entry_delivery_defaults_to_read_and_refuses_a_bad_value() {
+        // Absent ⇒ read: an image's entries are data, so a twin is the
+        // exception a runtime must ask for (spec 29 §3.1).
+        let l = ImageLayout::check(GOOD, "/__tfs__", "/rt/t.tfs").unwrap();
+        assert_eq!(l.entry_delivery, EntryDelivery::Read);
+
+        // Declared exec is honoured.
+        let exec = format!("{GOOD}entry_delivery: exec\n");
+        let l = ImageLayout::check(&exec, "/__tfs__", "/rt/t.tfs").unwrap();
+        assert_eq!(l.entry_delivery, EntryDelivery::Exec);
+
+        // Anything else is the named 78, and the message names the value.
+        let bad = format!("{GOOD}entry_delivery: copy\n");
+        let err = ImageLayout::check(&bad, "/__tfs__", "/rt/t.tfs").unwrap_err();
+        assert_eq!(err.code, crate::EX_TEBAKO_LAYOUT);
+        assert!(err.message.contains("entry_delivery"), "{}", err.message);
+        assert!(err.message.contains("copy"), "{}", err.message);
+    }
+
+    #[test]
     fn the_preload_shim_declaration_is_additive() {
         // absent (older images) ⇒ no preload env downstream
         assert_eq!(
