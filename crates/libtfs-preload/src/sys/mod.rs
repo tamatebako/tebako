@@ -2426,27 +2426,7 @@ unsafe fn execve_via(
     let Some(p) = (unsafe { c_path(path) }) else {
         return real();
     };
-    // A fork/clone child gets the try-lock route. `engine_call` refuses any
-    // child of the arm-time process by design (the engine's lock may be
-    // held by a thread that no longer exists there), and bun — Zig code
-    // that clones and then execs its own `bin/bunx` — reached exactly that
-    // refusal, which surfaced as ENOENT (tebako#935). The try-lock route
-    // enters the inherited engine when it is free and answers a named
-    // EAGAIN when it is not; the alternative, refusing the child, is a
-    // fake "no such file" for a file the mounts do hold.
-    let answer = match engine_call(|| route::vfs_materialize_exec(p)) {
-        Some(answer) => Some(answer),
-        None => match route::fork_child_materialize_exec(p) {
-            Ok(answer) => Some(answer),
-            Err(e) => {
-                if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-                    eprintln!("[preload] exec {p} from a child process -> errno={e}");
-                }
-                set_errno(e);
-                return -1;
-            }
-        },
-    };
+    let answer = engine_call(|| route::vfs_materialize_exec(p));
     match answer {
         // SAFETY: `host` and the gate's rebuilt envp outlive the call;
         // argv forwards verbatim.
