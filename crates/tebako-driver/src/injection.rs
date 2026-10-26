@@ -42,7 +42,7 @@
 //! named boot error (exit 78), never a skipped injection.
 
 use crate::driver::{join_mount, DriverError, Env};
-use crate::layout::{EntryDelivery, ImageLayout};
+use crate::layout::ImageLayout;
 use crate::EX_TEBAKO_LAYOUT;
 use tfs::context::context;
 
@@ -171,7 +171,7 @@ mod tests {
             runtime_dll: runtime_dll.map(str::to_string),
             interpreter: None,
             visibility: None,
-            entry_delivery: EntryDelivery::Read,
+            entry_delivery: crate::layout::EntryDelivery::Read,
         }
     }
 
