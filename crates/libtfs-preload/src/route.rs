@@ -534,37 +534,6 @@ pub fn vfs_materialize_spawn(path: &str) -> PathRoute<std::ffi::CString> {
     materialize_exec_route(path, true)
 }
 
-/// Exec materialization from a FORKED child.
-///
-/// A forked child inherits the mount table, but its engine lock may have
-/// been held at fork time by a thread that does not exist in the child —
-/// a blocking `write()` there is a deadlock, which is why
-/// `engine_call` refuses the child outright. `bun` forks and then execs
-/// its own `bin/bunx` (a full copy of the interpreter, and Zig code that
-/// reaches the kernel directly), so refusing the child turned every
-/// `bunx`/`bun run` child into `ENOENT` (tebako#935).
-///
-/// The answer here is try-lock, never wait: a free engine is entered and
-/// the exec materializes exactly as in the parent; a held one answers
-/// `EAGAIN` — a named failure instead of a fake `ENOENT`.
-pub fn fork_child_materialize_exec(path: &str) -> Result<PathRoute<std::ffi::CString>, i32> {
-    let answer = {
-        let mut ctx = match context().try_write() {
-            Ok(guard) => guard,
-            Err(std::sync::TryLockError::WouldBlock) => return Err(libc::EAGAIN),
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-        };
-        ctx.exec_materialize(path)
-    };
-    Ok(match answer {
-        Ok(host) => match ensure_exec_bit(&host) {
-            Ok(()) => PathRoute::Vfs(host),
-            Err(e) => PathRoute::Denied(e),
-        },
-        Err(e) => route_answer::<std::ffi::CString>(Err(e), path, HostAccess::Ro),
-    })
-}
-
 /// The shared exec/spawn route: the engine answers with the trace op the
 /// syscall surface owns (`exec` for execve, `spawn` for posix_spawn).
 fn materialize_exec_route(path: &str, spawn: bool) -> PathRoute<std::ffi::CString> {
@@ -774,23 +743,6 @@ pub fn errno_text(e: i32) -> String {
 
 #[cfg(test)]
 mod tests {
-    /// A child process (fork/clone) inherits the mounts but not the
-    /// engine's threads: materialization there must TRY the lock and
-    /// answer EAGAIN, never block on a lock whose holder may no longer
-    /// exist. bun's `bunx` is the live case (tebako#935).
-    #[test]
-    fn a_child_process_materializes_only_while_the_engine_is_free() {
-        let held = super::context().write().unwrap();
-        assert_eq!(
-            super::fork_child_materialize_exec("/host/path"),
-            Err(libc::EAGAIN)
-        );
-        drop(held);
-        assert!(matches!(
-            super::fork_child_materialize_exec("/host/path"),
-            Ok(super::PathRoute::Host)
-        ));
-    }
 
     use super::*;
     use std::path::Path;
