@@ -301,6 +301,29 @@ spelling, and there never will be.
    A malformed or unreadable PEM is `ExtraCaMalformed` /
    `ExtraCaUnreadable` at startup — never a silently skipped file.
 
+**The eMudhra distrust policy (2026-10 amendment).** eMudhra's
+intermediate CA private keys were generated with recoverable entropy
+(one key is literally the integer 4). tebako excludes the CA outright
+from every trust set this stack assembles:
+
+| Assembled set | Owner | Distrust effect |
+|---|---|---|
+| bundled Mozilla roots (`webpki` / default) | tebako-http `distrust` | every eMudhra/emSign root is dropped before install; `RootCerts::WebPki` is never used (it would bypass the filter) |
+| additive `extra_ca` PEMs | tebako-http `netconfig` | a file carrying a distrusted cert is the named `ExtraCaDistrusted` — never a silent drop |
+| operator CA store (`$TEBAKO_HOME/trust/ca`) | tebako-driver `materialize` | a store file carrying a distrusted cert is a named 65 naming `tebako trust remove` |
+| driver platform enumeration (merged runtime bundle) | tebako-driver `materialize` | every distrusted DER is dropped before the merge; the drop is debug-journaled; a store that reduces to zero is a named 65 |
+
+Identity is lexical over the certificate DER (subject/issuer DN
+markers `eMudhra` / `emSign`, case-insensitive) — it survives
+re-issues, cross-signs, and the Microsoft-only `emSign Root TLS/CS
+CA - G3` pair. The compromised intermediates (including the
+AAA-cross-signed ones) are additionally blocked at verification time by
+rustls-webpki ≥ 0.103.16's SPKI blocklist; the bundled-root floors are
+`webpki-root-certs` / `webpki-roots` ≥ 1.0.10 (which drop
+`emSign ECC Root CA - G3` upstream). Platform mode trusts the OS store
+as-is at the TLS verifier (the OS owns its own distrust); the driver
+still filters the enumerated blocks it merges into a runtime bundle.
+
 **Capability gating** (§3's general rule applied): `network` is a
 cargo feature on tebako-http — default ON for the toolchain, OFF for
 the size-gated bootstrap. Compiled out, a set proxy env or

@@ -14,17 +14,35 @@ categories = ["web-programming::http-client"]
 # additive trust anchors. Default ON for the toolchain; the size-gated
 # bootstrap builds with default-features = false and answers a set
 # proxy/CA env with the named NetworkingCompiledOut error.
+#
+# The eMudhra distrust filter is NOT feature-gated — it is a security
+# property of every build shape, so webpki-root-certs is an
+# unconditional dependency (the filter needs the full-cert DER form;
+# ureq's RootCerts::WebPki shortcut cannot compose and is never used).
 [features]
 default = ["network"]
-network = ["dep:webpki-root-certs", "dep:rustls-pemfile"]
+# `network` gates the netconfig module (proxy + additive CA knobs).
+# The distrust filter and the bundled-root assembly are unconditional.
+network = []
 
 [dependencies]
-# Full-cert DER form of the Mozilla bundle (the additive store's base;
-# ureq's own WebPki variant uses the anchor form, which cannot compose).
-webpki-root-certs = { version = "1", optional = true }
+# Full-cert DER form of the Mozilla bundle — the ONLY spelling of "the
+# bundled roots" tebako installs. Floor 1.0.10 (emSign ECC Root CA - G3
+# removed upstream); the local distrust filter additionally drops the
+# remaining emSign roots (C1/G1/C3) webpki-root-certs still ships.
+webpki-root-certs = { version = "1.0.10" }
+# Floor 1.0.10 — same release as webpki-root-certs. Declared directly so
+# the floating lockfile cannot resolve ureq's transitive webpki-roots
+# below the eMudhra-removal line even though this crate never names it.
+webpki-roots = { version = "1.0.10" }
+# Floor 0.103.16 — carries the compromised eMudhra-intermediate SPKI
+# blocklist (the 2026-10 incident's eight intermediates, including the
+# AAA-cross-signed ones). Declared directly to pin the floating
+# resolution; the verification path itself is rustls's.
+rustls-webpki = { version = "0.103.16" }
 # Multi-block PEM splitting for extra_ca files (a corporate export often
-# carries root + intermediates).
-rustls-pemfile = { version = "2", optional = true }
+# carries root + intermediates). Also the distrust module's PEM walk.
+rustls-pemfile = { version = "2" }
 
 # The rustls crypto provider is platform-split: ring everywhere EXCEPT
 # windows-gnu — ring 0.17 has no windows-gnu support (its C fails to

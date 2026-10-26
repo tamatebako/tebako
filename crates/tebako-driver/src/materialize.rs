@@ -422,9 +422,12 @@ fn merge_bundle(
 }
 
 /// The platform trust store, enumerated (spec 17 §2.3's platform mode) —
-/// DER blocks in the store's own order. Fail closed: any enumeration
-/// error, or an empty store, is a named 65 (an enterprise MITM CA that
-/// did not land must never degrade into the image bundle alone).
+/// DER blocks in the store's own order, with every eMudhra/emSign
+/// certificate removed (tebako-http's distrust policy; the CA never
+/// enters a tebako-assembled bundle even when the OS store still carries
+/// it). Fail closed: any enumeration error, or an empty store, is a
+/// named 65 (an enterprise MITM CA that did not land must never degrade
+/// into the image bundle alone).
 fn enumerate_platform_roots() -> Result<Vec<Vec<u8>>, DriverError> {
     // rustls-native-certs' env-aware leg honors SSL_CERT_FILE /
     // SSL_CERT_DIR, but this enumeration must name the OS STORE: an
@@ -459,11 +462,25 @@ fn enumerate_platform_roots() -> Result<Vec<Vec<u8>>, DriverError> {
             "{TRUST_PLATFORM_ENV} is set but the platform trust store enumerated zero certificates — refusing to boot with the image bundle alone"
         )));
     }
-    Ok(result
+    let der_certs: Vec<Vec<u8>> = result
         .certs
         .iter()
         .map(|c| c.as_ref().to_vec())
-        .collect::<Vec<Vec<u8>>>())
+        .collect::<Vec<Vec<u8>>>();
+    let (kept, dropped) = tebako_http::distrust::retain_trusted(der_certs);
+    if dropped > 0 {
+        tebako_log::log!(
+            tebako_log::Level::Debug,
+            "driver",
+            "trust bridge: dropped {dropped} distrusted (eMudhra/emSign) certificate(s) from the platform store enumeration"
+        );
+    }
+    if kept.is_empty() {
+        return Err(manifest(format!(
+            "{TRUST_PLATFORM_ENV} is set but every certificate in the platform trust store is distrusted (eMudhra/emSign) — refusing to boot with an empty merged bundle"
+        )));
+    }
+    Ok(kept)
 }
 
 /// One DER block's PEM spelling (RFC 7468: `CERTIFICATE` armor,
@@ -485,9 +502,12 @@ fn pem_block(der: &[u8]) -> Vec<u8> {
 /// Read + validate one `extra_ca` file — tebako-http's parse rule
 /// mirrored at the consumption point (the loader plane validates at
 /// fetch, the runtime at boot: different moments, same rule): every
-/// certificate block parses, and at least one exists. The bytes return
-/// verbatim — the merged bundle carries the file's own spelling. A
-/// malformed or unreadable file is a named 65 (fail closed).
+/// certificate block parses, and at least one exists. A block that
+/// belongs to the distrusted eMudhra hierarchy is the named 65 — the
+/// CA never enters a tebako-assembled bundle, and a drop is never
+/// silent. The bytes return verbatim — the merged bundle carries the
+/// file's own spelling. A malformed or unreadable file is a named 65
+/// (fail closed).
 fn read_extra_ca(path: &Path) -> Result<Vec<u8>, DriverError> {
     let bytes = std::fs::read(path).map_err(|e| {
         manifest(format!(
@@ -498,12 +518,18 @@ fn read_extra_ca(path: &Path) -> Result<Vec<u8>, DriverError> {
     let mut count = 0usize;
     let mut cursor = std::io::Cursor::new(&bytes);
     for item in rustls_pemfile::certs(&mut cursor) {
-        item.map_err(|e| {
+        let der = item.map_err(|e| {
             manifest(format!(
                 "the extra CA '{}' conveyed by {TRUST_EXTRA_CA_ENV} does not parse: {e} — expected PEM (-----BEGIN CERTIFICATE-----)",
                 path.display()
             ))
         })?;
+        if tebako_http::distrust::is_distrusted(&der) {
+            return Err(manifest(format!(
+                "the extra CA '{}' conveyed by {TRUST_EXTRA_CA_ENV} carries an eMudhra/emSign certificate — that CA is distrusted (2026-10 intermediate-key incident) and never enters a tebako trust set",
+                path.display()
+            )));
+        }
         count += 1;
     }
     if count == 0 {
@@ -571,8 +597,10 @@ fn trust_store_pems(env: &dyn Env) -> Result<Vec<PathBuf>, DriverError> {
 /// Read + validate one trust-store CA file — the conveyed extra_ca's
 /// parse rule at the store's own wording (every block parses, at least
 /// one exists; the merged bundle carries the file's own spelling). A
-/// corrupt store file is a named 65 (fail closed) naming the removal
-/// verb.
+/// block that belongs to the distrusted eMudhra hierarchy is a named 65
+/// naming the removal verb — the CA never enters a tebako-assembled
+/// bundle, and a drop is never silent. A corrupt store file is a named
+/// 65 (fail closed) naming the same verb.
 fn read_store_ca(path: &Path) -> Result<Vec<u8>, DriverError> {
     let bytes = std::fs::read(path).map_err(|e| {
         manifest(format!(
@@ -583,12 +611,18 @@ fn read_store_ca(path: &Path) -> Result<Vec<u8>, DriverError> {
     let mut count = 0usize;
     let mut cursor = std::io::Cursor::new(&bytes);
     for item in rustls_pemfile::certs(&mut cursor) {
-        item.map_err(|e| {
+        let der = item.map_err(|e| {
             manifest(format!(
                 "the trust store CA '{}' does not parse: {e} — expected PEM (-----BEGIN CERTIFICATE-----); fix the file or remove it with `tebako trust remove <name>`",
                 path.display()
             ))
         })?;
+        if tebako_http::distrust::is_distrusted(&der) {
+            return Err(manifest(format!(
+                "the trust store CA '{}' carries an eMudhra/emSign certificate — that CA is distrusted (2026-10 intermediate-key incident) and never enters a tebako trust set; remove it with `tebako trust remove <name>`",
+                path.display()
+            )));
+        }
         count += 1;
     }
     if count == 0 {

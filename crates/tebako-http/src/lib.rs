@@ -23,6 +23,10 @@ use std::fmt;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+/// CA distrust policy (the eMudhra exclusion) — always compiled, every
+/// build shape. See the module doc for the 2026-10 incident.
+pub mod distrust;
+
 #[cfg(feature = "network")]
 pub mod netconfig;
 #[cfg(feature = "network")]
@@ -311,12 +315,17 @@ fn build_agent(global_timeout: Duration) -> Result<ureq::Agent, FetchError> {
 
 /// [`build_agent`] with the `https_only` latch as a parameter (the
 /// distribution surface's [`raw_agent`] passes `false`).
+///
+/// The bundled roots are assembled through [`distrust`] (never
+/// `RootCerts::WebPki`) so the eMudhra exclusion holds on the
+/// size-gated bootstrap too — the distrust policy is a security
+/// property, not an enterprise-networking feature.
 #[cfg(not(feature = "network"))]
 fn build_agent_with(global_timeout: Duration, https_only: bool) -> Result<ureq::Agent, FetchError> {
     let root_certs = if std::env::var_os(PLATFORM_ROOTS_ENV).is_some() {
         ureq::tls::RootCerts::PlatformVerifier
     } else {
-        ureq::tls::RootCerts::WebPki
+        ureq::tls::RootCerts::new_with_certs(&bundled_trusted_roots())
     };
     Ok(ureq::Agent::config_builder()
         .tls_config(tls_config_for(root_certs))
@@ -327,6 +336,18 @@ fn build_agent_with(global_timeout: Duration, https_only: bool) -> Result<ureq::
         .http_status_as_error(false)
         .build()
         .into())
+}
+
+/// The bundled Mozilla roots with eMudhra/emSign removed. The
+/// feature-off twin of [`netconfig::bundled_trusted_roots`]; both filter
+/// through [`distrust::is_distrusted`].
+#[cfg(not(feature = "network"))]
+fn bundled_trusted_roots() -> Vec<ureq::tls::Certificate<'static>> {
+    webpki_root_certs::TLS_SERVER_ROOT_CERTS
+        .iter()
+        .filter(|der| !distrust::is_distrusted(der.as_ref()))
+        .map(|der| ureq::tls::Certificate::from_der(der.as_ref()))
+        .collect()
 }
 
 /// The feature-off guard: a proxy/custom-CA env on a compiled-out binary
