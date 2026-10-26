@@ -1999,7 +1999,7 @@ pub unsafe extern "C" fn syscall(
                 arg1 as *const c_char,
                 arg2 as *const *mut c_char,
                 arg3 as *const *mut c_char,
-                || real() as c_int,
+                |_envp| real() as c_int,
             ) as libc::c_long
         },
         _ => real(),
@@ -2407,7 +2407,11 @@ pub unsafe extern "C" fn execve(
     envp: *const *mut c_char,
 ) -> c_int {
     boot_arm!(plat::raw_execve, (path, argv, envp));
-    unsafe { execve_via(path, argv, envp, || plat::real_execve()(path, argv, envp)) }
+    unsafe {
+        execve_via(path, argv, envp, |envp| {
+            plat::real_execve()(path, argv, envp)
+        })
+    }
 }
 
 /// Interposed `execve` body: a memfs path materializes to its host twin
@@ -2421,10 +2425,10 @@ unsafe fn execve_via(
     path: *const c_char,
     argv: *const *mut c_char,
     envp: *const *mut c_char,
-    real: impl FnOnce() -> c_int,
+    real: impl FnOnce(*const *mut c_char) -> c_int,
 ) -> c_int {
     let Some(p) = (unsafe { c_path(path) }) else {
-        return real();
+        return real(envp);
     };
     let answer = engine_call(|| route::vfs_materialize_exec(p));
     match answer {
@@ -2445,12 +2449,16 @@ unsafe fn execve_via(
             -1
         }
         Some(PathRoute::Host) | None => {
+            // The gate's rebuilt envp is what the real call must carry: a
+            // target that cannot load the shim needs the insertion
+            // stripped, and dropping it here aborts dyld instead (the
+            // e2e insert-probe pin, macOS x86_64 under Rosetta).
             #[cfg(target_os = "macos")]
             let gate = unsafe { macho_arch::strip_for_path_target(p, envp) };
             #[cfg(target_os = "macos")]
             let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
-            let _ = (p, envp);
-            real()
+            let _ = p;
+            real(envp)
         }
     }
 }
