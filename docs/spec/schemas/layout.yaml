@@ -15,7 +15,7 @@
 
 schema: layout
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 4 # MINOR — additive changes only (1: mount_root_override; 2: preload_shim; 3: runtime_dll; 4: interpreter + visibility)
+schema_minor: 5 # MINOR — additive changes only (1: mount_root_override; 2: preload_shim; 3: runtime_dll; 4: interpreter + visibility; 5: entry_delivery)
 status: normative
 owner: tebako-runtime-ruby (writer) + crates/tebako-driver (reader); grammar owned here
 edge: C3 (runtime exe ↔ env image)
@@ -150,6 +150,27 @@ grammar:
       key / the path and the mount (spec 29 §2/§4). SSOT: the runtime's
       factory authors the path once (the image's own manifest owns it —
       the wrapper crate carries no per-runtime knowledge, spec 29 §7).
+  entry_delivery:
+    type: string
+    required: false
+    since: schema_minor 5
+    enum: [read, exec]
+    notes: >-
+      How the child reaches its ENTRY under a mechanism that can serve
+      virtual paths (spec 29 §3). 'read' keeps the entry's VFS spelling:
+      the interpreter opens it through the shim, so every relative
+      include the program performs resolves INSIDE the image. 'exec'
+      materializes a host twin instead, which is what a runtime whose
+      file-runner SPAWN-EXECS its entry needs, because the spawned
+      shebang would otherwise resolve through the kernel's PATH
+      (tebako#831). The distinction is the RUNTIME's property and never
+      the file's: every entry in an image is 0644 data, so nothing about
+      the file can decide it — which is why the image declares it and
+      the wrapper honours it. Absent ⇒ 'read', because a twin is the
+      exception a runtime must ask for. Honoured under 'preload' only;
+      an 'exec-cache' image materializes regardless, having no
+      interposition able to read a virtual path. A value outside the
+      enum is a named exit 78.
   visibility:
     type: string
     required: false
@@ -178,6 +199,8 @@ grammar:
       the era-2 driver parses but does not gate on it.
 
 refusals:
+  - case: entry_delivery declared outside read|exec
+    behavior: "named refusal \u2014 exit 78 naming the image and the value (spec 29 §3.1)"
   - case: /lib/tebako/layout.yaml absent (S17)
     behavior: era-1 refusal naming the image — exit 78
   - case: schema_version / era / image_layout newer than the driver speaks (S18)

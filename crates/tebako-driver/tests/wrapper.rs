@@ -203,6 +203,7 @@ fn write_env_image(dir: &Path, spec29_keys: &str, shim: bool) -> PathBuf {
 const EXEC_CACHE: &str = "interpreter: /bin/stub\nvisibility: exec-cache\n";
 const PRELOAD: &str =
     "interpreter: /bin/stub\nvisibility: preload\npreload_shim: lib/tebako/libtfs_preload.so\n";
+const PRELOAD_EXEC: &str = "interpreter: /bin/stub\nvisibility: preload\npreload_shim: lib/tebako/libtfs_preload.so\nentry_delivery: exec\n";
 const DEFAULT_WITH_SHIM: &str =
     "interpreter: /bin/stub\npreload_shim: lib/tebako/libtfs_preload.so\n";
 const NO_INTERPRETER: &str = "";
@@ -312,6 +313,42 @@ fn exec_cache_composes_argv_and_bridges_the_entry() {
 
 #[cfg(unix)]
 #[test]
+fn preload_exec_delivery_materializes_the_entry_twin() {
+    // The OTHER delivery, and the reason it exists: a runtime whose
+    // file-runner SPAWN-EXECS its entry needs a host twin, because the
+    // spawned shebang resolves through the kernel's PATH (tebako#831). The
+    // runtime asks for it in its image; the wrapper does not guess.
+    let g = guard("pl-exec");
+    let env_image = write_env_image(g.path(), PRELOAD_EXEC, true);
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "/bin/app",
+                "-version",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+
+    assert_ne!(launch.argv[2], "/bin/app");
+    assert!(
+        Path::new(&launch.argv[2]).is_absolute(),
+        "an exec-delivery entry is a host twin"
+    );
+    assert_eq!(launch.argv[3], "-version");
+}
+
+#[test]
 fn preload_bridges_the_entry_and_arms_the_injection_env() {
     let g = guard("pl-launch");
     let env_image = write_env_image(g.path(), PRELOAD, true);
@@ -349,11 +386,13 @@ fn preload_bridges_the_entry_and_arms_the_injection_env() {
     // masking the failure as a false pass). A 0644 host twin is the
     // shape every interpreter treats as plain input — what exec-cache
     // has always handed its interpreters.
-    assert_ne!(launch.argv[2], "/bin/app");
-    assert!(
-        Path::new(&launch.argv[2]).is_absolute(),
-        "the bridged entry is a host path"
-    );
+    // The DEFAULT delivery is `read` (spec 29 §3.1): the entry keeps its
+    // VFS spelling, so the interpreter opens it through the armed shim and
+    // its own relative includes resolve inside the image. A twin here is
+    // what broke node's 54-byte `bin/npm`, whose whole body is
+    // `require('../lib/cli.js')` (tebako#930) — the twin sits alone in a
+    // temp directory, where that require finds nothing.
+    assert_eq!(launch.argv[2], "/bin/app");
     assert_eq!(launch.argv[3], "-version");
     assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
     // The spec-22 §3 arming already happened in the shared boot (reuse):
