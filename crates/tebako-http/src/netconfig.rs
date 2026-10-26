@@ -99,6 +99,10 @@ pub enum NetConfigError {
     /// escape) — the spec 17 §2.3 wire cannot convey it, and a dropped
     /// entry is never silent.
     ExtraCaNotEnvExpressible { path: PathBuf },
+    /// An `extra_ca` file carries an eMudhra/emSign certificate — the
+    /// CA is distrusted outright (2026-10 incident) and never enters a
+    /// tebako trust set. Named, never a silent drop.
+    ExtraCaDistrusted { path: PathBuf },
 }
 
 impl fmt::Display for NetConfigError {
@@ -134,6 +138,13 @@ impl fmt::Display for NetConfigError {
                 "extra CA {} has no OS path-list spelling (it holds the list \
                  separator, or a quote on Windows) and cannot ride the \
                  {EXTRA_CA_ENV} env form — move the file",
+                path.display()
+            ),
+            NetConfigError::ExtraCaDistrusted { path } => write!(
+                f,
+                "extra CA {} carries an eMudhra/emSign certificate — that CA is \
+                 distrusted (2026-10 intermediate-key incident) and never enters \
+                 a tebako trust set; pick a different CA",
                 path.display()
             ),
         }
@@ -317,19 +328,20 @@ pub(crate) fn resolve_proxy(cfg: &NetworkConfig) -> Result<Option<ureq::Proxy>, 
     Ok(ureq::Proxy::try_from_env())
 }
 
-/// The root-certs choice for the agent builder. Additive mode parses
-/// every extra PEM into the SAME store as the bundled Mozilla set —
-/// fail-closed per file, named per failure.
+/// The root-certs choice for the agent builder. The bundled Mozilla set
+/// is ALWAYS assembled from [`webpki_root_certs`] (never ureq's
+/// `RootCerts::WebPki` shortcut) so the eMudhra distrust filter can run:
+/// every eMudhra/emSign root is dropped before the store is handed to
+/// rustls. Additive mode parses every extra PEM into the SAME store —
+/// fail-closed per file, named per failure; an extra CA that carries a
+/// distrusted certificate is the named [`NetConfigError::ExtraCaDistrusted`],
+/// never a silent drop.
 pub(crate) fn resolve_roots(cfg: &NetworkConfig) -> Result<RootCerts, NetConfigError> {
     cfg.validate()?;
     match (cfg.tls_roots, cfg.extra_ca.is_empty()) {
         (TlsRoots::Platform, _) => Ok(RootCerts::PlatformVerifier),
-        (TlsRoots::WebPki, true) => Ok(RootCerts::WebPki),
-        (TlsRoots::WebPki, false) => {
-            let mut certs: Vec<Certificate<'static>> = webpki_root_certs::TLS_SERVER_ROOT_CERTS
-                .iter()
-                .map(|der| Certificate::from_der(der.as_ref()))
-                .collect();
+        (TlsRoots::WebPki, _) => {
+            let mut certs: Vec<Certificate<'static>> = bundled_trusted_roots();
             for path in &cfg.extra_ca {
                 certs.extend(load_pem_certs(path)?);
             }
@@ -338,8 +350,23 @@ pub(crate) fn resolve_roots(cfg: &NetworkConfig) -> Result<RootCerts, NetConfigE
     }
 }
 
+/// The bundled Mozilla roots with every eMudhra/emSign certificate
+/// removed (the [`crate::distrust`] policy). This is the ONLY spelling
+/// of "the bundled roots" tebako ever installs — `RootCerts::WebPki`
+/// would bypass the filter.
+pub(crate) fn bundled_trusted_roots() -> Vec<Certificate<'static>> {
+    webpki_root_certs::TLS_SERVER_ROOT_CERTS
+        .iter()
+        .filter(|der| !crate::distrust::is_distrusted(der.as_ref()))
+        .map(|der| Certificate::from_der(der.as_ref()))
+        .collect()
+}
+
 /// Every certificate block in one PEM file (a corporate export often
-/// carries the root AND intermediates — all land; rustls picks).
+/// carries the root AND intermediates — all land; rustls picks). A block
+/// that belongs to the distrusted eMudhra hierarchy is the named
+/// [`NetConfigError::ExtraCaDistrusted`] — the CA never enters a tebako
+/// trust set, and a drop is never silent.
 fn load_pem_certs(path: &Path) -> Result<Vec<Certificate<'static>>, NetConfigError> {
     let bytes = std::fs::read(path).map_err(|e| NetConfigError::ExtraCaUnreadable {
         path: path.to_path_buf(),
@@ -352,6 +379,11 @@ fn load_pem_certs(path: &Path) -> Result<Vec<Certificate<'static>>, NetConfigErr
             path: path.to_path_buf(),
             why: e.to_string(),
         })?;
+        if crate::distrust::is_distrusted(&der) {
+            return Err(NetConfigError::ExtraCaDistrusted {
+                path: path.to_path_buf(),
+            });
+        }
         certs.push(Certificate::from_der(der.as_ref()).to_owned());
     }
     if certs.is_empty() {
@@ -440,7 +472,39 @@ wVYzxWmIj2VzW7jBacDLSIXvtFG6/Q7Zi5uJkatP7H6F\n\
         assert!(cfg.proxy_url.is_none());
         assert!(cfg.extra_ca.is_empty());
         assert!(cfg.validate().is_ok());
-        assert!(matches!(resolve_roots(&cfg).unwrap(), RootCerts::WebPki));
+        // The bundled set is ALWAYS assembled through the distrust filter
+        // (never `RootCerts::WebPki`), so the default path is a Specific
+        // list that already excludes eMudhra.
+        match resolve_roots(&cfg).unwrap() {
+            RootCerts::Specific(certs) => {
+                assert_eq!(certs.len(), bundled_trusted_roots().len());
+                assert!(certs
+                    .iter()
+                    .all(|c| !crate::distrust::is_distrusted(c.der())));
+            }
+            other => panic!("expected filtered Specific roots, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_bundled_set_excludes_emudhra() {
+        let kept = bundled_trusted_roots();
+        assert!(!kept.is_empty(), "the filtered Mozilla set is never empty");
+        // The unfiltered webpki-root-certs set still carries other
+        // emSign roots even at 1.0.10 (C1/G1/C3; only ECC G3 was
+        // dropped upstream) — prove our filter removes every one.
+        let unfiltered = webpki_root_certs::TLS_SERVER_ROOT_CERTS.len();
+        let distrusted = unfiltered - kept.len();
+        assert!(
+            distrusted > 0,
+            "webpki-root-certs still ships emSign roots; the filter must drop them \
+             (unfiltered={unfiltered})"
+        );
+        for der in webpki_root_certs::TLS_SERVER_ROOT_CERTS {
+            if crate::distrust::is_distrusted(der.as_ref()) {
+                assert!(!kept.iter().any(|c| c.der() == der.as_ref()));
+            }
+        }
     }
 
     #[test]
@@ -526,14 +590,58 @@ wVYzxWmIj2VzW7jBacDLSIXvtFG6/Q7Zi5uJkatP7H6F\n\
         };
         match resolve_roots(&cfg).unwrap() {
             RootCerts::Specific(certs) => {
-                // bundled Mozilla set + our one test root
-                assert_eq!(
-                    certs.len(),
-                    webpki_root_certs::TLS_SERVER_ROOT_CERTS.len() + 1
-                );
+                // filtered bundled Mozilla set + our one test root
+                assert_eq!(certs.len(), bundled_trusted_roots().len() + 1);
             }
             other => panic!("expected additive Specific roots, got {other:?}"),
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Real compromised eMudhra intermediate (EM DV TLS CA - G3B).
+    const EMUDHRA_PEM: &str = "-----BEGIN CERTIFICATE-----\n\
+MIIDaDCCAu6gAwIBAgIQAKSu5njyM2K0wORgt3LyFDAKBggqhkjOPQQDAzBWMQsw\n\
+CQYDVQQGEwJJTjElMCMGA1UECgwcZU11ZGhyYSBUZWNobm9sb2dpZXMgTGltaXRl\n\
+ZDEgMB4GA1UEAwwXZW1TaWduIFJvb3QgVExTIENBIC0gRzMwHhcNMjUwNDMwMTU1\n\
+NDA4WhcNNDAwNDI4MTgzMDAwWjA/MQswCQYDVQQGEwJOTDETMBEGA1UECgwKZU11\n\
+ZGhyYSBCVjEbMBkGA1UEAwwSRU0gRFYgVExTIENBIC0gRzNCMHYwEAYHKoZIzj0C\n\
+AQYFK4EEACIDYgAE557ZwEqXc8RzXlERHahawr1eZKs3S4DhLLwgOOweTw47gS/J\n\
+hZ4eZ6+wTi+LyX90hbplqpEe6KTkW2LVzAPVa+Z4s8OMtNyTfKJGDiOEU8iSk10p\n\
+1E+R4VYGtjzO2rRoo4IBljCCAZIwHwYDVR0jBBgwFoAU4TqrIXzx401UrtRyt/2L\n\
+WUIgkFQwHQYDVR0OBBYEFOIeL+ccGTkOVUtiwSAkVzUkiiUUMB0GA1UdJQQWMBQG\n\
+CCsGAQUFBwMBBggrBgEFBQcDAjBdBgNVHSAEVjBUMDkGCysGAQQBg44hAQABMCow\n\
+KAYIKwYBBQUHAgEWHGh0dHA6Ly9yZXBvc2l0b3J5LmVtc2lnbi5jb20wDQYLKwYB\n\
+BAGDjiEBAmQwCAYGZ4EMAQIBMHUGCCsGAQUFBwEBBGkwZzAkBggrBgEFBQcwAYYY\n\
+aHR0cDovL29jc3AtYi5lbXNpZ24uY29tMD8GCCsGAQUFBzAChjNodHRwOi8vcmVw\n\
+b3NpdG9yeS5lbXNpZ24uY29tL2NlcnRzL0VNRFZUTFNDQUczQi5wN2MwNwYDVR0f\n\
+BDAwLjAsoCqgKIYmaHR0cDovL2NybC5lbXNpZ24uY29tLz9yb290dGxzY2FnMy5j\n\
+cmwwDgYDVR0PAQH/BAQDAgEGMBIGA1UdEwEB/wQIMAYBAf8CAQAwCgYIKoZIzj0E\n\
+AwMDaAAwZQIwLmsGXi6oFMJ2klkcEMXMug6gvxQWZWkewiDWVzQyl2L6z6DuQfPO\n\
+Ibh1grvdULDCAjEAxZvLlxUavG69J6wnSjC8XBbqNIQsJ6CE2QdNOe84Ptxb6VG8\n\
+gt2TlfJbHii+KNvK\n\
+-----END CERTIFICATE-----\n";
+
+    #[test]
+    fn extra_ca_carrying_emudhra_is_a_named_error() {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-http-netcfg-distrust-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("emudhra.pem");
+        std::fs::write(&path, EMUDHRA_PEM).unwrap();
+        let err = load_pem_certs(&path).unwrap_err();
+        assert!(matches!(err, NetConfigError::ExtraCaDistrusted { .. }));
+        // And the full resolve_roots path refuses it too — never a
+        // silent drop into the bundled store.
+        let cfg = NetworkConfig {
+            extra_ca: vec![path.clone()],
+            ..Default::default()
+        };
+        assert!(matches!(
+            resolve_roots(&cfg),
+            Err(NetConfigError::ExtraCaDistrusted { .. })
+        ));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
