@@ -522,10 +522,13 @@ fn the_runtime_entrypoint_execs_directly() {
     // declaration's args_default between the program and the user args,
     // no resolved-entry token, no bridge (spec 30 §2's wrapper case).
     assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
+    // argv[0] is the ENTRY's name (spec 29 §1's identity form): a
+    // multicall interpreter dispatches on it, and a launcher that ignores
+    // it loses nothing.
     assert_eq!(
         launch.argv,
         vec![
-            launch.program.clone(),
+            "jing".to_string(),
             "-jar".to_string(),
             "input.xml".to_string()
         ]
@@ -1528,15 +1531,138 @@ fn an_entrypoint_that_links_to_the_interpreter_takes_the_direct_form() {
         .unwrap(),
     );
     // The link resolves to the interpreter, so the kernel execs the
-    // interpreter's bytes and the entry never rides the argv.
+    // interpreter's bytes and the entry never rides the argv. argv[0] is
+    // the ENTRY's name, because a multicall interpreter dispatches on it:
+    // `bunx` must run bun's package runner, not `bun` (spec 29 §1).
     assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
-    assert_eq!(launch.argv[0], launch.program);
+    assert_eq!(launch.argv[0], "bunx");
     assert_eq!(
         launch.argv[1], "--version",
         "the user's args: {:?}",
         launch.argv
     );
     assert_eq!(launch.argv.len(), 2, "{:?}", launch.argv);
+}
+
+#[test]
+fn an_entrypoint_that_is_a_copy_of_the_interpreter_takes_the_direct_form() {
+    // tebako#938: a packaging flow that cannot create a link stages the
+    // second name as a copy — upstream's Linux bun zip carries one binary,
+    // and the Windows staging path has no symlink. Path identity is false
+    // by construction there, so the entry used to take the composition
+    // path and the interpreter SPAWNED the copy: ENOENT on POSIX, and on
+    // Windows the interpreter read its own PE bytes as a script. Identity
+    // is about content, so byte-identical entries take the direct form.
+    let g = guard("rt-entry-copy");
+    let layout = format!("{}{EXEC_CACHE}", good_layout());
+    let manifest = payload_manifest(
+        "runtime",
+        "provides:\n  \
+         provides: [{engine: bun, version: \"1.4.4\", abi_line: \"1\", platform: aarch64-macos}]\n  \
+         built_from: {src_sha256: 0000000000000000000000000000000000000000000000000000000000000000, patch_set: base}\n  \
+         entrypoints: [{name: bun, path: /bin/stub}, {name: bunx, path: /bin/bunx}]\n  \
+         capabilities: {exec: true, read: true, runtime: true}",
+    );
+    let tree = g.path().join("tree");
+    std::fs::create_dir_all(tree.join("bin")).unwrap();
+    std::fs::create_dir_all(tree.join("lib/tebako")).unwrap();
+    std::fs::create_dir_all(tree.join("__tpkg__")).unwrap();
+    std::fs::write(tree.join("lib/tebako/layout.yaml"), layout.as_bytes()).unwrap();
+    std::fs::write(tree.join("bin/stub"), STUB).unwrap();
+    // The COPY shape: the same bytes under the alias name, no link.
+    std::fs::write(tree.join("bin/bunx"), STUB).unwrap();
+    std::fs::write(tree.join("__tpkg__/manifest.yaml"), manifest.as_bytes()).unwrap();
+    let env_image = g.path().join("env.tfs");
+    build_limnifs_from_tree(&tree, &env_image);
+
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "bunx",
+                "--version",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        std::fs::read(&launch.program).unwrap(),
+        STUB,
+        "the copy is the interpreter, so its bytes are what the kernel execs"
+    );
+    assert_eq!(
+        launch.argv[0], "bunx",
+        "argv[0] carries the entry's name: {:?}",
+        launch.argv
+    );
+    assert_eq!(launch.argv[1], "--version");
+    assert_eq!(launch.argv.len(), 2, "{:?}", launch.argv);
+}
+
+#[test]
+fn a_different_entrypoint_that_happens_to_share_a_size_is_not_the_interpreter() {
+    // The cheap discriminator must not be the ONLY one: equal size, one
+    // byte apart, and the composition path is the right answer.
+    let g = guard("rt-entry-copy-differs");
+    let layout = format!("{}{EXEC_CACHE}", good_layout());
+    let manifest = payload_manifest(
+        "runtime",
+        "provides:\n  \
+         provides: [{engine: bun, version: \"1.4.4\", abi_line: \"1\", platform: aarch64-macos}]\n  \
+         built_from: {src_sha256: 0000000000000000000000000000000000000000000000000000000000000000, patch_set: base}\n  \
+         entrypoints: [{name: bun, path: /bin/stub}, {name: bunx, path: /bin/bunx}]\n  \
+         capabilities: {exec: true, read: true, runtime: true}",
+    );
+    let tree = g.path().join("tree");
+    std::fs::create_dir_all(tree.join("bin")).unwrap();
+    std::fs::create_dir_all(tree.join("lib/tebako")).unwrap();
+    std::fs::create_dir_all(tree.join("__tpkg__")).unwrap();
+    std::fs::write(tree.join("lib/tebako/layout.yaml"), layout.as_bytes()).unwrap();
+    std::fs::write(tree.join("bin/stub"), STUB).unwrap();
+    let mut near = STUB.to_vec();
+    let last = near.len() - 1;
+    near[last] ^= 0x01;
+    assert_eq!(near.len(), STUB.len(), "the sizes must match");
+    std::fs::write(tree.join("bin/bunx"), &near).unwrap();
+    std::fs::write(tree.join("__tpkg__/manifest.yaml"), manifest.as_bytes()).unwrap();
+    let env_image = g.path().join("env.tfs");
+    build_limnifs_from_tree(&tree, &env_image);
+
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "bunx",
+                "--version",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+    // Composed, not direct: the entry rides the argv after the program.
+    assert_eq!(launch.argv[0], launch.program, "{:?}", launch.argv);
+    assert!(
+        launch.argv.iter().any(|a| a.contains("bunx")),
+        "the entry must ride the argv: {:?}",
+        launch.argv
+    );
 }
 
 #[test]
