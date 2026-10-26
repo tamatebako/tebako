@@ -1971,7 +1971,7 @@ pub unsafe extern "C" fn syscall(
         plat::raw_syscall,
         (number, arg1, arg2, arg3, arg4, arg5, arg6)
     );
-    let real = || unsafe { plat::real_syscall()(number, arg1, arg2, arg3, arg4, arg5, arg6) };
+    let real = || unsafe { plat::raw_syscall(number, arg1, arg2, arg3, arg4, arg5, arg6) };
     match number {
         libc::SYS_statx => unsafe {
             statx_via(
