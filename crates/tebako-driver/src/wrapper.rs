@@ -709,7 +709,12 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
             }
         }
     }
-    bridge_entry(&mut launch, mech, outcome.entry_index, layout.entry_delivery)?;
+    bridge_entry(
+        &mut launch,
+        mech,
+        outcome.entry_index,
+        layout.entry_delivery,
+    )?;
     Ok(BootAction::Launch(launch))
 }
 
