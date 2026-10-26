@@ -58,25 +58,28 @@ fn a_real_update_moves_its_measured_share() {
         ranges += 1;
         Ok(target_bytes[offset as usize..(offset + len) as usize].to_vec())
     };
-    let stats = tebako_resolve::delta::assemble(
-        &donor,
-        &sidecar,
-        &sidecar.sha256,
-        &out,
-        &mut fetch,
-    )
-    .expect("the assembler produces the published image");
+    let stats =
+        tebako_resolve::delta::assemble(&donor, &sidecar, &sidecar.sha256, &out, &mut fetch)
+            .expect("the assembler produces the published image");
 
     // The share describes a correct artifact only when the artifact it
     // produced is the published one.
     let assembled = std::fs::read(&out).expect("the assembled image is readable");
     let _ = std::fs::remove_file(&out);
-    assert_eq!(assembled, target_bytes, "the assembled image is byte-identical");
-    assert_eq!(wire, stats.bytes_fetched, "the wire carried the planned bytes");
+    assert_eq!(
+        assembled, target_bytes,
+        "the assembled image is byte-identical"
+    );
+    assert_eq!(
+        wire, stats.bytes_fetched,
+        "the wire carried the planned bytes"
+    );
 
     println!(
         "donor {} bytes -> target {} bytes ({} groups, group size locked at 4 MiB)",
-        std::fs::metadata(Path::new(&donor)).map(|m| m.len()).unwrap_or(0),
+        std::fs::metadata(Path::new(&donor))
+            .map(|m| m.len())
+            .unwrap_or(0),
         sidecar.size_bytes,
         sidecar.group_count()
     );
@@ -116,16 +119,22 @@ fn a_donor_of_a_different_family_still_assembles() {
     let out = scratch("no-donor.tfs");
     let empty = scratch("empty-donor.tfs");
     std::fs::write(&empty, b"").expect("an empty donor is writable");
-    let mut fetch = |offset: u64, len: u64| {
-        Ok(target_bytes[offset as usize..(offset + len) as usize].to_vec())
-    };
+    let mut fetch =
+        |offset: u64, len: u64| Ok(target_bytes[offset as usize..(offset + len) as usize].to_vec());
     let stats =
         tebako_resolve::delta::assemble(&empty, &sidecar, &sidecar.sha256, &out, &mut fetch)
             .expect("an empty donor assembles the whole image");
     let assembled = std::fs::read(&out).expect("the assembled image is readable");
     let _ = std::fs::remove_file(&out);
     let _ = std::fs::remove_file(&empty);
-    assert_eq!(assembled, target_bytes, "the assembled image is byte-identical");
+    assert_eq!(
+        assembled, target_bytes,
+        "the assembled image is byte-identical"
+    );
     assert_eq!(stats.groups_copied, 0, "an empty donor copies nothing");
-    assert_eq!(stats.fetched_fraction(), 1.0, "and the wire carries everything");
+    assert_eq!(
+        stats.fetched_fraction(),
+        1.0,
+        "and the wire carries everything"
+    );
 }
