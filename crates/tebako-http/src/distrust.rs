@@ -196,11 +196,10 @@ gt2TlfJbHii+KNvK\n\
     fn extract_first_pem(pem: &str) -> Vec<u8> {
         let mut cursor = std::io::Cursor::new(pem.as_bytes());
         let mut certs = rustls_pemfile::certs(&mut cursor);
-        let der = certs
+        certs
             .next()
             .expect("fixture has one cert")
             .expect("fixture parses")
-            .to_vec();
-        der
+            .to_vec()
     }
 }
