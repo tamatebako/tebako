@@ -1333,6 +1333,16 @@ pub unsafe extern "C" fn __realpath_chk(
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     boot_arm!(plat::raw_close, (fd));
+    unsafe { close_via(fd, || plat::real_close()(fd)) }
+}
+
+/// Interposed `close` body: a memfs fd is shim-side state (the CLOEXEC
+/// table plus the engine's open-file description), everything else is
+/// `real`. Shared by the `close` symbol and the `syscall` interposition —
+/// libuv closes through `syscall(SYS_close)` (its no-cancellation
+/// spelling), so a symbol-only interposition leaks the description and
+/// hands the kernel a fake fd, which answers EBADF (tebako#935).
+unsafe fn close_via(fd: c_int, real: impl FnOnce() -> c_int) -> c_int {
     if route::is_memfs_fd(fd) {
         fd_table_purge(fd);
         return match engine_call(|| route::vfs_close(fd)) {
@@ -1350,7 +1360,7 @@ pub unsafe extern "C" fn close(fd: c_int) -> c_int {
             }
         };
     }
-    unsafe { plat::real_close()(fd) }
+    real()
 }
 
 /// Interposed `dup` (fd-flag dispatch; tebako#534 — libxml2's
@@ -1767,6 +1777,111 @@ pub unsafe extern "C" fn fstatat64(
     }
 }
 
+/// Write one engine RawStat into a caller's `struct statx` and answer the
+/// statx(2) success value. `stx_mask` names exactly the fields written.
+///
+/// # Safety
+/// `stx` is a valid, non-null struct statx pointer per the call contract.
+#[cfg(target_os = "linux")]
+unsafe fn write_statx(raw: &tfs::backend::RawStat, stx: *mut statx_abi::statx) -> c_int {
+    use tfs::backend::EntryType;
+    #[allow(clippy::unnecessary_cast)] // identity on linux, required on macOS
+    let type_bits: u32 = match raw.entry_type {
+        EntryType::File => libc::S_IFREG as u32,
+        EntryType::Directory => libc::S_IFDIR as u32,
+        // A link in an image is a stat-able entry (spec 11 §9): node's
+        // module resolution lstats its way along every path component.
+        EntryType::Symlink => tfs::backend::S_IFLNK,
+        EntryType::Other => {
+            set_errno(libc::EINVAL);
+            return -1;
+        }
+    };
+    // SAFETY: a zeroed struct statx is valid. Field-by-field assignment:
+    // statx_timestamp's padding is private (libc-version dependent).
+    let mut out: statx_abi::statx = unsafe { std::mem::zeroed() };
+    out.stx_mode = (type_bits | raw.perms) as u16;
+    out.stx_size = raw.size as u64;
+    out.stx_nlink = 1;
+    out.stx_mtime.tv_sec = raw.mtime;
+    out.stx_mtime.tv_nsec = 0;
+    out.stx_mask = statx_abi::STATX_TYPE
+        | statx_abi::STATX_MODE
+        | statx_abi::STATX_NLINK
+        | statx_abi::STATX_SIZE
+        | statx_abi::STATX_MTIME;
+    unsafe { *stx = out };
+    0
+}
+
+/// Interposed `statx` body: the engine's RawStat fills the answer, or
+/// `real` runs (host path, unarmed, already inside the engine). Shared by
+/// the `statx` symbol and the `syscall` interposition — libuv reaches
+/// statx through `syscall(2)`, where no libc symbol is involved.
+#[cfg(target_os = "linux")]
+unsafe fn statx_via(
+    dirfd: c_int,
+    path: *const c_char,
+    flags: c_int,
+    stx: *mut statx_abi::statx,
+    real: impl FnOnce() -> c_int,
+) -> c_int {
+    if stx.is_null() {
+        return real();
+    }
+    let nofollow = flags & libc::AT_SYMLINK_NOFOLLOW != 0;
+    // AT_EMPTY_PATH: the FD is the subject, not a path. libuv's `fstat` is
+    // exactly this call once statx is available (`statx(fd, "",
+    // AT_EMPTY_PATH, …)`), so a memfs fd must answer from the engine's
+    // fstat table — forwarding it would hand the kernel a fake fd and a
+    // path it cannot resolve (tebako#935's second face: node's
+    // `readFile` died at `fstat` before it ever read a byte).
+    if flags & libc::AT_EMPTY_PATH != 0 && route::is_memfs_fd(dirfd) {
+        return match engine_call(|| route::vfs_fstat(dirfd)) {
+            Some(Ok(raw)) => unsafe { write_statx(&raw, stx) },
+            Some(Err(e)) => {
+                set_errno(e);
+                -1
+            }
+            None => {
+                set_errno(libc::EIO);
+                -1
+            }
+        };
+    }
+    // AT_EMPTY_PATH with a HOST fd is the ordinary `fstat` fast path: the
+    // kernel's answer is the right one, and an empty path is not a path.
+    if flags & libc::AT_EMPTY_PATH != 0 {
+        return real();
+    }
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return real();
+    };
+    let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
+        Ok(route::AtRoute::Routed(rp)) => rp,
+        Ok(route::AtRoute::Real) => return real(),
+        Err(e) => {
+            set_errno(e);
+            return -1;
+        }
+    };
+    let answer = engine_call(|| {
+        if nofollow {
+            route::vfs_lstat(&routed)
+        } else {
+            route::vfs_stat(&routed)
+        }
+    });
+    match answer {
+        Some(PathRoute::Vfs(raw)) => unsafe { write_statx(&raw, stx) },
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(PathRoute::Host) | None => real(),
+    }
+}
+
 /// Linux: `statx` (roadmap 39). The engine's RawStat fills the statx
 /// answer; stx_mask reports exactly the fields written. The ABI comes
 /// from statx_abi (libc on glibc, the uapi mirror on musl — libc
@@ -1782,59 +1897,271 @@ pub unsafe extern "C" fn statx(
     stx: *mut statx_abi::statx,
 ) -> c_int {
     boot_arm!(plat::raw_statx, (dirfd, path, flags, mask, stx));
-    use tfs::backend::EntryType;
-
-    let Some(p) = (unsafe { c_path(path) }) else {
-        return unsafe { plat::real_statx()(dirfd, path, flags, mask, stx) };
-    };
-    if stx.is_null() {
-        return unsafe { plat::real_statx()(dirfd, path, flags, mask, stx) };
+    unsafe {
+        statx_via(dirfd, path, flags, stx, || {
+            plat::real_statx()(dirfd, path, flags, mask, stx)
+        })
     }
-    let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
-        Ok(route::AtRoute::Routed(rp)) => rp,
-        Ok(route::AtRoute::Real) => {
-            return unsafe { plat::real_statx()(dirfd, path, flags, mask, stx) };
-        }
-        Err(e) => {
-            set_errno(e);
-            return -1;
-        }
-    };
-    match engine_call(|| route::vfs_stat(&routed)) {
-        Some(PathRoute::Vfs(raw)) => {
-            #[allow(clippy::unnecessary_cast)] // identity on linux, required on macOS
-            let type_bits: u32 = match raw.entry_type {
-                EntryType::File => libc::S_IFREG as u32,
-                EntryType::Directory => libc::S_IFDIR as u32,
-                _ => {
-                    set_errno(libc::EINVAL);
-                    return -1;
-                }
-            };
-            // SAFETY: a zeroed struct statx is valid; stx is valid per the
-            // call contract. Field-by-field assignment: statx_timestamp's
-            // padding is private (libc-version dependent).
-            let mut out: statx_abi::statx = unsafe { std::mem::zeroed() };
-            out.stx_mode = (type_bits | raw.perms) as u16;
-            out.stx_size = raw.size as u64;
-            out.stx_nlink = 1;
-            out.stx_mtime.tv_sec = raw.mtime;
-            out.stx_mtime.tv_nsec = 0;
-            out.stx_mask = statx_abi::STATX_TYPE
-                | statx_abi::STATX_MODE
-                | statx_abi::STATX_NLINK
-                | statx_abi::STATX_SIZE
-                | statx_abi::STATX_MTIME;
-            unsafe { *stx = out };
-            0
-        }
-        Some(PathRoute::Denied(e)) => {
+}
+
+/// Interposed `fstat` body: a memfs fd answers from the engine, everything
+/// else from `real`. Shared by the `fstat`/`__fxstat` shims and the
+/// `syscall` interposition.
+#[cfg(target_os = "linux")]
+unsafe fn fstat_via(fd: c_int, st: *mut libc::stat, real: impl FnOnce() -> c_int) -> c_int {
+    if !route::is_memfs_fd(fd) {
+        return real();
+    }
+    if st.is_null() {
+        set_errno(libc::EFAULT);
+        return -1;
+    }
+    match engine_call(|| route::vfs_fstat(fd)) {
+        // SAFETY: st is valid per the call contract.
+        Some(Ok(raw)) => match unsafe { fill_stat(&raw) } {
+            Ok(s) => {
+                unsafe { *st = s };
+                0
+            }
+            Err(e) => {
+                set_errno(e);
+                -1
+            }
+        },
+        Some(Err(e)) => {
             set_errno(e);
             -1
         }
-        Some(PathRoute::Host) | None => unsafe {
-            plat::real_statx()(dirfd, path, flags, mask, stx)
+        None => {
+            set_errno(libc::EIO);
+            -1
+        }
+    }
+}
+
+/// Interposed `syscall(2)` — the one interposition that catches a caller
+/// which names no libc wrapper at all.
+///
+/// libuv (node, and every runtime built on it) stats through
+/// `syscall(SYS_statx, …)` directly, a probe it caches at first use:
+/// strace on a real pair shows the kernel receiving
+/// `statx(AT_FDCWD, "/__tfs__", …) = -1 ENOENT` while the shim is armed and
+/// its `statx` symbol never runs. Symbol interposition cannot see such a
+/// call, so on Linux every `fs.stat`/`lstat`/`realpath` inside a mount
+/// answered ENOENT — node's `bin/npm` (a link, so resolution stats it) was
+/// unreachable while `bin/node --version` worked, which is exactly the
+/// split the factory smoke reported (tebako#935).
+///
+/// The dispatch is deliberately narrow: the three stat-family numbers are
+/// answered from the mounts when the path routes there, and every other
+/// syscall — including those same three against a HOST path — is the
+/// byte-identical passthrough.
+#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+#[no_mangle]
+pub unsafe extern "C" fn syscall(
+    number: libc::c_long,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+    arg4: usize,
+    arg5: usize,
+    arg6: usize,
+) -> libc::c_long {
+    boot_arm!(
+        plat::raw_syscall,
+        (number, arg1, arg2, arg3, arg4, arg5, arg6)
+    );
+    let real = || unsafe { plat::real_syscall()(number, arg1, arg2, arg3, arg4, arg5, arg6) };
+    match number {
+        libc::SYS_statx => unsafe {
+            statx_via(
+                arg1 as c_int,
+                arg2 as *const c_char,
+                arg3 as c_int,
+                arg5 as *mut statx_abi::statx,
+                || real() as c_int,
+            ) as libc::c_long
         },
+        libc::SYS_newfstatat => unsafe {
+            fstatat_via(
+                arg1 as c_int,
+                arg2 as *const c_char,
+                arg3 as *mut libc::stat,
+                || real() as c_int,
+            ) as libc::c_long
+        },
+        libc::SYS_fstat => unsafe {
+            fstat_via(arg1 as c_int, arg2 as *mut libc::stat, || real() as c_int) as libc::c_long
+        },
+        libc::SYS_close => unsafe { close_via(arg1 as c_int, || real() as c_int) as libc::c_long },
+        libc::SYS_execve => unsafe {
+            execve_via(
+                arg1 as *const c_char,
+                arg2 as *const *mut c_char,
+                arg3 as *const *mut c_char,
+                || real() as c_int,
+            ) as libc::c_long
+        },
+        _ => real(),
+    }
+}
+
+/// `scandir`/`scandir64` — the whole-listing API (node's `fs.readdir`
+/// path). glibc implements it on its own libc-INTERNAL opendir/readdir
+/// aliases, which LD_PRELOAD cannot interpose, so a VFS directory answered
+/// `ENOENT` even though `opendir` itself works. The shim therefore answers
+/// the call: it opens the VFS handle, copies every entry into its own
+/// malloc'd `struct dirent`, and applies the caller's filter and
+/// comparator exactly as scandir(3) specifies — the array and every entry
+/// are the caller's to `free(3)`, one by one, which is what libuv's
+/// `uv_fs_scandir` does.
+#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+unsafe fn scandir_via(
+    path: *const c_char,
+    namelist: *mut *mut *mut libc::dirent,
+    filter: Option<unsafe extern "C" fn(*const libc::dirent) -> c_int>,
+    compar: Option<
+        unsafe extern "C" fn(*const *const libc::dirent, *const *const libc::dirent) -> c_int,
+    >,
+    real: impl FnOnce() -> c_int,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return real();
+    };
+    if namelist.is_null() {
+        return real();
+    }
+    let id = match engine_call(|| route::vfs_opendir(p)) {
+        Some(PathRoute::Vfs(id)) => id,
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            return -1;
+        }
+        Some(PathRoute::Host) | None => return real(),
+    };
+    // Collect first: the engine's entry buffer is reused per call, and the
+    // handle must be closed on EVERY exit path.
+    let mut collected: Vec<tfs::context::TebakoCDirent> = Vec::new();
+    let mut failure: Option<i32> = None;
+    loop {
+        match engine_call(|| route::vfs_readdir(id)) {
+            Some(Ok(Some(entry))) => collected.push(entry),
+            Some(Ok(None)) => break,
+            Some(Err(e)) => {
+                failure = Some(e);
+                break;
+            }
+            None => {
+                failure = Some(libc::EIO);
+                break;
+            }
+        }
+    }
+    let _ = engine_call(|| route::vfs_closedir(id));
+    if let Some(e) = failure {
+        set_errno(e);
+        return -1;
+    }
+
+    // Filter, allocate, sort — glibc's own order of operations.
+    let kept: Vec<tfs::context::TebakoCDirent> = match filter {
+        Some(f) => collected
+            .into_iter()
+            .filter(|entry| {
+                let mut probe: libc::dirent = unsafe { std::mem::zeroed() };
+                fill_dirent(&mut probe, entry);
+                unsafe { f(&probe) != 0 }
+            })
+            .collect(),
+        None => collected,
+    };
+    let count = kept.len();
+    let array = unsafe {
+        libc::malloc(std::mem::size_of::<*mut libc::dirent>() * count.max(1))
+            as *mut *mut libc::dirent
+    };
+    if array.is_null() {
+        set_errno(libc::ENOMEM);
+        return -1;
+    }
+    for (index, entry) in kept.iter().enumerate() {
+        let name_len = entry
+            .d_name
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(entry.d_name.len());
+        let size = std::mem::size_of::<libc::dirent>() + name_len + 1;
+        let slot = unsafe { libc::malloc(size) as *mut libc::dirent };
+        if slot.is_null() {
+            for done in 0..index {
+                unsafe { libc::free(*array.add(done) as *mut libc::c_void) };
+            }
+            unsafe { libc::free(array as *mut libc::c_void) };
+            set_errno(libc::ENOMEM);
+            return -1;
+        }
+        fill_dirent(unsafe { &mut *slot }, entry);
+        unsafe { *array.add(index) = slot };
+    }
+    if let Some(cmp) = compar {
+        // Insertion sort: the comparator is the caller's and may be
+        // arbitrarily expensive, so the array is small enough that a
+        // quadratic pass is the honest choice (scandir's contract asks for
+        // a sorted array, not a particular algorithm).
+        for i in 1..count {
+            let mut j = i;
+            while j > 0 {
+                let a: *const libc::dirent = unsafe { *array.add(j - 1) };
+                let b: *const libc::dirent = unsafe { *array.add(j) };
+                if unsafe { cmp(&a, &b) } <= 0 {
+                    break;
+                }
+                unsafe { std::ptr::swap(array.add(j - 1), array.add(j)) };
+                j -= 1;
+            }
+        }
+    }
+    unsafe { *namelist = array };
+    count as c_int
+}
+
+/// Interposed `scandir` (the classic spelling).
+#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+#[no_mangle]
+pub unsafe extern "C" fn scandir(
+    path: *const c_char,
+    namelist: *mut *mut *mut libc::dirent,
+    filter: Option<unsafe extern "C" fn(*const libc::dirent) -> c_int>,
+    compar: Option<
+        unsafe extern "C" fn(*const *const libc::dirent, *const *const libc::dirent) -> c_int,
+    >,
+) -> c_int {
+    boot_arm!(plat::raw_scandir, (path, namelist, filter, compar));
+    unsafe {
+        scandir_via(path, namelist, filter, compar, || {
+            plat::real_scandir()(path, namelist, filter, compar)
+        })
+    }
+}
+
+/// Interposed `scandir64` (glibc's LFS alias; same layout on 64-bit —
+/// this is the symbol node imports). glibc-only: musl has no
+/// `scandir64` at all, and a missing dlsym aborts the shim.
+#[cfg(all(target_os = "linux", target_env = "gnu", target_pointer_width = "64"))]
+#[no_mangle]
+pub unsafe extern "C" fn scandir64(
+    path: *const c_char,
+    namelist: *mut *mut *mut libc::dirent,
+    filter: Option<unsafe extern "C" fn(*const libc::dirent) -> c_int>,
+    compar: Option<
+        unsafe extern "C" fn(*const *const libc::dirent, *const *const libc::dirent) -> c_int,
+    >,
+) -> c_int {
+    boot_arm!(plat::raw_scandir64, (path, namelist, filter, compar));
+    unsafe {
+        scandir_via(path, namelist, filter, compar, || {
+            plat::real_scandir64()(path, namelist, filter, compar)
+        })
     }
 }
 
@@ -2080,10 +2407,47 @@ pub unsafe extern "C" fn execve(
     envp: *const *mut c_char,
 ) -> c_int {
     boot_arm!(plat::raw_execve, (path, argv, envp));
+    unsafe { execve_via(path, argv, envp, || plat::real_execve()(path, argv, envp)) }
+}
+
+/// Interposed `execve` body: a memfs path materializes to its host twin
+/// (through the engine's exec answer) and the twin is exec'd, everything
+/// else is `real`. Shared by the `execve` symbol and the `syscall`
+/// interposition — bun (Zig) spawns through raw `syscall(SYS_execve)`, so
+/// `bin/bunx` (a full copy of the interpreter, not a link) answered
+/// ENOENT and every `bunx`/`bun run` child died before exec
+/// (tebako#935).
+unsafe fn execve_via(
+    path: *const c_char,
+    argv: *const *mut c_char,
+    envp: *const *mut c_char,
+    real: impl FnOnce() -> c_int,
+) -> c_int {
     let Some(p) = (unsafe { c_path(path) }) else {
-        return unsafe { plat::real_execve()(path, argv, envp) };
+        return real();
     };
-    match engine_call(|| route::vfs_materialize_exec(p)) {
+    // A fork/clone child gets the try-lock route. `engine_call` refuses any
+    // child of the arm-time process by design (the engine's lock may be
+    // held by a thread that no longer exists there), and bun — Zig code
+    // that clones and then execs its own `bin/bunx` — reached exactly that
+    // refusal, which surfaced as ENOENT (tebako#935). The try-lock route
+    // enters the inherited engine when it is free and answers a named
+    // EAGAIN when it is not; the alternative, refusing the child, is a
+    // fake "no such file" for a file the mounts do hold.
+    let answer = match engine_call(|| route::vfs_materialize_exec(p)) {
+        Some(answer) => Some(answer),
+        None => match route::fork_child_materialize_exec(p) {
+            Ok(answer) => Some(answer),
+            Err(e) => {
+                if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+                    eprintln!("[preload] exec {p} from a child process -> errno={e}");
+                }
+                set_errno(e);
+                return -1;
+            }
+        },
+    };
+    match answer {
         // SAFETY: `host` and the gate's rebuilt envp outlive the call;
         // argv forwards verbatim.
         Some(PathRoute::Vfs(host)) => {
@@ -2105,7 +2469,8 @@ pub unsafe extern "C" fn execve(
             let gate = unsafe { macho_arch::strip_for_path_target(p, envp) };
             #[cfg(target_os = "macos")]
             let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
-            unsafe { plat::real_execve()(path, argv, envp) }
+            let _ = (p, envp);
+            real()
         }
     }
 }

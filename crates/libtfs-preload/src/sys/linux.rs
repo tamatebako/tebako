@@ -215,6 +215,55 @@ real_fn!(
     c"readdir64",
     unsafe extern "C" fn(*mut libc::DIR) -> *mut libc::dirent
 );
+/// `scandir` is a libc composition, not a syscall: its pre-arm arm is the
+/// resolved libc function itself.
+#[cfg(target_pointer_width = "64")]
+pub(super) unsafe extern "C" fn raw_scandir(
+    path: *const c_char,
+    namelist: *mut *mut *mut libc::dirent,
+    filter: Option<unsafe extern "C" fn(*const libc::dirent) -> c_int>,
+    compar: Option<
+        unsafe extern "C" fn(*const *const libc::dirent, *const *const libc::dirent) -> c_int,
+    >,
+) -> c_int {
+    unsafe { real_scandir()(path, namelist, filter, compar) }
+}
+#[cfg(all(target_env = "gnu", target_pointer_width = "64"))]
+pub(super) unsafe extern "C" fn raw_scandir64(
+    path: *const c_char,
+    namelist: *mut *mut *mut libc::dirent,
+    filter: Option<unsafe extern "C" fn(*const libc::dirent) -> c_int>,
+    compar: Option<
+        unsafe extern "C" fn(*const *const libc::dirent, *const *const libc::dirent) -> c_int,
+    >,
+) -> c_int {
+    unsafe { real_scandir64()(path, namelist, filter, compar) }
+}
+real_fn!(
+    real_scandir,
+    c"scandir",
+    unsafe extern "C" fn(
+        *const c_char,
+        *mut *mut *mut libc::dirent,
+        Option<unsafe extern "C" fn(*const libc::dirent) -> c_int>,
+        Option<
+            unsafe extern "C" fn(*const *const libc::dirent, *const *const libc::dirent) -> c_int,
+        >,
+    ) -> c_int
+);
+#[cfg(target_env = "gnu")]
+real_fn!(
+    real_scandir64,
+    c"scandir64",
+    unsafe extern "C" fn(
+        *const c_char,
+        *mut *mut *mut libc::dirent,
+        Option<unsafe extern "C" fn(*const libc::dirent) -> c_int>,
+        Option<
+            unsafe extern "C" fn(*const *const libc::dirent, *const *const libc::dirent) -> c_int,
+        >,
+    ) -> c_int
+);
 real_fn!(
     real_closedir,
     c"closedir",
@@ -510,6 +559,19 @@ real_fn!(
     c"execve",
     unsafe extern "C" fn(*const c_char, *const *mut c_char, *const *mut c_char) -> c_int
 );
+// The real `syscall(2)` entry, resolved past the shim's own export of the
+// symbol (tebako#935: libuv reaches statx through `syscall`, so a libc
+// wrapper interposition never sees a node stat). Fixed arity, not
+// variadic: Linux caps a syscall's argument count at six, so
+// `syscall(nr, a1..a6)` is ABI-identical to the variadic original for
+// every call the kernel can answer — and a variadic DEFINITION is not
+// expressible on stable Rust.
+#[cfg(target_pointer_width = "64")]
+real_fn!(
+    real_syscall,
+    c"syscall",
+    unsafe extern "C" fn(libc::c_long, usize, usize, usize, usize, usize, usize) -> libc::c_long
+);
 real_fn!(
     real_posix_spawn,
     c"posix_spawn",
@@ -782,3 +844,19 @@ static INIT: extern "C" fn() = {
     }
     init
 };
+
+/// `syscall(2)` via the resolved real entry — the pre-arm passthrough of
+/// the `syscall` interposition, and the reason that interposition cannot
+/// recurse into itself (tebako#935).
+#[cfg(target_pointer_width = "64")]
+pub(super) unsafe extern "C" fn raw_syscall(
+    number: libc::c_long,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+    arg4: usize,
+    arg5: usize,
+    arg6: usize,
+) -> libc::c_long {
+    unsafe { real_syscall()(number, arg1, arg2, arg3, arg4, arg5, arg6) }
+}
