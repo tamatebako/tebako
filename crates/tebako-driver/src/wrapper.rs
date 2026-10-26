@@ -296,11 +296,72 @@ fn same_image_file(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
-    let ctx = context().read().unwrap();
-    match (ctx.canonical(a), ctx.canonical(b)) {
-        (Ok(ca), Ok(cb)) => ca == cb,
-        _ => false,
+    let mut ctx = context().write().unwrap();
+    let (ca, cb) = match (ctx.canonical(a), ctx.canonical(b)) {
+        (Ok(ca), Ok(cb)) => (ca, cb),
+        _ => return false,
+    };
+    if ca == cb {
+        return true;
     }
+    same_content(&mut ctx, &ca, &cb)
+}
+
+/// Content identity for a COPY-SHAPED entry (tebako#938).
+///
+/// A packaging flow that cannot create a link stages the second name as a
+/// copy — upstream's Linux bun zip carries one binary, and the Windows
+/// staging path has no symlink — so the image holds two independent files
+/// for one program. Path identity is false by construction there, and the
+/// entry then took the composition path, where the interpreter SPAWNS the
+/// copy: the kernel is handed a path inside the image and answers ENOENT
+/// on POSIX, while on Windows the interpreter reads the PE bytes as a
+/// script (`MZx\x01…`, "Expected ";" but found """).
+///
+/// The direct form is about identity, not spelling, so the bits decide:
+/// equal size first (the cheap discriminator), then a chunked comparison
+/// through the engine's own reader — nothing is materialized to answer it,
+/// and it runs once per boot, only for an entry that is neither the
+/// interpreter's own path nor a link to it.
+fn same_content(ctx: &mut tfs::context::FsContext, a: &str, b: &str) -> bool {
+    use tfs::backend::EntryType;
+    let (Ok(sa), Ok(sb)) = (ctx.stat(a), ctx.stat(b)) else {
+        return false;
+    };
+    if sa.entry_type != EntryType::File || sb.entry_type != EntryType::File {
+        return false;
+    }
+    if sa.size != sb.size || sa.size <= 0 {
+        return false;
+    }
+    let (Ok(fa), Ok(fb)) = (ctx.open(a, libc::O_RDONLY), ctx.open(b, libc::O_RDONLY)) else {
+        return false;
+    };
+    let mut bufa = vec![0u8; 64 * 1024];
+    let mut bufb = vec![0u8; 64 * 1024];
+    let mut equal = true;
+    loop {
+        let (na, nb) = match (ctx.read(fa, &mut bufa), ctx.read(fb, &mut bufb)) {
+            (Ok(na), Ok(nb)) => (na, nb),
+            _ => {
+                equal = false;
+                break;
+            }
+        };
+        if na != nb || bufa[..na] != bufb[..nb] {
+            equal = false;
+            break;
+        }
+        if na == 0 {
+            break;
+        }
+    }
+    let _ = ctx.close(fa);
+    let _ = ctx.close(fb);
+    if equal && std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+        eprintln!("[driver] entry identity by content: {a} == {b}");
+    }
+    equal
 }
 
 fn compose(program: String, outcome: &BootOutcome) -> Launch {
@@ -677,7 +738,19 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
                     let program = materialize(&vfs, mech, &outcome.runtime_root)?;
                     let mut argv =
                         Vec::with_capacity(1 + ep.args_default.len() + h.user_args.len());
-                    argv.push(program.clone());
+                    // argv[0] for an ALIAS is the entry's name: a
+                    // multicall interpreter dispatches on it (`bunx` runs
+                    // bun's package runner, spec 29 §1's identity form).
+                    // The interpreter's OWN entrypoint keeps the program
+                    // path, because argv[0] is load-bearing for runtimes
+                    // that resolve their installation from it (CPython's
+                    // getpath) and the name adds nothing there.
+                    let own_name = vfs.rsplit('/').next().unwrap_or(vfs.as_str());
+                    if ep.name == own_name {
+                        argv.push(program.clone());
+                    } else {
+                        argv.push(ep.name.clone());
+                    }
                     argv.extend(ep.args_default.iter().cloned());
                     argv.extend(h.user_args.iter().cloned());
                     return Ok(BootAction::Launch(Launch { program, argv }));
