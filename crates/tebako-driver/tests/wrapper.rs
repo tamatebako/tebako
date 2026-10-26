@@ -348,6 +348,13 @@ fn preload_exec_delivery_materializes_the_entry_twin() {
     assert_eq!(launch.argv[3], "-version");
 }
 
+// Preload is POSIX-only (a `visibility: preload` image is the named 65 on
+// windows — there is no interposition API), and this case reads the
+// platform's injection variable, which exists only on unix. The gate was
+// attached to the neighbouring case by an edit that inserted a test between
+// the attribute and its function, so a WINDOWS leg compiled this body
+// without INJECT_VAR and failed to build.
+#[cfg(unix)]
 #[test]
 fn preload_bridges_the_entry_and_arms_the_injection_env() {
     let g = guard("pl-launch");
