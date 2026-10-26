@@ -71,7 +71,10 @@ fn contains_ascii_ci(haystack: &[u8], needle: &[u8]) -> bool {
 /// drop itself is never silent at the audit layer.
 pub fn retain_trusted(der_certs: Vec<Vec<u8>>) -> (Vec<Vec<u8>>, usize) {
     let total = der_certs.len();
-    let kept: Vec<Vec<u8>> = der_certs.into_iter().filter(|c| !is_distrusted(c)).collect();
+    let kept: Vec<Vec<u8>> = der_certs
+        .into_iter()
+        .filter(|c| !is_distrusted(c))
+        .collect();
     let dropped = total - kept.len();
     (kept, dropped)
 }
@@ -105,8 +108,7 @@ wVYzxWmIj2VzW7jBacDLSIXvtFG6/Q7Zi5uJkatP7H6F\n\
     /// as a DER fragment the lexical check must catch. Not a valid
     /// certificate — `is_distrusted` is a lexical identity check over
     /// the DER, so a subject-bearing blob is exactly the unit under test.
-    const EMUDHRA_SUBJECT_BLOB: &[u8] =
-        b"0\x131\x110\x0f\x06\x03U\x04\x0a\x13\x08eMudhra Inc";
+    const EMUDHRA_SUBJECT_BLOB: &[u8] = b"0\x131\x110\x0f\x06\x03U\x04\x0a\x13\x08eMudhra Inc";
 
     const EMSIGN_SUBJECT_BLOB: &[u8] =
         b"0\x1c1\x1a0\x18\x06\x03U\x04\x03\x13\x11emSign Root CA - C1";
