@@ -115,7 +115,7 @@ fn a_row_the_host_is_not_published_for_is_a_note_not_a_problem() {
     };
     let registry = format!(
         "schema_version: 1\npayloads:\n  - name: demo\n    kind: toolkit\n    versions:\n      - version: 1.0.0\n        platforms:\n          {other}:\n            artifact: demo-linux.tfs\n            sha256: \"{}\"\n        release: {{ref: \"tfs:github:o/demo:1.0.0\"}}\n",
-        "a".repeat(64)
+        "0".repeat(64)
     );
     let path = dir.join("tpkg-registry.yaml");
     fs::write(&path, &registry).unwrap();
@@ -158,7 +158,7 @@ fn a_row_whose_artifact_is_gone_is_a_problem_without_a_download() {
     let dir = scratch("gone");
     // The registry still names the file and the pin still parses: only the
     // bytes are gone, which is exactly the rot a document gate cannot see.
-    let registry = universal_registry(&dir, &"a".repeat(64), None);
+    let registry = universal_registry(&dir, &"0".repeat(64), None);
     fs::remove_file(dir.join("demo.tfs")).unwrap();
     let path = dir.join("tpkg-registry.yaml");
     fs::write(&path, &registry).unwrap();

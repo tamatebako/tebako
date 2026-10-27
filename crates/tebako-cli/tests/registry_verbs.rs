@@ -359,7 +359,7 @@ fn validate_names_an_abi_mirrored_on_a_multi_platform_row() {
     // class (one platform's value served to every triplet).
     let dir = scratch("vabi");
     let registry = dir.join("tpkg-registry.yaml");
-    let sha = "a".repeat(64);
+    let sha = "0".repeat(64);
     let doc = |abi: &str| {
         format!(
             "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    implementation: mri\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos: {{artifact: app-1.0-macos-arm64.tfs, sha256: \"{sha}\"}}\n          x86_64-linux-gnu: {{artifact: app-1.0-linux-gnu-x86_64.tfs, sha256: \"{sha}\"}}\n        release: {{ref: tfs:github:o/app:1.0}}\n        runtime_requirement: {{engine: ruby, constraint: \"~> 3.3.0\", implementation: mri{abi}}}\n        entrypoints: [app]\n"
