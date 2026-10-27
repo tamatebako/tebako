@@ -160,10 +160,13 @@ jobs:
         working-directory: tebako-rs
         env:
           # First-push of a new package id CANNOT be done by GITHUB_TOKEN
-          # (GitHub quirk: 403 on creation; community#159893) — the org
-          # secret (classic PAT, write:packages) owns creation when present;
-          # GITHUB_TOKEN remains the read path and the whole fallback.
-          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+          # (GitHub quirk: 403 on creation; community#159893) — a classic
+          # PAT carrying write:packages owns creation. TEBAKO_PACKAGES_PAT
+          # is the dedicated name; the org's cross-repo TEBAKO_CI_PAT_TOKEN
+          # rides second because it already exists on every repo, and a
+          # token without the scope degrades to today's 403 (the script's
+          # cache failure path is non-fatal by design, #899).
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.TEBAKO_CI_PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: bash ci/vcpkg-nuget-cache.sh
 
       # Pre-install libsquashfs & co in a serialized step: sqfs-sys's
@@ -729,10 +732,13 @@ jobs:
         shell: bash
         env:
           # First-push of a new package id CANNOT be done by GITHUB_TOKEN
-          # (GitHub quirk: 403 on creation; community#159893) — the org
-          # secret (classic PAT, write:packages) owns creation when present;
-          # GITHUB_TOKEN remains the read path and the whole fallback.
-          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+          # (GitHub quirk: 403 on creation; community#159893) — a classic
+          # PAT carrying write:packages owns creation. TEBAKO_PACKAGES_PAT
+          # is the dedicated name; the org's cross-repo TEBAKO_CI_PAT_TOKEN
+          # rides second because it already exists on every repo, and a
+          # token without the scope degrades to today's 403 (the script's
+          # cache failure path is non-fatal by design, #899).
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.TEBAKO_CI_PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: bash ci/vcpkg-nuget-cache.sh
 
       - name: Cache the cargo target dir
