@@ -109,7 +109,11 @@ REGISTRY=127.0.0.1:$PORT
 # --- the fixture payload: a toolkit image (zip backend — the tfs ZIP
 # reader mounts it) with an embedded manifest and one executable, so
 # the install legs materialize zero-runtime entrypoints from the image.
-FAKE_A=$(printf 'a%.0s' $(seq 1 64))
+# The tree hash is the all-zero placeholder: the install path refuses a
+# manifest whose declared merkle root disagrees with its own image, and a
+# placeholder is the form a producer that never stamped carries (it is
+# skipped, not compared). A fabricated value would be refused — correctly.
+FAKE_A=$(printf '0%.0s' $(seq 1 64))
 FAKE_B=$(printf 'b%.0s' $(seq 1 64))
 make_payload() { # <out> <name> <version> <marker>
   local out=$1 name=$2 version=$3 marker=$4 stage
