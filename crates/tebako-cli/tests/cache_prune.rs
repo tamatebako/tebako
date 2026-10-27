@@ -40,7 +40,7 @@ fn write_payload(home: &Path, name: &str, version: &str, manifest_yaml: Option<&
     fs::write(dir.join(format!("{version}.tfs")), b"image").unwrap();
     fs::write(
         dir.join(format!("{version}.tfs.sha256")),
-        format!("{}  {version}.tfs\n", "a".repeat(64)),
+        format!("{}  {version}.tfs\n", "0".repeat(64)),
     )
     .unwrap();
     fs::write(dir.join(format!("{version}.tfs.origin")), "file:///x\n").unwrap();
@@ -54,7 +54,7 @@ fn write_payload(home: &Path, name: &str, version: &str, manifest_yaml: Option<&
 fn app_manifest(name: &str, version: &str, tool: &str) -> String {
     format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako-cli-tests, tool_version: \"1\"}}\n  created: \"2026-07-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{tree}\"\n    blob_sha256: {blob}\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {tool}\n      path: /app/bin/{tool}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        tree = "a".repeat(64),
+        tree = "0".repeat(64),
         blob = "b".repeat(64),
     )
 }

@@ -1404,7 +1404,7 @@ fn the_oci_option_names_the_bare_repo_only() {
         "app-1.0.tfs",
         &app_manifest_yaml("app", "1.0", &["app"]),
     );
-    let hex = "a".repeat(64);
+    let hex = "0".repeat(64);
     for bad in [
         "tfs+oci://oci.example/acme/app:1.0".to_string(),
         format!("tfs+oci://oci.example/acme/app@sha256:{hex}"),

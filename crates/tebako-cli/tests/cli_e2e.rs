@@ -610,7 +610,7 @@ fn cache_list_json() {
         b"fake",
     )
     .unwrap();
-    fs::write(entry.join("sha256"), format!("{}\n", "a".repeat(64))).unwrap();
+    fs::write(entry.join("sha256"), format!("{}\n", "0".repeat(64))).unwrap();
     fs::write(entry.join("origin"), "https://example.test/runtime\n").unwrap();
 
     // A payload entry (spec 05 layout: artifact + .sha256 + .origin).
