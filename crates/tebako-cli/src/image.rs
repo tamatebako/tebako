@@ -95,9 +95,24 @@ fn stage_source(
             .map_err(|e| plain_error(format!("cannot hash the payload tree: {e}")))?;
         let authored = std::fs::read_to_string(&staged_manifest)
             .map_err(|e| plain_error(format!("cannot read {}: {e}", staged_manifest.display())))?;
-        // A malformed authored manifest goes in unstamped (the imager is
-        // the stamper, not the validator; `tfs info --verify` grades it).
-        if let Ok(filled) = tpkg::merkle_host::fill_tree_hash(&authored, &digest) {
+        // The digest block must be present before the image is built: a
+        // manifest that does not even PARSE is refused by name here rather
+        // than embedded unread (tebako#916) — the author would otherwise
+        // learn at install time, from a different verb. A document that
+        // parses but violates the locked rules still goes in unstamped:
+        // `tfs info --verify` grades it, and that grading must stay
+        // exercisable.
+        let filled = match tpkg::merkle_host::fill_tree_hash(&authored, &digest) {
+            Ok(text) => text,
+            Err(e @ tpkg::ManifestError::Yaml(_)) => {
+                return Err(plain_error(format!(
+                    "the payload manifest at {} does not parse: {e} — the imager stamps identity.digest.tree_hash over a manifest it can read, so the digest block must be present (its tree_hash value may be a placeholder: the imager computes it)",
+                    staged_manifest.display()
+                )))
+            }
+            Err(_) => return Ok(None),
+        };
+        {
             // The staged manifest is a hardlink to the author's source —
             // remove before writing so the source tree is never mutated.
             std::fs::remove_file(&staged_manifest)
@@ -202,10 +217,18 @@ fn stamp_tree_hash(src_dir: &Path) -> Result<Option<(tempfile::TempDir, String)>
         .map_err(|e| plain_error(format!("cannot hash the payload tree: {e}")))?;
     let authored = std::fs::read_to_string(&manifest_path)
         .map_err(|e| plain_error(format!("cannot read {}: {e}", manifest_path.display())))?;
-    let Ok(filled) = tpkg::merkle_host::fill_tree_hash(&authored, &digest) else {
-        // A malformed authored manifest goes in unstamped (mkimage is
-        // the stamper, not the validator; `tfs info --verify` grades it).
-        return Ok(None);
+    let filled = match tpkg::merkle_host::fill_tree_hash(&authored, &digest) {
+        Ok(text) => text,
+        // A manifest that does not parse is refused by name, not embedded
+        // unread (tebako#916); a schema-invalid one still goes in
+        // unstamped for `tfs info --verify` to grade.
+        Err(e @ tpkg::ManifestError::Yaml(_)) => {
+            return Err(plain_error(format!(
+                "the payload manifest at {} does not parse: {e} — the imager stamps identity.digest.tree_hash over a manifest it can read, so the digest block must be present (its tree_hash value may be a placeholder: the imager computes it)",
+                manifest_path.display()
+            )))
+        }
+        Err(_) => return Ok(None),
     };
     let tmp = tempfile::tempdir()
         .map_err(|e| plain_error(format!("cannot create a staging dir: {e}")))?;

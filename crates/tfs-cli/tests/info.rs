@@ -470,15 +470,41 @@ fn verify_plain_image_passes_with_a_note() {
 fn verify_malformed_manifest_is_65() {
     let w = TempDir::new("i65");
     let home = test_home("i65");
-    let img = mk_image(&w, "bad.tfs", Some("identity: [not: valid: yaml"));
-    let (rc, out, _) = run(&["info", "--verify", img.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 65, "{out}");
-    assert!(out.contains("  manifest: FAILED"), "{out}");
-    assert!(out.contains("result: FAILED (exit 65)\n"), "{out}");
 
-    // Schema-invalid (parses, but violates the locked rules) is 65 too.
-    // Normalize the checkout's line endings first (CRLF on windows) so the
-    // field-precise pattern matches on every platform — and only there.
+    // A manifest the imager cannot parse never reaches an image: mkimage
+    // refuses it by name (tebako#916) instead of embedding bytes it never
+    // read, so the author learns at creation time rather than at install.
+    let src = w.0.join("src-bad");
+    std::fs::create_dir_all(src.join("__tpkg__")).unwrap();
+    std::fs::write(src.join("hello.txt"), b"hi").unwrap();
+    std::fs::write(
+        src.join("__tpkg__/manifest.yaml"),
+        "identity: [not: valid: yaml",
+    )
+    .unwrap();
+    let (rc, _, err) = run(
+        &[
+            "mkimage",
+            "--format",
+            "dwarfs",
+            src.to_str().unwrap(),
+            "-o",
+            w.0.join("bad.tfs").to_str().unwrap(),
+        ],
+        &w.0,
+        &home,
+    );
+    assert_eq!(rc, 65, "{err}");
+    assert!(err.contains("does not parse"), "{err}");
+    assert!(
+        err.contains("tree_hash value may be a placeholder"),
+        "{err}"
+    );
+
+    // Schema-invalid (parses, but violates the locked rules) is still 65 at
+    // VERIFY time — this half keeps its original subject. Normalize the
+    // checkout's line endings first (CRLF on windows) so the field-precise
+    // pattern matches on every platform — and only there.
     let invalid = APP_MANIFEST
         .replace("\r\n", "\n")
         .replace("name: metanorma\n", "name: ''\n");

@@ -1618,10 +1618,13 @@ fn exec_child(
 /// plain images stay plain (spec 10's opt-in rule covers the whole
 /// trust surface: nothing is ever stamped into existence).
 ///
-/// Stamping is deliberately lenient: a manifest that does not parse or
-/// validate goes into the image UNSTAMPED (no staging, the authored
-/// bytes verbatim) — mkimage is the stamper, not the validator;
-/// `tfs info --verify` grades malformed manifests (exit 65).
+/// Stamping is a gate, not a courtesy: a manifest that does not parse is
+/// REFUSED by name here (tebako#916), because the alternative is an image
+/// carrying bytes the imager never read — the author learns at install
+/// time, from a different verb, that their manifest was wrong all along.
+/// The digest block must therefore exist before `mkimage` runs; its
+/// `tree_hash` value may be a placeholder, which is what this stamps
+/// over.
 fn stamp_tree_hash(
     source_dir: &Path,
 ) -> Result<Option<(tempfile::TempDir, String)>, (String, i32)> {
@@ -1635,8 +1638,24 @@ fn stamp_tree_hash(
         .map_err(|e| (format!("cannot hash the source tree: {e}"), 1))?;
     let authored = std::fs::read_to_string(&manifest_path)
         .map_err(|e| (format!("cannot read {}: {e}", manifest_path.display()), 1))?;
-    let Ok(filled) = tpkg::merkle_host::fill_tree_hash(&authored, &digest) else {
-        return Ok(None); // malformed authored manifest: unstamped, verify grades it
+    let filled = match tpkg::merkle_host::fill_tree_hash(&authored, &digest) {
+        Ok(text) => text,
+        // A document that does not even parse is refused here (tebako#916):
+        // an image carrying bytes the imager never read teaches the author
+        // at install time, from a different verb.
+        Err(e @ tpkg::ManifestError::Yaml(_)) => {
+            return Err((
+                format!(
+                    "the payload manifest at {} does not parse: {e} — mkimage stamps identity.digest.tree_hash over a manifest it can read, so the digest block must be present (its tree_hash value may be a placeholder: this verb computes it)",
+                    manifest_path.display()
+                ),
+                65,
+            ))
+        }
+        // A document that PARSES but violates the locked rules goes in
+        // unstamped: `tfs info --verify` grades it 65, and that grading is
+        // a product behaviour a foreign-made image must still exercise.
+        Err(_) => return Ok(None),
     };
     let tmp = tempfile::tempdir().map_err(|e| (format!("cannot create a staging dir: {e}"), 1))?;
     let tree = tmp.path().join("tree");
@@ -1648,8 +1667,9 @@ fn stamp_tree_hash(
 /// The `--exclude` flow: stage the FILTERED hardlink mirror, then stamp
 /// the tree hash over it (the hash covers the image's actual contents).
 /// Returns the staging tempdir plus the rendered hash when a manifest
-/// survived the filter and was stamped. Same lenient stamp policy as
-/// `stamp_tree_hash` — a malformed manifest goes in unstamped.
+/// survived the filter and was stamped. The stamp policy is
+/// `stamp_tree_hash`'s: a manifest that does not parse is refused by
+/// name, never embedded unread.
 fn stage_filtered_source(
     source_dir: &Path,
     excludes: &tpkg::exclude::ExcludeSet,
@@ -1666,8 +1686,18 @@ fn stage_filtered_source(
         .map_err(|e| (format!("cannot hash the source tree: {e}"), 1))?;
     let authored = std::fs::read_to_string(&staged_manifest)
         .map_err(|e| (format!("cannot read {}: {e}", staged_manifest.display()), 1))?;
-    let Ok(filled) = tpkg::merkle_host::fill_tree_hash(&authored, &digest) else {
-        return Ok((tmp, None)); // malformed authored manifest: unstamped, verify grades it
+    let filled = match tpkg::merkle_host::fill_tree_hash(&authored, &digest) {
+        Ok(text) => text,
+        Err(e @ tpkg::ManifestError::Yaml(_)) => {
+            return Err((
+                format!(
+                    "the payload manifest at {} does not parse: {e} — mkimage stamps identity.digest.tree_hash over a manifest it can read, so the digest block must be present (its tree_hash value may be a placeholder: this verb computes it)",
+                    staged_manifest.display()
+                ),
+                65,
+            ))
+        }
+        Err(_) => return Ok((tmp, None)),
     };
     // The staged manifest is a hardlink to the author's source — remove
     // before writing so the source tree is never mutated.
