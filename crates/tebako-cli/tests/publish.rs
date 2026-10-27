@@ -66,7 +66,7 @@ fn app_manifest_yaml(name: &str, version: &str, entrypoints: &[&str]) -> String 
         .collect();
     format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n{entries}  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     )
 }
@@ -361,7 +361,7 @@ fn pin_verification_runs_even_under_skip_verify() {
 fn app_manifest_native(name: &str, version: &str, constraint: &str, abi: &str) -> String {
     format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /app/bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \"{constraint}\", implementation: mri, abi: \"{abi}\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     )
 }
@@ -929,7 +929,7 @@ fn version_is_derived_from_the_artifact_names() {
 fn app_manifest_with_requires(name: &str, version: &str, requires: &str) -> String {
     format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /app/bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\nrequires:\n{requires}",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     )
 }
@@ -938,7 +938,7 @@ fn app_manifest_with_requires(name: &str, version: &str, requires: &str) -> Stri
 fn register_dep(fx: &Fixture, name: &str, version: &str) -> String {
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: toolkit\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  platforms: universal\n  capabilities: {{exec: false, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     let dep_path = fx.work.join(format!("{name}-{version}.tfs"));
@@ -1022,7 +1022,7 @@ fn toolkit_image_with_executables(name: &str, version: &str, executables: &[&str
         .collect();
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: toolkit\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  executables:\n{execs}  libraries: []\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     // the executables must exist in the image — the verify install
@@ -1044,7 +1044,7 @@ fn toolkit_image_with_executables(name: &str, version: &str, executables: &[&str
 fn data_image(name: &str, version: &str) -> Vec<u8> {
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  mount_semantics: {{suggested: \"/\"}}\n  capabilities: {{exec: false, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     zip_image(&manifest)

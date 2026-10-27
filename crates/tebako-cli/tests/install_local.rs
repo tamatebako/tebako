@@ -58,7 +58,7 @@ fn zip_image_with_manifest(manifest_yaml: &str) -> Vec<u8> {
 fn embedded_manifest_yaml(name: &str, version: &str) -> String {
     format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /app/bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     )
 }

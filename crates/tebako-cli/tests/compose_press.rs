@@ -93,7 +93,7 @@ fn manifest_yaml(kind: &str, name: &str, version: &str, requires: &str) -> Strin
     };
     format!(
         "identity:\n  schema_version: 1\n  kind: {kind}\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\n{provides}{requires}",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     )
 }

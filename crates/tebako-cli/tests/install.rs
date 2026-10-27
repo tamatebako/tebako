@@ -1290,7 +1290,7 @@ fn zip_runtime_image(name: &str, version: &str) -> Vec<u8> {
         .unwrap_or(version);
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-{name}\n  version: \"0.16.9\"\n  producer: {{tool: tebako-runtime-{name}, tool_version: \"0.16.9\"}}\n  created: \"2026-10-21T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides:\n    engine: {name}\n    version: \"{version}\"\n    abi_line: \"{abi_line}\"\n    platform: {triplet}\n  built_from:\n    src_sha256: {}\n    patch_set: fixture\n  capabilities:\n    exec: true\n    read: true\n    runtime: true\n  entrypoints:\n    - name: {name}\n      path: /bin/{name}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b'),
         sha(b'c'),
     );
@@ -1828,7 +1828,7 @@ fn zip_image_with_manifest(manifest_yaml: &str) -> Vec<u8> {
 fn embedded_manifest_yaml(name: &str, version: &str) -> String {
     format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /app/bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     )
 }
@@ -1839,7 +1839,7 @@ fn embedded_manifest_yaml(name: &str, version: &str) -> String {
 fn toolkit_home_manifest_yaml(name: &str, exe: &str, version: &str) -> String {
     format!(
         "identity:\n  schema_version: 1\n  kind: toolkit\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\n  annotations: {{java_home: \"/\"}}\nprovides:\n  executables:\n    - {{name: {exe}, path: /bin/{exe}, version: \"{version}\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     )
 }
@@ -2118,7 +2118,7 @@ fn uninstall_removes_shims_and_cache_and_journals_the_anchors() {
 fn app_image_with_requires(name: &str, version: &str, requires: &str) -> Vec<u8> {
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /app/bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\nrequires:\n{requires}",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     zip_image_with_manifest(&manifest)
@@ -2129,7 +2129,7 @@ fn app_image_with_requires(name: &str, version: &str, requires: &str) -> Vec<u8>
 fn toolkit_image(name: &str, version: &str) -> Vec<u8> {
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: toolkit\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  platforms: universal\n  capabilities: {{exec: false, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     zip_image_with_manifest(&manifest)
@@ -2139,7 +2139,7 @@ fn toolkit_image(name: &str, version: &str) -> Vec<u8> {
 fn data_image(name: &str, version: &str) -> Vec<u8> {
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  mount_semantics: {{suggested: \"/\"}}\n  capabilities: {{exec: false, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     zip_image_with_manifest(&manifest)
@@ -2763,7 +2763,7 @@ fn cached_java_runtime(fx: &Fixture, entrypoints: &[&str]) {
         .collect();
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-java\n  version: \"21.0.8\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-08-31T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides: {{engine: java, version: \"21.0.8\", abi_line: \"21\", platform: aarch64-macos}}\n  built_from: {{src_sha256: {}, patch_set: v1}}\n  entrypoints:\n{eps}  capabilities: {{exec: true, read: true, runtime: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b'),
         sha(b'c')
     );
@@ -2859,7 +2859,7 @@ fn cached_ruby_runtime(fx: &Fixture) {
     fs::write(dir.join(&exe), b"fake ruby runtime exe\n").unwrap();
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-ruby\n  version: \"3.4.2\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-08-31T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides: {{engine: ruby, version: \"3.4.2\", abi_line: \"3.4\", platform: aarch64-macos}}\n  built_from: {{src_sha256: {}, patch_set: v1}}\n  entrypoints:\n    - {{name: ruby, path: /bin/ruby}}\n  capabilities: {{exec: true, read: true, runtime: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b'),
         sha(b'c')
     );
@@ -2879,7 +2879,7 @@ fn cached_ruby_runtime(fx: &Fixture) {
 fn provider_image(name: &str, version: &str, entrypoint: &str) -> Vec<u8> {
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-08-31T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {entrypoint}\n      path: /app/bin/{entrypoint}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     zip_image_with_manifest(&manifest)
@@ -3338,7 +3338,7 @@ fn per_triplet_registry_yaml(name: &str, version: &str, oci: Option<&str>) -> St
         .unwrap_or_default();
     format!(
         "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: {version}\n        platforms:\n          {triplet}: {{artifact: {name}-{version}-x.tfs, sha256: '{sha}'{oci_field}}}\n        release: {{ref: 'tfs:github:acme/{name}:{version}'}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{name}]\n    default: {version}\n",
-        sha = sha(b'a')
+        sha = "0".repeat(64)
     )
 }
 
@@ -3495,7 +3495,7 @@ fn cached_engine_runtime(
         .collect();
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-{engine}\n  version: \"21.0.8\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-08-31T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides: {{engine: {engine}, version: \"21.0.8\", abi_line: \"21\", platform: aarch64-macos}}\n  built_from: {{src_sha256: {}, patch_set: v1}}\n  entrypoints:\n{eps}  capabilities: {{exec: true, read: true, runtime: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b'),
         sha(b'c')
     );
