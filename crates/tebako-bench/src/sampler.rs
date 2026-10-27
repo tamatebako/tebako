@@ -36,18 +36,22 @@ pub struct ChildSpec {
     pub timeout: Duration,
 }
 
-/// One measured run.
+/// One measured run. A sample describes the measured child and, on a
+/// platform that requires a launcher (Windows has no `exec`: every v2 arm
+/// runs `tebako`/`tebako-shim` in front of the runtime exe), its whole
+/// tree — the launcher's own footprint alone is a 16 ms / 6 MiB fiction
+/// in front of a 55 s compile (tebako#927).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sample {
     /// Instant-elapsed seconds around spawn→reap.
     pub wall_s: f64,
-    /// User CPU seconds attributed to the child.
+    /// User CPU seconds attributed to the child tree.
     pub cpu_user_s: f64,
-    /// System CPU seconds attributed to the child.
+    /// System CPU seconds attributed to the child tree.
     pub cpu_sys_s: f64,
     /// Peak RSS in BYTES, always (unit-normalized at record time —
     /// `ru_maxrss` is KiB on Linux/musl, bytes on macOS; Windows's
-    /// `PeakWorkingSetSize` is bytes).
+    /// `PeakWorkingSetSize` and the job's `PeakJobMemoryUsed` are bytes).
     pub peak_rss_bytes: u64,
     /// The process exit status; 128+signal when signal-killed (the shell
     /// convention — a timeout kill records 137).

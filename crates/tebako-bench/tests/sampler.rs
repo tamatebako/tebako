@@ -146,6 +146,41 @@ fn peak_rss_tracks_the_allocation_in_bytes() {
     );
 }
 
+/// The measured unit is the child's TREE (tebako#927). Windows has no
+/// `exec`, so every v2 arm starts a launcher (`tebako`/`tebako-shim`)
+/// that spawns the runtime exe; sampling the launcher alone reported
+/// 16 ms of CPU and 6 MiB in front of a 55 s compile. The launcher here
+/// is the same helper binary in `--spawn-busy-ms` mode: it does no work
+/// itself, so the asserted CPU and RSS can only come from the grandchild
+/// — the job's totals, never the direct child's own counters.
+#[cfg(windows)]
+#[test]
+fn the_sample_covers_the_child_tree_not_the_launcher() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut sampler = Sampler::new();
+    let sample = sampler
+        .run(&spec(
+            dir.path(),
+            "tree",
+            &["--spawn-busy-ms", "3000", "--spawn-alloc-mb", "256"],
+            120,
+        ))
+        .unwrap();
+    assert_eq!(sample.exit, 0, "{sample:?}");
+    let cpu = sample.cpu_user_s + sample.cpu_sys_s;
+    assert!(
+        cpu >= 1.0,
+        "the grandchild burns ~3 s of CPU; the sample says {cpu:.3} s — that is the \
+         launcher's own footprint, not the tree's (tebako#927): {sample:?}"
+    );
+    assert!(
+        sample.peak_rss_bytes >= 200 * 1024 * 1024,
+        "the grandchild holds 256 MiB; the sample says {} bytes — the launcher's \
+         working set, not the tree's peak (tebako#927)",
+        sample.peak_rss_bytes
+    );
+}
+
 #[test]
 fn timeout_kills_the_child_and_records_137() {
     let dir = tempfile::tempdir().unwrap();
