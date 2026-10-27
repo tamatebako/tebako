@@ -402,24 +402,39 @@ pub fn verify_package(
             (Some(m), None) => {
                 checks.push(Check::pass(name.clone(), "schema valid"));
                 // 5. digest agreement (manifest blob_sha256 vs image bytes).
+                // The EMBEDDED `blob_sha256` is advisory provenance, never a
+                // verification input (spec 03 §7's fixed-point rule: a
+                // manifest inside the image it describes cannot name that
+                // image's digest, so the field lives one tier out). The
+                // outer record — the trailer's per-slot digest (check 2) or
+                // the registry pin — is what verifies the bytes. Reporting
+                // the agreement as a failure made every published payload
+                // exit 70 for being well-formed (tebako#944), so this line
+                // now names both values for an operator comparing against an
+                // outer record and decides nothing on its own.
                 let actual = sha256_region(binary, slot.offset, slot.size)?;
                 let declared = &m.identity.digest.blob_sha256;
-                if hex(&actual) == *declared {
-                    checks.push(Check::pass(
-                        format!("slot[{}] digest agreement", slot.index),
-                        "blob_sha256 matches the image bytes",
-                    ));
-                } else {
-                    checks.push(Check::fail(
-                        format!("slot[{}] digest agreement", slot.index),
+                let placeholder = !declared.is_empty() && declared.chars().all(|c| c == '0');
+                checks.push(Check::skip(
+                    format!("slot[{}] digest agreement", slot.index),
+                    if placeholder {
                         format!(
-                            "manifest blob_sha256 {}… != image {}",
+                            "blob_sha256 is the placeholder (advisory inside an embedded manifest); the image is {}",
+                            hex(&actual)
+                        )
+                    } else if hex(&actual) == *declared {
+                        format!(
+                            "blob_sha256 matches the image bytes (advisory inside an embedded manifest; the outer record is the verification input) — image {}",
+                            hex(&actual)
+                        )
+                    } else {
+                        format!(
+                            "manifest blob_sha256 {}… is advisory inside an embedded manifest, not a verdict; the image is {} — verify against the registry entry or the trailer",
                             &declared[..8.min(declared.len())],
                             hex(&actual)
-                        ),
-                        exit_code::DIGEST,
-                    ));
-                }
+                        )
+                    },
+                ));
             }
             (Some(_), Some(err)) => {
                 checks.push(Check::fail(name, err.clone(), exit_code::MALFORMED));
@@ -1253,27 +1268,37 @@ pub fn verify_image(image: &Path, require_signed: bool) -> Result<Vec<Check>, In
         ));
     }
 
-    // 4. Digest agreement (manifest blob_sha256 vs image bytes, when a
-    //    valid manifest declares it).
+    // 4. Digest agreement: advisory, never a verdict (tebako#944). A
+    //    manifest embedded in the image it describes cannot name that
+    //    image's digest — the fixed-point rule — so the field is advisory
+    //    provenance by spec (03 §7) and the OUTER record (the registry
+    //    entry or the trailer's per-slot digests) is what verifies the
+    //    bytes. Reporting the disagreement as a failure made every
+    //    published payload exit 70 for being well-formed.
     if let Some(m) = manifest {
         let actual = sha256_region(image, 0, p.size_bytes)?;
         let declared = &m.identity.digest.blob_sha256;
-        if hex(&actual) == *declared {
-            checks.push(Check::pass(
-                "digest agreement",
-                "blob_sha256 matches the image bytes",
-            ));
-        } else {
-            checks.push(Check::fail(
-                "digest agreement",
+        let placeholder = !declared.is_empty() && declared.chars().all(|c| c == '0');
+        checks.push(Check::skip(
+            "digest agreement",
+            if placeholder {
                 format!(
-                    "manifest blob_sha256 {}… != image {}",
+                    "blob_sha256 is the placeholder (advisory inside an embedded manifest); the image is {}",
+                    hex(&actual)
+                )
+            } else if hex(&actual) == *declared {
+                format!(
+                    "blob_sha256 matches the image bytes (advisory inside an embedded manifest; the outer record is the verification input) — image {}",
+                    hex(&actual)
+                )
+            } else {
+                format!(
+                    "manifest blob_sha256 {}… is advisory inside an embedded manifest, not a verdict; the image is {} — verify against the registry entry or the trailer",
                     &declared[..8.min(declared.len())],
                     hex(&actual)
-                ),
-                exit_code::DIGEST,
-            ));
-        }
+                )
+            },
+        ));
     }
 
     // 5. Tree hash (spec 03 §7): recompute the manifest-excluded merkle
