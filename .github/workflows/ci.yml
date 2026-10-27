@@ -20,6 +20,16 @@ on:
   schedule:
     # Nightly 03:17 UTC — the full matrix (owner-locked tier map).
     - cron: "17 3 * * *"
+  # Manual dispatch exists for the arm64 stress rig (tebako#874): set
+  # `stress_runs` to repeat the tebako-info lib suite N times on the
+  # arm64-linux row under glibc's malloc checker. Empty (the default)
+  # runs the ordinary matrix.
+  workflow_dispatch:
+    inputs:
+      stress_runs:
+        description: "tebako#874: repeat the arm64 tebako-info lib suite N times under MALLOC_CHECK_=3 (empty = no stress step)"
+        required: false
+        default: ""
 
 # One run per branch/PR-head at a time: a new push cancels the stale run.
 concurrency:
@@ -353,6 +363,23 @@ jobs:
           else
             cargo test --workspace --exclude libtfs-preload
           fi
+
+      # tebako#874: the arm64 allocator abort's recurrence rig. The
+      # signature was one `free(): double free detected in tcache 2`
+      # SIGABRT inside the tebako-info lib suite, gone on the next run of
+      # the same commit; the plain suite cannot name the test that died,
+      # because cargo prints the list only after the binary finishes.
+      # Dispatch CI with `stress_runs` set (any positive integer) and this
+      # step runs the suite one test per process-call under glibc's malloc
+      # checker and perturb, printing each iteration before it starts —
+      # so the log names the test. Never runs on push/PR/schedule: the
+      # input is empty there and the step is skipped.
+      - name: stress the arm64 ABI (tebako#874)
+        if: ${{ matrix.os == 'ubuntu-24.04-arm' && inputs.stress_runs != '' }}
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: sh ci/arm64-abi-stress.sh "${{ inputs.stress_runs }}" tebako-info lib
 
       - name: cargo test (libtfs-preload, per-test watchdog)
         working-directory: tebako-rs
