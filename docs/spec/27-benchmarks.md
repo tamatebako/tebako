@@ -261,10 +261,19 @@ rule (unsafe only inside FFI boundary modules).
     discipline still stands (it keeps wall/timeout semantics clean and
     matches the Windows handle model), even though wait4 makes
     cross-child CPU/RSS contamination impossible by construction.
-  - Windows: `CreateProcessW` + `GetProcessTimes` on the child's
-    process handle after wait; user/kernel 100-ns FILETIME intervals
-    converted to seconds. Recorded as `cpu_user_s` / `cpu_sys_s`;
-    statistics use their sum as `cpu_s`.
+  - Windows: the measured unit is the child's TREE, not the child
+    (`CreateProcessW` is not `exec`: a v2 arm starts `tebako` or
+    `tebako-shim`, which spawns the runtime exe and waits, so the direct
+    child's own counters describe a launcher — 16 ms of CPU in front of a
+    55 s compile, tebako#927). `QueryInformationJobObject(JobObjectBasicAndIoAccountingInformation)`
+    reports `TotalUserTime`/`TotalKernelTime` summed over every process
+    the job has held, terminated ones included; user/kernel are 100-ns
+    `LARGE_INTEGER`s converted to seconds. Recorded as `cpu_user_s` /
+    `cpu_sys_s`; statistics use their sum as `cpu_s`. Read BEFORE the job
+    is closed — the counters die with the handle. When no job exists (a
+    runner that forbids assignment) or its accounting is unreadable, the
+    sample falls back to `GetProcessTimes` on the child's own handle and
+    says so on stderr.
 - **Peak RSS** —
   - POSIX: `ru_maxrss` from the same `wait4` reap (the measured
     child's own high-water mark). **Unit
@@ -272,10 +281,15 @@ rule (unsafe only inside FFI boundary modules).
     reports bytes — the sampler multiplies the Linux value by 1024 and
     every run record carries `peak_rss_bytes`, bytes, always. A result
     file with un-normalized units is a bug, not a platform difference.
-  - Windows: `K32GetProcessMemoryInfo` → `PeakWorkingSetSize` (bytes,
-    already normalized).
-  - `ru_maxrss`/`PeakWorkingSetSize` are high-water marks of the
-    child — per-run peak, not a sample series. That is the metric
+  - Windows: `PeakJobMemoryUsed` from
+    `QueryInformationJobObject(JobObjectExtendedLimitInformation)` — the
+    tree's peak committed memory in bytes, already normalized, and the
+    same tree the CPU numbers describe. The direct-child fallback uses
+    `K32GetProcessMemoryInfo` → `PeakWorkingSetSize` (bytes, already
+    normalized).
+  - `ru_maxrss`/`PeakJobMemoryUsed`/`PeakWorkingSetSize` are high-water
+    marks of the measured process (the tree, where the platform needs a
+    launcher) — per-run peak, not a sample series. That is the metric
     (process comparison), and it is deliberately not a Ruby-heap
     profiler: the comparison target is the process, not the
     interpreter's allocator.
