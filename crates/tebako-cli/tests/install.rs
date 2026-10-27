@@ -167,7 +167,9 @@ fn add_registry_resolves_a_file_directory_to_its_document() {
     )
     .unwrap();
 
-    let dir_ref = format!("file://{}", library.display());
+    // The URL spelling comes from the one constructor (the drive-recovered
+    // `file:///C:/…` form on windows; `file://C:\…` is rejected by the parser).
+    let dir_ref = tebako_http::file_url(&library);
     let (outcome, registry) = install::add_registry(&fx.home, &dir_ref).unwrap();
     assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
     assert_eq!(registry.payloads.len(), 1);
