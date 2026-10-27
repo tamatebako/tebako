@@ -1,24 +1,32 @@
 //! The sampler's Windows mechanics — one of the crate's two FFI boundary
 //! modules (all `unsafe` lives here and in `sys::posix`).
 //!
-//! Spawn is std (`Command` gets argv quoting right for free). Metrics ride
-//! a handle we `OpenProcess` ourselves (std's `Child` does not expose
-//! its handle): `WaitForSingleObject` on a 50 ms tick against an
-//! `Instant` deadline, then `GetProcessTimes` (user/kernel FILETIMEs —
-//! separate, mapping straight onto cpu_user/cpu_sys) and
-//! `K32GetProcessMemoryInfo` (`PeakWorkingSetSize`, already bytes). Both
-//! stay queryable after the child exits because the handle is held open.
+//! Spawn is std (`Command` gets argv quoting right for free). Wait is a
+//! handle we `OpenProcess` ourselves (std's `Child` does not expose its
+//! handle): `WaitForSingleObject` on a 50 ms tick against an `Instant`
+//! deadline.
 //!
-//! The timeout kill is a JOB OBJECT armed with
+//! **The sample describes the child's TREE, not the child.** Windows has
+//! no `exec`, so every v2 arm starts a launcher (`tebako`/`tebako-shim`)
+//! that spawns the runtime exe; measuring the launcher alone reports the
+//! 16 ms / 6 MiB of a shim in front of a 55 s compile (tebako#927). The
+//! job object the timeout kill already needs is the accountable unit:
+//! `QueryInformationJobObject(JobObjectBasicAndIoAccountingInformation)`
+//! sums `TotalUserTime`/`TotalKernelTime` over every process the job has
+//! ever held, and `PeakJobMemoryUsed` is the tree's peak. Only when no
+//! job exists — or its accounting is unreadable — does the sampler fall
+//! back to the direct child's `GetProcessTimes` +
+//! `K32GetProcessMemoryInfo`, LOUDLY on stderr (invariant 9).
+//!
+//! The timeout kill is the same JOB OBJECT armed with
 //! `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`: on expiry we close it, which
 //! takes the child's whole tree (metanorma spawns sub-tools). On a normal
 //! exit the job is disarmed (LimitFlags=0) BEFORE its handle is closed —
 //! closing an armed job would kill the (already exited) tree. CI runners
 //! may nest us in a job that forbids assignment (GitHub windows-2019
 //! does): then we run without a job and the timeout kill degrades to
-//! `TerminateProcess` on the direct child — loud on stderr, never silent
-//! (invariant 9). Either way a timeout records exit 137 (the shell
-//! convention, matching the POSIX SIGKILL path).
+//! `TerminateProcess` on the direct child. Either way a timeout records
+//! exit 137 (the shell convention, matching the POSIX SIGKILL path).
 
 use std::fs::OpenOptions;
 use std::process::{Command, Stdio};
@@ -29,8 +37,9 @@ use windows_sys::Win32::Foundation::{
     CloseHandle, FILETIME, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAndIoAccountingInformation,
+    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+    JOBOBJECT_BASIC_AND_IO_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
@@ -126,10 +135,12 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
         job
     };
 
-    let result = poll_child(h, deadline, job.is_null());
-    let timed_out = matches!(result, PollOutcome::TimedOut);
+    let result = poll_child(h, deadline, job);
+    let timed_out = matches!(result, PollOutcome::TimedOut { .. });
     // The job close IS the tree kill on timeout; otherwise disarm first
-    // (closing an armed job would kill the tree).
+    // (closing an armed job would kill the tree). The sample was taken
+    // above, while the job was still open — its counters die with the
+    // handle.
     close_job(job, timed_out);
 
     // Reap via std (our OpenProcess handle is separate). On timeout the
@@ -156,12 +167,16 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
                 "sampler: child wait() failed: {e}"
             ))),
         },
-        PollOutcome::TimedOut => {
+        PollOutcome::TimedOut {
+            cpu_user_s,
+            cpu_sys_s,
+            peak_rss_bytes,
+        } => {
             // The job close (or the TerminateProcess fallback in
             // poll_child) already killed the child; drain the wait so no
             // zombie handle lingers, ignore its code.
             let _ = wait;
-            query_metrics(h).map(|(cpu_user_s, cpu_sys_s, peak_rss_bytes)| Sample {
+            Ok(Sample {
                 wall_s,
                 cpu_user_s,
                 cpu_sys_s,
@@ -185,19 +200,25 @@ enum PollOutcome {
         cpu_sys_s: f64,
         peak_rss_bytes: u64,
     },
-    TimedOut,
+    TimedOut {
+        cpu_user_s: f64,
+        cpu_sys_s: f64,
+        peak_rss_bytes: u64,
+    },
     Failed(BenchError),
 }
 
 /// WaitForSingleObject polling against the deadline; on expiry the caller
 /// kills via the job close — here we only terminate directly when there
-/// is no job.
-fn poll_child(h: HANDLE, deadline: Instant, no_job: bool) -> PollOutcome {
+/// is no job. Both resource branches sample BEFORE the job is closed:
+/// its counters die with the handle.
+fn poll_child(h: HANDLE, deadline: Instant, job: HANDLE) -> PollOutcome {
+    let no_job = job.is_null();
     loop {
         // SAFETY: h is our valid process handle.
         let rc = unsafe { WaitForSingleObject(h, POLL_INTERVAL_MS) };
         if rc == WAIT_OBJECT_0 {
-            return match query_metrics(h) {
+            return match tree_metrics(h, job) {
                 Ok((cpu_user_s, cpu_sys_s, peak_rss_bytes)) => PollOutcome::Exited {
                     cpu_user_s,
                     cpu_sys_s,
@@ -214,6 +235,7 @@ fn poll_child(h: HANDLE, deadline: Instant, no_job: bool) -> PollOutcome {
         }
         debug_assert_eq!(rc, WAIT_TIMEOUT);
         if Instant::now() >= deadline {
+            let metrics = tree_metrics(h, job);
             if no_job {
                 // SAFETY: h is our valid process handle; failing that, the
                 // sample is a timeout either way.
@@ -221,9 +243,82 @@ fn poll_child(h: HANDLE, deadline: Instant, no_job: bool) -> PollOutcome {
                     TerminateProcess(h, 137);
                 }
             }
-            return PollOutcome::TimedOut;
+            return match metrics {
+                Ok((cpu_user_s, cpu_sys_s, peak_rss_bytes)) => PollOutcome::TimedOut {
+                    cpu_user_s,
+                    cpu_sys_s,
+                    peak_rss_bytes,
+                },
+                Err(e) => PollOutcome::Failed(e),
+            };
         }
     }
+}
+
+/// user/kernel CPU seconds + peak RSS bytes for the MEASURED TREE: the
+/// job's totals when a job is open (every process it has held, terminated
+/// ones included), the direct child's own counters otherwise.
+fn tree_metrics(h: HANDLE, job: HANDLE) -> Result<(f64, f64, u64), BenchError> {
+    if !job.is_null() {
+        match query_job_metrics(job) {
+            Ok(totals) => return Ok(totals),
+            Err(e) => eprintln!(
+                "tebako-bench: warning: the job's accounting is unreadable ({e}); \
+                 this sample describes the direct child only"
+            ),
+        }
+    }
+    query_metrics(h)
+}
+
+/// user/kernel CPU seconds + peak working-set bytes for the whole job —
+/// the accountable unit on a platform with no `exec` (tebako#927).
+fn query_job_metrics(job: HANDLE) -> Result<(f64, f64, u64), BenchError> {
+    let mut acct: JOBOBJECT_BASIC_AND_IO_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: job is our valid job handle; `acct` is a valid out-param of
+    // the passed size for this information class, filled before any read.
+    if unsafe {
+        QueryInformationJobObject(
+            job,
+            JobObjectBasicAndIoAccountingInformation,
+            &mut acct as *mut JOBOBJECT_BASIC_AND_IO_ACCOUNTING_INFORMATION as *mut _,
+            std::mem::size_of::<JOBOBJECT_BASIC_AND_IO_ACCOUNTING_INFORMATION>() as u32,
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(BenchError::operational(format!(
+            "sampler: QueryInformationJobObject(basic accounting) failed: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: as above, for the extended-limit class (`PeakJobMemoryUsed`).
+    if unsafe {
+        QueryInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION as *mut _,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(BenchError::operational(format!(
+            "sampler: QueryInformationJobObject(peaks) failed: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
+    Ok((
+        large_integer_to_s(acct.BasicInfo.TotalUserTime),
+        large_integer_to_s(acct.BasicInfo.TotalKernelTime),
+        limits.PeakJobMemoryUsed as u64,
+    ))
+}
+
+/// A job's `LARGE_INTEGER` times are 100-ns intervals; convert to seconds.
+fn large_integer_to_s(ticks: i64) -> f64 {
+    ticks as f64 / 10_000_000.0
 }
 
 /// user/kernel CPU seconds + peak RSS bytes from the (still open)

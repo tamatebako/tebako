@@ -7,11 +7,13 @@
 //!
 //! ```text
 //! tebako-bench-child [--sleep-ms N] [--busy-ms N] [--alloc-mb N]
+//!                    [--spawn-busy-ms N] [--spawn-alloc-mb N]
 //!                    [--touch PATH]... [--print TEXT] [--print-env VAR]
 //!                    [--exit N]
 //! ```
 //!
-//! Order of operations: alloc → busy → sleep → touch/print → exit.
+//! Order of operations: spawn-launcher → alloc → busy → sleep →
+//! touch/print → exit.
 
 use std::time::{Duration, Instant};
 
@@ -37,6 +39,8 @@ fn main() {
     let mut prints: Vec<String> = Vec::new();
     let mut print_envs: Vec<String> = Vec::new();
     let mut exit = 0i32;
+    let mut spawn_busy_ms: Option<u64> = None;
+    let mut spawn_alloc_mb = 0usize;
 
     let mut i = 0;
     while i < args.len() {
@@ -44,6 +48,18 @@ fn main() {
             "--sleep-ms" => sleep_ms = take_value(&args, &mut i, "--sleep-ms").parse().unwrap_or(0),
             "--busy-ms" => busy_ms = take_value(&args, &mut i, "--busy-ms").parse().unwrap_or(0),
             "--alloc-mb" => alloc_mb = take_value(&args, &mut i, "--alloc-mb").parse().unwrap_or(0),
+            "--spawn-busy-ms" => {
+                spawn_busy_ms = Some(
+                    take_value(&args, &mut i, "--spawn-busy-ms")
+                        .parse()
+                        .unwrap_or(0),
+                )
+            }
+            "--spawn-alloc-mb" => {
+                spawn_alloc_mb = take_value(&args, &mut i, "--spawn-alloc-mb")
+                    .parse()
+                    .unwrap_or(0)
+            }
             "--touch" => touches.push(take_value(&args, &mut i, "--touch")),
             "--print" => prints.push(take_value(&args, &mut i, "--print")),
             "--print-env" => print_envs.push(take_value(&args, &mut i, "--print-env")),
@@ -54,6 +70,32 @@ fn main() {
             }
         }
         i += 1;
+    }
+
+    // Launcher mode (tebako#927's shape): do none of the work here —
+    // spawn a grandchild that does it, wait, and mirror its status. A
+    // sampler that measures this process alone reads milliseconds.
+    if let Some(ms) = spawn_busy_ms {
+        let exe = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("tebako-bench-child: cannot locate itself to spawn: {e}");
+                std::process::exit(74);
+            }
+        };
+        let status = std::process::Command::new(exe)
+            .arg("--busy-ms")
+            .arg(ms.to_string())
+            .arg("--alloc-mb")
+            .arg(spawn_alloc_mb.to_string())
+            .status();
+        match status {
+            Ok(s) => std::process::exit(s.code().unwrap_or(-1)),
+            Err(e) => {
+                eprintln!("tebako-bench-child: cannot spawn its grandchild: {e}");
+                std::process::exit(74);
+            }
+        }
     }
 
     // Allocated and page-touched, then HELD until the end (the peak-RSS
