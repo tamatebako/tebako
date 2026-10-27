@@ -5,11 +5,15 @@
 //! when declared). Everything is local: the trusted keyring is read from
 //! `$TEBAKO_HOME` (never downloaded).
 //!
-//! Note on digest agreement: the check compares the declared
-//! `blob_sha256` against the actual image bytes. A manifest embedded in
-//! the image it describes cannot name that image's digest (the field
-//! would have to hash its own bytes), so this check in practice detects
-//! manifests naming a DIFFERENT blob — tampering or a stale manifest.
+//! Note on digest agreement: the field is ADVISORY, never a verdict
+//! (spec 03 §7's fixed-point rule). A manifest embedded in the image it
+//! describes cannot name that image's digest — the field would have to
+//! hash its own bytes — so the actual verification input is the OUTER
+//! record: the trailer's per-slot digest, the signature, or the registry
+//! pin. The check reports both values for an operator comparing against
+//! that outer record and decides nothing on its own (tebako#944: grading
+//! the embedded value as a failure made every well-formed published
+//! payload exit 70).
 
 use std::path::{Path, PathBuf};
 
