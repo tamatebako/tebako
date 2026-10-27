@@ -777,14 +777,18 @@ fn validate_malformed_is_65() {
 }
 
 #[test]
-fn validate_digest_agreement_is_70() {
+fn validate_reports_the_embedded_digest_as_advisory() {
     let w = TempDir::new("p70b");
     let home = test_home("p70b");
-    // The fixture manifest's blob_sha256 is a placeholder: a manifest
-    // embedded in the image it describes cannot name that image's digest,
-    // so the agreement check reports the disagreement as 70.
-    let app = mk_image(&w, "app.tfs", Some(APP_MANIFEST));
-    let pm = package_manifest_file(&w);
+    // The suite manifest's blob_sha256 is a placeholder: a manifest
+    // embedded in the image it describes can never name that image's
+    // digest (the fixed-point rule), and the field is advisory provenance
+    // by contract. The check reports both values and decides nothing, so a
+    // well-formed package passes (tebako#944). Names and paths mirror
+    // each other so the entry cross-check passes too — this test's subject
+    // is the digest line alone.
+    let app = mk_suite_image(&w, "suite.tfs");
+    let pm = pm_file(&w, SUITE_PACKAGE_MANIFEST_YAML);
     let pkg = w.0.join("pkg");
     bundle(
         &home,
@@ -795,13 +799,20 @@ fn validate_digest_agreement_is_70() {
     );
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}");
+    assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains("  slot[0] manifest: ok — schema valid\n"),
         "{out}"
     );
-    assert!(out.contains("  slot[0] digest agreement: FAILED"), "{out}");
-    assert!(out.contains("result: FAILED (exit 70)\n"), "{out}");
+    assert!(
+        out.contains("  slot[0] digest agreement: skip — manifest blob_sha256"),
+        "{out}"
+    );
+    assert!(
+        out.contains("advisory inside an embedded manifest"),
+        "{out}"
+    );
+    assert!(out.contains("result: PASS\n"), "{out}");
 }
 
 // ---------------------------------------------------------------------
@@ -825,9 +836,9 @@ const SUITE_PACKAGE_MANIFEST_YAML: &str = "schema_version: 1\n\
      entries:\n  - {name: metanorma, slot: 0, entrypoint: bin/metanorma, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n  - {name: metanorma-nokogiri, slot: 0, entrypoint: bin/metanorma-nokogiri, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n";
 
 // The app-suite manifest's blob_sha256 can never name the image that
-// embeds it (the check-5 note in verify.rs), so the suite packages below
-// exit 70 on digest agreement — the entry checks are asserted by their
-// report lines.
+// embeds it (the fixed-point rule), and the field is advisory provenance:
+// a suite package built from it passes (tebako#944), so a composition
+// defect below shows up as its own named failure (65) and nothing else.
 
 #[test]
 fn validate_entries_crosscheck_name_and_path() {
@@ -845,7 +856,7 @@ fn validate_entries_crosscheck_name_and_path() {
     );
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement (check 5), see above
+    assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains("  entry[metanorma]: ok — path exists in slot 0; name declared\n"),
         "{out}"
@@ -890,7 +901,7 @@ fn validate_entries_interp_env_mirror_passes_with_a_refined_value() {
         &pkg,
     );
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement (check 5), see above
+    assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains("  entry-env[metanorma]: ok — slot 0's interp_env mirrored (2 key(s))\n"),
         "{out}"
@@ -919,7 +930,7 @@ fn validate_entries_interp_env_dropped_key_fails() {
         &pkg,
     );
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert_eq!(rc, 65, "{out}");
     assert!(
         out.contains("  entry-env[metanorma]: FAILED — drops slot 0's declared interp_env key(s) RUBY_GC_HEAP_FREE_SLOTS"),
         "{out}"
@@ -977,7 +988,7 @@ fn validate_entries_dangling_name_fails() {
     );
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement precedes the entry check
+    assert_eq!(rc, 65, "{out}");
     assert!(
         out.contains(
             "  entry[fontist]: FAILED — 'fontist' is not a declared entrypoint of slot 0's payload (declared: metanorma, metanorma-nokogiri)\n"
@@ -1181,10 +1192,9 @@ fn default_output_is_the_legacy_trailer_dump() {
 
 /// The L1 shape shared by the spawned cross-check tests: the java edge
 /// plus the `probe` entrypoint the L2 entries mirror. Its digest block
-/// can never name the image that embeds it (the check-5 note in
-/// verify.rs), so these packages exit 70 on digest agreement — the
-/// spawned checks are asserted by their report lines (the suite tests'
-/// rule).
+/// can never name the image that embeds it (the fixed-point rule), and
+/// the field is advisory — so a passing composition reports PASS and a
+/// broken one fails by name (65), which is what these tests assert.
 const SPAWNED_APP_MANIFEST: &str = "identity:\n\
      \x20 schema_version: 1\n\
      \x20 kind: app\n\
@@ -1266,7 +1276,7 @@ fn validate_spawned_mirror_passes_when_the_lock_mirrors_the_edge() {
     let pkg = bundle_spawned_app(&w, &home, &spawned_pm(SPAWNED_LOCK_YAML));
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement (check 5), see above
+    assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains(
             "  spawned[java]: ok — mirrors the L1 edge; the locked version 21.0.12 satisfies \">= 21, < 26\"\n"
@@ -1284,7 +1294,7 @@ fn validate_spawned_unmirrored_edge_is_65() {
     let pkg = bundle_spawned_app(&w, &home, &spawned_pm(""));
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert_eq!(rc, 65, "{out}");
     assert!(
         out.contains(
             "  spawned[java]: FAILED — the app payload's L1 manifest declares this spawned-runtime edge but the lock carries no row"
@@ -1305,7 +1315,7 @@ fn validate_spawned_mirror_mismatches_are_65() {
     );
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert_eq!(rc, 65, "{out}");
     assert!(
         out.contains(
             "  spawned[java]: FAILED — the locked version 20.0.2 does not satisfy the mirrored constraint \">= 21, < 26\""
@@ -1367,7 +1377,7 @@ fn validate_spawned_carried_raw_exe_slot_skips_the_manifest_check() {
     let pkg = bundle_spawned_carried_runtime(&w, &home, None, None);
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // slot 0 digest agreement, see above
+    assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains(
             "  slot[1] manifest: skip — spawned runtime artifact (raw bytes — never mounted; the lock pin is verified against the slot bytes by the spawned[] digest checks)\n"
@@ -1433,7 +1443,7 @@ fn validate_spawned_carried_per_triplet_pin_without_the_host_row_skips_loud() {
     let pkg = bundle_spawned_carried_runtime(&w, &home, Some(exe_pin), None);
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // slot 0 digest agreement, see above
+    assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains(&format!(
             "  spawned[java].exe digest: skip — the lock pin covers no {} row — the host's slot bytes are unchecked\n",
@@ -1520,7 +1530,7 @@ fn validate_spawned32_mirror_passes_when_the_lock_mirrors_the_edge() {
     let pkg = bundle_spawned32_app(&w, &home, &spawned_pm(SPAWNED32_LOCK_YAML));
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement (check 5), see above
+    assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains(
             "  spawned[xml2rfc]: ok — mirrors the L1 executable edge; the locked provider version 3.2.1 satisfies \">= 3.0\"\n"
@@ -1546,7 +1556,7 @@ fn validate_spawned32_unmirrored_edge_is_65() {
     let pkg = bundle_spawned32_app(&w, &home, &spawned_pm(""));
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert_eq!(rc, 65, "{out}");
     assert!(
         out.contains(
             "  spawned[xml2rfc]: FAILED — the app payload's L1 manifest declares this expose-carrying `kind: executable` edge but the lock carries no payload row"
@@ -1568,7 +1578,7 @@ fn validate_spawned32_mirror_mismatches_are_65() {
     );
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert_eq!(rc, 65, "{out}");
     assert!(
         out.contains(
             "  spawned[xml2rfc]: FAILED — the locked provider version 2.9.0 does not satisfy the mirrored constraint \">= 3.0\""
@@ -1634,7 +1644,7 @@ fn validate_spawned32_carried_provider_image_cross_checks_the_nested_runtime() {
     let pkg = bundle_spawned32_carried(&w, &home, ">= 3.3, < 5.0");
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // slot digest agreement, see above
+    assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains(
             "  spawned[xml2rfc]: ok — mirrors the L1 executable edge; the locked provider version 3.2.1 satisfies \">= 3.0\"\n"
@@ -1686,7 +1696,7 @@ fn validate_spawned32_nested_constraint_mirror_mismatch_is_65() {
     let pkg = bundle_spawned32_carried(&w, &home, ">= 3.2");
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}"); // slot digest agreement, see above
+    assert_eq!(rc, 65, "{out}");
     assert!(
         out.contains(
             "  spawned[xml2rfc].runtime: FAILED — the nested runtime constraint mirror differs — the provider's L1 declares \">= 3.3, < 5.0\", the lock carries \">= 3.2\""
