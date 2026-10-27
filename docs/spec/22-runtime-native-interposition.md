@@ -763,6 +763,62 @@ the authored `<jre>:ro` ingredient remains the spelling for an
 operator-INSTALLED host JRE (the non-wrapper pattern this section was
 locked on).
 
+### 3.6 The exe shape's own file-IO family (PLANNED — tebako-runtime-ruby#126)
+
+The runtime exe defines class L's `dlopen`/`dlerror` for the whole
+process (§2 Rule L2), so a loader call routes through the mounts. It
+defines nothing of the file-IO family, and that is a hole with a named
+consumer: ruby statically links libcrypto, whose `BIO_new_file` /
+`X509_LOOKUP_load_file` / `RAND_load_file` / openssl-config reads call
+`fopen64`/`openat64`/`__openat_2`/`__fxstatat64` directly. Under
+`TEBAKO_JAIL=deny` those reads reach the host unchecked — the same
+mechanism tebako#439 fixed for the injected shim, one shape over.
+
+The family cannot be added one symbol at a time. Handing a VFS-backed
+`fd` back to libcrypto obliges the same process to answer that fd's
+`read`, `pread`, `lseek`, `fstat`, `dup`, `fcntl`, and `close`; a
+partial family returns a descriptor the caller then services through
+libc, which is a silent-wrong-bytes failure, strictly worse than the
+untouched hole. The proven implementation of the whole family is
+`crates/libtfs-preload` — including the reentrancy guard, the fd-space
+bookkeeping, `dup`'s shared-offset semantics (tebako#534), and the
+host-policy gate on pass-through.
+
+**Delivery, per platform (both reuse an existing mechanism, neither
+invents one):**
+
+- **ELF.** The exe's own strong definitions preempt libc for the whole
+  process (the Rule L2 mechanism). Definitions inside
+  `libtebako_driver.a` are only pulled by the linker when referenced, so
+  the link line needs `--whole-archive` (or a `-u` per symbol) — a
+  factory link-flag change, named as such. Static libcrypto compiled
+  into the same exe resolves its LFS references against those
+  definitions at static-link time; no `-rdynamic` is required for the
+  in-exe case (it is for the injected one).
+- **macOS.** The driver's micro interpose-dylib (§2's phase-1 delivery,
+  `loader_interpose.c`, `__interpose` tuples bound to the exe's
+  `tebako_fs_*` exports with `-undefined dynamic_lookup`) gains the
+  family's tuples: one VFS context in the process, no third artifact.
+
+**The open design decision (it belongs here before code lands).** The
+injected shim owns its own engine instance; the exe's `tebako_fs_*`
+exports own the exe's. Glue written against the C API keeps ONE context
+and re-implements the routing half of `libtfs-preload` over
+`tebako_fs_open`/`read`/`pread`/`fstat`/`close` +
+`tebako_path_is_embedded` + `tebako_fs_host_guard`; linking the crate
+itself is cheaper to write and leaves the process carrying two engines
+over the same images. The first is the direction §2's macOS delivery
+already took; the choice is recorded here when it is made.
+
+**Acceptance (the issue's bar, not "the symbols are defined").** With
+`TEBAKO_JAIL=deny` and no grant for the cert path, a packaged app's
+`OpenSSL::X509::Store#add_file` / `set_default_paths` /
+`RAND_load_file` fails with the policy's named EPERM and the journal
+carries the denial; with no jail bound, the same run is
+byte-identical to today's. Both proven on the exe shape by the §3
+proof harness, after a runtime build — which is why this row is
+PLANNED and not DELIVERED.
+
 ## 4. Class R — declarative boot materialization
 
 **Rule R1.** An image manifest MAY declare `materialize: [paths]`
@@ -968,8 +1024,8 @@ runtime releases.
   the phase-W design: the PE closure walk, the dln-load IAT rebind, the
   alias bare-name rule) → windows exec (§3.2's host tier — no win32
   spawn hook; the driver materializes by declaration and `PATH` carries
-  the answer). Each lands behind its dogfood
-  proof; a failed proof keeps the adapter.
+  the answer) → the exe shape's own file-IO family (§3.6, PLANNED). Each
+  lands behind its dogfood proof; a failed proof keeps the adapter.
 
 ## 8. Acceptance
 
@@ -998,3 +1054,10 @@ runtime releases.
   mirrored closure + `LOAD_WITH_ALTERED_SEARCH_PATH`; and a failed VFS
   materialization surfaces the §5 verdict line in the raised
   `LoadError`, never the v1-era bare `goto failed`.
+- The exe shape's file-IO family (§3.6 — PLANNED): under
+  `TEBAKO_JAIL=deny` with no grant for the cert path, a packaged app's
+  in-exe libcrypto reads (`Store#add_file`, `set_default_paths`,
+  `RAND_load_file`, the openssl config) fail with the policy's named
+  EPERM and the denial appears in the audit journal; with no jail
+  bound, the same run is byte-identical to the pre-change runtime. Both
+  on the exe shape, through the §3 proof harness.
