@@ -1757,13 +1757,69 @@ fn embedded_root_fingerprint_matches_the_signer_const() {
 // the embedded manifest (tier 1, authoritative)
 // ---------------------------------------------------------------------
 
+/// The merkle root of the fixture payload tree. The hash covers the tree
+/// EXCLUDING `__tpkg__/` (the digest fixed-point rule), which is why a
+/// fixture may rewrite its manifest after the tree is fixed: the value is
+/// independent of the manifest's own bytes.
+fn fixture_tree_hash() -> String {
+    tree_hash_of(&[("app/bin/app", b"#!/bin/sh\n".as_slice())])
+}
+
+/// The merkle root of an arbitrary fixture tree: a unique scratch dir per
+/// call (the test binary is threaded, so a shared path would race between
+/// deletions), hashed the way `mkimage` hashes a payload — paths relative
+/// to the root, no `__tpkg__/`.
+fn tree_hash_of(entries: &[(&str, &[u8])]) -> String {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "tebako-cli-fixture-tree-{}-{n}",
+        std::process::id()
+    ));
+    let src = dir.join("tree");
+    let _ = fs::remove_dir_all(&dir);
+    for (path, bytes) in entries {
+        let dest = src.join(path);
+        fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        fs::write(&dest, bytes).unwrap();
+    }
+    let digest = tpkg::tree_digest(&tpkg::merkle_host::HostTree::new(&src)).unwrap();
+    let rendered = tpkg::render_tree_hash(&digest);
+    let _ = fs::remove_dir_all(&dir);
+    rendered
+}
+
+/// Replace whatever `tree_hash:` the fixture wrote with the tree's real
+/// root — the install path refuses a manifest that disagrees with its own
+/// image (tebako#916 defect 3), so fixtures must not lie either.
+fn restamp_tree_hash(manifest_yaml: &str, real: &str) -> String {
+    let mut out = String::with_capacity(manifest_yaml.len());
+    for line in manifest_yaml.lines() {
+        if line.trim_start().starts_with("tree_hash:") {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            out.push_str(&format!("{indent}tree_hash: \"{real}\"\n"));
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 fn zip_image_with_manifest(manifest_yaml: &str) -> Vec<u8> {
+    let stamped = restamp_tree_hash(manifest_yaml, &fixture_tree_hash());
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default();
     writer
         .start_file("__tpkg__/manifest.yaml", options)
         .unwrap();
-    writer.write_all(manifest_yaml.as_bytes()).unwrap();
+    writer.write_all(stamped.as_bytes()).unwrap();
+    // Explicit directory entries: the tree walk over an archive sees only
+    // what the archive records, so a directory the writer never adds is a
+    // directory the merkle root cannot contain (and the stamped hash, which
+    // comes from a real tree, would disagree).
+    writer.add_directory("app/", options).unwrap();
+    writer.add_directory("app/bin/", options).unwrap();
     writer.start_file("app/bin/app", options).unwrap();
     writer.write_all(b"#!/bin/sh\n").unwrap();
     writer.finish().unwrap().into_inner()
@@ -1803,9 +1859,14 @@ fn zip_image_with_home(name: &str, exe: &str, version: &str) -> Vec<u8> {
     writer
         .start_file("__tpkg__/manifest.yaml", options)
         .unwrap();
-    writer
-        .write_all(toolkit_home_manifest_yaml(name, exe, version).as_bytes())
-        .unwrap();
+    let stamped = restamp_tree_hash(
+        &toolkit_home_manifest_yaml(name, exe, version),
+        &tree_hash_of(&[
+            (&format!("bin/{exe}"), b"#!/bin/sh\n".as_slice()),
+            ("lib/jvm.cfg", b"-server KNOWN\n".as_slice()),
+        ]),
+    );
+    writer.write_all(stamped.as_bytes()).unwrap();
     writer.start_file(format!("bin/{exe}"), options).unwrap();
     writer.write_all(b"#!/bin/sh\n").unwrap();
     writer.start_file("lib/jvm.cfg", options).unwrap();

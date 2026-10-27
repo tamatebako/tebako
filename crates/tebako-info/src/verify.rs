@@ -1324,6 +1324,35 @@ pub fn verify_image(image: &Path, require_signed: bool) -> Result<Vec<Check>, In
 
 /// Recompute the payload tree hash (spec 03 §7) over a fresh mount of
 /// the image. `Err` is the named reason recomputation cannot run.
+/// The outcome of comparing a manifest's declared `tree_hash` with the
+/// merkle root recomputed over the image (tebako#916 defect 3). A
+/// backend that cannot enumerate the tree (special files) answers
+/// [`Unavailable`](TreeHashCheck::Unavailable) rather than a verdict —
+/// "I cannot look" is not "I looked and it was wrong".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TreeHashCheck {
+    /// The declared value matches the recomputed root.
+    Match,
+    /// The image's root disagrees with the declaration.
+    Mismatch { declared: String, actual: String },
+    /// The tree could not be enumerated (the reason travels).
+    Unavailable(String),
+}
+
+/// Recompute the merkle root over `image` and compare it with the
+/// manifest's declaration. The caller decides what a mismatch means; the
+/// install path refuses the payload before it reaches the store.
+pub fn check_tree_hash(image: &Path, declared: &str) -> TreeHashCheck {
+    match recompute_tree_hash(image) {
+        Ok(actual) if actual == declared => TreeHashCheck::Match,
+        Ok(actual) => TreeHashCheck::Mismatch {
+            declared: declared.to_string(),
+            actual,
+        },
+        Err(e) => TreeHashCheck::Unavailable(e),
+    }
+}
+
 fn recompute_tree_hash(image: &Path) -> Result<String, String> {
     let mount = tfs::mount::build_from_file(&image.to_string_lossy(), "/mnt")
         .map_err(|e| format!("cannot mount for recomputation (errno {e})"))?;
@@ -1349,4 +1378,61 @@ fn keyid_bytes(keyid: &str) -> Result<[u8; 8], InfoError> {
             .map_err(|_| err(format!("invalid keyid {keyid:?} (want 16 hex)")))?;
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tree_hash_tests {
+    use super::*;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-info-th-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The check the install path runs (tebako#916 defect 3): a declared
+    /// root that is not the image's own is a mismatch, and the value the
+    /// mismatch reports is the one that then matches — so the comparison
+    /// is real, not a constant.
+    #[test]
+    fn a_declared_root_must_match_the_image_it_describes() {
+        let dir = scratch("match");
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("hello.txt"), b"hi").unwrap();
+        let img = dir.join("app.tfs");
+        let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default()).unwrap();
+        writer.add_tree(&src, "/").unwrap();
+        writer.write(&img).unwrap();
+
+        let zeros = format!("sha256:{}", "0".repeat(64));
+        let actual = match check_tree_hash(&img, &zeros) {
+            TreeHashCheck::Mismatch { actual, .. } => actual,
+            other => panic!("expected a mismatch against the placeholder, got {other:?}"),
+        };
+        assert_eq!(check_tree_hash(&img, &actual), TreeHashCheck::Match);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A path that is not an image cannot be enumerated: the answer is
+    /// `Unavailable`, never a verdict. "I cannot look" must not read as
+    /// "I looked and it was wrong".
+    #[test]
+    fn an_unreadable_image_is_unavailable_not_a_mismatch() {
+        let dir = scratch("unavailable");
+        let not_an_image = dir.join("not-an-image.tfs");
+        std::fs::write(&not_an_image, b"definitely not a filesystem image").unwrap();
+        assert!(matches!(
+            check_tree_hash(&not_an_image, &format!("sha256:{}", "a".repeat(64))),
+            TreeHashCheck::Unavailable(_)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
