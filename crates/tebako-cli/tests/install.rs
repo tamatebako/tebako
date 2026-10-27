@@ -151,6 +151,38 @@ fn add_registry_registers_and_preserves_config_keys() {
     assert_eq!(install::list_registries(&fx.home).unwrap().len(), 1);
 }
 
+/// spec 04 §2: a `file://` reference naming a DIRECTORY resolves the
+/// registry document inside it (`tpkg-registry.yaml`). A library is a
+/// directory by design, and the library guide's first command names one
+/// that way — failing there with "Is a directory" taught the wrong thing.
+#[test]
+fn add_registry_resolves_a_file_directory_to_its_document() {
+    let fx = Fixture::new("addregdir");
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let library = fx.home.join("library");
+    fs::create_dir_all(&library).unwrap();
+    fs::write(
+        library.join("tpkg-registry.yaml"),
+        registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
+    )
+    .unwrap();
+
+    let dir_ref = format!("file://{}", library.display());
+    let (outcome, registry) = install::add_registry(&fx.home, &dir_ref).unwrap();
+    assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
+    assert_eq!(registry.payloads.len(), 1);
+
+    // The book holds the RESOLVED document, not the directory spelling:
+    // dispatch and every later read go straight at the file.
+    let rows = install::list_registries(&fx.home).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0].reference.ends_with("/tpkg-registry.yaml"),
+        "expected the resolved document, got {}",
+        rows[0].reference
+    );
+}
+
 #[test]
 fn add_registry_book_keys_round_trip_and_render() {
     let fx = Fixture::new("addregbook");

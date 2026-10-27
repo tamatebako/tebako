@@ -181,6 +181,29 @@ pub enum SigningConsent {
     Unattended,
 }
 
+/// A `file://` reference that names a DIRECTORY means the registry
+/// document the directory holds: the registry file's name is fixed
+/// (`tpkg-registry.yaml`), and a library is a directory by design — the
+/// library guide's first command names one that way, so the document is
+/// resolved rather than taught.
+///
+/// Only an existing directory is rewritten. A missing path, a pinned
+/// directory (a digest of a directory names nothing), and every non-`file`
+/// form return unchanged and keep their own named error at fetch time —
+/// no guessing about what the author meant.
+fn resolve_registry_directory(r: RegistryRef) -> RegistryRef {
+    let path = match &r {
+        RegistryRef::File(Reference::File { path, sha256: None }) => path.clone(),
+        _ => return r,
+    };
+    let dir = Path::new(&path);
+    if !dir.is_dir() {
+        return r;
+    }
+    let document = tebako_http::file_url(&dir.join("tpkg-registry.yaml"));
+    RegistryRef::parse(&document).unwrap_or(r)
+}
+
 /// The transport-injected half of [`add_registry_opts`] (tests).
 pub fn add_registry_full<T: Transport>(
     home: &Path,
@@ -189,7 +212,9 @@ pub fn add_registry_full<T: Transport>(
     consent: SigningConsent,
     fetcher: &Fetcher<T>,
 ) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
-    let r = RegistryRef::parse(registry_ref).map_err(|e| err(EX_USAGE, e.to_string()))?;
+    let r = resolve_registry_directory(
+        RegistryRef::parse(registry_ref).map_err(|e| err(EX_USAGE, e.to_string()))?,
+    );
     // spec 06 §5a's wiring rule: the network read renders through
     // tebako-term — a one-shot quiet-gated line (an index read, not an
     // artifact stream — no bar).
