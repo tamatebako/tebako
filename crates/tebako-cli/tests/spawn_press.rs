@@ -81,7 +81,7 @@ fn zip_image_with_manifest(manifest_yaml: &str) -> Vec<u8> {
 fn app_image_with_requires(requires: &str) -> Vec<u8> {
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: mn\n  version: \"1.0\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-09-12T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: mn\n      path: /app/bin/mn\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\nrequires:\n{requires}",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     zip_image_with_manifest(&manifest)
@@ -138,7 +138,7 @@ fn cached_runtime(
         .collect();
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-{engine}\n  version: \"{lv}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-09-12T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides: {{engine: {engine}, version: \"{lv}\", abi_line: \"21\", platform: aarch64-macos}}\n  built_from: {{src_sha256: {}, patch_set: v1}}\n  entrypoints:\n{eps}  capabilities: {{exec: true, read: true, runtime: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b'),
         sha(b'c')
     );
@@ -169,7 +169,7 @@ fn provider_image(name: &str, version: &str, entrypoint: &str, language: Option<
     };
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-09-12T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {entrypoint}\n      path: /app/bin/{entrypoint}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n{requires}",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     zip_image_with_manifest(&manifest)
@@ -180,7 +180,7 @@ fn provider_image(name: &str, version: &str, entrypoint: &str, language: Option<
 fn runtime_less_provider_image(name: &str, version: &str, entrypoint: &str) -> Vec<u8> {
     let manifest = format!(
         "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-09-12T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {entrypoint}\n      path: /app/bin/{entrypoint}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
-        sha(b'a'),
+        "0".repeat(64),
         sha(b'b')
     );
     zip_image_with_manifest(&manifest)
