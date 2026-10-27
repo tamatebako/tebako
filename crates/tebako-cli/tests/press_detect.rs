@@ -80,7 +80,55 @@ fn a_python_project_names_its_engine_and_the_current_limit() {
     let (code, err) = press(&dir);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("python project"), "{err}");
-    assert!(err.contains("not available in this release"), "{err}");
+    // No console command declared: the entry point is exactly what is
+    // missing, so the refusal names that rather than the whole backend.
+    assert!(err.contains("[project.scripts]"), "{err}");
+}
+
+/// PEP 621's console command and `requires-python` are derived, so the
+/// refusal names what was read instead of calling the directory unknown
+/// (tebako#862's first increment).
+#[test]
+fn a_python_project_names_the_console_command_and_requirement_it_read() {
+    let dir = scratch("python-scripts");
+    fs::write(
+        dir.join("pyproject.toml"),
+        "[project]\nname = \"x\"\nrequires-python = \">=3.11,<4\"\n\n[project.scripts]\nmycli = \"x.cli:main\"\n",
+    )
+    .unwrap();
+
+    let (code, err) = press(&dir);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("console command is 'mycli'"), "{err}");
+    assert!(err.contains("requires python >=3.11,<4"), "{err}");
+    assert!(err.contains("derived, not guessed"), "{err}");
+}
+
+#[test]
+fn a_python_project_with_several_scripts_is_refused_with_their_names() {
+    let dir = scratch("python-many");
+    fs::write(
+        dir.join("pyproject.toml"),
+        "[project]\nname = \"x\"\n\n[project.scripts]\na-one = \"x.a:main\"\nb-two = \"x.b:main\"\n",
+    )
+    .unwrap();
+
+    let (code, err) = press(&dir);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("2 console commands"), "{err}");
+    assert!(err.contains("a-one, b-two"), "{err}");
+    assert!(err.contains("-e <entry>"), "{err}");
+}
+
+#[test]
+fn an_unparseable_pyproject_is_named_as_such() {
+    let dir = scratch("python-broken");
+    fs::write(dir.join("pyproject.toml"), "[project\nname = ").unwrap();
+
+    let (code, err) = press(&dir);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("pyproject.toml"), "{err}");
+    assert!(err.contains("does not parse"), "{err}");
 }
 
 #[test]

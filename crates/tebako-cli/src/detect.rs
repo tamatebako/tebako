@@ -77,12 +77,29 @@ pub fn detect(dir: &Path) -> Result<ProjectPlan, String> {
                     requirement,
                 });
             }
-            for (name, engine) in [("pyproject.toml", "python"), ("Cargo.toml", "rust")] {
-                if dir.join(name).is_file() {
-                    return Err(format!(
-                        "this directory is a {engine} project ({name}): the {engine} press backend is not available in this release — the project-kind detection ships for ruby first; press a ruby project, or see the feedstock model in the guides for other engines"
-                    ));
-                }
+            // python's plan IS derivable from PEP 621 (the console command
+            // and `requires-python`), so it is derived here and refused at
+            // the BACKEND, where the message can name what was read — the
+            // node path's shape. An unreadable pyproject.toml reports its
+            // own parse error instead of a generic "not available".
+            if dir.join("pyproject.toml").is_file() {
+                return match python_plan(&dir) {
+                    Ok((entry, requirement)) => Err(format!(
+                        "this directory is a python project (pyproject.toml): its console command is '{}'{}. The python press backend is not available in this release — the plan was derived, not guessed, and is refused here rather than at build time; press a ruby project, or see the feedstock model in the guides for other engines",
+                        entry.display(),
+                        requirement
+                            .map(|r| format!(" and it requires python {r}"))
+                            .unwrap_or_default()
+                    )),
+                    Err(e) => Err(format!(
+                        "this directory is a python project (pyproject.toml), but {e}"
+                    )),
+                };
+            }
+            if dir.join("Cargo.toml").is_file() {
+                return Err(
+                    "this directory is a rust project (Cargo.toml): the rust press backend is not available in this release — the project-kind detection ships for ruby first; press a ruby project, or see the feedstock model in the guides for other engines".to_string()
+                );
             }
             // The usage line promises "the single root *.rb": a directory
             // with no marker but exactly one executable script (bin/, exe/,
@@ -185,6 +202,39 @@ fn node_plan(dir: &Path) -> Result<(PathBuf, Option<String>), String> {
         return Ok((PathBuf::from("index.js"), requirement));
     }
     Err("its package.json declares no bin/main script and the root holds no index.js".to_string())
+}
+
+/// `pyproject.toml`'s PEP 621 shape: the console command under
+/// `[project.scripts]` (`name = "module:callable"`) is the entry, and
+/// `requires-python` is the interpreter requirement. Derived so the
+/// backend's refusal can name what it read rather than calling the
+/// directory empty — the node path's precedent, applied to python.
+fn python_plan(dir: &Path) -> Result<(PathBuf, Option<String>), String> {
+    let path = dir.join("pyproject.toml");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("its pyproject.toml cannot be read: {e}"))?;
+    let doc = text
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("its pyproject.toml does not parse: {e}"))?;
+    let project = doc.get("project").and_then(|p| p.as_table_like());
+    let requirement = project
+        .and_then(|p| p.get("requires-python"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let scripts: Vec<&str> = project
+        .and_then(|p| p.get("scripts"))
+        .and_then(|s| s.as_table_like())
+        .map(|t| t.iter().map(|(k, _)| k).collect())
+        .unwrap_or_default();
+    match scripts.as_slice() {
+        [] => Err("its pyproject.toml declares no [project.scripts] console command — that command IS the entry point".to_string()),
+        [one] => Ok((PathBuf::from(one), requirement)),
+        several => Err(format!(
+            "its [project.scripts] declares {} console commands ({}); pass -e <entry> to name the entry point",
+            several.len(),
+            several.join(", ")
+        )),
+    }
 }
 
 /// The entry point of a Ruby project: the single executable script under

@@ -38,6 +38,13 @@ tebako-bootstrap = { version = "2.0.0", path = "../tebako-bootstrap" }
 # The suite file (--suite) is authored YAML (spec 00 invariant 6) — the
 # tpkg manifest convention (serde_yml), not serde_yaml.
 serde = { version = "1", features = ["derive"] }
+# The python press reads `pyproject.toml` (PEP 621): the entry is the
+# console command in `[project.scripts]` and `requires-python` is the
+# runtime requirement. `toml_edit` is the crate cargo itself uses; our
+# use is read-only today and Stage D's recipe emission reuses it, so a
+# second TOML reader never enters the tree (toml_edit, not toml: the
+# latter drags serde in for a parse the product does not need).
+toml_edit = "0.23"
 serde_yml = "0.0.12"
 # The in-process DwarFS writer (dwarfs-t-rs): the application and deploy
 # driver images are built without any mkdwarfs binary.
