@@ -1994,6 +1994,52 @@ fn finish_install<T: Transport + Sync>(
                                                 ),
                                             )));
                                         }
+                                        // The payload's own merkle root (tebako#916
+                                        // defect 3): a manifest that declares one —
+                                        // and the all-zero placeholder is not a claim
+                                        // — must match the image it arrived in. A
+                                        // backend that cannot enumerate the tree
+                                        // (special files) says so and the registry
+                                        // pin stays the only anchor.
+                                        let declared = embedded.identity.digest.tree_hash.trim();
+                                        let placeholder =
+                                            declared.strip_prefix("sha256:").is_some_and(|hex| {
+                                                !hex.is_empty() && hex.chars().all(|c| c == '0')
+                                            });
+                                        if !placeholder {
+                                            match tebako_info::verify::check_tree_hash(
+                                                staged.tmp,
+                                                declared,
+                                            ) {
+                                                tebako_info::verify::TreeHashCheck::Match => {}
+                                                tebako_info::verify::TreeHashCheck::Mismatch {
+                                                    declared,
+                                                    actual,
+                                                } => {
+                                                    return Err(sink.fail(err(
+                                                        EX_TEBAKO_MANIFEST,
+                                                        format!(
+                                                            "the embedded manifest of the incoming {} {} declares tree_hash {declared}, but the image's merkle root is {actual} — the payload does not describe itself, so nothing was placed",
+                                                            plan.name, plan.version
+                                                        ),
+                                                    )))
+                                                }
+                                                // A tree this backend cannot
+                                                // enumerate (an older image
+                                                // format, special files, or a
+                                                // fixture that is not an image
+                                                // at all) is not a verdict: the
+                                                // registry pin already bounds
+                                                // the bytes, and a payload that
+                                                // cannot mount fails by name at
+                                                // run time. Staying quiet here
+                                                // keeps install's output to the
+                                                // lines it earns.
+                                                tebako_info::verify::TreeHashCheck::Unavailable(
+                                                    _,
+                                                ) => {}
+                                            }
+                                        }
                                     }
                                     Err(e) => {
                                         return Err(sink.fail(err(
