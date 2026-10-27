@@ -515,19 +515,28 @@ fn verify_malformed_manifest_is_65() {
 }
 
 #[test]
-fn verify_digest_agreement_is_70() {
+fn verify_reports_the_embedded_digest_as_advisory() {
     let w = TempDir::new("i70");
     let home = test_home("i70");
-    // The fixture manifest's blob_sha256 is a placeholder, so it can never
-    // match the actual image bytes (a manifest embedded in the image it
-    // describes cannot name that image's digest) — the check reports the
-    // disagreement as exit 70.
+    // The fixture manifest's blob_sha256 is a placeholder, and a manifest
+    // embedded in the image it describes can never name that image's
+    // digest (the fixed-point rule). The field is advisory provenance, so
+    // the check reports both values and decides nothing: a well-formed
+    // payload must not fail verify for being well-formed (tebako#944).
     let img = mk_image(&w, "app.tfs", Some(APP_MANIFEST));
     let (rc, out, _) = run(&["info", "--verify", img.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 70, "{out}");
+    assert_eq!(rc, 0, "{out}");
     assert!(out.contains("  manifest: ok"), "{out}");
-    assert!(out.contains("  digest agreement: FAILED"), "{out}");
-    assert!(out.contains("result: FAILED (exit 70)\n"), "{out}");
+    assert!(
+        out.contains("digest agreement: SKIPPED") || out.contains("digest agreement: skip"),
+        "{out}"
+    );
+    assert!(
+        out.contains("advisory inside an embedded manifest"),
+        "{out}"
+    );
+    assert!(out.contains("the image is "), "{out}");
+    assert!(!out.contains("FAILED"), "{out}");
 }
 
 #[test]
@@ -580,10 +589,13 @@ fn verify_signature_outcomes_trusted_and_unknown_signer() {
     std::fs::write(w.0.join("runtime.tfs.asc"), armored).unwrap();
 
     let (rc, out, _) = run(&["info", "--verify", img.to_str().unwrap()], &w.0, &home);
-    // The signature itself verifies (trusted); the declared blob_sha256
-    // placeholder cannot match the image → 70 from digest agreement.
-    assert_eq!(rc, 70, "{out}");
+    // The signature verifies (trusted), the tree hash agrees with the image
+    // and the embedded blob_sha256 is advisory — nothing fails, so the
+    // verdict is a pass (tebako#944).
+    assert_eq!(rc, 0, "{out}");
     assert!(out.contains("  signature: ok — trusted"), "{out}");
+    assert!(out.contains("digest agreement: skip"), "{out}");
+    assert!(out.contains("result: PASS"), "{out}");
 
     // The same image against an empty keyring: unknown signer → 72.
     let stranger = test_home("stranger");
