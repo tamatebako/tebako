@@ -407,14 +407,15 @@ jobs:
         run: |
           set -e
           shopt -s nullglob
-          # Run the test BINARIES directly (unit + e2e), not via cargo:
+          # Run the test BINARIES directly (unit + e2e + the exe-shape
+          # proof), not via cargo:
           # a wedged test must stay alive past its 180 s budget so gdb
           # can dump every thread BEFORE the kill — the log then carries
           # the deadlock's lock graph, not just a name. (cargo forwards
           # SIGTERM to the test child, so `timeout cargo test …` reaps
           # the very process we need to inspect.)
           BINS=()
-          for b in target/debug/deps/tfs_preload-* target/debug/deps/e2e-*; do
+          for b in target/debug/deps/tfs_preload-* target/debug/deps/e2e-* target/debug/deps/exe_shape-*; do
             case "$b" in *.d) continue;; esac
             [ -x "$b" ] && BINS+=("$b")
           done
