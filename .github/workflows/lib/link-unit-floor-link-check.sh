@@ -57,6 +57,29 @@ c++ -o "$probe_dir/probe" "$probe_dir/consumer.o" \
   -Wl,--start-group "$unit/libtebako_driver.a" "$unit/libtfs.a" "$unit"/closure/*.a -Wl,--end-group \
   -lpthread -ldl -lm
 
+# The exe-shape archive (spec 22 §3.6), when this leg shipped one: the
+# factory's exact link shape — --whole-archive on the family, the scoped
+# siblings plain. The consumer calls the kept entry point, so the link
+# proves the scoping left tebako_preload_init (and the family's libc
+# spellings) unrenamed and the dedupe left no multiple definitions.
+if [ -f "$unit/libtfs_preload.a" ]; then
+  cat > "$probe_dir/exe_shape_consumer.c" <<'EOF'
+extern int tebako_preload_init(void);
+int main(void) {
+    /* No mounts exported: the family initializes with an empty set. */
+    return tebako_preload_init() == 0 ? 0 : 1;
+}
+EOF
+  cc -c "$probe_dir/exe_shape_consumer.c" -o "$probe_dir/exe_shape_consumer.o"
+  c++ -o "$probe_dir/exe_shape_probe" "$probe_dir/exe_shape_consumer.o" \
+    -Wl,--whole-archive "$unit/libtfs_preload.a" -Wl,--no-whole-archive \
+    "$unit/libtebako_driver.a" "$unit/libtfs.a" "$unit"/closure/*.a \
+    -lpthread -ldl -lm
+  echo "== run the exe-shape probe =="
+  "$probe_dir/exe_shape_probe"
+  echo "link-unit-floor-link-check: exe-shape archive folds and runs"
+fi
+
 echo "== run the probe (exercises the extracted driver code) =="
 "$probe_dir/probe"
 echo "link-unit-floor-link-check: OK ($PLATFORM folds under $(ld --version | head -1))"

@@ -42,11 +42,24 @@ if [ -n "${SQFS_SYS_VCPKG_INSTALLED_DIR:-}" ]; then
 fi
 
 mkdir -p "out/link-unit-$PLATFORM"
+# The exe-shape archive (spec 22 §3.6) is built by the leg before this
+# script runs, into its OWN target dir (a shared one would shadow the
+# injected shim's constructor-ful cdylib — tebako#951's finding). POSIX
+# legs carry it; windows never does.
+exe_shape_args=()
+if [ -n "$TARGET" ]; then
+  exe_shape_dir="target/exe-shape/$TARGET/release"
+else
+  exe_shape_dir="target/exe-shape/release"
+fi
+if [ -f "$exe_shape_dir/libtfs_preload.a" ]; then
+  exe_shape_args=(--exe-shape-archive "$exe_shape_dir/libtfs_preload.a")
+fi
 # bash 3.2 (the macOS runners' /bin/bash) calls an empty "${array[@]}"
 # unbound under set -u — the [@]+ guard expands to nothing instead.
-ruby tools/stage_link_unit "out/link-unit-$PLATFORM" ${target_args[@]+"${target_args[@]}"} --skip-build
+ruby tools/stage_link_unit "out/link-unit-$PLATFORM" ${target_args[@]+"${target_args[@]}"} --skip-build ${exe_shape_args[@]+"${exe_shape_args[@]}"}
 
-# tebako#413 floor gate: the two SCOPED archives must carry no
+# tebako#413 floor gate: the SCOPED archives must carry no
 # STB_GNU_UNIQUE definitions. The scoper's rewrite drops the SHT_GROUP
 # COMDAT the binding folds through, and binutils ld < 2.35 (the
 # factory's ubuntu:20.04 floor) reads a group-less UNIQUE as a STRONG
@@ -57,7 +70,8 @@ ruby tools/stage_link_unit "out/link-unit-$PLATFORM" ${target_args[@]+"${target_
 # are NOT gated: their groups survive (nothing rewrites them) and fold
 # normally at any binutils. Mach-O/musl legs carry none by construction
 # (nm prints no "u" type there) — the gate is a no-op, kept fail-closed.
-for a in "out/link-unit-$PLATFORM/libtfs.a" "out/link-unit-$PLATFORM/libtebako_driver.a"; do
+for a in "out/link-unit-$PLATFORM/libtfs.a" "out/link-unit-$PLATFORM/libtebako_driver.a" "out/link-unit-$PLATFORM/libtfs_preload.a"; do
+  [ -f "$a" ] || continue
   uniq_count=$(nm "$a" 2>/dev/null | grep -cE ' u [^ ]' || true)
   if [ "$uniq_count" != "0" ]; then
     echo "::error::link-unit-stage GATE-FAIL: $a carries $uniq_count STB_GNU_UNIQUE symbol(s) — binutils 2.34 reads group-less UNIQUE as strong (tebako#413); the scoper must demote them to weak" >&2

@@ -209,6 +209,10 @@ fi
 
 echo "== link unit (tebako-driver + tfs, scoped, + closure) =="
 cargo build --release --target "$TARGET" -p tfs -p tebako-driver -p libtfs-preload
+# The exe shape's archive (spec 22 §3.6), in its own target dir so its
+# constructor-less cdylib can never shadow the injected shim's copy
+# (tebako#951). Its floor link proof runs in the stage check below.
+cargo build --release --target "$TARGET" -p libtfs-preload --features exe-shape --target-dir target/exe-shape
 bash .github/workflows/lib/link-unit-stage.sh
 
 echo "== link unit floor link check (tebako#413) =="

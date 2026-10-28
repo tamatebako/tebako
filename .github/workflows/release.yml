@@ -427,6 +427,23 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM"
 
+      # The exe shape's archive (spec 22 §3.6): the same crate as the
+      # preload cdylib, built with --features exe-shape (no constructor —
+      # the driver calls tebako_preload_init at boot head) into its OWN
+      # target dir, so its constructor-less cdylib can never shadow the
+      # injected shim's copy (tebako#951). Linux only — the family
+      # preempts ELF libc, and there is no such mechanism on Mach-O
+      # (macOS keeps §2's micro interpose-dylib) or windows.
+      - name: Build the exe-shape archive (Linux)
+        if: runner.os == 'Linux'
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: |
+          cargo build --release --target ${{ matrix.target }} \
+            -p libtfs-preload --features exe-shape \
+            --target-dir target/exe-shape
+
       - name: Stage the link unit (tebako-driver + tfs, scoped, + closure)
         working-directory: tebako-rs
         env:
