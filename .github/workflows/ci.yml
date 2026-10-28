@@ -346,6 +346,18 @@ jobs:
       # — where preload interposes can deadlock a fixture — runs
       # test-by-test with a per-test watchdog so the log's last START
       # line IS the culprit.
+      # tebako#126 (spec 22 §3.6): the EXE shape's proof links the family
+      # INTO a probe binary with --whole-archive, and the archive is a
+      # separate crate-type that a test build does not produce. Building it
+      # here lets the proof run in the ordinary sweep on the linux legs; the
+      # test skips (with a note) where the archive is absent.
+      - name: cargo build (libtfs-preload staticlib, exe shape)
+        if: runner.os == 'Linux'
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: cargo build -p libtfs-preload --features exe-shape
+
       - name: cargo test (workspace sweep)
         working-directory: tebako-rs
         env:

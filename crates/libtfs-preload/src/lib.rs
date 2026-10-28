@@ -164,6 +164,45 @@ compile_error!(
 #[cfg(unix)]
 mod sys;
 
+/// The EXE shape's explicit entry point (spec 22 §3.6).
+///
+/// A runtime exe that links this family statically cannot use the library
+/// constructor: `.init_array` entries run before the driver has exported
+/// `TEBAKO_TFS_MOUNTS` and `TEBAKO_JAIL` to its own environment, so the
+/// mount pass would find nothing to mount. The driver therefore performs
+/// its mount of the images through the C API, exports the same two
+/// variables for the family's own view, and calls this function at boot
+/// head. It is the constructor's payload with a return value instead of a
+/// process exit:
+///
+/// - `0` — the mounts (and the jail, when declared) are live.
+/// - `78` (`EX_CONFIG`) — a named configuration error was printed on
+///   stderr, each naming the variable and the offending token. The caller
+///   decides what a failure means; a runtime exe's boot treats it like any
+///   other named boot error.
+///
+/// Idempotent: a second call re-runs the guards and returns the first
+/// verdict without remounting.
+///
+/// # Calling context
+///
+/// It touches process-global state (the mount table, the host policy, the
+/// pid gate), so it belongs to the process that exported the environment
+/// variables, called once at boot head — never from a fork child before
+/// `exec` (the pid gate would answer the passthrough path, but the mounts
+/// would not exist in that child either).
+#[cfg(unix)]
+#[no_mangle]
+pub extern "C" fn tebako_preload_init() -> std::ffi::c_int {
+    match sys::init_checked() {
+        Ok(()) => 0,
+        Err(msg) => {
+            eprintln!("libtfs-preload: {msg}");
+            crate::spec::EX_CONFIG
+        }
+    }
+}
+
 /// The crate's tests share one process-global context: the mount table and the
 /// host-access policy. Two of them race — the route matrix installs and resets
 /// policies, and the symlink seam mounts an image through the policy-gated

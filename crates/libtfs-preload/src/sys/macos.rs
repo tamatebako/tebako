@@ -563,6 +563,11 @@ interpose!(
 );
 
 /// Library constructor: establish the namespace before the program's main.
+/// Compiled out for the EXE shape (`exe-shape`) — see the linux sibling; a
+/// macOS exe cannot host `__interpose` tuples at all, so the exe shape's
+/// family travels in the driver's micro dylib and this crate's constructor
+/// is not the delivery there.
+#[cfg(not(feature = "exe-shape"))]
 #[used]
 #[link_section = "__DATA,__mod_init_func"]
 static INIT: extern "C" fn() = {

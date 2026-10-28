@@ -829,6 +829,10 @@ pub(super) unsafe fn raw_execve(
 }
 
 /// Library constructor: establish the namespace before the program's main.
+/// Compiled out for the EXE shape (`exe-shape`): a statically linked image
+/// runs .init_array entries before the host process has exported the mount
+/// configuration, so the driver calls `tebako_preload_init` at boot head.
+#[cfg(not(feature = "exe-shape"))]
 #[used]
 #[link_section = ".init_array"]
 static INIT: extern "C" fn() = {

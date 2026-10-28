@@ -16,7 +16,19 @@ categories = ["filesystem"]
 # tfs-cli (which reuses the TEBAKO_TFS_MOUNTS parser — one grammar, one
 # parser).
 name = "tfs_preload"
-crate-type = ["cdylib", "rlib"]
+# staticlib is the EXE shape's delivery (spec 22 §3.6): the runtime exe
+# links the family itself when factory link flags allow it, because dyld
+# honours __interpose only from a dylib and the exe-shape hole is the
+# in-process C library's own reads.
+crate-type = ["cdylib", "rlib", "staticlib"]
+
+[features]
+# The exe shape (spec 22 §3.6): omit the library CONSTRUCTOR, since a
+# statically linked image runs .init_array entries before the host process
+# has exported the mount configuration; the driver calls
+# `tebako_preload_init` at boot head instead. Default off: the injected
+# dylib keeps its constructor.
+exe-shape = []
 
 [dependencies]
 # The engine, embedded in-process: the shim is a TFS consumer, never a
