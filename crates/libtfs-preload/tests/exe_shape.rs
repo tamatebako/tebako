@@ -134,7 +134,10 @@ fn a_binary_that_links_the_family_reads_an_image_without_injection() {
         .arg("-Wl,--whole-archive")
         .arg(&archive)
         .arg("-Wl,--no-whole-archive")
-        .args(["-ldl", "-lpthread", "-lm"])
+        // The archive carries the C++ dwarfs backend (the only C++ in the
+        // tree), so the link needs the C++ runtime too — the same flag the
+        // factory's link line will need.
+        .args(["-lstdc++", "-ldl", "-lpthread", "-lm"])
         .output()
         .expect("cc spawn");
     assert!(
