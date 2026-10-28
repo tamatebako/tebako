@@ -1423,6 +1423,12 @@ pub fn boot_with_mount_modes(
             // The standalone interpreter spawns too — arm its children
             // the same way (spec 22 §3).
             crate::injection::export(env, declaration.as_ref(), runtime_root)?;
+            // The exe shape's own file-IO family (spec 22 §3.6): the env
+            // image is mounted and `TEBAKO_TFS_MOUNTS` now names it, so a
+            // runtime that linked the family arms it here — before the
+            // interpreter's first C-library read. A runtime without the
+            // archive returns immediately.
+            crate::exe_shape::arm();
             // argv[0] + the interpreter's own args — byte-identical to
             // the incoming argv when no loader flags were present (the
             // parse then fed every arg to interpreter_args), but the
@@ -1518,6 +1524,13 @@ pub fn boot_with_mount_modes(
         crate::spawn::capture(app_images, env, runtime_root, mount_keys)?;
         let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
         crate::path_env::export(&h.images, env, shim_host.as_deref(), &host_overrides)?;
+        // The mounts exist, the jail is bound, and `TEBAKO_TFS_MOUNTS` is
+        // published (both `export_mount_vars` above and the injection
+        // export name the same set). The exe shape's own file-IO family
+        // arms here when the binary carries it (spec 22 §3.6); the
+        // interpreter has not run, so its first C-library read is already
+        // routed. A runtime without the archive returns immediately.
+        crate::exe_shape::arm();
         // tebako#237 (spec 17 §7): the invoked program NAME rides the
         // handoff so the interpreter's $0/$PROGRAM_NAME names the
         // program the user ran, not the resolved in-VFS script path

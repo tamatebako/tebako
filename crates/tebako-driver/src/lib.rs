@@ -41,6 +41,7 @@
 pub mod alias;
 pub mod driver;
 pub mod env_scrub;
+pub(crate) mod exe_shape;
 pub mod exec_cache;
 pub mod ffi;
 pub mod handoff;
