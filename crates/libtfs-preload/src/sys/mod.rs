@@ -2559,11 +2559,16 @@ pub unsafe extern "C" fn posix_spawnp(
 // Initialization (the library constructor's payload)
 // ---------------------------------------------------------------------
 
-/// The constructor payload: establish the namespace from the environment.
-/// Misformatted `TEBAKO_TFS_MOUNTS` / `TEBAKO_JAIL`, or an image that will
-/// not mount, is a named configuration error: a clear stderr message
-/// naming the variable and the offending token, then EX_CONFIG (78).
-pub fn init() {
+/// Establish the namespace from the environment and report the verdict:
+/// `Ok(())` when the mounts (and the jail, if any) are live, `Err(msg)`
+/// when the configuration is malformed or an image will not mount.
+///
+/// Idempotent by construction: `route::initialize` is `OnceLock`-guarded,
+/// so a second call re-runs the guards and returns the first verdict
+/// without touching the mount table again. That property is what the EXE
+/// shape relies on — the driver calls `tebako_preload_init` once at boot
+/// head, and a later boot step calling it again is a no-op.
+pub fn init_checked() -> Result<(), String> {
     // Record the initializing pid FIRST, before anything can fork/vfork:
     // the pid gate (see `INIT_PID`) is the only guard that reaches vfork
     // children — glibc runs no atfork handlers for vfork(2).
@@ -2585,15 +2590,30 @@ pub fn init() {
         Some(r) => r,
         None => route::initialize(),
     };
-    if let Err(msg) = result {
-        eprintln!("libtfs-preload: {msg}");
-        // SAFETY: plain libc call.
-        unsafe { libc::exit(crate::spec::EX_CONFIG) };
+    if result.is_err() {
+        return result;
     }
     // Open the boot gate LAST: only with the mounts live may interposed
     // calls reach the engine; pre-gate calls take the raw early arms
     // (tebako#527 — see BOOT_LIVE). Release pairs every boot_live() load.
     BOOT_LIVE.store(true, Ordering::Release);
+    Ok(())
+}
+
+/// The constructor payload: establish the namespace from the environment.
+/// Misformatted `TEBAKO_TFS_MOUNTS` / `TEBAKO_JAIL`, or an image that will
+/// not mount, is a named configuration error: a clear stderr message
+/// naming the variable and the offending token, then EX_CONFIG (78).
+///
+/// Compiled out for the EXE shape, where no constructor exists and the
+/// driver calls `tebako_preload_init` instead.
+#[cfg(not(feature = "exe-shape"))]
+pub fn init() {
+    if let Err(msg) = init_checked() {
+        eprintln!("libtfs-preload: {msg}");
+        // SAFETY: plain libc call.
+        unsafe { libc::exit(crate::spec::EX_CONFIG) };
+    }
 }
 
 // tebako#734 (spec 07 §8a): the virtual cwd. chdir into a VFS mount
