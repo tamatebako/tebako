@@ -2590,9 +2590,7 @@ pub fn init_checked() -> Result<(), String> {
         Some(r) => r,
         None => route::initialize(),
     };
-    if result.is_err() {
-        return result;
-    }
+    result?;
     // Open the boot gate LAST: only with the mounts live may interposed
     // calls reach the engine; pre-gate calls take the raw early arms
     // (tebako#527 — see BOOT_LIVE). Release pairs every boot_live() load.
