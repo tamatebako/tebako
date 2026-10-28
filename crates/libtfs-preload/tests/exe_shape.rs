@@ -30,16 +30,25 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// The archive cargo builds for `crate-type = ["staticlib", ...]`.
+///
+/// `TEBAKO_EXE_SHAPE_ARCHIVE` wins when set: CI builds the exe-shape archive
+/// into its OWN target directory, because the same crate's cdylib is what the
+/// injected-shim suites load, and a `--features exe-shape` build in the shared
+/// directory leaves a constructor-less copy beside the real one — the loader
+/// then picks one of the hashed `.so` files, and every mount silently
+/// disappears (the `tebako-bootstrap` jail suite catches it: no denial is
+/// journaled). Isolating the archive is the fix; the size of the build is the
+/// price.
 fn staticlib() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("TEBAKO_EXE_SHAPE_ARCHIVE") {
+        let p = PathBuf::from(explicit);
+        return p.exists().then_some(p);
+    }
     let dir = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target")));
-    for candidate in [dir.join("debug").join("libtfs_preload.a")] {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
+    let candidate = dir.join("debug").join("libtfs_preload.a");
+    candidate.exists().then_some(candidate)
 }
 
 fn skip(why: &str) -> bool {

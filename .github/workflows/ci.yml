@@ -356,7 +356,14 @@ jobs:
         working-directory: tebako-rs
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-        run: cargo build -p libtfs-preload --features exe-shape
+          # Its OWN target dir: the same crate's cdylib is what the injected
+          # suites load, and a feature-different build in the shared dir leaves
+          # a constructor-less copy beside the real one (the loader then picks
+          # one of the hashed .so files and every mount disappears).
+          CARGO_TARGET_DIR: ${{ github.workspace }}/tebako-rs/target/exe-shape
+        run: |
+          cargo build -p libtfs-preload --features exe-shape
+          echo "TEBAKO_EXE_SHAPE_ARCHIVE=${{ github.workspace }}/tebako-rs/target/exe-shape/debug/libtfs_preload.a" >> "$GITHUB_ENV"
 
       - name: cargo test (workspace sweep)
         working-directory: tebako-rs
