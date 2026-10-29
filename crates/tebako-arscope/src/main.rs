@@ -82,10 +82,16 @@ struct Keep {
 }
 
 impl Keep {
-    /// True when the logical name stays public. The Mach-O leading
-    /// underscore is not part of the logical name — trim it the way the
-    /// prefix rule always has.
+    /// True when the logical name stays public. The prefix rule reads
+    /// the Mach-O-trimmed spelling (a `_tebako_` Mach-O name is the
+    /// tebako_ surface); the exact-symbol rule matches BOTH spellings —
+    /// trimming first would read `__fxstatat64` as `fxstatat64` and
+    /// rename the entire `__*` interpose surface away (v2.8.67's first
+    /// staged archive shipped exactly that).
     fn covers(&self, name: &str) -> bool {
+        if self.symbols.contains(name) {
+            return true;
+        }
         let logical = name.trim_start_matches('_');
         logical.starts_with(&self.prefix) || self.symbols.contains(logical)
     }
@@ -1610,6 +1616,12 @@ mod tests {
         assert!(keep.covers("tebako_fs_open"));
         assert!(keep.covers("fopen"));
         assert!(keep.covers("_fopen")); // the Mach-O spelling
+                                        // The double-underscore family: the list's ELF spelling must
+                                        // match the raw name, not the trimmed one (trimming reads
+                                        // __fxstatat64 as fxstatat64 and renames the LFS surface away).
+        keep.symbols.insert("__fxstatat64".to_string());
+        assert!(keep.covers("__fxstatat64"));
+        assert!(!keep.covers("__fxstatat"));
         assert!(!keep.covers("fopen64")); // exact, never prefix
         assert!(!keep.covers("openat64"));
         assert!(!keep.covers("mangled_rust_symbol"));
