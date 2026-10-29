@@ -1,0 +1,771 @@
+{
+  "suite": "runtime-lazy-vs-eager",
+  "generated_by": "tebako-bench report",
+  "baseline": {
+    "target": "eager-ruby",
+    "label": "eager-ruby"
+  },
+  "notes": [
+    "Cold method: each cold iteration wipes the arm's caches before the measured run. For the tebako runtime arms the wipe covers the bench store and the per-target tempdir, so the measured run pays the driver's first mount and cache rebuild — the one-time, user-visible first-boot cost. The runtime pair's own download and verification happen at acquisition, outside the measured span.",
+    "Teardown is not a separate workload: a no-op run's wall clock is boot+teardown by construction, and teardown is ≈free by design — the in-process VFS dies with the process; a measured exit that ever shows a tail is a regression signal.",
+    "On-system arms report no cold numbers: the toolchain's provisioning time is not tebako's comparison."
+  ],
+  "triplets": [
+    {
+      "triplet": "linux-gnu-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715927552
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-gnu-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760340480
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-musl-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715923456
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-musl-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760344576
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "macos-arm64",
+      "runner": {
+        "runs_on": "macos-14",
+        "arch": "aarch64",
+        "cpus": 3,
+        "ram_bytes": 7516192768
+      },
+      "versions": {
+        "tebako": "2.8.67"
+      },
+      "cells": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.250714083,
+          "min_wall_s": 0.227340667,
+          "max_wall_s": 0.289700375,
+          "stdev_wall_s": 0.022821453478295076,
+          "mean_wall_s": 0.2553171668,
+          "median_cpu_s": 0.235767,
+          "median_peak_rss_bytes": 67436544,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": "cold",
+          "n": 3,
+          "median_wall_s": 0.243736917,
+          "min_wall_s": 0.228385291,
+          "max_wall_s": 0.261999625,
+          "stdev_wall_s": 0.01682816277653178,
+          "mean_wall_s": 0.24470727766666667,
+          "median_cpu_s": 0.222156,
+          "median_peak_rss_bytes": 66355200,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.256559208,
+          "min_wall_s": 0.214266375,
+          "max_wall_s": 0.3252265,
+          "stdev_wall_s": 0.04375773678140751,
+          "mean_wall_s": 0.2552957,
+          "median_cpu_s": 0.23851,
+          "median_peak_rss_bytes": 67338240,
+          "speedup_vs_v1": 0.9772172472562357
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": "cold",
+          "n": 3,
+          "median_wall_s": 0.9837635,
+          "min_wall_s": 0.983373791,
+          "max_wall_s": 1.023297042,
+          "stdev_wall_s": 0.022938028055972365,
+          "mean_wall_s": 0.9968114443333334,
+          "median_cpu_s": 1.059102,
+          "median_peak_rss_bytes": 56885248,
+          "speedup_vs_v1": 0.2477596668304933
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.423444208,
+          "min_wall_s": 0.416343333,
+          "max_wall_s": 0.45073775,
+          "stdev_wall_s": 0.015349733472564317,
+          "mean_wall_s": 0.42993918340000004,
+          "median_cpu_s": 0.410489,
+          "median_peak_rss_bytes": 67272704,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": "cold",
+          "n": 3,
+          "median_wall_s": 0.381176459,
+          "min_wall_s": 0.378188584,
+          "max_wall_s": 0.393380458,
+          "stdev_wall_s": 0.00804837482807866,
+          "mean_wall_s": 0.38424850033333335,
+          "median_cpu_s": 0.364549,
+          "median_peak_rss_bytes": 67715072,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.418038625,
+          "min_wall_s": 0.41698175,
+          "max_wall_s": 0.45267925,
+          "stdev_wall_s": 0.015607206108011267,
+          "mean_wall_s": 0.42481195000000005,
+          "median_cpu_s": 0.408697,
+          "median_peak_rss_bytes": 67420160,
+          "speedup_vs_v1": 1.0129308218827866
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": "cold",
+          "n": 3,
+          "median_wall_s": 1.110872083,
+          "min_wall_s": 1.044377042,
+          "max_wall_s": 1.129153375,
+          "stdev_wall_s": 0.04461468882126124,
+          "mean_wall_s": 1.0948008333333334,
+          "median_cpu_s": 1.1641910000000002,
+          "median_peak_rss_bytes": 56803328,
+          "speedup_vs_v1": 0.3431326296098846
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.227575042,
+          "min_wall_s": 0.224425333,
+          "max_wall_s": 0.238351625,
+          "stdev_wall_s": 0.005844423947941638,
+          "mean_wall_s": 0.22927325820000002,
+          "median_cpu_s": 0.213972,
+          "median_peak_rss_bytes": 173998080,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": "cold",
+          "n": 3,
+          "median_wall_s": 0.234694958,
+          "min_wall_s": 0.227932125,
+          "max_wall_s": 0.253222666,
+          "stdev_wall_s": 0.013093403797280469,
+          "mean_wall_s": 0.238616583,
+          "median_cpu_s": 0.213751,
+          "median_peak_rss_bytes": 175357952,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.239189375,
+          "min_wall_s": 0.232136209,
+          "max_wall_s": 0.240815,
+          "stdev_wall_s": 0.003952433752870413,
+          "mean_wall_s": 0.23711460840000004,
+          "median_cpu_s": 0.21840900000000002,
+          "median_peak_rss_bytes": 175013888,
+          "speedup_vs_v1": 0.9514429393028013
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": "cold",
+          "n": 3,
+          "median_wall_s": 1.053479041,
+          "min_wall_s": 1.010320459,
+          "max_wall_s": 1.080753667,
+          "stdev_wall_s": 0.035513859296669614,
+          "mean_wall_s": 1.048184389,
+          "median_cpu_s": 1.128967,
+          "median_peak_rss_bytes": 160022528,
+          "speedup_vs_v1": 0.22278085169802636
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.466299834,
+          "min_wall_s": 0.451959125,
+          "max_wall_s": 0.578989375,
+          "stdev_wall_s": 0.05323686072150343,
+          "mean_wall_s": 0.4927468586,
+          "median_cpu_s": 0.45173399999999997,
+          "median_peak_rss_bytes": 97828864,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": "cold",
+          "n": 3,
+          "median_wall_s": 0.479992125,
+          "min_wall_s": 0.476871542,
+          "max_wall_s": 0.506713375,
+          "stdev_wall_s": 0.016402734714178413,
+          "mean_wall_s": 0.4878590139999999,
+          "median_cpu_s": 0.469301,
+          "median_peak_rss_bytes": 101793792,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.494303833,
+          "min_wall_s": 0.452887042,
+          "max_wall_s": 0.508726917,
+          "stdev_wall_s": 0.025609401569310856,
+          "mean_wall_s": 0.48125058339999993,
+          "median_cpu_s": 0.473391,
+          "median_peak_rss_bytes": 98385920,
+          "speedup_vs_v1": 0.9433465874014374
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": "cold",
+          "n": 3,
+          "median_wall_s": 1.348370917,
+          "min_wall_s": 1.270578792,
+          "max_wall_s": 1.380483541,
+          "stdev_wall_s": 0.05651237207452012,
+          "mean_wall_s": 1.3331444166666666,
+          "median_cpu_s": 1.404375,
+          "median_peak_rss_bytes": 75366400,
+          "speedup_vs_v1": 0.35597929245458504
+        }
+      ],
+      "unavailable": [],
+      "failed": []
+    },
+    {
+      "triplet": "macos-x86_64",
+      "runner": {
+        "runs_on": "macos-15-intel",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 15032385536
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "windows-ucrt64",
+      "runner": {
+        "runs_on": "windows-latest",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 17174360064
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    }
+  ]
+}

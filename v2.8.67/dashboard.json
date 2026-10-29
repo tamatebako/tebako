@@ -1,0 +1,649 @@
+{
+  "suite": "metanorma-v1-vs-v2",
+  "generated_by": "tebako-bench report",
+  "triplets": [
+    {
+      "triplet": "linux-gnu-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715927552
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 105.191838008,
+          "min_wall_s": 104.857818592,
+          "max_wall_s": 108.212405794,
+          "stdev_wall_s": 1.3772033105239294,
+          "mean_wall_s": 105.91437332820001,
+          "median_cpu_s": 123.572364,
+          "median_peak_rss_bytes": 1222270976,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 113.969541331,
+          "min_wall_s": 113.509803671,
+          "max_wall_s": 114.429278991,
+          "stdev_wall_s": 0.6501672339056733,
+          "mean_wall_s": 113.969541331,
+          "median_cpu_s": 131.886891,
+          "median_peak_rss_bytes": 1312708608,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 51.662600641,
+          "min_wall_s": 51.348998695,
+          "max_wall_s": 51.783977043,
+          "stdev_wall_s": 0.18507681961765365,
+          "mean_wall_s": 51.6014512556,
+          "median_cpu_s": 63.777891999999994,
+          "median_peak_rss_bytes": 889880576,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 56.8130188545,
+          "min_wall_s": 56.648733511,
+          "max_wall_s": 56.977304198,
+          "stdev_wall_s": 0.23233456087681947,
+          "mean_wall_s": 56.8130188545,
+          "median_cpu_s": 69.03160650000001,
+          "median_peak_rss_bytes": 887304192,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-gnu-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760340480
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 126.582484803,
+          "min_wall_s": 125.371960047,
+          "max_wall_s": 127.812784287,
+          "stdev_wall_s": 1.0607811018550186,
+          "mean_wall_s": 126.59736279160002,
+          "median_cpu_s": 155.885876,
+          "median_peak_rss_bytes": 1259200512,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 135.868292622,
+          "min_wall_s": 135.346289216,
+          "max_wall_s": 136.390296028,
+          "stdev_wall_s": 0.7382242963701434,
+          "mean_wall_s": 135.868292622,
+          "median_cpu_s": 165.6547535,
+          "median_peak_rss_bytes": 1390137344,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 64.087152776,
+          "min_wall_s": 63.06161667,
+          "max_wall_s": 64.491742092,
+          "stdev_wall_s": 0.5375798239274323,
+          "mean_wall_s": 63.973002328199996,
+          "median_cpu_s": 83.563209,
+          "median_peak_rss_bytes": 937582592,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 69.837387604,
+          "min_wall_s": 69.703803815,
+          "max_wall_s": 69.970971393,
+          "stdev_wall_s": 0.18891600611698492,
+          "mean_wall_s": 69.837387604,
+          "median_cpu_s": 91.1125625,
+          "median_peak_rss_bytes": 939964416,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-musl-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715923456
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-musl-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760344576
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "macos-arm64",
+      "runner": {
+        "runs_on": "macos-14",
+        "arch": "aarch64",
+        "cpus": 3,
+        "ram_bytes": 7516192768
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 170.558269625,
+          "min_wall_s": 153.3453265,
+          "max_wall_s": 184.518076666,
+          "stdev_wall_s": 11.296143467355732,
+          "mean_wall_s": 169.6464406082,
+          "median_cpu_s": 180.694582,
+          "median_peak_rss_bytes": 2160656384,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 158.1453528545,
+          "min_wall_s": 156.31134375,
+          "max_wall_s": 159.979361959,
+          "stdev_wall_s": 2.593680549099632,
+          "mean_wall_s": 158.1453528545,
+          "median_cpu_s": 166.0576975,
+          "median_peak_rss_bytes": 2169257984,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 124.789739916,
+          "min_wall_s": 112.621355875,
+          "max_wall_s": 145.626911166,
+          "stdev_wall_s": 12.385705722334007,
+          "mean_wall_s": 126.073194358,
+          "median_cpu_s": 128.812118,
+          "median_peak_rss_bytes": 1651097600,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 136.4576019585,
+          "min_wall_s": 135.606305708,
+          "max_wall_s": 137.308898209,
+          "stdev_wall_s": 1.2039147030544624,
+          "mean_wall_s": 136.4576019585,
+          "median_cpu_s": 140.6090485,
+          "median_peak_rss_bytes": 1676640256,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "macos-x86_64",
+      "runner": {
+        "runs_on": "macos-15-intel",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 15032385536
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "windows-ucrt64",
+      "runner": {
+        "runs_on": "windows-latest",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 17174360064
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 133.1921092,
+          "min_wall_s": 128.8602775,
+          "max_wall_s": 133.9178213,
+          "stdev_wall_s": 2.0759088824170258,
+          "mean_wall_s": 132.40856096,
+          "median_cpu_s": 163.59375,
+          "median_peak_rss_bytes": 1668366336,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 141.82284645,
+          "min_wall_s": 141.6105158,
+          "max_wall_s": 142.0351771,
+          "stdev_wall_s": 0.30028088493749255,
+          "mean_wall_s": 141.82284645,
+          "median_cpu_s": 174.09375,
+          "median_peak_rss_bytes": 1648764928,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 66.4233033,
+          "min_wall_s": 65.4718328,
+          "max_wall_s": 72.3483913,
+          "stdev_wall_s": 3.1463185689637165,
+          "mean_wall_s": 68.02759632,
+          "median_cpu_s": 90.5625,
+          "median_peak_rss_bytes": 1639489536,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 73.3915744,
+          "min_wall_s": 73.0813521,
+          "max_wall_s": 73.7017967,
+          "stdev_wall_s": 0.43872058401057434,
+          "mean_wall_s": 73.3915744,
+          "median_cpu_s": 98.5078125,
+          "median_peak_rss_bytes": 1667047424,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+        }
+      ],
+      "failed": []
+    }
+  ]
+}
