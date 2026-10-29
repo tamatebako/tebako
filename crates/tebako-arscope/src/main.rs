@@ -252,6 +252,46 @@ fn run(
         input_members.push((name, data.to_vec()));
     }
 
+    // Pass A: collect every symbol this tool will RENAME anywhere in
+    // the archive (the rename set for references — a renamed definition
+    // must be matched by its references or the link breaks). Mach-O
+    // members use the raw nlist scan so this pass and the rewrite share
+    // one rule; other formats use the object crate.
+    let mut defined: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // The object format decides the archive's index form (BSD __.SYMDEF
+    // for Mach-O, GNU "/" elsewhere) and whether members get ld64's
+    // 4-byte content pad (Mach-O only — see Pass B). Detected here: one
+    // Mach-O member makes the archive Mach-O.
+    let mut is_macho = false;
+    for (name, data) in &input_members {
+        let data = &data[..];
+        let _ = name;
+        match macho::defined(data, keep) {
+            Ok(names) => {
+                is_macho = true;
+                defined.extend(names);
+            }
+            Err(_) => {
+                if let Ok(obj) = File::parse(data) {
+                    for symbol in obj.symbols() {
+                        let external = symbol.scope() != SymbolScope::Unknown || symbol.is_weak();
+                        if !symbol.is_undefined() && external {
+                            if let Ok(name) = symbol.name() {
+                                // A kept definition never enters the
+                                // rename set: its references must keep
+                                // the spelling or the link breaks (the
+                                // exe-shape family is exactly this case).
+                                if !keep.covers(name) {
+                                    defined.insert(name.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // The opt-in RAW fold (`--fold-identical` + `--fold-against`),
     // pre-scoping so raw bytes compare: cargo's staticlib bundling packs
     // the same vendored object once per crate path (the exe-shape
@@ -430,46 +470,7 @@ fn run(
             }
         }
         input_members = kept;
-    } // Pass A: collect every symbol this tool will RENAME anywhere in
-      // the archive (the rename set for references — a renamed definition
-      // must be matched by its references or the link breaks). Mach-O
-      // members use the raw nlist scan so this pass and the rewrite share
-      // one rule; other formats use the object crate.
-    let mut defined: std::collections::HashSet<String> = std::collections::HashSet::new();
-    // The object format decides the archive's index form (BSD __.SYMDEF
-    // for Mach-O, GNU "/" elsewhere) and whether members get ld64's
-    // 4-byte content pad (Mach-O only — see Pass B). Detected here: one
-    // Mach-O member makes the archive Mach-O.
-    let mut is_macho = false;
-    for (name, data) in &input_members {
-        let data = &data[..];
-        let _ = name;
-        match macho::defined(data, keep) {
-            Ok(names) => {
-                is_macho = true;
-                defined.extend(names);
-            }
-            Err(_) => {
-                if let Ok(obj) = File::parse(data) {
-                    for symbol in obj.symbols() {
-                        let external = symbol.scope() != SymbolScope::Unknown || symbol.is_weak();
-                        if !symbol.is_undefined() && external {
-                            if let Ok(name) = symbol.name() {
-                                // A kept definition never enters the
-                                // rename set: its references must keep
-                                // the spelling or the link breaks (the
-                                // exe-shape family is exactly this case).
-                                if !keep.covers(name) {
-                                    defined.insert(name.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
-
     // The index FORM follows the object format inside: Mach-O archives
     // get the BSD __.SYMDEF (the cargo/llvm-ranlib form), everything
     // else the GNU "/" index. (The input's own index member, when it has
