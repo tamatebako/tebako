@@ -79,4 +79,23 @@ for a in "out/link-unit-$PLATFORM/libtfs.a" "out/link-unit-$PLATFORM/libtebako_d
   fi
 done
 
+# The exe-shape surface gate (spec 22 §3.6): every name the keep list
+# declares must survive the scoping UNRENAMED — a renamed interpose
+# definition preempts nothing (v2.8.67's first staged archive renamed
+# the whole __* LFS surface away: the keep rule trimmed the name before
+# matching the list's spelling). nm prints the defined text symbols; a
+# missing name fails the stage before the unit ships.
+pre="out/link-unit-$PLATFORM/libtfs_preload.a"
+if [ -f "$pre" ]; then
+  missing=""
+  while IFS= read -r sym; do
+    case "$sym" in ''|\#*) continue;; esac
+    nm "$pre" 2>/dev/null | grep -qE " T ${sym}$" || missing="$missing $sym"
+  done < crates/libtfs-preload/exe-shape-symbols.txt
+  if [ -n "$missing" ]; then
+    echo "::error::link-unit-stage GATE-FAIL: libtfs_preload.a renamed or dropped the family surface:${missing} — the exe shape preempts nothing with these renamed (spec 22 §3.6)" >&2
+    exit 65
+  fi
+fi
+
 tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
