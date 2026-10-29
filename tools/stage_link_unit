@@ -284,11 +284,16 @@ end
 # preemption; the list is the crate's own exe-shape-symbols.txt, parity-
 # tested against sys/mod.rs); the dedupe spans BOTH scoped siblings; and
 # the raw fold collapses the byte-identical vendored members cargo packs
-# in once per crate path, against the closure's copies too (the bundled
-# members ARE the closure's, byte for byte — one build tree) — because
-# --whole-archive pulls every member, and the doubles would die the exe
-# link on multiple definitions. It stages LAST: the closure must exist
-# to fold against.
+# in once per crate path — because --whole-archive pulls every member,
+# and the doubles would die the exe link on multiple definitions.
+#
+# The fold's bases are the RAW sibling archives (the build tree's
+# pre-scope originals), never the closure: the closure ships unscoped,
+# and folding a member whose definition the scoping then renames strands
+# its renamed references (v2.8.67's gnu-floor legs: the closure-folded
+# dwarfs members left __tebako_internal_ references dangling). The raw
+# siblings get scoped with the same rule, so a member folded against
+# them resolves through the staged sibling at the exe link.
 if exe_shape
   keep_file = File.join(root, "crates", "libtfs-preload", "exe-shape-symbols.txt")
   die "missing the exe-shape keep list #{keep_file}" unless File.file?(keep_file)
@@ -296,7 +301,9 @@ if exe_shape
                   .reject { |l| l.empty? || l.start_with?("#") }
                   .flat_map { |sym| ["--keep-symbol", sym] }
   fold_args = ["--fold-identical"] +
-              Dir.glob(File.join(out, "closure", "*.a")).sort.flat_map { |c| ["--fold-against", c] }
+              [File.join(build_dir, "libtfs.a"), File.join(build_dir, "libtebako_driver.a")]
+                .select { |b| File.file?(b) }
+                .flat_map { |b| ["--fold-against", b] }
   system(arscope_env, "cargo", "run", "-q", "-p", "tebako-arscope", "--",
          exe_shape, File.join(out, "libtfs_preload.a"),
          "--dedupe-against", File.join(out, "libtfs.a"),
