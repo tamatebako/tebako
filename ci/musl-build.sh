@@ -143,4 +143,8 @@ bash .github/workflows/lib/stage.sh
 
 echo "== link unit (tebako-driver + tfs, scoped, + closure) =="
 cargo build --release -p tfs -p tebako-driver -p libtfs-preload
+# The exe shape's archive (spec 22 §3.6), in its own target dir so its
+# constructor-less cdylib can never shadow the injected shim's copy
+# (tebako#951). No --target: the leg is native, like the builds above.
+cargo build --release -p libtfs-preload --features exe-shape --target-dir target/exe-shape
 TARGET= bash .github/workflows/lib/link-unit-stage.sh

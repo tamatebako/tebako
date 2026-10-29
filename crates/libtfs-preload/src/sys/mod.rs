@@ -1580,7 +1580,11 @@ pub unsafe extern "C" fn rename(old: *const c_char, new: *const c_char) -> c_int
 /// a host library passes through (policy-gated like any read). Failures
 /// return NULL; dlerror() text is dyld/ld.so-internal and cannot be set
 /// portably (errno carries the cause; documented).
-#[cfg_attr(target_os = "linux", no_mangle)]
+///
+/// Not exported from the exe shape: the runtime exe defines its own
+/// class-L `dlopen` (spec 22 §2), and two strong definitions cannot
+/// link. The exe shape is the file-IO family only (§3.6).
+#[cfg_attr(all(target_os = "linux", not(feature = "exe-shape")), no_mangle)]
 pub unsafe extern "C" fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void {
     if path.is_null() {
         return unsafe { plat::real_dlopen()(path, mode) };
@@ -2400,7 +2404,11 @@ pub unsafe extern "C" fn readdir_r(
 /// (an arm64e slice dyld would prefer, or no host-arch slice at all) gets
 /// a rebuilt envp WITHOUT `DYLD_INSERT_LIBRARIES` — dyld would TERMINATE
 /// the child over the incompatible insertion otherwise.
-#[cfg_attr(target_os = "linux", no_mangle)]
+// The exec class is not exported from the exe shape: the driver arms
+// children through the injection export (spec 22 §3), and an exported
+// exec arm would preempt the interpreter's own exec handling. The exe
+// shape is the file-IO family only (§3.6).
+#[cfg_attr(all(target_os = "linux", not(feature = "exe-shape")), no_mangle)]
 pub unsafe extern "C" fn execve(
     path: *const c_char,
     argv: *const *mut c_char,
@@ -2470,7 +2478,11 @@ unsafe fn execve_via(
 /// execve (tebako#448); the gate's rebuilt envp is dropped after the
 /// spawn returns — posix_spawn copies the environment into the child
 /// before returning, so the buffer's drop is safe.
-#[cfg_attr(target_os = "linux", no_mangle)]
+// The exec class is not exported from the exe shape: the driver arms
+// children through the injection export (spec 22 §3), and an exported
+// exec arm would preempt the interpreter's own exec handling. The exe
+// shape is the file-IO family only (§3.6).
+#[cfg_attr(all(target_os = "linux", not(feature = "exe-shape")), no_mangle)]
 pub unsafe extern "C" fn posix_spawn(
     pid: *mut libc::pid_t,
     path: *const c_char,
@@ -2512,7 +2524,11 @@ pub unsafe extern "C" fn posix_spawn(
 /// name through the caller's PATH for its Mach-O probe (first readable
 /// hit; unresolvable → passthrough unchanged) — the real spawnp's own
 /// search still answers for the exec itself.
-#[cfg_attr(target_os = "linux", no_mangle)]
+// The exec class is not exported from the exe shape: the driver arms
+// children through the injection export (spec 22 §3), and an exported
+// exec arm would preempt the interpreter's own exec handling. The exe
+// shape is the file-IO family only (§3.6).
+#[cfg_attr(all(target_os = "linux", not(feature = "exe-shape")), no_mangle)]
 pub unsafe extern "C" fn posix_spawnp(
     pid: *mut libc::pid_t,
     file: *const c_char,

@@ -124,6 +124,35 @@ fn a_binary_that_links_the_family_reads_an_image_without_injection() {
     std::fs::write(&src, probe_source()).unwrap();
     let exe = dir.path().join("probe");
 
+    // The raw archive bundles the whole dependency graph, and cargo packs
+    // the same vendored codec object once per crate path — the enc
+    // feature's botan and the dwarfs backend each carry zlib, so a
+    // --whole-archive link of the RAW archive dies on multiple
+    // definitions (tebako#953's first CI run). The production consumption
+    // is the staged archive, where arscope folds the byte-identical
+    // members; mirror it with a fold-only pass (--keep-prefix "" keeps
+    // every name — the probe links against the libc spellings).
+    let folded = dir.path().join("libtfs_preload.folded.a");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf();
+    let fold = Command::new("cargo")
+        .args(["run", "-q", "-p", "tebako-arscope", "--manifest-path"])
+        .arg(root.join("Cargo.toml"))
+        .arg("--")
+        .arg(&archive)
+        .arg(&folded)
+        .args(["--keep-prefix", "", "--fold-identical"])
+        .output()
+        .expect("arscope spawn");
+    assert!(
+        fold.status.success(),
+        "folding the archive failed:\n{}",
+        String::from_utf8_lossy(&fold.stderr)
+    );
+
     // --whole-archive: the archive's interpose objects are referenced by
     // nobody in the program's own code, so without it the linker drops them
     // and `fopen` binds to libc.
@@ -132,7 +161,7 @@ fn a_binary_that_links_the_family_reads_an_image_without_injection() {
         .arg(&exe)
         .arg(&src)
         .arg("-Wl,--whole-archive")
-        .arg(&archive)
+        .arg(&folded)
         .arg("-Wl,--no-whole-archive")
         // The archive carries the C++ dwarfs backend (the only C++ in the
         // tree), so the link needs the C++ runtime too — the same flag the

@@ -123,12 +123,12 @@ fn symbols(
 }
 
 /// The single rename rule both passes share: a definition is renamed
-/// when it is visible outside its object and not under the keep
-/// prefix. References are renamed exactly when their name is in the
-/// set this rule collects across the whole archive.
-fn renames_def(name: &[u8], keep: &str) -> bool {
+/// when it is visible outside its object and not kept. References are
+/// renamed exactly when their name is in the set this rule collects
+/// across the whole archive.
+fn renames_def(name: &[u8], keep: &crate::Keep) -> bool {
     let logical = std::str::from_utf8(name).unwrap_or("");
-    !logical.trim_start_matches('_').starts_with(keep)
+    !keep.covers(logical)
 }
 
 /// The scoped spelling of a raw nlist name. The raw name rides the
@@ -148,7 +148,10 @@ fn scoped_name(name: &[u8], prefix: &str) -> String {
 /// Pass A: the raw strtab names of every definition this tool will
 /// rename anywhere in the archive. References compare against these
 /// raw names (Mach-O leading underscore included).
-pub fn defined(bytes: &[u8], keep: &str) -> Result<std::collections::HashSet<String>, String> {
+pub fn defined(
+    bytes: &[u8],
+    keep: &crate::Keep,
+) -> Result<std::collections::HashSet<String>, String> {
     let (_, symoff, nsyms, stroff, strsize) = symtab(bytes)?;
     let mut out = std::collections::HashSet::new();
     for sym in symbols(bytes, symoff, nsyms, stroff, strsize)? {
@@ -170,7 +173,7 @@ pub fn defined(bytes: &[u8], keep: &str) -> Result<std::collections::HashSet<Str
 /// these).
 pub fn scope(
     bytes: &[u8],
-    keep: &str,
+    keep: &crate::Keep,
     prefix: &str,
     defined: &std::collections::HashSet<String>,
 ) -> Result<(Vec<u8>, Vec<String>, usize, usize), String> {

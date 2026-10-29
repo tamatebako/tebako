@@ -67,6 +67,29 @@ use object::{
 const KEEP_PREFIX: &str = "tebako_";
 /// The default internal prefix for scoped symbols.
 const SCOPE_PREFIX: &str = "__tebako_internal_";
+
+/// What stays public: every logical name under the prefix, plus every
+/// EXACT name in the symbol set. The set exists for the exe-shape
+/// archive (spec 22 §3.6): its interpose definitions must keep their
+/// libc spellings (`fopen`, `openat64`, …) or they preempt nothing, and
+/// they start no `tebako_` prefix by definition — preemption IS the
+/// point. Kept names are kept on BOTH sides of the rewrite: a kept
+/// definition's references keep the spelling too (the rename set never
+/// learns them), or the link breaks.
+struct Keep {
+    prefix: String,
+    symbols: std::collections::HashSet<String>,
+}
+
+impl Keep {
+    /// True when the logical name stays public. The Mach-O leading
+    /// underscore is not part of the logical name — trim it the way the
+    /// prefix rule always has.
+    fn covers(&self, name: &str) -> bool {
+        let logical = name.trim_start_matches('_');
+        logical.starts_with(&self.prefix) || self.symbols.contains(logical)
+    }
+}
 /// ELF st_info bindings (the object crate has no named constants for
 /// them): glibc-target g++'s vague-linkage binding and its demotion
 /// target (see the STB_GNU_UNIQUE neutralization in scope_object).
@@ -75,41 +98,59 @@ const STB_WEAK: u8 = 2;
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
-    let mut keep = KEEP_PREFIX.to_string();
+    let mut keep = Keep {
+        prefix: KEEP_PREFIX.to_string(),
+        symbols: std::collections::HashSet::new(),
+    };
     let mut prefix = SCOPE_PREFIX.to_string();
-    let mut dedupe_against = None;
+    let mut dedupe_against = Vec::new();
+    let mut fold_identical = false;
+    let mut fold_against: Vec<String> = Vec::new();
     let mut paths = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--keep-prefix" => match args.next() {
-                Some(v) => keep = v,
+                Some(v) => keep.prefix = v,
                 None => return usage("--keep-prefix needs a value"),
+            },
+            "--keep-symbol" => match args.next() {
+                Some(v) => {
+                    keep.symbols.insert(v);
+                }
+                None => return usage("--keep-symbol needs a value"),
             },
             "--prefix" => match args.next() {
                 Some(v) => prefix = v,
                 None => return usage("--prefix needs a value"),
             },
             "--dedupe-against" => match args.next() {
-                Some(v) => dedupe_against = Some(v),
+                Some(v) => dedupe_against.push(v),
                 None => return usage("--dedupe-against needs a value"),
+            },
+            "--fold-identical" => fold_identical = true,
+            "--fold-against" => match args.next() {
+                Some(v) => fold_against.push(v),
+                None => return usage("--fold-against needs a value"),
             },
             _ => paths.push(arg),
         }
     }
     if paths.len() != 2 {
-        return usage("expected: tebako-arscope <in.a> <out.a> [--keep-prefix P] [--prefix P] [--dedupe-against base.a]");
+        return usage("expected: tebako-arscope <in.a> <out.a> [--keep-prefix P] [--keep-symbol S]... [--prefix P] [--dedupe-against base.a]... [--fold-identical] [--fold-against base.a]...");
     }
     match run(
         &paths[0],
         &paths[1],
         &keep,
         &prefix,
-        dedupe_against.as_deref(),
+        &dedupe_against,
+        fold_identical,
+        &fold_against,
     ) {
         Ok(report) => {
             println!(
-                "arscope: {} -> {} ({} member(s), {} symbol(s) scoped, {} kept public, {} import member(s), {} cross-deduped)",
-                paths[0], paths[1], report.members, report.scoped, report.kept, report.imports, report.deduped
+                "arscope: {} -> {} ({} member(s), {} symbol(s) scoped, {} kept public, {} import member(s), {} cross-deduped, {} folded)",
+                paths[0], paths[1], report.members, report.scoped, report.kept, report.imports, report.deduped, report.folded
             );
             ExitCode::SUCCESS
         }
@@ -146,6 +187,9 @@ struct Report {
     kept: usize,
     imports: usize,
     deduped: usize,
+    /// Raw-byte-identical members folded before scoping (`--fold-identical`
+    /// / `--fold-against`): the exe-shape archive's vendored duplicates.
+    folded: usize,
     /// COFF .drectve export directives stripped for naming scoped
     /// symbols (tebako#708) — the dllexport attributes the scoped
     /// objects carried pre-rename.
@@ -187,30 +231,219 @@ fn base_member_keys(path: &str) -> Result<std::collections::HashSet<(String, Vec
 fn run(
     input: &str,
     output: &str,
-    keep: &str,
+    keep: &Keep,
     prefix: &str,
-    dedupe_against: Option<&str>,
+    dedupe_against: &[String],
+    fold_identical: bool,
+    fold_against: &[String],
 ) -> Result<Report, String> {
     let bytes = std::fs::read(input).map_err(|e| format!("cannot read {input}: {e}"))?;
     let archive = object::read::archive::ArchiveFile::parse(&bytes[..])
         .map_err(|e| format!("cannot parse {input} as an archive: {e}"))?;
 
-    // Pass A: collect every symbol this tool will RENAME anywhere in
-    // the archive (the rename set for references — a renamed definition
-    // must be matched by its references or the link breaks). Mach-O
-    // members use the raw nlist scan so this pass and the rewrite share
-    // one rule; other formats use the object crate.
+    // Collect the members once; both passes walk this list.
+    let mut input_members: Vec<(String, Vec<u8>)> = Vec::new();
+    for member in archive.members() {
+        let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
+        let name = String::from_utf8_lossy(member.name()).into_owned();
+        let data = member
+            .data(&bytes[..])
+            .map_err(|e| format!("cannot read member {name} of {input}: {e}"))?;
+        input_members.push((name, data.to_vec()));
+    }
+
+    // The opt-in RAW fold (`--fold-identical` + `--fold-against`),
+    // pre-scoping so raw bytes compare: cargo's staticlib bundling packs
+    // the same vendored object once per crate path (the exe-shape
+    // archive carries zlib once via botan and once via the dwarfs
+    // closure), and --whole-archive pulls EVERY member, so the doubles
+    // must fold or the exe link dies on multiple definitions. Byte
+    // identity makes the fold provably interchangeable — ld resolves by
+    // symbol through the index, never by member identity. A same-name
+    // member with DIFFERENT content survives (the keep-both import-set
+    // rule's object twin), and import members never fold here (the
+    // import registry's own name-keyed rule owns them).
+    // The opt-in RAW fold (`--fold-identical` + `--fold-against`),
+    // pre-scoping so raw bytes compare: cargo's staticlib bundling packs
+    // the same vendored object once per crate path, and --whole-archive
+    // pulls EVERY member, so the doubles must fold or the exe link dies
+    // on multiple definitions.
+    //
+    // A member folds when another member — anywhere in this archive or
+    // in a base — covers it: byte-identical (provably interchangeable),
+    // or its defined EXTERNAL symbol set (strong and weak alike) is a
+    // subset of the other's. Coverage is order-independent: the
+    // one-symbol shim folds into the codegen unit carrying the same
+    // symbol among many, whichever sorts first. A member with an EMPTY
+    // external set never folds (its content is unreachable via symbols
+    // at all), import members fold on bytes only, and a partial overlap
+    // never folds — a true collision links loud.
+    let mut folded = 0usize;
+    if fold_identical || !fold_against.is_empty() {
+        // Cheap content identity pre-filter.
+        fn content_hash(data: &[u8]) -> u64 {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            data.hash(&mut h);
+            h.finish()
+        }
+
+        // A member's defined external symbol set — strong AND weak.
+        // Strong doubles are what --whole-archive dies on; weak ones
+        // (the C++ COMDAT templates) fold at the link, but a member
+        // whose weak definitions nobody else carries must survive: fold
+        // it away and its references go undefined (the first attempt
+        // folded the flatbuffers_metadata_builder ctor's only carrier).
+        // An unparseable member (a COFF short-form import stub) answers
+        // None and folds on bytes alone.
+        fn external_defs(data: &[u8]) -> Option<std::collections::HashSet<String>> {
+            let obj = File::parse(data).ok()?;
+            let mut set = std::collections::HashSet::new();
+            for symbol in obj.symbols() {
+                let external = symbol.is_global() || symbol.is_weak();
+                if !symbol.is_undefined() && external {
+                    if let Ok(name) = symbol.name() {
+                        set.insert(name.to_string());
+                    }
+                }
+            }
+            Some(set)
+        }
+
+        // The bases' byte buckets and external sets. Bases are never
+        // folded — only consulted.
+        let mut base_bytes: std::collections::HashMap<u64, Vec<Vec<u8>>> =
+            std::collections::HashMap::new();
+        // Set-valued indexes bucket by set SIZE: a member's cover can
+        // only live among sets at least as large.
+        let mut base_defs: std::collections::BTreeMap<
+            usize,
+            Vec<std::collections::HashSet<String>>,
+        > = std::collections::BTreeMap::new();
+        for base in fold_against {
+            for (_bname, data) in base_member_keys(base)? {
+                base_bytes
+                    .entry(content_hash(&data))
+                    .or_default()
+                    .push(data.clone());
+                if let Some(defs) = external_defs(&data) {
+                    if !defs.is_empty() {
+                        base_defs.entry(defs.len()).or_default().push(defs);
+                    }
+                }
+            }
+        }
+
+        // Per-member: (import-stub?, byte hash, external set).
+        struct MemberInfo {
+            import_stub: bool,
+            hash: u64,
+            defs: Option<std::collections::HashSet<String>>,
+        }
+        let infos: Vec<MemberInfo> = input_members
+            .iter()
+            .map(|(name, data)| MemberInfo {
+                import_stub: canonical_import_member_name(name, data).is_some(),
+                hash: content_hash(data),
+                defs: external_defs(data),
+            })
+            .collect();
+
+        // Self byte-identity buckets (hash → indices).
+        let mut self_bytes: std::collections::HashMap<u64, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, (info, (_name, data))) in infos.iter().zip(input_members.iter()).enumerate() {
+            if !info.import_stub {
+                self_bytes.entry(info.hash).or_default().push(i);
+                let _ = data;
+            }
+        }
+        // Self external sets by size → indices.
+        let mut self_defs: std::collections::BTreeMap<usize, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (i, info) in infos.iter().enumerate() {
+            if !info.import_stub {
+                if let Some(defs) = &info.defs {
+                    if !defs.is_empty() {
+                        self_defs.entry(defs.len()).or_default().push(i);
+                    }
+                }
+            }
+        }
+
+        let mut drop = vec![false; input_members.len()];
+        for i in 0..input_members.len() {
+            if infos[i].import_stub {
+                continue;
+            }
+            let (name, data) = &input_members[i];
+            let _ = name;
+            // Byte identity: against the bases, or an EARLIER same-bytes
+            // member of this archive (a later same-bytes member folds
+            // into this one when ITS turn comes).
+            let byte_dupe = base_bytes
+                .get(&infos[i].hash)
+                .is_some_and(|bases| bases.iter().any(|b| b[..] == data[..]))
+                || self_bytes
+                    .get(&infos[i].hash)
+                    // Byte-identical doubles fold into the EARLIER copy
+                    // (both directions matching would drop both).
+                    .is_some_and(|idxs| {
+                        idxs.iter()
+                            .any(|&j| j < i && input_members[j].1[..] == data[..])
+                    });
+            let abi_dupe = !byte_dupe && {
+                match &infos[i].defs {
+                    None => false,
+                    Some(defs) => {
+                        if defs.is_empty() {
+                            false
+                        } else {
+                            let covered_by_base = base_defs
+                                .range(defs.len()..)
+                                .any(|(_, sets)| sets.iter().any(|s| defs.is_subset(s)));
+                            let covered_by_self = self_defs.range(defs.len()..).any(|(_, idxs)| {
+                                idxs.iter().any(|&j| {
+                                    j != i && {
+                                        let other = infos[j].defs.as_ref().expect("indexed");
+                                        // Equal sets fold by archive
+                                        // order (first wins); a strict
+                                        // superset folds at any order.
+                                        defs.is_subset(other) && (defs.len() < other.len() || j < i)
+                                    }
+                                })
+                            });
+                            covered_by_base || covered_by_self
+                        }
+                    }
+                }
+            };
+            if byte_dupe || abi_dupe {
+                folded += 1;
+                drop[i] = true;
+            }
+        }
+        let mut kept: Vec<(String, Vec<u8>)> = Vec::with_capacity(input_members.len());
+        for (i, member) in std::mem::take(&mut input_members).into_iter().enumerate() {
+            if !drop[i] {
+                kept.push(member);
+            }
+        }
+        input_members = kept;
+    } // Pass A: collect every symbol this tool will RENAME anywhere in
+      // the archive (the rename set for references — a renamed definition
+      // must be matched by its references or the link breaks). Mach-O
+      // members use the raw nlist scan so this pass and the rewrite share
+      // one rule; other formats use the object crate.
     let mut defined: std::collections::HashSet<String> = std::collections::HashSet::new();
     // The object format decides the archive's index form (BSD __.SYMDEF
     // for Mach-O, GNU "/" elsewhere) and whether members get ld64's
     // 4-byte content pad (Mach-O only — see Pass B). Detected here: one
     // Mach-O member makes the archive Mach-O.
     let mut is_macho = false;
-    for member in archive.members() {
-        let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
-        let data = member
-            .data(&bytes[..])
-            .map_err(|e| format!("cannot read a member of {input}: {e}"))?;
+    for (name, data) in &input_members {
+        let data = &data[..];
+        let _ = name;
         match macho::defined(data, keep) {
             Ok(names) => {
                 is_macho = true;
@@ -222,7 +455,13 @@ fn run(
                         let external = symbol.scope() != SymbolScope::Unknown || symbol.is_weak();
                         if !symbol.is_undefined() && external {
                             if let Ok(name) = symbol.name() {
-                                defined.insert(name.to_string());
+                                // A kept definition never enters the
+                                // rename set: its references must keep
+                                // the spelling or the link breaks (the
+                                // exe-shape family is exactly this case).
+                                if !keep.covers(name) {
+                                    defined.insert(name.to_string());
+                                }
                             }
                         }
                     }
@@ -240,7 +479,10 @@ fn run(
 
     // Pass B: rewrite every member, collecting its exported names
     // (post-rename) for the archive symbol index.
-    let mut report = Report::default();
+    let mut report = Report {
+        folded,
+        ..Report::default()
+    };
     let mut members: Vec<(String, Vec<u8>, Vec<String>)> = Vec::new();
     // Canonical-name registry for import members: name -> index of the
     // first surviving member in `members`. Byte-identical duplicates
@@ -260,16 +502,21 @@ fn run(
     // is kept too — redundant, never wrong.)
     let mut import_names: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
-    let base_keys = match dedupe_against {
-        Some(base) => Some(base_member_keys(base)?),
-        None => None,
+    // Repeatable: the exe-shape archive's bundled graph spans BOTH the
+    // tfs and driver archives (spec 22 §3.6's link-unit member), so its
+    // dedupe reads the union.
+    let base_keys = if dedupe_against.is_empty() {
+        None
+    } else {
+        let mut keys = std::collections::HashSet::new();
+        for base in dedupe_against {
+            keys.extend(base_member_keys(base)?);
+        }
+        Some(keys)
     };
-    for member in archive.members() {
-        let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
-        let name = String::from_utf8_lossy(member.name()).into_owned();
-        let data = member
-            .data(&bytes[..])
-            .map_err(|e| format!("cannot read member {name} of {input}: {e}"))?;
+    for (name, data) in &input_members {
+        let name = name.clone();
+        let data = &data[..];
         let canonical = canonical_import_member_name(&name, data);
         let (mut rewritten, exported) = scope_object(data, keep, prefix, &defined, &mut report)
             .map_err(|reason| format!("member {name}: {reason}"))?;
@@ -531,11 +778,11 @@ fn index_size(
     }
 }
 
-/// True when the symbol's logical name is under the keep prefix and
-/// therefore stays public (used by the generic non-Mach-O path; the
-/// Mach-O path shares the rule through macho::renames_def).
-fn keeps_name(name: &str, keep: &str) -> bool {
-    name.trim_start_matches('_').starts_with(keep)
+/// True when the symbol's logical name is kept public (used by the
+/// generic non-Mach-O path; the Mach-O path shares the rule through
+/// macho::renames_def).
+fn keeps_name(name: &str, keep: &Keep) -> bool {
+    keep.covers(name)
 }
 
 /// Filter a COFF `.drectve` payload (tebako#708): drop every export
@@ -634,7 +881,7 @@ fn canonical_import_member_name(name: &str, data: &[u8]) -> Option<String> {
 /// non-keep symbols renamed, relocations remapped to the renamed ids.
 fn scope_object(
     data: &[u8],
-    keep: &str,
+    keep: &Keep,
     prefix: &str,
     defined: &std::collections::HashSet<String>,
     report: &mut Report,
@@ -1347,6 +1594,26 @@ fn coff_mark_undefined_section_symbols(bytes: &mut [u8], names: &[&str]) -> Resu
 mod tests {
     use super::*;
 
+    /// The stock rule — the tebako_ prefix and no exact keeps.
+    fn default_keep() -> Keep {
+        Keep {
+            prefix: KEEP_PREFIX.to_string(),
+            symbols: std::collections::HashSet::new(),
+        }
+    }
+
+    #[test]
+    fn keep_covers_prefix_and_exact_symbols() {
+        let mut keep = default_keep();
+        keep.symbols.insert("fopen".to_string());
+        assert!(keep.covers("tebako_fs_open"));
+        assert!(keep.covers("fopen"));
+        assert!(keep.covers("_fopen")); // the Mach-O spelling
+        assert!(!keep.covers("fopen64")); // exact, never prefix
+        assert!(!keep.covers("openat64"));
+        assert!(!keep.covers("mangled_rust_symbol"));
+    }
+
     /// Build a tiny object with one public tebako_* symbol, one internal
     /// global, one local, and one undefined reference.
     fn fixture_object() -> Vec<u8> {
@@ -1420,7 +1687,7 @@ mod tests {
         let mut report = Report::default();
         let (bytes, _exported) = scope_object(
             &fixture_object(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
             &std::collections::HashSet::new(),
             &mut report,
@@ -1557,7 +1824,7 @@ mod tests {
         let mut report = Report::default();
         let (bytes, _exported) = scope_object(
             &fixture,
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
             &std::collections::HashSet::new(),
             &mut report,
@@ -1684,10 +1951,12 @@ mod tests {
     fn refs_to_renamed_definitions_ride_the_prefix() {
         let def_member = fixture_object();
         let ref_member = fixture_object_with_ref();
-        let mut defined = macho::defined(&def_member, KEEP_PREFIX).expect("pass A over the def");
-        defined.extend(macho::defined(&ref_member, KEEP_PREFIX).expect("pass A over the ref"));
+        let mut defined =
+            macho::defined(&def_member, &default_keep()).expect("pass A over the def");
+        defined.extend(macho::defined(&ref_member, &default_keep()).expect("pass A over the ref"));
         let (out, _exported, renamed, _kept) =
-            macho::scope(&ref_member, KEEP_PREFIX, SCOPE_PREFIX, &defined).expect("scope the ref");
+            macho::scope(&ref_member, &default_keep(), SCOPE_PREFIX, &defined)
+                .expect("scope the ref");
         let obj = File::parse(&out[..]).expect("parse the rewritten ref member");
         let names: Vec<String> = obj
             .symbols()
@@ -1766,9 +2035,9 @@ mod tests {
         obj.extend_from_slice(&syms);
         obj.extend_from_slice(strtab);
 
-        let defined = macho::defined(&obj, KEEP_PREFIX).expect("pass A");
+        let defined = macho::defined(&obj, &default_keep()).expect("pass A");
         let (out, exported, renamed, kept) =
-            macho::scope(&obj, KEEP_PREFIX, SCOPE_PREFIX, &defined).expect("scope the fixture");
+            macho::scope(&obj, &default_keep(), SCOPE_PREFIX, &defined).expect("scope the fixture");
         assert_eq!(renamed, 3, "both spellings + the reference ride the prefix");
         assert_eq!(kept, 1, "the tebako_* definition stays public");
 
@@ -1827,9 +2096,11 @@ mod tests {
         run(
             tmp.to_str().unwrap(),
             tmp_out.to_str().unwrap(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
-            None,
+            &[],
+            false,
+            &[],
         )
         .expect("scope the archive");
         let out = std::fs::read(&tmp_out).expect("read the scoped archive");
@@ -2006,7 +2277,7 @@ mod tests {
         let mut report = Report::default();
         let (scoped, _exported) = scope_object(
             &bytes,
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
             &std::collections::HashSet::new(),
             &mut report,
@@ -2102,7 +2373,7 @@ mod tests {
         let mut report = Report::default();
         let (scoped, _exported) = scope_object(
             &bytes,
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
             &std::collections::HashSet::new(),
             &mut report,
@@ -2167,9 +2438,11 @@ mod tests {
         let report = run(
             tmp.to_str().unwrap(),
             tmp_out.to_str().unwrap(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
-            None,
+            &[],
+            false,
+            &[],
         )
         .expect("scope the archive");
         let out = std::fs::read(&tmp_out).expect("read the scoped archive");
@@ -2238,9 +2511,11 @@ mod tests {
         let report = run(
             tmp.to_str().unwrap(),
             tmp_out.to_str().unwrap(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
-            None,
+            &[],
+            false,
+            &[],
         )
         .expect("two import sets for one DLL are kept, never an error");
         let out = std::fs::read(&tmp_out).expect("read the scoped archive");
@@ -2284,6 +2559,229 @@ mod tests {
         );
     }
 
+    /// A tiny object defining the given strong externals (the fold's
+    /// fixture shape).
+    fn object_defining(names: &[&str]) -> Vec<u8> {
+        let arch = if cfg!(target_arch = "aarch64") {
+            object::Architecture::Aarch64
+        } else {
+            object::Architecture::X86_64
+        };
+        let format = if cfg!(target_os = "macos") {
+            object::BinaryFormat::MachO
+        } else {
+            object::BinaryFormat::Elf
+        };
+        let endian = if cfg!(target_endian = "little") {
+            object::Endianness::Little
+        } else {
+            object::Endianness::Big
+        };
+        let mut out = object::write::Object::new(format, arch, endian);
+        let text = out.add_section(
+            b"__TEXT".to_vec(),
+            b"__text".to_vec(),
+            object::SectionKind::Text,
+        );
+        out.section_mut(text).set_data(b"\x90\x90\xc3", 1);
+        for (i, name) in names.iter().enumerate() {
+            out.add_symbol(object::write::Symbol {
+                name: name.as_bytes().to_vec(),
+                value: i as u64,
+                size: 1,
+                kind: object::SymbolKind::Text,
+                scope: object::SymbolScope::Linkage,
+                weak: false,
+                section: object::write::SymbolSection::Section(text),
+                flags: object::SymbolFlags::None,
+            });
+        }
+        out.write().expect("fixture object")
+    }
+
+    /// The fold drops the member whose strong set an EARLIER kept member
+    /// covers (the one-symbol shim folds into the codegen unit that
+    /// carries the same symbol among many — the archive-order rule, the
+    /// same determinism ld's first-definition-wins has).
+    #[test]
+    fn fold_drops_a_member_covered_by_an_earlier_one() {
+        let shim = object_defining(&["shared_hook"]);
+        let cgu = object_defining(&["shared_hook", "the_crates_other_work"]);
+        let mut input = b"!<arch>\n".to_vec();
+        write_member(&mut input, "shim.o", &shim, false).expect("shim");
+        write_member(&mut input, "cgu.o", &cgu, false).expect("cgu");
+
+        let pid = std::process::id();
+        let in_p = std::env::temp_dir().join(format!("arscope-fold-in-{pid}.a"));
+        let out_p = std::env::temp_dir().join(format!("arscope-fold-out-{pid}.a"));
+        std::fs::write(&in_p, &input).expect("write input");
+        let report = run(
+            in_p.to_str().unwrap(),
+            out_p.to_str().unwrap(),
+            &default_keep(),
+            SCOPE_PREFIX,
+            &[],
+            true,
+            &[],
+        )
+        .expect("fold");
+        let _ = std::fs::remove_file(&in_p);
+
+        // Coverage is order-independent: the shim's set is covered by the
+        // cgu's superset, so the shim folds whichever sorts first.
+        assert_eq!(report.folded, 1, "the shim folds into the cgu");
+
+        // Reverse the order: the same fold.
+        let mut input2 = b"!<arch>\n".to_vec();
+        write_member(&mut input2, "cgu.o", &cgu, false).expect("cgu");
+        write_member(&mut input2, "shim.o", &shim, false).expect("shim");
+        std::fs::write(&in_p, &input2).expect("write input2");
+        let report2 = run(
+            in_p.to_str().unwrap(),
+            out_p.to_str().unwrap(),
+            &default_keep(),
+            SCOPE_PREFIX,
+            &[],
+            true,
+            &[],
+        )
+        .expect("fold 2");
+        let _ = std::fs::remove_file(&in_p);
+        let out2 = std::fs::read(&out_p).expect("read out");
+        let _ = std::fs::remove_file(&out_p);
+        assert_eq!(report2.folded, 1, "the shim folds into the earlier cgu");
+        let archive = object::read::archive::ArchiveFile::parse(&out2[..]).expect("reparse");
+        let names: Vec<String> = archive
+            .members()
+            .map(|m| String::from_utf8_lossy(m.expect("m").name()).into_owned())
+            .filter(|n| n != "/" && !n.starts_with("__.SYMDEF"))
+            .collect();
+        assert_eq!(names, vec!["cgu.o"], "only the covering member remains");
+    }
+
+    /// A member whose WEAK external is its own never folds, even when
+    /// its strong set is covered: fold it away and the weak definition's
+    /// references go undefined (the flatbuffers_metadata_builder ctor
+    /// lesson — the template instantiation lived in one member).
+    #[test]
+    fn fold_never_drops_a_unique_weak_definition() {
+        // object_defining's symbols are strong; this fixture needs a weak
+        // one, so the object is constructed directly.
+        let arch = if cfg!(target_arch = "aarch64") {
+            object::Architecture::Aarch64
+        } else {
+            object::Architecture::X86_64
+        };
+        let format = if cfg!(target_os = "macos") {
+            object::BinaryFormat::MachO
+        } else {
+            object::BinaryFormat::Elf
+        };
+        let endian = if cfg!(target_endian = "little") {
+            object::Endianness::Little
+        } else {
+            object::Endianness::Big
+        };
+        let mut o = object::write::Object::new(format, arch, endian);
+        let text = o.add_section(
+            b"__TEXT".to_vec(),
+            b"__text".to_vec(),
+            object::SectionKind::Text,
+        );
+        o.section_mut(text).set_data(b"\x90\xc3", 1);
+        o.add_symbol(object::write::Symbol {
+            name: b"shared_hook".to_vec(),
+            value: 0,
+            size: 1,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        o.add_symbol(object::write::Symbol {
+            name: b"unique_weak_template".to_vec(),
+            value: 1,
+            size: 1,
+            kind: object::SymbolKind::Text,
+            scope: object::SymbolScope::Linkage,
+            weak: true,
+            section: object::write::SymbolSection::Section(text),
+            flags: object::SymbolFlags::None,
+        });
+        let cgu = o.write().expect("fixture with a weak");
+
+        let shim = object_defining(&["shared_hook"]);
+        let mut input = b"!<arch>\n".to_vec();
+        // The shim FIRST (kept), then the cgu: the cgu's strong set is
+        // covered by the shim, but its weak definition is unique, so the
+        // cgu must survive.
+        write_member(&mut input, "shim.o", &shim, false).expect("shim");
+        write_member(&mut input, "cgu.o", &cgu, false).expect("cgu");
+        let pid = std::process::id();
+        let in_p = std::env::temp_dir().join(format!("arscope-weak-{pid}.a"));
+        let out_p = std::env::temp_dir().join(format!("arscope-weak-out-{pid}.a"));
+        std::fs::write(&in_p, &input).expect("write input");
+        let report = run(
+            in_p.to_str().unwrap(),
+            out_p.to_str().unwrap(),
+            &default_keep(),
+            SCOPE_PREFIX,
+            &[],
+            true,
+            &[],
+        )
+        .expect("fold");
+        let _ = std::fs::remove_file(&in_p);
+        let out = std::fs::read(&out_p).expect("read out");
+        let _ = std::fs::remove_file(&out_p);
+        // The shim folds (the cgu covers it); the cgu survives because
+        // ITS set — including the unique weak definition — is covered by
+        // nobody.
+        assert_eq!(report.folded, 1, "the covered shim folds");
+        let archive = object::read::archive::ArchiveFile::parse(&out[..]).expect("reparse");
+        let names: Vec<String> = archive
+            .members()
+            .map(|m| String::from_utf8_lossy(m.expect("m").name()).into_owned())
+            .filter(|n| n != "/" && !n.starts_with("__.SYMDEF"))
+            .collect();
+        assert_eq!(
+            names,
+            vec!["cgu.o"],
+            "the weak definition's carrier survives"
+        );
+    }
+
+    /// A member with NO strong externals never folds (it may be pulled
+    /// for a weak definition), and disjoint sets never fold.
+    #[test]
+    fn fold_never_touches_empty_or_disjoint_sets() {
+        let empty = object_defining(&[]);
+        let one = object_defining(&["only_here"]);
+        let other = object_defining(&["only_there"]);
+        let mut input = b"!<arch>\n".to_vec();
+        write_member(&mut input, "empty.o", &empty, false).expect("empty");
+        write_member(&mut input, "one.o", &one, false).expect("one");
+        write_member(&mut input, "other.o", &other, false).expect("other");
+        let pid = std::process::id();
+        let in_p = std::env::temp_dir().join(format!("arscope-nofold-in-{pid}.a"));
+        let out_p = std::env::temp_dir().join(format!("arscope-nofold-out-{pid}.a"));
+        std::fs::write(&in_p, &input).expect("write input");
+        let report = run(
+            in_p.to_str().unwrap(),
+            out_p.to_str().unwrap(),
+            &default_keep(),
+            SCOPE_PREFIX,
+            &[],
+            true,
+            &[],
+        )
+        .expect("no fold");
+        let _ = std::fs::remove_file(&in_p);
+        let _ = std::fs::remove_file(&out_p);
+        assert_eq!(report.folded, 0);
+    }
+
     /// `--dedupe-against` drops from the derived archive every member the
     /// (already scoped) base carries under the same final name with the
     /// same final bytes — cargo's staticlib bundling packs the base's
@@ -2310,9 +2808,11 @@ mod tests {
         run(
             base_in.to_str().unwrap(),
             base_out.to_str().unwrap(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
-            None,
+            &[],
+            false,
+            &[],
         )
         .expect("scope the base");
 
@@ -2330,9 +2830,11 @@ mod tests {
         let report = run(
             der_in.to_str().unwrap(),
             der_out.to_str().unwrap(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
-            Some(base_out.to_str().unwrap()),
+            &[base_out.to_str().unwrap().to_string()],
+            false,
+            &[],
         )
         .expect("scope + cross-dedupe the derived archive");
         let out = std::fs::read(&der_out).expect("read the result");
@@ -2451,7 +2953,7 @@ mod tests {
         let mut report = Report::default();
         let defined = std::collections::HashSet::new();
         let (rewritten, _exported) =
-            scope_object(&bytes, KEEP_PREFIX, SCOPE_PREFIX, &defined, &mut report)
+            scope_object(&bytes, &default_keep(), SCOPE_PREFIX, &defined, &mut report)
                 .expect("a descriptor member's undefined section symbols survive the rewrite");
 
         let obj = File::parse(&rewritten[..]).expect("parse the rewritten descriptor");
@@ -2527,9 +3029,11 @@ mod tests {
         let report = run(
             tmp.to_str().unwrap(),
             tmp_out.to_str().unwrap(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
-            None,
+            &[],
+            false,
+            &[],
         )
         .expect("a short-form import member passes through");
         let out = std::fs::read(&tmp_out).expect("read the scoped archive");
@@ -2602,9 +3106,11 @@ mod tests {
         let err = run(
             tmp.to_str().unwrap(),
             tmp_out.to_str().unwrap(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
-            None,
+            &[],
+            false,
+            &[],
         )
         .expect_err("a padded short-form import member is refused");
         let _ = std::fs::remove_file(&tmp);
@@ -2663,9 +3169,9 @@ mod tests {
         obj.extend_from_slice(&syms);
         obj.extend_from_slice(strtab);
 
-        let defined = macho::defined(&obj, KEEP_PREFIX).expect("pass A");
+        let defined = macho::defined(&obj, &default_keep()).expect("pass A");
         let (scoped, _, _, _) =
-            macho::scope(&obj, KEEP_PREFIX, SCOPE_PREFIX, &defined).expect("scope the fixture");
+            macho::scope(&obj, &default_keep(), SCOPE_PREFIX, &defined).expect("scope the fixture");
         let padded_len = scoped.len().div_ceil(4) * 4;
         assert!(
             padded_len > scoped.len(),
@@ -2682,9 +3188,11 @@ mod tests {
         run(
             tmp.to_str().unwrap(),
             tmp_out.to_str().unwrap(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
-            None,
+            &[],
+            false,
+            &[],
         )
         .expect("scope the Mach-O archive");
         let out = std::fs::read(&tmp_out).expect("read the scoped archive");
@@ -2753,7 +3261,7 @@ mod tests {
         let mut report = Report::default();
         let (bytes, _) = scope_object(
             &drectve_fixture_object(),
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
             &std::collections::HashSet::new(),
             &mut report,
@@ -2798,7 +3306,7 @@ mod tests {
         let mut report = Report::default();
         let (scoped, _) = scope_object(
             &bytes,
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
             &std::collections::HashSet::new(),
             &mut report,
@@ -2845,7 +3353,7 @@ mod tests {
         let mut report = Report::default();
         let (scoped, _) = scope_object(
             &bytes,
-            KEEP_PREFIX,
+            &default_keep(),
             SCOPE_PREFIX,
             &std::collections::HashSet::new(),
             &mut report,

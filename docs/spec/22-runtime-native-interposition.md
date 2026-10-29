@@ -833,7 +833,12 @@ Silent degradation is the one outcome the arm refuses.
 
 **What is still open.** The factory link (`--whole-archive`,
 `-Wl,--export-dynamic`, and `-lstdc++` for the dwarfs backend the
-archive carries) and the jail proof on a built runtime. Until both
+archive carries) and the jail proof on a built runtime. The archive
+itself ships in the link unit (Linux legs): scoped like its siblings
+except the family's names ride an exact keep list
+(`crates/libtfs-preload/exe-shape-symbols.txt`, parity-tested against
+the definitions) because renaming ends the preemption, and deduped
+against both scoped siblings. Until the factory link and the proof
 land, every shipped runtime takes the absent path.
 
 **Acceptance (the issue's bar, not "the symbols are defined").** With

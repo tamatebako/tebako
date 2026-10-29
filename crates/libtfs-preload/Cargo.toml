@@ -28,7 +28,15 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 # has exported the mount configuration; the driver calls
 # `tebako_preload_init` at boot head instead. Default off: the injected
 # dylib keeps its constructor.
-exe-shape = []
+#
+# The staticlib is whole-archived INTO the runtime exe beside the
+# driver's own archives (one tfs per process — two engines over the same
+# images would double every mount and disagree on the fd space), so the
+# bundled engine must carry the link unit's full feature surface: enc +
+# vendored-squashfs ride the tfs defaults the driver sees, and this
+# crate's own base set (vendored-dwarfs + backend-limnifs +
+# backend-remote) is already requested in [dependencies].
+exe-shape = ["tfs/enc", "tfs/vendored-squashfs"]
 
 [dependencies]
 # The engine, embedded in-process: the shim is a TFS consumer, never a

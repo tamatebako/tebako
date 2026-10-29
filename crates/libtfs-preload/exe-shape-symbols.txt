@@ -1,0 +1,77 @@
+# The exe shape's exported surface (spec 22 §3.6) — the symbols the
+# link-unit scoping must NOT rename, because renaming ends their
+# preemption of the process's libc. One name per line, the ELF logical
+# spelling (the Mach-O path prepends its underscore itself).
+#
+# Owner: sys/mod.rs is the definition; this file is the link-unit's copy
+# of it, and `tests/exe_shape_surface.rs` proves the two agree. The exec
+# class (dlopen/execve/posix_spawn/posix_spawnp) is deliberately ABSENT:
+# the exe shape is the file-IO family only — children are armed by the
+# driver's injection export, and an exported dlopen would collide with
+# the runtime's own class-L definition at link.
+__fxstat
+__fxstat64
+__fxstatat
+__fxstatat64
+__lxstat
+__lxstat64
+__openat_2
+__read_chk
+__realpath_chk
+__xstat
+__xstat64
+access
+canonicalize_file_name
+chdir
+close
+closedir
+creat
+dirfd
+dup
+dup2
+faccessat
+fchdir
+fcntl
+fcntl64
+fcntl_impl
+fopen
+fopen64
+fstat
+fstat64
+fstatat
+fstatat64
+getcwd
+getdents64
+lseek
+lseek64
+lstat
+lstat64
+mkdir
+mmap
+mmap64
+open
+open_impl
+open64
+openat
+openat64
+openat_impl
+opendir
+pread
+pread64
+read
+readdir
+readdir64
+readdir_r
+readlink
+realpath
+rename
+rewinddir
+scandir
+scandir64
+seekdir
+stat
+stat64
+statx
+syscall
+telldir
+unlink
