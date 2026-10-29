@@ -147,4 +147,6 @@ cargo build --release -p tfs -p tebako-driver -p libtfs-preload
 # constructor-less cdylib can never shadow the injected shim's copy
 # (tebako#951). No --target: the leg is native, like the builds above.
 cargo build --release -p libtfs-preload --features exe-shape --target-dir target/exe-shape
-TARGET= bash .github/workflows/lib/link-unit-stage.sh
+# musl has no scandir64 (its scandir is 64-bit always): the keep list's
+# gnu-only lines drop out of the keep set on this leg.
+EXE_SHAPE_LIBC=musl TARGET= bash .github/workflows/lib/link-unit-stage.sh
