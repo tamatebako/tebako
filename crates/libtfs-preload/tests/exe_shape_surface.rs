@@ -9,8 +9,13 @@ use std::collections::BTreeSet;
 /// (or linux-gated `no_mangle`) `extern "C"` fn in sys/mod.rs, minus the
 /// exec class (gated OUT of the exe shape by its own cfg).
 fn defined_surface() -> BTreeSet<String> {
+    // The surface's definition is split: the interpose family lives in
+    // sys/mod.rs, and the entry point the driver dlsym's for is lib.rs's
+    // tebako_preload_init. Both are the list's owners.
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/sys/mod.rs"))
-        .expect("read sys/mod.rs");
+        .expect("read sys/mod.rs")
+        + &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
+            .expect("read lib.rs");
     let lines: Vec<&str> = src.lines().collect();
     let mut out = BTreeSet::new();
     let mut window: Vec<&str> = Vec::new();

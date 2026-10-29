@@ -9,6 +9,7 @@
 # the exe shape is the file-IO family only — children are armed by the
 # driver's injection export, and an exported dlopen would collide with
 # the runtime's own class-L definition at link.
+tebako_preload_init
 __fxstat
 __fxstat64
 __fxstatat

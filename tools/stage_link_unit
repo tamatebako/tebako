@@ -312,8 +312,15 @@ if exe_shape
               [File.join(build_dir, "libtfs.a"), File.join(build_dir, "libtebako_driver.a")]
                 .select { |b| File.file?(b) }
                 .flat_map { |b| ["--fold-against", b] }
+  # The keep PREFIX differs from the siblings': the bundled graph's
+  # tebako_* C exports (tfs's c_api) must RENAME in this archive —
+  # keeping them would collide with the sibling's copies at the exe link
+  # (tebako_strerror et al, the roll's first build). The family's own
+  # surface is the keep LIST (the interpose names + tebako_preload_init);
+  # the sentinel prefix matches nothing, so the prefix rule keeps nothing.
   system(arscope_env, "cargo", "run", "-q", "-p", "tebako-arscope", "--",
          exe_shape, File.join(out, "libtfs_preload.a"),
+         "--keep-prefix", "__exe_shape_no_prefix__",
          "--dedupe-against", File.join(out, "libtfs.a"),
          "--dedupe-against", File.join(out, "libtebako_driver.a"),
          *keep_args, *fold_args, chdir: root, exception: true)
