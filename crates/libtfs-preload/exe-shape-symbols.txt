@@ -67,7 +67,7 @@ realpath
 rename
 rewinddir
 scandir
-scandir64
+scandir64  # gnu-only (musl has no scandir64; its scandir is 64-bit always)
 seekdir
 stat
 stat64

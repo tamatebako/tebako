@@ -55,7 +55,9 @@ fn listed_surface() -> BTreeSet<String> {
     txt.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(str::to_string)
+        // A line is the ELF spelling plus an optional marker comment
+        // ("# gnu-only"): the name is the first whitespace token.
+        .map(|l| l.split_whitespace().next().unwrap_or(l).to_string())
         .collect()
 }
 

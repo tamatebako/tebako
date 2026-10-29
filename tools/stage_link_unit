@@ -297,8 +297,16 @@ end
 if exe_shape
   keep_file = File.join(root, "crates", "libtfs-preload", "exe-shape-symbols.txt")
   die "missing the exe-shape keep list #{keep_file}" unless File.file?(keep_file)
+  # The list's ELF spelling per line; a trailing "# gnu-only" marker
+  # names a glibc-only symbol (musl has no scandir64 — its scandir is
+  # 64-bit always), and a musl leg drops it from the keep set.
+  musl = ENV["EXE_SHAPE_LIBC"] == "musl"
   keep_args = File.readlines(keep_file, chomp: true)
+                  .map(&:strip)
                   .reject { |l| l.empty? || l.start_with?("#") }
+                  .reject { |l| musl && l.include?("gnu-only") }
+                  .map { |l| l.split(/\s+/).first }
+                  .compact
                   .flat_map { |sym| ["--keep-symbol", sym] }
   fold_args = ["--fold-identical"] +
               [File.join(build_dir, "libtfs.a"), File.join(build_dir, "libtebako_driver.a")]
