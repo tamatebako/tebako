@@ -588,6 +588,36 @@ fn run(
     // The archive symbol index: ld consumes archives THROUGH it (a
     // missing index is "no table of contents"); its form was decided by
     // the object format in pass A.
+    // The kept-surface verification (spec 22 §3.6's gate at the point of
+    // truth): every --keep-symbol name must be DEFINED in the output.
+    // nm cannot read an LTO bitcode member's symtab (the release profile
+    // is fat-LTO), so an after-the-fact nm gate is blind exactly where it
+    // matters — this checks the symbol tables this tool itself wrote.
+    if !keep.symbols.is_empty() {
+        let mut defined_out: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for (_name, _data, exported) in &members {
+            for name in exported {
+                defined_out.insert(name.as_str());
+            }
+        }
+        let mut missing: Vec<&String> = keep
+            .symbols
+            .iter()
+            .filter(|sym| {
+                !defined_out.contains(sym.as_str())
+                    && !defined_out.contains(format!("_{sym}").as_str())
+            })
+            .collect();
+        missing.sort();
+        if !missing.is_empty() {
+            return Err(format!(
+                "the keep list did not survive the rewrite: {} renamed or dropped ({}) — a renamed interpose definition preempts nothing",
+                missing.len(),
+                missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ")
+            ));
+        }
+    }
+
     let index = build_index(&members, bsd);
     let index_name = if bsd { "__.SYMDEF" } else { "/" };
 
