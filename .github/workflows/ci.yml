@@ -69,7 +69,7 @@ jobs:
           # arch gap in the nightly/main tier (the arch classes it
           # catches are compile-class; the nightly lands within a day).
           arm='"os":"ubuntu-24.04-arm","crypto_triplet":"arm64-linux-dynamic","triplet":"arm64-linux-static"'
-          mac='"os":"macos-14","crypto_triplet":"arm64-osx-dynamic","triplet":"arm64-osx-static"'
+          mac='"os":"macos-15","crypto_triplet":"arm64-osx-dynamic","triplet":"arm64-osx-static"'
           if [ "${{ github.event_name }}" = pull_request ]; then
             m="{\"include\":[{$smoke}]}"
           else
