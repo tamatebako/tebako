@@ -716,6 +716,30 @@ impl FsContext {
         None
     }
 
+    /// The host answer for a dlmap spelling the image does not serve as
+    /// a FILE (tebako#502): an unheld tail is the materialized host copy
+    /// itself, and a directory tail (the mount root included) is the
+    /// extraction tree's real host directory — a tree walk of our own
+    /// cache (the exit cleanup's remove_dir_all proved it) must not die
+    /// on the materialize answer's EISDIR. Ungated: those bytes are
+    /// process-internal and the hex leaf is unauthorable as a grant.
+    /// ENOENT is the open-path's host-passthrough token (the caller's
+    /// real open answers for the literal path).
+    fn dlmap_tree_host_answer(
+        &self,
+        path: &str,
+        trace_start: Option<trace::Start>,
+    ) -> Result<i32, i32> {
+        if let Some(start) = trace_start {
+            trace::emit(
+                trace::Event::new(trace::Op::Open, path, "host")
+                    .detail("reason", Value::String("dlmap-tree".to_string()))
+                    .dur(start),
+            );
+        }
+        Err(libc::ENOENT)
+    }
+
     /// The host-side tail of a memfs path under an extraction root (the
     /// dlmap/exec-cache layout `<root>/<tail>`). A drive-letter memfs
     /// root (msys: `A:/t`) makes the raw join operand drive-prefixed —
@@ -815,6 +839,16 @@ impl FsContext {
                 }
                 let host = match self.dlmap2file_inner(&tail) {
                     Ok(host) => host,
+                    // A dlmap spelling of a DIRECTORY (the mount root
+                    // included) names the extraction tree's real host
+                    // directory — a consumer walking the materialized
+                    // tree (the exit cleanup's remove_dir_all proved it)
+                    // must not die on the materialize answer's EISDIR.
+                    // The host copy answers, exactly the tebako#502
+                    // contract below.
+                    Err(e) if e == libc::EISDIR => {
+                        return self.dlmap_tree_host_answer(path, trace_start);
+                    }
                     Err(e) => {
                         if let Some(start) = trace_start {
                             trace::emit(
@@ -871,14 +905,7 @@ impl FsContext {
         // below could only gate-and-ENOENT it (a tmpdir host path
         // matches no VFS mount point).
         if Self::dlmap_tail(path).is_some() {
-            if let Some(start) = trace_start {
-                trace::emit(
-                    trace::Event::new(trace::Op::Open, path, "host")
-                        .detail("reason", Value::String("dlmap-tree".to_string()))
-                        .dur(start),
-                );
-            }
-            return Err(libc::ENOENT);
+            return self.dlmap_tree_host_answer(path, trace_start);
         }
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08): the policy gates the

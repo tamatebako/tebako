@@ -816,6 +816,29 @@ unproven copy of the ~2.8k lines that have needed the most hardening
 fork/vfork guards); the accepted cost is the family's engine instance
 beside the driver's, over the same images.
 
+**Engine IO across the copy boundary (tebako#964,
+tebako-runtime-ruby#306).** The two engine instances make the preload's
+own re-entrancy mark blind to a body that enters the engine through the
+C ABI: a materialization's host writes then re-enter the armed family —
+a recursive context-lock acquisition in the single-copy link (the
+probe's wedge), and a dlmap-prefix redirect of the engine's own cache
+tree across the two copies (the runtime's phantom materialization: the
+extract's create lands in the FAMILY's cache while the caller is handed
+the path its own copy never wrote). The mark therefore has exactly one
+process-wide home: the preload exports `tebako_engine_io_enter` /
+`tebako_engine_io_leave` (kept names, never scoped — the same keep list
+as `tebako_preload_init`), the C ABI's materialization family
+(`tebako_fs_dlmap2file`, `tebako_fs_exec_materialize`,
+`tebako_fs_dlalias2file`) arms the depth for the body's span, resolved
+by `dlsym(RTLD_DEFAULT, …)` exactly like the arm, and the family's
+engine gate treats a nonzero depth as `IN_ENGINE`: engine IO is host
+IO, never routed, never locked against. A process without the family
+linked resolves nothing and the guard is inert. The seam's other half:
+a dlmap spelling of a DIRECTORY (the mount root included) answers the
+extraction tree's real host directory — the materialize answer's
+EISDIR is for files the image holds — so a walk of the per-process
+cache (the driver's exit cleanup) reads the host tree.
+
 **The arm (driver side, DELIVERED 2026-10-28).** The factory's link
 change sits in another release chain, so the driver does not
 hard-reference the entry. `crates/tebako-driver/src/exe_shape.rs`

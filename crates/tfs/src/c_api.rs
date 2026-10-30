@@ -90,6 +90,92 @@ fn fail(err: i32) -> i32 {
     -1
 }
 
+// ---------------------------------------------------------------------
+// The engine-IO guard (tebako#964; spec 22 §3.6's exe-shape seam)
+// ---------------------------------------------------------------------
+
+/// A materialization body runs INSIDE the engine with the context lock
+/// held, and its host writes (the dlmap cache's extraction) re-enter the
+/// interposed family when the exe shape arms the family in-process.
+/// Unmarked, that re-entry is a recursive context-lock acquisition in
+/// the single-copy link (the probe's deadlock, tebako#964) and a
+/// dlmap-prefix redirect of the engine's own cache tree in the two-copy
+/// exe — the extract's `File::create` lands in the FAMILY's copy of the
+/// cache while the caller is handed the phantom path its own copy never
+/// wrote (the runtime's `cannot open shared object file` on the
+/// materialized name, tebako-runtime-ruby#306).
+///
+/// The family's own `IN_ENGINE` cannot see these bodies: in the exe
+/// shape the family and this C ABI are different scoped copies of the
+/// same engine. The guard state therefore lives in exactly one place per
+/// process — the preload crate exports `tebako_engine_io_enter` /
+/// `tebako_engine_io_leave`, and the family's engine gate checks the
+/// depth alongside `IN_ENGINE` ("engine IO is host IO by definition").
+/// Every tfs copy resolves the pair once by `dlsym(RTLD_DEFAULT)` — the
+/// `tebako_preload_init` precedent (tebako-driver's exe_shape). A
+/// process without the family linked resolves nothing and the guard is
+/// inert: nothing interposes, nothing needs marking.
+///
+/// Only the materialization family holds the guard: the extraction
+/// writes are process-internal and never policy-gated (the tebako#502
+/// contract), which is exactly the set of bodies whose host IO under
+/// the lock can re-enter the family.
+struct EngineIoGuard {
+    leave: Option<unsafe extern "C" fn()>,
+}
+
+impl Drop for EngineIoGuard {
+    fn drop(&mut self) {
+        if let Some(leave) = self.leave {
+            // SAFETY: resolved from the paired export; balances the
+            // guard's enter.
+            unsafe { leave() };
+        }
+    }
+}
+
+#[cfg(unix)]
+fn engine_io_guard() -> EngineIoGuard {
+    use std::sync::OnceLock;
+    static PAIR: OnceLock<(
+        Option<unsafe extern "C" fn()>,
+        Option<unsafe extern "C" fn()>,
+    )> = OnceLock::new();
+    let (enter, leave) = PAIR.get_or_init(|| {
+        // SAFETY: `RTLD_DEFAULT` is the documented pseudo-handle for the
+        // global scope; the resolved value is the preload's exported
+        // `unsafe`-free enter/leave, or null (absent family).
+        unsafe {
+            let resolve = |name: &std::ffi::CStr| {
+                let p = libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr());
+                (!p.is_null())
+                    .then(|| std::mem::transmute::<*mut c_void, unsafe extern "C" fn()>(p))
+            };
+            (
+                resolve(c"tebako_engine_io_enter"),
+                resolve(c"tebako_engine_io_leave"),
+            )
+        }
+    });
+    match (enter, leave) {
+        (Some(enter), Some(leave)) => {
+            // SAFETY: the export's contract; balanced by the guard's drop.
+            unsafe { enter() };
+            EngineIoGuard {
+                leave: Some(*leave),
+            }
+        }
+        _ => EngineIoGuard { leave: None },
+    }
+}
+
+#[cfg(not(unix))]
+fn engine_io_guard() -> EngineIoGuard {
+    // The file-IO family is POSIX; no shim ever shares a windows process
+    // with this C ABI, so there is nothing to mark.
+    EngineIoGuard { leave: None }
+}
+
 // ===================================================================
 // Lifecycle Management
 // ===================================================================
@@ -1094,6 +1180,7 @@ pub unsafe extern "C" fn tebako_fs_extract_all(dest_path: *const c_char) -> libc
 /// `name` must be a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_dlalias2file(name: *const c_char) -> *mut c_char {
+    let _io = engine_io_guard();
     let name = match unsafe { path_arg(name) } {
         Ok(n) => n,
         Err(e) => {
@@ -1128,6 +1215,7 @@ pub unsafe extern "C" fn tebako_fs_dlalias2file(name: *const c_char) -> *mut c_c
 /// `path` must be a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_char {
+    let _io = engine_io_guard();
     let path = match unsafe { path_arg(path) } {
         Ok(p) => anchor_vfs_path(p),
         Err(e) => {
@@ -1171,6 +1259,7 @@ pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_cha
 /// `path` must be a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_exec_materialize(path: *const c_char) -> *mut c_char {
+    let _io = engine_io_guard();
     let path = match unsafe { path_arg(path) } {
         Ok(p) => anchor_vfs_path(p),
         Err(e) => {

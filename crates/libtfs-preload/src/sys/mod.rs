@@ -86,6 +86,40 @@ fn set_errno(e: c_int) {
 
 thread_local! {
     static IN_ENGINE: Cell<bool> = const { Cell::new(false) };
+
+    /// The engine-IO depth, armed by the C ABI's materialization bodies
+    /// (tebako#964; spec 22 §3.6's exe-shape seam). `IN_ENGINE` covers
+    /// entries through THIS crate's route layer; it cannot cover a body
+    /// that entered the engine through the C ABI, because in the exe
+    /// shape the family and the consumer-facing `tebako_fs_*` are
+    /// different scoped copies of the same engine (`__tebako_internal_`),
+    /// and the family's view of the C ABI's thread is "just another
+    /// caller". Left unmarked, an extraction's host writes re-enter the
+    /// family: a recursive context-lock acquisition in the single-copy
+    /// link (the probe's deadlock), a dlmap-prefix redirect of the
+    /// engine's own cache tree in the two-copy exe (the runtime's
+    /// phantom materialization, tebako-runtime-ruby#306). The depth is
+    /// armed through the exported enter/leave pair below — the one
+    /// process-wide home every tfs copy resolves by name — and checked
+    /// in `engine_call` next to `IN_ENGINE`: engine IO is host IO.
+    static ENGINE_IO_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+/// The C ABI's engine-IO mark (see `ENGINE_IO_DEPTH`): the
+/// materialization family in any tfs copy arms it for the body's span.
+/// Exported by name (never renamed in the exe-shape link unit — the
+/// `exe-shape-symbols.txt` keep list) so the copy boundary is crossed by
+/// `dlsym`, exactly the `tebako_preload_init` precedent.
+#[no_mangle]
+pub extern "C" fn tebako_engine_io_enter() {
+    ENGINE_IO_DEPTH.with(|c| c.set(c.get() + 1));
+}
+
+/// The leave half of [`tebako_engine_io_enter`]. A leave without an
+/// enter saturates at 0 (the guard is a depth, not a tripwire).
+#[no_mangle]
+pub extern "C" fn tebako_engine_io_leave() {
+    ENGINE_IO_DEPTH.with(|c| c.set(c.get().saturating_sub(1)));
 }
 
 // ---------------------------------------------------------------------
@@ -269,6 +303,12 @@ pub(crate) fn engine_call<T>(f: impl FnOnce() -> T) -> Option<T> {
 /// `engine_call`).
 fn engine_call_inner<T>(in_fork_child: bool, f: impl FnOnce() -> T) -> Option<T> {
     if in_fork_child {
+        return None;
+    }
+    // A C ABI materialization body in flight (any tfs copy's) owns the
+    // process's path calls exactly like the route layer's own span: its
+    // host IO passes through to the real libc untouched.
+    if ENGINE_IO_DEPTH.with(|c| c.get()) > 0 {
         return None;
     }
     IN_ENGINE.with(|c| {
