@@ -9,7 +9,15 @@
 # the exe shape is the file-IO family only — children are armed by the
 # driver's injection export, and an exported dlopen would collide with
 # the runtime's own class-L definition at link.
+#
+# The tebako_engine_io_* pair is the engine-IO guard (tebako#964): armed
+# by ANY tfs copy's C ABI materialization bodies, resolved across the
+# copy boundary by dlsym — renamed, it would resolve to nothing and the
+# family's re-entry guard would go inert in exactly the shape that needs
+# it.
 tebako_preload_init
+tebako_engine_io_enter
+tebako_engine_io_leave
 __fxstat
 __fxstat64
 __fxstatat
