@@ -203,7 +203,7 @@ jobs:
         with:
           name: bench-${{ matrix.triplet }}
           retention-days: 1
-          path: tebako-rs/out/
+          path: tebako-rs/out/results.json
           if-no-files-found: error
       - name: Upload the runtime leg's results
         if: always()
@@ -211,7 +211,7 @@ jobs:
         with:
           name: bench-runtime-${{ matrix.triplet }}
           retention-days: 1
-          path: tebako-rs/out-runtime/
+          path: tebako-rs/out-runtime/results.json
           if-no-files-found: warn
       - name: Upload the lazy leg's results
         if: always()
@@ -219,7 +219,7 @@ jobs:
         with:
           name: bench-lazy-${{ matrix.triplet }}
           retention-days: 1
-          path: tebako-rs/out-lazy/
+          path: tebako-rs/out-lazy/results.json
           if-no-files-found: warn
 
   report:
