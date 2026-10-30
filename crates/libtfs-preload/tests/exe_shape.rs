@@ -199,3 +199,156 @@ fn a_binary_that_links_the_family_reads_an_image_without_injection() {
         "the in-image read must come from the image, not the host:\n{stdout}\n{stderr}"
     );
 }
+
+/// The materialization probe (the runtime's fiddle path, spec 22 §3.6's
+/// class-L seam): with the family armed, a VFS-resident library
+/// materializes to the exec cache through the family's OWN engine and the
+/// real dlopen loads that copy. The pin-roll's first built runtime died
+/// here (tebako-runtime-ruby#306's smoke): the extract wrote nothing and
+/// the dlopen hit an empty host path. This probe proves the seam on the
+/// exe shape directly.
+fn dlprobe_source() -> &'static str {
+    r#"
+#include <stdio.h>
+#include <dlfcn.h>
+
+extern int tebako_preload_init(void);
+extern char *tebako_fs_dlmap2file(const char *path);
+
+int main(int argc, char **argv) {
+    if (argc < 2) return 64;
+    int rc = tebako_preload_init();
+    printf("init=%d\n", rc);
+    fflush(stdout);
+    if (rc != 0) return 65;
+
+    char *host = tebako_fs_dlmap2file(argv[1]);
+    if (!host) { printf("dlmap2file=NULL\n"); return 66; }
+    printf("host=%s\n", host);
+    fflush(stdout);
+
+    void *h = dlopen(host, RTLD_NOW);
+    if (!h) { printf("dlopen=FAILED %s\n", dlerror()); return 67; }
+    int (*answer)(void) = (int(*)(void))dlsym(h, "probe_answer");
+    printf("answer=%d\n", answer ? answer() : -1);
+    return 0;
+}
+"#
+}
+
+/// A tiny image carrying a shared library at a known path: the library is
+/// compiled with cc (the probe's fixture needs a real ELF), then packed
+/// with the crate's own zip backend like the other fixtures.
+fn lib_image(dir: &Path) -> Option<PathBuf> {
+    let src = dir.join("probe_lib.c");
+    std::fs::write(&src, "int probe_answer(void) { return 42; }\n").unwrap();
+    let lib = dir.join("libprobe.so");
+    let cc = Command::new("cc")
+        .args(["-shared", "-fPIC", "-O1", "-o"])
+        .arg(&lib)
+        .arg(&src)
+        .output()
+        .ok()?;
+    if !cc.status.success() {
+        return None;
+    }
+    let path = dir.join("exe-shape-lib.zip");
+    let file = std::fs::File::create(&path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    zip.start_file("libfake.so", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    std::io::Write::write_all(&mut zip, &std::fs::read(&lib).unwrap()).unwrap();
+    zip.finish().unwrap();
+    Some(path)
+}
+
+#[test]
+fn a_linked_binary_materializes_and_dlopens_a_vfs_library() {
+    if !cfg!(target_os = "linux") {
+        assert!(skip("the exe shape's static preemption is ELF-only"));
+        return;
+    }
+    if Command::new("cc").arg("--version").output().is_err() {
+        assert!(skip("no C compiler on PATH"));
+        return;
+    }
+    let Some(archive) = staticlib() else {
+        assert!(skip(
+            "libtfs_preload.a not built (run `cargo build -p libtfs-preload --features exe-shape`)"
+        ));
+        return;
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let Some(image) = lib_image(dir.path()) else {
+        assert!(skip("cc could not build the fixture library"));
+        return;
+    };
+    let src = dir.path().join("dlprobe.c");
+    std::fs::write(&src, dlprobe_source()).unwrap();
+    let exe = dir.path().join("dlprobe");
+
+    // The same fold-then-link the first proof uses.
+    let folded = dir.path().join("libtfs_preload.folded.a");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf();
+    let fold = Command::new("cargo")
+        .args(["run", "-q", "-p", "tebako-arscope", "--manifest-path"])
+        .arg(root.join("Cargo.toml"))
+        .arg("--")
+        .arg(&archive)
+        .arg(&folded)
+        .args(["--keep-prefix", "", "--fold-identical"])
+        .output()
+        .expect("arscope spawn");
+    assert!(
+        fold.status.success(),
+        "folding the archive failed:\n{}",
+        String::from_utf8_lossy(&fold.stderr)
+    );
+
+    let link = Command::new("cc")
+        .args(["-O1", "-o"])
+        .arg(&exe)
+        .arg(&src)
+        .arg("-Wl,--whole-archive")
+        .arg(&folded)
+        .arg("-Wl,--no-whole-archive")
+        .args(["-lstdc++", "-ldl", "-lpthread", "-lm"])
+        .output()
+        .expect("cc spawn");
+    assert!(
+        link.status.success(),
+        "linking the dlprobe failed:\n{}",
+        String::from_utf8_lossy(&link.stderr)
+    );
+
+    let mounts = format!("{}:/img", image.display());
+    let exec_cache = dir.path().join("exec-cache");
+    let out = Command::new(&exe)
+        .arg("/img/libfake.so")
+        .env("TEBAKO_TFS_MOUNTS", &mounts)
+        .env("TEBAKO_EXEC_CACHE", &exec_cache)
+        .env_remove("LD_PRELOAD")
+        .env_remove("TEBAKO_JAIL")
+        .output()
+        .expect("dlprobe spawn");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "dlprobe failed (status {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        out.status
+    );
+    assert!(
+        stdout.contains("init=0"),
+        "the explicit init must report success:\n{stdout}\n{stderr}"
+    );
+    assert!(
+        stdout.contains("answer=42"),
+        "the materialized library must answer 42 — a NULL dlmap2file or an empty host copy is the #306 failure:\n{stdout}\n{stderr}"
+    );
+}
