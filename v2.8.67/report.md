@@ -2,32 +2,32 @@
 
 ## linux-gnu-arm64
 
-Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.6 GiB
+Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.5 GiB
 Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 105.192 | 104.858 | 108.212 | 1.377 | 105.914 | 123.572 | 1165.6 | 1.00× |
+| v1-packed-mn | 5 | 103.496 | 103.125 | 105.669 | 1.052 | 103.873 | 122.227 | 1159.5 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 113.970 | 113.510 | 114.429 | 0.650 | 113.970 | 131.887 | 1251.9 | 1.00× |
+| v1-packed-mn | 2 | 111.082 | 110.615 | 111.549 | 0.661 | 111.082 | 130.024 | 1252.0 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 51.663 | 51.349 | 51.784 | 0.185 | 51.601 | 63.778 | 848.7 | 1.00× |
+| v1-packed-mn | 5 | 50.697 | 50.138 | 51.287 | 0.458 | 50.740 | 62.126 | 845.4 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 56.813 | 56.649 | 56.977 | 0.232 | 56.813 | 69.032 | 846.2 | 1.00× |
+| v1-packed-mn | 2 | 55.002 | 54.861 | 55.143 | 0.199 | 55.002 | 67.259 | 848.3 | 1.00× |
 
 Unavailable arms:
 
@@ -45,25 +45,25 @@ Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 126.582 | 125.372 | 127.813 | 1.061 | 126.597 | 155.886 | 1200.9 | 1.00× |
+| v1-packed-mn | 5 | 112.953 | 111.378 | 114.301 | 1.128 | 113.084 | 139.211 | 1202.4 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 135.868 | 135.346 | 136.390 | 0.738 | 135.868 | 165.655 | 1325.7 | 1.00× |
+| v1-packed-mn | 2 | 124.469 | 123.608 | 125.329 | 1.217 | 124.469 | 150.769 | 1330.4 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 64.087 | 63.062 | 64.492 | 0.538 | 63.973 | 83.563 | 894.1 | 1.00× |
+| v1-packed-mn | 5 | 57.576 | 57.106 | 58.651 | 0.607 | 57.733 | 75.027 | 893.4 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 69.837 | 69.704 | 69.971 | 0.189 | 69.837 | 91.113 | 896.4 | 1.00× |
+| v1-packed-mn | 2 | 63.826 | 63.418 | 64.234 | 0.577 | 63.826 | 82.232 | 894.3 | 1.00× |
 
 Unavailable arms:
 
@@ -111,25 +111,25 @@ Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 170.558 | 153.345 | 184.518 | 11.296 | 169.646 | 180.695 | 2060.6 | 1.00× |
+| v1-packed-mn | 5 | 183.288 | 160.979 | 237.956 | 34.801 | 199.033 | 191.073 | 2052.8 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 158.145 | 156.311 | 159.979 | 2.594 | 158.145 | 166.058 | 2068.8 | 1.00× |
+| v1-packed-mn | 2 | 178.817 | 177.058 | 180.576 | 2.488 | 178.817 | 187.144 | 2091.4 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 124.790 | 112.621 | 145.627 | 12.386 | 126.073 | 128.812 | 1574.6 | 1.00× |
+| v1-packed-mn | 5 | 127.623 | 116.315 | 143.297 | 11.852 | 129.358 | 130.821 | 1572.5 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 136.458 | 135.606 | 137.309 | 1.204 | 136.458 | 140.609 | 1599.0 | 1.00× |
+| v1-packed-mn | 2 | 156.493 | 143.560 | 169.425 | 18.289 | 156.493 | 160.285 | 1609.3 | 1.00× |
 
 Unavailable arms:
 
@@ -160,25 +160,25 @@ Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 133.192 | 128.860 | 133.918 | 2.076 | 132.409 | 163.594 | 1591.1 | 1.00× |
+| v1-packed-mn | 5 | 126.287 | 125.726 | 128.004 | 1.018 | 126.636 | 155.344 | 1559.2 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 141.823 | 141.611 | 142.035 | 0.300 | 141.823 | 174.094 | 1572.4 | 1.00× |
+| v1-packed-mn | 2 | 135.911 | 135.247 | 136.575 | 0.939 | 135.911 | 164.953 | 1588.9 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 66.423 | 65.472 | 72.348 | 3.146 | 68.028 | 90.562 | 1563.5 | 1.00× |
+| v1-packed-mn | 5 | 61.801 | 59.400 | 67.041 | 3.122 | 62.183 | 86.250 | 1592.5 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 73.392 | 73.081 | 73.702 | 0.439 | 73.392 | 98.508 | 1589.8 | 1.00× |
+| v1-packed-mn | 2 | 68.379 | 67.686 | 69.072 | 0.980 | 68.379 | 89.125 | 1561.5 | 1.00× |
 
 Unavailable arms:
 
@@ -189,7 +189,7 @@ Unavailable arms:
 
 ---
 
-Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.6 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-14 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
+Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-14 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
 
 GitHub-hosted runners are shared, multi-tenant machines; treat differences under ~10% as noise and read min alongside median — min is the cross-noise-comparable figure (noise inflates, never deflates).
 

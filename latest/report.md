@@ -2,234 +2,194 @@
 
 ## linux-gnu-arm64
 
-Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.6 GiB
-Versions: tebako 2.8.67 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.5 GiB
+Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 102.958 | 102.421 | 106.207 | 1.578 | 103.720 | 119.841 | 1163.7 | 1.00× |
-| v2-fat | 5 | 200.307 | 199.572 | 201.866 | 0.963 | 200.704 | 214.139 | 1340.8 | 0.51× |
+| v1-packed-mn | 5 | 103.496 | 103.125 | 105.669 | 1.052 | 103.873 | 122.227 | 1159.5 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 112.244 | 111.897 | 112.591 | 0.491 | 112.244 | 129.135 | 1251.8 | 1.00× |
-| v2-fat | 2 | 220.069 | 218.713 | 221.425 | 1.918 | 220.069 | 231.684 | 1449.2 | 0.51× |
+| v1-packed-mn | 2 | 111.082 | 110.615 | 111.549 | 0.661 | 111.082 | 130.024 | 1252.0 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 51.411 | 51.148 | 51.898 | 0.290 | 51.423 | 62.829 | 853.1 | 1.00× |
-| v2-fat | 5 | 111.353 | 110.897 | 111.581 | 0.258 | 111.323 | 185.796 | 863.3 | 0.46× |
-| v2-shim | 5 | 112.042 | 111.479 | 112.305 | 0.347 | 111.949 | 186.681 | 880.0 | 0.46× |
+| v1-packed-mn | 5 | 50.697 | 50.138 | 51.287 | 0.458 | 50.740 | 62.126 | 845.4 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 56.079 | 55.819 | 56.339 | 0.367 | 56.079 | 67.513 | 848.6 | 1.00× |
-| v2-fat | 2 | 120.023 | 119.450 | 120.596 | 0.810 | 120.023 | 192.750 | 818.3 | 0.47× |
-| v2-shim | 2 | 122.496 | 121.804 | 123.187 | 0.978 | 122.496 | 194.290 | 833.6 | 0.46× |
+| v1-packed-mn | 2 | 55.002 | 54.861 | 55.143 | 0.199 | 55.002 | 67.259 | 848.3 | 1.00× |
 
-Failed runs:
+Unavailable arms:
 
-- compile-medium-rice / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
+- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 
 ## linux-gnu-x86_64
 
 Runner: ubuntu-24.04 · x86_64 · 4 cpus · 15983.9 GiB
-Versions: tebako 2.8.67 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 75.347 | 71.587 | 78.928 | 2.985 | 75.777 | 91.475 | 1210.8 | 1.00× |
-| v2-fat | 5 | 131.722 | 126.865 | 134.959 | 3.360 | 130.810 | 141.358 | 1337.6 | 0.57× |
+| v1-packed-mn | 5 | 112.953 | 111.378 | 114.301 | 1.128 | 113.084 | 139.211 | 1202.4 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 78.577 | 77.117 | 80.038 | 2.066 | 78.577 | 93.537 | 1307.8 | 1.00× |
-| v2-fat | 2 | 149.740 | 149.303 | 150.176 | 0.617 | 149.740 | 161.723 | 1473.0 | 0.52× |
+| v1-packed-mn | 2 | 124.469 | 123.608 | 125.329 | 1.217 | 124.469 | 150.769 | 1330.4 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 38.349 | 37.200 | 39.937 | 1.001 | 38.369 | 50.704 | 908.1 | 1.00× |
-| v2-fat | 5 | 72.321 | 70.101 | 75.997 | 2.147 | 72.613 | 137.210 | 865.3 | 0.53× |
-| v2-shim | 5 | 73.388 | 71.801 | 78.565 | 3.226 | 74.764 | 136.792 | 878.2 | 0.52× |
+| v1-packed-mn | 5 | 57.576 | 57.106 | 58.651 | 0.607 | 57.733 | 75.027 | 893.4 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 47.112 | 46.677 | 47.548 | 0.616 | 47.112 | 58.936 | 903.3 | 1.00× |
-| v2-fat | 2 | 85.666 | 85.177 | 86.155 | 0.691 | 85.666 | 148.391 | 819.7 | 0.55× |
-| v2-shim | 2 | 90.320 | 89.150 | 91.490 | 1.655 | 90.320 | 147.441 | 814.0 | 0.52× |
+| v1-packed-mn | 2 | 63.826 | 63.418 | 64.234 | 0.577 | 63.826 | 82.232 | 894.3 | 1.00× |
 
-Failed runs:
+Unavailable arms:
 
-- compile-medium-rice / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
+- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 
 ## linux-musl-arm64
 
-Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.6 GiB
-Versions: tebako 2.8.67 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · image limnifs
+Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.5 GiB
 
 Unavailable arms:
 
 - compile-small-iso / v1-packed-mn: unavailable — platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet
+- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 - compile-medium-rice / v1-packed-mn: unavailable — platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet
-
-Failed runs:
-
-- compile-small-iso / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
-- compile-small-iso / v2-fat [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
-- compile-medium-rice / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
-- compile-medium-rice / v2-fat [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
+- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 
 ## linux-musl-x86_64
 
 Runner: ubuntu-24.04 · x86_64 · 4 cpus · 15983.9 GiB
-Versions: tebako 2.8.67 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
+
+Unavailable arms:
+
+- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 
 Failed runs:
 
 - compile-small-iso / v1-packed-mn [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
-- compile-small-iso / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
-- compile-small-iso / v2-fat [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
 - compile-medium-rice / v1-packed-mn [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
-- compile-medium-rice / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
-- compile-medium-rice / v2-fat [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
 
 ## macos-arm64
 
 Runner: macos-14 · aarch64 · 3 cpus · 7168.0 GiB
-Versions: tebako 2.8.67 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 147.076 | 142.056 | 162.961 | 7.988 | 149.463 | 153.178 | 2087.5 | 1.00× |
-| v2-fat | 5 | 170.557 | 157.518 | 180.570 | 9.559 | 168.327 | 176.826 | 1627.9 | 0.86× |
+| v1-packed-mn | 5 | 183.288 | 160.979 | 237.956 | 34.801 | 199.033 | 191.073 | 2052.8 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 168.055 | 161.325 | 174.784 | 9.516 | 168.055 | 173.333 | 2093.5 | 1.00× |
-| v2-fat | 2 | 184.883 | 183.086 | 186.681 | 2.542 | 184.883 | 189.564 | 1668.0 | 0.91× |
+| v1-packed-mn | 2 | 178.817 | 177.058 | 180.576 | 2.488 | 178.817 | 187.144 | 2091.4 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 88.857 | 84.564 | 136.963 | 21.661 | 99.814 | 92.380 | 1636.7 | 1.00× |
-| v2-fat | 5 | 101.769 | 90.805 | 114.392 | 9.042 | 103.645 | 189.776 | 983.8 | 0.87× |
-| v2-shim | 5 | 92.830 | 88.117 | 109.345 | 8.269 | 95.825 | 178.371 | 972.7 | 0.96× |
+| v1-packed-mn | 5 | 127.623 | 116.315 | 143.297 | 11.852 | 129.358 | 130.821 | 1572.5 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 94.608 | 91.289 | 97.928 | 4.695 | 94.608 | 98.696 | 1753.4 | 1.00× |
-| v2-fat | 2 | 106.614 | 106.287 | 106.941 | 0.463 | 106.614 | 184.400 | 987.4 | 0.89× |
-| v2-shim | 2 | 108.286 | 101.930 | 114.642 | 8.989 | 108.286 | 192.582 | 942.5 | 0.87× |
+| v1-packed-mn | 2 | 156.493 | 143.560 | 169.425 | 18.289 | 156.493 | 160.285 | 1609.3 | 1.00× |
 
-Failed runs:
+Unavailable arms:
 
-- compile-medium-rice / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
+- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 
 ## macos-x86_64
 
 Runner: macos-15-intel · x86_64 · 4 cpus · 14336.0 GiB
-Versions: tebako 2.8.67 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · image limnifs
-
-### compile-medium-rice — warm
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v2-fat | 5 | 348.645 | 300.348 | 371.128 | 33.636 | 339.684 | 396.670 | 1318.3 | — |
-
-### compile-medium-rice — cold (install/first-boot)
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v2-fat | 2 | 418.283 | 389.927 | 446.638 | 40.100 | 418.283 | 453.027 | 1366.0 | — |
-
-### compile-small-iso — warm
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v2-fat | 5 | 197.307 | 183.053 | 212.559 | 11.987 | 199.641 | 359.520 | 772.6 | — |
-| v2-shim | 5 | 183.767 | 178.283 | 203.323 | 12.449 | 189.427 | 337.795 | 778.2 | — |
-
-### compile-small-iso — cold (install/first-boot)
-
-| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
-|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v2-fat | 2 | 180.909 | 161.340 | 200.478 | 27.675 | 180.909 | 311.835 | 757.6 | — |
-| v2-shim | 2 | 208.609 | 184.916 | 232.302 | 33.507 | 208.609 | 356.994 | 756.1 | — |
 
 Unavailable arms:
 
 - compile-small-iso / v1-packed-mn: unavailable — platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet
+- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 - compile-medium-rice / v1-packed-mn: unavailable — platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet
-
-Failed runs:
-
-- compile-medium-rice / v2-shim [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
+- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 
 ## windows-ucrt64
 
 Runner: windows-latest · x86_64 · 4 cpus · 16378.7 GiB
-Versions: tebako 2.8.67 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Versions: packed-mn v1.14.4 (metanorma-cli 1.14.4)
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 101.195 | 98.020 | 103.803 | 2.463 | 101.305 | 122.234 | 1610.6 | 1.00× |
+| v1-packed-mn | 5 | 126.287 | 125.726 | 128.004 | 1.018 | 126.636 | 155.344 | 1559.2 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 113.591 | 112.136 | 115.047 | 2.058 | 113.591 | 135.484 | 1658.4 | 1.00× |
+| v1-packed-mn | 2 | 135.911 | 135.247 | 136.575 | 0.939 | 135.911 | 164.953 | 1588.9 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 51.206 | 50.767 | 51.617 | 0.346 | 51.135 | 69.234 | 1595.3 | 1.00× |
-| v2-fat | 5 | 46.233 | 46.001 | 46.693 | 0.258 | 46.285 | 65.844 | 2512.0 | 1.11× |
-| v2-shim | 5 | 47.600 | 46.507 | 49.218 | 1.177 | 47.947 | 66.266 | 2510.2 | 1.08× |
+| v1-packed-mn | 5 | 61.801 | 59.400 | 67.041 | 3.122 | 62.183 | 86.250 | 1592.5 | 1.00× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 58.951 | 56.363 | 61.538 | 3.659 | 58.951 | 75.117 | 1614.0 | 1.00× |
-| v2-shim | 2 | 54.865 | 54.671 | 55.058 | 0.274 | 54.865 | 72.742 | 2530.1 | 1.07× |
+| v1-packed-mn | 2 | 68.379 | 67.686 | 69.072 | 0.980 | 68.379 | 89.125 | 1561.5 | 1.00× |
 
-Failed runs:
+Unavailable arms:
 
-- compile-small-iso / v2-fat [cold] #1 (exit -1073741515): failed — exit -1073741515 (expected 0)
-- compile-small-iso / v2-fat [cold] #2 (exit -1073741515): failed — exit -1073741515 (expected 0)
-- compile-medium-rice / v2-shim [warm] #0 (exit -1073741515): failed — warmup: exit -1073741515 (expected 0)
-- compile-medium-rice / v2-fat [warm] #0 (exit -1073741515): failed — warmup: exit -1073741515 (expected 0)
+- compile-small-iso / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-small-iso / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-shim: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
+- compile-medium-rice / v2-fat: unavailable — v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS
 
 ---
 
-Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.6 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.6 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-14 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
+Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-14 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
 
 GitHub-hosted runners are shared, multi-tenant machines; treat differences under ~10% as noise and read min alongside median — min is the cross-noise-comparable figure (noise inflates, never deflates).
 
