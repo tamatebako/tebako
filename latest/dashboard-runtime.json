@@ -17,15 +17,199 @@
         "runs_on": "ubuntu-24.04-arm",
         "arch": "aarch64",
         "cpus": 4,
-        "ram_bytes": 16715923456
+        "ram_bytes": 16715927552
       },
       "versions": {
+        "tebako": "2.8.67",
         "extra": {
           "on-system-python": "Python 3.14.7",
           "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.2.0)"
         }
       },
-      "cells": [],
+      "cells": [
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.012705492,
+          "min_wall_s": 0.010766154,
+          "max_wall_s": 0.012733844,
+          "stdev_wall_s": 0.000869176493110404,
+          "mean_wall_s": 0.012320453200000001,
+          "median_cpu_s": 0.010595,
+          "median_peak_rss_bytes": 144662528,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.339589103,
+          "min_wall_s": 0.339556734,
+          "max_wall_s": 0.339656842,
+          "stdev_wall_s": 0.0000402931089728775,
+          "mean_wall_s": 0.33960524780000007,
+          "median_cpu_s": 0.33904500000000004,
+          "median_peak_rss_bytes": 190431232,
+          "speedup_vs_v1": 0.03741431008167538
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.340652627,
+          "min_wall_s": 0.33956235,
+          "max_wall_s": 0.341742904,
+          "stdev_wall_s": 0.0015418845201434518,
+          "mean_wall_s": 0.340652627,
+          "median_cpu_s": 0.33907299999999996,
+          "median_peak_rss_bytes": 190490624,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.271750767,
+          "min_wall_s": 0.269676477,
+          "max_wall_s": 0.277887556,
+          "stdev_wall_s": 0.0033946158569263187,
+          "mean_wall_s": 0.2725946582,
+          "median_cpu_s": 0.27015599999999995,
+          "median_peak_rss_bytes": 144662528,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.606823142,
+          "min_wall_s": 0.602805723,
+          "max_wall_s": 0.60900985,
+          "stdev_wall_s": 0.0023276573852941003,
+          "mean_wall_s": 0.6060951984,
+          "median_cpu_s": 0.604552,
+          "median_peak_rss_bytes": 190562304,
+          "speedup_vs_v1": 0.44782531876478765
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.6050350515,
+          "min_wall_s": 0.603019442,
+          "max_wall_s": 0.607050661,
+          "stdev_wall_s": 0.0028505022913480746,
+          "mean_wall_s": 0.6050350515,
+          "median_cpu_s": 0.6031305,
+          "median_peak_rss_bytes": 190490624,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.016818477,
+          "min_wall_s": 0.016812732,
+          "max_wall_s": 0.016843524,
+          "stdev_wall_s": 0.00001347295967113328,
+          "mean_wall_s": 0.0168253316,
+          "median_cpu_s": 0.016423,
+          "median_peak_rss_bytes": 144662528,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.343695601,
+          "min_wall_s": 0.339579907,
+          "max_wall_s": 0.362227281,
+          "stdev_wall_s": 0.00904131213118078,
+          "mean_wall_s": 0.3465880436,
+          "median_cpu_s": 0.343689,
+          "median_peak_rss_bytes": 193347584,
+          "speedup_vs_v1": 0.048934222466234
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.3478342635,
+          "min_wall_s": 0.343745881,
+          "max_wall_s": 0.351922646,
+          "stdev_wall_s": 0.005781845979668842,
+          "mean_wall_s": 0.3478342635,
+          "median_cpu_s": 0.3472425,
+          "median_peak_rss_bytes": 193353728,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.051811975,
+          "min_wall_s": 0.051762029,
+          "max_wall_s": 0.051831656,
+          "stdev_wall_s": 0.00002765784371204565,
+          "mean_wall_s": 0.0518057204,
+          "median_cpu_s": 0.050266000000000005,
+          "median_peak_rss_bytes": 144662528,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.4362228,
+          "min_wall_s": 0.426091323,
+          "max_wall_s": 0.436307475,
+          "stdev_wall_s": 0.0044177043396408,
+          "mean_wall_s": 0.43384199720000005,
+          "median_cpu_s": 0.434261,
+          "median_peak_rss_bytes": 190562304,
+          "speedup_vs_v1": 0.11877411038579368
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.42915011599999997,
+          "min_wall_s": 0.428181336,
+          "max_wall_s": 0.430118896,
+          "stdev_wall_s": 0.0013700618149557712,
+          "mean_wall_s": 0.42915011599999997,
+          "median_cpu_s": 0.42862,
+          "median_peak_rss_bytes": 190496768,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.029187128,
+          "min_wall_s": 0.029115958,
+          "max_wall_s": 0.035371094,
+          "stdev_wall_s": 0.003377880252606478,
+          "mean_wall_s": 0.0316125784,
+          "median_cpu_s": 0.028109000000000002,
+          "median_peak_rss_bytes": 144662528,
+          "speedup_vs_v1": 1.0
+        }
+      ],
       "unavailable": [
         {
           "workload": "ruby-boot",
@@ -120,92 +304,47 @@
         {
           "workload": "python-boot",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-boot",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-fib",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-fib",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-stdlib",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-stdlib",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-ioread",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-ioread",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-statloop",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-statloop",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-boot",
@@ -298,7 +437,17 @@
           "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling"
         }
       ],
-      "failed": []
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
     },
     {
       "triplet": "linux-gnu-x86_64",
@@ -309,6 +458,7 @@
         "ram_bytes": 16760344576
       },
       "versions": {
+        "tebako": "2.8.67",
         "extra": {
           "on-system-java": "openjdk version \"21.0.12.1\" 2026-08-18 LTS",
           "on-system-python": "Python 3.14.7",
@@ -316,7 +466,400 @@
           "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.2.0)"
         }
       },
-      "cells": [],
+      "cells": [
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.036308081,
+          "min_wall_s": 0.03503474,
+          "max_wall_s": 0.038677713,
+          "stdev_wall_s": 0.0016519244262354442,
+          "mean_wall_s": 0.036623286600000006,
+          "median_cpu_s": 0.03969,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.565974392,
+          "min_wall_s": 0.552997983,
+          "max_wall_s": 0.581307247,
+          "stdev_wall_s": 0.01089083839858808,
+          "mean_wall_s": 0.5670939858,
+          "median_cpu_s": 0.570006,
+          "median_peak_rss_bytes": 198733824,
+          "speedup_vs_v1": 0.06415145546019686
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.570334286,
+          "min_wall_s": 0.566574757,
+          "max_wall_s": 0.574093815,
+          "stdev_wall_s": 0.005316776899934937,
+          "mean_wall_s": 0.570334286,
+          "median_cpu_s": 0.575333,
+          "median_peak_rss_bytes": 198623232,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.053489931,
+          "min_wall_s": 0.04911019,
+          "max_wall_s": 0.059634243,
+          "stdev_wall_s": 0.004860032458166068,
+          "mean_wall_s": 0.0539455618,
+          "median_cpu_s": 0.055618,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.577155139,
+          "min_wall_s": 0.57247411,
+          "max_wall_s": 0.641413273,
+          "stdev_wall_s": 0.029526308887377752,
+          "mean_wall_s": 0.5887392908,
+          "median_cpu_s": 0.580851,
+          "median_peak_rss_bytes": 198823936,
+          "speedup_vs_v1": 0.09267860127292395
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5881811975,
+          "min_wall_s": 0.585450409,
+          "max_wall_s": 0.590911986,
+          "stdev_wall_s": 0.003861918132672438,
+          "mean_wall_s": 0.5881811975,
+          "median_cpu_s": 0.5934254999999999,
+          "median_peak_rss_bytes": 198856704,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.082626571,
+          "min_wall_s": 0.078390527,
+          "max_wall_s": 0.085405389,
+          "stdev_wall_s": 0.0034289873263741843,
+          "mean_wall_s": 0.0820392464,
+          "median_cpu_s": 0.087717,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.592822529,
+          "min_wall_s": 0.586243408,
+          "max_wall_s": 0.599419386,
+          "stdev_wall_s": 0.005499059320466173,
+          "mean_wall_s": 0.5941267146,
+          "median_cpu_s": 0.601999,
+          "median_peak_rss_bytes": 200691712,
+          "speedup_vs_v1": 0.1393782573334017
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.597721364,
+          "min_wall_s": 0.587217251,
+          "max_wall_s": 0.608225477,
+          "stdev_wall_s": 0.014855059065299513,
+          "mean_wall_s": 0.597721364,
+          "median_cpu_s": 0.6046739999999999,
+          "median_peak_rss_bytes": 200833024,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.087497404,
+          "min_wall_s": 0.083251795,
+          "max_wall_s": 0.096844815,
+          "stdev_wall_s": 0.005555639546462205,
+          "mean_wall_s": 0.08918311159999999,
+          "median_cpu_s": 0.123667,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.633653754,
+          "min_wall_s": 0.615854592,
+          "max_wall_s": 0.660613094,
+          "stdev_wall_s": 0.017278657636475767,
+          "mean_wall_s": 0.6347178186,
+          "median_cpu_s": 0.6624760000000001,
+          "median_peak_rss_bytes": 198569984,
+          "speedup_vs_v1": 0.13808393534744212
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.6349520545,
+          "min_wall_s": 0.633269608,
+          "max_wall_s": 0.636634501,
+          "stdev_wall_s": 0.0023793386582671313,
+          "mean_wall_s": 0.6349520545,
+          "median_cpu_s": 0.6699014999999999,
+          "median_peak_rss_bytes": 198762496,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.221768169,
+          "min_wall_s": 0.206576704,
+          "max_wall_s": 0.227930628,
+          "stdev_wall_s": 0.008888365933377648,
+          "mean_wall_s": 0.21914294059999997,
+          "median_cpu_s": 0.519847,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.760119674,
+          "min_wall_s": 0.737306211,
+          "max_wall_s": 0.77958907,
+          "stdev_wall_s": 0.017929441561790764,
+          "mean_wall_s": 0.7602874448000001,
+          "median_cpu_s": 1.010867,
+          "median_peak_rss_bytes": 198836224,
+          "speedup_vs_v1": 0.2917542810502231
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.7928916575,
+          "min_wall_s": 0.77883997,
+          "max_wall_s": 0.806943345,
+          "stdev_wall_s": 0.01987208703672844,
+          "mean_wall_s": 0.7928916575,
+          "median_cpu_s": 1.1208865000000001,
+          "median_peak_rss_bytes": 198365184,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.014840568,
+          "min_wall_s": 0.014823767,
+          "max_wall_s": 0.017063339,
+          "stdev_wall_s": 0.0009914278928923677,
+          "mean_wall_s": 0.01529034,
+          "median_cpu_s": 0.012922,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.476498458,
+          "min_wall_s": 0.471353673,
+          "max_wall_s": 0.480954466,
+          "stdev_wall_s": 0.004250614218119583,
+          "mean_wall_s": 0.47655353040000004,
+          "median_cpu_s": 0.47518,
+          "median_peak_rss_bytes": 200019968,
+          "speedup_vs_v1": 0.0311450493718072
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.48463954200000003,
+          "min_wall_s": 0.48288623,
+          "max_wall_s": 0.486392854,
+          "stdev_wall_s": 0.0024795576094714666,
+          "mean_wall_s": 0.48463954200000003,
+          "median_cpu_s": 0.48307100000000003,
+          "median_peak_rss_bytes": 199772160,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.308462123,
+          "min_wall_s": 0.298806886,
+          "max_wall_s": 0.321077138,
+          "stdev_wall_s": 0.0085925132439785,
+          "mean_wall_s": 0.309863157,
+          "median_cpu_s": 0.30656700000000003,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.749179871,
+          "min_wall_s": 0.741657135,
+          "max_wall_s": 0.773466469,
+          "stdev_wall_s": 0.013979651765300716,
+          "mean_wall_s": 0.7553011084000001,
+          "median_cpu_s": 0.747954,
+          "median_peak_rss_bytes": 199983104,
+          "speedup_vs_v1": 0.41173306296693063
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.7493439295,
+          "min_wall_s": 0.745455785,
+          "max_wall_s": 0.753232074,
+          "stdev_wall_s": 0.00549866668436639,
+          "mean_wall_s": 0.7493439295,
+          "median_cpu_s": 0.7481340000000001,
+          "median_peak_rss_bytes": 199161856,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.021060718,
+          "min_wall_s": 0.021003756,
+          "max_wall_s": 0.02221093,
+          "stdev_wall_s": 0.0005267254146909001,
+          "mean_wall_s": 0.021270054399999995,
+          "median_cpu_s": 0.020071,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.494461469,
+          "min_wall_s": 0.480913264,
+          "max_wall_s": 0.551513864,
+          "stdev_wall_s": 0.028454696324736926,
+          "mean_wall_s": 0.5035240162,
+          "median_cpu_s": 0.49378500000000003,
+          "median_peak_rss_bytes": 202379264,
+          "speedup_vs_v1": 0.042593244004620306
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5041026435,
+          "min_wall_s": 0.489811279,
+          "max_wall_s": 0.518394008,
+          "stdev_wall_s": 0.020211041500717408,
+          "mean_wall_s": 0.5041026435,
+          "median_cpu_s": 0.502801,
+          "median_peak_rss_bytes": 202352640,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.074759063,
+          "min_wall_s": 0.072654794,
+          "max_wall_s": 0.075450643,
+          "stdev_wall_s": 0.0012853341256493175,
+          "mean_wall_s": 0.0740792248,
+          "median_cpu_s": 0.07275599999999999,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.567804351,
+          "min_wall_s": 0.564681379,
+          "max_wall_s": 0.602889935,
+          "stdev_wall_s": 0.01581708877752478,
+          "mean_wall_s": 0.5750964834,
+          "median_cpu_s": 0.566662,
+          "median_peak_rss_bytes": 200032256,
+          "speedup_vs_v1": 0.13166342045166893
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5683784855,
+          "min_wall_s": 0.567401678,
+          "max_wall_s": 0.569355293,
+          "stdev_wall_s": 0.001381414414327771,
+          "mean_wall_s": 0.5683784855,
+          "median_cpu_s": 0.5674025,
+          "median_peak_rss_bytes": 199706624,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.037570089,
+          "min_wall_s": 0.035485705,
+          "max_wall_s": 0.038901233,
+          "stdev_wall_s": 0.0014781757912122634,
+          "mean_wall_s": 0.037021117000000006,
+          "median_cpu_s": 0.035934,
+          "median_peak_rss_bytes": 150106112,
+          "speedup_vs_v1": 1.0
+        }
+      ],
       "unavailable": [
         {
           "workload": "ruby-boot",
@@ -411,185 +954,105 @@
         {
           "workload": "python-boot",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-boot",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-fib",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-fib",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-stdlib",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-stdlib",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-ioread",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-ioread",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-statloop",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-statloop",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-boot",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-boot",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-fib",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-fib",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-stdlib",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-stdlib",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-ioread",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-ioread",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-statloop",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-statloop",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         }
       ],
-      "failed": []
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
     },
     {
       "triplet": "linux-musl-arm64",
@@ -1168,6 +1631,7 @@
         "ram_bytes": 7516192768
       },
       "versions": {
+        "tebako": "2.8.67",
         "extra": {
           "on-system-java": "openjdk version \"21.0.12.1\" 2026-08-18 LTS",
           "on-system-python": "Python 3.14.7",
@@ -1175,7 +1639,400 @@
           "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.2.0)"
         }
       },
-      "cells": [],
+      "cells": [
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.070661792,
+          "min_wall_s": 0.04684925,
+          "max_wall_s": 0.075727375,
+          "stdev_wall_s": 0.012678411796309729,
+          "mean_wall_s": 0.06361891680000001,
+          "median_cpu_s": 0.03419,
+          "median_peak_rss_bytes": 37650432,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.76902275,
+          "min_wall_s": 0.6982295,
+          "max_wall_s": 0.865442792,
+          "stdev_wall_s": 0.07289473587347123,
+          "mean_wall_s": 0.780308725,
+          "median_cpu_s": 0.373418,
+          "median_peak_rss_bytes": 47054848,
+          "speedup_vs_v1": 0.09188517764916578
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.6541426455,
+          "min_wall_s": 0.603258208,
+          "max_wall_s": 0.705027083,
+          "stdev_wall_s": 0.07196146162622617,
+          "mean_wall_s": 0.6541426455,
+          "median_cpu_s": 0.3445745,
+          "median_peak_rss_bytes": 47030272,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.071366959,
+          "min_wall_s": 0.059830042,
+          "max_wall_s": 0.088413541,
+          "stdev_wall_s": 0.010978942612768886,
+          "mean_wall_s": 0.074304575,
+          "median_cpu_s": 0.049518999999999994,
+          "median_peak_rss_bytes": 38600704,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.741726416,
+          "min_wall_s": 0.679506291,
+          "max_wall_s": 0.878821833,
+          "stdev_wall_s": 0.08866844615411985,
+          "mean_wall_s": 0.7744213912,
+          "median_cpu_s": 0.404265,
+          "median_peak_rss_bytes": 47923200,
+          "speedup_vs_v1": 0.09621736190126468
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.812011104,
+          "min_wall_s": 0.772311666,
+          "max_wall_s": 0.851710542,
+          "stdev_wall_s": 0.05614348363818979,
+          "mean_wall_s": 0.812011104,
+          "median_cpu_s": 0.41570050000000003,
+          "median_peak_rss_bytes": 47931392,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.06983925,
+          "min_wall_s": 0.0534145,
+          "max_wall_s": 0.093596209,
+          "stdev_wall_s": 0.016578148292297222,
+          "mean_wall_s": 0.0753023836,
+          "median_cpu_s": 0.058691999999999994,
+          "median_peak_rss_bytes": 42074112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.825300417,
+          "min_wall_s": 0.745827459,
+          "max_wall_s": 0.916189375,
+          "stdev_wall_s": 0.07037843721294457,
+          "mean_wall_s": 0.8130278670000001,
+          "median_cpu_s": 0.41748599999999997,
+          "median_peak_rss_bytes": 118456320,
+          "speedup_vs_v1": 0.08462282165549906
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.797301917,
+          "min_wall_s": 0.615305084,
+          "max_wall_s": 0.97929875,
+          "stdev_wall_s": 0.2573823895375513,
+          "mean_wall_s": 0.797301917,
+          "median_cpu_s": 0.426597,
+          "median_peak_rss_bytes": 118497280,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.105054542,
+          "min_wall_s": 0.082718166,
+          "max_wall_s": 0.10705225,
+          "stdev_wall_s": 0.01127792490910594,
+          "mean_wall_s": 0.0982408582,
+          "median_cpu_s": 0.09783900000000001,
+          "median_peak_rss_bytes": 42352640,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.825256,
+          "min_wall_s": 0.805847625,
+          "max_wall_s": 0.88615125,
+          "stdev_wall_s": 0.03526413676553381,
+          "mean_wall_s": 0.8377113668,
+          "median_cpu_s": 0.44651399999999997,
+          "median_peak_rss_bytes": 51183616,
+          "speedup_vs_v1": 0.1272993374177225
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.7992172289999999,
+          "min_wall_s": 0.684334208,
+          "max_wall_s": 0.91410025,
+          "stdev_wall_s": 0.16246912638459304,
+          "mean_wall_s": 0.7992172289999999,
+          "median_cpu_s": 0.5092975,
+          "median_peak_rss_bytes": 51322880,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.269972333,
+          "min_wall_s": 0.201115833,
+          "max_wall_s": 0.34178925,
+          "stdev_wall_s": 0.054418361726184236,
+          "mean_wall_s": 0.2609886,
+          "median_cpu_s": 0.33757000000000004,
+          "median_peak_rss_bytes": 79593472,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.9778975,
+          "min_wall_s": 0.8908895,
+          "max_wall_s": 1.200886875,
+          "stdev_wall_s": 0.12669028649712658,
+          "mean_wall_s": 0.9940148668,
+          "median_cpu_s": 0.73506,
+          "median_peak_rss_bytes": 88965120,
+          "speedup_vs_v1": 0.27607426442955424
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.9912591665000001,
+          "min_wall_s": 0.946099125,
+          "max_wall_s": 1.036419208,
+          "stdev_wall_s": 0.06386594316663184,
+          "mean_wall_s": 0.9912591665000001,
+          "median_cpu_s": 0.7185165,
+          "median_peak_rss_bytes": 88539136,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.033834333,
+          "min_wall_s": 0.017856833,
+          "max_wall_s": 0.04016075,
+          "stdev_wall_s": 0.01061296103834678,
+          "mean_wall_s": 0.0294343582,
+          "median_cpu_s": 0.01557,
+          "median_peak_rss_bytes": 11943936,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.270085416,
+          "min_wall_s": 0.2605115,
+          "max_wall_s": 0.305042666,
+          "stdev_wall_s": 0.017619027509881664,
+          "mean_wall_s": 0.27572999140000004,
+          "median_cpu_s": 0.24588,
+          "median_peak_rss_bytes": 136626176,
+          "speedup_vs_v1": 0.12527271372549786
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.270208146,
+          "min_wall_s": 0.24843475,
+          "max_wall_s": 0.291981542,
+          "stdev_wall_s": 0.030792231922120078,
+          "mean_wall_s": 0.270208146,
+          "median_cpu_s": 0.25629599999999997,
+          "median_peak_rss_bytes": 136953856,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.266831875,
+          "min_wall_s": 0.210024833,
+          "max_wall_s": 0.285909666,
+          "stdev_wall_s": 0.029184673770904765,
+          "mean_wall_s": 0.2574410666,
+          "median_cpu_s": 0.255718,
+          "median_peak_rss_bytes": 11993088,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.566986042,
+          "min_wall_s": 0.480386458,
+          "max_wall_s": 0.677815125,
+          "stdev_wall_s": 0.07098341775914697,
+          "mean_wall_s": 0.5730222166,
+          "median_cpu_s": 0.536716,
+          "median_peak_rss_bytes": 136462336,
+          "speedup_vs_v1": 0.4706145393963684
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5427300415,
+          "min_wall_s": 0.523453042,
+          "max_wall_s": 0.562007041,
+          "stdev_wall_s": 0.027261794134759376,
+          "mean_wall_s": 0.5427300415,
+          "median_cpu_s": 0.5270485,
+          "median_peak_rss_bytes": 136314880,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.034327833,
+          "min_wall_s": 0.0310345,
+          "max_wall_s": 0.037148333,
+          "stdev_wall_s": 0.002192932793064735,
+          "mean_wall_s": 0.0341978832,
+          "median_cpu_s": 0.022761999999999998,
+          "median_peak_rss_bytes": 14237696,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.2897665,
+          "min_wall_s": 0.270422541,
+          "max_wall_s": 0.336146208,
+          "stdev_wall_s": 0.026735920599880662,
+          "mean_wall_s": 0.2969582748,
+          "median_cpu_s": 0.26922799999999997,
+          "median_peak_rss_bytes": 208240640,
+          "speedup_vs_v1": 0.11846722447211808
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.266557375,
+          "min_wall_s": 0.257975625,
+          "max_wall_s": 0.275139125,
+          "stdev_wall_s": 0.012136427238895306,
+          "mean_wall_s": 0.266557375,
+          "median_cpu_s": 0.25414000000000003,
+          "median_peak_rss_bytes": 208134144,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.079540375,
+          "min_wall_s": 0.074209209,
+          "max_wall_s": 0.090306375,
+          "stdev_wall_s": 0.0066542697101230576,
+          "mean_wall_s": 0.0821663168,
+          "median_cpu_s": 0.069247,
+          "median_peak_rss_bytes": 20905984,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.482492584,
+          "min_wall_s": 0.428312959,
+          "max_wall_s": 0.537587791,
+          "stdev_wall_s": 0.04687446063995817,
+          "mean_wall_s": 0.477949925,
+          "median_cpu_s": 0.45471,
+          "median_peak_rss_bytes": 145637376,
+          "speedup_vs_v1": 0.16485305191758137
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.41596204150000005,
+          "min_wall_s": 0.415357291,
+          "max_wall_s": 0.416566792,
+          "stdev_wall_s": 0.0008552463589519116,
+          "mean_wall_s": 0.41596204150000005,
+          "median_cpu_s": 0.39257450000000005,
+          "median_peak_rss_bytes": 146104320,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.036667958,
+          "min_wall_s": 0.036226959,
+          "max_wall_s": 0.054790458,
+          "stdev_wall_s": 0.00803634812478869,
+          "mean_wall_s": 0.0405265502,
+          "median_cpu_s": 0.033874,
+          "median_peak_rss_bytes": 18661376,
+          "speedup_vs_v1": 1.0
+        }
+      ],
       "unavailable": [
         {
           "workload": "ruby-boot",
@@ -1270,185 +2127,105 @@
         {
           "workload": "python-boot",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-boot",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-fib",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-fib",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-stdlib",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-stdlib",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-ioread",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-ioread",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-statloop",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-statloop",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-boot",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-boot",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-fib",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-fib",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-stdlib",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-stdlib",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-ioread",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-ioread",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-statloop",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-statloop",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         }
       ],
-      "failed": []
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
     },
     {
       "triplet": "macos-x86_64",
@@ -1459,12 +2236,196 @@
         "ram_bytes": 15032385536
       },
       "versions": {
+        "tebako": "2.8.67",
         "extra": {
           "on-system-python": "Python 3.14.7",
           "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.2.0)"
         }
       },
-      "cells": [],
+      "cells": [
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.051510142,
+          "min_wall_s": 0.044183917,
+          "max_wall_s": 0.067346357,
+          "stdev_wall_s": 0.008610491891226433,
+          "mean_wall_s": 0.0532249228,
+          "median_cpu_s": 0.041544,
+          "median_peak_rss_bytes": 9162752,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.601647023,
+          "min_wall_s": 0.566045076,
+          "max_wall_s": 0.723073749,
+          "stdev_wall_s": 0.059747044377938305,
+          "mean_wall_s": 0.621930884,
+          "median_cpu_s": 0.5790379999999999,
+          "median_peak_rss_bytes": 133910528,
+          "speedup_vs_v1": 0.0856152196069289
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5557040915,
+          "min_wall_s": 0.547048855,
+          "max_wall_s": 0.564359328,
+          "stdev_wall_s": 0.012240352843846634,
+          "mean_wall_s": 0.5557040915,
+          "median_cpu_s": 0.539343,
+          "median_peak_rss_bytes": 133861376,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.644965255,
+          "min_wall_s": 0.632488562,
+          "max_wall_s": 0.674618947,
+          "stdev_wall_s": 0.018290025444949568,
+          "mean_wall_s": 0.6524429855999999,
+          "median_cpu_s": 0.641902,
+          "median_peak_rss_bytes": 9261056,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 1.766322444,
+          "min_wall_s": 1.730207242,
+          "max_wall_s": 1.892939269,
+          "stdev_wall_s": 0.06820911443220372,
+          "mean_wall_s": 1.788999038,
+          "median_cpu_s": 1.7463410000000001,
+          "median_peak_rss_bytes": 133857280,
+          "speedup_vs_v1": 0.36514581875516267
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 1.7274238130000001,
+          "min_wall_s": 1.717082656,
+          "max_wall_s": 1.73776497,
+          "stdev_wall_s": 0.014624604480029375,
+          "mean_wall_s": 1.7274238130000001,
+          "median_cpu_s": 1.7045435000000002,
+          "median_peak_rss_bytes": 133937152,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.068787832,
+          "min_wall_s": 0.058289496,
+          "max_wall_s": 0.080149871,
+          "stdev_wall_s": 0.009307545164346514,
+          "mean_wall_s": 0.0680891062,
+          "median_cpu_s": 0.056782,
+          "median_peak_rss_bytes": 11423744,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.649151804,
+          "min_wall_s": 0.635277985,
+          "max_wall_s": 0.749459028,
+          "stdev_wall_s": 0.04776723967994097,
+          "mean_wall_s": 0.6647739502000001,
+          "median_cpu_s": 0.635319,
+          "median_peak_rss_bytes": 204398592,
+          "speedup_vs_v1": 0.10596571029478336
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.7251891075,
+          "min_wall_s": 0.663358527,
+          "max_wall_s": 0.787019688,
+          "stdev_wall_s": 0.08744164551250144,
+          "mean_wall_s": 0.7251891075,
+          "median_cpu_s": 0.6777275,
+          "median_peak_rss_bytes": 204584960,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.184107375,
+          "min_wall_s": 0.152792519,
+          "max_wall_s": 0.197688323,
+          "stdev_wall_s": 0.021060256593711205,
+          "mean_wall_s": 0.176257749,
+          "median_cpu_s": 0.18087599999999998,
+          "median_peak_rss_bytes": 18116608,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.932959509,
+          "min_wall_s": 0.850778963,
+          "max_wall_s": 0.967257926,
+          "stdev_wall_s": 0.04415901123080017,
+          "mean_wall_s": 0.916315303,
+          "median_cpu_s": 0.899301,
+          "median_peak_rss_bytes": 141312000,
+          "speedup_vs_v1": 0.19733694037519048
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.939958184,
+          "min_wall_s": 0.927798788,
+          "max_wall_s": 0.95211758,
+          "stdev_wall_s": 0.01719598273346515,
+          "mean_wall_s": 0.939958184,
+          "median_cpu_s": 0.9252644999999999,
+          "median_peak_rss_bytes": 141651968,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.104477243,
+          "min_wall_s": 0.091063875,
+          "max_wall_s": 0.108985268,
+          "stdev_wall_s": 0.006821306401019769,
+          "mean_wall_s": 0.10220141540000001,
+          "median_cpu_s": 0.097502,
+          "median_peak_rss_bytes": 14688256,
+          "speedup_vs_v1": 1.0
+        }
+      ],
       "unavailable": [
         {
           "workload": "ruby-boot",
@@ -1559,92 +2520,47 @@
         {
           "workload": "python-boot",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-boot",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-fib",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-fib",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-stdlib",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-stdlib",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-ioread",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-ioread",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "python-statloop",
           "target": "on-system-python",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "python-statloop",
-          "target": "tebako-python",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-boot",
@@ -1737,7 +2653,17 @@
           "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling"
         }
       ],
-      "failed": []
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
     },
     {
       "triplet": "windows-ucrt64",
@@ -1748,12 +2674,196 @@
         "ram_bytes": 17174360064
       },
       "versions": {
+        "tebako": "2.8.67",
         "extra": {
           "on-system-java": "openjdk version \"21.0.12.1\" 2026-08-18 LTS",
           "tebako-java": "openjdk version \"21.0.12\" 2026-07-21 LTS (tamatebako/tebako-runtime-openjdk v2.7.0)"
         }
       },
-      "cells": [],
+      "cells": [
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.0629175,
+          "min_wall_s": 0.0598948,
+          "max_wall_s": 0.0644978,
+          "stdev_wall_s": 0.0018551951643964565,
+          "mean_wall_s": 0.06256165999999999,
+          "median_cpu_s": 0.078125,
+          "median_peak_rss_bytes": 347140096,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.6143095,
+          "min_wall_s": 0.5928376,
+          "max_wall_s": 0.6426987,
+          "stdev_wall_s": 0.022154747174702775,
+          "mean_wall_s": 0.6196915,
+          "median_cpu_s": 0.625,
+          "median_peak_rss_bytes": 492199936,
+          "speedup_vs_v1": 0.10241987141660679
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.60534625,
+          "min_wall_s": 0.6052334,
+          "max_wall_s": 0.6054591,
+          "stdev_wall_s": 0.0001595940005138005,
+          "mean_wall_s": 0.60534625,
+          "median_cpu_s": 0.6328125,
+          "median_peak_rss_bytes": 492300288,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.0782074,
+          "min_wall_s": 0.0746742,
+          "max_wall_s": 0.0859252,
+          "stdev_wall_s": 0.005330666460865846,
+          "mean_wall_s": 0.07987007999999998,
+          "median_cpu_s": 0.109375,
+          "median_peak_rss_bytes": 347414528,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.6072885,
+          "min_wall_s": 0.6036853,
+          "max_wall_s": 0.6496339,
+          "stdev_wall_s": 0.019143354149208026,
+          "mean_wall_s": 0.61784112,
+          "median_cpu_s": 0.609375,
+          "median_peak_rss_bytes": 492580864,
+          "speedup_vs_v1": 0.1287812958750248
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.6306038,
+          "min_wall_s": 0.6297401,
+          "max_wall_s": 0.6314675,
+          "stdev_wall_s": 0.001221456253821596,
+          "mean_wall_s": 0.6306038,
+          "median_cpu_s": 0.6640625,
+          "median_peak_rss_bytes": 492699648,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.0906068,
+          "min_wall_s": 0.0879131,
+          "max_wall_s": 0.0937655,
+          "stdev_wall_s": 0.0020878093789903356,
+          "mean_wall_s": 0.09074926,
+          "median_cpu_s": 0.109375,
+          "median_peak_rss_bytes": 348667904,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.1532693,
+          "min_wall_s": 0.1516606,
+          "max_wall_s": 0.1587441,
+          "stdev_wall_s": 0.003416947349170013,
+          "mean_wall_s": 0.15497522,
+          "median_cpu_s": 0.234375,
+          "median_peak_rss_bytes": 349814784,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.6804669,
+          "min_wall_s": 0.6710546,
+          "max_wall_s": 0.6933104,
+          "stdev_wall_s": 0.008336424022505104,
+          "mean_wall_s": 0.68045936,
+          "median_cpu_s": 0.734375,
+          "median_peak_rss_bytes": 495116288,
+          "speedup_vs_v1": 0.22524137470904168
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.67697005,
+          "min_wall_s": 0.6685516,
+          "max_wall_s": 0.6853885,
+          "stdev_wall_s": 0.011905486164159734,
+          "mean_wall_s": 0.67697005,
+          "median_cpu_s": 0.71875,
+          "median_peak_rss_bytes": 494880768,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.2591861,
+          "min_wall_s": 0.2505706,
+          "max_wall_s": 0.3084753,
+          "stdev_wall_s": 0.023510865792692546,
+          "mean_wall_s": 0.26714212000000004,
+          "median_cpu_s": 0.671875,
+          "median_peak_rss_bytes": 354603008,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.7916295,
+          "min_wall_s": 0.7853729,
+          "max_wall_s": 0.8285701,
+          "stdev_wall_s": 0.018053545992740592,
+          "mean_wall_s": 0.79985312,
+          "median_cpu_s": 1.140625,
+          "median_peak_rss_bytes": 499576832,
+          "speedup_vs_v1": 0.3274083393809856
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.8036436,
+          "min_wall_s": 0.8024861,
+          "max_wall_s": 0.8048011,
+          "stdev_wall_s": 0.0016369521984469049,
+          "mean_wall_s": 0.8036436,
+          "median_cpu_s": 1.1796875,
+          "median_peak_rss_bytes": 499632128,
+          "speedup_vs_v1": null
+        }
+      ],
       "unavailable": [
         {
           "workload": "ruby-boot",
@@ -1938,95 +3048,60 @@
         {
           "workload": "java-boot",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-boot",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-fib",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-fib",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-stdlib",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-stdlib",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-ioread",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-ioread",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         },
         {
           "workload": "java-statloop",
           "target": "on-system-java",
-          "mode": null,
+          "mode": "cold",
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS)"
-        },
-        {
-          "workload": "java-statloop",
-          "target": "tebako-java",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
         }
       ],
-      "failed": []
+      "failed": [
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
     }
   ]
 }

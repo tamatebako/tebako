@@ -8,10 +8,14 @@
         "runs_on": "ubuntu-24.04-arm",
         "arch": "aarch64",
         "cpus": 4,
-        "ram_bytes": 16715923456
+        "ram_bytes": 16715927552
       },
       "versions": {
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+        "tebako": "2.8.67",
+        "runtime": "0.17.4-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
       },
       "cells": [
         {
@@ -19,13 +23,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 103.495522761,
-          "min_wall_s": 103.125094444,
-          "max_wall_s": 105.66881767,
-          "stdev_wall_s": 1.0523542242851214,
-          "mean_wall_s": 103.8730950362,
-          "median_cpu_s": 122.227104,
-          "median_peak_rss_bytes": 1215864832,
+          "median_wall_s": 99.987347507,
+          "min_wall_s": 99.042266147,
+          "max_wall_s": 100.445649355,
+          "stdev_wall_s": 0.5209919630101301,
+          "mean_wall_s": 99.8598840534,
+          "median_cpu_s": 117.21710300000001,
+          "median_peak_rss_bytes": 1226985472,
           "speedup_vs_v1": 1.0
         },
         {
@@ -33,27 +37,55 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 111.081793573,
-          "min_wall_s": 110.614607092,
-          "max_wall_s": 111.548980054,
-          "stdev_wall_s": 0.6607014575875586,
-          "mean_wall_s": 111.081793573,
-          "median_cpu_s": 130.0239955,
-          "median_peak_rss_bytes": 1312798720,
+          "median_wall_s": 107.0866822955,
+          "min_wall_s": 105.797348236,
+          "max_wall_s": 108.376016355,
+          "stdev_wall_s": 1.8233937133744587,
+          "mean_wall_s": 107.0866822955,
+          "median_cpu_s": 124.279123,
+          "median_peak_rss_bytes": 1380831232,
           "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 196.936402154,
+          "min_wall_s": 195.192838383,
+          "max_wall_s": 197.731741474,
+          "stdev_wall_s": 0.9759683455594829,
+          "mean_wall_s": 196.63816610119997,
+          "median_cpu_s": 210.133339,
+          "median_peak_rss_bytes": 1404850176,
+          "speedup_vs_v1": 0.5077138934873607
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 216.10370994200002,
+          "min_wall_s": 215.761786674,
+          "max_wall_s": 216.44563321,
+          "stdev_wall_s": 0.48355252289653355,
+          "mean_wall_s": 216.10370994200002,
+          "median_cpu_s": 229.897082,
+          "median_peak_rss_bytes": 1567938560,
+          "speedup_vs_v1": 0.4955337524017563
         },
         {
           "workload": "compile-small-iso",
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 50.696621097,
-          "min_wall_s": 50.138281135,
-          "max_wall_s": 51.286777172,
-          "stdev_wall_s": 0.45800457376742965,
-          "mean_wall_s": 50.740009744599995,
-          "median_cpu_s": 62.125845,
-          "median_peak_rss_bytes": 886419456,
+          "median_wall_s": 49.029554826,
+          "min_wall_s": 48.780615692,
+          "max_wall_s": 49.254747286,
+          "stdev_wall_s": 0.17404844201944017,
+          "mean_wall_s": 49.032093877,
+          "median_cpu_s": 59.793718,
+          "median_peak_rss_bytes": 894881792,
           "speedup_vs_v1": 1.0
         },
         {
@@ -61,55 +93,84 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 55.001946672,
-          "min_wall_s": 54.860919547,
-          "max_wall_s": 55.142973797,
-          "stdev_wall_s": 0.19944247283748692,
-          "mean_wall_s": 55.001946672,
-          "median_cpu_s": 67.25914800000001,
-          "median_peak_rss_bytes": 889556992,
+          "median_wall_s": 53.3763641755,
+          "min_wall_s": 52.940498591,
+          "max_wall_s": 53.81222976,
+          "stdev_wall_s": 0.6164070209715765,
+          "mean_wall_s": 53.3763641755,
+          "median_cpu_s": 64.879603,
+          "median_peak_rss_bytes": 895059968,
           "speedup_vs_v1": 1.0
-        }
-      ],
-      "unavailable": [
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
         },
         {
           "workload": "compile-small-iso",
           "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 109.48306001,
+          "min_wall_s": 108.911277371,
+          "max_wall_s": 111.312096225,
+          "stdev_wall_s": 0.9232428208412617,
+          "mean_wall_s": 109.7195847348,
+          "median_cpu_s": 182.482828,
+          "median_peak_rss_bytes": 913461248,
+          "speedup_vs_v1": 0.44782777190847356
         },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 118.33883114700001,
+          "min_wall_s": 117.99491577,
+          "max_wall_s": 118.682746524,
+          "stdev_wall_s": 0.4863697904620486,
+          "mean_wall_s": 118.33883114700001,
+          "median_cpu_s": 190.589587,
+          "median_peak_rss_bytes": 874031104,
+          "speedup_vs_v1": 0.4510469104532231
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 110.104976469,
+          "min_wall_s": 109.031420685,
+          "max_wall_s": 111.003190974,
+          "stdev_wall_s": 0.8182349932735226,
+          "mean_wall_s": 110.00753875820001,
+          "median_cpu_s": 183.109181,
+          "median_peak_rss_bytes": 915251200,
+          "speedup_vs_v1": 0.44529826351494883
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 121.1703765485,
+          "min_wall_s": 120.671551488,
+          "max_wall_s": 121.669201609,
+          "stdev_wall_s": 0.7054451658106743,
+          "mean_wall_s": 121.1703765485,
+          "median_cpu_s": 194.2787105,
+          "median_peak_rss_bytes": 876740608,
+          "speedup_vs_v1": 0.4405067120851558
+        }
+      ],
+      "unavailable": [],
+      "failed": [
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
         }
-      ],
-      "failed": []
+      ]
     },
     {
       "triplet": "linux-gnu-x86_64",
@@ -120,7 +181,11 @@
         "ram_bytes": 16760344576
       },
       "versions": {
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+        "tebako": "2.8.67",
+        "runtime": "0.17.4-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
       },
       "cells": [
         {
@@ -128,13 +193,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 112.95262847,
-          "min_wall_s": 111.378475001,
-          "max_wall_s": 114.301410617,
-          "stdev_wall_s": 1.1278047194313947,
-          "mean_wall_s": 113.083841426,
-          "median_cpu_s": 139.210722,
-          "median_peak_rss_bytes": 1260843008,
+          "median_wall_s": 125.356640736,
+          "min_wall_s": 123.451068527,
+          "max_wall_s": 125.909940233,
+          "stdev_wall_s": 0.9695302739705537,
+          "mean_wall_s": 125.0650905402,
+          "median_cpu_s": 153.412139,
+          "median_peak_rss_bytes": 1262211072,
           "speedup_vs_v1": 1.0
         },
         {
@@ -142,27 +207,55 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 124.4685248495,
-          "min_wall_s": 123.607711403,
-          "max_wall_s": 125.329338296,
-          "stdev_wall_s": 1.2173740507134316,
-          "mean_wall_s": 124.4685248495,
-          "median_cpu_s": 150.76877149999999,
-          "median_peak_rss_bytes": 1394991104,
+          "median_wall_s": 133.5491646405,
+          "min_wall_s": 132.650037587,
+          "max_wall_s": 134.448291694,
+          "stdev_wall_s": 1.2715576733562532,
+          "mean_wall_s": 133.5491646405,
+          "median_cpu_s": 163.7914255,
+          "median_peak_rss_bytes": 1414379520,
           "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 194.722840873,
+          "min_wall_s": 193.913697814,
+          "max_wall_s": 196.17792474,
+          "stdev_wall_s": 0.9108264027296817,
+          "mean_wall_s": 194.9237998114,
+          "median_cpu_s": 223.045966,
+          "median_peak_rss_bytes": 1368068096,
+          "speedup_vs_v1": 0.6437695761523875
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 216.877809889,
+          "min_wall_s": 216.30451261,
+          "max_wall_s": 217.451107168,
+          "stdev_wall_s": 0.8107647872333948,
+          "mean_wall_s": 216.877809889,
+          "median_cpu_s": 239.6289675,
+          "median_peak_rss_bytes": 1511288832,
+          "speedup_vs_v1": 0.6157806771880059
         },
         {
           "workload": "compile-small-iso",
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 57.575810013,
-          "min_wall_s": 57.105773918,
-          "max_wall_s": 58.65147054,
-          "stdev_wall_s": 0.606694970544612,
-          "mean_wall_s": 57.7331201484,
-          "median_cpu_s": 75.027362,
-          "median_peak_rss_bytes": 936759296,
+          "median_wall_s": 63.218938673,
+          "min_wall_s": 62.583792826,
+          "max_wall_s": 64.931065287,
+          "stdev_wall_s": 0.9464126002040845,
+          "mean_wall_s": 63.5332781732,
+          "median_cpu_s": 82.864229,
+          "median_peak_rss_bytes": 952098816,
           "speedup_vs_v1": 1.0
         },
         {
@@ -170,55 +263,84 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 63.825763433000006,
-          "min_wall_s": 63.417800604,
-          "max_wall_s": 64.233726262,
-          "stdev_wall_s": 0.5769465657158991,
-          "mean_wall_s": 63.825763433000006,
-          "median_cpu_s": 82.2323775,
-          "median_peak_rss_bytes": 937697280,
+          "median_wall_s": 67.9897539695,
+          "min_wall_s": 67.46203616,
+          "max_wall_s": 68.517471779,
+          "stdev_wall_s": 0.7463056833007269,
+          "mean_wall_s": 67.9897539695,
+          "median_cpu_s": 88.662027,
+          "median_peak_rss_bytes": 949391360,
           "speedup_vs_v1": 1.0
-        }
-      ],
-      "unavailable": [
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
         },
         {
           "workload": "compile-small-iso",
           "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 104.247010837,
+          "min_wall_s": 102.133727027,
+          "max_wall_s": 111.264396201,
+          "stdev_wall_s": 4.364817350882614,
+          "mean_wall_s": 106.3015723114,
+          "median_cpu_s": 197.539915,
+          "median_peak_rss_bytes": 908894208,
+          "speedup_vs_v1": 0.6064340662184429
         },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 118.071571149,
+          "min_wall_s": 117.611080265,
+          "max_wall_s": 118.532062033,
+          "stdev_wall_s": 0.6512324535019787,
+          "mean_wall_s": 118.071571149,
+          "median_cpu_s": 213.8139165,
+          "median_peak_rss_bytes": 862935040,
+          "speedup_vs_v1": 0.5758350914438207
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 103.546199792,
+          "min_wall_s": 103.073602358,
+          "max_wall_s": 111.467400852,
+          "stdev_wall_s": 3.5966519798153977,
+          "mean_wall_s": 105.649467344,
+          "median_cpu_s": 199.304119,
+          "median_peak_rss_bytes": 911777792,
+          "speedup_vs_v1": 0.6105384726816822
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 126.9456640875,
+          "min_wall_s": 123.390951133,
+          "max_wall_s": 130.500377042,
+          "stdev_wall_s": 5.027123270597231,
+          "mean_wall_s": 126.9456640875,
+          "median_cpu_s": 213.924498,
+          "median_peak_rss_bytes": 865767424,
+          "speedup_vs_v1": 0.5355815376461902
+        }
+      ],
+      "unavailable": [],
+      "failed": [
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
         }
-      ],
-      "failed": []
+      ]
     },
     {
       "triplet": "linux-musl-arm64",
@@ -228,7 +350,12 @@
         "cpus": 4,
         "ram_bytes": 16715923456
       },
-      "versions": {},
+      "versions": {
+        "tebako": "2.8.67",
+        "runtime": "0.17.4-4.0.9",
+        "payload": "1.17.0-6",
+        "image_format": "limnifs"
+      },
       "cells": [],
       "unavailable": [
         {
@@ -241,24 +368,6 @@
           "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
         },
         {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
           "workload": "compile-medium-rice",
           "target": "v1-packed-mn",
           "mode": null,
@@ -266,27 +375,46 @@
           "status": "unavailable",
           "error": null,
           "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
         },
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
         },
         {
           "workload": "compile-medium-rice",
           "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
         }
-      ],
-      "failed": []
+      ]
     },
     {
       "triplet": "linux-musl-x86_64",
@@ -297,47 +425,14 @@
         "ram_bytes": 16760344576
       },
       "versions": {
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+        "tebako": "2.8.67",
+        "runtime": "0.17.4-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
       },
       "cells": [],
-      "unavailable": [
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        }
-      ],
+      "unavailable": [],
       "failed": [
         {
           "workload": "compile-small-iso",
@@ -349,8 +444,44 @@
           "reason": null
         },
         {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
           "workload": "compile-medium-rice",
           "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
           "mode": "warm",
           "iteration": 0,
           "status": "failed",
@@ -368,7 +499,11 @@
         "ram_bytes": 7516192768
       },
       "versions": {
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+        "tebako": "2.8.67",
+        "runtime": "0.17.4-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
       },
       "cells": [
         {
@@ -376,13 +511,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 183.287608333,
-          "min_wall_s": 160.979418084,
-          "max_wall_s": 237.955598625,
-          "stdev_wall_s": 34.80092331756759,
-          "mean_wall_s": 199.03257447480001,
-          "median_cpu_s": 191.072634,
-          "median_peak_rss_bytes": 2152480768,
+          "median_wall_s": 163.307448,
+          "min_wall_s": 129.106133917,
+          "max_wall_s": 178.043296292,
+          "stdev_wall_s": 19.821535739679042,
+          "mean_wall_s": 156.75036350860003,
+          "median_cpu_s": 172.543327,
+          "median_peak_rss_bytes": 2181414912,
           "speedup_vs_v1": 1.0
         },
         {
@@ -390,27 +525,55 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 178.8169458335,
-          "min_wall_s": 177.057705875,
-          "max_wall_s": 180.576185792,
-          "stdev_wall_s": 2.4879410087793663,
-          "mean_wall_s": 178.8169458335,
-          "median_cpu_s": 187.14358399999998,
-          "median_peak_rss_bytes": 2193031168,
+          "median_wall_s": 172.67327127049998,
+          "min_wall_s": 166.375991833,
+          "max_wall_s": 178.970550708,
+          "stdev_wall_s": 8.905697986565707,
+          "mean_wall_s": 172.67327127049998,
+          "median_cpu_s": 181.162119,
+          "median_peak_rss_bytes": 2089025536,
           "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 179.167778084,
+          "min_wall_s": 168.963065833,
+          "max_wall_s": 200.258832375,
+          "stdev_wall_s": 12.21124921402219,
+          "mean_wall_s": 180.5831274834,
+          "median_cpu_s": 187.87759799999998,
+          "median_peak_rss_bytes": 1699053568,
+          "speedup_vs_v1": 0.9114777765644662
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 192.788642583,
+          "min_wall_s": 192.30543275,
+          "max_wall_s": 193.271852416,
+          "stdev_wall_s": 0.6833618993006435,
+          "mean_wall_s": 192.788642583,
+          "median_cpu_s": 200.7808245,
+          "median_peak_rss_bytes": 1755217920,
+          "speedup_vs_v1": 0.8956610148658529
         },
         {
           "workload": "compile-small-iso",
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 127.623221125,
-          "min_wall_s": 116.315459125,
-          "max_wall_s": 143.297386875,
-          "stdev_wall_s": 11.852252015739259,
-          "mean_wall_s": 129.35833012519998,
-          "median_cpu_s": 130.820729,
-          "median_peak_rss_bytes": 1648852992,
+          "median_wall_s": 96.953926333,
+          "min_wall_s": 87.245281167,
+          "max_wall_s": 97.886369583,
+          "stdev_wall_s": 4.4380689973286325,
+          "mean_wall_s": 95.0539861666,
+          "median_cpu_s": 99.742772,
+          "median_peak_rss_bytes": 1809874944,
           "speedup_vs_v1": 1.0
         },
         {
@@ -418,55 +581,84 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 156.4926087915,
-          "min_wall_s": 143.560449833,
-          "max_wall_s": 169.42476775,
-          "stdev_wall_s": 18.288834589875414,
-          "mean_wall_s": 156.4926087915,
-          "median_cpu_s": 160.285443,
-          "median_peak_rss_bytes": 1687486464,
+          "median_wall_s": 95.4594615205,
+          "min_wall_s": 93.117832416,
+          "max_wall_s": 97.801090625,
+          "stdev_wall_s": 3.3115636376314668,
+          "mean_wall_s": 95.4594615205,
+          "median_cpu_s": 98.450649,
+          "median_peak_rss_bytes": 1762254848,
           "speedup_vs_v1": 1.0
-        }
-      ],
-      "unavailable": [
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
         },
         {
           "workload": "compile-small-iso",
           "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 100.082956875,
+          "min_wall_s": 87.462227209,
+          "max_wall_s": 111.113327708,
+          "stdev_wall_s": 9.479227640976047,
+          "mean_wall_s": 98.02240504999999,
+          "median_cpu_s": 188.134186,
+          "median_peak_rss_bytes": 1036091392,
+          "speedup_vs_v1": 0.9687356305239059
         },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 109.156370625,
+          "min_wall_s": 107.397822416,
+          "max_wall_s": 110.914918834,
+          "stdev_wall_s": 2.486962727254722,
+          "mean_wall_s": 109.156370625,
+          "median_cpu_s": 190.218612,
+          "median_peak_rss_bytes": 1001218048,
+          "speedup_vs_v1": 0.8745202957365183
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 90.570867958,
+          "min_wall_s": 82.285119625,
+          "max_wall_s": 93.840464417,
+          "stdev_wall_s": 4.443686421953966,
+          "mean_wall_s": 89.58071970840001,
+          "median_cpu_s": 166.71954200000002,
+          "median_peak_rss_bytes": 1023623168,
+          "speedup_vs_v1": 1.07047584415289
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 109.038473417,
+          "min_wall_s": 103.080996209,
+          "max_wall_s": 114.995950625,
+          "stdev_wall_s": 8.4251450650822,
+          "mean_wall_s": 109.038473417,
+          "median_cpu_s": 193.788987,
+          "median_peak_rss_bytes": 979722240,
+          "speedup_vs_v1": 0.875465865662212
+        }
+      ],
+      "unavailable": [],
+      "failed": [
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
         }
-      ],
-      "failed": []
+      ]
     },
     {
       "triplet": "macos-x86_64",
@@ -476,8 +668,98 @@
         "cpus": 4,
         "ram_bytes": 15032385536
       },
-      "versions": {},
-      "cells": [],
+      "versions": {
+        "tebako": "2.8.67",
+        "runtime": "0.17.4-4.0.9",
+        "payload": "1.17.0-6",
+        "image_format": "limnifs"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 262.189025189,
+          "min_wall_s": 260.016163412,
+          "max_wall_s": 359.694579851,
+          "stdev_wall_s": 44.146216305175,
+          "mean_wall_s": 291.1711417542,
+          "median_cpu_s": 289.152282,
+          "median_peak_rss_bytes": 1366245376,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 404.4107491315,
+          "min_wall_s": 401.487238559,
+          "max_wall_s": 407.334259704,
+          "stdev_wall_s": 4.134468301370621,
+          "mean_wall_s": 404.4107491315,
+          "median_cpu_s": 438.51297650000004,
+          "median_peak_rss_bytes": 1494990848,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 166.129353145,
+          "min_wall_s": 145.956063149,
+          "max_wall_s": 183.319907827,
+          "stdev_wall_s": 13.389909147779116,
+          "mean_wall_s": 166.2691025338,
+          "median_cpu_s": 301.807519,
+          "median_peak_rss_bytes": 822587392,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 172.34686127,
+          "min_wall_s": 164.697064729,
+          "max_wall_s": 179.996657811,
+          "stdev_wall_s": 10.818446017676992,
+          "mean_wall_s": 172.34686127,
+          "median_cpu_s": 295.12125549999996,
+          "median_peak_rss_bytes": 788948992,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 165.368902562,
+          "min_wall_s": 131.761982873,
+          "max_wall_s": 171.88476891,
+          "stdev_wall_s": 19.52865198854735,
+          "mean_wall_s": 154.89945231820002,
+          "median_cpu_s": 302.510876,
+          "median_peak_rss_bytes": 805175296,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 183.133843992,
+          "min_wall_s": 183.014834266,
+          "max_wall_s": 183.252853718,
+          "stdev_wall_s": 0.1683051685635082,
+          "mean_wall_s": 183.133843992,
+          "median_cpu_s": 317.949875,
+          "median_peak_rss_bytes": 792201216,
+          "speedup_vs_v1": null
+        }
+      ],
       "unavailable": [
         {
           "workload": "compile-small-iso",
@@ -489,24 +771,6 @@
           "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
         },
         {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
           "workload": "compile-medium-rice",
           "target": "v1-packed-mn",
           "mode": null,
@@ -514,27 +778,19 @@
           "status": "unavailable",
           "error": null,
           "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
-        },
+        }
+      ],
+      "failed": [
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
         }
-      ],
-      "failed": []
+      ]
     },
     {
       "triplet": "windows-ucrt64",
@@ -545,7 +801,11 @@
         "ram_bytes": 17174360064
       },
       "versions": {
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+        "tebako": "2.8.67",
+        "runtime": "0.17.4-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
       },
       "cells": [
         {
@@ -553,13 +813,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 126.2873918,
-          "min_wall_s": 125.7260528,
-          "max_wall_s": 128.0035392,
-          "stdev_wall_s": 1.0183101535938501,
-          "mean_wall_s": 126.63559774000001,
-          "median_cpu_s": 155.34375,
-          "median_peak_rss_bytes": 1634889728,
+          "median_wall_s": 135.6779187,
+          "min_wall_s": 134.03366,
+          "max_wall_s": 137.2568089,
+          "stdev_wall_s": 1.170719049295435,
+          "mean_wall_s": 135.70604834,
+          "median_cpu_s": 167.265625,
+          "median_peak_rss_bytes": 1632444416,
           "speedup_vs_v1": 1.0
         },
         {
@@ -567,13 +827,13 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 135.91139445,
-          "min_wall_s": 135.2473633,
-          "max_wall_s": 136.5754256,
-          "stdev_wall_s": 0.9390818581682024,
-          "mean_wall_s": 135.91139445,
-          "median_cpu_s": 164.953125,
-          "median_peak_rss_bytes": 1666035712,
+          "median_wall_s": 144.56589524999998,
+          "min_wall_s": 144.4297008,
+          "max_wall_s": 144.7020897,
+          "stdev_wall_s": 0.19260803830993128,
+          "mean_wall_s": 144.56589524999998,
+          "median_cpu_s": 178.5078125,
+          "median_peak_rss_bytes": 1670434816,
           "speedup_vs_v1": 1.0
         },
         {
@@ -581,13 +841,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 61.8008345,
-          "min_wall_s": 59.3997973,
-          "max_wall_s": 67.0406738,
-          "stdev_wall_s": 3.1219284305148416,
-          "mean_wall_s": 62.18272812,
-          "median_cpu_s": 86.25,
-          "median_peak_rss_bytes": 1669808128,
+          "median_wall_s": 68.4779517,
+          "min_wall_s": 68.2249914,
+          "max_wall_s": 69.0241171,
+          "stdev_wall_s": 0.3172527544761696,
+          "mean_wall_s": 68.52209212,
+          "median_cpu_s": 92.0625,
+          "median_peak_rss_bytes": 1651019776,
           "speedup_vs_v1": 1.0
         },
         {
@@ -595,55 +855,97 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 68.3792224,
-          "min_wall_s": 67.6862728,
-          "max_wall_s": 69.072172,
-          "stdev_wall_s": 0.9799787223610092,
-          "mean_wall_s": 68.3792224,
-          "median_cpu_s": 89.125,
-          "median_peak_rss_bytes": 1637310464,
+          "median_wall_s": 73.8680758,
+          "min_wall_s": 72.7320449,
+          "max_wall_s": 75.0041067,
+          "stdev_wall_s": 1.6065903060549054,
+          "mean_wall_s": 73.8680758,
+          "median_cpu_s": 98.9296875,
+          "median_peak_rss_bytes": 1642567680,
           "speedup_vs_v1": 1.0
-        }
-      ],
-      "unavailable": [
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
         },
         {
           "workload": "compile-small-iso",
           "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 62.2106449,
+          "min_wall_s": 62.0021122,
+          "max_wall_s": 62.3518805,
+          "stdev_wall_s": 0.14234154602457813,
+          "mean_wall_s": 62.17333102,
+          "median_cpu_s": 88.015625,
+          "median_peak_rss_bytes": 2630635520,
+          "speedup_vs_v1": 1.1007433182869963
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 64.1476151,
+          "min_wall_s": 62.788072,
+          "max_wall_s": 65.0502181,
+          "stdev_wall_s": 0.8687823700563299,
+          "mean_wall_s": 64.04808492,
+          "median_cpu_s": 91.40625,
+          "median_peak_rss_bytes": 2611122176,
+          "speedup_vs_v1": 1.0675058081777387
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 70.39546795000001,
+          "min_wall_s": 69.5380805,
+          "max_wall_s": 71.2528554,
+          "stdev_wall_s": 1.21252895999848,
+          "mean_wall_s": 70.39546795000001,
+          "median_cpu_s": 99.1953125,
+          "median_peak_rss_bytes": 2635005952,
+          "speedup_vs_v1": 1.0493299917043877
+        }
+      ],
+      "unavailable": [],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "iteration": 1,
+          "status": "failed",
+          "error": "exit -1073741515 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "iteration": 2,
+          "status": "failed",
+          "error": "exit -1073741515 (expected 0)",
+          "reason": null
         },
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit -1073741515 (expected 0)",
+          "reason": null
         },
         {
           "workload": "compile-medium-rice",
           "target": "v2-fat",
-          "mode": null,
-          "iteration": null,
-          "status": "unavailable",
-          "error": null,
-          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS: not found: https://github.com/tamatebako/tebako/releases/download/v2.8.67/SHA256SUMS"
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit -1073741515 (expected 0)",
+          "reason": null
         }
-      ],
-      "failed": []
+      ]
     }
   ]
 }
