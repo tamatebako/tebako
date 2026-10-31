@@ -84,7 +84,14 @@ mechanics above are uniform; the DELIVERY is platform-split:
   `DYLD_INSERT_LIBRARIES` plus the sentinel `TEBAKO_LOADER_INTERPOSED=1`,
   and `execv`s itself. The sentinel makes the re-exec fire exactly
   once; the re-exec precedes all mounting, so there is no double boot,
-  no partial-mount window, and no launcher-ABI change.
+  no partial-mount window, and no launcher-ABI change. The AMFI gate:
+  on macOS 15+, an exec'd image whose code signature carries no CMS
+  blob is killed when `DYLD_INSERT_LIBRARIES` is armed (the unified
+  log's "no CMS blob … Unrecoverable CT signature issue") — the linker's
+  adhoc signature has no CMS blob, so an UNSIGNED exe (a dev build, a
+  CI test binary) skips the re-exec and boots uninserted with the loud
+  warning, the fallback this section already promises. A signed runtime
+  carries the blob and inserts exactly as before.
 
 **Windows (msys) delivery record (design-pinned 2026-08-14, phase W1;
 the implementation is W2).** Windows has no process-wide preemption
@@ -763,7 +770,7 @@ the authored `<jre>:ro` ingredient remains the spelling for an
 operator-INSTALLED host JRE (the non-wrapper pattern this section was
 locked on).
 
-### 3.6 The exe shape's own file-IO family (DELIVERED 2026-10-31 — the mechanism, the arm, the factory link, and the jailed proof; tebako-runtime-ruby#126)
+### 3.6 The exe shape's own file-IO family (PLANNED — the mechanism and the driver's arm are DELIVERED 2026-10-28; the runtime link and its jail proof are pending; tebako-runtime-ruby#126)
 
 The runtime exe defines class L's `dlopen`/`dlerror` for the whole
 process (§2 Rule L2), so a loader call routes through the mounts. It
@@ -854,27 +861,25 @@ host filesystem), and a missing family while `TEBAKO_JAIL` is bound
 (the jail covers loader calls, not the in-exe C library's own reads).
 Silent degradation is the one outcome the arm refuses.
 
-**The delivery record (2026-10-31).** The factory link
-(`--whole-archive`, `-Wl,--export-dynamic`, and `-lstdc++` for the
-dwarfs backend the archive carries) is tebako-runtime-ruby#305; the
-archive ships in the link unit (Linux legs): scoped like its siblings
+**What is still open.** The factory link (`--whole-archive`,
+`-Wl,--export-dynamic`, and `-lstdc++` for the dwarfs backend the
+archive carries) and the jail proof on a built runtime. The archive
+itself ships in the link unit (Linux legs): scoped like its siblings
 except the family's names ride an exact keep list
 (`crates/libtfs-preload/exe-shape-symbols.txt`, parity-tested against
 the definitions) because renaming ends the preemption, and deduped
-against both scoped siblings. The first armed build proved the
-copy-boundary seam (above); v2.8.68 carries the guard. The jail proof
-is the boot smoke's §3.6 leg (tebako-runtime-ruby#309): a jailed child
-of the built runtime reads an ungranted host cert through libcrypto's
-`fopen64` and is denied, journaled — asserting, not skipping, on the
-family-carrying exe.
+against both scoped siblings. Until the factory link and the proof
+land, every shipped runtime takes the absent path.
 
 **Acceptance (the issue's bar, not "the symbols are defined").** With
 `TEBAKO_JAIL=deny` and no grant for the cert path, a packaged app's
 `OpenSSL::X509::Store#add_file` / `set_default_paths` /
 `RAND_load_file` fails with the policy's named EPERM and the journal
 carries the denial; with no jail bound, the same run is
-byte-identical to today's. Proven on the exe shape by the §3 proof
-harness on a built runtime (tebako-runtime-ruby#309, green).
+byte-identical to today's. Both proven on the exe shape by the §3
+proof harness, after a runtime build — the bar this row is accepted
+by, and the reason the row stays PLANNED while the mechanism and the
+arm are delivered.
 
 ## 4. Class R — declarative boot materialization
 

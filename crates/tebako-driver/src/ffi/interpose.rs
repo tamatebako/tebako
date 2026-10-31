@@ -100,6 +100,129 @@ fn should_insert(sentinel: Option<&OsStr>) -> bool {
     sentinel.is_none()
 }
 
+/// The running OS's major version (`kern.osproductversion` — 15 for the
+/// AMFI-tightened generation). Read through libc, never a shell-out.
+fn macos_major() -> Option<u64> {
+    let mut buf = [0u8; 32];
+    let mut size = buf.len();
+    // SAFETY: the named sysctl is a string; buf is sized for it, size is
+    // in/out, and no new value is written (the null oldp form).
+    let rc = unsafe {
+        libc::sysctlbyname(
+            c"kern.osproductversion".as_ptr(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    let end = buf.iter().position(|b| *b == 0).unwrap_or(size);
+    let s = std::str::from_utf8(&buf[..end]).ok()?;
+    s.split('.').next()?.parse().ok()
+}
+
+/// Does this exe's code signature carry a CMS blob? The superblob's
+/// index holds a CSSLOT_CMS_SIGNATURE (5) entry exactly when the
+/// signature is a real one; the linker's adhoc signature is a code
+/// directory alone. FAT headers resolve the CURRENT arch's slice;
+/// anything unreadable answers true (the insert attempt is the
+/// pre-macOS-15 behavior — never a silent degradation there).
+fn exe_carries_cms_blob(exe: &Path) -> bool {
+    // true ONLY on a positive CMS-slot find — every other shape (no
+    // signature, a bare adhoc code directory, an unreadable file) has no
+    // CMS blob, and the gate's skip is the safe answer on the AMFI
+    // generations (the insert re-exec would be killed, not warned).
+    let Ok(bytes) = std::fs::read(exe) else {
+        return false;
+    };
+    let read_u32 = |off: usize, be: bool| -> Option<u32> {
+        let b = bytes.get(off..off + 4)?;
+        Some(if be {
+            u32::from_be_bytes([b[0], b[1], b[2], b[3]])
+        } else {
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        })
+    };
+    let base = match bytes.first_chunk::<4>() {
+        // FAT (the big-endian magics): the current arch's slice.
+        Some([0xca, 0xfe, 0xba, 0xbe]) | Some([0xca, 0xfe, 0xba, 0xbf]) => {
+            let n = read_u32(4, true).unwrap_or(0) as usize;
+            let want: u32 = if cfg!(target_arch = "aarch64") {
+                0x0100_000C // CPU_TYPE_ARM64
+            } else {
+                0x0100_0007 // CPU_TYPE_X86_64
+            };
+            let mut off = None;
+            for i in 0..n {
+                let e = 8 + i * 20;
+                if read_u32(e, true) == Some(want) {
+                    off = read_u32(e + 8, true);
+                    break;
+                }
+            }
+            match off {
+                Some(o) => o as usize,
+                None => return false,
+            }
+        }
+        // Thin 64-bit LE (stored CF FA ED FE) and 32-bit LE (stored CE FA
+        // ED FE) — the raw bytes, never a transposed read.
+        Some([0xcf, 0xfa, 0xed, 0xfe]) | Some([0xce, 0xfa, 0xed, 0xfe]) => 0,
+        _ => return false,
+    };
+    // The mach-o header: ncmds at base+16 (LE), load commands from
+    // base+32 (64-bit) or base+28 (32-bit). Find LC_CODE_SIGNATURE
+    // (0x1d); its dataoff is the signature blob's file offset.
+    let Some(ncmds) = read_u32(base + 16, false) else {
+        return false;
+    };
+    let is64 = bytes[base..base + 4] == [0xcf, 0xfa, 0xed, 0xfe];
+    let mut lc = base + if is64 { 32 } else { 28 };
+    for _ in 0..ncmds {
+        let (Some(cmd), Some(size)) = (read_u32(lc, false), read_u32(lc + 4, false)) else {
+            return false;
+        };
+        if cmd == 0x1d {
+            let Some(dataoff) = read_u32(lc + 8, false) else {
+                return false;
+            };
+            let soff = dataoff as usize;
+            // An adhoc signature is a BARE code directory (magic
+            // 0xFADE0CC0) — no superblob, no CMS slot. A real signature's
+            // superblob (magic 0xFADE0CC2) indexes it at slot type 5.
+            if read_u32(soff, true) != Some(0xFADE0CC2) {
+                return false;
+            }
+            let Some(count) = read_u32(soff + 8, true) else {
+                return false;
+            };
+            for i in 0..count {
+                if let Some(5) = read_u32(soff + 12 + (i as usize) * 8, true) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        lc += size as usize;
+    }
+    false // no LC_CODE_SIGNATURE at all — unsigned, no CMS blob
+}
+
+/// The macOS-15 AMFI gate: with an insertion armed, AMFI kills an
+/// exec'd image whose code signature carries no CMS blob — "no CMS
+/// blob … Unrecoverable CT signature issue", SIGSEGV, never reaching
+/// main (the macos-15 leg's silent death, proven by the unified log).
+/// The adhoc link signature has no CMS blob, so an UNSIGNED exe (a dev
+/// build, a CI test binary) must not re-exec into it; the boot's
+/// documented fallback (warn loudly, boot uninserted) fires instead.
+/// The signed production runtime carries the CMS blob and is untouched.
+fn amfi_kills_this_exe(exe: &Path) -> bool {
+    macos_major().is_some_and(|v| v >= 15) && !exe_carries_cms_blob(exe)
+}
+
 /// The cache-dir marker every inserted micro-dylib path carries
 /// (`<temp>/tebako-interpose/<sha256>.dylib`). Any tebako version's entry
 /// matches — an ancestor runtime's micro is as foreign to a child as ours.
@@ -252,6 +375,14 @@ pub(crate) fn self_insert(c_argv: *mut *mut c_char) {
         scrub_insertion_for_children();
         return;
     }
+    if let Ok(exe) = std::env::current_exe() {
+        if amfi_kills_this_exe(&exe) {
+            eprintln!(
+                "tebako: loader interposition skipped: this exe's adhoc signature carries no CMS blob, and macOS 15+'s AMFI kills an insert re-exec of it — booting uninserted (a signed runtime is unaffected)"
+            );
+            return;
+        }
+    }
     if let Err(reason) = try_insert(&std::env::temp_dir(), c_argv as *const *const c_char) {
         eprintln!("tebako: loader interposition unavailable: {reason}");
     }
@@ -260,6 +391,7 @@ pub(crate) fn self_insert(c_argv: *mut *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     #[test]
     fn sha256_hex_matches_the_known_vectors() {
@@ -305,6 +437,46 @@ mod tests {
             compose_insert_libraries(dylib, Some(OsString::from("/a/x.dylib:/b/y.dylib"))),
             OsString::from("/cache/tebako-interpose/ab12.dylib:/a/x.dylib:/b/y.dylib")
         );
+    }
+
+    #[test]
+    fn the_cms_parse_reads_this_adhoc_test_binary_as_uncarrying() {
+        // The linker's adhoc signature is a bare code directory — the
+        // parse must answer NO CMS slot (the first draft's transposed
+        // magic read answered true for everything and masked the gate,
+        // and the superblob-magic mismatch read it as signed).
+        let exe = std::env::current_exe().unwrap();
+        assert!(
+            !exe_carries_cms_blob(&exe),
+            "a cargo-built test binary is adhoc — no CMS slot"
+        );
+        // The positive half, when the host can sign: a copy signed with
+        // a real identity carries the CMS slot.
+        if Command::new("codesign").arg("--version").output().is_ok()
+            && !Command::new("security")
+                .args(["find-identity", "-v", "-p", "codesigning"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).contains("Developer ID"))
+                .unwrap_or(false)
+        {
+            return; // no identity on this host — the negative half stands alone
+        }
+        let dir = std::env::temp_dir().join(format!("cms-fixture-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let signed = dir.join("signed-fixture");
+        std::fs::copy(&exe, &signed).unwrap();
+        let status = Command::new("codesign")
+            .args(["--force", "--sign", "Developer ID"])
+            .arg(&signed)
+            .status()
+            .unwrap();
+        if status.success() {
+            assert!(
+                exe_carries_cms_blob(&signed),
+                "a real signature carries the CMS slot"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
