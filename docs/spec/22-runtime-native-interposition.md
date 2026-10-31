@@ -763,7 +763,7 @@ the authored `<jre>:ro` ingredient remains the spelling for an
 operator-INSTALLED host JRE (the non-wrapper pattern this section was
 locked on).
 
-### 3.6 The exe shape's own file-IO family (PLANNED — the mechanism and the driver's arm are DELIVERED 2026-10-28; the runtime link and its jail proof are pending; tebako-runtime-ruby#126)
+### 3.6 The exe shape's own file-IO family (DELIVERED 2026-10-31 — the mechanism, the arm, the factory link, and the jailed proof; tebako-runtime-ruby#126)
 
 The runtime exe defines class L's `dlopen`/`dlerror` for the whole
 process (§2 Rule L2), so a loader call routes through the mounts. It
@@ -854,25 +854,27 @@ host filesystem), and a missing family while `TEBAKO_JAIL` is bound
 (the jail covers loader calls, not the in-exe C library's own reads).
 Silent degradation is the one outcome the arm refuses.
 
-**What is still open.** The factory link (`--whole-archive`,
-`-Wl,--export-dynamic`, and `-lstdc++` for the dwarfs backend the
-archive carries) and the jail proof on a built runtime. The archive
-itself ships in the link unit (Linux legs): scoped like its siblings
+**The delivery record (2026-10-31).** The factory link
+(`--whole-archive`, `-Wl,--export-dynamic`, and `-lstdc++` for the
+dwarfs backend the archive carries) is tebako-runtime-ruby#305; the
+archive ships in the link unit (Linux legs): scoped like its siblings
 except the family's names ride an exact keep list
 (`crates/libtfs-preload/exe-shape-symbols.txt`, parity-tested against
 the definitions) because renaming ends the preemption, and deduped
-against both scoped siblings. Until the factory link and the proof
-land, every shipped runtime takes the absent path.
+against both scoped siblings. The first armed build proved the
+copy-boundary seam (above); v2.8.68 carries the guard. The jail proof
+is the boot smoke's §3.6 leg (tebako-runtime-ruby#309): a jailed child
+of the built runtime reads an ungranted host cert through libcrypto's
+`fopen64` and is denied, journaled — asserting, not skipping, on the
+family-carrying exe.
 
 **Acceptance (the issue's bar, not "the symbols are defined").** With
 `TEBAKO_JAIL=deny` and no grant for the cert path, a packaged app's
 `OpenSSL::X509::Store#add_file` / `set_default_paths` /
 `RAND_load_file` fails with the policy's named EPERM and the journal
 carries the denial; with no jail bound, the same run is
-byte-identical to today's. Both proven on the exe shape by the §3
-proof harness, after a runtime build — the bar this row is accepted
-by, and the reason the row stays PLANNED while the mechanism and the
-arm are delivered.
+byte-identical to today's. Proven on the exe shape by the §3 proof
+harness on a built runtime (tebako-runtime-ruby#309, green).
 
 ## 4. Class R — declarative boot materialization
 
