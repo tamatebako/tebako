@@ -172,9 +172,11 @@ jobs:
       # The tag-push leg creates the Release object itself.
       contents: write
       # The green-commit guard reads the CI workflow's runs for the tag's
-      # commit; a job-level `permissions:` block replaces the defaults,
-      # so this must be spelled out.
-      actions: read
+      # commit, and RE-FIRES a cancelled one (tebako#960: the shared
+      # CI-main concurrency group cancels a same-sha run when a later
+      # main push lands); a job-level `permissions:` block replaces the
+      # defaults, so both must be spelled out.
+      actions: write
     runs-on: ubuntu-24.04
     outputs:
       tag_name: ${{ steps.vars.outputs.tag_name }}
@@ -199,9 +201,10 @@ jobs:
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
           deadline=$((SECONDS + 3600))
+          cancels=0
           while :; do
             row="$(gh run list --workflow ci.yml --commit "$sha" --limit 20 \
-              --json status,conclusion,event \
+              --json databaseId,status,conclusion,event \
               | jq -c '[.[] | select(.event == "push")][0] // empty')"
             if [ -z "$row" ]; then
               echo "::error::no ci.yml run on $sha — a release is cut only from a commit the full matrix has seen (the aarch64 tier lives there)"
@@ -209,10 +212,29 @@ jobs:
             fi
             status="$(printf '%s' "$row" | jq -r .status)"
             conclusion="$(printf '%s' "$row" | jq -r '.conclusion // ""')"
+            run_id="$(printf '%s' "$row" | jq -r .databaseId)"
             if [ "$status" = "completed" ]; then
               if [ "$conclusion" = "success" ]; then
                 echo "ci.yml on $sha: success"
                 exit 0
+              fi
+              if [ "$conclusion" = "cancelled" ] && [ "$cancels" -lt 2 ]; then
+                # tebako#960: the shared CI-main concurrency group cancels
+                # a same-sha run when a LATER main push lands — the cancel
+                # says nothing about THIS commit's health. Re-fire it and
+                # keep waiting; the second cancel fails named (a live
+                # churn, not a flake — someone is pushing faster than the
+                # matrix settles).
+                cancels=$((cancels + 1))
+                echo "ci.yml on $sha: cancelled — re-firing run $run_id (re-fire $cancels of 2)"
+                gh run rerun "$run_id" || {
+                  echo "::error::the re-fire of cancelled run $run_id was refused"
+                  exit 1
+                }
+                # The re-fired run is a full matrix — the hour restarts.
+                deadline=$((SECONDS + 3600))
+                sleep 60
+                continue
               fi
               echo "::error::ci.yml on $sha concluded '$conclusion' — a release is cut only from a green commit"
               exit 1
