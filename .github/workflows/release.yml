@@ -200,7 +200,7 @@ jobs:
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
-          deadline=$((SECONDS + 3600))
+          deadline=$((SECONDS + 7200))
           cancels=0
           while :; do
             row="$(gh run list --workflow ci.yml --commit "$sha" --limit 20 \
@@ -232,7 +232,7 @@ jobs:
                   exit 1
                 }
                 # The re-fired run is a full matrix — the hour restarts.
-                deadline=$((SECONDS + 3600))
+                deadline=$((SECONDS + 7200))
                 sleep 60
                 continue
               fi
@@ -240,7 +240,7 @@ jobs:
               exit 1
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::ci.yml on $sha still '$status' after 60 minutes — refusing to release"
+              echo "::error::ci.yml on $sha still '$status' after 120 minutes — refusing to release"
               exit 1
             fi
             echo "ci.yml on $sha: $status — waiting"
