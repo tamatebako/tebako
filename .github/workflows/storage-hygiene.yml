@@ -35,7 +35,13 @@ on:
       budget_gb:
         description: Fail the job when artifacts plus caches exceed this.
         type: number
-        default: 10
+        # 10 → 16 (tebako#966): the artifact treadmill is fixed (retention
+        # + the results-only bench upload), and what remains is the HOT
+        # cache floor — the rust/vcpkg working set is ~11 GiB on a normal
+        # day (measured 2026-10-30: 11.78 GiB with zero stale lanes). The
+        # budget is working-set + the heaviest single day's in-flight
+        # feeds; a runaway lane still trips it.
+        default: 16
   schedule:
     # 04:41 UTC — after the canaries, before any working day starts.
     - cron: "41 4 * * *"
@@ -44,7 +50,7 @@ on:
       budget_gb:
         description: Override the budget for one run.
         type: number
-        default: 10
+        default: 16
 
 permissions:
   # Deleting artifacts and caches is a write to the repository's Actions
@@ -67,7 +73,7 @@ jobs:
       ARTIFACT_DAYS: ${{ inputs.artifact_days || 14 }}
       CACHE_DAYS: ${{ inputs.cache_days || 14 }}
       RETENTION_DAYS: ${{ inputs.retention_days || 14 }}
-      BUDGET_GB: ${{ inputs.budget_gb || 10 }}
+      BUDGET_GB: ${{ inputs.budget_gb || 16 }}
     steps:
       - name: Stamp the retention policy
         shell: bash
