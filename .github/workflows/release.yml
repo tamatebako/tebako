@@ -231,7 +231,7 @@ jobs:
                   echo "::error::the re-fire of cancelled run $run_id was refused"
                   exit 1
                 }
-                # The re-fired run is a full matrix — the hour restarts.
+                # The re-fired run is a full matrix — the budget restarts.
                 deadline=$((SECONDS + 7200))
                 sleep 60
                 continue
