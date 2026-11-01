@@ -499,16 +499,19 @@ there; no second arch axis is ever introduced.
 * *Wheel platform tags ↔ triplets* — the one table:
 
 +
-| wheel platform tag (PEP 425/600) | tebako triplet |
-|----------------------------------|----------------|
-| `manylinux_*_x86_64`             | `linux-gnu-x86_64` |
-| `manylinux_*_aarch64`            | `linux-gnu-arm64` |
-| `musllinux_*_x86_64`             | `linux-musl-x86_64` |
-| `musllinux_*_aarch64`            | `linux-musl-arm64` |
-| `macosx_*_x86_64`                | `macos-x86_64` |
-| `macosx_*_arm64`                 | `macos-arm64` |
-| `macosx_*_universal2`            | split per-arch at bake time — the payload stays per-triplet |
-| `win_amd64` / `win_arm64`        | RESERVED — the windows python runtime is not yet shipped; readers MUST NOT guess a mapping |
+[cols="<,<",options="header"]
+|===
+| wheel platform tag (PEP 425/600) | tebako triplet
+| `manylinux_*_x86_64` | `linux-gnu-x86_64`
+| `manylinux_*_aarch64` | `linux-gnu-arm64`
+| `musllinux_*_x86_64` | `linux-musl-x86_64`
+| `musllinux_*_aarch64` | `linux-musl-arm64`
+| `macosx_*_x86_64` | `macos-x86_64`
+| `macosx_*_arm64` | `macos-arm64`
+| `macosx_*_universal2` | split per-arch at bake time — the payload stays per-triplet
+| `win_amd64` / `win_arm64` | RESERVED — the windows python runtime is not yet shipped; readers MUST NOT guess a mapping
+|===
+
 
 +
 The musllinux-vs-manylinux (libc) distinction rides the triplet axis

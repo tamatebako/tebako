@@ -302,7 +302,7 @@ process from the environment merged over the `network:` section of
 `~/.tebako/config.yaml` — *env wins per key* — and installed before
 the first request (agent construction caches the transport). The
 resolution is journaled (`event=network-config …`) with proxy
-credentials REDACTED (`http://***@host:port`). There is no verify-off
+credentials REDACTED (`+++http://***@host:port+++`). There is no verify-off
 spelling, and there never will be.
 
 *Proxy.*
@@ -311,7 +311,7 @@ spelling, and there never will be.
 cases), the de-facto grammar: comma list, suffix match, `*`;
 localhost is always direct. Config mirror: `network.proxy: <url>`.
 * Precedence: env → config → direct. Credentials ride the URL
-(`http://user:pass@host:port`) — the only auth spelling.
+(`+++http://user:pass@host:port+++`) — the only auth spelling.
 * HTTPS rides CONNECT through the proxy; TLS terminates at the TARGET.
 An inspecting proxy re-encrypts — that is what the trust half below
 is for.

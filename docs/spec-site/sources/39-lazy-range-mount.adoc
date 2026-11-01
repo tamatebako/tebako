@@ -351,13 +351,16 @@ semantics, finer grain.
 * *Exit codes (reuse, never extend — the 65–79 space stands):*
 
 +
-| condition | class |
-|---|---|
-| descriptor invalid, lazy config malformed, non-HTTPS source | 65 usage |
-| mount-open fetch failure; offline miss; server unusable | 69 unavailable |
-| sidecar pin mismatch; group digest mismatch (2nd); whole-sha mismatch at seal | 70 integrity |
-| cached blksum torn (65) / off its pin (70) — the §3 cache arm | 65 / 70 |
-| store IO (lock, block write, assemble, rename) | 74 IO |
+[cols="<,<",options="header"]
+|===
+| condition | class
+| descriptor invalid, lazy config malformed, non-HTTPS source | 65 usage
+| mount-open fetch failure; offline miss; server unusable | 69 unavailable
+| sidecar pin mismatch; group digest mismatch (2nd); whole-sha mismatch at seal | 70 integrity
+| cached blksum torn (65) / off its pin (70) — the §3 cache arm | 65 / 70
+| store IO (lock, block write, assemble, rename) | 74 IO
+|===
+
 
 +
 spec 09's 71/72 bind the sidecar's signed-index chain exactly as they
