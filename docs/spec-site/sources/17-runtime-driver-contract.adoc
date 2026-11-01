@@ -297,14 +297,15 @@ copy, no second config read in the driver).
 convention (§2's `SSL_CERT_FILE` row, spec 22 §4) materializes a
 MERGED bundle instead of the image's bare `cert.pem`: the image roots
 ** the enumerated platform store (rustls-native-certs; the driver is
-  not size-gated) in platform mode, or the image roots + the parsed
-  `extra_ca` PEMs in additive mode. The merged bundle lives under the
-  same resources cache with the same digest discipline (spec 22 §4's
-  write-once + per-boot rehash), content-keyed by the merge inputs.
-  Precedence is the §2 row's unchanged: a user's real host-path
-  `SSL_CERT_FILE` always wins; the stale in-VFS spelling is still
-  rewritten. Platform + additive simultaneously is the netconfig
-  layer's named error, never the driver's.
++
+not size-gated) in platform mode, or the image roots + the parsed
+`extra_ca` PEMs in additive mode. The merged bundle lives under the
+same resources cache with the same digest discipline (spec 22 §4's
+write-once + per-boot rehash), content-keyed by the merge inputs.
+Precedence is the §2 row's unchanged: a user's real host-path
+`SSL_CERT_FILE` always wins; the stale in-VFS spelling is still
+rewritten. Platform + additive simultaneously is the netconfig
+layer's named error, never the driver's.
 * *The operator CA store (tebako#541; spec 22 §4's Rule R4 owns the
 *mechanics).* The machine-wide `$TEBAKO_HOME/trust/ca/*.pem` store
 merges into the same bundle WITHOUT a conveyed verdict too — an image

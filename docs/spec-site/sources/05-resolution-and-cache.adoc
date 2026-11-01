@@ -154,9 +154,10 @@ feedstock>` alone, no authored config required.
 `https://github.com/tamatebako/tebako-runtime-ruby/releases/download`
 (the ruby factory line — the back-compat floor every pre-chain
 consumer already speaks).
-  An edge no channel answers is a NAMED error enumerating the channels
-  tried (never a silent query of a base that hosts no such engine — a
-  wrong-line 404 is diagnosed as what it is).
++
+An edge no channel answers is a NAMED error enumerating the channels
+tried (never a silent query of a base that hosts no such engine — a
+wrong-line 404 is diagnosed as what it is).
 * Signing of the index and the artifacts it names: spec 09 §5 (every
 consumable index form signed — the same-channel-MITM gap closes) and
 spec 09 §4's runtime-fetch verification point (the per-artifact
@@ -234,10 +235,11 @@ symlink, resolves to the real binary, and takes the first seat or no
 seat instead);
 .* `<home>/runtimes/<entry>/<exe>` (a store runtime — the driver's
 seat).
-   The *store-grammar markers* are: any of `config.yaml`, `shims/`,
-   `payloads/`, `runtimes/`, `registries/`, `keys/`, `trust/`. A
-   directory carrying none of them is not a home and the tier does not
-   fire.
++
+The *store-grammar markers* are: any of `config.yaml`, `shims/`,
+`payloads/`, `runtimes/`, `registries/`, `keys/`, `trust/`. A
+directory carrying none of them is not a home and the tier does not
+fire.
 . *The platform default* — `~/.tebako`; windows:
 `%LOCALAPPDATA%\tebako` (falling back to `%USERPROFILE%\.tebako`).
 
@@ -330,8 +332,9 @@ run's own enforcement strength, never upgraded;
 with the seeding package as origin;
 ** `TEBAKO_OFFLINE=1` does not block seeding (no network is involved);
 ** `TPKG_FLAG_NO_INSTALL` packages never seed (spec 02 §5).
-  The shared-runtime preset needs no exception: its artifacts arrive
-  through the ordinary resolve-download-verify-install path.
++
+The shared-runtime preset needs no exception: its artifacts arrive
+through the ordinary resolve-download-verify-install path.
 
 
 [%unnumbered]
