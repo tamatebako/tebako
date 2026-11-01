@@ -1,0 +1,240 @@
+= tpkg wire format (L0)
+:edition: 1.0
+:doctype: standard
+:docnumber: TBK SPEC 02
+:published-date: 2026-11-01
+:status: published
+:security: unrestricted
+:committee: Tebako
+:committee-type: technical
+:mn-document-class: ribose
+:mn-output-extensions: xml,html,pdf,rxl
+:fullname: The Tebako Project
+:publisher: The Tebako Project
+:local-cache-only:
+:data-uri-image:
+
+// source: docs/spec/02-tpkg-wire-format.md @ a2775622fdc1e99b530573c14444ee9c6cecf8b9
+
+Normative byte-level specification of the tebako package container.
+Source of truth: pass:c,q,a,m,p[`crates/tpkg`] (byte-exact with the reference C99
+pass:c,q,a,m,p[`include/tebako/tpkg.h`]; golden vectors pin the layout). All v1 integers
+little-endian; the trailer header sits at the logical EOF (§1) at fixed
+size. The container
+knows *nothing* about runtimes, entrypoints, or languages — it carries
+bytes, slots, mounts, and a resolution hint. *Authenticated, signed, and
+*encrypted packages:* authentication/signing is the v2 extension (§4);
+encryption is a TFS-layer transform of the slot images (spec 10) — the
+container itself stays byte-identical either way.
+
+
+[%unnumbered]
+== 1. File anatomy
+
+
+[source]
+----
+[payload bytes][slot table: n × 280][v2 extension?][trailer header: 166 @ EOF]
+----
+
+"EOF" is the LOGICAL end of the package: the physical EOF, except on a
+package signed post-press. On a Mach-O package codesigned post-press
+(spec 31 §1.2), codesign appends the code-signature superblob after the
+trailer, 16-byte aligned with a zero pad. Readers locate the trailer end
+via the tail slice's LC_CODE_SIGNATURE: when the superblob reaches the
+physical EOF exactly, the trailer header is the self-validating (magic +
+crc + bounds) window ending at the superblob's dataoff or at most 15
+zero pad bytes earlier; every other shape reads at the physical EOF.
+On a PE package Authenticode-signed post-press (spec 34 §1.2/§6), the
+signer appends the WIN_CERTIFICATE table after the trailer and points
+the security data directory (pass:c,q,a,m,p[`IMAGE_DIRECTORY_ENTRY_SECURITY`], a file
+offset, not an RVA) at it: when the certificate table reaches the
+physical EOF exactly, the trailer header is the same self-validating
+window ending at the table's start or at most 15 zero pad bytes earlier
+(the table is 8-byte aligned); an absent or zero-length directory entry
+means unsigned. Writers never produce the suffixed shape — only the
+platform signer does, and the container bytes it hashes are unchanged by
+it.
+
+
+[%unnumbered]
+== 2. Trailer header — 166 bytes, always at the package end
+
+(The package end is the physical EOF, or — on a post-press-signed
+Mach-O/PE — just before the trailing superblob's or certificate table's
+alignment pad; §1.)
+
+
+[cols=">,>,<",options="header"]
+|===
+| offset | size | field
+| 0 | 10 | magic `"TEBAKOTFS\0"`
+| 10 | 4 | u32 version = *1* (extensions ride flags, not version bumps)
+| 14 | 4 | u32 package_flags (bit0 LEAN, bit1 SIGNED_V2, bit2 NO_INSTALL, bit3 QUIET_NOTICES)
+| 18 | 4 | u32 slot_count (1..=8)
+| 22 | 8 | u64 slot_table_offset (absolute file offset of slot 0)
+| 30 | 128 | char runtime_ref[128] — resolution hint (spec 05 §1); empty = classic
+| 158 | 4 | u32 launcher_abi
+| 162 | 4 | u32 crc32 over [0,162) — accident integrity, NOT authenticity
+|===
+
+
+pass:c,q,a,m,p[`TPKG_MAGIC_PREFIX_LEN`] = 4 (pass:c,q,a,m,p[`"TEBA"`]) discriminates absent vs corrupt.
+
+Bit0's _name_ is the only deprecated thing about it (locked 2026-08-25,
+tebako#460): read *LEAN = 1* as "the package does not carry its
+runtime pair" and LEAN = 0 as "the runtime pair is carried as ordinary
+slots" — the _shared-runtime_ and _self-contained_ presets of spec 23
+§13.2 (whose pass:c,q,a,m,p[`lean`]/pass:c,q,a,m,p[`fat`] aliases exist only so older documents stay
+readable). The BIT itself stays load-bearing exactly as spec 18 S4
+requires: flags are never skipped, and an unknown set bit is a named
+refusal.
+
+
+[%unnumbered]
+== 3. Slot record — 280 bytes
+
+
+[cols=">,>,<",options="header"]
+|===
+| offset | size | field
+| 0 | 8 | u64 offset (absolute file offset of the image)
+| 8 | 8 | u64 size
+| 16 | 4 | u32 format_id — IMAGE FORMAT ONLY: 0=auto, 1=dwarfs, 2=squashfs, 3=zip, 5=limnifs (spec 20, PLANNED) (4=runtime: legacy role wart, §5)
+| 20 | 4 | u32 flags (0 today; future home of role bits)
+| 24 | 256 | char mount_point[256] (UTF-8, NUL-padded)
+|===
+
+
+
+[%unnumbered]
+== 4. v2 chain-of-trust extension (opt-in; flag bit1 pass:c,q,a,m,p[`SIGNED_V2`])
+
+Between slot table and header; *all its numerics big-endian* (the header
+stays v1-little-endian). v1 readers ignore the flag and run the package —
+trust enforcement is a reader capability, not a format barrier.
+
+
+[cols=">,>,<",options="header"]
+|===
+| offset | size | field
+| 0 | 256 | per-slot SHA-256, 8 × 32 B (digest of slot i at i×32; tail zeroed)
+| 256 | 8 | signer keyid (low 64 bits of OpenPGP fingerprint, BE)
+| 264 | sig_len | OpenPGP detached signature (binary packets)
+| 264+sig_len | 4 | u32be sig_len (1..=65536)
+|===
+
+
+Canonical signed bytes: pass:c,q,a,m,p[`slot table ‖ digests ‖ keyid ‖ header`] —
+everything except the signature and its length field.
+
+
+[%unnumbered]
+== 5. The installability flag (bit2 pass:c,q,a,m,p[`NO_INSTALL`])
+
+A run is a run — a plain execution never writes payload slices into the
+local store, with exactly one scoped exception: the lazy seed of spec 05
+§4 (a self-contained package MAY seed the cache with the artifacts it
+carries — best-effort, never blocking the run). pass:c,q,a,m,p[`NO_INSTALL`] packages
+never seed. Installation is otherwise the EXPLICIT verb
+(pass:c,q,a,m,p[`tebako install <path>`]; the bootstrap's pass:c,q,a,m,p[`--tebako-install`] refuses or
+guides, spec 06 §4 exit 76). pass:c,q,a,m,p[`NO_INSTALL`] marks a publisher-frozen
+package: it RUNS standalone
+but every install attempt is refused with a named error. Absence means
+installable-on-request, including packages pressed before the verb
+existed — pass-through like every flag.
+
+
+[%unnumbered]
+== 5a. The quiet-notices flag (bit3 pass:c,q,a,m,p[`QUIET_NOTICES`]; tebako#400, spec 23 §14)
+
+The developer's declaration that the package's runs suppress the
+unsigned-legacy-trailer warning (spec 09 §v1-legacy) and the progress
+lines (spec 06 §5) — declared through any registry channel (CLI
+pass:c,q,a,m,p[`--quiet-notices`], env pass:c,q,a,m,p[`TEBAKO_QUIET_NOTICES`], compose key
+pass:c,q,a,m,p[`quiet_notices:`]), resolved once at press, baked here. Run-time reads
+only the bit: the package behaves identically on every machine. The bit
+rides inside the signed region, so it cannot be forged onto a signed
+package; pass:c,q,a,m,p[`TEBAKO_REQUIRE_SIGNED=1`] is checked FIRST and outranks it,
+and the audit-journal entry is written regardless. Absence means the
+default notice behavior — pass-through like every flag.
+
+
+[%unnumbered]
+== 6. Orthogonality note (normative)
+
+pass:c,q,a,m,p[`format_id`] answers exactly one question: how to read the slot's bytes.
+Whether a slot is a runtime, and which payload carries the entrypoint, are
+*roles* — L2 semantics declared by manifests (spec 03), never encoded in
+the format axis. The v1 pass:c,q,a,m,p[`format_id = 4 (TPKG_FORMAT_RUNTIME)`] marks the fat
+runtime slot so v1 loaders skip handing it over as a mount; it is a role
+riding in the format field, kept only for backward compatibility. The
+two-slot era makes the wart obsolete in practice: a self-contained
+package carries its runtime as ordinary exe + env-image slots
+(spec 19 §6.1), and presses never emit format 4 anymore. The cleanup
+path: slot role moves to slot flags / package manifest, and
+pass:c,q,a,m,p[`format_id`] returns to pure image-format semantics. New semantics must
+never again be smuggled into the format axis.
+
+
+[%unnumbered]
+== 5b. Typed extension blocks (the L2 home; locked 2026-07-26)
+
+Following OCI's model — the manifest is a separate blob BESIDE the
+layers, readable without pulling any image — the package-level (L2)
+manifest lives in the container but OUTSIDE every payload image. The v2
+signing extension already proved the mechanism: blocks between the slot
+table and the trailer header are invisible to v1 readers (they only read
+the header at EOF and the slot table at its recorded offset; the bounds
+check never requires the table to abut the header).
+
+Generalized layout:
+
+
+[source]
+----
+[bootstrap][payload slots][slot table][ext blocks…][v2 signing ext?][header @EOF]
+
+ext block: [u32be type][u32be length][payload bytes]
+  type 1 = v2 signing extension (historical: immediately before the
+           header, self-delimiting from the tail via its sig_len field)
+  type 2 = package manifest (YAML — spec 03 §6; identity, entrypoint/
+           suite composition, package-level jail + env, per-entry
+           runtime refs, per-slot mount modes — exclusive/union,
+           spec 17 §1)
+----
+
+Rules: blocks walk forward from the end of the slot table (type+length
+self-delimit); the v2 signing ext, when present, is LAST before the
+header (unchanged bytes/position); unknown block types are skipped by
+v1-era-aware readers (forward-compat) but rejected by pass:c,q,a,m,p[`validate`] with a
+named error; a package manifest never duplicates payload manifests — it
+references slots, and payload manifests (spec 03) stay inside images
+(self-describing payloads). The 128-byte single pass:c,q,a,m,p[`runtime_ref`] remains
+for v1-era loaders; per-entry runtime references for suites and
+multi-runtime packages live in the type-2 manifest (no size cap).
+
+
+[%unnumbered]
+== 6. Absent vs corrupt; validation
+
+* Last-166-byte window without the pass:c,q,a,m,p[`"TEBA"`] prefix → pass:c,q,a,m,p[`NoTrailer`] (classic
+bundle; callers may fall back to offset auto-detection).
+* Prefix ok, magic bad → pass:c,q,a,m,p[`Magic`]. Magic ok, crc bad → pass:c,q,a,m,p[`Crc`].
+* Version ≠ 1 → pass:c,q,a,m,p[`Version`]. Slot count outside 1..=8 → pass:c,q,a,m,p[`Slots`].
+* Structural validation mirrors the reference C pass:c,q,a,m,p[`tpkg_validate()`]:
+pass:c,q,a,m,p[`offset+size`] non-overflowing, pass:c,q,a,m,p[`format_id`] ≤ 5 (spec 20 raised the
+bound from the C reference's ≤ 4 — the documented parity end: the C99
+reader keeps rejecting format 5 with its named invalid error; ids ≥ 6
+stay unallocated), pass:c,q,a,m,p[`runtime_ref`] and mount
+points NUL-terminated within their fixed fields; table fits entirely
+before the header.
+* v2: flag/extension co-presence; zeroed digest tail; signature non-empty
+and ≤ 65536; signer keyid non-zero.
+
+
+[%unnumbered]
+== 7. Errors (Rust pass:c,q,a,m,p[`TpkgError`] ↔ C pass:c,q,a,m,p[`TPKG_ERR_*`], 1:1)
+
+pass:c,q,a,m,p[`NoTrailer`], pass:c,q,a,m,p[`Magic`], pass:c,q,a,m,p[`Crc`], pass:c,q,a,m,p[`Version`], pass:c,q,a,m,p[`Slots`], pass:c,q,a,m,p[`Bounds`], pass:c,q,a,m,p[`Invalid`] —
+pass:c,q,a,m,p[`strerror`] strings byte-identical with the C implementation.

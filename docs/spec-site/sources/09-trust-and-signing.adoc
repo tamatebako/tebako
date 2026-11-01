@@ -299,7 +299,7 @@ Non-interactive flows supply the expected fingerprint out of band via
 trust class (exit 72) printing both fingerprints.
 . *Out-of-band confirmation (second channel, never auto-trusted).*
 Authors publish the same fingerprint where their audience already
-trusts them: `https://<author-domain>/.well-known/tebako-key.asc`
+trusts them: `+++https://<author-domain>/.well-known/tebako-key.asc+++`
 (the well-known convention), their docs/README, and for GitHub-hosted
 projects the org's `.github` repository (zero new infrastructure).
 The CLI prints these URLs for the user to compare; it never upgrades
