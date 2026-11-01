@@ -1,0 +1,29 @@
+---
+metanorma:
+  source:
+    files:
+      - sources/index.adoc
+      - sources/01-overview.adoc
+      - sources/02-tpkg-wire-format.adoc
+      - sources/03-payload-manifest.adoc
+      - sources/04-references-and-registry.adoc
+      - sources/05-resolution-and-cache.adoc
+      - sources/06-launcher-abi.adoc
+      - sources/07-shims-and-dispatch.adoc
+      - sources/08-jails.adoc
+      - sources/09-trust-and-signing.adoc
+      - sources/10-encryption.adoc
+      - sources/11-tfs-vfs-model.adoc
+      - sources/17-runtime-driver-contract.adoc
+      - sources/25-trace-observability.adoc
+      - sources/36-release-bundles.adoc
+      - sources/37-registry-book.adoc
+      - sources/38-oci-distribution.adoc
+      - sources/39-lazy-range-mount.adoc
+      - sources/40-audit-ledger.adoc
+      - sources/41-registry-transparency.adoc
+      - sources/42-tree-solving.adoc
+
+  collection:
+    organization: "Tebako"
+    name: "Tebako Specifications"

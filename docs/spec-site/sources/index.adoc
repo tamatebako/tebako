@@ -1,0 +1,94 @@
+= Tebako Specifications — Series landing
+:edition: 1.0
+:doctype: standard
+:published-date: 2026-11-01
+:status: published
+:security: unrestricted
+:committee: Tebako
+:committee-type: technical
+:mn-document-class: ribose
+:mn-output-extensions: xml,html,pdf,rxl
+:fullname: The Tebako Project
+:publisher: The Tebako Project
+:local-cache-only:
+:data-uri-image:
+
+== The series
+
+The tebako ecosystem packages applications and runtimes into single
+executables whose loading behavior is governed by normative
+specifications: the wire format of the package container, the manifest
+grammar of a payload, the contract between the loader and a runtime, and
+the policies for resolution, caching, jailing, trust, and observability.
+Those normative texts live as Markdown files in the product repository,
+and an implementer — a runtime factory author, a registry operator, a
+feedstock maintainer — has until now read them only as raw Markdown
+source, with no rendered document to cite.
+
+The Tebako Specifications (TBK SPEC) series closes that gap. Each
+document in the series is one normative text from the repository,
+converted to a Metanorma standard document and rendered to HTML and PDF
+as a member of a single collection. The document numbering follows the
+numbering of the source files: TBK SPEC 02 renders `02-tpkg-wire-format.md`,
+and so on. Section numbering, section titles, tables, and code listings
+are carried over verbatim, so a reference of the form "spec 06 §4"
+resolves identically against the Markdown source and against the
+rendered document.
+
+== Source of truth and synchronization
+
+The Markdown files under `docs/spec/` in the `tamatebako/tebako`
+repository are the source of truth for every document in the series.
+This series is their rendered form; the AsciiDoc twin of a specification
+is derived from the Markdown and never edited independently. The
+Markdown sources themselves are not modified by the rendering process.
+
+Each rendered document records the blob SHA of the Markdown file it was
+converted from in a comment line of the form
+`// source: docs/spec/NN-name.md @ <sha>`. The drift gate at
+`docs/spec-site/tools/sync.rb` recomputes the blob SHA of every
+referenced Markdown source and compares it with the recorded value. The
+gate exits with status 0 when every rendered twin is current, and exits
+1 naming the drifted documents when a Markdown source has moved without
+its rendered twin being updated. A continuous-integration job runs the
+gate on every pull request that touches `docs/spec/`, so a specification
+edit cannot land without its rendered twin following it.
+
+The conversion from Markdown to AsciiDoc is performed and reviewed by
+hand; the gate does not regenerate document content. After a
+specification edit has been carried into its twin and reviewed,
+`ruby docs/spec-site/tools/sync.rb --sync` updates the recorded SHAs to
+bless the new state.
+
+== Documents in the series
+
+[cols="<,<,<",options="header"]
+|===
+| Document | Title | Markdown source
+
+| link:01-overview.html[TBK SPEC 01] | System overview | `docs/spec/01-overview.md`
+| link:02-tpkg-wire-format.html[TBK SPEC 02] | tpkg wire format (L0) | `docs/spec/02-tpkg-wire-format.md`
+| link:03-payload-manifest.html[TBK SPEC 03] | Payload manifest (L1) | `docs/spec/03-payload-manifest.md`
+| link:04-references-and-registry.html[TBK SPEC 04] | References and registries (L3) | `docs/spec/04-references-and-registry.md`
+| link:05-resolution-and-cache.html[TBK SPEC 05] | Resolution and machine cache (L3) | `docs/spec/05-resolution-and-cache.md`
+| link:06-launcher-abi.html[TBK SPEC 06] | Launcher ABI (bootstrap → runtime) | `docs/spec/06-launcher-abi.md`
+| link:07-shims-and-dispatch.html[TBK SPEC 07] | Shims and dispatch | `docs/spec/07-shims-and-dispatch.md`
+| link:08-jails.html[TBK SPEC 08] | Jails: host-access policy | `docs/spec/08-jails.md`
+| link:09-trust-and-signing.html[TBK SPEC 09] | Trust and signing (authentication) | `docs/spec/09-trust-and-signing.md`
+| link:10-encryption.html[TBK SPEC 10] | Encryption (confidentiality) | `docs/spec/10-encryption.md`
+| link:11-tfs-vfs-model.html[TBK SPEC 11] | TFS: the virtual filesystem layer | `docs/spec/11-tfs-vfs-model.md`
+| link:17-runtime-driver-contract.html[TBK SPEC 17] | The runtime driver contract (any language) | `docs/spec/17-runtime-driver-contract.md`
+| link:25-trace-observability.html[TBK SPEC 25] | Trace observability: the interception bus, diagnosis, and coverage | `docs/spec/25-trace-observability.md`
+| link:36-release-bundles.html[TBK SPEC 36] | Release bundles (the runtime publish unit) | `docs/spec/36-release-bundles.md`
+| link:37-registry-book.html[TBK SPEC 37] | The registry book: federation, aliases, credentials, the official seed | `docs/spec/37-registry-book.md`
+| link:38-oci-distribution.html[TBK SPEC 38] | OCI distribution (`tfs+oci:`) | `docs/spec/38-oci-distribution.md`
+| link:39-lazy-range-mount.html[TBK SPEC 39] | Lazy range-fetch mounting of runtime images | `docs/spec/39-lazy-range-mount.md`
+| link:40-audit-ledger.html[TBK SPEC 40] | The audit ledger: queries, the anchor, and the auditor's walk | `docs/spec/40-audit-ledger.md`
+| link:41-registry-transparency.html[TBK SPEC 41] | Registry transparency: completeness proofs for the public fabric | `docs/spec/41-registry-transparency.md`
+| link:42-tree-solving.html[TBK SPEC 42] | Tree solving and lockfiles: one answer for a whole composition | `docs/spec/42-tree-solving.md`
+|===
+
+Specifications whose number is absent from the table — the internal
+process documents and the documents outside the public format/contract
+set — are not part of this series rendering and remain readable in the
+repository.
