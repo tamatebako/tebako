@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -75,8 +76,8 @@ later (§11).
 
 The issue's sketch ("a new TFS backend `http-range` beside
 zip/dwarfs-t/squashfs/tar") is refined against the shipped seam. The
-spec 11 `Backend` trait (`crates/tfs/src/backend.rs`) is *path-addressed
-*and format-keyed*: `stat`/`pread`/`read_dir`/`read_link` by in-image
+spec 11 `Backend` trait (`+++crates/tfs/src/backend.rs+++`) is *path-addressed
+and format-keyed*: `stat`/`pread`/`read_dir`/`read_link` by in-image
 path, selected by magic detection (spec 20 §3). Transport is not a
 format — `format_id` answers only "how do I read these bytes"
 (orthogonality law, spec 00). An HTTP Range transport placed at the
@@ -86,8 +87,8 @@ Backend seam would either fake a format (wrong) or re-implement one
 The correct layer is the one below the format backend. Spec 11 §5's
 mount-source kinds (host-file, memory, file-region, VFS-file-region) all
 serve positioned byte reads into the mount constructors
-(`crates/tfs/src/mount.rs`). This spec adds a *fifth mount-source
-*kind: remote-range*, behind a byte-source abstraction:
+(`+++crates/tfs/src/mount.rs+++`). This spec adds a *fifth mount-source
+kind: remote-range*, behind a byte-source abstraction:
 
 
 [source]
@@ -108,7 +109,7 @@ backend learns to write.
 unchanged (the 512-byte sniff is one small range read at open);
 `writable()` stays `None`.
 * *The limnifs adapter gains a sourced open* beside
-`LimnifsBackend::from_image(Vec<u8>)` (`crates/tfs/src/backends_limnifs.rs`):
+`+++LimnifsBackend::from_image(Vec&lt;u8&gt;)+++` (`+++crates/tfs/src/backends_limnifs.rs+++`):
 mount-open fetches, through the caching byte source, the manifest
 prefix (header → feature flags → metadata reference + inline metadata
 blob → slab index → history — the self-delimiting walk the adapter
@@ -133,8 +134,8 @@ rule, unchanged.
 
 The issue's open question — whole-file sha256 at seal vs per-block-group
 digests at read — is decided: *per-block-group digests at read is the
-*PRIMARY design; the whole-file sha256 verifies at seal as the mandatory
-*second anchor.* The rejected alternative (whole-file verify only at
+PRIMARY design; the whole-file sha256 verifies at seal as the mandatory
+second anchor.* The rejected alternative (whole-file verify only at
 seal) is rejected on the threat model, not on convenience.
 
 *Threat model.* Today's law (spec 05 §4): verification at fetch/install,
@@ -156,7 +157,7 @@ whose ids match its own evil metadata.)
 bytes (the wire bytes — format-agnostic, so the same source later
 serves dwarfs; the final group is short). Groups align all cache,
 verification, and progress accounting (§4, §7).
-* *The digest sidecar* — `<image>.blksum.json`, published beside the
+* *The digest sidecar* — `+++&lt;image&gt;.blksum.json+++`, published beside the
 image by the PUBLISHER (the runtime factory / the feedstock publish
 leg; `tebako publish` generates it in-process in the same invocation
 that stages the release bytes): a versioned JSON document
@@ -172,8 +173,7 @@ the binary the leg already runs, a runtime pair can ship with no
 sidecar and lazy seeding can never engage (tebako#868). No second
 implementation of the group scheme exists, by construction.
 * *The sidecar's own anchor* rides the existing channel, additively:
-the release shard/registry row gains `image.blksum: {filename,
-sha256}` (mirror-only, spec 03 §4's tier-3 rule); where the index is
+the release shard/registry row gains `+++image.blksum: {filename, sha256}+++` (mirror-only, spec 03 §4's tier-3 rule); where the index is
 signed (spec 09 §5) the field is covered exactly like `image.sha256`.
 The sidecar is fetched and verified against that pin BEFORE the first
 range read; a sidecar whose bytes do not match its pin is the named
@@ -199,7 +199,7 @@ installed one.
 * *Missing sidecar → LOUD eager fallback (locked).* Lazy is requested
 but the release publishes no sidecar (every pre-2026 image): the
 loader fetches the whole image exactly as today (whole-file sha256
-verify — EQUAL trust strength, no downgrade), with a stderr warning +
+verify — EQUAL trust strength, no downgrade), with a stderr warning {plus}
 journal line (`event=lazy-fallback reason=blksum-missing`) naming the
 artifact. Never a hard error — every published image must stay
 runnable — and never silent (invariant 9; the spec 05 §4 stale-serve
@@ -207,7 +207,7 @@ precedent for loud degradation).
 * *The cached-blksum arm (locked, with the §7 flip).* The loader
 fetches and pin-verifies the sidecar at INSTALL time regardless — the
 seed decision needs it — so the install also writes it into the entry
-(`<image>.blksum.json`, tmp+rename, BEFORE the descriptor's commit
+(`+++&lt;image&gt;.blksum.json+++`, tmp+rename, BEFORE the descriptor's commit
 rename). The mount-open consults the cache FIRST: a verified hit is a
 zero-network open (nothing the exec phase owes the wire); a miss
 fetches as before and writes through (best-effort — the verified
@@ -240,14 +240,14 @@ runtimes/<lang>-<lv>-<ver>-<triplet>/
   <image>.tfs.sha256 / <image>.tfs.origin           # written at seal — today's shapes, unchanged
 ----
 
-* *The seed descriptor* (`<image>.lazy.json`, versioned JSON, the
+* *The seed descriptor* (`+++&lt;image&gt;.lazy.json+++`, versioned JSON, the
 blksum schema's sibling `schema/tpkg-lazy-seed-v1.schema.json`):
 source URL (the concrete origin), the whole-image sha256 pin, the
 blksum sidecar's sha256, `group_size`, `size_bytes`, group count.
 Written tmp+rename under the entry's flock (spec 05 §4) by the loader
 INSTEAD of the image download. A descriptor that fails validation at
 open is the named `LazyDescriptorInvalid` (65) — never a guess.
-* *The block map IS the directory.* Present `*.blk` files are the
+* *The block map IS the directory.* Present `+++*.blk+++` files are the
 seeded set; no separate bitmap, no journal. Open scans the directory
 and validates each group's size against the descriptor; a
 size-mismatched or unparseable group file is discarded and refetched.
@@ -304,7 +304,7 @@ NEVER blocks on it, never fails because of it (a seal-side fetch
 failure logs and retries next run). `TEBAKO_LAZY_SEAL=0` disables the
 background thread (the debug/airgap shape; on-demand seeding still
 works).
-* *The commit:* with all groups present, seal assembles `<image>.tfs`
+* *The commit:* with all groups present, seal assembles `+++&lt;image&gt;.tfs+++`
 by concatenation into a tmp file, streams the whole-file sha256 over
 it (one pass, constant memory — the spec 05 §6 discipline), compares
 the original pin (mismatch → named 70, the assembled tmp dropped, the
@@ -315,7 +315,7 @@ renames `.tfs` (0444), then `.tfs.sha256` + `.tfs.origin` (the
 anchor's rename is the commit point), then removes the blocks and the
 descriptor. A crash anywhere before the anchor rename leaves
 LAZY_SEEDING, fully resumable.
-* *The explicit verb:* `tebako cache seal [<entry>|--all]` runs the
+* *The explicit verb:* `+++tebako cache seal [&lt;entry&gt;|--all]+++` runs the
 same pass synchronously from the toolchain — full tebako-term
 ProgressSet rendering (§7). Operators who want first-run-lazy but
 warm-cache-complete run it at their convenience.
@@ -329,7 +329,7 @@ warm-cache-complete run it at their convenience.
 * *Mount-open failures* (prefix or record-table fetch fails, sidecar
 pin mismatch, descriptor invalid): the env image mount fails BEFORE
 the boot proceeds — the driver's existing unmount-everything law
-(spec 17 §1; `crates/tebako-driver/src/driver.rs`) applies verbatim:
+(spec 17 §1; `+++crates/tebako-driver/src/driver.rs+++`) applies verbatim:
 never a partial mount, the named error surfaces.
 * *Network partition mid-mount:* a touching read whose group cannot be
 fetched after the retry law exhausts returns *EIO on that read* (the
@@ -366,7 +366,7 @@ semantics, finer grain.
 spec 09's 71/72 bind the sidecar's signed-index chain exactly as they
 bind the image's today; `TEBAKO_REQUIRE_SIGNED=1` fails closed before
 the first range read, unchanged.
-* *HTTPS-only (locked):* the source URL is `https://` or `file://`
+* *HTTPS-only (locked):* the source URL is `+++https://+++` or `+++file://+++`
 (the test/airgap spelling), enforced by tebako-http's existing
 refusal — plus the spec 38 §8 LOOPBACK carve-out (`localhost`,
 `127.0.0.0/8`, `::1` over plain HTTP) for the §10 fixture only. There
@@ -380,10 +380,10 @@ exactly like whole-file GETs.
 == 7. UX: mount mode, progress, doctor
 
 * *The mount-mode chain (the flip LOCKED 2026-10-07, spec-00-style
-*note).* The default is *lazy-on*: a runtime install on a release
+note).* The default is *lazy-on*: a runtime install on a release
 serving the lazy wire seeds the env image instead of fetching it
 whole. Resolution: `TEBAKO_RUNTIME_LAZY` (env) over `runtime_lazy` in
-`~/.tebako/config.yaml` over the product default ON — env wins per
+`+++~/.tebako/config.yaml+++` over the product default ON — env wins per
 key (the `TEBAKO_FETCH_JOBS` / spec 04 §4 precedence rule), an
 unparseable value is a NAMED error (65), never a silent clamp. Eager
 stays first-class as the opt-out (`TEBAKO_RUNTIME_LAZY=0`,
@@ -426,14 +426,11 @@ name in the driver, unchanged.
 * *Progress.* The loader's lazy first run renders through tebako-term
 (the spec 06 §5/§5a wiring rule — nothing else prints download
 progress): the exe's ordinary artifact bar, then one line —
-`runtime env image <name> (<size>) — lazy: seeding on demand, sealing
-in background`. `tebako cache seal` renders the block map as a
-ProgressSet slot — `sealing <image> [<bar>] 62% (groups 831/1340,
-3.1 MB/s)` — group-accurate, not estimated. Plain mode and
+`+++runtime env image &lt;name&gt; (&lt;size&gt;) — lazy: seeding on demand, sealing in background+++`. `tebako cache seal` renders the block map as a
+ProgressSet slot — `+++sealing &lt;image&gt; [&lt;bar&gt;] 62% (groups 831/1340, 3.1 MB/s)+++` — group-accurate, not estimated. Plain mode and
 `TEBAKO_NO_PROGRESS=1` behave per spec 06 §5a, unchanged.
 * *`tebako doctor`* (spec 35) store section gains the seed state per
-runtime entry: `LAZY_SEEDING — 231/1340 groups (17%), source <host>,
-seal resumable` or `SEALED`; a descriptor/block-dir inconsistency is
+runtime entry: `+++LAZY_SEEDING — 231/1340 groups (17%), source &lt;host&gt;, seal resumable+++` or `SEALED`; a descriptor/block-dir inconsistency is
 reported by name (never healed silently).
 * *`tebako cache list`* marks lazy entries (`(seeding 17%)`); the
 origin marker carries the source URL as today.
@@ -443,7 +440,7 @@ origin marker carries the source URL as today.
 == 8. Interaction with spec 38 (OCI)
 
 The byte source is transport-shaped, not URL-shaped: it consumes a
-range-fetch closure. An OCI blob GET (`/v2/<repo>/blobs/<digest>`,
+range-fetch closure. An OCI blob GET (`+++/v2/&lt;repo&gt;/blobs/&lt;digest&gt;+++`,
 spec 38 §5) supports Range on every conformant registry, and the blob
 digest IS the artifact sha256 (spec 38 §3's trust-anchor equivalence) —
 so a range source over an OCI blob needs NO grammar, NO divergence: the
@@ -453,7 +450,7 @@ class.
 
 *The closure arm (locked 2026-10-01 with PR 6).* The OCI client's
 blob fetch carries the range arm: one positioned GET
-(`Range: bytes=<offset>-<end>`, the caller-decided credential header
+(`+++Range: bytes=&lt;offset&gt;-&lt;end&gt;+++`, the caller-decided credential header
 attached verbatim per dance attempt), answering 206 with a
 Content-Range validated against the request (exact start, exact
 length) or 200 — the §3 loud-eager-fallback signal, byte-identical in
@@ -464,7 +461,7 @@ sidecar's OCI spellings are spec 38 §3's (that section owns the class
 table and the tag rules): artifactType
 `application/vnd.tebako.blksum.v1`, layer media type
 `application/vnd.tebako.blksum.v1+json`, the sibling digest-tag
-`sha256-<64 hex of the IMAGE blob's digest>.blksum.json` with the
+`+++sha256-&lt;64 hex of the IMAGE blob's digest&gt;.blksum.json+++` with the
 `org.tebako.blksum.subject` annotation naming the image digest. The
 sidecar's layer digest IS the blksum document's sha256 — the seed
 descriptor's `blksum_sha256` pin binds it with no second file, and a
@@ -514,7 +511,7 @@ the sealed file mounts whole, the ABSENT file with a valid descriptor
 beside it mounts the caching range source, and neither file nor
 descriptor keeps the ordinary named open error. The lazy promise
 holds at both layers: only the groups demand touches are fetched.
-* *The handoff grammar.* `TEBAKO_RUNTIME_IMAGE=<path>` and the
+* *The handoff grammar.* `+++TEBAKO_RUNTIME_IMAGE=&lt;path&gt;+++` and the
 `--tebako-image` triples are byte-identical (spec 17 §1); the path
 names the entry whose on-disk state (§4) the driver reads. No
 contract-version bump: `TEBAKO_RUNTIME_LAZY` is an operator env in
@@ -627,29 +624,29 @@ image-internal integrity (spec 20 §7's recorded addendum, unchanged).
 [%unnumbered]
 == Implementation plan (spec PR first; each PR independently mergeable)
 
-. *PR 1 — the spec.* This document + the `00-INDEX.md` entry +
-`schema/tpkg-blksum-v1.schema.json` +
+. *PR 1 — the spec.* This document + the `00-INDEX.md` entry {plus}
+`schema/tpkg-blksum-v1.schema.json` {plus}
 `schema/tpkg-lazy-seed-v1.schema.json`. No code.
-. *PR 2 — the transport.* `crates/tebako-http/src/lib.rs`: the Range
+. *PR 2 — the transport.* `+++crates/tebako-http/src/lib.rs+++`: the Range
 GET entry point (Range header, 206/Content-Range validation,
 If-Range/ETag revalidation, the loopback carve-out), unit + contract
 tiers with the fixture server.
 . *PR 3 — the byte source and the lazy store record.*
-`crates/tpkg/src/lazy.rs` (descriptor + blksum models, the
+`+++crates/tpkg/src/lazy.rs+++` (descriptor + blksum models, the
 store-record read/write/scan under `tpkg::runtime_store`),
-`crates/tfs/src/source.rs` + `crates/tfs/src/source_remote.rs` (the
+`+++crates/tfs/src/source.rs+++` + `crates/tfs/src/source_remote.rs` (the
 byte-source seam, the caching remote source, `backend-remote`
-feature), `crates/tfs/src/mount.rs` (the fifth mount-source kind),
-`crates/tfs/src/backends_limnifs.rs` (the sourced open — prefix +
+feature), `+++crates/tfs/src/mount.rs+++` (the fifth mount-source kind),
+`+++crates/tfs/src/backends_limnifs.rs+++` (the sourced open — prefix {plus}
 record-table fetch), the limnifs-core paged-`SlabSource` pin
 (upstream first). Unit/property tiers + the parity class.
-. *PR 4 — the loader + driver wiring.* `crates/tebako-resolve/src/plan.rs`
+. *PR 4 — the loader + driver wiring.* `+++crates/tebako-resolve/src/plan.rs+++`
 (the lazy commit closure writing the seed record), the shim/bootstrap
 resolve paths (`TEBAKO_RUNTIME_LAZY` + config),
-`crates/tebako-driver/src/driver.rs` (state-detecting env-image
-mount, the seal thread, EIO mapping), `crates/tebako-cli/src/doctor.rs`
-.* the cache list/seal surfaces. E2e legs of §10.
-. *PR 5 — the publish path.* `crates/tebako-cli/src/publish.rs`
+`+++crates/tebako-driver/src/driver.rs+++` (state-detecting env-image
+mount, the seal thread, EIO mapping), `+++crates/tebako-cli/src/doctor.rs+++`
+** the cache list/seal surfaces. E2e legs of §10.
+. *PR 5 — the publish path.* `+++crates/tebako-cli/src/publish.rs+++`
 (blksum generation in-process), the shard/registry additive
 `image.blksum` field (validation + schema), the factory release legs
 (factory repos, stacked on PR 5's product half).

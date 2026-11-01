@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -84,7 +85,7 @@ target is already on the current path fails with `solve-cycle`, naming
 the path as declared (it can be legitimate to _repeat_ a payload in two
 branches — that is a DAG, not a cycle, and it resolves once).
 * *A skipped edge is recorded, not silent.* The lockfile carries
-`skipped: [{edge, triplet, reason}]` so a reader can see that the tree
+`+++skipped: [{edge, triplet, reason}]+++` so a reader can see that the tree
 on this host is smaller than the tree in the manifest.
 
 *Where the per-payload edges come from.* They are not in the registry,
@@ -92,7 +93,7 @@ and that is the layer model working as designed: L3 mirrors resolution
 fields only, while DEPENDS is L1 (spec 03 §2.3). The caller — the press,
 which holds the payloads or has just read their in-image manifests —
 supplies each candidate's edges as a *closure map* keyed
-`<kind> <name>@<version>`. The solver's answer is therefore a function of
+`+++&lt;kind&gt; &lt;name&gt;@&lt;version&gt;+++`. The solver's answer is therefore a function of
 three inputs: the seed edges, the closure map, and the registry
 documents. Nothing is fetched; a candidate whose edges are absent from
 the map is a named `solve-closure-missing`, never an implicit "assume no
@@ -111,16 +112,15 @@ satisfies" and "the only candidate was yanked" are different findings;
 * a row is a candidate for a triplet only if that triplet appears in its
 `platforms:` (or the row is `universal`);
 * the constraint language is the one already specified (spec 05 §4):
-ranges (`>= 3.3, < 5.0`) for pure-language edges, ABI lines
-(`~> 3.3.0`) for native-extension edges. The solver uses the same
+ranges (`+++&gt;= 3.3, &lt; 5.0+++`) for pure-language edges, ABI lines
+(`+++~&gt; 3.3.0+++`) for native-extension edges. The solver uses the same
 parser the dispatcher uses — one grammar, two callers.
 
 
 [%unnumbered]
 == 4. The assignment law
 
-An assignment is a map `(kind, name) -> (version, triplet, artifact
-sha256)`. Among all assignments satisfying every edge of the closure, the
+An assignment is a map `+++(kind, name) -&gt; (version, triplet, artifact sha256)+++`. Among all assignments satisfying every edge of the closure, the
 solver returns *the maximal one*, ordered by:
 
 . higher `version` is preferred for the first `(kind, name)` in

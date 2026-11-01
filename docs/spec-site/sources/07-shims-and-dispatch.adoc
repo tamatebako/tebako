@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -19,14 +20,13 @@
 Normative specification of executable registration and version
 management. Status: PARTIAL — the dispatcher and version manager
 (§2–§4) ship as `crates/tebako-shim` in tebako-rs (roadmap 08; retires
-`mnenv`). Remote registry fetch ships with `tebako add-registry |
-install` (roadmap 28.1 — the CLI resolves every registry form of
+`mnenv`). Remote registry fetch ships with `+++tebako add-registry | install+++` (roadmap 28.1 — the CLI resolves every registry form of
 spec 04 §2), and the dispatch-time registry cache ships with roadmap 33
 (the registry-default chain link resolves every registry form through
-tebako-resolve behind `~/.tebako/registries/<sha>.yaml` — 24 h TTL,
+tebako-resolve behind `+++~/.tebako/registries/&lt;sha&gt;.yaml+++` — 24 h TTL,
 `tebako update-registries`, `TEBAKO_OFFLINE` = cache-or-named-error;
 `tebako add-registry` primes the cache with the bytes it fetched; a
-STALE cache + a failed refresh serves the stale bytes LOUD — stderr +
+STALE cache + a failed refresh serves the stale bytes LOUD — stderr {plus}
 journal — rather than failing, spec 05 §4's stale-serve, roadmap 86).
 The 2026-09-05 routing amendment (qualified pins, per-payload disable,
 `tebako-shim use`) SHIPS with this spec's PR-A — the status lines below
@@ -42,7 +42,7 @@ in `config.yaml` as the exact ref).
 command name → pin; a nearer file that does not pin the command
 does not shadow a farther one that does.
 * *The chain-value grammar (2026-09-05 amendment):* every link of the
-version chain — `TEBAKO_<TOOL>_VERSION`, `.tebako-tools.yaml`,
+version chain — `+++TEBAKO_&lt;TOOL&gt;_VERSION+++`, `.tebako-tools.yaml`,
 `config.yaml defaults:` — carries `[payload@]version` (split on the
 FIRST `@`; `tpkg::toolpin::ToolPin` is the ONE parser — spec 00
 invariant 10). `payload@version` makes the named payload THE provider
@@ -51,12 +51,12 @@ invariant 10). `payload@version` makes the named payload THE provider
 incomplete link. An unparseable chain value is the NAMED grammar
 error (`EX_TEBAKO_MANIFEST`, naming the link and value), never a
 silent skip.
-* *`~/.tebako/config.yaml` keys:* `defaults:` (command →
+* *`+++~/.tebako/config.yaml+++` keys:* `defaults:` (command →
 `[payload@]version`; tebako#667: a KEY of the form
-`<registry>/<payload>` is the payload-level pin — it covers every
+`+++&lt;registry&gt;/&lt;payload&gt;+++` is the payload-level pin — it covers every
 entrypoint the payload declares, and a command-level pin beats it for
 its own command, §4), `registries:` (spec 04 refs), `runtimes:`
-(engine → `{version, tebako, source?}` runtime preference; `source:`
+(engine → `+++{version, tebako, source?}+++` runtime preference; `source:`
 pins the engine's download base — spec 05 §2's per-engine chain,
 SHIPPED in the shim's dispatch-time fetch, tebako#567). The shim never
 writes this file — except
@@ -64,16 +64,15 @@ through `tebako-shim use`, the explicit verb (tmp + rename, the same
 discipline as `add-registry`; a structural edit that preserves keys,
 not comments).
 * *Disabled state* is shim-managed state, not authored config:
-`~/.tebako/shims/.disabled.yaml` (command → selector list). The
-selector grammar (2026-09-05 amendment — `tpkg::toolpin::
-DisableSelector` is the ONE parser): `all` gates every claim of the
+`+++~/.tebako/shims/.disabled.yaml+++` (command → selector list). The
+selector grammar (2026-09-05 amendment — `+++tpkg::toolpin&#58;: DisableSelector+++` is the ONE parser): `all` gates every claim of the
 command; `version` gates that version of ANY claim; `payload@all`
 gates the named payload's claim; `payload@version` gates exactly that
 (payload, version) claim. An unknown selector string in the file is a
 NAMED parse error at load, never silently ignored (invariant 9).
 * *Installed payload record* (the dispatcher-visible manifest mirror,
-spec 03 §4 tier 3 rationale): `payloads/<name>/<version>.tfs`,
-`<version>.tfs.sha256`, `<version>.manifest.yaml`.
+spec 03 §4 tier 3 rationale): `+++payloads/&lt;name&gt;/&lt;version&gt;.tfs+++`,
+`+++&lt;version&gt;.tfs.sha256+++`, `+++&lt;version&gt;.manifest.yaml+++`.
 * *Zero-runtime dispatch* (spec 03 §2.2): the payload image itself is
 the program — the self-launching-image contract; dependency mounts
 still ride the ABI v1 argv shape minus the runtime prefix.
@@ -85,11 +84,10 @@ mount point `/` of the jail namespace.
 == 1. The model
 
 Tebako manages shims for *every executable every installed payload
-*provides* (spec 03 `entrypoints`). One payload may carry MULTIPLE
+provides* (spec 03 `entrypoints`). One payload may carry MULTIPLE
 executables — each is dispatchable; the ACTIVE subset (spec 03 §2.2's
 per-entrypoint `active`, default true) is PATH-registered at install,
-and an inactive-but-declared command links on demand (`tebako shim
-enable <name>`). A payload's `kind: runtime` edge (spec 30) adds one
+and an inactive-but-declared command links on demand (`+++tebako shim enable &lt;name&gt;+++`). A payload's `kind: runtime` edge (spec 30) adds one
 more source of names: the edge's `expose:` list registers one shim per
 exposed depended-runtime entry under the same active-flag and
 enable-on-demand rules — dispatch of such a shim IS spec 30 §2's
@@ -114,7 +112,7 @@ a registry's `default:` stays payload-keyed, and a registry NEVER routes
 commands (routing is local state by design; a future registry
 `default_payload:` cold-start hint is a separate extension point, not
 this spec). The version chain itself is a DYNAMIC per-tool family
-(`TEBAKO_<TOOL>_VERSION` — an unbounded name set) with its own four-link
+(`+++TEBAKO_&lt;TOOL&gt;_VERSION+++` — an unbounded name set) with its own four-link
 chain (§2.1); it is NOT a citizen of spec 23 §14's settings registry
 (§14 owns FIXED-NAME press/machine knobs) — the two surfaces never drift
 into each other.
@@ -131,7 +129,7 @@ per declared entrypoint name — never as re-exec wrappers.
 
 
 [%unnumbered]
-== 2. The dispatch chain (per invocation of `~/.tebako/shims/<tool>`)
+== 2. The dispatch chain (per invocation of `+++~/.tebako/shims/&lt;tool&gt;+++`)
 
 // The source numbers this chain 0, 0.5, 1–4 by hand (the 0.5 step is the
 // 2026-09-05 amendment) and other specs cite the steps by those numbers;
@@ -148,14 +146,13 @@ versions simultaneously.
 payload-qualified value makes the named payload THE provider — it must
 be installed and declare or expose the command, else the named
 NotAProvider error. The provider scan skips claims disabled at
-`<payload>@all` or `<payload>@version`, so disabling all-but-one claims
+`+++&lt;payload&gt;@all+++` or `+++&lt;payload&gt;@version+++`, so disabling all-but-one claims
 routes without a pin. Unqualified values fall through to today's scan
 (payload-of-command-name fast path → suite scan → expose scan). A
 registry never routes commands: routing is local state.
 1:: *Payload VERSION resolution* (first match wins):
-`TEBAKO_<TOOL>_VERSION` env → nearest `.tebako-tools.yaml` walking up
-from cwd (per-project pinning) → user default (`tebako-shim use
-<tool> <pin>`) → registry's `default`.
+`+++TEBAKO_&lt;TOOL&gt;_VERSION+++` env → nearest `.tebako-tools.yaml` walking up
+from cwd (per-project pinning) → user default (`+++tebako-shim use &lt;tool&gt; &lt;pin&gt;+++`) → registry's `default`.
 2:: *RUNTIME resolution:* the entrypoint's `runtime_requirement` →
 newest COMPATIBLE cached runtime (no download) → else download newest
 compatible (spec 05 §5). *Swapping runtimes needs no payload change*
@@ -164,10 +161,10 @@ compatible (spec 05 §5). *Swapping runtimes needs no payload change*
 3:: *EXTENSION-SLICE scan (additive — schema_minor 10, spec 03 §2.8):*
 when the resolved root payload declares `extension_points:`, the
 dispatcher scans the STORE's payload manifest mirrors
-(`payloads/*/*.manifest.yaml`, spec 05 §3) for slices whose
+(`+++payloads/*/*.manifest.yaml+++`, spec 05 §3) for slices whose
 `augments[].payload` names the root — store-local, never a network
 fetch. Per candidate: bind `extension_point` → mount
-`<point.mount>/<slice.name>` (an unknown point name = loud skip);
+`+++&lt;point.mount&gt;/&lt;slice.name&gt;+++` (an unknown point name = loud skip);
 check the slice's `constraint` against the RESOLVED base version and
 its language edge against the RESOLVED runtime (engine + abi line).
 A slice MAY carry several `augments` edges naming the root — the
@@ -175,10 +172,7 @@ suffixed-line family (spec 03 §2.8) ships one exact-pin edge per
 family row; the candidate attaches when ANY such edge matches.
 Newest compatible version per slice name attaches (the store layout
 makes same-version duplicates impossible); an auto-discovered
-mismatch = loud skip + journal (`event=slice-skip slice=…
-reason=…`); a successful attach journals `event=slice-augment
-slice=… base=… mount=…`. Compatible slices append `--tebako-image
-<slice-path>:-:<mount>` triples AFTER the app's (spec 17 multi-mount
+mismatch = loud skip + journal (`event=slice-skip slice=… reason=…`); a successful attach journals `event=slice-augment slice=… base=… mount=…`. Compatible slices append `+++--tebako-image &lt;slice-path&gt;:-:&lt;mount&gt;+++` triples AFTER the app's (spec 17 multi-mount
 — nested under the app's `/` mount, longest-prefix dispatch; a mount
 failure is the driver's all-or-nothing teardown). Config-pinned
 slices (§4) override auto-discovery per slice name, fetch on miss
@@ -202,46 +196,45 @@ store GC cannot re-pick mid-process.
 [%unnumbered]
 == 3. Shell integration (no per-shell magic)
 
-* ONE directory on PATH: `~/.tebako/shims`. One-time setup;
-`tebako shim install-shell [--shell bash|zsh|fish|csh]` inserts a
+* ONE directory on PATH: `+++~/.tebako/shims+++`. One-time setup;
+`+++tebako shim install-shell [--shell bash|zsh|fish|csh]+++` inserts a
 managed BEGIN/END block into the right startup file
 (`.profile`/`.bash_profile`/`.bashrc`/`.zshrc`/`.cshrc`) prepending the
 shim dir; idempotent; `uninstall-shell` removes exactly its block.
 * *Shim links are always an explicit act*: registry
 installs register the payload's `provides` (that IS the install's
-point); a local-package install (`tebako install <path>`) links only
+point); a local-package install (`+++tebako install &lt;path&gt;+++`) links only
 with the explicit `--shims`; a run — of any package, ever — links
 nothing. A one-off act never claims PATH names.
 * NO eval-init hook for switching: the dispatcher reads the project file
-itself (the mise model, not the rbenv `eval "$(… init -)"` model).
-* `tebako-shim use / disable / enable / list / which / doctor` manage
+itself (the mise model, not the rbenv `+++eval "$(… init -)"+++` model).
+* `+++tebako-shim use / disable / enable / list / which / doctor+++` manage
 shims (link/remove/inspect/diagnose); enable/disable specific versions.
-The verbs spell identically through the CLI: `tebako shim <verb> …` ≡
-`tebako-shim <verb> …` (tebako-cli calls the shim crate as a library —
+The verbs spell identically through the CLI: `+++tebako shim &lt;verb&gt; …+++` ≡
+`+++tebako-shim &lt;verb&gt; …+++` (tebako-cli calls the shim crate as a library —
 never a shell-out).
-** *`use <tool> <pin>`* writes the user-default link
+** *`+++use &lt;tool&gt; &lt;pin&gt;+++`* writes the user-default link
 (`config.yaml defaults:` — the explicit authored-config write verb
 beside `add-registry`, tmp + rename, keys preserved); the pin is the
-`[payload@]version` grammar of §0. `use --clear <tool>` removes
-exactly that key; `use --runtime <engine>@<langver>[:<tebako>]`
+`[payload@]version` grammar of §0. `+++use --clear &lt;tool&gt;+++` removes
+exactly that key; `+++use --runtime &lt;engine&gt;@&lt;langver&gt;[:&lt;tebako&gt;]+++`
 writes `runtimes:`.
-** *`enable|disable <tool>[@<version>] [--of <payload>]`* edit the
-disabled-state selectors of §0: bare → `all`; `@<version>` →
-`version`; `--of <payload>` alone → `payload@all`; with
-`@<version>` → `payload@version`.
-** *`which <tool>`* names the provider payload and provider kind
+** *`+++enable|disable &lt;tool&gt;[@&lt;version&gt;] [--of &lt;payload&gt;]+++`* edit the
+disabled-state selectors of §0: bare → `all`; `+++@&lt;version&gt;+++` →
+`version`; `+++--of &lt;payload&gt;+++` alone → `payload@all`; with
+`+++@&lt;version&gt;+++` → `payload@version`.
+** *`+++which &lt;tool&gt;+++`* names the provider payload and provider kind
 (own / exposed / pinned) beside the version and its source.
 ** *`list [--json]`* shows per command the provider payload, provider
 kind, resolved version + source, and disabled marks; `--json` emits
-one `"info_schema": 1` document (mirroring `tebako cache list
---json`).
+one `+++"info_schema": 1+++` document (mirroring `tebako cache list --json`).
 ** *`doctor`* additionally reports: commands with MORE THAN ONE
 enabled claim (collisions), dangling pins (project-file/config pins
 naming an uninstalled payload or version), and disabled-but-pinned
 conflicts. Doctor stays diagnose-only: findings print, the exit code
 is unchanged (0 / 1 with problems).
 +
-*Enable links on demand* (locked 2026-08-29): `enable <tool>` whose
+*Enable links on demand* (locked 2026-08-29): `+++enable &lt;tool&gt;+++` whose
 command is declared by an installed payload but was never linked
 (spec 03 §2.2's `active: false` default) materializes the shim link
 then — the dispatcher links ITSELF (argv0 integrity above); enabling an
@@ -253,12 +246,11 @@ the link.
 [%unnumbered]
 == 4. Configuration
 
-* User config: `~/.tebako/config.yaml` (YAML — the locked convention;
+* User config: `+++~/.tebako/config.yaml+++` (YAML — the locked convention;
 supersedes the earlier `config.json` note). Contents: defaults,
 registries, runtime preferences. (IMPLEMENTED 2026-10-07 — tebako#559:
 a per-tool `env:` map, store-config schema minor 3 — the user-config
-layer of the §9.1 interp_env chain, set by hand or by `tebako-shim
-env`; never written implicitly by a dispatch.)
+layer of the §9.1 interp_env chain, set by hand or by `tebako-shim env`; never written implicitly by a dispatch.)
 * Project pins: `.tebako-tools.yaml` at any directory — the dispatcher
 walks up from cwd; nearest wins.
 * *Extension slices (schema_minor 10):* per-tool keys in the same two
@@ -273,13 +265,13 @@ metanorma:
 auto_slices: true                  # false kills the §2 step-3 store scan
 ----
 +
-One-off env: `TEBAKO_<TOOL>_SLICES=metanorma-bsi@1.2.0,…` (prepended
+One-off env: `+++TEBAKO_&lt;TOOL&gt;_SLICES=metanorma-bsi@1.2.0,…+++` (prepended
 to the pinned set). Pins override auto-discovery for the same slice
 name; a pin naming a slice installed at a DIFFERENT version attaches
 the pin exactly.
 
 * *Payload-level pins (store-config schema_minor 5, tebako#667):* a
-`defaults:` KEY of the form `<registry>/<payload>` pins every
+`defaults:` KEY of the form `+++&lt;registry&gt;/&lt;payload&gt;+++` pins every
 entrypoint the payload declares — the one-line form of "this machine
 runs metanorma 1.16.9" for a 31-entrypoint suite:
 +
@@ -334,16 +326,14 @@ error, never a segfault.
 `tebako doctor`.
 * More than one ENABLED claim for a command (2026-09-05 amendment) →
 `EX_TEBAKO_MANIFEST`, naming every claiming payload; the hint names
-the routing verbs: pin `<cmd>: <payload>@<version>` in
-`.tebako-tools.yaml`, or disable one claim (`tebako-shim disable <cmd>
---of <payload>`).
+the routing verbs: pin `+++&lt;cmd&gt;: &lt;payload&gt;@&lt;version&gt;+++` in
+`.tebako-tools.yaml`, or disable one claim (`+++tebako-shim disable &lt;cmd&gt; --of &lt;payload&gt;+++`).
 * A payload-qualified chain value whose payload is not installed, or is
 installed but neither declares nor exposes the command → the
 NotAProvider named error (`EX_TEBAKO_MANIFEST`), naming the pin, the
 payload, and the chain link the pin came from.
 * A payload-only pin (`payload@`, empty version) → the grammar error
-(`EX_TEBAKO_MANIFEST`, §0): route out with `tebako-shim disable <cmd>
---of <payload>`, never with an incomplete pin.
+(`EX_TEBAKO_MANIFEST`, §0): route out with `+++tebako-shim disable &lt;cmd&gt; --of &lt;payload&gt;+++`, never with an incomplete pin.
 * An unparseable chain value at ANY link (env, project file, config
 default) → the grammar error, naming the link and the value (spec 23
 §14's env-parse rule, extended to every chain link) — never a silent
@@ -378,20 +368,20 @@ was ruby-only; metanorma-on-tebako required host-installed inkscape).
 The locked model is three tiers — *interposition-first, never FUSE*:
 
 . *Dynamic native tools (the mainline): the preload interposition
-*shim* — `libtfs-preload`, injected via `LD_PRELOAD` (ELF),
+shim* — `libtfs-preload`, injected via `LD_PRELOAD` (ELF),
 `DYLD_INSERT_LIBRARIES` (Mach-O), or DLL injection (Windows), mapping
 the libc/dyld file-IO family (open/stat/opendir/pread/dlopen…) onto
-`tebako_fs_*`. The launcher seeds the mount table via env
+`+++tebako_fs_*+++`. The launcher seeds the mount table via env
 (`TEBAKO_TFS_MOUNTS=image[:slot]:mount,…` — grammar in spec 17 §2.1); the binary AND its whole dynamic
 chain see the mounted image — *no extraction, no chain problem*.
 retrace (in-family: linux/macOS/windows CI, v2 config-driven
 interception) is the reference technique. Bonus: interposed IO flows
 through the same `host_policy` — *jails extend to these binaries*
 (spec 08). Limit: dynamic binaries only; the shim is a TFS consumer,
-never a format. *SHIPPED (roadmap 30): `crates/libtfs-preload` +
-*`tfs exec <image>[:mount] [--image …] [--jail <spec>] -- <cmd>` in
-*tfs-cli — macOS and linux-gnu first-class, windows later. Coverage
-*(roadmap 39):* interposed surface open/openat/creat(the tebako#444
+never a format. *SHIPPED (roadmap 30): `crates/libtfs-preload` {plus}
+`+++tfs exec &lt;image&gt;[:mount] [--image …] [--jail &lt;spec&gt;] -- &lt;cmd&gt;+++` in
+tfs-cli — macOS and linux-gnu first-class, windows later. Coverage
+(roadmap 39):* interposed surface open/openat/creat(the tebako#444
 audit's adjacent-write finding: creat(3) IS
 open(O_WRONLY|O_CREAT|O_TRUNC) spelled as its own libc symbol —
 glibc builds it over libc-internal open aliases and libSystem gives
@@ -408,7 +398,7 @@ readdir_r/rewinddir/telldir/seekdir/dirfd/closedir/pread/read/lseek/
 mmap(memfs fd → private anonymous mapping pre-filled from the VFS,
 +mmap64 on linux)/
 close(+the plain and $NOCANCEL spellings on x86_64 darwin — the libc
-crate maps `libc::close` to `close$NOCANCEL` there, C binaries
+crate maps `libc::close` to `+++close$NOCANCEL+++` there, C binaries
 (the JVM's libjava/libjli/libzip) import plain `close`; both route
 to the shim)/dup/dup2(tebako#534 — libxml2's xmlInputFromFd calls
 dup(fd) unconditionally, so every VFS fd died EBADF there: the clone
@@ -436,13 +426,13 @@ interpreter died importing `encodings` before any user code)/fopen(tebako#444:
 read-only modes (r with no +) materialize the memfs original through
 dlmap2file exactly like dlopen — stdio's internal open path never
 touches the interposed `open`; the write-ish modes (w/a bases, every
-.* update form incl. r+, the x-forms) ride the SAME spec 08 write
+** update form incl. r+, the x-forms) ride the SAME spec 08 write
 +
 gate as open(O_WRONLY|O_CREAT|O_RDWR) BEFORE the real fopen touches
 the host — a memfs-held path is EROFS, a jailed write outside an rw
 grant is EPERM by name; pre-fix the write modes sailed through
 ungated and r+ was misclassified as a read)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
-.* the realpath family (realpath, plus macOS's realpath$DARWIN_EXTSN;
+** the realpath family (realpath, plus macOS's realpath$DARWIN_EXTSN;
 +
 canonicalize_file_name and the fortified __realpath_chk on linux):
 glibc's realpath(3) walks the path with libc-INTERNAL stat/readlink
@@ -456,19 +446,19 @@ URLClassPath on a root-mounted payload, and the jar lookup silently
 dropped a byte-perfect jar);
 covered-but-not-held paths still pass to the host realpath (the
 /etc/localtime discipline);
-`TEBAKO_JAIL` carries the spec 08 §1 env form (`open|deny` +
-`host:mount:ro|rw` grants + `@` argument files); the ENTRYPOINT (when
+`TEBAKO_JAIL` carries the spec 08 §1 env form (`+++open|deny+++` {plus}
+`+++host:mount:ro|rw+++` grants + `@` argument files); the ENTRYPOINT (when
 in-image) is materialized through `dlmap2file` (execve needs a host
 path — one copy per exec, gc later), and execve/posix_spawn of MEMFS
 paths materialize the same way (a tool spawning an in-image helper
 needs no extraction; environ propagates, so grandchildren stay in the
-VFS); every *at shim gates its fd branch on `dirfd >= 0` (AT_FDCWD
+VFS); every *at shim gates its fd branch on `+++dirfd &gt;= 0+++` (AT_FDCWD
 carries the fd-flag bit — the runtime-builds regression class, pinned
-by tests); the mmap shim gates on `fd >= 0` and `!MAP_ANONYMOUS` (fd
+by tests); the mmap shim gates on `+++fd &gt;= 0+++` and `!MAP_ANONYMOUS` (fd
 -1 carries the same bit — the JVM PaX-check regression class); exec
 of a HOST binary is not policy-gated (not an IO route
 in the policy's op classes — the child's own IO stays jailed via env
-propagation); SIP platform binaries strip `DYLD_*` and leave it; a
+propagation); SIP platform binaries strip `+++DYLD_*+++` and leave it; a
 mount at `/` is legitimate under the union mount model (spec 03 §6 /
 spec 17 §1 — the app payload mounts there): covered-but-not-held paths
 fall through to the host with the jail consulted; fork is not
@@ -496,7 +486,7 @@ need the cloexec plumbing the POSIX dup class already has),
 or symbol on linux-gnu — nothing to interpose; a raw `syscall(2)`
 caller bypasses userland interposition by construction), fstatat64 on
 macOS (the legacy
-32-bit-inode layout), `__fxstatat64` and the write-side
+32-bit-inode layout), `+++__fxstatat64+++` and the write-side
 pwrite64/ftruncate64/statvfs64 family plus
 readv/preadv/sendfile/copy_file_range on memfs fds on linux,
 fdopendir (memfs directories are never fd-opened), the
@@ -523,12 +513,12 @@ extraction, child unaware. Cost: per-syscall user/kernel round trips
 (io-heavy tools notice); platform: Linux only (the API does not
 exist elsewhere).
 (b) *Extract-to-exec-cache (everywhere, tier 2b)*:
-`~/.tebako/exec/<sha256>/…`, 0755, verified at install — the
+`+++~/.tebako/exec/&lt;sha256&gt;/…+++`, 0755, verified at install — the
 manifest-declared closure, content-addressed, shared. On
 macOS/Windows (no executor-side syscall mediation API) this is the
 static path; such binaries see only the host FS (no VFS, no jails —
 a platform-API statement, not a trust statement).
-Nuances: a static binary BUILT against the `tebako_fs_*` ABI carries
+Nuances: a static binary BUILT against the `+++tebako_fs_*+++` ABI carries
 the VFS inside itself (the "libtfs for everyone" embedding story —
 build-time property, not imposable on an arbitrary binary). Prefer
 tier 1 (dynamic) for io-heavy tools; tier 2a covers the rest on
@@ -566,7 +556,7 @@ host"): every `current_dir()`-based relative resolution in the preload
 joins the VIRTUAL cwd when one is set.
 * *Bundler's git source* (the #119 reporter): `SharedHelpers.chdir`
 into the checkout now works in-image.
-* *Host escapes*: `chdir("..")` past the VFS root reaches the host
+* *Host escapes*: `+++chdir("..")+++` past the VFS root reaches the host
 parent exactly as a path op would (the jail policy governs); no new
 wall is invented.
 
@@ -574,7 +564,7 @@ wall is invented.
 [%unnumbered]
 == 9. Environment composition (locked 2026-07-27)
 
-Env across the mount stack (runtime + toolkit layers + data layers +
+Env across the mount stack (runtime + toolkit layers + data layers {plus}
 app) composes by RULE, never by accident:
 
 * *Path-class vars* (`GEM_PATH`, `PATH`-in-image, `TEBAKO_LD_PATH`):
@@ -657,9 +647,9 @@ order:
 . *A token naming an existing file* is a package — the §2/pkg
 surface of this verb, unchanged. (A windows drive path always lands
 here while the file exists; spell the engine form for the engine.)
-. *Otherwise the token parses as `<engine>[:<command>]`* — the
-engine grammar: `<engine>` is the runtime payload's `engine` key
-(spec 04 §2 MINOR 1 — bare lowercase name), `<command>` one of the
+. *Otherwise the token parses as `+++&lt;engine&gt;[:&lt;command&gt;]+++`* — the
+engine grammar: `+++&lt;engine&gt;+++` is the runtime payload's `engine` key
+(spec 04 §2 MINOR 1 — bare lowercase name), `+++&lt;command&gt;+++` one of the
 resolved runtime's declared entrypoints. A token that is neither an
 existing file nor a well-formed engine reference is the §7 usage
 error, naming the token.
@@ -673,7 +663,7 @@ a silent pick.
 *Resolution:* the engine resolves against the store FIRST (the
 newest compatible cached runtime), then the registries (download,
 verify, cache — the same fetch path as every payload's runtime
-requirement). The version chain per engine: `TEBAKO_<ENGINE>_VERSION`
+requirement). The version chain per engine: `+++TEBAKO_&lt;ENGINE&gt;_VERSION+++`
 env → the nearest `.tebako-tools.yaml` → `~/.tebako/config.yaml`'s
 `defaults:` → the registry's newest. All local surfaces, never a
 registry-side route (the provider-routing rule above). The engine name
@@ -681,9 +671,9 @@ matches a registry entry's `engine` key, never a display name; no
 configured registry carrying the engine is the §7 no-such-engine error.
 
 *Dispatch:* the handoff is the spec-17 wire exactly — the wrapper exe
-with `TEBAKO_RUNTIME_IMAGE=<env image>` + `--tebako-entry <command>`
+with `+++TEBAKO_RUNTIME_IMAGE=&lt;env image&gt;+++` + `--tebako-entry <command>`
 (or the bare form's default) + the user args; the driver composes
-`[interpreter, <the entrypoint's args_default…>, <entry>, <args>…]` per
+`+++[interpreter, &lt;the entrypoint's args_default…&gt;, &lt;entry&gt;, &lt;args&gt;…]+++` per
 spec 29 §1. This surface parses NO flags: every token after the engine
 reference is the engine's own argument, verbatim (a `--jail` there
 reaches the engine, never tebako). The jail posture is the user's own
@@ -691,26 +681,26 @@ policy riding `TEBAKO_JAIL` in the inherited environment (the driver
 enforces it per spec 17), open by default — a runtime-own command is
 the user's own process, not a payload's.
 
-*The shim surface:* `tebako install <engine>[:<command>]` registers
+*The shim surface:* `+++tebako install &lt;engine&gt;[:&lt;command&gt;]+++` registers
 shims/<command> (the default entry's name for the bare form — `node`,
 `bun`, `java`) dispatching argv0 → the engine's runtime resolution →
 the same spec-17 wire. The install target's engine reading WINS a bare
 engine-shaped token it answers (a cached runtime of the engine, a
 config `runtimes:` preference, a registered registry's `kind: runtime`
 entry carrying the engine, or the ruby default); a same-named payload
-stays reachable through its qualified forms (`<alias>/<name>`, the
+stays reachable through its qualified forms (`+++&lt;alias&gt;/&lt;name&gt;+++`, the
 reference forms). *Collision rule (MECE):* a PAYLOAD-provided
 name wins over a runtime-own name of the same spelling (the payload
 declared the tool; the runtime surface is the fallback when no payload
 provides it) — the provider-routing surfaces of §2 answer collisions
 locally, never by registry. A runtime-own shim records its engine
 class in the shim metadata (`shims/.runtime-own.yaml`, command →
-`{engine, entry}` — the entry is the wire token: `self` for the bare
+`+++{engine, entry}+++` — the entry is the wire token: `self` for the bare
 form, the command name otherwise), so `tebako shim list`/`disable`
 answer the class explicitly and a later payload install claiming the
 name displaces the runtime-own claim with a loud notice (never a
 silent shadow). The §0 disable selectors gate a runtime-own claim
-through the engine riding the payload slot: `all` and `<engine>@all`
+through the engine riding the payload slot: `all` and `+++&lt;engine&gt;@all+++`
 refuse the dispatch by name; a bare version selector has no axis to
 gate (the engine's version chain owns versions).
 

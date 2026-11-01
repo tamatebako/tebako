@@ -1,1 +1,3 @@
 _site/
+*.asciidoc.log.txt
+*.xml.abort

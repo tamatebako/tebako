@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -18,12 +19,12 @@
 
 Normative byte-level specification of the tebako package container.
 Source of truth: `crates/tpkg` (byte-exact with the reference C99
-`include/tebako/tpkg.h`; golden vectors pin the layout). All v1 integers
+`+++include/tebako/tpkg.h+++`; golden vectors pin the layout). All v1 integers
 little-endian; the trailer header sits at the logical EOF (§1) at fixed
 size. The container
 knows *nothing* about runtimes, entrypoints, or languages — it carries
 bytes, slots, mounts, and a resolution hint. *Authenticated, signed, and
-*encrypted packages:* authentication/signing is the v2 extension (§4);
+encrypted packages:* authentication/signing is the v2 extension (§4);
 encryption is a TFS-layer transform of the slot images (spec 10) — the
 container itself stays byte-identical either way.
 
@@ -42,7 +43,7 @@ package signed post-press. On a Mach-O package codesigned post-press
 (spec 31 §1.2), codesign appends the code-signature superblob after the
 trailer, 16-byte aligned with a zero pad. Readers locate the trailer end
 via the tail slice's LC_CODE_SIGNATURE: when the superblob reaches the
-physical EOF exactly, the trailer header is the self-validating (magic +
+physical EOF exactly, the trailer header is the self-validating (magic {plus}
 crc + bounds) window ending at the superblob's dataoff or at most 15
 zero pad bytes earlier; every other shape reads at the physical EOF.
 On a PE package Authenticode-signed post-press (spec 34 §1.2/§6), the
@@ -68,7 +69,7 @@ alignment pad; §1.)
 [cols=">,>,<",options="header"]
 |===
 | offset | size | field
-| 0 | 10 | magic `"TEBAKOTFS\0"`
+| 0 | 10 | magic `+++"TEBAKOTFS\0"+++`
 | 10 | 4 | u32 version = *1* (extensions ride flags, not version bumps)
 | 14 | 4 | u32 package_flags (bit0 LEAN, bit1 SIGNED_V2, bit2 NO_INSTALL, bit3 QUIET_NOTICES)
 | 18 | 4 | u32 slot_count (1..=8)
@@ -79,7 +80,7 @@ alignment pad; §1.)
 |===
 
 
-`TPKG_MAGIC_PREFIX_LEN` = 4 (`"TEBA"`) discriminates absent vs corrupt.
+`TPKG_MAGIC_PREFIX_LEN` = 4 (`+++"TEBA"+++`) discriminates absent vs corrupt.
 
 Bit0's _name_ is the only deprecated thing about it (locked 2026-08-25,
 tebako#460): read *LEAN = 1* as "the package does not carry its
@@ -137,7 +138,7 @@ local store, with exactly one scoped exception: the lazy seed of spec 05
 §4 (a self-contained package MAY seed the cache with the artifacts it
 carries — best-effort, never blocking the run). `NO_INSTALL` packages
 never seed. Installation is otherwise the EXPLICIT verb
-(`tebako install <path>`; the bootstrap's `--tebako-install` refuses or
+(`+++tebako install &lt;path&gt;+++`; the bootstrap's `--tebako-install` refuses or
 guides, spec 06 §4 exit 76). `NO_INSTALL` marks a publisher-frozen
 package: it RUNS standalone
 but every install attempt is refused with a named error. Absence means
@@ -218,7 +219,7 @@ multi-runtime packages live in the type-2 manifest (no size cap).
 [%unnumbered]
 == 6. Absent vs corrupt; validation
 
-* Last-166-byte window without the `"TEBA"` prefix → `NoTrailer` (classic
+* Last-166-byte window without the `+++"TEBA"+++` prefix → `NoTrailer` (classic
 bundle; callers may fall back to offset auto-detection).
 * Prefix ok, magic bad → `Magic`. Magic ok, crc bad → `Crc`.
 * Version ≠ 1 → `Version`. Slot count outside 1..=8 → `Slots`.
@@ -234,7 +235,7 @@ and ≤ 65536; signer keyid non-zero.
 
 
 [%unnumbered]
-== 7. Errors (Rust `TpkgError` ↔ C `TPKG_ERR_*`, 1:1)
+== 7. Errors (Rust `TpkgError` ↔ C `+++TPKG_ERR_*+++`, 1:1)
 
 `NoTrailer`, `Magic`, `Crc`, `Version`, `Slots`, `Bounds`, `Invalid` —
 `strerror` strings byte-identical with the C implementation.

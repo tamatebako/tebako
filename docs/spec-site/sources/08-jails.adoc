@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -25,7 +26,7 @@ policy (§1) is SHIPPED with roadmap 30's preload shim (`tfs exec --jail`
 carries it to native binaries); manifest integration (§4 —
 `capabilities.host` in `crates/tpkg`), the press/dispatch surfaces
 (`tebako press --jail` writing the package manifest's `jail:` block,
-`tebako run`/`tebako-shim` `--jail|--mount|--no-host`), the bootstrap's
+`tebako run`/`tebako-shim` `+++--jail|--mount|--no-host+++`), the bootstrap's
 manifest∩user composition at handoff, and the audit-journal logging of
 violations (`event=jail-deny`) are SHIPPED with roadmap 35. Enforcement
 exists because every file access already flows through the TFS layer —
@@ -74,11 +75,11 @@ class.
 == 2.1 The platform floor (locked 2026-08-14)
 
 Every policy bound under the `deny` default gains the *platform
-*floor*: a fixed per-platform set of read-only grants covering the
+floor*: a fixed per-platform set of read-only grants covering the
 surface a spawned interpreter or runtime physically cannot boot
 without. The floor exists because the failure mode for a missing
 platform grant was never a policy verdict — under a scratch-only jail
-(`deny;<scratch>:<scratch>:rw`) the JVM crashed with a SIGSEGV at
+(`+++deny;&lt;scratch&gt;:&lt;scratch&gt;:rw+++`) the JVM crashed with a SIGSEGV at
 `getMacOSXLocale` (its locale/framework init NULL-derefs when reads
 under `/usr` are denied; spec 22 phase-E dogfood, 2026-08-13). A jail
 whose denial crashes the child in someone else's library is wrongly
@@ -87,11 +88,11 @@ process, so the floor grants it always.
 
 * *Entries (evidence-driven):*
 ** macOS — `/usr`, `/System`, `/Library` (the proven set above).
-** windows — `%SystemRoot%\System32` (the loader's DLL root; no
-process resolves its imports without it), `%SystemRoot%\SysWOW64`
-(the 32-bit view for 32-bit children), `%SystemRoot%\Fonts` (the
+** windows — `+++%SystemRoot%\System32+++` (the loader's DLL root; no
+process resolves its imports without it), `+++%SystemRoot%\SysWOW64+++`
+(the 32-bit view for 32-bit children), `+++%SystemRoot%\Fonts+++` (the
 GDI font tree GUI runtimes enumerate — the JVM's AWT init reads
-it). `%SystemRoot%` resolves at bind (`C:\Windows` when unset).
+it). `%SystemRoot%` resolves at bind (`+++C:\Windows+++` when unset).
 ** Other unix — none today; an entry joins a list only with a proven
 platform-process consumer, cited by run. The lists are amended by
 evidence, never by anticipation.
@@ -119,11 +120,11 @@ legs). The `deny:arg` profile's file grants join the same rule
 way to is unusable — the JVM died at VM init under `deny:arg` with a
 granted file in a denied cwd chain. The set is derived at bind —
 never authored, never serialized.
-It is what makes an authored `$CWD`-style grant sufficient in
+It is what makes an authored `+++$CWD+++`-style grant sufficient in
 practice: the payload names the directory it works in; the platform
 walk to reach it passes by construction.
 * *Inheritance:* floor mounts are NOT serialized into `TEBAKO_JAIL` —
-the env grammar's `host:mount:ro|rw` right-split cannot carry a
+the env grammar's `+++host:mount:ro|rw+++` right-split cannot carry a
 windows drive-qualified floor spelling, and it never needs to: every
 consumer re-derives the floor at its own bind (supersede makes that
 idempotent), so a spawned child's inherited spec plus its bind yields
@@ -135,8 +136,8 @@ and the user's home stay authored grants — an operator's `deny` must
 not silently read-expose private data, and the prefix grammar cannot
 express the "stat-only" grant the macOS CFPreferences home probe
 needs (spec 22 §3.4's journal-pinned chain, 2026-08-14: floor →
-named `jvm.cfg` error → named `InternalError` → boot with `<jre>:ro`
-** `<home>:ro`). The floor's promise is the end of the segfault
+named `jvm.cfg` error → named `InternalError` → boot with `+++&lt;jre&gt;:ro+++`
+** `+++&lt;home&gt;:ro+++`). The floor's promise is the end of the segfault
 +
 class: every missing grant surfaces as the workload's own named
 error, pinned in the audit journal — never a crash in someone else's
@@ -157,7 +158,7 @@ int tebako_fs_host_policy(int default_open /* 0 = deny */,
 ----
 
 * The host-passthrough path of every IO route consults the policy:
-prefix match + access bit per mount. `tebako_fs_stat/open/opendir/…`
+prefix match + access bit per mount. `+++tebako_fs_stat/open/opendir/…+++`
 return `EPERM` (denied) / `EROFS` (ro write).
 * The policy is about HOST paths; memfs mounts are unaffected.
 * Implemented in the Rust TFS (`crates/tfs`) — the same layer that owns
@@ -183,8 +184,8 @@ not EROFS, so the consumer's pass-through can perform the write
 byte-for-byte unchanged (write opens on it stay EROFS).
 * The per-process materialization tree is NOT a host path for policy
 purposes (tebako#502, 2026-08-30): a dlmap-marker path
-(`…/tebako-dl-<hex>/…` — closure copies and the home-layout
-whole-tree roots `tebako-home-<handle>/…`) the image does not answer
+(`+++…/tebako-dl-&lt;hex&gt;/…+++` — closure copies and the home-layout
+whole-tree roots `+++tebako-home-&lt;handle&gt;/…+++`) the image does not answer
 is the runtime's own extraction served by its host copy. Every route
 (`open`/`stat`/`opendir`/`dlmap2file`) answers it ENOENT without
 consulting the policy: the hex leaf is per-process (unauthorable at
@@ -228,7 +229,7 @@ compose: manifest request ∩ user policy = effective jail.
 [%unnumbered]
 === Shipped surfaces (roadmap 35)
 
-* *Model:* `crates/tpkg/src/jail.rs` owns the authored shape (YAML
+* *Model:* `+++crates/tpkg/src/jail.rs+++` owns the authored shape (YAML
 block ↔ `TEBAKO_JAIL` env form ↔ `--jail` cli spec: `open` | `deny` |
 `deny:arg` | a YAML file | the env grammar) and the locked precedence
 algebra (`intersect` / `effective`): deny defaults win; each side's
@@ -237,22 +238,20 @@ is sticky, a user `--no-host` drops request grants); argument files
 union and `auto-allowed` resolves argv files into read-only grants at
 dispatch. The payload manifest's `capabilities.host` and the package
 manifest's `jail:` block are both this type.
-* *Press:* `tebako press --jail <spec>` writes the policy into the
+* *Press:* `+++tebako press --jail &lt;spec&gt;+++` writes the policy into the
 type-2 package manifest's `jail:` block (spec 02 §5b / spec 03 §6);
 block-less packages are byte-identical to before.
 * *Bootstrap:* composes package `jail:` ∩ `TEBAKO_JAIL` at handoff and
 exports the effective policy as `TEBAKO_JAIL` (+ `TEBAKO_JAIL_SOURCE`
 = `manifest` | `user` | `manifest+user`, + `TEBAKO_JAIL_JOURNAL` →
-`$TEBAKO_HOME/journal.log`). Malformed policy fails closed, exit 73
+`+++$TEBAKO_HOME/journal.log+++`). Malformed policy fails closed, exit 73
 (`EX_TEBAKO_JAIL`). No policy: nothing exported (legacy byte-identical).
-* *Dispatch:* `tebako run <pkg> [--jail <spec>] [--mount
-<host:mount:ro|rw>]... [--no-host] [--] [args...]` and the same flags on
+* *Dispatch:* `+++tebako run &lt;pkg&gt; [--jail &lt;spec&gt;] [--mount &lt;host:mount:ro|rw&gt;]... [--no-host] [--] [args...]+++` and the same flags on
 `tebako-shim` (consumed before `--`; the payload mirror carries
 `capabilities.host` from install time).
-* *Audit journal (§2):* every denial in the TFS layer appends `<ts>
-event=jail-deny path=<p> op=read|write source=<s>` to the tebako
-journal (`TEBAKO_JAIL_JOURNAL` > `$TEBAKO_HOME/journal.log` >
-`~/.tebako/journal.log`), best-effort — journaling never fails the
+* *Audit journal (§2):* every denial in the TFS layer appends `+++&lt;ts&gt; event=jail-deny path=&lt;p&gt; op=read|write source=&lt;s&gt;+++` to the tebako
+journal (`TEBAKO_JAIL_JOURNAL` > `+++$TEBAKO_HOME/journal.log+++` >
+`+++~/.tebako/journal.log+++`), best-effort — journaling never fails the
 operation it audits.
 
 
@@ -273,7 +272,7 @@ The shim's coverage is SYMBOL-level (tebako#439): a jail holds only for
 the libc entry points the shim interposes — the named list in
 `crates/libtfs-preload` (lib.rs "Interposed surface"), which includes
 the LFS64/fortify/versioned twins (`open64`/`openat64`/`fopen64`,
-`__read_chk`/`__openat_2`, the `__xstat` family through `__fxstatat64`)
+`+++__read_chk+++`/`+++__openat_2+++`, the `+++__xstat+++` family through `+++__fxstatat64+++`)
 because glibc hands `_FILE_OFFSET_BITS=64`/`_FORTIFY_SOURCE`/pre-2.33
 callers DISTINCT symbols that never touch the plain names (the #439
 hole: OpenSSL's `o_fopen.c` defines `_FILE_OFFSET_BITS=64` itself, so
@@ -288,7 +287,7 @@ route through `host_policy` BEFORE the real libc call touches the host
 an ro grant EROFS, and a write naming a memfs-held path is EROFS under
 any policy (payload images are always read-only). Known-uncovered at
 this layer: the remaining fortify open family
-(`__open_2`/`__open64_2`/`__openat64_2` — no importer observed in the
+(`+++__open_2+++`/`+++__open64_2+++`/`+++__openat64_2+++` — no importer observed in the
 0.16.6 linux-gnu runtime) and raw `syscall(2)` IO. Separately, the
 runtime EXE's own statically-linked native libraries are gated only for
 symbols the exe itself defines (spec 22 §2: `dlopen`/`dlerror` today —
@@ -316,9 +315,9 @@ upward.
 A jail is only as good as the attacks it has been shown to stop. Every
 vector below is either *blocked and proven by a named test*, or
 *named out of scope with the reason* — there is no third state. The
-host-filesystem vectors live in `crates/tfs/tests/jails.rs`; the
+host-filesystem vectors live in `+++crates/tfs/tests/jails.rs+++`; the
 environment vector lives beside its implementation
-(`crates/tebako-driver/src/env_scrub.rs`). Both run on every platform
+(`+++crates/tebako-driver/src/env_scrub.rs+++`). Both run on every platform
 leg of every CI run and therefore on every release: a regression
 reddens the release matrix, not a dashboard nobody reads.
 
@@ -340,10 +339,10 @@ reddens the release matrix, not a dashboard nobody reads.
 | 12 | unmount under a live policy | fail-closed | `policy_survives_unmount_fail_closed`
 | 13 | malformed policy spec | fail-closed (named) | `policy_install_validates_its_arguments`
 | 14 | argument-file grant: only the declared file, nothing beside it | blocked | `tight_jail_allows_only_the_argument_file`
-| 15 | packager/CI credentials reaching the payload: `TEBAKO_GITHUB_TOKEN` and every other packager-side `TEBAKO_*` variable past the handoff | blocked (blanked, never logged; `env_pass` is the explicit opt-in) | `the_packager_token_is_scrubbed_and_the_contract_kept`, `the_env_pass_opt_in_carries_its_declared_names`, `the_factory_smoke_contract_survives_the_scrub` (spec 03 §2.10, tebako#737)
+| 15 | packager/CI credentials reaching the payload: `TEBAKO_GITHUB_TOKEN` and every other packager-side `+++TEBAKO_*+++` variable past the handoff | blocked (blanked, never logged; `env_pass` is the explicit opt-in) | `the_packager_token_is_scrubbed_and_the_contract_kept`, `the_env_pass_opt_in_carries_its_declared_names`, `the_factory_smoke_contract_survives_the_scrub` (spec 03 §2.10, tebako#737)
 | 16 | Windows alternate data stream (`file.txt:stream`) on a denied base | PLANNED — the decision rides the base path (a stream suffix is not a path component), and the proof lands with the windows leg that can exercise it | — (named, not claimed)
 | 17 | statically-linked binary, or raw `syscall(2)` IO | OUT OF SCOPE — no interposition point; §5 states it in the manifest and the docs | §5
-| 18 | fortify open family still uncovered (`__open_2`/`__open64_2`/`__openat64_2`) | OUT OF SCOPE — no importer observed in the shipped runtimes; the symbol list is the interposed surface's SSOT | §5
+| 18 | fortify open family still uncovered (`+++__open_2+++`/`+++__open64_2+++`/`+++__openat64_2+++`) | OUT OF SCOPE — no importer observed in the shipped runtimes; the symbol list is the interposed surface's SSOT | §5
 | 19 | the runtime EXE's own statically-linked stat/open definitions | OUT OF SCOPE today — gated only for the symbols the exe defines (spec 22 §2); follow-up wiring lives in the runtime factory | §5
 | 20 | a payload's own sockets (network confinement) | OUT OF SCOPE today — `capabilities.network` is advisory metadata; the network axis is SOTA arc 05's second item, not a claim of this spec | §5
 |===
