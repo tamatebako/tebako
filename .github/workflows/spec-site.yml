@@ -1,0 +1,31 @@
+name: spec-site
+
+# The drift gate for the Tebako Specifications series. Each rendered
+# document under docs/spec-site/sources/ records the blob SHA of the
+# docs/spec/ Markdown file it was converted from, and the Markdown is
+# the source of truth: a specification edit that lands without its
+# rendered twin being regenerated leaves the recorded SHA stale, and
+# this job goes red. The rendered series can never silently diverge from
+# the normative Markdown.
+
+on:
+  pull_request:
+    paths:
+      - "docs/spec/**"
+      - "docs/spec-site/**"
+      - ".github/workflows/spec-site.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spec-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: ruby docs/spec-site/tools/sync.rb
