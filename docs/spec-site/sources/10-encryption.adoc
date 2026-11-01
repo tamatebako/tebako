@@ -11,13 +11,14 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
 // source: docs/spec/10-encryption.md @ 8c6e29ae184f19c068cac57a2e303063cc2349ac
 
 Normative specification of encrypted volumes: selective, in-memory-only
-decryption. Status: v1 SHIPPED (roadmap 37: `EncBackend` +
+decryption. Status: v1 SHIPPED (roadmap 37: `EncBackend` {plus}
 `tfs encrypt`/`decrypt`/`mount`, SUITE-1; PQC suites, metadata hiding
 and merkle verify-on-read remain PLANNED). Encryption is per-image
 *opt-in*, never default.
@@ -27,7 +28,7 @@ and merkle verify-on-read remain PLANNED). Encryption is per-image
 == 1. Model
 
 Encryption is a *stacking transform* like COW, not a format:
-`EncBackend { base: dyn Backend, key_source }` — reads decrypt on demand,
+`+++EncBackend { base: dyn Backend, key_source }+++` — reads decrypt on demand,
 in memory only; plaintext blocks never touch disk. Compose freely:
 `Enc(COW(base))`, `COW(Enc(base))`, nested encapsulated encrypted images.
 Per the transforms law (spec 00): `EncBackend` lives ONLY in the Rust TFS
@@ -108,7 +109,7 @@ AES-256 keeps ~128-bit post-Grover strength; the merkle/hash layer is
 PQC-safe by construction. Signatures are the migration surface,
 envelopes the confidentiality surface — both suite-versioned, so
 migration is additive.
-* Implementation path: botan 3 (rnp's backend) via rnp-rs PQC tracking +
+* Implementation path: botan 3 (rnp's backend) via rnp-rs PQC tracking {plus}
 OpenPGP PQC drafts; recipients may hold classical AND PQC keys
 (multi-recipient envelopes are native).
 
@@ -131,16 +132,16 @@ the hard part; mlock/zeroize is the baseline, not a panacea.
 [%unnumbered]
 == 7. CLI surface (SHIPPED v1)
 
-`tfs encrypt / decrypt / mount --recipient / --key` — encryption
+`+++tfs encrypt / decrypt / mount --recipient / --key+++` — encryption
 at image-creation time through the same Writer path; mount requires the
 recipient key; wrong key → named `EKEY`-class error, never garbage.
 SHIPPED (roadmap 37): `tfs encrypt` (root grant `--recipient`, subtree
-grants `--subtree <path>=<pubkey>`; `--rewrap --key` rotates grants to a
+grants `+++--subtree &lt;path&gt;=&lt;pubkey&gt;+++`; `--rewrap --key` rotates grants to a
 new recipient set with the bulk ciphertext byte-identical),
 `tfs decrypt` (plaintext to a tar stream — never a staging tree),
 `tfs mount --key` (the unlock/grant report; FUSE/serve mounts remain
 spec-11 §6 PLANNED). `tfs sign` is spec 09's surface. The v1 crypto
 construction (per-block AES-256-GCM, HKDF-SHA256 subtree keys, PKESK
-DEK envelopes, the `/__tpkg__/envelopes.yaml` grant manifest) is
-documented normatively in `crates/tfs/src/backends_enc.rs` and
-`crates/tpkg/src/envelope.rs`.
+DEK envelopes, the `+++/__tpkg__/envelopes.yaml+++` grant manifest) is
+documented normatively in `+++crates/tfs/src/backends_enc.rs+++` and
+`+++crates/tpkg/src/envelope.rs+++`.

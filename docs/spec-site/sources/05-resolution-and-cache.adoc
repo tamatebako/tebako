@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -56,9 +57,9 @@ enumeration (choosing the newest COMPATIBLE version line) flows through
 the factory's in-repo L3 registry (spec 04 §2), never through a release
 monolith.
 
-* `<stem>.manifest.json` — the *per-package shard*, the sidecar-era
+* `+++&lt;stem&gt;.manifest.json+++` — the *per-package shard*, the sidecar-era
 authority. The stem is the exe asset's own name
-(`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — suffix-less, §2's
+(`+++tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;+++` — suffix-less, §2's
 spelling rule below, on windows too). The shard is ONE manifest-entry
 object
 (the same fields the monolith's array items carry: the identity
@@ -69,15 +70,15 @@ from it (normalized to the array shape at the resolver boundary —
 tebako-resolve owns the release-card reader semantics).
 * `manifest.json` — derived monolith; the same per-asset entries as an
 array, plus the additive
-image-era key `image: {filename, sha256, size_bytes}` and the additive
+image-era key `+++image: {filename, sha256, size_bytes}+++` and the additive
 `contract_version` key (bootstrap↔runtime contract, spec 06 §6).
 * *The entry's `filename` is the ONLY authoritative asset spelling*
 (spec 00 §10 SSOT; tebako#456). A consumer matches the entry by the
-identity triple (`tebako_version`, `<lang>_version`, `platform`) —
+identity triple (`tebako_version`, `+++&lt;lang&gt;_version+++`, `platform`) —
 never by a synthesized name — and flows `filename` /
 `image.filename` / `dll.filename`+`install_as` verbatim into the
 download URL, the cache layout, and the pre-download contract gate.
-The `tebako-runtime-<ver>-<lang>-<lv>-<triplet>[.exe]` grammar is the
+The `+++tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;[.exe]+++` grammar is the
 factory's to declare, not the consumer's to derive (the factory
 publishes the windows exe SUFFIX-LESS). When no entry matches the
 identity triple (a pre-identity index), the synthesized spelling
@@ -86,8 +87,8 @@ missing-entry refusal names the identity triple — the mis-lookup is
 diagnosed as what it is, never as a contract refusal of a
 hand-invented name.
 * *The grammar carries the language segment* (tebako#716):
-`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — `<ver>` the tebako
-line, `<lv>` the language version, and `<lang>` the runtime's
+`+++tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;+++` — `+++&lt;ver&gt;+++` the tebako
+line, `+++&lt;lv&gt;+++` the language version, and `+++&lt;lang&gt;+++` the runtime's
 *distribution identity*: the registry row's `implementation` when
 the factory ships several flavors of one engine (openjdk publishes
 `temurin` and `graalvm` rows side by side in the same release), else
@@ -97,7 +98,7 @@ unambiguous field separator. A flat directory holding several
 languages' runtimes is self-describing, and a cross-language version
 overlap can never collide byte-for-byte. *Era law:* assets
 published before this amendment (the ≤ v0.16.32 line) spell
-`tebako-runtime-<ver>-<lv>-<triplet>` — immutable, sha256-pinned by
+`+++tebako-runtime-&lt;ver&gt;-&lt;lv&gt;-&lt;triplet&gt;+++` — immutable, sha256-pinned by
 live registries and shipped packages, keep-forever (invariant 7).
 The identity-triple match + verbatim `filename` flow means consumers
 never branch on era for FLOWED names; a registry pick likewise flows
@@ -112,15 +113,15 @@ amendment, so its selector-less default tag composes the new-era
 spelling only; the INDEX-LESS cache fallback (fat/carried installs,
 pre-identity manifests — all pre-#716-shaped by construction)
 composes the old-era spelling permanently.
-* `SHA256SUMS.txt` — line-index fallback (`<sha>  <file>`), carries the
-`<asset>.tfs` lines in the image era.
-* Every payload asset also carries its own `<asset>.sha256` sidecar
-(coreutils `<sha>  <file>` — the store marker's exact shape). The
+* `SHA256SUMS.txt` — line-index fallback (`+++&lt;sha&gt;  &lt;file&gt;+++`), carries the
+`+++&lt;asset&gt;.tfs+++` lines in the image era.
+* Every payload asset also carries its own `+++&lt;asset&gt;.sha256+++` sidecar
+(coreutils `+++&lt;sha&gt;  &lt;file&gt;+++` — the store marker's exact shape). The
 sidecar is the per-asset pin; the shard's sha fields are re-anchored
 to the served bytes at publish time.
 * *Bundle-era lines (additive, 2026-09-24, spec 36):* a shard
 carrying the additive `bundle` block is consumed as ONE fetch — the
-`<stem>.tar.gz` bundle + its sidecar (+ `.asc` when declared) —
+`+++&lt;stem&gt;.tar.gz+++` bundle + its sidecar (+ `.asc` when declared) —
 verified, then unpacked in-process into the §3 store layout with
 every member checked against the shard's per-member pins
 (`InvalidBundle`, spec 36 §7). A shard without `bundle` takes the
@@ -132,14 +133,14 @@ tebako-shim's dispatch-time fetch — tebako#567; the CLI's press-time
 resolver and the bootstrap consult `TEBAKO_RUNTIME_MIRROR` + the
 default base only). First hit wins, and
 every download journals the base AND the channel that supplied it:
-*. `runtimes: {<engine>: {source: <base>}}` — the authored config pin
+.. `+++runtimes: {&lt;engine&gt;: {source: &lt;base&gt;}}+++` — the authored config pin
 (spec 07 §0; most specific: an operator who pins an engine's
 source means exactly that base for that engine).
-*. `TEBAKO_RUNTIME_MIRROR` (https or file://) — the operator's global
+.. `TEBAKO_RUNTIME_MIRROR` (https or file://) — the operator's global
 override, applying to every engine WITHOUT a `source:` pin. When a
 pin shadows a differing mirror value the shadowing is journaled,
 loud — never silent precedence.
-*. *Registry-derived* — a registered registry (spec 04 §2) carrying
+.. *Registry-derived* — a registered registry (spec 04 §2) carrying
 a `kind: runtime` entry whose `engine:` (+ `implementation:` when
 the edge names one) matches, with a version satisfying the
 edge's constraint: the base derives from that version's
@@ -148,10 +149,9 @@ per-row `release.ref` (registry schema MINOR 6, tebako#711), from
 THAT ref: a version line unioning rows from several per-platform
 shard tags cannot name the serving tag at the version level, so
 the row carries it. This is the zero-config path — a third-party
-runtime becomes resolvable from `tebako add-registry <its
-feedstock>` alone, no authored config required.
-*. The product default base
-`https://github.com/tamatebako/tebako-runtime-ruby/releases/download`
+runtime becomes resolvable from `+++tebako add-registry &lt;its feedstock&gt;+++` alone, no authored config required.
+.. The product default base
+`+++https://github.com/tamatebako/tebako-runtime-ruby/releases/download+++`
 (the ruby factory line — the back-compat floor every pre-chain
 consumer already speaks).
 +
@@ -167,7 +167,7 @@ the channel that supplied it.
 
 
 [%unnumbered]
-== 3. Machine cache layout (`~/.tebako`)
+== 3. Machine cache layout (`+++~/.tebako+++`)
 
 
 [source]
@@ -194,9 +194,9 @@ The interpreter/image file names in a cache entry keep the index entry's
 `filename` / `image.filename` spellings verbatim (§2 — on windows the exe
 is suffix-less; the loader execs by full path and CreateProcess needs no
 `.exe`). The diagram shows the post-tebako#716 spelling; entries installed
-from the immutable ≤ v0.16.32 lines keep their `<ver>-<lv>-<triplet>`
+from the immutable ≤ v0.16.32 lines keep their `+++&lt;ver&gt;-&lt;lv&gt;-&lt;triplet&gt;+++`
 spellings forever — the two eras coexist in one store, and the directory
-name (`<lang>-<lv>-<ver>-<triplet>`) is era-free. The `[.exe]` diagram
+name (`+++&lt;lang&gt;-&lt;lv&gt;-&lt;ver&gt;-&lt;triplet&gt;+++`) is era-free. The `[.exe]` diagram
 notation marks the synthesized fallback
 spelling, used only when no index entry is available (fat-payload
 installs, pre-identity manifests).
@@ -206,15 +206,14 @@ installs, pre-identity manifests).
 === 3.0a The manifest mirrors and the extension-slice scan
 
 Every installed payload carries its L1 manifest beside the image as
-`<version>.manifest.yaml` (the embedded manifest transcribed at install;
+`+++&lt;version&gt;.manifest.yaml+++` (the embedded manifest transcribed at install;
 a legacy image without one gets a LOUDLY synthesized minimal mirror —
 identity only, no `augments`). The mirrors are the dispatcher's
 store-local reading of the extension-slice graph (spec 07 §2 step 3a):
 the scan for slices augmenting the dispatched payload reads ONLY these
 files — never the network, never the registry caches (trust was already
 enforced at install; a run re-verifies nothing). A corrupt or unparseable
-mirror is a loud skip of that one payload (`event=slice-skip
-reason=manifest-unreadable`), never a dispatch failure.
+mirror is a loud skip of that one payload (`event=slice-skip reason=manifest-unreadable`), never a dispatch failure.
 
 
 [%unnumbered]
@@ -224,24 +223,24 @@ The store root resolves by precedence (single owner:
 `tpkg::runtime_store::tebako_home`; every component — CLI, shim,
 bootstrap, driver, journal — reads through it):
 
-. *`$TEBAKO_HOME`* (non-empty) — the explicit override.
+. *`+++$TEBAKO_HOME+++`* (non-empty) — the explicit override.
 . *The bundle-sibling tier* — the process image sits inside a tebako
 store tree, making that tree the home. Three seats:
-.* `<root>/<seat>/<tool>` beside a grammar-carrying `<root>/home` (the
+** `+++&lt;root&gt;/&lt;seat&gt;/&lt;tool&gt;+++` beside a grammar-carrying `+++&lt;root&gt;/home+++` (the
 bundle layout's `bin/`; the seat name is irrelevant — the grammar is
-the witness, so `/usr/local/bin` never false-triggers);
-.* `<home>/shims/<tool>` (the windows shim copies; a unix shim is a
+the witness, so `+++/usr/local/bin+++` never false-triggers);
+** `+++&lt;home&gt;/shims/&lt;tool&gt;+++` (the windows shim copies; a unix shim is a
 symlink, resolves to the real binary, and takes the first seat or no
 seat instead);
-.* `<home>/runtimes/<entry>/<exe>` (a store runtime — the driver's
+** `+++&lt;home&gt;/runtimes/&lt;entry&gt;/&lt;exe&gt;+++` (a store runtime — the driver's
 seat).
 +
 The *store-grammar markers* are: any of `config.yaml`, `shims/`,
 `payloads/`, `runtimes/`, `registries/`, `keys/`, `trust/`. A
 directory carrying none of them is not a home and the tier does not
 fire.
-. *The platform default* — `~/.tebako`; windows:
-`%LOCALAPPDATA%\tebako` (falling back to `%USERPROFILE%\.tebako`).
+. *The platform default* — `+++~/.tebako+++`; windows:
+`+++%LOCALAPPDATA%\tebako+++` (falling back to `+++%USERPROFILE%\.tebako+++`).
 
 The tier is identity-preserving for managed installs: every managed seat
 resolves to the home the default tier would pick anyway (or does not
@@ -274,13 +273,13 @@ re-download, never a half-installed record masquerading as
 standing.
 * The `.sha256` marker IS the trust anchor: present ⇒ the artifact was
 sha256-verified at install; re-verify only on re-fetch, *never per
-*run*.
+run*.
 * Image-era cache entries hold artifacts only — no extracted `layout/`
 tree; press seeds its environment by extracting in-process through the
 TFS ABI and rebuilds per press.
 * `TEBAKO_OFFLINE=1` — cache hit or hard error.
 * *Stale-registry serve on fetch failure (locked 2026-09-12, roadmap
-*86):* the dispatch-time registry cache (`registries/<sha>.yaml` +
+86):* the dispatch-time registry cache (`+++registries/&lt;sha&gt;.yaml+++` {plus}
 `.fetched-at`, 24 h TTL — spec 07) degrades LOUD, never hard: cache
 PRESENT but stale + the refresh fetch failed → the stale cache
 SERVES, with a stderr warning and a journal line
@@ -292,8 +291,7 @@ a silent fallback: the registry is an index — the trust anchor is the
 artifact's `.sha256` / `.asc` verified at fetch time, never the
 registry's freshness, and a stale index can name only artifacts whose
 own anchors still verify at install.
-* `tebako cache list` (runtimes and payloads) / `cache prune
-[--runtimes] [--payloads] [--all | --older-than Nd]` manage the cache.
+* `tebako cache list` (runtimes and payloads) / `+++cache prune [--runtimes] [--payloads] [--all | --older-than Nd]+++` manage the cache.
 Bare `cache prune` touches runtimes only; `--payloads` adds the
 payload arm, which NEVER removes a pinned version — the protected set
 (config `defaults:` pins through the spec 07 §2 toolpin grammar, exact
@@ -306,7 +304,7 @@ its `.sha256` / `.origin` markers, the `.manifest.yaml` mirror, a
 materialized `.tree/`, the install lock — and the name dir when it
 goes empty.
 * *A run is a run*: executing a package NEVER installs
-its payload slices. `tebako install <path>` installs a local package's
+its payload slices. `+++tebako install &lt;path&gt;+++` installs a local package's
 payload slices explicitly — trailer slot digests are the anchors for
 signed (v2) packages, the computed digest for unsigned ones (the run's
 own enforcement strength, never upgraded); the runtime slot is NOT
@@ -345,14 +343,13 @@ build time — the runtime_ref plus every payload ref, transitively — and lock
 concrete versions + sha256 digests into the L2 package manifest. What press
 tested is what runs, always.
 
-*The embed dial.* `-m lean|fat` is sugar over an embed set (`--embed=all|
-none|name,…`): `fat` embeds everything (runtime exe + env image + all payload
+*The embed dial.* `+++-m lean|fat+++` is sugar over an embed set (`+++--embed=all| none|name,…+++`): `fat` embeds everything (runtime exe + env image + all payload
 slices, per #458's two-slot shape); lean embeds a subset. Embedding changes
 byte placement only — non-embedded slices resolve at run time *by the locked
-*digests*, never by fresh semver resolution, fail-closed on mismatch.
+digests*, never by fresh semver resolution, fail-closed on mismatch.
 
 *Run-time payload resolution* mirrors the runtime's own chain exactly:
-registry fetch → sha256 verify → tmp+rename into `~/.tebako/payloads/` →
+registry fetch → sha256 verify → tmp+rename into `+++~/.tebako/payloads/+++` →
 co-mount at the declared points. Transitive DEPENDS walk with cycle
 detection; `TEBAKO_OFFLINE=1` is cache-or-named-error. Named errors: an
 unresolvable slice is the 75 class; a digest mismatch is the trust class; a
@@ -380,7 +377,7 @@ fail-closed, verification at fetch/install — never per run.
 runtime already cached (no download) → else download the newest
 compatible from the runtime releases → verify → cache. Swapping runtimes
 never touches the payload. *The min-runtime floor (spec 03 §2.9,
-*schema_minor 15, tebako#666):* when the payload manifest declares
+schema_minor 15, tebako#666):* when the payload manifest declares
 `min_runtime_tebako`, cached runtimes whose own tebako version is below
 the floor are discarded BEFORE the compatible pick (they are named in
 the miss errors, never silently preferred) and the download path runs
@@ -400,18 +397,17 @@ _self-contained_ succeeds _fat_.) Self-contained: the runtime pair is
 carried as two package slots — the interpreter exe and the env image
 (spec 19 §6.1): the exe stages into the runtime cache, the env image
 mounts from the package file through the ordinary
-`<self>:<slot>:<mount>` grammar, both verified against the trailer slot
+`+++&lt;self&gt;:&lt;slot&gt;:&lt;mount&gt;+++` grammar, both verified against the trailer slot
 digests, and both seed the cache per §4's lazy-seed rule. (Pre-#458
 packages carry the runtime as one legacy `format_id = 4` slot, extracted
 and verified against `;sha256=` — readers keep serving that form;
 presses never emit it.)
 
-*Compatibility model:* pure-language payloads take a range (`>= 3.3,
-< 5.0`) — any newer runtime works; native-extension payloads lock to the
+*Compatibility model:* pure-language payloads take a range (`+++&gt;= 3.3, &lt; 5.0+++`) — any newer runtime works; native-extension payloads lock to the
 ABI line they were built against, which is TWO-dimensional: the version
-line (`~> 3.3.0`) AND the platform line (`abi: arm64-darwin-23` — the
+line (`+++~&gt; 3.3.0+++`) AND the platform line (`abi: arm64-darwin-23` — the
 runtime's own platform string; ruby: `Gem::Platform.local.to_s`, from
-the staging runtime's `RbConfig::CONFIG["arch"]`). A newer line needs a
+the staging runtime's `+++RbConfig::CONFIG["arch"]+++`). A newer line needs a
 new payload build (or an SDK rebuild path); a wrong line on EITHER axis
 produces a named compatibility error, never a segfault. Runtimes publish
 their platform string as the per-package `abi` key in the release index
@@ -420,11 +416,11 @@ eligible (the compat window — a payload's abi check never fails against
 an unknown line).
 
 *Version ordering (the plain-wins rule — the single owner is
-*`tpkg::versions::compare`; every consumer flows it).* Versions are
+`tpkg::versions::compare`; every consumer flows it).* Versions are
 dot-separated components, missing components zero. Within one component:
-a leading numeric prefix compares numerically (`1.10 > 1.9`); at an
+a leading numeric prefix compares numerically (`+++1.10 &gt; 1.9+++`); at an
 equal prefix a PLAIN component ranks ABOVE a suffixed one
-(`3.13.15 > 3.13.15-jit` — semver's release > prerelease rule), so a
+(`+++3.13.15 &gt; 3.13.15-jit+++` — semver's release > prerelease rule), so a
 factory's build variant (a `-jit`, `-debug`, … line) never silently
 outranks its plain twin in a newest-satisfying pick; two suffixes order
 lexicographically; a component without a numeric prefix falls back to
@@ -445,12 +441,12 @@ against a line-split base, one slice per base line). Matching semantics
 — the variant and its plain twin are DIFFERENT versions (`= 1.16.9`
 never matches `1.16.9-ruby4.0`); ordering clauses follow `compare()`
 unchanged — a plain bound excludes variants ranking below it
-(`>= 1.16.9` does not match `1.16.9-ruby4.0`), a suffixed bound admits
-its own line upward (`>= 1.16.9-ruby4.0` matches the variant, the plain
-twin, and everything newer); `~>` computes its upper bound from the
+(`+++&gt;= 1.16.9+++` does not match `1.16.9-ruby4.0`), a suffixed bound admits
+its own line upward (`+++&gt;= 1.16.9-ruby4.0+++` matches the variant, the plain
+twin, and everything newer); `+++~&gt;+++` computes its upper bound from the
 numeric core under the same component model as `compare()` — the
-label's own dot counts (`~> 1.16.9-ruby4.0` is a four-component
-spelling, so the bound is `< 1.16.10`; for `< 1.17` write the explicit
+label's own dot counts (`+++~&gt; 1.16.9-ruby4.0+++` is a four-component
+spelling, so the bound is `+++&lt; 1.16.10+++`; for `+++&lt; 1.17+++` write the explicit
 range).
 Readers older than minor 12 reject a suffixed clause by name (exit 65)
 — fail-closed, never a misread pin.
@@ -460,11 +456,9 @@ mri, jruby and truffleruby are all `engine: ruby`, told apart by the
 runtime's `provides.implementation`. A requirement WITHOUT
 `implementation` matches any cached runtime of the engine whose
 `language_version` satisfies the constraint (the pure-language case: one
-build, any implementation — jruby 9.4 declares `language_version:
-"3.1"`, so a `>= 3.3` requirement does not match it and a `>= 3.1` one
+build, any implementation — jruby 9.4 declares `+++language_version: "3.1"+++`, so a `+++&gt;= 3.3+++` requirement does not match it and a `+++&gt;= 3.1+++` one
 does). A requirement WITH `implementation` reads its constraint against
-that implementation's OWN version line (`{engine: ruby, implementation:
-jruby, constraint: "~> 9.4"}`) and matches no other implementation. An
+that implementation's OWN version line (`+++{engine: ruby, implementation: jruby, constraint: "~&gt; 9.4"}+++`) and matches no other implementation. An
 `abi:` in force requires `implementation` — ABI and platform lines are
 per-implementation by construction; a native requirement naming no
 implementation is a named manifest error (spec 03 §2.2). Compatibility
@@ -479,15 +473,14 @@ line above, once, here; the resolver and the factory REFERENCE this
 table and never re-derive it in code comments.
 
 * *Version line.* The wheel ABI tag `cp3X` (`cp311`, `cp312`, …) IS
-the version line `~> 3.X.0`: a native-extension payload baked against
-CPython 3.X declares `runtime_requirement: {engine: python,
-constraint: "~> 3.X.0", abi: <the built-against runtime's abi>}`.
+the version line `+++~&gt; 3.X.0+++`: a native-extension payload baked against
+CPython 3.X declares `+++runtime_requirement: {engine: python, constraint: "~&gt; 3.X.0", abi: &lt;the built-against runtime's abi&gt;}+++`.
 Pure-python payloads take the range form exactly as ruby's
-pure-language case (xml2rfc's `requires_python >= 3.10` is the first
+pure-language case (xml2rfc's `+++requires_python &gt;= 3.10+++` is the first
 instance).
 * *The stable ABI (`abi3`) is a bake-time concern, never a resolver
-*concern (locked).* An upstream `cp3Y-abi3` wheel is compatible with
-every CPython line `>= 3.Y`; the factory consumes that width by baking
+concern (locked).* An upstream `cp3Y-abi3` wheel is compatible with
+every CPython line `+++&gt;= 3.Y+++`; the factory consumes that width by baking
 the abi3 wheel into EACH targeted (line × triplet) payload variant.
 The baked variant records the TARGET runtime's line and `abi` exactly
 like a line-specific build — the resolver's grammar gains no `abi3`
@@ -505,13 +498,13 @@ there; no second arch axis is ever introduced.
 [cols="<,<",options="header"]
 |===
 | wheel platform tag (PEP 425/600) | tebako triplet
-| `manylinux_*_x86_64` | `linux-gnu-x86_64`
-| `manylinux_*_aarch64` | `linux-gnu-arm64`
-| `musllinux_*_x86_64` | `linux-musl-x86_64`
-| `musllinux_*_aarch64` | `linux-musl-arm64`
-| `macosx_*_x86_64` | `macos-x86_64`
-| `macosx_*_arm64` | `macos-arm64`
-| `macosx_*_universal2` | split per-arch at bake time — the payload stays per-triplet
+| `+++manylinux_*_x86_64+++` | `linux-gnu-x86_64`
+| `+++manylinux_*_aarch64+++` | `linux-gnu-arm64`
+| `+++musllinux_*_x86_64+++` | `linux-musl-x86_64`
+| `+++musllinux_*_aarch64+++` | `linux-musl-arm64`
+| `+++macosx_*_x86_64+++` | `macos-x86_64`
+| `+++macosx_*_arm64+++` | `macos-arm64`
+| `+++macosx_*_universal2+++` | split per-arch at bake time — the payload stays per-triplet
 | `win_amd64` / `win_arm64` | RESERVED — the windows python runtime is not yet shipped; readers MUST NOT guess a mapping
 |===
 
@@ -540,20 +533,20 @@ registry YAML) stay small buffered GETs; the pipeline is for artifacts.
 
 * *The plan.* Resolution produces the whole closure up front; the
 pipeline takes it as an explicit `FetchPlan`: a subject line (the
-progress header's `<what>`) plus one item per artifact carrying
-`{reference, sha256 pin, size hint, tmp dir, commit closure}`. The
+progress header's `+++&lt;what&gt;+++`) plus one item per artifact carrying
+`+++{reference, sha256 pin, size hint, tmp dir, commit closure}+++`. The
 commit closure owns the artifact's install semantics (signature
 verification, the store's lock + rename + markers) — the pipeline
 owns transport, integrity, and scheduling; neither crosses over.
 * *Parallelism.* A std::thread worker pool — `jobs` from
-`TEBAKO_FETCH_JOBS` (env) over `fetch_jobs` (`~/.tebako/config.yaml`)
+`TEBAKO_FETCH_JOBS` (env) over `fetch_jobs` (`+++~/.tebako/config.yaml+++`)
 over the default *3* (docker's number); `1` is sequential (the
 debug shape). An unparseable or zero value is a NAMED error, never a
 silent clamp. No async runtime, no new dependencies (spec 14).
 * *Streaming integrity (one pass, constant memory).* Each worker
 streams its response body into the item's tmp file WHILE updating a
 streaming sha256 hasher; the pin compares at end-of-stream. The
-pre-pipeline shape (buffer the whole body into a `Vec<u8>`, hash as
+pre-pipeline shape (buffer the whole body into a `+++Vec&lt;u8&gt;+++`, hash as
 a second pass — a 200 MB image pinning 200 MB of RAM) is RETIRED:
 artifact bytes never materialize whole in memory on the download
 path. A signature verification that needs the bytes reads the
@@ -574,7 +567,7 @@ unchanged — the taxonomy of spec 06 §4 / the caller's table is
 untouched). A partial install never appears in the store: tmp+rename
 (§4) already makes the bytes invisible, and the cancel path removes
 the tmp files — proven by test, not asserted.
-* *The store is concurrency-safe by design* (§4's per-entry flock +
+* *The store is concurrency-safe by design* (§4's per-entry flock {plus}
 content-addressed byte-identical artifacts): two workers never share
 an entry — one plan holds disjoint store slots, and a foreign
 process installing the same entry serializes on the same flock with

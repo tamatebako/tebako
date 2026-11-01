@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -46,7 +47,7 @@ that proves the log only grew.
 [%unnumbered]
 == 2. The canonical snapshot
 
-`tebako registry snapshot <alias|path>` renders every row of a registry
+`+++tebako registry snapshot &lt;alias|path&gt;+++` renders every row of a registry
 document as ONE canonical line. Determinism is the premise — a snapshot
 that shifts when nothing changed is worthless as evidence:
 
@@ -62,7 +63,7 @@ that shifts when nothing changed is worthless as evidence:
 | field | rule
 | `kind` | the document's `kind:` value, verbatim
 | `name@version` | verbatim from the document (one line per row, so a version entry with N platform legs is N lines)
-| `platform` | the triplet, or `universal`; a variant arm renders `<variant-id>:<universal\|triplet>` — the arm id never stands alone, so a universal arm can never be mistaken for a triplet
+| `platform` | the triplet, or `universal`; a variant arm renders `+++&lt;variant-id&gt;:&lt;universal\|triplet&gt;+++` — the arm id never stands alone, so a universal arm can never be mistaken for a triplet
 | `sha256` | the row's anchor digest, lowercase hex; `-` when the row declares none (a runtime index row)
 | `state` | `active`, or `withdrawn` — spec 04's `status:` value verbatim, never a second spelling (§6)
 | `keyid` | the row's declared signer keyid when present, else `-`
@@ -199,7 +200,7 @@ head, and one proof per matching row: a version is often several rows (one
 per platform), and hiding all but one would understate what the registry
 says. It needs `--registry` as well as `--row`, because the canonical line
 cannot be reconstructed from a name alone — the line IS what is proved.
-`--verify-root <hex>` checks the proof against a root the caller obtained
+`+++--verify-root &lt;hex&gt;+++` checks the proof against a root the caller obtained
 out of band: a user holding ONE 32-byte value can prove a row's membership
 without trusting the download that carried it.
 

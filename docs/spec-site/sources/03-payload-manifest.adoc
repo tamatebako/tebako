@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -23,7 +24,7 @@ Normative specification of the in-image manifest: every payload is a
 [%unnumbered]
 == 1. Location and form
 
-* Path: `/__tpkg__/manifest.yaml` — inside the image, at a well-known
+* Path: `+++/__tpkg__/manifest.yaml+++` — inside the image, at a well-known
 location. No sidecars, no central service.
 * Format: *YAML* (the locked convention for all authored configuration
 surfaces). Versioned JSON Schema: `schema/tpkg-manifest-v1.schema.json`.
@@ -133,8 +134,7 @@ an orthogonal per-entrypoint key:
 
 `active` is the payload author's default exposure. Install registers only
 the active set (spec 07 §1); an inactive-but-declared command stays
-dispatchable — `tebako shim enable <name>` links it on demand, `tebako
-run <name>` reaches it directly, and the user's per-machine
+dispatchable — `+++tebako shim enable &lt;name&gt;+++` links it on demand, `+++tebako run &lt;name&gt;+++` reaches it directly, and the user's per-machine
 enable/disable always overrides the manifest default (spec 07 §3).
 Additive on the wire: pre-flag readers ignore the key and register every
 entrypoint (the pre-flag behavior). The declared names are also the only
@@ -241,7 +241,7 @@ order (runtime first, layers, app last) → per node: cache hit on
 manifest's declared env → exec. The SAME signed `.tfs` artifact type at
 every graph level — one coherent algebra.
 * *PER-EDGE PLATFORM CONDITIONING (`triplets:`, additive — schema_minor
-*9, locked 2026-09-12, roadmap 86):* every edge kind EXCEPT
+9, locked 2026-09-12, roadmap 86):* every edge kind EXCEPT
 `kind: language` accepts the OPTIONAL `triplets:` list — the §3 axis's
 vcpkg-form triplets, non-empty, no duplicates
 (validated at parse). This generalizes the toolkit edge's existing
@@ -289,16 +289,16 @@ materialize:
 
 A top-level list (any kind may declare it; old readers ignore it under
 the unknown-field rule) naming *regular files a C library must read
-*through its own IO* — the interpreter's patched IO never gets asked, so
+through its own IO* — the interpreter's patched IO never gets asked, so
 the bytes must exist on the host filesystem. The OpenSSL CA cert is the
 canonical entry. The driver extracts each declared path after the mounts
 and the jail, before the interpreter handoff, to
-`<TEBAKO_EXEC_CACHE>/resources/<image-key>/<P>` — whole-file, read-only,
+`+++&lt;TEBAKO_EXEC_CACHE&gt;/resources/&lt;image-key&gt;/&lt;P&gt;+++` — whole-file, read-only,
 digest-verified. A declared path absent from the image, or not a regular
 file, is the manifest lying: boot fails by name (exit 65), never a
 skipped entry. The full mechanics and the trust chain are spec 22 §4
 (class R); the grammar is registered in
-`docs/spec/schemas/payload-manifest.yaml`.
+`+++docs/spec/schemas/payload-manifest.yaml+++`.
 
 
 [%unnumbered]
@@ -330,7 +330,7 @@ co-mounted images declaring the same `name` is a named boot error
 (authoring ambiguity, the spec 17 §2 slug precedent), never a silent
 winner. No platform filter: native images are triplet-bound (§3), so an
 alias is platform surface by construction. The grammar is registered in
-`docs/spec/schemas/payload-manifest.yaml`.
+`+++docs/spec/schemas/payload-manifest.yaml+++`.
 
 
 [%unnumbered]
@@ -364,7 +364,7 @@ construction. A malformed block is a named validation error at press /
 `tfs validate` (exit 65), never discovered at run time. The semantics —
 the engine, the three moments, SKIP/FAIL discipline — are spec 26; the
 grammar is registered in
-`docs/spec/schemas/payload-manifest.yaml`.
+`+++docs/spec/schemas/payload-manifest.yaml+++`.
 
 
 [%unnumbered]
@@ -380,7 +380,7 @@ interp_env:
 
 A top-level map (any kind may declare; old readers ignore it under the
 unknown-field rule) carrying *interpreter-option defaults the slice
-*author owns*: what options the interpreter starts with is a
+author owns*: what options the interpreter starts with is a
 packaging-time decision (the runtime/payload slice developer's), with
 the local user always able to override. The dispatcher exports each
 merged key into the runtime process's environment at dispatch, so the
@@ -391,7 +391,7 @@ a ruby wart).
 MECE against the existing env surfaces: `provides.env:` (runtime kind)
 is the runtime's COMPOSED process-env defaults (path-class included,
 spec 07 §9); `interp_env:` is the per-slice interpreter-OPTION channel —
-scalar only, never path-class, never a `TEBAKO_*` control var (those are
+scalar only, never path-class, never a `+++TEBAKO_*+++` control var (those are
 dispatcher/driver-owned; both violations are named manifest errors).
 Values are literal strings: no expansion, no execution, no references —
 additive and declarative by construction; a malformed block is a named
@@ -435,7 +435,7 @@ mount: two slices carrying different versions of one gem stay
 VISIBLE-and-resolvable (requirement-based activation) instead of
 one shadowing the other by mount precedence.
 * `layout: files` — opaque content the application reads itself
-(fonts, codelists). The app enumerates `<mount>/<slice>/…`.
+(fonts, codelists). The app enumerates `+++&lt;mount&gt;/&lt;slice&gt;/…+++`.
 
 *Base side, dedup inventory — PROVIDES gains `gems:`* (any payload
 staging a gem home; REQUIRED when it declares a `gem-home` extension
@@ -451,7 +451,7 @@ provides:
 ----
 
 * Generated, never hand-authored (spec 00 §10): the builder scans the
-staged gem home's `specifications/*.gemspec` before the image seals.
+staged gem home's `+++specifications/*.gemspec+++` before the image seals.
 One generator, two consumers — the dispatcher reads the manifest key
 (the overlap journal, spec 07 §2 step 3a); the release exports the
 same inventory as its `closure.json` asset, the slice press's
@@ -490,7 +490,7 @@ the forward `requires`/`expose` machinery (spec 30), never
 satisfied by the BASE's resolved runtime (abi line included — a
 mismatch is the dispatch-time loud skip, never a segfault).
 * *The binding rule.* A slice deduped against the base's closure
-pins EXACTLY (`constraint: "= x.y.z"` — one slice release per base
+pins EXACTLY (`+++constraint: "= x.y.z"+++` — one slice release per base
 release, shipped in lockstep): subtraction is sound only against
 the exact inventory it subtracted, and the slice's tests ran against
 exactly that base. When the base ships runtime LINES as suffixed
@@ -520,7 +520,7 @@ metanorma flavor slices, metanorma/packed-metanorma-bsi and -nist,
 serves every runtime line of a base family cannot use ONE exact
 pin: equality clauses are suffix-exact in the versions grammar
 (`= 1.17.0` never matches `1.17.0-ruby3.3`). Nor should it reach
-for a range (`>= 1.17.0-ruby3.3, < 1.17.1`): a range is legal for
+for a range (`+++&gt;= 1.17.0-ruby3.3, &lt; 1.17.1+++`): a range is legal for
 content that honestly spans, but a gem-closure slice subtracts a
 specific inventory, and the binding rule wants each served row
 named. The shipped spelling is one edge per row:
@@ -606,10 +606,10 @@ requirement's; the tooling axis is the floor's).
 The packager's opt-in to the driver's credential scrub. A packaged
 app must not exfiltrate the packager's credentials by default: at
 boot's end, after every contract read, the driver BLANKS every
-`TEBAKO_*` environment variable that is not part of the boot contract
+`+++TEBAKO_*+++` environment variable that is not part of the boot contract
 (spec 17 §1/§7's handoff surface, spec 08 §2's jail, spec 22 §6's
 exec cache, spec 22 §3's child injection, spec 25 §2's trace, and the
-`TEBAKO_MOUNT_*` discovery prefix) — `TEBAKO_GITHUB_TOKEN` above all.
+`+++TEBAKO_MOUNT_*+++` discovery prefix) — `TEBAKO_GITHUB_TOKEN` above all.
 The scrub journals each NAME at debug, never a value.
 
 
@@ -635,7 +635,7 @@ run silently carrying the press host's credentials.
 [%unnumbered]
 == 3. Platform axis (locked, vcpkg-triplet form)
 
-`platforms` is EITHER `"universal"` (pure-ruby/data) OR an explicit list:
+`platforms` is EITHER `+++"universal"+++` (pure-ruby/data) OR an explicit list:
 
 * `aarch64-macos`, `x86_64-macos`
 * `x86_64-linux-gnu`, `aarch64-linux-gnu`
@@ -673,12 +673,11 @@ every payload.
 inferred: app for pressed apps; data for plain images; runtime for
 runtime packages — `provides` filled from the factory's versions data).
 * *Payload exclusion at imaging time (additive, 2026-10-09,
-*tebako#333):* `tebako press --exclude <glob>` (repeatable) and `tfs
-mkimage --exclude <glob>` leave matching paths out of the BUILT image —
+tebako#333):* `+++tebako press --exclude &lt;glob&gt;+++` (repeatable) and `+++tfs mkimage --exclude &lt;glob&gt;+++` leave matching paths out of the BUILT image —
 one grammar, one semantics, one implementation shared by both commands.
 A pattern matches the payload-root-relative path (slash-separated, no
-leading `/`): `*`, `?`, and `[...]` classes follow fnmatch flag-0
-semantics (a `*` run spans `/`), `\` quotes the next character, and a
+leading `/`): `+++*+++`, `?`, and `+++[...]+++` classes follow fnmatch flag-0
+semantics (a `+++*+++` run spans `/`), `+++\+++` quotes the next character, and a
 matched directory prunes its whole subtree (a trailing `/` on the
 pattern is accepted and stripped — it names the directory). Exclusion
 is imaging-time only: excluded paths are absent from the image, and
@@ -742,8 +741,7 @@ lock:                             # the press-time composition lock (spec 23 §4
 multi-runtime packages); the trailer's v1 field stays for v1 loaders.
 * `entries[].name` / `entries[].entrypoint` mirror the slot payload's L1
 `provides.entrypoints[]` (§2.2 completeness — one SSOT): every L2 entry
-names a DECLARED L1 entrypoint of its slot, enforced by `tebako-pkg
-validate` (tebako#494). Two entries MAY share one slot — same image,
+names a DECLARED L1 entrypoint of its slot, enforced by `tebako-pkg validate` (tebako#494). Two entries MAY share one slot — same image,
 different in-image entrypoints: the multi-command single-payload form
 (one app slice carrying several CLIs, e.g. metanorma + fontist).
 * `entries[].interp_env` (IMPLEMENTED 2026-10-07, tebako#559 — §2.7's L2 face): the
@@ -751,8 +749,7 @@ press-time COMPOSITION of the slot payload's L1 `interp_env` with the
 packager's refinement (a packager key wins over the same L1 key; L1
 keys pass through untouched otherwise). The mirror exists because the
 size-gated bootstrap reads no image bytes: the standalone dispatcher
-consumes exactly this block, never the in-image L1. `tebako-pkg
-validate` cross-checks the composition against the slot's L1 (every
+consumes exactly this block, never the in-image L1. `tebako-pkg validate` cross-checks the composition against the slot's L1 (every
 L1 key present with its declared or the refined value; a dropped L1
 key is a named validation error, the tebako#494 class) — the block is
 a faithful mirror plus declared overrides, never an independent
@@ -766,7 +763,7 @@ named error). `mode: union` merges the image over the images already
 mounted at `point` with declared precedence — read-only images only,
 directories merge, file conflicts resolve by precedence order (the
 env image is always lowest). `precedence` values: `after-env` (over
-the runtime's env image — the pressed-app form) or `after:<slot>`
+the runtime's env image — the pressed-app form) or `+++after:&lt;slot&gt;+++`
 (over another payload slot). The union set is journaled at boot
 (spec 17 §1). `cow`/`enc` are RESERVED mode spellings on the same
 axis (the transforms law: overlays exist only in the Rust TFS) and
@@ -804,10 +801,10 @@ A manifest inside the image it describes CANNOT name that image's
 sha256 (self-reference has no fixed point). Therefore:
 
 * `tree_hash` is computed over the payload tree EXCLUDING
-`/__tpkg__/` (manifest-excluded merkle root — well-defined, and it is
+`+++/__tpkg__/+++` (manifest-excluded merkle root — well-defined, and it is
 what CAS/dedup/signing use). The construction (SHA-256, 4 KiB chunks,
 length-prefixed domain-separated serialization) is locked as
-`tfs-merkle-1` in `crates/tpkg/src/merkle.rs`; `tfs mkimage` and
+`tfs-merkle-1` in `+++crates/tpkg/src/merkle.rs+++`; `tfs mkimage` and
 `tebako press` stamp it at image creation, `tfs info --verify`
 recomputes and compares (roadmap 37, SHIPPED; verification-on-READ
 inside the VFS is a later milestone).

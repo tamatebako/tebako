@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -68,8 +69,8 @@ routine.
 [%unnumbered]
 == 2. The bundle (wire format)
 
-`<stem>.tar.gz` where `<stem>` is the package stem
-(`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — suffix-less, spec 05 §2's
+`+++&lt;stem&gt;.tar.gz+++` where `+++&lt;stem&gt;+++` is the package stem
+(`+++tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;+++` — suffix-less, spec 05 §2's
 spelling rule and era law, on windows too). A gzipped tar whose members are
 named by their served spellings, in this fixed order (deterministic bytes —
 a re-run of identical inputs yields a digest-identical bundle, so the
@@ -136,7 +137,7 @@ The shard keeps today's identity anchors and gains ONE additive key:
 ----
 
 * `filename` stays the EXE's spelling and the per-member sha fields
-(`sha256`, `image.sha256`, `dll.*`) keep pinning the UNPACKED members
+(`sha256`, `image.sha256`, `+++dll.*+++`) keep pinning the UNPACKED members
 — the store verifies members against them post-unpack (§4), and old
 readers keep matching the identity triple exactly as today.
 * `bundle` is additive: pre-bundle readers ignore it (the additive
@@ -152,13 +153,12 @@ spellings.
 *Co-publish (the lazy arm's serving requirement, spec 39 §7).* A
 bundle-era line whose consumers include a lazy-mount loader ALSO serves
 the per-file assets of spec 13 §2a's enumeration — the bare exe under
-its historical spelling, `<stem>.tfs`, `<stem>.dll` (windows) — each
+its historical spelling, `+++&lt;stem&gt;.tfs+++`, `+++&lt;stem&gt;.dll+++` (windows) — each
 with its own `.sha256` sidecar, plus an `.asc` of each on
 signing-enabled lines. The shard's grammar is otherwise unchanged: the
 per-file blocks already pin exactly these bytes (the member pins ARE
 the standalone pins — one staged file, one digest, two serving forms);
-the shard gains ONE additive witness, top-level `"per_file_assets":
-true` (runtime-manifest MINOR 2), and declares the entry/facet
+the shard gains ONE additive witness, top-level `+++"per_file_assets": true+++` (runtime-manifest MINOR 2), and declares the entry/facet
 `signature` blocks exactly as the per-file era does (the every-served-
 name rule covers the standalone set again). A shard carrying the
 witness without the assets on the release is the same invalid publish
@@ -182,7 +182,7 @@ when its consumers include the lazy arm.
 Preference order is unchanged (shard → derived monolith → line index);
 the era branch happens INSIDE the shard case:
 
-* `bundle` present ⇒ *bundle fetch*: download `bundle.filename` +
+* `bundle` present ⇒ *bundle fetch*: download `bundle.filename` {plus}
 its `.sha256` sidecar (+ `.asc` when `bundle.signature` declares it)
 → verify the detached signature FIRST when declared (spec 09 §4's
 runtime-fetch point, always strict: 71 invalid / 72 untrusted) →
@@ -214,7 +214,7 @@ unchanged — the bundle is just the asset the chain supplies).
 == 5. The registry mirror (spec 04 §2 amendment)
 
 A bundle-era runtime entry's platform rows name the BUNDLE:
-`artifact: <stem>.tar.gz`, `sha256` pins the bundle. The rows stay the
+`+++artifact: &lt;stem&gt;.tar.gz+++`, `sha256` pins the bundle. The rows stay the
 resolution mirror and audit pin; the runtime download itself flows the
 shard (§4). Per-file-era rows keep naming the exe — the registry is a
 faithful mirror of what the pinned release serves, era by era, and a
@@ -234,7 +234,7 @@ set (line tips: 5 rubies × 7 platforms ≈ 385 per-file assets, ≈ 175
 bundle assets) — comfortably under the ceiling on either shape.
 * *Catalog republication is for migrations only* (a format switch
 like dwarfs→limnifs), and a catalog run DERIVES its shard tags itself:
-`v<ver>-<engine><line>-<platform>` per (ruby line × platform group) —
+`+++v&lt;ver&gt;-&lt;engine&gt;&lt;line&gt;-&lt;platform&gt;+++` per (ruby line × platform group) —
 the platform group's vocabulary is `linux-gnu` / `linux-musl` /
 `macos` / `windows` (one shard serves both arch legs of its group) —
 no operator input (the v0.16.28 manual `TEBAKO_RELEASE_TAG` input

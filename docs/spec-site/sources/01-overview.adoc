@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -87,10 +88,10 @@ Everywhere else: Rust, pure Ruby, or Docker. Owner-locked.
 |===
 | Crate | Kind | Role
 | `tpkg` | lib | L0 wire format, single source of truth (spec 02). `#![forbid(unsafe_code)]`.
-| `tfs` | lib (cdylib+staticlib+rlib) | The Rust TFS (spec 11): `tebako_fs_*` C ABI, mount table, dispatch, backends ZIP/DwarFS/SquashFS. Sole home of future COW/ENC transforms.
+| `tfs` | lib (cdylib+staticlib+rlib) | The Rust TFS (spec 11): `+++tebako_fs_*+++` C ABI, mount table, dispatch, backends ZIP/DwarFS/SquashFS. Sole home of future COW/ENC transforms.
 | `sqfs-sys` | lib (FFI) | libsquashfs-tools-ng FFI, ABI-pinned.
-| `tebako-pkg` | bin | Container surgery: `info/bundle/unbundle/reassemble/insert-image/remove-image/set-runtime/sign/verify`.
-| `tfs-cli` | bin | The `tfs` image tool: `info/ls/tree/cat/stat/extract/find/mkimage` (in-process Writer).
+| `tebako-pkg` | bin | Container surgery: `+++info/bundle/unbundle/reassemble/insert-image/remove-image/set-runtime/sign/verify+++`.
+| `tfs-cli` | bin | The `tfs` image tool: `+++info/ls/tree/cat/stat/extract/find/mkimage+++` (in-process Writer).
 | `tebako-cli` | bin | The packager: `press` (lean/fat), `cache list/prune`.
 | `tebako-bootstrap` | bin | The loader (spec 06): trailer parse, resolution, verification, ABI-v1 handoff. < 3 MB static, size-gated (unverified-first: rnp/botan feature-gated out; OpenPGP moves to the roadmap-72 crypto toolkit).
 | `tebako-driver` | lib (staticlib+rlib) | The spec-17 runtime driver: mounts the env image + payload images into the process-global TFS context, applies `TEBAKO_JAIL`, rewrites argv to the entrypoint. Linked into every runtime executable. The Rust successor of the v1 C++ `tebako-main`.

@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -56,8 +57,8 @@ between channels, a second signature mechanism.
 == 2. The reference grammar (spec 04 §1 amendment)
 
 One new PROTOCOL-class form. The host is ALWAYS explicit — there is no
-canonical OCI SaaS — so the form is the `tfs+<svc>://host` shape of
-spec 37 §4, never the bare `tfs:<svc>:` SaaS shape:
+canonical OCI SaaS — so the form is the `+++tfs+&lt;svc&gt;://host+++` shape of
+spec 37 §4, never the bare `+++tfs:&lt;svc&gt;:+++` SaaS shape:
 
 
 [source]
@@ -93,16 +94,16 @@ digest    = "sha256:" 64HEXDIG
 
 * *MECE (locked):* the tag splits at the LAST `:` (a `host:port`
 never collides — the host came off at the first `/`, exactly the
-`tfs+github://` rule); `@` selects the digest form; a reference
+`+++tfs+github://+++` rule); `@` selects the digest form; a reference
 carrying both `:tag` and `@digest` is `Invalid`. Repo names are
 lowercase-only per the distribution grammar — an uppercase byte in
 `repo` is a parse-time `Invalid` (65), never a downcasing guess.
 * *The bare form `tfs:oci:…`* is the named `Invalid` steering to the
-hosted spelling: "the OCI form is `tfs+oci://<registry>/<repo>` —
+hosted spelling: "the OCI form is `+++tfs+oci://&lt;registry&gt;/&lt;repo&gt;+++` —
 there is no canonical OCI host; name the registry explicitly"
 (the `UnsupportedService` pattern of spec 37 §4: a refusal that
 teaches, never a guess). docker.io is reachable only as an explicit
-host (`tfs+oci://registry-1.docker.io/library/…`).
+host (`+++tfs+oci://registry-1.docker.io/library/…+++`).
 * *No `#artifact` concept.* The tag/digest IS the selector; there is
 no multi-asset listing to disambiguate (the `AmbiguousAssets` class
 never fires on this adapter). Repo layout (one repo per payload, one
@@ -136,7 +137,7 @@ class; that is exactly the spec 36 §4 compat-window behavior).
 
 *One OCI artifact per served file.* Every artifact is an OCI image
 manifest (distribution-spec v1.1 form) with `artifactType` set, the
-empty config (`application/vnd.oci.empty.v1+json`, the canonical `{}`
+empty config (`application/vnd.oci.empty.v1+json`, the canonical `+++{}+++`
 bytes), and EXACTLY ONE layer — the file's raw bytes. No tar
 wrapping, no compression: the layer blob IS the file, so the layer
 digest IS the artifact's sha256 — the `.sha256` sidecar's exact
@@ -178,31 +179,31 @@ L3 subset, so a dispatcher never pulls a blob to resolve:
 
 
 *Tag derivation (locked — the single owner of both rules is this
-*section):*
+section):*
 
-* payload: `<version>` for `universal`, `<version>-<triplet>` per
+* payload: `+++&lt;version&gt;+++` for `universal`, `+++&lt;version&gt;-&lt;triplet&gt;+++` per
 triplet (tebako version/triplet characters are a subset of the OCI
 tag grammar by construction).
 * runtime bundle: the bundle STEM verbatim
-(`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — spec 36 §2's spelling;
+(`+++tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;+++` — spec 36 §2's spelling;
 the factory declares it, consumers flow it). The OCI lane opened with
 the post-tebako#716 grammar: pre-#716 (per-file-era) lines never
 publish to OCI, so a selector-less locator composes the new-era
 spelling only.
 * registry index: `latest` by convention; publishers MAY add version
 tags; operators pin with the `@sha256:` form.
-* signature: `sha256-<64 hex of the SIGNED BLOB's digest>.asc` — keyed
+* signature: `+++sha256-&lt;64 hex of the SIGNED BLOB's digest&gt;.asc+++` — keyed
 by the signed bytes, derived deterministically from the layer
 descriptor the fetcher already holds. No listing, no guessing.
 * blksum sidecar (added with spec 39 §8's OCI arm):
-`sha256-<64 hex of the IMAGE blob's digest>.blksum.json` — the same
+`+++sha256-&lt;64 hex of the IMAGE blob's digest&gt;.blksum.json+++` — the same
 sibling digest-tag rule as the signature's, keyed by the image bytes.
 The artifact's layer digest IS the sidecar document's own sha256 —
 the seed descriptor's `blksum_sha256` pin (spec 39 §3) binds it with
 no second file.
 
 *Per-triplet tags, never an OCI image index (locked — the tebako#695
-*DECIDE).* Platform selection in tebako is the REGISTRY's declarative
+DECIDE).* Platform selection in tebako is the REGISTRY's declarative
 job (spec 04 §2, locked: "the adapter NEVER auto-picks by host
 triplet"). An OCI index manifest would import a second, adapter-side
 platform matcher — and its `os`/`arch` vocabulary cannot express tebako
@@ -216,7 +217,7 @@ multi-file need ships as a new artifact CLASS, never a second layer
 meaning and never an index.
 
 *Signatures ride sibling digest-tags, not the referrers API
-*(locked).* The v1.1 referrers API is the semantically rich form, but
+(locked).* The v1.1 referrers API is the semantically rich form, but
 the issue's target set (ECR, ACR, Harbor, zot) is exactly where
 referrers coverage is uneven in 2026, and a referrers-required design
 would re-introduce per-registry capability negotiation — a silent
@@ -238,7 +239,7 @@ pins identity exactly as today.
 
 A `tpkg-registry.yaml` published as a §3 registry-class artifact is a
 REGISTRY LOCATION — the third location form, beside the git-host forms
-and spec 37 §4's `tfs+https://` registry file:
+and spec 37 §4's `+++tfs+https://+++` registry file:
 
 
 [source]
@@ -252,12 +253,12 @@ seed — all of spec 37 §2 applies unchanged (the alias derives from
 the ref's repo component).
 * *TTL mapping (locked):* a TAG-pulled OCI registry rides the
 dispatch-time cache exactly like the git-host default-branch form —
-`registries/<sha>.yaml` + `.fetched-at`, 24 h TTL, spec 05 §4's
+`+++registries/&lt;sha&gt;.yaml+++` + `.fetched-at`, 24 h TTL, spec 05 §4's
 stale-serve on refresh failure (the manifest digest is recorded in
 the cache sidecar; a refresh that resolves the same digest re-serves
 the cached bytes, saving the blob pull). A DIGEST-pulled OCI registry
 is the pinned-immutable form — the analog of
-`tfs:<svc>:owner/repo:version#tpkg-registry.yaml`: cached forever,
+`+++tfs:&lt;svc&gt;:owner/repo:version#tpkg-registry.yaml+++`: cached forever,
 never re-fetched, TTL inapplicable.
 * `TEBAKO_OFFLINE=1`: cached-within-TTL serves; anything else is the
 named offline error. Unchanged semantics, new adapter.
@@ -270,19 +271,19 @@ Manifest reads (and the shard/registry-YAML blobs they name) join the
 "small buffered GETs" class; the artifact blob is a spec 05 §6
 FetchPlan ITEM — the pipeline owns transport, integrity, scheduling:
 
-. *Manifest read.* GET `/v2/<repo>/manifests/<tag|digest>` with the
+. *Manifest read.* GET `+++/v2/&lt;repo&gt;/manifests/&lt;tag|digest&gt;+++` with the
 §6 credential decision; a `?sha256=` byte pin is checked against the
 layer descriptor digest BEFORE the blob stream starts (a fail-fast
 70, never a wasted pull); an `@sha256:` reference verifies the
 returned manifest against the pin (the registry's
 `Docker-Content-Digest` and the body digest must agree — 70 class).
-. *Blob pull.* GET `/v2/<repo>/blobs/<digest>` streams through the
+. *Blob pull.* GET `+++/v2/&lt;repo&gt;/blobs/&lt;digest&gt;+++` streams through the
 pipeline's HashWriter — one pass, constant memory, the inline sha256
 compared against the layer digest AND any byte pin. The layer digest
 is the registry-supplied trust anchor; the store's `.sha256` marker
 is written from it, byte-identical in shape to today's sidecars.
 . *Commit.* The commit closure owns install semantics exactly as
-today: the store's per-entry flock (120 s, stale-lock hint), tmp +
+today: the store's per-entry flock (120 s, stale-lock hint), tmp {plus}
 rename, the spec 05 §4 commit order (the manifest mirror is the
 commit point — a version whose mirror is absent was never
 installed), signature verification per spec 09 BEFORE the bytes
@@ -293,16 +294,16 @@ derivation (`release_download_locator`) gains the OCI arm, and the
 fetch runs the bundle flow below. OCI runtime distribution is
 bundle-era only: per-file-era lines stay on their git-host releases
 forever (keep-forever, spec 13 §8) and never publish to OCI.
-.* *The fetch tag.* A selector-less locator tags the bundle STEM
-(`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — §3's tag rule, the
+** *The fetch tag.* A selector-less locator tags the bundle STEM
+(`+++tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;+++` — §3's tag rule, the
 factory's spelling flowed verbatim; the OCI lane is post-tebako#716,
 so only the language-carrying spelling exists here); an authored
 `:tag` or `@sha256:` selector rides exactly as written (spec 37 §8's
 authored-selector law).
-.* *One manifest read replaces the shard fetch.* The per-package
+** *One manifest read replaces the shard fetch.* The per-package
 shard comes from the bundle manifest's `org.tebako.runtime.shard`
 annotation (§3) and is gated THREE ways before any blob streams:
-the shard's identity triple (`<engine>_version` /
+the shard's identity triple (`+++&lt;engine&gt;_version+++` /
 `tebako_version` / `platform`) must match the runtime being
 resolved — a mismatch means the tag resolved another runtime's
 publish (69); the shard MUST declare a `bundle` block — a
@@ -311,7 +312,7 @@ per-file-era shard over OCI is the named bundle-era-only refusal
 digest — which IS the bundle's `.sha256` sidecar (§3) — must
 agree with the shard's bundle pin (a disagreement is 70, nothing
 installed).
-.* *The plan re-resolves by digest.* The FetchPlan item re-reads
+** *The plan re-resolves by digest.* The FetchPlan item re-reads
 the ALREADY-RESOLVED manifest by its digest — the tag's
 mutability never reaches the stream — and streams the one bundle
 layer under the RuntimeBundle shape law; spec 36 §4 then runs
@@ -322,12 +323,12 @@ git-host lane — then bundle digest → in-process unpack →
 per-member pins → the spec 05 §3 layout). The staged store entry
 is indistinguishable from a git-host bundle install, the origin
 markers excepted (point 5's digest-pinned form).
-.* *The lazy mode degrades loud.* OCI serves the bundle whole —
+** *The lazy mode degrades loud.* OCI serves the bundle whole —
 there is no per-file arm and no blksum probe on this channel —
 so the lazy mount mode against an OCI source is the loud eager
 fallback (`event=lazy-fallback reason=oci-bundle-era-only`) and
 the install completes eager.
-.* *`channel: oci` covers runtime rows.* A book entry declaring
+** *`channel: oci` covers runtime rows.* A book entry declaring
 `channel: oci` (§11) routes the picked runtime row through its
 per-triplet `oci:` mirror field — fail-closed exactly like the
 payload lane: a universal row, a host-covered row lacking the
@@ -335,7 +336,7 @@ mirror, or an unparsable one is a named 65 error naming the
 registry and the row; never a fallback to the primary
 `release.ref`.
 . *The origin marker* records the concrete digest-pinned form
-(`tfs+oci://<host>/<repo>@sha256:<manifest digest>`) even for tag
+(`+++tfs+oci://&lt;host&gt;/&lt;repo&gt;@sha256:&lt;manifest digest&gt;+++`) even for tag
 pulls — spec 37 §7's origin binding and `tebako cache list` work
 unchanged, channel included.
 
@@ -356,9 +357,9 @@ fallback tier and the distribution-spec token flow:
 host; derivation rides the same base-URL construction SSOT).
 . *Tier 2* — the URL's exact host.
 . *The docker/config.json fallback (NEW, OCI-class URLs only):*
-static `auths[<host>]` entries (the base64 `user:pass` pair) from
-`~/.docker/config.json` (plus `$DOCKER_CONFIG`), journaled as
-`token:docker-config:<host>`. `credHelpers`/`credsStore` entries
+static `+++auths[&lt;host&gt;]+++` entries (the base64 `user:pass` pair) from
+`+++~/.docker/config.json+++` (plus `+++$DOCKER_CONFIG+++`), journaled as
+`+++token:docker-config:&lt;host&gt;+++`. `credHelpers`/`credsStore` entries
 covering a referenced host are the named
 `DockerCredentialHelperUnsupported` (65) — helpers are shell-outs,
 forbidden by the no-shell-outs law, and the steer says so (move the
@@ -387,11 +388,11 @@ hardcoded hosts). The returned bearer rides ONLY to the registry
 host — never cross-host, never to a redirect target (ureq's
 `RedirectAuthHeaders::Never` stands).
 * The header shape by service class gains the OCI row:
-`Authorization: Basic <base64(user:pass)>` to the realm,
-`Authorization: Bearer <token>` to the registry — the adapter owns
+`+++Authorization: Basic &lt;base64(user:pass)&gt;+++` to the realm,
+`+++Authorization: Bearer &lt;token&gt;+++` to the registry — the adapter owns
 the shape; authored config never spells header mechanics.
 * Every fetch journals host + credential class, values redacted —
-spec 37 §5's audit trail, new classes (`token:docker-config:<host>`)
+spec 37 §5's audit trail, new classes (`+++token:docker-config:&lt;host&gt;+++`)
 included.
 
 
@@ -403,7 +404,7 @@ The normative publisher is `tebako publish` — the OCI leg is in-process
 never the ORAS CLI (the no-shell-outs law binds shipped artifacts and
 tests; ORAS in a CI workflow is permitted sugar, never the contract).
 
-* `tebako publish … --oci tfs+oci://<host>/<repo>` uploads each
+* `+++tebako publish … --oci tfs+oci://&lt;host&gt;/&lt;repo&gt;+++` uploads each
 payload's §3 artifact (plus signature artifacts when signing, plus
 the blksum sidecar sibling for every payload the staged sidecar
 exists for — spec 39 §8) from
@@ -421,7 +422,7 @@ platforms:
 ----
 
 * *Write-once (the release-immutability rule transferred, spec 13
-*§2a):* publish refuses to point an existing tag at a DIFFERENT
+§2a):* publish refuses to point an existing tag at a DIFFERENT
 digest — `OciTagConflict` (69) naming the tag and both digests.
 Re-publish of identical bytes is the idempotent skip, as today. Tags
 are mutable in the OCI model; tebako treats them as immutable by
@@ -508,7 +509,7 @@ The adapter is a cargo feature `oci` on tebako-resolve (backing the new
 tebako-shim, tfs CLI), OFF for the size-gated tebako-bootstrap, where a
 `tfs+oci:` reference fails closed with the named `OciAdapterDisabled`
 (the `GitAdapterDisabled` precedent: steer to managed mode). The
-bootstrap's own runtime base stays the spec 05 §2 default +
+bootstrap's own runtime base stays the spec 05 §2 default {plus}
 `TEBAKO_RUNTIME_MIRROR` (https/file) — OCI runtime distribution enters
 through the toolchain's registry-derived channel, and the 3 MiB gate
 never pays for it.
@@ -555,12 +556,12 @@ parses silently (a named error, always); tag derivation injective per
 challenge→token→manifest→blob happy path; the error-code map
 (`NAME_UNKNOWN`→`OciManifestNotFound`, …); media-type/shape refusals;
 cross-host realm refusal; token re-challenge-once; store-equivalence —
-an install from OCI and from `file://` of the SAME bytes yields
+an install from OCI and from `+++file://+++` of the SAME bytes yields
 identical store records except the origin marker (the parity arm of
 spec 00 invariant 8).
 * *E2e* (`ci/`, tiered): a *zot fixture* — a pinned zot binary (CI
 tooling, fetched at workflow time, never a shipped dependency)
-configured in-tmp on `127.0.0.1:<port>` over plain HTTP, exercising
+configured in-tmp on `+++127.0.0.1:&lt;port&gt;+++` over plain HTTP, exercising
 exactly the §8 loopback carve-out. Legs: publish payload + signature
 → `add-registry` over OCI → install → run the entrypoint;
 digest-pinned pull; offline refusal; `TEBAKO_REQUIRE_SIGNED=1`
@@ -573,9 +574,9 @@ existing live-GitHub legs.
 [%unnumbered]
 == 13. Open questions (each with this spec's recommendation)
 
-. *The issue's `tfs:oci:` sketch vs `tfs+oci://`.* Recommended and
-locked: `tfs+oci://` — spec 37 §4 puts every explicit host in the
-`tfs+<svc>://` shape, and `tfs:<svc>:` names a canonical SaaS host,
+. *The issue's `tfs:oci:` sketch vs `+++tfs+oci://+++`.* Recommended and
+locked: `+++tfs+oci://+++` — spec 37 §4 puts every explicit host in the
+`+++tfs+&lt;svc&gt;://+++` shape, and `+++tfs:&lt;svc&gt;:+++` names a canonical SaaS host,
 which OCI deliberately lacks. The bare form is the teaching refusal.
 . *Referrers API for signatures.* Recommended: sibling digest-tags
 (locked, §3); referrers as a later additive mirror once ECR/ACR/
@@ -617,15 +618,14 @@ choice.
 
 . *PR 1 — the spec.* This document + `00-INDEX.md` entry + the
 registry JSON Schema's additive `oci:` field. No code.
-. *PR 2 — the pull path, end-to-end.* `tebako-oci` crate (model +
+. *PR 2 — the pull path, end-to-end.* `tebako-oci` crate (model {plus}
 auth + client), `Reference::Oci` grammar, fetch/pipeline
 integration, credential chain (docker fallback, realm confinement),
-registry-YAML-over-OCI (`add-registry`), the `oci` cargo feature +
-`OciAdapterDisabled`, and the full unit/property/contract tier +
+registry-YAML-over-OCI (`add-registry`), the `oci` cargo feature {plus}
+`OciAdapterDisabled`, and the full unit/property/contract tier {plus}
 zot e2e pull legs. Readers accept and resolve `oci:` row fields
 (primary-ref resolution only; `channel:` declaration not yet).
-. *PR 3 — the publish path + mirror coexistence.* `tebako publish
---oci` (artifacts, signature artifacts, write-once `OciTagConflict`,
+. *PR 3 — the publish path + mirror coexistence.* `tebako publish --oci` (artifacts, signature artifacts, write-once `OciTagConflict`,
 `oci:` row mirror write), the book's `channel: oci` declaration
 with fail-closed row errors, zot e2e publish→install→run legs,
 tebako.org tier-4 how-to (separate repo).

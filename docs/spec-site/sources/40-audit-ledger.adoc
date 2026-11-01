@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -46,14 +47,14 @@ driver's and preload's policy, VFS, overlay and decrypt decisions):
 ----
 
 The ledger answers exactly one question — *"what ran here, and why did
-*it run?"* — for one host, from one file, with no network and no other
+it run?"* — for one host, from one file, with no network and no other
 tebako artifact. It is not aggregated, not sharded, not rotated by the
 tools (an operator may rotate it; `--seal` before rotation is the
 discipline that keeps the seam auditable).
 
 *The read-only law.* A query (`tebako audit …` without `--seal`)
 creates nothing, appends nothing, stamps nothing, migrates nothing. It
-runs on a host whose `~/.tebako` was written by an older tebako, and it
+runs on a host whose `+++~/.tebako+++` was written by an older tebako, and it
 must not move that store's layout forward on the way in. The single
 writing verb is `--seal`, and the only file it writes is the anchor
 (§4).
@@ -73,7 +74,7 @@ operation).
 value may itself contain `=` (URLs with query strings, base64).
 * A token that carries no `=` CONTINUES the previous value, joined by
 one space. Writers record paths, and paths contain spaces: a
-legitimate `path=/a b/c` must not turn into damage. A leading token
+legitimate `+++path=/a b/c+++` must not turn into damage. A leading token
 without `=` before any key exists is damage.
 * `event=` is the required key: a line without it, or with an
 unreadable timestamp, is `malformed` (§2.2).
@@ -141,11 +142,11 @@ tebako audit [filters] [--count] [--json] [--strict]
 [cols="<,<",options="header"]
 |===
 | flag | meaning
-| `--since <t>` | keep records with `ts >= t`. `t` is unix seconds or RFC 3339 UTC (`YYYY-MM-DDTHH:MM:SSZ`).
-| `--until <t>` | keep records with `ts <= t`. Same grammar.
-| `--event <e>[,<e>…]` | keep records whose `event=` is one of the listed names. Repeatable; the union of all occurrences. Exact match, never a prefix.
-| `--artifact <needle>` | keep records whose body (everything after the timestamp) CONTAINS `needle` — the artifact reference as the writer recorded it: a payload name, a version, a sha256, a URL fragment. Case-sensitive, documented as a substring so nobody mistakes it for a structured field.
-| `--tail <n>` | after filtering, keep only the last `n` records.
+| `+++--since &lt;t&gt;+++` | keep records with `+++ts &gt;= t+++`. `t` is unix seconds or RFC 3339 UTC (`YYYY-MM-DDTHH:MM:SSZ`).
+| `+++--until &lt;t&gt;+++` | keep records with `+++ts &lt;= t+++`. Same grammar.
+| `+++--event &lt;e&gt;[,&lt;e&gt;…]+++` | keep records whose `event=` is one of the listed names. Repeatable; the union of all occurrences. Exact match, never a prefix.
+| `+++--artifact &lt;needle&gt;+++` | keep records whose body (everything after the timestamp) CONTAINS `needle` — the artifact reference as the writer recorded it: a payload name, a version, a sha256, a URL fragment. Case-sensitive, documented as a substring so nobody mistakes it for a structured field.
+| `+++--tail &lt;n&gt;+++` | after filtering, keep only the last `n` records.
 |===
 
 
@@ -346,8 +347,8 @@ damage there is never noise.
 | `records[].raw` | the record's exact bytes without the newline
 | `malformed[]` | unparseable lines, always present (empty array when clean)
 | `verify` | `null` for a query; the object above for `--verify`; absent for `--seal`, whose document carries `seal` instead
-| `verify.divergence` | `{"from_line": N, "to_line": M}` when the outcome is `tampered`, else `null`
-| `seal` (on `--seal`) | `{path, ts, head, lines, signer}` — `signer` is `null` when unsigned
+| `verify.divergence` | `+++{"from_line": N, "to_line": M}+++` when the outcome is `tampered`, else `null`
+| `seal` (on `--seal`) | `+++{path, ts, head, lines, signer}+++` — `signer` is `null` when unsigned
 |===
 
 
@@ -380,7 +381,7 @@ The arc's acceptance, spelled out as the steps an auditor with no tebako
 knowledge performs. Each step is offline and needs only public artifacts
 plus this document:
 
-. `tebako audit --json > ledger.json` — the host's decisions.
+. `+++tebako audit --json &gt; ledger.json+++` — the host's decisions.
 . `tebako audit --event fetch,runtime-fetch-verified --json` — every
 byte source and its verification verdict.
 . Take any `sha256` from step 2 and check the artifact against the

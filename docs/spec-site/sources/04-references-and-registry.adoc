@@ -11,6 +11,7 @@
 :mn-output-extensions: xml,html,pdf,rxl
 :fullname: The Tebako Project
 :publisher: The Tebako Project
+:smartquotes: false
 :local-cache-only:
 :data-uri-image:
 
@@ -53,7 +54,7 @@ DIGEST PIN (any class, query form — never clashes with #artifact/#path):
 
 *Repo vs releases is a class distinction, never a flag.* The git tree
 is addressed ONLY by `tfs+git:`; release artifacts ONLY by
-`tfs:<service>:`. Both are supported by design — a service form never
+`+++tfs:&lt;service&gt;:+++`. Both are supported by design — a service form never
 means "the repo", a git form never means "the release".
 
 *Multi-artifact releases (locked — no magic):*
@@ -75,17 +76,16 @@ selection is the registry's declarative job (§2).
 | `tfs:github:` / `tfs:gitlab:` / `tfs:bb:` | that service's releases API
 | `tfs+git:` | git protocol adapter
 | `tfs+https:` (or bare http(s)) | http fetch
-| `file://` | local file
+| `+++file://+++` | local file
 | anything else | *named error listing the classes*
 |===
 
 
 There is *NO default service or namespace* anywhere: every reference is
-fully explicit. (Superseded forms — `tfs://github.com/owner/repo:version`
+fully explicit. (Superseded forms — `+++tfs://github.com/owner/repo:version+++`
 and any host-inferred shorthand — are rejected, never guessed.)
 
-Manifest `requires` entries (spec 03) resolve through `{ref, constraint,
-mount}`.
+Manifest `requires` entries (spec 03) resolve through `+++{ref, constraint, mount}+++`.
 
 
 [%unnumbered]
@@ -94,11 +94,11 @@ mount}`.
 A *registry* is ANY git host repo carrying `tpkg-registry.yaml`. The
 git host's releases ARE the storage — no server to run.
 
-*Registry resolution (locked):* `tfs:<service>:owner/repo` (no version)
+*Registry resolution (locked):* `+++tfs:&lt;service&gt;:owner/repo+++` (no version)
 resolves the registry file from the repo's DEFAULT-BRANCH ROOT via the
 service contents API (`/tpkg-registry.yaml`); the pinned-immutable form
-`tfs:<service>:owner/repo:version#tpkg-registry.yaml` reads it as a
-release artifact (versioned with its payloads); `tfs+git://…#path` reads
+`+++tfs:&lt;service&gt;:owner/repo:version#tpkg-registry.yaml+++` reads it as a
+release artifact (versioned with its payloads); `+++tfs+git://…#path+++` reads
 it from any git ref/path. No other locations, no search, no fallback
 chain — exactly one location per form.
 
@@ -147,7 +147,7 @@ violations.
 * The registry MIRRORS only resolution-relevant fields (spec 03 §4 tier 3)
 — the dispatcher resolves without downloading every payload.
 * *The mirror's `runtime_requirement.abi` rule (additive, 2026-10-07,
-*tebako#440):* the abi is per-triplet by construction, so a version
+tebako#440):* the abi is per-triplet by construction, so a version
 entry's mirrored requirement carries `abi` only when one value holds
 for the WHOLE entry (a `universal` row or a single-platform per-triplet
 row). A multi-platform per-triplet entry omits it — one platform's abi
@@ -158,10 +158,10 @@ embedded manifest; dispatch reads it there, never from the mirror.
 producer-gate violation (2026-10-08) — the reader stays lenient so
 already-published registries keep resolving.
 * *The variant dimension (additive, 2026-10-09, tebako#557; spec 28
-*§2–§3):* a version entry carries EITHER the shorthand above
+§2–§3):* a version entry carries EITHER the shorthand above
 (top-level `platforms:` + `runtime_requirement:` — exactly the
 single-variant form) OR `variants:` — a list of
-`{runtime_requirement, platforms}` arms, one per
+`+++{runtime_requirement, platforms}+++` arms, one per
 (runtime_requirement × platforms) build of the same version — never
 both. Each variant is keyed by its requirement alone (the variant id
 derives, spec 28 §2); a duplicate key inside one version, both forms
@@ -173,8 +173,8 @@ else the variant whose requirement's line is newest (spec 28 §4 rule
 no top-level `platforms:` and refuse it loudly — a clean break, never
 a mis-resolution.
 * *The per-row shard `release.ref` (additive, 2026-10-07,
-*tebako#711):* a `platforms[<triplet>]` entry may carry its own
-`release: {ref: …}` naming the shard release tag serving THAT row's
+tebako#711):* a `+++platforms[&lt;triplet&gt;]+++` entry may carry its own
+`+++release: {ref: …}+++` naming the shard release tag serving THAT row's
 bytes. A version line that unions rows from several per-platform shard
 tags (the runtime factory's shape) cannot name the serving tag at the
 version level — the row carries it. The same grammar discipline as the
@@ -186,8 +186,7 @@ the pre-shard shape).
 * *The head `signing:` block (additive, 2026-10-07, tebako#617):* the
 registry's signing-key self-description (spec 09 §9.1) —
 `key:` (armored OpenPGP public key), `fingerprint:` (the key's own
-primary, 40 hex), optional `url:` (https cross-check). `tebako
-add-registry` verifies the block against its own key, then TOFU-pins
+primary, 40 hex), optional `url:` (https cross-check). `tebako add-registry` verifies the block against its own key, then TOFU-pins
 it (prompt, or `--expect-fingerprint` unattended); pre-MINOR-7 readers
 ignore the block.
 * *`status: withdrawn` (additive, 2026-09-12, roadmap 85):* the entry
@@ -201,7 +200,7 @@ reads `platforms[host_triplet].artifact` (or `universal`), fetches THAT
 artifact from the named release. Never adapter-side guessing.
 * *Concrete rows only (locked 2026-08-25, tebako#460).* A version
 carries a `universal:` row OR per-triplet rows — never patterns
-(`linux-*-*` is rejected at validation), never both. Identical bytes
+(`+++linux-*-*+++` is rejected at validation), never both. Identical bytes
 under multiple rows dedup naturally (content-addressed cache). A
 composition's `platforms:` assertion (spec 23 §13.3) CONSTRAINS the
 mirrored coverage — checked fail-closed against it — and NEVER
@@ -214,7 +213,7 @@ the matched version's `release.ref` derives the download base
 (spec 05 §2's per-engine chain, the zero-config path for third-party
 runtimes). Runtime entries predating MINOR 1 carry no `engine:` and
 stay invisible to edges. *The payload-level spelling is the one
-*authored grammar (2026-10-08, tebako#549, MINOR 8):* the version-level
+authored grammar (2026-10-08, tebako#549, MINOR 8):* the version-level
 `implementation:` remains a compat READ (MINOR 2 — already-published
 registries keep resolving) but is never authored anew, and a
 version-level `engine:` parses to nothing; `tebako registry validate`
@@ -222,22 +221,21 @@ names the old spelling, a mix of both spellings, and the misplaced
 `engine:` key as producer-gate violations, so a registry PR fails its
 own CI leg instead of publishing a decorative axis.
 * *Bundle-era runtime rows name the bundle* (additive, 2026-09-24,
-spec 36): `platforms[<triplet>].artifact` is `<stem>.tar.gz` and the
+spec 36): `+++platforms[&lt;triplet&gt;].artifact+++` is `+++&lt;stem&gt;.tar.gz+++` and the
 row's `sha256` pins the bundle, whose members unpack into the runtime
 store (spec 36 §4). Per-file-era rows keep naming the exe — the
 mirror is faithful to what the pinned release serves, era by era, and
 `status: withdrawn` means the same on both.
-* `tebako add-registry <ref>` registers one; shipped config has ZERO
+* `+++tebako add-registry &lt;ref&gt;+++` registers one; shipped config has ZERO
 registries (explicit only — spec 16).
 * Install = resolve the registry → select the host entry → download →
 verify (sha256 and/or OpenPGP signature, spec 09) → content-addressed
-cache (`~/.tebako/payloads/<name>/<version>.tfs`) → register shims
+cache (`+++~/.tebako/payloads/&lt;name&gt;/&lt;version&gt;.tfs+++`) → register shims
 (spec 07). An install whose selected entry is `kind: runtime` refuses
 BEFORE any download (2026-10-07, tebako#672): the named
 `RuntimeKindNotInstallable` error (exit 65) points at the working
-paths — `tebako install <the app that needs it>` (its
-runtime_requirement resolves the runtime) or `tebako use --runtime
-<engine>@<langver>[:<tebako>]`. Runtimes flow through the runtime
+paths — `+++tebako install &lt;the app that needs it&gt;+++` (its
+runtime_requirement resolves the runtime) or `+++tebako use --runtime &lt;engine&gt;@&lt;langver&gt;[:&lt;tebako&gt;]+++`. Runtimes flow through the runtime
 cache, never the payload store.
 * A developer's release flow: press → sign → upload payloads → commit
 `tpkg-registry.yaml` (a `tebako publish` helper later; manual first).
@@ -247,15 +245,14 @@ cache, never the payload store.
 == 3. Fetch discipline
 
 * In-process HTTP only (spec 01): ureq + rustls + webpki-roots bundled;
-OS roots opt-in via `TEBAKO_TLS_PLATFORM_ROOTS`; `file://` mirrors for
+OS roots opt-in via `TEBAKO_TLS_PLATFORM_ROOTS`; `+++file://+++` mirrors for
 tests and air-gapped sites.
 * Git protocol via `gix` (gitoxide) when `tfs+git:` needs smart-protocol
 fetch — never the git CLI.
 * The capability is per-binary, not per-ecosystem. The shipped
 `tebako-bootstrap` (the 3 MiB-gated loader) links tebako-resolve with
 the `git` feature OFF: `tfs+git:` lock sources fail closed with the
-named `GitAdapterDisabled` error (steer to managed mode — `tebako
-install` / the shim — or mirror to `tfs+https:`). The toolchain
+named `GitAdapterDisabled` error (steer to managed mode — `tebako install` / the shim — or mirror to `tfs+https:`). The toolchain
 (tebako CLI, tebako-shim, tfs CLI) always carries the full surface.
 General rule: an optional capability is a cargo feature on the owning
 crate — default ON for the toolchain, OFF for the bootstrap, named
@@ -266,7 +263,7 @@ invisible. `TEBAKO_OFFLINE=1`: cache hit or hard error.
 * *Private GitHub repos (2026-09-15 amendment):* with
 `TEBAKO_GITHUB_TOKEN`/`GITHUB_TOKEN` ambient, the GitHub adapter
 resolves assets to their API URL
-(`/repos/{o}/{r}/releases/assets/{id}`) instead of
+(`+++/repos/{o}/{r}/releases/assets/{id}+++`) instead of
 `browser_download_url` — private repos answer 404 on the anonymous
 browser URL. The fetch requirements the choice implies are declared ON
 the asset descriptor the adapter returns (`accept` — the API serves
@@ -299,7 +296,7 @@ fetch discipline (§3) are identical with the runtime's own chain.
 Every fetch the loader or the toolchain makes rides ONE client
 (`tebako-http::build_agent`); the policy below is resolved once per
 process from the environment merged over the `network:` section of
-`~/.tebako/config.yaml` — *env wins per key* — and installed before
+`+++~/.tebako/config.yaml+++` — *env wins per key* — and installed before
 the first request (agent construction caches the transport). The
 resolution is journaled (`event=network-config …`) with proxy
 credentials REDACTED (`+++http://***@host:port+++`). There is no verify-off
@@ -308,8 +305,8 @@ spelling, and there never will be.
 *Proxy.*
 
 * Env: `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY` (both
-cases), the de-facto grammar: comma list, suffix match, `*`;
-localhost is always direct. Config mirror: `network.proxy: <url>`.
+cases), the de-facto grammar: comma list, suffix match, `+++*+++`;
+localhost is always direct. Config mirror: `+++network.proxy: &lt;url&gt;+++`.
 * Precedence: env → config → direct. Credentials ride the URL
 (`+++http://user:pass@host:port+++`) — the only auth spelling.
 * HTTPS rides CONNECT through the proxy; TLS terminates at the TARGET.
@@ -327,7 +324,7 @@ deterministic: retry loops return them immediately, never as
 . `platform`: the OS store (GPO/MDM-pushed enterprise roots) — env
 `TEBAKO_TLS_PLATFORM_ROOTS` (since v2.0.0) or
 `network.tls_roots: platform`.
-. Additive: `network.extra_ca: [<pem>…]` / `TEBAKO_EXTRA_CA`
+. Additive: `+++network.extra_ca: [&lt;pem&gt;…]+++` / `TEBAKO_EXTRA_CA`
 (os-path-list separator) — the PEMs parse at client build INTO the
 bundled store (never instead of it). Combining `platform` with
 `extra_ca` is the named `ExtraCaWithPlatformRoots` error (the OS
@@ -346,15 +343,14 @@ from every trust set this stack assembles:
 | Assembled set | Owner | Distrust effect
 | bundled Mozilla roots (`webpki` / default) | tebako-http `distrust` | every eMudhra/emSign root is dropped before install; `RootCerts::WebPki` is never used (it would bypass the filter)
 | additive `extra_ca` PEMs | tebako-http `netconfig` | a file carrying a distrusted cert is the named `ExtraCaDistrusted` — never a silent drop
-| operator CA store (`$TEBAKO_HOME/trust/ca`) | tebako-driver `materialize` | a store file carrying a distrusted cert is a named 65 naming `tebako trust remove`
+| operator CA store (`+++$TEBAKO_HOME/trust/ca+++`) | tebako-driver `materialize` | a store file carrying a distrusted cert is a named 65 naming `tebako trust remove`
 | driver platform enumeration (merged runtime bundle) | tebako-driver `materialize` | every distrusted DER is dropped before the merge; the drop is debug-journaled; a store that reduces to zero is a named 65
 |===
 
 
 Identity is lexical over the certificate DER (subject/issuer DN
 markers `eMudhra` / `emSign`, case-insensitive) — it survives
-re-issues, cross-signs, and the Microsoft-only `emSign Root TLS/CS
-CA - G3` pair. The compromised intermediates (including the
+re-issues, cross-signs, and the Microsoft-only `emSign Root TLS/CS CA - G3` pair. The compromised intermediates (including the
 AAA-cross-signed ones) are additionally blocked at verification time by
 rustls-webpki ≥ 0.103.16's SPKI blocklist; the bundled-root floors are
 `webpki-root-certs` / `webpki-roots` ≥ 1.0.10 (which drop
