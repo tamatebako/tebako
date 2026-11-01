@@ -133,31 +133,35 @@ per declared entrypoint name — never as re-exec wrappers.
 [%unnumbered]
 == 2. The dispatch chain (per invocation of `~/.tebako/shims/<tool>`)
 
-. *argv0 is the selector.* One tebako-shim binary, linked per command
+// The source numbers this chain 0, 0.5, 1–4 by hand (the 0.5 step is the
+// 2026-09-05 amendment) and other specs cite the steps by those numbers;
+// a description list keeps the labels verbatim where an ordered list
+// would renumber them.
+0:: *argv0 is the selector.* One tebako-shim binary, linked per command
 name; it maps name → entrypoint in the payload's manifest.
 *Multi-command suites:* one package with N entrypoints installs N
 shims — each dispatches to its own image AND ITS OWN runtime
 requirement; two commands in one package may run different runtime
 versions simultaneously.
-0.5. *PROVIDER ROUTING (2026-09-05 amendment):* the chain VALUE grammar is
-   `[payload@]version` (`tpkg::toolpin` is the SSOT parser). A
-   payload-qualified value makes the named payload THE provider — it must
-   be installed and declare or expose the command, else the named
-   NotAProvider error. The provider scan skips claims disabled at
-   `<payload>@all` or `<payload>@version`, so disabling all-but-one claims
-   routes without a pin. Unqualified values fall through to today's scan
-   (payload-of-command-name fast path → suite scan → expose scan). A
-   registry never routes commands: routing is local state.
-. *Payload VERSION resolution* (first match wins):
+0.5:: *PROVIDER ROUTING (2026-09-05 amendment):* the chain VALUE grammar is
+`[payload@]version` (`tpkg::toolpin` is the SSOT parser). A
+payload-qualified value makes the named payload THE provider — it must
+be installed and declare or expose the command, else the named
+NotAProvider error. The provider scan skips claims disabled at
+`<payload>@all` or `<payload>@version`, so disabling all-but-one claims
+routes without a pin. Unqualified values fall through to today's scan
+(payload-of-command-name fast path → suite scan → expose scan). A
+registry never routes commands: routing is local state.
+1:: *Payload VERSION resolution* (first match wins):
 `TEBAKO_<TOOL>_VERSION` env → nearest `.tebako-tools.yaml` walking up
 from cwd (per-project pinning) → user default (`tebako-shim use
 <tool> <pin>`) → registry's `default`.
-. *RUNTIME resolution:* the entrypoint's `runtime_requirement` →
+2:: *RUNTIME resolution:* the entrypoint's `runtime_requirement` →
 newest COMPATIBLE cached runtime (no download) → else download newest
 compatible (spec 05 §5). *Swapping runtimes needs no payload change*
 — the payload is immutable; only the dispatch-time choice changes
 (`tebako use --runtime ruby@3.4.2`, or a per-project pin).
-. *EXTENSION-SLICE scan (additive — schema_minor 10, spec 03 §2.8):*
+3:: *EXTENSION-SLICE scan (additive — schema_minor 10, spec 03 §2.8):*
 when the resolved root payload declares `extension_points:`, the
 dispatcher scans the STORE's payload manifest mirrors
 (`payloads/*/*.manifest.yaml`, spec 05 §3) for slices whose
@@ -184,7 +188,7 @@ skip. When base and attaching slice both carry `provides.gems`, a
 same-name gem pair journals `event=slice-overlap slice=… gem=…` —
 informational only (gem homes compose by requirement-based
 activation; the fix is a slice rebuild against the newer base).
-. *Hand-off:* mount payload + ZERO OR MORE runtime payloads (native
+4:: *Hand-off:* mount payload + ZERO OR MORE runtime payloads (native
 entrypoints need none — spec 03) + declared dependency mounts
 (spec 03 §2.3), apply the jail view (spec 08), exec the entrypoint.
 Signed payloads are verified at install time, not per run. When the
@@ -236,13 +240,14 @@ enabled claim (collisions), dangling pins (project-file/config pins
 naming an uninstalled payload or version), and disabled-but-pinned
 conflicts. Doctor stays diagnose-only: findings print, the exit code
 is unchanged (0 / 1 with problems).
-  *Enable links on demand* (locked 2026-08-29): `enable <tool>` whose
-  command is declared by an installed payload but was never linked
-  (spec 03 §2.2's `active: false` default) materializes the shim link
-  then — the dispatcher links ITSELF (argv0 integrity above); enabling an
-  undeclared command is the suite scan's named error, never a dangling
-  link. `disable` gates per version (`.disabled.yaml`) without removing
-  the link.
++
+*Enable links on demand* (locked 2026-08-29): `enable <tool>` whose
+command is declared by an installed payload but was never linked
+(spec 03 §2.2's `active: false` default) materializes the shim link
+then — the dispatcher links ITSELF (argv0 integrity above); enabling an
+undeclared command is the suite scan's named error, never a dangling
+link. `disable` gates per version (`.disabled.yaml`) without removing
+the link.
 
 
 [%unnumbered]
@@ -432,75 +437,77 @@ read-only modes (r with no +) materialize the memfs original through
 dlmap2file exactly like dlopen — stdio's internal open path never
 touches the interposed `open`; the write-ish modes (w/a bases, every
 .* update form incl. r+, the x-forms) ride the SAME spec 08 write
-   gate as open(O_WRONLY|O_CREAT|O_RDWR) BEFORE the real fopen touches
-   the host — a memfs-held path is EROFS, a jailed write outside an rw
-   grant is EPERM by name; pre-fix the write modes sailed through
-   ungated and r+ was misclassified as a read)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
-* the realpath family (realpath, plus macOS's realpath$DARWIN_EXTSN;
-   canonicalize_file_name and the fortified __realpath_chk on linux):
-   glibc's realpath(3) walks the path with libc-INTERNAL stat/readlink
-   aliases no PLT interpose sees, so a covered path MUST be answered by
-   the shim with the MOUNT spelling — the in-image link hops resolved
-   (spec 11 §9's rule: ELOOP past 32, a dangling link ENOENT) and the
-   result lexically normalized. The host resolver's canonicalization must
-   never rewrite a VFS path (the 2026-09-03 dogfood linux-gnu jing
-   ClassNotFound: usrmerge /lib→usr/lib leaked into the JDK's
-   URLClassPath on a root-mounted payload, and the jar lookup silently
-   dropped a byte-perfect jar);
-   covered-but-not-held paths still pass to the host realpath (the
-   /etc/localtime discipline);
-   `TEBAKO_JAIL` carries the spec 08 §1 env form (`open|deny` +
-   `host:mount:ro|rw` grants + `@` argument files); the ENTRYPOINT (when
-   in-image) is materialized through `dlmap2file` (execve needs a host
-   path — one copy per exec, gc later), and execve/posix_spawn of MEMFS
-   paths materialize the same way (a tool spawning an in-image helper
-   needs no extraction; environ propagates, so grandchildren stay in the
-   VFS); every *at shim gates its fd branch on `dirfd >= 0` (AT_FDCWD
-   carries the fd-flag bit — the runtime-builds regression class, pinned
-   by tests); the mmap shim gates on `fd >= 0` and `!MAP_ANONYMOUS` (fd
-   -1 carries the same bit — the JVM PaX-check regression class); exec
-   of a HOST binary is not policy-gated (not an IO route
-   in the policy's op classes — the child's own IO stays jailed via env
-   propagation); SIP platform binaries strip `DYLD_*` and leave it; a
-   mount at `/` is legitimate under the union mount model (spec 03 §6 /
-   spec 17 §1 — the app payload mounts there): covered-but-not-held paths
-   fall through to the host with the jail consulted; fork is not
-   interposed but its child side is GUARDED — a `pthread_atfork` child
-   handler arms a process-global flag and every shim's engine entry
-   passes through to the real libc while it is set (the backends are not
-   fork-safe: dwarfs-t's block-cache worker pool dies at fork, so a
-   backend-touching call in the child — e.g. the execve materialization
-   probe under a `/` mount — would wait on threads that no longer exist;
-   the 2026-08-22 git-clone deadlock, runtime 0.16.4); glibc runs NO
-   atfork handlers for vfork(2), and a vfork child shares the parent's
-   whole address space with the parent thread suspended in the kernel,
-   so the guard carries a PID backstop — the constructor records the
-   initializing pid, and an engine entry under a different pid is a
-   fork/vfork child in its pre-exec window and passes through exactly
-   like the atfork flag's child (the 2026-09-03 dash vfork deadlock in
-   the dogfood repro; exec preserves the pid, so the exec'd image's
-   constructor re-stores the same value and the gate re-opens at exec);
-   and a fork child
-   that execs re-enters a fresh shim through the inherited preload env,
-   so the grandchild rule above is unaffected; not interposed: fork,
-   `dup3` (linux-only, no tier-1 consumer — its flags argument would
-   need the cloexec plumbing the POSIX dup class already has),
-   `openat2` (glibc exposes no wrapper
-   or symbol on linux-gnu — nothing to interpose; a raw `syscall(2)`
-   caller bypasses userland interposition by construction), fstatat64 on
-   macOS (the legacy
-   32-bit-inode layout), `__fxstatat64` and the write-side
-   pwrite64/ftruncate64/statvfs64 family plus
-   readv/preadv/sendfile/copy_file_range on memfs fds on linux,
-   fdopendir (memfs directories are never fd-opened), the
-   internal-walk family glob/nftw/ftw/wordexp (UNAUDITED — their path
-   walks ride libc-internal aliases, the same bypass class as realpath;
-   no importer observed on the JDK/ruby boot paths, so this is pinned
-   debt, never silently assumed covered), and
-   syscall()-direct IO (raw syscalls bypass userland interposition by
-   construction); `dirfd` of a memfs stream answers -1/ENOTSUP;
-   `getdents64` on a memfs fd answers ENOTDIR (VFS directories enumerate
-   via opendir, never fds).
++
+gate as open(O_WRONLY|O_CREAT|O_RDWR) BEFORE the real fopen touches
+the host — a memfs-held path is EROFS, a jailed write outside an rw
+grant is EPERM by name; pre-fix the write modes sailed through
+ungated and r+ was misclassified as a read)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
+.* the realpath family (realpath, plus macOS's realpath$DARWIN_EXTSN;
++
+canonicalize_file_name and the fortified __realpath_chk on linux):
+glibc's realpath(3) walks the path with libc-INTERNAL stat/readlink
+aliases no PLT interpose sees, so a covered path MUST be answered by
+the shim with the MOUNT spelling — the in-image link hops resolved
+(spec 11 §9's rule: ELOOP past 32, a dangling link ENOENT) and the
+result lexically normalized. The host resolver's canonicalization must
+never rewrite a VFS path (the 2026-09-03 dogfood linux-gnu jing
+ClassNotFound: usrmerge /lib→usr/lib leaked into the JDK's
+URLClassPath on a root-mounted payload, and the jar lookup silently
+dropped a byte-perfect jar);
+covered-but-not-held paths still pass to the host realpath (the
+/etc/localtime discipline);
+`TEBAKO_JAIL` carries the spec 08 §1 env form (`open|deny` +
+`host:mount:ro|rw` grants + `@` argument files); the ENTRYPOINT (when
+in-image) is materialized through `dlmap2file` (execve needs a host
+path — one copy per exec, gc later), and execve/posix_spawn of MEMFS
+paths materialize the same way (a tool spawning an in-image helper
+needs no extraction; environ propagates, so grandchildren stay in the
+VFS); every *at shim gates its fd branch on `dirfd >= 0` (AT_FDCWD
+carries the fd-flag bit — the runtime-builds regression class, pinned
+by tests); the mmap shim gates on `fd >= 0` and `!MAP_ANONYMOUS` (fd
+-1 carries the same bit — the JVM PaX-check regression class); exec
+of a HOST binary is not policy-gated (not an IO route
+in the policy's op classes — the child's own IO stays jailed via env
+propagation); SIP platform binaries strip `DYLD_*` and leave it; a
+mount at `/` is legitimate under the union mount model (spec 03 §6 /
+spec 17 §1 — the app payload mounts there): covered-but-not-held paths
+fall through to the host with the jail consulted; fork is not
+interposed but its child side is GUARDED — a `pthread_atfork` child
+handler arms a process-global flag and every shim's engine entry
+passes through to the real libc while it is set (the backends are not
+fork-safe: dwarfs-t's block-cache worker pool dies at fork, so a
+backend-touching call in the child — e.g. the execve materialization
+probe under a `/` mount — would wait on threads that no longer exist;
+the 2026-08-22 git-clone deadlock, runtime 0.16.4); glibc runs NO
+atfork handlers for vfork(2), and a vfork child shares the parent's
+whole address space with the parent thread suspended in the kernel,
+so the guard carries a PID backstop — the constructor records the
+initializing pid, and an engine entry under a different pid is a
+fork/vfork child in its pre-exec window and passes through exactly
+like the atfork flag's child (the 2026-09-03 dash vfork deadlock in
+the dogfood repro; exec preserves the pid, so the exec'd image's
+constructor re-stores the same value and the gate re-opens at exec);
+and a fork child
+that execs re-enters a fresh shim through the inherited preload env,
+so the grandchild rule above is unaffected; not interposed: fork,
+`dup3` (linux-only, no tier-1 consumer — its flags argument would
+need the cloexec plumbing the POSIX dup class already has),
+`openat2` (glibc exposes no wrapper
+or symbol on linux-gnu — nothing to interpose; a raw `syscall(2)`
+caller bypasses userland interposition by construction), fstatat64 on
+macOS (the legacy
+32-bit-inode layout), `__fxstatat64` and the write-side
+pwrite64/ftruncate64/statvfs64 family plus
+readv/preadv/sendfile/copy_file_range on memfs fds on linux,
+fdopendir (memfs directories are never fd-opened), the
+internal-walk family glob/nftw/ftw/wordexp (UNAUDITED — their path
+walks ride libc-internal aliases, the same bypass class as realpath;
+no importer observed on the JDK/ruby boot paths, so this is pinned
+debt, never silently assumed covered), and
+syscall()-direct IO (raw syscalls bypass userland interposition by
+construction); `dirfd` of a memfs stream answers -1/ENOTSUP;
+`getdents64` on a memfs fd answers ENOTDIR (VFS directories enumerate
+via opendir, never fds).
 . *Static/self-contained tools*: tebako is the EXECUTOR, not an
 injector — it spawns and owns every child, so mediating a child's
 syscalls is the execution contract itself, not hijacking (a
@@ -633,7 +640,7 @@ entrypoints (the additive entrypoints list — spec 30 §2; the node
 factory declares node/npm/npx/corepack; the bun factory bun/bunx; the
 openjdk factory java/keytool/…); the user reaches them directly:
 
-    tebako run <engine>[:<command>] [<args>…]
+tebako run <engine>[:<command>] [<args>…]
 
 * The bare form (`tebako run node`) runs the runtime's DEFAULT entry
 (the interpreter — the env image's `layout.interpreter`), with the

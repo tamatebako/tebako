@@ -60,19 +60,23 @@ republish of v1-era runtimes needed.
 [%unnumbered]
 == 3. Loader behavior contract (tebako-bootstrap)
 
-. Read own trailer (spec 02; absent → classic-bundle error path).
-. Require `launcher_abi == 1` (else exit 66).
-2a. *`--tebako-install` verb:* after the chain + ABI
-   gates — the package's `TPKG_FLAG_NO_INSTALL` refuses (exit 76); any
-   other package answers with the named guidance to
-   `tebako install <path>` (exit 76 — the manifest read needs the TFS
-   engine the size-capped bootstrap deliberately does not carry). A run
-   is a run: the verb is the ONLY way slices reach the store.
-. Trust handling, by build and trailer flag:
-.* *`TPKG_FLAG_SIGNED_V2`, verification ENABLED* (`openpgp-verify`
+// The source numbers this chain 1, 2, 2a, 3–6 by hand (the 2a step is a
+// later insertion); a description list keeps the labels verbatim where
+// an ordered list would renumber them.
+1:: Read own trailer (spec 02; absent → classic-bundle error path).
+2:: Require `launcher_abi == 1` (else exit 66).
+2a:: *`--tebako-install` verb:* after the chain + ABI
+gates — the package's `TPKG_FLAG_NO_INSTALL` refuses (exit 76); any
+other package answers with the named guidance to
+`tebako install <path>` (exit 76 — the manifest read needs the TFS
+engine the size-capped bootstrap deliberately does not carry). A run
+is a run: the verb is the ONLY way slices reach the store.
+3:: Trust handling, by build and trailer flag:
++
+* *`TPKG_FLAG_SIGNED_V2`, verification ENABLED* (`openpgp-verify`
 feature): verify the OpenPGP signature against the trusted keyring
 and each slot's SHA-256 — always strict (spec 09).
-.* *`TPKG_FLAG_SIGNED_V2`, verification DISABLED* (unverified-first,
+* *`TPKG_FLAG_SIGNED_V2`, verification DISABLED* (unverified-first,
 the shipped default until roadmap 72's crypto toolkit): loud
 UNVERIFIED warning + audit journal, then enforce each slot's
 SHA-256 as integrity-vs-corruption (the anchor is unverified —
@@ -80,14 +84,14 @@ documented, spec 09 §7). `TEBAKO_REQUIRE_SIGNED=1` here fails
 CLOSED with exit 71 naming the missing capability ("built without
 OpenPGP verification") — a strict-mode request is never silently
 downgraded to unverified.
-.* *Unsigned (v1)*: loud warning + audit journal (or exit 71 under
+* *Unsigned (v1)*: loud warning + audit journal (or exit 71 under
 `TEBAKO_REQUIRE_SIGNED=1`).
-. Resolve the runtime per spec 05 §5 — negotiating the contract version
+4:: Resolve the runtime per spec 05 §5 — negotiating the contract version
 (§6) fail-closed before any checksum acceptance.
-. Image-era: ensure `<asset>.tfs` + trust markers in the cache entry
+5:: Image-era: ensure `<asset>.tfs` + trust markers in the cache entry
 (fetch + verify on miss — authenticity per spec 09 §4's runtime-fetch
 point first, then sha256 integrity as today), install read-only.
-. Exec the handoff. Never returns on success.
+6:: Exec the handoff. Never returns on success.
 
 
 [%unnumbered]
@@ -183,8 +187,9 @@ per redraw) plus an ETA (`eta 12s`, shown only once the EMA has
 converged past its warmup), the byte pair in the total's unit.
 Unknown content-length → a braille spinner (`⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏`)
 ** byte count. Colors: cyan for an active slot, green for done, red
-  for failed — decorative only, and absent whenever the mode rule
-  above selects plain (NO_COLOR included).
++
+for failed — decorative only, and absent whenever the mode rule
+above selects plain (NO_COLOR included).
 * *Plain mode grammar (pipe/CI/opt-out — byte-stable, testable):*
 exactly the plan header, then per artifact the pair
 `downloading <asset> (<size>)` / `installed <asset> (<size>)`
