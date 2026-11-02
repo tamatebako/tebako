@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Tree solving and lockfiles: one answer for a whole composition</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 42</docidentifier><docnumber>TBK SPEC 42</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_0139bed4-4380-4cc3-7685-6bbf61bb6063" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_bfdc9d72-1f82-d943-ef2e-b338f47ba11a"><strong>Status: PARTIAL</strong> (the payload-edge solve, the named-conflict contract and the lockfile ship with this spec; the runtime-edge seam is spec 05's resolver and is refused by name until it is wired — §2 states it).</p>
+</foreword></preface><sections>
+<clause id="_7999a48d-4026-ee39-2716-d88e1f6d8cd3" unnumbered="true" obligation="normative">
+<title id="_13a35ed1-0a4a-d20a-b453-0de972e044e5">1. What resolution does today, and what it cannot do</title>
+<p id="_aa93e10d-a72c-1d2b-e270-8db12cb752af">Resolution today answers ONE question at a time: an entrypoint declares <tt>runtime_requirement</tt>, the dispatcher picks the newest COMPATIBLE runtime (spec 05 §4). That is a per-edge decision, and it is correct for what it covers — a single app over a single runtime.</p>
+
+<p id="_b45347c7-7f51-08ea-f82a-f9145293d229">A composition is not one edge. A press names payloads; each payload's <tt>requires:</tt> names more payloads, runtimes, toolkits and data; each of those resolves against a different registry row. Today each edge is satisfied independently, in traversal order, and two edges that cannot both be satisfied are discovered as a  <em>runtime</em> failure — a mount <tt>EEXIST</tt>, a runtime that does not match — after the package was built. First-fit over a tree is an accident that usually works.</p>
+
+<p id="_39c22bc7-d610-9c58-8cda-43d08d7e3f5a">The tree is a constraint problem, and it has one honest answer: the maximal assignment that satisfies every edge at once, or a named conflict that says which requirement, which candidates, and why.</p>
+</clause>
+
+<clause id="_2dc83778-ae23-2f05-053f-873fd0dc1ca1" unnumbered="true" obligation="normative">
+<title id="_7077a51b-29f5-69d7-9c29-351340718f95">2. The requirement closure</title>
+<p id="_cad8b689-6eb8-bfa3-8436-adb42a792c22">The solver's input is a <strong>requirement set</strong>: the edges declared by the press recipe, closed over the edges of every payload it selects.</p>
+
+<sourcecode id="_6cb50643-00e2-a5f9-99f9-df13692fc758"><body>closure(R0):
+  R = R0
+  repeat
+    for each r in R whose candidate is already fixed by the assignment:
+      R += the chosen payload's own requires:      (spec 03 §2.3)
+  until R is stable</body></sourcecode>
+
+
+<table id="_ff21ea75-24ba-43f2-b230-5be108725a9b"><thead><tr id="_88ef6508-994b-b220-6394-eb7e65dbfa08"><th id="_efe56182-3d15-e122-d5eb-d55a13084f81" valign="top" align="left">edge kind</th>
+<th id="_30ef23f6-2c64-7583-2924-7124559cb0a3" valign="top" align="left">candidate space</th>
+<th id="_555b7c75-bc8f-f5a7-3e88-f4b4f0b9365e" valign="top" align="left">skipped when</th>
+</tr></thead>
+<tbody><tr id="_005dea0c-75e8-59ef-cd89-2836474d4d4e"><td id="_528105dd-7ab1-81a9-9e93-2bc90da983f9" valign="top" align="left"><tt>language</tt></td>
+<td id="_7bf061a0-a31b-3fb0-543b-4c1eabaa5741" valign="top" align="left"><strong>spec 05's resolver, not a second copy of it</strong>: the solver calls the dispatcher's own runtime-edge pick (engine + optional implementation + constraint against the runtime index), so a runtime edge has exactly one implementation in the ecosystem (invariant 10)</td>
+<td id="_8a3e509a-ca04-eee3-9860-42f3a08a23e3" valign="top" align="left">never</td>
+</tr><tr id="_ab99f168-120e-b9a0-2caa-e14fda7080ed"><td id="_8ec0c665-3385-ea6a-bf5f-582d9af94d44" valign="top" align="left"><tt>runtime</tt></td>
+<td id="_7b71e8d5-701a-7e0a-91a4-666007868d23" valign="top" align="left">same seam, spec 30's spawned shape</td>
+<td id="_abfaa66b-6826-fa98-c937-832903a64be5" valign="top" align="left">never</td>
+</tr><tr id="_a5709c0f-75b5-4e6f-809c-10ff60458cbe"><td id="_c8395b92-584f-4b03-e084-108991914b3c" valign="top" align="left"><tt>toolkit</tt>, <tt>data</tt></td>
+<td id="_3214f8fa-2b27-56d4-b649-ac215aa90ad5" valign="top" align="left"><tt>kind:</tt> rows with that <tt>name</tt>, constraint on <tt>version</tt></td>
+<td id="_a6e6a057-418f-d822-6cec-f86611247083" valign="top" align="left">the host triplet is absent from the edge's <tt>triplets:</tt> list</td>
+</tr><tr id="_f1c0d73e-9e33-a5fc-79b6-612c5c06e6cf"><td id="_6a6cbac4-5760-ea9c-5c86-3f39c8ff7727" valign="top" align="left"><tt>app</tt></td>
+<td id="_adbb41d3-69c5-06ac-d3b3-bc938d27f969" valign="top" align="left"><tt>kind: app</tt> rows with that name</td>
+<td id="_50d14259-a715-51e3-c302-a69cf3489865" valign="top" align="left">same as above</td>
+</tr></tbody>
+</table>
+
+<p id="_8b65c1b7-7895-4df8-004d-05b58d839f71"><strong>The runtime seam is named while it is open.</strong> The first implementation of this spec solves payload edges; a  <tt>language</tt> or <tt>runtime</tt> edge is refused with  <tt>solve-runtime-edge</tt> (exit 81) and the message points at spec 05's resolver, rather than carrying a second matcher that would drift from the dispatcher's. Closing the seam is a change to this spec's status, not a silent behaviour.</p>
+
+<p id="_32e097d5-6c8d-6d7d-bc71-e6492158fd16">Two closure rules that are not negotiable:</p>
+
+<ul id="_bfc1174e-d335-bcb5-4a28-6cc8c3b0a857"><li><p id="_de25bc4f-fbd7-50b5-a417-7a5dfec65473"><strong>A cycle is a named error</strong>, not a stack overflow: an edge whose target is already on the current path fails with  <tt>solve-cycle</tt>, naming the path as declared (it can be legitimate to  <em>repeat</em> a payload in two branches — that is a DAG, not a cycle, and it resolves once).</p>
+</li>
+<li><p id="_ba76af2b-5765-6889-acd0-2799d48007ca"><strong>A skipped edge is recorded, not silent.</strong> The lockfile carries <tt>skipped: [{edge, triplet, reason}]</tt> so a reader can see that the tree on this host is smaller than the tree in the manifest.</p>
+</li>
+</ul>
+
+<p id="_70bf7c2a-5190-2850-7a3b-be4abf177a34"><strong>Where the per-payload edges come from.</strong> They are not in the registry, and that is the layer model working as designed: L3 mirrors resolution fields only, while DEPENDS is L1 (spec 03 §2.3). The caller — the press, which holds the payloads or has just read their in-image manifests — supplies each candidate's edges as a  <strong>closure map</strong> keyed <tt>&lt;kind&gt; &lt;name&gt;@&lt;version&gt;</tt>. The solver's answer is therefore a function of three inputs: the seed edges, the closure map, and the registry documents. Nothing is fetched; a candidate whose edges are absent from the map is a named  <tt>solve-closure-missing</tt>, never an implicit "assume no dependencies".</p>
+</clause>
+
+<clause id="_82895b28-6693-1ef5-3b73-c869fba5dd1d" unnumbered="true" obligation="normative">
+<title id="_daec67b0-af43-bcf3-e46c-08255c23c11c">3. The candidate space is the registry, as published</title>
+<p id="_6bdda0e3-613c-d90d-cb84-9b8f644c1257">Candidates come from the registry document(s) the press is configured with (spec 04), never from a network probe:</p>
+
+<ul id="_43913a07-22f9-88c7-3d88-a473a0a1c09c"><li><p id="_a3f2118f-a219-2c09-b9f2-edd1f6e3a5f4"><tt>status: withdrawn</tt> rows are <strong>not candidates</strong>, and a conflict whose only satisfying rows are withdrawn names them as withdrawn — "nothing satisfies" and "the only candidate was yanked" are different findings;</p>
+</li>
+<li><p id="_85781c22-07cc-c8b9-b587-951f35925bd3">a row is a candidate for a triplet only if that triplet appears in its <tt>platforms:</tt> (or the row is <tt>universal</tt>);</p>
+</li>
+<li><p id="_e36f25f4-09ff-5448-7aab-1b53a961f1ff">the constraint language is the one already specified (spec 05 §4): ranges (<tt>&gt;= 3.3, &lt; 5.0</tt>) for pure-language edges, ABI lines (<tt>~&gt; 3.3.0</tt>) for native-extension edges. The solver uses the same parser the dispatcher uses — one grammar, two callers.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_d8d46c9a-9b8f-6461-a42c-7c5bc1286576" unnumbered="true" obligation="normative">
+<title id="_8f21239e-2499-d842-f51a-f80c96f86059">4. The assignment law</title>
+<p id="_cc78dd83-1c27-c0f3-b411-04b167c336f9">An assignment is a map <tt>(kind, name) -&gt; (version, triplet, artifact sha256)</tt>. Among all assignments satisfying every edge of the closure, the solver returns  <strong>the maximal one</strong>, ordered by:</p>
+
+<ol id="_dab19036-a78c-8801-9046-82727e0d81f8" type="arabic"><li><p id="_f140a6cf-b97b-b438-dd91-9c91d0869493">higher <tt>version</tt> is preferred for the first <tt>(kind, name)</tt> in canonical order (kind, then name — byte order, no locale);</p>
+</li>
+<li><p id="_0bdfe9d5-373a-f558-9e18-f3a025f73fec">then higher <tt>version</tt> for the next entry;</p>
+</li>
+<li><p id="_a13cdc09-7f8b-e953-bfeb-9b422a9047e0">then the lexicographically smaller artifact digest.</p>
+</li>
+</ol>
+
+<p id="_3dd25d69-7c40-c52b-c642-e5134e470123">Consequences worth stating as laws, because they are the properties the tests must hold:</p>
+
+<ul id="_d6ef7209-e7a3-848f-17af-195d09c92e6d"><li><p id="_9732c5f8-8166-f634-1aa9-aa5650f41b47"><strong>Determinism.</strong> The answer is a function of (closure, registry bytes). Not of hash-map iteration order, not of traversal order, not of which mirror served the document. Two runs over the same inputs produce the same assignment and the same lockfile bytes.</p>
+</li>
+<li><p id="_45ae3dd1-9a8d-00e7-5c7d-160b3603dcb6"><strong>No silent downgrade.</strong> A lower version is chosen only when no higher one is part of any satisfying assignment, and the lockfile records the chosen version — a reader can always see what was picked.</p>
+</li>
+<li><p id="_b4291622-ac9d-6de6-158e-647cf9fe8731"><strong>One version per name.</strong> The model has no side-by-side versions of the same payload; a requirement set that would need two versions of one name is a conflict, not a multiply-mounted tree.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_83059310-62b9-1371-cb1e-6924461167ed" unnumbered="true" obligation="normative">
+<title id="_3169db73-d18c-48c7-18b4-eddadcfe740e">5. Conflicts are named, and they exit 81</title>
+<sourcecode id="_4565d238-78b4-d90e-a470-2e1b14699ae2"><body>solve-conflict: &lt;edge as declared&gt;
+  needs &lt;kind&gt; &lt;name&gt; &lt;constraint&gt; on &lt;triplet&gt;
+  candidates: &lt;v1&gt;, &lt;v2&gt;, &lt;v3&gt;
+  excluded: &lt;v1&gt; — &lt;reason&gt;; &lt;v2&gt; — &lt;reason&gt;
+  fix: &lt;the smallest change that would satisfy it&gt;</body></sourcecode>
+
+
+<table id="_60856ecc-8d74-0bd4-428d-4afd8663e9d6"><thead><tr id="_da54517c-be4a-738e-3d92-41e89ab07823"><th id="_f01503f2-64d2-8782-4eb8-01fde3c8cf4e" valign="top" align="left">reason</th>
+<th id="_68a2fff6-b412-b9e2-c17f-961dd4596bc2" valign="top" align="left">meaning</th>
+</tr></thead>
+<tbody><tr id="_d00a49ed-7eda-b11c-a0dc-38a42799d174"><td id="_e4dd3ded-f2d3-3a83-f4f0-0971af55c582" valign="top" align="left"><tt>constraint</tt></td>
+<td id="_718d7a2b-1185-9c1e-e5b7-3fcff2fa9f9d" valign="top" align="left">the version exists but does not satisfy this edge's constraint</td>
+</tr><tr id="_a30c7385-8215-d76f-9c5d-7aae7c8e9a20"><td id="_4c174942-896e-59c1-320a-770026e9e8c7" valign="top" align="left"><tt>platform</tt></td>
+<td id="_92e8f2f1-9bae-9d30-4dd1-83a479f8b913" valign="top" align="left">the version exists but publishes no artifact for this triplet</td>
+</tr><tr id="_f6844195-b555-964a-514e-e8865aeda6b6"><td id="_ae22b686-8c4b-88aa-5df7-a52a21008455" valign="top" align="left"><tt>withdrawn</tt></td>
+<td id="_2b2becc9-73d0-52ec-cc8c-2d2f66808401" valign="top" align="left">the only satisfying rows are withdrawn (and this is printed)</td>
+</tr><tr id="_a540600f-3236-9e46-4ab2-5ebb08f37658"><td id="_bb74e69e-7958-ecaa-bc1d-64022c476758" valign="top" align="left"><tt>pinned</tt></td>
+<td id="_389cf470-3585-d242-143f-e0885ee524ed" valign="top" align="left">another, already-required edge forces a different version of the same name</td>
+</tr><tr id="_6e6d6ffe-5d1e-8548-820c-6bd8e2caf8ed"><td id="_53599651-ed82-638b-a786-ccae60f4129a" valign="top" align="left"><tt>closure</tt></td>
+<td id="_1a421e11-ed12-5f57-cdd0-c6a884fafe12" valign="top" align="left">the chosen candidate's <tt>requires:</tt> are absent from the closure map (<tt>solve-closure-missing</tt>) — the press must supply L1</td>
+</tr></tbody>
+</table>
+
+<p id="_f94dc7b4-6ce6-ff7d-1c91-c4c6b70abb9a">Exit code <strong>81</strong> (<tt>EX_TEBAKO_SOLVE</tt>) for a conflict, <tt>81</tt> for lockfile drift (§6),  <tt>64</tt> for a malformed requirement set. All three are named; none is a silent fallback. (<tt>81</tt> is the first code above the allocated <tt>65</tt>–<tt>80</tt> range; the table in spec 06 gains the row in the same change.)</p>
+</clause>
+
+<clause id="_10e0156c-1869-009c-5db3-62aa14565fa3" unnumbered="true" obligation="normative">
+<title id="_e0bfd220-5a03-97f2-fd25-7ce3b565c26b">6. The lockfile</title>
+<p id="_c94bbcf6-7882-dd33-cff5-b3a669ae631c"><tt>tebako.lock</tt> — YAML, one document, written by the solver and read by the press. Its bytes are a function of the assignment alone:</p>
+
+<sourcecode id="_ab2fec0f-aca4-89ea-1d3d-8f8338fc14ac" lang="yaml"><body>lock_version: 1
+assignments:                    # canonical order: kind, then name
+  - kind: data
+    name: iso-codes
+    version: "2024.2"
+    triplet: universal
+    sha256: "…"                 # the artifact's own anchor
+  - kind: language
+    name: ruby
+    version: "4.0.7"
+    triplet: aarch64-macos
+    sha256: "…"
+skipped:
+  - edge: "toolkit gtk-layer"
+    triplet: x86_64-linux-musl
+    reason: triplet-not-listed
+registries:                     # content, never a URL
+  - snapshot: "…"               # spec 41 §2's canonical snapshot root</body></sourcecode>
+
+
+<p id="_f9f91d0f-2c8b-53b7-1e7a-f010706383b6">Laws:</p>
+
+<ul id="_ef35d085-ee0d-91c5-068c-4cf8357acb59"><li><p id="_2743aecc-4a66-4a76-b909-ea64b3ac3d07"><strong>No URLs, no timestamps, no host names.</strong> A mirror URL in a lockfile would make the same tree lock differently depending on where it was solved. The  <tt>registries:</tt> rows carry the <em>snapshot root</em> (spec 41 §2) of the document the assignment was solved against, which is a content identity and is comparable across mirrors.</p>
+</li>
+<li><p id="_076943aa-93ff-c105-4150-2c7e41d58a78"><strong>Round-trip.</strong> <tt>solve(closure, registries)</tt> followed by <tt>solve(closure, registries, lock)</tt> returns the same assignment and re-renders byte-identical bytes (<tt>lock-roundtrip</tt> in the test names).</p>
+</li>
+<li><p id="_04fb39cd-8471-a7f0-d2c7-c3d81fc22397"><strong><tt>--locked</tt>.</strong> A press under <tt>--locked</tt> refuses to change the assignment: any difference between the lockfile and the solve is <tt>lock-drift</tt>, exit 81, printing the two assignments line by line. That is the flag CI uses, and the reason a green run stays green.</p>
+</li>
+<li><p id="_d093cdea-00dc-4d96-e5c6-5623665d7dff"><strong>Invalidation is explicit.</strong> A lockfile from a different <tt>lock_version</tt>, or one whose <tt>registries:</tt> snapshot no longer matches the document in hand, is refused by name — never "re-solved silently and rewritten".</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_18f88b9d-baeb-1547-bf19-34f61aff62ff" unnumbered="true" obligation="normative">
+<title id="_8108389c-3e87-55ce-eadd-d7ff1771fdae">7. What this does not cover</title>
+<ul id="_5f43929b-30b7-0d5a-89d2-d82a294dbe2d"><li><p id="_576bfb23-4608-efd7-0aa9-f21a535a4c6d"><strong>Inside a payload's own ecosystem.</strong> A payload carrying <tt>Gemfile.lock</tt> or  <tt>package-lock.json</tt> is authoritative for what it vendors (spec 26's press already requires a lockfile for node). The solver resolves payloads and runtimes; it does not resolve gems.</p>
+</li>
+<li><p id="_a2b7457c-d944-4826-4709-c414b3c865e6"><strong>Signature and trust policy.</strong> Selection happens before verification; a verified-failed artifact fails the fetch, not the solve (spec 09).</p>
+</li>
+<li><p id="_011262e0-59ce-1f05-ee6d-b1d3881f2714"><strong>Deltas and transfer.</strong> The lockfile records digests, so a fetch can plan deltas from them (spec 39) — planning is downstream of solving.</p>
+</li>
+<li><p id="_da2f2e76-cafc-078e-3eaf-cfab282896e5"><strong>Cross-registry fetching.</strong> A tree spanning two registries solves under this spec today only if both documents are configured inputs; the transport story is spec 04's.</p>
+</li>
+</ul>
+</clause>
+</sections>
+</metanorma>

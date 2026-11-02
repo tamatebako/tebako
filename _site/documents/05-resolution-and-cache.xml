@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Resolution and machine cache (L3)</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 05</docidentifier><docnumber>TBK SPEC 05</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_87298880-e9eb-8dbf-ae91-2da81be56c48" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_696990c4-8258-41af-04fa-dbd30a7e32e7">Normative specification of runtime/payload resolution and the shared machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL (roadmap 07).</p>
+</foreword></preface><sections>
+<clause id="_0dcb493a-d490-2a48-f134-4594f774bcd6" unnumbered="true" obligation="normative">
+<title id="_1898a451-fa66-f80a-3d10-5e0c2b37274f">1. runtime_ref (the resolution hint in the v1 trailer)</title>
+<sourcecode id="_3019d524-3d9a-3752-83aa-4edcf837a99c"><body>&lt;lang&gt;@&lt;lang-version&gt;;tebako=&lt;tebako-version&gt;[;image][;sha256=&lt;64 hex&gt;]</body></sourcecode>
+
+
+<ul id="_d8a73e49-67b6-a14d-c5a1-59b2d96ec38d"><li><p id="_24288332-9490-3c66-ccad-76b1854a3b66">Language-generic by construction; <tt>ruby@…</tt> is today's instance.</p>
+</li>
+<li><p id="_64e96545-96e1-e5b1-7854-184d7c4a61d0"><tt>;sha256=</tt> — fat payload checksum (the embedded runtime slot).</p>
+</li>
+<li><p id="_ce606600-145c-4a01-b0c5-515cd1a075aa"><tt>;image</tt> — bare flag: image-era runtime (interpreter + separate <tt>.tfs</tt>). The image's expected sha256 comes from the release index — the same trust source as the executable's own checksum. Bare-flag form keeps image-era fat refs inside the 127-byte field budget.</p>
+</li>
+<li><p id="_027d08d0-22db-b48f-4b08-9d2eb47b904e">Refs without <tt>;image</tt> behave byte-identically to v1: no image lookup, no download, no env.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_a1f6e93e-dd66-0bd0-ba35-e89d8de20ef1" unnumbered="true" obligation="normative">
+<title id="_f5cb70cf-660b-50aa-0de3-4f16c2a7f3b1">2. Release index (runtime factory releases)</title>
+<p id="_1dd03735-466d-5d1a-a235-c74fb797bc76">The index is <strong>per-package first</strong> (tebako#493): the resolver's preference order is the per-package shard → the derived monolith → the line index. The fallbacks stay forever — pre-shard releases are immutable and remain installable (invariant 7); a missing, unreadable, or triple-mismatched shard falls through to the next form with the URL recorded for the failure message. Post-2026-09-12 release lines ship no monolith at all (spec 13 §2a's de-rendezvous, roadmap 85): on them the shard-first order never misses, and the monolith + line-index forms exist only for the immutable pre-de-rendezvous releases. Range enumeration (choosing the newest COMPATIBLE version line) flows through the factory's in-repo L3 registry (spec 04 §2), never through a release monolith.</p>
+
+<ul id="_aaf1a49c-35e7-1bf7-8c86-bda7e5782de0"><li><p id="_a5ccf713-5be8-d81e-5c31-8d38e315150c"><tt>&lt;stem&gt;.manifest.json</tt> — the <strong>per-package shard</strong>, the sidecar-era authority. The stem is the exe asset's own name (<tt>tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;</tt> — suffix-less, §2's spelling rule below, on windows too). The shard is ONE manifest-entry object (the same fields the monolith's array items carry: the identity triple,  <tt>filename</tt>, <tt>sha256</tt>, the additive <tt>image</tt> / <tt>dll</tt> / contract-set keys). The resolver derives the stem from the requested triple, fetches exactly one small object, and reads the contract gate from it (normalized to the array shape at the resolver boundary — tebako-resolve owns the release-card reader semantics).</p>
+</li>
+<li><p id="_95bab0f4-73d6-bbcd-51aa-f667bb84c27f"><tt>manifest.json</tt> — derived monolith; the same per-asset entries as an array, plus the additive image-era key  <tt>image: {filename, sha256, size_bytes}</tt> and the additive <tt>contract_version</tt> key (bootstrap↔runtime contract, spec 06 §6).</p>
+</li>
+<li><p id="_d72cde20-7715-a0df-efa6-e75b5d16904b"><strong>The entry's <tt>filename</tt> is the ONLY authoritative asset spelling</strong> (spec 00 §10 SSOT; tebako#456). A consumer matches the entry by the identity triple (<tt>tebako_version</tt>, <tt>&lt;lang&gt;_version</tt>, <tt>platform</tt>) — never by a synthesized name — and flows  <tt>filename</tt> / <tt>image.filename</tt> / <tt>dll.filename</tt>+<tt>install_as</tt> verbatim into the download URL, the cache layout, and the pre-download contract gate. The  <tt>tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;[.exe]</tt> grammar is the factory's to declare, not the consumer's to derive (the factory publishes the windows exe SUFFIX-LESS). When no entry matches the identity triple (a pre-identity index), the synthesized spelling remains the fallback for the SHA256SUMS-only era, and the missing-entry refusal names the identity triple — the mis-lookup is diagnosed as what it is, never as a contract refusal of a hand-invented name.</p>
+</li>
+<li><p id="_357e14ee-52b5-6ff9-1f8a-210618dac3f6"><strong>The grammar carries the language segment</strong> (tebako#716): <tt>tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;</tt> — <tt>&lt;ver&gt;</tt> the tebako line,  <tt>&lt;lv&gt;</tt> the language version, and <tt>&lt;lang&gt;</tt> the runtime's <strong>distribution identity</strong>: the registry row's <tt>implementation</tt> when the factory ships several flavors of one engine (openjdk publishes <tt>temurin</tt> and <tt>graalvm</tt> rows side by side in the same release), else the engine name (<tt>ruby</tt>, <tt>python</tt>, …). The segment is dash-free <tt>[a-z0-9]+</tt> — a tebako line never carries <tt>-</tt>, so the dash is the unambiguous field separator. A flat directory holding several languages' runtimes is self-describing, and a cross-language version overlap can never collide byte-for-byte.  <strong>Era law:</strong> assets published before this amendment (the ≤ v0.16.32 line) spell <tt>tebako-runtime-&lt;ver&gt;-&lt;lv&gt;-&lt;triplet&gt;</tt> — immutable, sha256-pinned by live registries and shipped packages, keep-forever (invariant 7). The identity-triple match + verbatim  <tt>filename</tt> flow means consumers never branch on era for FLOWED names; a registry pick likewise flows the row's declared artifact stem into the shard probe verbatim, so the probe is exact in either era and never recomposes the identity. The few places a consumer synthesizes a name behave as follows: a REMOTE probe whose target's era is unknowable (the shard fetch on a registry-less channel, a bundle-sidecar existence probe) tries the new-era spelling first and falls back to the old-era, journaling both; the OCI lane (spec 38) opened after this amendment, so its selector-less default tag composes the new-era spelling only; the INDEX-LESS cache fallback (fat/carried installs, pre-identity manifests — all pre-#716-shaped by construction) composes the old-era spelling permanently.</p>
+</li>
+<li><p id="_577b81de-805c-4f03-b8b3-95a6f6c396e9"><tt>SHA256SUMS.txt</tt> — line-index fallback (<tt>&lt;sha&gt;  &lt;file&gt;</tt>), carries the <tt>&lt;asset&gt;.tfs</tt> lines in the image era.</p>
+</li>
+<li><p id="_a3803295-9f67-dbe3-a3e9-f8fafd4688de">Every payload asset also carries its own <tt>&lt;asset&gt;.sha256</tt> sidecar (coreutils  <tt>&lt;sha&gt;  &lt;file&gt;</tt> — the store marker's exact shape). The sidecar is the per-asset pin; the shard's sha fields are re-anchored to the served bytes at publish time.</p>
+</li>
+<li><p id="_fb7924d4-b4f2-a9da-0ec2-96dc72574b57"><strong>Bundle-era lines (additive, 2026-09-24, spec 36):</strong> a shard carrying the additive  <tt>bundle</tt> block is consumed as ONE fetch — the <tt>&lt;stem&gt;.tar.gz</tt> bundle + its sidecar (+ <tt>.asc</tt> when declared) — verified, then unpacked in-process into the §3 store layout with every member checked against the shard's per-member pins (<tt>InvalidBundle</tt>, spec 36 §7). A shard without <tt>bundle</tt> takes the per-file path, forever. A pre-bundle resolver on a bundle-era release fails LOUD at the exe fetch (the asset does not exist — exit-69 class, naming the identity triple), never an exec of wrong bytes.</p>
+</li>
+<li><p id="_c6ecd205-47f6-bc8a-bfb8-87b5d2afd197"><strong>The download base is PER-ENGINE</strong> (the chain below is SHIPPED in tebako-shim's dispatch-time fetch — tebako#567; the CLI's press-time resolver and the bootstrap consult  <tt>TEBAKO_RUNTIME_MIRROR</tt> + the default base only). First hit wins, and every download journals the base AND the channel that supplied it:</p>
+<ol id="_41271a96-ed77-7e86-de45-2030cb64dd22" type="alphabet"><li><p id="_fc0d2964-ab6d-cd9d-5766-e98f4316a8c7"><tt>runtimes: {&lt;engine&gt;: {source: &lt;base&gt;}}</tt> — the authored config pin (spec 07 §0; most specific: an operator who pins an engine's source means exactly that base for that engine).</p>
+</li>
+<li><p id="_e86d1497-4d06-e984-8c09-5873bd5e8015"><tt>TEBAKO_RUNTIME_MIRROR</tt> (https or file://) — the operator's global override, applying to every engine WITHOUT a  <tt>source:</tt> pin. When a pin shadows a differing mirror value the shadowing is journaled, loud — never silent precedence.</p>
+</li>
+<li><p id="_48688c21-b79b-a42f-f45f-0cf23ecb948f"><strong>Registry-derived</strong> — a registered registry (spec 04 §2) carrying a  <tt>kind: runtime</tt> entry whose <tt>engine:</tt> (+ <tt>implementation:</tt> when the edge names one) matches, with a version satisfying the edge's constraint: the base derives from that version's <tt>release.ref</tt> — or, when the host's row carries the additive per-row  <tt>release.ref</tt> (registry schema MINOR 6, tebako#711), from THAT ref: a version line unioning rows from several per-platform shard tags cannot name the serving tag at the version level, so the row carries it. This is the zero-config path — a third-party runtime becomes resolvable from  <tt>tebako add-registry &lt;its feedstock&gt;</tt> alone, no authored config required.</p>
+</li>
+<li><p id="_2634ac48-d9a1-f4c7-6b8c-ff2809b7c6e2">The product default base <tt>https://github.com/tamatebako/tebako-runtime-ruby/releases/download</tt> (the ruby factory line — the back-compat floor every pre-chain consumer already speaks).</p>
+<p id="_1b4de1c4-9bbd-6061-e215-9830fa083519">An edge no channel answers is a NAMED error enumerating the channels tried (never a silent query of a base that hosts no such engine — a wrong-line 404 is diagnosed as what it is).</p>
+</li>
+</ol>
+</li>
+<li><p id="_37f6c91e-1862-181a-afb2-29231799b325">Signing of the index and the artifacts it names: spec 09 §5 (every consumable index form signed — the same-channel-MITM gap closes) and spec 09 §4's runtime-fetch verification point (the per-artifact <tt>signature</tt> check, the unsigned-line semantics, the exit codes). The fetch journal records the verification strength alongside the base and the channel that supplied it.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_bb9da5bb-7529-9820-f7be-f392411d2304" unnumbered="true" obligation="normative">
+<title id="_ddc4e925-f532-7974-ed10-5becbac672cf">3. Machine cache layout (<tt>~/.tebako</tt>)</title>
+<sourcecode id="_593ebb26-acde-0d9a-6c64-dd413ac288a7"><body>runtimes/&lt;lang&gt;-&lt;lv&gt;-&lt;ver&gt;-&lt;triplet&gt;/
+  tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;[.exe]   # interpreter (0755)
+  sha256 / origin                                    # executable markers
+  tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;.tfs     # image-era runtime (0444)
+  &lt;image&gt;.sha256                                     # trust anchor ("&lt;sha&gt;  &lt;file&gt;\n")
+  &lt;image&gt;.origin                                     # source URL
+payloads/&lt;name&gt;/&lt;version&gt;.tfs                 # registry payloads (0444)
+payloads/&lt;name&gt;/&lt;version&gt;.tfs.sha256          # trust anchor
+payloads/&lt;name&gt;/&lt;version&gt;.manifest.yaml       # manifest mirror (embedded wins; else synthesized LOUDLY)
+shims/                                        # spec 07
+registries/&lt;sha&gt;.yaml (+.fetched-at)          # dispatch-time registry cache (24 h TTL, spec 07; §4's stale-serve)
+config.yaml                                   # spec 07 (YAML — never JSON)
+keys/                                         # press-local signing keys (spec 09)
+keyring/trusted.pgp                           # the trusted signer keyring (`tebako keys import`; spec 09 §2)
+trust/&lt;FINGERPRINT&gt;.pub                       # add-registry TOFU pins, read-only (spec 09 §9.1)
+trust/ca/&lt;name&gt;.pem                           # the operator CA store, read-only (spec 22 §4 Rule R4)</body></sourcecode>
+
+
+<p id="_de8ec826-f724-743b-25d3-fc6dfd186d3b">The interpreter/image file names in a cache entry keep the index entry's <tt>filename</tt> / <tt>image.filename</tt> spellings verbatim (§2 — on windows the exe is suffix-less; the loader execs by full path and CreateProcess needs no <tt>.exe</tt>). The diagram shows the post-tebako#716 spelling; entries installed from the immutable ≤ v0.16.32 lines keep their  <tt>&lt;ver&gt;-&lt;lv&gt;-&lt;triplet&gt;</tt> spellings forever — the two eras coexist in one store, and the directory name (<tt>&lt;lang&gt;-&lt;lv&gt;-&lt;ver&gt;-&lt;triplet&gt;</tt>) is era-free. The <tt>[.exe]</tt> diagram notation marks the synthesized fallback spelling, used only when no index entry is available (fat-payload installs, pre-identity manifests).</p>
+
+<clause id="_07795c72-baff-f6da-95ce-de37e03746fb" unnumbered="true" obligation="normative">
+<title id="_f8774ed1-d9c7-ce62-22fc-82a9eca9dab9">3.0a The manifest mirrors and the extension-slice scan</title>
+<p id="_cb158d12-0ed2-0118-407b-219ed4d16763">Every installed payload carries its L1 manifest beside the image as <tt>&lt;version&gt;.manifest.yaml</tt> (the embedded manifest transcribed at install; a legacy image without one gets a LOUDLY synthesized minimal mirror — identity only, no  <tt>augments</tt>). The mirrors are the dispatcher's store-local reading of the extension-slice graph (spec 07 §2 step 3a): the scan for slices augmenting the dispatched payload reads ONLY these files — never the network, never the registry caches (trust was already enforced at install; a run re-verifies nothing). A corrupt or unparseable mirror is a loud skip of that one payload (<tt>event=slice-skip reason=manifest-unreadable</tt>), never a dispatch failure.</p>
+</clause>
+
+<clause id="_5c93a5aa-f085-4a62-e4db-e9a076f845ce" unnumbered="true" obligation="normative">
+<title id="_7312a8bf-e7a6-b3c6-7209-c82d713d1a7a">3.1 Home discovery</title>
+<p id="_84be43fd-39c8-efa4-517f-aa4154838583">The store root resolves by precedence (single owner: <tt>tpkg::runtime_store::tebako_home</tt>; every component — CLI, shim, bootstrap, driver, journal — reads through it):</p>
+
+<ol id="_1ebdaaae-9560-8318-870b-93d835b9d9ae" type="arabic"><li><p id="_f726f8d8-58b0-0c5d-2060-0c63bc417014"><strong><tt>$TEBAKO_HOME</tt></strong> (non-empty) — the explicit override.</p>
+</li>
+<li><p id="_a716e883-38db-6f2b-cf53-306cb9a3b7eb"><strong>The bundle-sibling tier</strong> — the process image sits inside a tebako store tree, making that tree the home. Three seats:</p>
+<ul id="_f012a259-ec01-a056-98c7-3dcd6a5ceabb"><li><p id="_0b7d747e-8838-b359-959c-b5018844571a"><tt>&lt;root&gt;/&lt;seat&gt;/&lt;tool&gt;</tt> beside a grammar-carrying <tt>&lt;root&gt;/home</tt> (the bundle layout's  <tt>bin/</tt>; the seat name is irrelevant — the grammar is the witness, so  <tt>/usr/local/bin</tt> never false-triggers);</p>
+</li>
+<li><p id="_06019355-2793-a074-da0d-a10c464474f0"><tt>&lt;home&gt;/shims/&lt;tool&gt;</tt> (the windows shim copies; a unix shim is a symlink, resolves to the real binary, and takes the first seat or no seat instead);</p>
+</li>
+<li><p id="_1f0910cb-6110-b611-ec64-0c16472e14d4"><tt>&lt;home&gt;/runtimes/&lt;entry&gt;/&lt;exe&gt;</tt> (a store runtime — the driver's seat).</p>
+<p id="_3789b581-cd82-19df-99d5-0a10973f19c9">The <strong>store-grammar markers</strong> are: any of <tt>config.yaml</tt>, <tt>shims/</tt>, <tt>payloads/</tt>, <tt>runtimes/</tt>, <tt>registries/</tt>, <tt>keys/</tt>, <tt>trust/</tt>. A directory carrying none of them is not a home and the tier does not fire.</p>
+</li>
+</ul>
+</li>
+<li><p id="_3cfab61e-d664-54d5-a46d-a35363696be6"><strong>The platform default</strong> — <tt>~/.tebako</tt>; windows: <tt>%LOCALAPPDATA%\tebako</tt> (falling back to <tt>%USERPROFILE%\.tebako</tt>).</p>
+</li>
+</ol>
+
+<p id="_048a5e6f-fe0c-5ce1-82e6-ce036a41bd83">The tier is identity-preserving for managed installs: every managed seat resolves to the home the default tier would pick anyway (or does not fire), so the tier only ever lights up for a foreign tree — a bundle (spec 16 §7's MSI/pkg  <tt>bin/</tt> + <tt>home/</tt> layout). When the bundle tier wins, the shim and the bootstrap export  <tt>TEBAKO_HOME</tt> early so the whole process tree — dispatch execs, the runtime driver, spawned grandchildren — agrees on the one home.</p>
+
+<p id="_ab22c05b-4f37-8df7-5ffb-f6b75dda4f50">A bundle home may be <strong>read-only</strong> (installed under <tt>Program Files</tt> / <tt>/opt</tt>): runs work (mounts never write), mutating verbs fail with a named IO error naming the unwritable path, and the audit journal degrades to best-effort silence.</p>
+</clause>
+</clause>
+
+<clause id="_464158f1-f549-85cf-0cec-2ef5c2247201" unnumbered="true" obligation="normative">
+<title id="_32fe53dd-4e1c-5cd5-69cc-6b7e70e6a204">4. Install and trust rules (locked)</title>
+<ul id="_73210d72-4686-309d-3d89-a41584610441"><li><p id="_22c9f775-fcb1-2720-3ed7-e45f98f518c6">Per-entry <strong>flock</strong> (120 s timeout with stale-lock hint); install is tmp + rename — a partial install is invisible.</p>
+</li>
+<li><p id="_de8aa558-e0a1-c281-4ada-6642d2ed4980"><strong>Commit order (locked 2026-09-16):</strong> an install lands in three stages — the image + trust anchor stage first (dispatch-invisible bytes), the payload's  <tt>requires:</tt> closure walks second, and the <strong>manifest mirror's save is the commit point</strong>. A version whose mirror is absent was never installed, whatever else the record holds: consumers keying on "installed" (the closure's cached-pin short-circuit included) test the mirror, and an aborted attempt's staged bytes re-run the tail from the cache hit — never a re-download, never a half-installed record masquerading as standing.</p>
+</li>
+<li><p id="_e55e6384-d300-d952-8ee6-90f57e0ed2ec">The <tt>.sha256</tt> marker IS the trust anchor: present ⇒ the artifact was sha256-verified at install; re-verify only on re-fetch,  <strong>never per run</strong>.</p>
+</li>
+<li><p id="_0ea63d2d-dd88-f6d4-21fc-d051ba960acf">Image-era cache entries hold artifacts only — no extracted <tt>layout/</tt> tree; press seeds its environment by extracting in-process through the TFS ABI and rebuilds per press.</p>
+</li>
+<li><p id="_8b9065d5-032f-411a-99a5-e6c0ba888834"><tt>TEBAKO_OFFLINE=1</tt> — cache hit or hard error.</p>
+</li>
+<li><p id="_1140cb5c-05bb-c6f2-efc6-751726d77568"><strong>Stale-registry serve on fetch failure (locked 2026-09-12, roadmap 86):</strong> the dispatch-time registry cache (<tt>registries/&lt;sha&gt;.yaml</tt> + <tt>.fetched-at</tt>, 24 h TTL — spec 07) degrades LOUD, never hard: cache PRESENT but stale + the refresh fetch failed → the stale cache SERVES, with a stderr warning and a journal line (<tt>event=stale-registry-serve</tt>, naming the ref and the fetch error); cache ABSENT + fetch fails → the named resolution error, unchanged; a fresh cache and a successful refresh are unchanged. <tt>TEBAKO_OFFLINE=1</tt> stays cache-or-named-error, unchanged. This is NOT a silent fallback: the registry is an index — the trust anchor is the artifact's  <tt>.sha256</tt> / <tt>.asc</tt> verified at fetch time, never the registry's freshness, and a stale index can name only artifacts whose own anchors still verify at install.</p>
+</li>
+<li><p id="_024376f4-bffc-d667-af4e-06caf6ee6ed2"><tt>tebako cache list</tt> (runtimes and payloads) / <tt>cache prune [--runtimes] [--payloads] [--all | --older-than Nd]</tt> manage the cache. Bare  <tt>cache prune</tt> touches runtimes only; <tt>--payloads</tt> adds the payload arm, which NEVER removes a pinned version — the protected set (config  <tt>defaults:</tt> pins through the spec 07 §2 toolpin grammar, exact <tt>payload@version</tt> disable selectors, and each name's newest installed version, the roll-forward floor) binds even under  <tt>--all</tt>: prune never strands a pin. Per-directory  <tt>.tebako-tools.yaml</tt> pins are dispatch-time state and invisible to prune (a reachable one prints the caveat once). Removal deletes the version's whole record — the  <tt>.tfs</tt>, its  <tt>.sha256</tt> / <tt>.origin</tt> markers, the <tt>.manifest.yaml</tt> mirror, a materialized  <tt>.tree/</tt>, the install lock — and the name dir when it goes empty.</p>
+</li>
+<li><p id="_f6fd68cb-e48f-c1f4-d6fb-85bdefcf5e44"><strong>A run is a run</strong>: executing a package NEVER installs its payload slices.  <tt>tebako install &lt;path&gt;</tt> installs a local package's payload slices explicitly — trailer slot digests are the anchors for signed (v2) packages, the computed digest for unsigned ones (the run's own enforcement strength, never upgraded); the runtime slot is NOT store-installed (it resolves into the runtime cache on first run, as always). Idempotent same-sha skip; same name+version with different content is never overwritten (loud warning + journal). Shims link only via the explicit  <tt>--shims</tt> (spec 07). <tt>TPKG_FLAG_NO_INSTALL</tt> packages refuse (spec 02 §5).</p>
+</li>
+<li><p id="_92ec4921-1807-8210-5937-fbd63ea849cd"><strong>Lazy seeding (the scoped exception, locked 2026-08-25, tebako#460):</strong> a package that CARRIES artifacts (the self-contained preset — spec 23 §13) MAY seed the machine cache with them at run time: the runtime pair (exe + env image) and each carried payload slice, so later packages share them. The exception is exactly this wide and no wider:</p>
+<ul id="_337b8e2f-c4d8-8fe3-285c-be6a2cbc1ed8"><li><p id="_df755dc5-889b-b936-fd2a-a978cc726cd7">best-effort — a seed that cannot complete NEVER blocks or fails the run; the carried artifacts keep serving from the package;</p>
+</li>
+<li><p id="_17c7765d-3475-fe9b-f2bf-5fc63968917f">tmp + rename under the entry lock — a partial seed is invisible and the next run re-seeds;</p>
+</li>
+<li><p id="_e2d3c55b-a8ea-c88f-356d-d8f21efaefaf">idempotent — a same-sha entry skips;</p>
+</li>
+<li><p id="_2f8273aa-78e9-7579-55a4-75f95d87e89b">trust anchors exactly as <tt>tebako install</tt>: trailer slot digests for signed (v2) packages, the computed digest for unsigned ones — the run's own enforcement strength, never upgraded;</p>
+</li>
+<li><p id="_eecdfeab-1bc9-ae4c-4053-ebb2503759f1">journaled (<tt>event=lazy-seed</tt>), and shown by <tt>tebako cache list</tt> with the seeding package as origin;</p>
+</li>
+<li><p id="_68831f58-6940-7179-091e-7de75e0575a3"><tt>TEBAKO_OFFLINE=1</tt> does not block seeding (no network is involved);</p>
+</li>
+<li><p id="_501a7f09-ff8e-fa72-779f-6a3e000d372b"><tt>TPKG_FLAG_NO_INSTALL</tt> packages never seed (spec 02 §5).</p>
+<p id="_7fdde92e-7a09-a91c-79fd-a40f8f532872">The shared-runtime preset needs no exception: its artifacts arrive through the ordinary resolve-download-verify-install path.</p>
+</li>
+</ul>
+</li>
+</ul>
+</clause>
+
+<clause id="_631c3d8e-b926-fffd-8917-8564515faf91" unnumbered="true" obligation="normative">
+<title id="_dc2b425e-66e1-a544-2e60-00a69c0a93e1">4a. Run-time payload resolution + lazy seeding (tebako#460, locked 2026-08-25 — the fat/lean unification)</title>
+<p id="_659a7d90-858e-15d4-5790-7cdb37130482"><strong>One pipeline, one lock.</strong> <tt>press</tt> resolves the full composition closure at build time — the runtime_ref plus every payload ref, transitively — and locks concrete versions + sha256 digests into the L2 package manifest. What press tested is what runs, always.</p>
+
+<p id="_6d876c3c-5d6b-bc8e-d586-4e02bb58d039"><strong>The embed dial.</strong> <tt>-m lean|fat</tt> is sugar over an embed set (<tt>--embed=all| none|name,…</tt>): <tt>fat</tt> embeds everything (runtime exe + env image + all payload slices, per #458's two-slot shape); lean embeds a subset. Embedding changes byte placement only — non-embedded slices resolve at run time  <strong>by the locked digests</strong>, never by fresh semver resolution, fail-closed on mismatch.</p>
+
+<p id="_90649a26-cbb2-e5b4-1f8c-a0c9b389d37b"><strong>Run-time payload resolution</strong> mirrors the runtime's own chain exactly: registry fetch → sha256 verify → tmp+rename into  <tt>~/.tebako/payloads/</tt> → co-mount at the declared points. Transitive DEPENDS walk with cycle detection;  <tt>TEBAKO_OFFLINE=1</tt> is cache-or-named-error. Named errors: an unresolvable slice is the 75 class; a digest mismatch is the trust class; a cycle is 65.</p>
+
+<p id="_e6f5d563-b8ee-246f-6d62-08115c70e579"><strong>Lazy seeding (the one exception to §4's run-is-a-run).</strong> A fat package's carried slices are byte-identical with registry artifacts; at first run the loader MAY copy absent slice regions into the machine cache (tmp+rename, the trailer-slot digest the trust anchor for signed packages / the computed digest for unsigned; journaled; idempotent same-sha skip). Strictly best-effort: never blocks, never fails, invisible when partial. The runtime pair seeds the runtime cache identically. Net: a fat download is a cache prime with a runnable side effect; fat and lean converge byte-for-byte.</p>
+
+<p id="_1d7fb060-33db-c8b9-9596-984b7dc0f6d8"><strong>Trust uniform:</strong> embedded or resolved, the same sha256 anchors, the same unsigned-is-loud + journal rules, the same  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> fail-closed, verification at fetch/install — never per run.</p>
+</clause>
+
+<clause id="_4227760f-c66f-f768-52f6-947679ff0c00" unnumbered="true" obligation="normative">
+<title id="_21cff32e-f4c4-a784-aecc-7c2e29ddd278">5. Resolution chains</title>
+<p id="_c29d422f-c1b2-5fa9-2f30-e09b70e2da12"><strong>Runtime for a payload (dispatch time):</strong> payload's declared requirement (engine + optional implementation + constraint) → newest COMPATIBLE runtime already cached (no download) → else download the newest compatible from the runtime releases → verify → cache. Swapping runtimes never touches the payload.  <strong>The min-runtime floor (spec 03 §2.9, schema_minor 15, tebako#666):</strong> when the payload manifest declares <tt>min_runtime_tebako</tt>, cached runtimes whose own tebako version is below the floor are discarded BEFORE the compatible pick (they are named in the miss errors, never silently preferred) and the download path runs instead; a downloaded runtime below the floor (a pinned stale line) is the named stale-runtime refusal.  <tt>TEBAKO_OFFLINE=1</tt> stays cache-or-named-error with the floor named. The floor gates every runtime the dispatch resolves — the entrypoint's own and the spawned edges' (spec 30/32); a provider payload's floor gates the provider's pair.</p>
+
+<p id="_9d39fee2-fe1d-8809-b7d8-c8dca5731403"><strong>Runtime for a shared-runtime package (first run):</strong> trailer runtime_ref → cache hit → use; miss → download from the index (per-package shard primary, manifest.json next, SHA256SUMS fallback — §2's order) → sha256-verify → flock'd atomic install. (Preset names per spec 23 §13.2:  <em>shared-runtime</em> is the default preset and the successor of the deprecated name  <em>lean</em>; <em>self-contained</em> succeeds <em>fat</em>.) Self-contained: the runtime pair is carried as two package slots — the interpreter exe and the env image (spec 19 §6.1): the exe stages into the runtime cache, the env image mounts from the package file through the ordinary <tt>&lt;self&gt;:&lt;slot&gt;:&lt;mount&gt;</tt> grammar, both verified against the trailer slot digests, and both seed the cache per §4's lazy-seed rule. (Pre-#458 packages carry the runtime as one legacy  <tt>format_id = 4</tt> slot, extracted and verified against  <tt>;sha256=</tt> — readers keep serving that form; presses never emit it.)</p>
+
+<p id="_d4b973f1-0df8-b5e1-fc51-a3b088818ce3"><strong>Compatibility model:</strong> pure-language payloads take a range (<tt>&gt;= 3.3, &lt; 5.0</tt>) — any newer runtime works; native-extension payloads lock to the ABI line they were built against, which is TWO-dimensional: the version line (<tt>~&gt; 3.3.0</tt>) AND the platform line (<tt>abi: arm64-darwin-23</tt> — the runtime's own platform string; ruby:  <tt>Gem::Platform.local.to_s</tt>, from the staging runtime's  <tt>RbConfig::CONFIG["arch"]</tt>). A newer line needs a new payload build (or an SDK rebuild path); a wrong line on EITHER axis produces a named compatibility error, never a segfault. Runtimes publish their platform string as the per-package  <tt>abi</tt> key in the release index (spec 13); cached runtimes installed before the field existed stay eligible (the compat window — a payload's abi check never fails against an unknown line).</p>
+
+<p id="_3975ab37-dfbb-1fea-0ace-157c5836d698"><strong>Version ordering (the plain-wins rule — the single owner is <tt>tpkg::versions::compare</tt>; every consumer flows it).</strong> Versions are dot-separated components, missing components zero. Within one component: a leading numeric prefix compares numerically (<tt>1.10 &gt; 1.9</tt>); at an equal prefix a PLAIN component ranks ABOVE a suffixed one (<tt>3.13.15 &gt; 3.13.15-jit</tt> — semver's release &gt; prerelease rule), so a factory's build variant (a  <tt>-jit</tt>, <tt>-debug</tt>, … line) never silently outranks its plain twin in a newest-satisfying pick; two suffixes order lexicographically; a component without a numeric prefix falls back to whole-component string order. Constraint MATCHING is unaffected: a variant version still satisfies an open constraint, so a platform where ONLY the variant exists still resolves — the variant simply never wins a max pick against the plain twin. A variant is SELECTED through the pin surface (the config  <tt>version:</tt> pin, the registry default), which names versions exactly and never compares.</p>
+
+<p id="_d7f68b7c-f6e5-bd04-d4f4-9bee6ab5a051"><strong>Variant suffixes in constraints (payload-manifest schema_minor 12).</strong> The constraint grammar (spec 03) admits the SAME suffixed component shape versions carry — each dot-separated component is leading decimals plus an optional  <tt>-label</tt> (<tt>[0-9A-Za-z-]+</tt>) — so an exact pin can NAME a variant line (<tt>= 1.16.9-ruby4.0</tt> — the spec 03 §2.8 binding rule against a line-split base, one slice per base line). Matching semantics (<tt>tpkg::versions</tt>, the single owner): equality clauses are suffix-exact — the variant and its plain twin are DIFFERENT versions (<tt>= 1.16.9</tt> never matches  <tt>1.16.9-ruby4.0</tt>); ordering clauses follow <tt>compare()</tt> unchanged — a plain bound excludes variants ranking below it (<tt>&gt;= 1.16.9</tt> does not match <tt>1.16.9-ruby4.0</tt>), a suffixed bound admits its own line upward (<tt>&gt;= 1.16.9-ruby4.0</tt> matches the variant, the plain twin, and everything newer);  <tt>~&gt;</tt> computes its upper bound from the numeric core under the same component model as  <tt>compare()</tt> — the label's own dot counts (<tt>~&gt; 1.16.9-ruby4.0</tt> is a four-component spelling, so the bound is  <tt>&lt; 1.16.10</tt>; for <tt>&lt; 1.17</tt> write the explicit range). Readers older than minor 12 reject a suffixed clause by name (exit 65) — fail-closed, never a misread pin.</p>
+
+<p id="_d88047ff-041e-d28b-fe4e-98b26dc31fde"><strong>The implementation axis (spec 28 §8):</strong> <tt>engine</tt> names the LANGUAGE — mri, jruby and truffleruby are all  <tt>engine: ruby</tt>, told apart by the runtime's  <tt>provides.implementation</tt>. A requirement WITHOUT <tt>implementation</tt> matches any cached runtime of the engine whose <tt>language_version</tt> satisfies the constraint (the pure-language case: one build, any implementation — jruby 9.4 declares  <tt>language_version: "3.1"</tt>, so a <tt>&gt;= 3.3</tt> requirement does not match it and a <tt>&gt;= 3.1</tt> one does). A requirement WITH  <tt>implementation</tt> reads its constraint against that implementation's OWN version line (<tt>{engine: ruby, implementation: jruby, constraint: "~&gt; 9.4"}</tt>) and matches no other implementation. An <tt>abi:</tt> in force requires <tt>implementation</tt> — ABI and platform lines are per-implementation by construction; a native requirement naming no implementation is a named manifest error (spec 03 §2.2). Compatibility never crosses implementations silently: the chosen runtime's implementation is journaled with the resolution event.</p>
+
+<p id="_fd4a6949-ee51-b34c-59c1-6435e08e18b1"><strong>The python wheel-tag mapping (<tt>engine: python</tt> — locked 2026-09-08).</strong> Python native extensions carry CPython's own two-tag compatibility grammar (the PEP 425/600 wheel tags). Tebako does not invent a second grammar — it maps that one onto the two-dimensional ABI line above, once, here; the resolver and the factory REFERENCE this table and never re-derive it in code comments.</p>
+
+<ul id="_cbea41be-5639-ef97-6a2e-2ae3a9d25391"><li><p id="_dbc3cb8a-842b-c319-1693-eec7965dd697"><strong>Version line.</strong> The wheel ABI tag <tt>cp3X</tt> (<tt>cp311</tt>, <tt>cp312</tt>, …) IS the version line  <tt>~&gt; 3.X.0</tt>: a native-extension payload baked against CPython 3.X declares  <tt>runtime_requirement: {engine: python, constraint: "~&gt; 3.X.0", abi: &lt;the built-against runtime's abi&gt;}</tt>. Pure-python payloads take the range form exactly as ruby's pure-language case (xml2rfc's  <tt>requires_python &gt;= 3.10</tt> is the first instance).</p>
+</li>
+<li><p id="_6565e1cf-c3d1-e6bc-45a1-cca81be6b38e"><strong>The stable ABI (<tt>abi3</tt>) is a bake-time concern, never a resolver concern (locked).</strong> An upstream <tt>cp3Y-abi3</tt> wheel is compatible with every CPython line  <tt>&gt;= 3.Y</tt>; the factory consumes that width by baking the abi3 wheel into EACH targeted (line × triplet) payload variant. The baked variant records the TARGET runtime's line and  <tt>abi</tt> exactly like a line-specific build — the resolver's grammar gains no  <tt>abi3</tt> case and the compatibility width never leaks into the wire.</p>
+</li>
+<li><p id="_9ba73c58-02e2-a9e1-8447-afcd16f11908"><strong>Platform line.</strong> The python runtime's published <tt>abi</tt> key (spec 13) is the CPython extension-suffix stem (sysconfig  <tt>EXT_SUFFIX</tt> without the leading dot), e.g.  <tt>cpython-312-x86_64-linux-gnu.so</tt>. The payload records the built-against runtime's  <tt>abi</tt> verbatim; comparison is the exact-string rule above, unchanged. macOS's suffix is arch-neutral (<tt>cpython-312-darwin.so</tt>) — the arch axis rides the triplet alone there; no second arch axis is ever introduced.</p>
+</li>
+<li><p id="_da4f7d7c-198b-6ac2-2bd3-b8487bec311c"><strong>Wheel platform tags ↔ triplets</strong> — the one table:</p>
+<table id="_9dcb32fd-9dbe-6cb9-2c61-540632701ad1"><thead><tr id="_27d8ae65-44cd-bf54-7af0-9b403ca4373a"><th id="_519b720b-6b0b-e59d-00a3-a60d65204e0d" valign="top" align="left">wheel platform tag (PEP 425/600)</th>
+<th id="_901b1f41-018c-5545-f23f-767f771dfc48" valign="top" align="left">tebako triplet</th>
+</tr></thead>
+<tbody><tr id="_b68afba6-f078-6704-ee6e-36aebeb582ad"><td id="_5822630e-4bff-ee13-a144-cc69be4db576" valign="top" align="left"><tt>manylinux_*_x86_64</tt></td>
+<td id="_65c60168-576a-4111-7123-18ff77e16ae8" valign="top" align="left"><tt>linux-gnu-x86_64</tt></td>
+</tr><tr id="_0e5eebfb-216b-aaaf-c89f-969b6b512533"><td id="_539053b8-15f4-4b1a-f888-4287900fb67f" valign="top" align="left"><tt>manylinux_*_aarch64</tt></td>
+<td id="_9d03588a-de42-21b1-ec6f-20ed19627914" valign="top" align="left"><tt>linux-gnu-arm64</tt></td>
+</tr><tr id="_43a40fd6-cc6b-38d0-5252-753312be6d30"><td id="_d4b14415-a2a6-78a5-4dcb-b89214db7d1a" valign="top" align="left"><tt>musllinux_*_x86_64</tt></td>
+<td id="_e64f14f8-81b4-5d5c-f12e-c2f024bf33ea" valign="top" align="left"><tt>linux-musl-x86_64</tt></td>
+</tr><tr id="_08707505-a0b3-60c0-8983-2c96d54427f0"><td id="_553bac62-0ddc-5bc3-4f6c-92b44792fd56" valign="top" align="left"><tt>musllinux_*_aarch64</tt></td>
+<td id="_5c489c50-3a6d-49ee-cda4-4e281d968bd6" valign="top" align="left"><tt>linux-musl-arm64</tt></td>
+</tr><tr id="_4fd0439d-ed4b-fe58-98f1-1353e098f79c"><td id="_677ea34d-5992-ebcb-730c-304445a14061" valign="top" align="left"><tt>macosx_*_x86_64</tt></td>
+<td id="_2f34d27a-5ac2-db24-7270-22711038fb2c" valign="top" align="left"><tt>macos-x86_64</tt></td>
+</tr><tr id="_e672751e-52de-e787-7855-c81192e8fdf3"><td id="_42cbb840-80bc-8978-14ba-4060ada2c2f3" valign="top" align="left"><tt>macosx_*_arm64</tt></td>
+<td id="_2ca74edb-563d-6599-28de-28592c8fa15c" valign="top" align="left"><tt>macos-arm64</tt></td>
+</tr><tr id="_87022c44-e927-056f-a205-293400947408"><td id="_4006bd4f-a3f4-fb80-9ee2-7562b7199ddb" valign="top" align="left"><tt>macosx_*_universal2</tt></td>
+<td id="_8c956b06-5d95-371c-a945-cae129e71174" valign="top" align="left">split per-arch at bake time — the payload stays per-triplet</td>
+</tr><tr id="_40a0e774-ab93-4983-5b4f-d4c4ba587688"><td id="_12016aed-7c86-3df6-2717-96761c12b3f8" valign="top" align="left"><tt>win_amd64</tt> / <tt>win_arm64</tt></td>
+<td id="_b1029e12-a6be-25ad-db19-95973e097b20" valign="top" align="left">RESERVED — the windows python runtime is not yet shipped; readers MUST NOT guess a mapping</td>
+</tr></tbody>
+</table>
+
+<p id="_892841cb-68ee-d91e-e813-d06a7f66c2b4">The musllinux-vs-manylinux (libc) distinction rides the triplet axis ONLY (<tt>linux-musl</tt> vs <tt>linux-gnu</tt>) — no wheel-tag axis, no libc key, no ad-hoc second axis anywhere in the grammar. A tag's policy version (<tt>manylinux_2_28</tt>, <tt>musllinux_1_2</tt>, …) is a build-floor statement consumed at bake time, never a resolution axis: a runtime built against any floor serves its triplet.</p>
+</li>
+<li><p id="_99ebafe9-8275-756a-498d-5acce7b81006"><strong>Wrong line = the named compatibility error</strong> on either axis, unchanged (never a segfault): the python instance names the selector and lists the available cached variants per spec 28 §4/§10.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_8e6e4cf6-34c9-b56e-2357-e410fb857419" unnumbered="true" obligation="normative">
+<title id="_5c1e72c1-0694-62f4-7fa5-394349bfd7b3">6. The fetch pipeline (parallel pulls, streaming integrity — locked 2026-09-18)</title>
+<p id="_889a540f-bce7-8eb0-016d-ddd9c99857a2">Every dynamic pull of ARTIFACT bytes (runtime exe + env image + dll, payload slices, detached  <tt>.asc</tt> signature assets, trust-anchor keys — spec 09 §10) runs through the one fetch pipeline (<tt>tebako_resolve::plan</tt>), never through ad-hoc per-caller download loops. Release INDEX reads (shards, manifest monoliths, SHA256SUMS, registry YAML) stay small buffered GETs; the pipeline is for artifacts.</p>
+
+<ul id="_872c78c8-e87a-cc91-0e84-0da96a99bfdd"><li><p id="_f9f3b46f-221f-d0b4-e336-20c12f10d750"><strong>The plan.</strong> Resolution produces the whole closure up front; the pipeline takes it as an explicit  <tt>FetchPlan</tt>: a subject line (the progress header's  <tt>&lt;what&gt;</tt>) plus one item per artifact carrying <tt>{reference, sha256 pin, size hint, tmp dir, commit closure}</tt>. The commit closure owns the artifact's install semantics (signature verification, the store's lock + rename + markers) — the pipeline owns transport, integrity, and scheduling; neither crosses over.</p>
+</li>
+<li><p id="_5ae5b816-b4de-43d3-cfaf-c20ff48da73d"><strong>Parallelism.</strong> A std::thread worker pool — <tt>jobs</tt> from <tt>TEBAKO_FETCH_JOBS</tt> (env) over <tt>fetch_jobs</tt> (<tt>~/.tebako/config.yaml</tt>) over the default  <strong>3</strong> (docker's number); <tt>1</tt> is sequential (the debug shape). An unparseable or zero value is a NAMED error, never a silent clamp. No async runtime, no new dependencies (spec 14).</p>
+</li>
+<li><p id="_9b922d33-2909-a218-efda-2825aaea8517"><strong>Streaming integrity (one pass, constant memory).</strong> Each worker streams its response body into the item's tmp file WHILE updating a streaming sha256 hasher; the pin compares at end-of-stream. The pre-pipeline shape (buffer the whole body into a  <tt>Vec&lt;u8&gt;</tt>, hash as a second pass — a 200 MB image pinning 200 MB of RAM) is RETIRED: artifact bytes never materialize whole in memory on the download path. A signature verification that needs the bytes reads the staged tmp file once, after ITS download completes — overlapped with the plan's remaining streams — and never after the rename.</p>
+</li>
+<li><p id="_fd5c9459-3e02-658d-d846-4f59cf4ebafc"><strong>Retry discipline, per worker per connection.</strong> The existing throttle/backoff law is unchanged (the tebako-http SSOT: Retry-After honored exactly, the 60 s × 2ⁿ hintless exponential, THROTTLE_ROUNDS rounds; DOWNLOAD_ATTEMPTS for transient failures) — it now runs per worker. A mid-stream failure retries the artifact FROM ZERO (tmp truncated, hasher reset): a resumed partial body would fail the pin anyway.</p>
+</li>
+<li><p id="_33176b6d-6bb4-3d14-db65-d058138d02a3"><strong>Failure law.</strong> Any artifact's transport/hash/signature/commit failure CANCELS THE PLAN: in-flight streams abort at the next chunk, queued items never start, the pool joins, every tmp file of the plan is dropped, and the FIRST named error surfaces (its exit code unchanged — the taxonomy of spec 06 §4 / the caller's table is untouched). A partial install never appears in the store: tmp+rename (§4) already makes the bytes invisible, and the cancel path removes the tmp files — proven by test, not asserted.</p>
+</li>
+<li><p id="_9c342c53-a1e8-fa37-bb1b-93804a04319c"><strong>The store is concurrency-safe by design</strong> (§4's per-entry flock + content-addressed byte-identical artifacts): two workers never share an entry — one plan holds disjoint store slots, and a foreign process installing the same entry serializes on the same flock with the same 120 s stale-lock-hint timeout. Parallel fetch changes nothing there (test-proven).</p>
+</li>
+<li><p id="_9450245f-8e27-5797-8152-764783df9e16"><strong><tt>TEBAKO_OFFLINE=1</tt></strong> keeps its cache-or-named-error semantics, evaluated per item before its stream starts;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> gates exactly where it gates today (the commit closure's signature policy is the caller's, unchanged in meaning).</p>
+</li>
+<li><p id="_4053cfbc-c8ee-2c14-72f1-2a4875e897c8"><strong>Rendering:</strong> spec 06 §5a — the pipeline renders through tebako-term v2 and nothing else prints download progress.</p>
+</li>
+</ul>
+</clause>
+</sections>
+</metanorma>

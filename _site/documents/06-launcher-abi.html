@@ -1,0 +1,2003 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>Launcher ABI (bootstrap → runtime)</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 06</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">Launcher ABI (bootstrap → runtime)</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_9225e1b7-a9bf-69b6-6e61-53945029e5db">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_c4dd8548-d13b-5d0a-9d33-8883b26a46b8">      
+  
+  1. The handoff
+</a></li>
+<li class="h1"><a href="#_cb27362e-a75a-f37e-1870-61fcfb9392f4">      
+  
+  2. Image-era addition (additive, ABI stays 1)
+</a></li>
+<li class="h1"><a href="#_e4824777-b77c-209b-9818-18b7564abccf">      
+  
+  3. Loader behavior contract (tebako-bootstrap)
+</a></li>
+<li class="h1"><a href="#_cf3cb64f-48f3-fbbe-c6a2-adacb8946f98">      
+  
+  4. Exit codes (named, stable)
+</a></li>
+<li class="h1"><a href="#_e497a9e8-3098-0351-e6ac-723818387f28">      
+  
+  5. Progress UX (locked 2026-07-26)
+</a></li>
+<li class="h2"><a href="#_ea146955-1c86-cbf5-5b7e-ea4733091de9">      
+  
+  5a. The fetch-plan rendering (tebako-term v2, locked 2026-09-18)
+</a></li>
+<li class="h1"><a href="#_3c958e01-463b-2366-73a1-d762f6f3be71">      
+  
+  6. Bootstrap↔runtime contract negotiation (roadmap 45)
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_9225e1b7-a9bf-69b6-6e61-53945029e5db"><h1 class="ForewordTitle" id="_d6b4c1c1-2aaa-45b4-b1b2-14c60aef0812"><a class="anchor" href="#_9225e1b7-a9bf-69b6-6e61-53945029e5db"></a><a class="header" href="#_9225e1b7-a9bf-69b6-6e61-53945029e5db">Foreword</a></h1><p id="_5aac6b34-8330-60c4-b3cc-fddc9d80b0bb">Normative specification of the handoff contract. Version: <b>1</b>. Status: SHIPPED (macOS/Linux; Windows exec/lock port PARTIAL — roadmap 02).</p></div><div id="_c4dd8548-d13b-5d0a-9d33-8883b26a46b8"><h1 id="_6e2bc4bf-70cb-4989-a5d1-dbefc02a87a7"><a class="anchor" href="#_c4dd8548-d13b-5d0a-9d33-8883b26a46b8"></a><a class="header" href="#_c4dd8548-d13b-5d0a-9d33-8883b26a46b8">1. The handoff</a></h1><figure id="_df2c85a2-0ef4-847b-1925-beadab238bd0" class="sourcecode" spellcheck="false" translation="no"><pre>&#x3c;runtime&#x3e; --tebako-image &#x3c;self&#x3e;:&#x3c;slot&#x3e;:&#x3c;mount&#x3e; ...<br />          --tebako-entry &#x3c;argv0&#x3e; &#x3c;user args...&#x3e;</pre><figcaption class="SourceTitle">Figure 1</figcaption></figure><div class="ul_wrap"><ul id="_b4173ee8-bf53-1076-dd26-4884ec512072"><li id="_dadd0dfb-5611-3af0-edf8-e0f533c81887"><p id="_d9d16327-d7fb-a850-40d8-dcbee4d87576">One <tt>--tebako-image</tt> triple per payload slot to mount: <tt>&#x3c;self&#x3e;</tt> = the package's own path, <tt>&#x3c;slot&#x3e;</tt> = slot index, <tt>&#x3c;mount&#x3e;</tt> = the slot's mount point.</p>
+</li>
+<li id="_b509ede4-b30c-ef91-68b9-00af0699e988"><p id="_fe916e82-20b8-aa96-2af2-0703bd58558c">Slots whose role is runtime are <b>never</b> handed over as mounts.</p>
+</li>
+<li id="_51d84a85-28bc-8e7f-2d60-597f7d8a95f2"><p id="_d7c95e2e-db58-c280-ee29-4247b154f1aa"><tt>--tebako-entry</tt> separates loader-consumed args from user args; <tt>&#x3c;argv0&#x3e;</tt> is the entrypoint name inside the mounted tree.</p>
+</li>
+<li id="_701d72e2-b50a-7b73-97a8-00e42a968a35"><p id="_a9c7f7d8-0504-6b47-03d3-e45e37802bb5"><tt>--tebako-extract</tt> is a runtime-side option riding the user-arg passthrough (the loader never interprets it).</p>
+</li>
+</ul></div></div><div id="_cb27362e-a75a-f37e-1870-61fcfb9392f4"><h1 id="_2e31e19b-bba8-478b-84de-91e3e4e3c97d"><a class="anchor" href="#_cb27362e-a75a-f37e-1870-61fcfb9392f4"></a><a class="header" href="#_cb27362e-a75a-f37e-1870-61fcfb9392f4">2. Image-era addition (additive, ABI stays 1)</a></h1><p id="_8d61a5a6-a78d-b3b0-b0c3-026b731af25c">When the runtime_ref carries <tt>;image</tt> (spec 05 §1), the loader exports:</p><figure id="_eb14fc2a-3f83-5ad7-5c7f-030472df392c" class="sourcecode" spellcheck="false" translation="no"><pre>TEBAKO_RUNTIME_IMAGE=&#x3c;absolute path of the cached .tfs&#x3e;</pre><figcaption class="SourceTitle">Figure 2</figcaption></figure><p id="_6e2e0f54-758a-2933-afd7-50721d49c3ba">The runtime driver prefers the env image over any embedded image (one-file driver patch,  <tt>docs/tebako-main.cpp.30b.patch</tt>); v1 runtimes ignore the env and use their embedded image — graceful degradation, no republish of v1-era runtimes needed.</p></div><div id="_e4824777-b77c-209b-9818-18b7564abccf"><h1 id="_0b1fc52e-1c24-4d54-848a-2f15ce44f6c2"><a class="anchor" href="#_e4824777-b77c-209b-9818-18b7564abccf"></a><a class="header" href="#_e4824777-b77c-209b-9818-18b7564abccf">3. Loader behavior contract (tebako-bootstrap)</a></h1><div class="figdl"><dl id="_141b099c-ba15-334e-201a-2f19de2b11be"><dt><p>1</p></dt><dd id="_a830204d-a5db-9a40-503a-bc919df1171e"><p id="_91450a2c-a0ae-2e6d-3de0-a72209ad4219">Read own trailer (spec 02; absent → classic-bundle error path).</p>
+</dd><dt><p>2</p></dt><dd id="_d8686e36-5efd-8524-6e56-12e7321875d8"><p id="_51e00ccb-3991-6143-3116-bf98c8b845a0">Require <tt>launcher_abi == 1</tt> (else exit 66).</p>
+</dd><dt><p>2a</p></dt><dd id="_8ff3649d-4d45-3f47-188b-f7a8099854e9"><p id="_32e1452d-6631-969e-800f-6f655e130921"><b><tt>--tebako-install</tt> verb:</b> after the chain + ABI gates — the package's  <tt>TPKG_FLAG_NO_INSTALL</tt> refuses (exit 76); any other package answers with the named guidance to <tt>tebako install &#x3c;path&#x3e;</tt> (exit 76 — the manifest read needs the TFS engine the size-capped bootstrap deliberately does not carry). A run is a run: the verb is the ONLY way slices reach the store.</p>
+</dd><dt><p>3</p></dt><dd id="_4f4c822a-35a5-2333-adb3-67b8a3604e25"><p id="_0197b12e-b247-b691-6a2c-b0c938781636">Trust handling, by build and trailer flag:</p>
+<div class="ul_wrap"><ul id="_5829da31-494b-9db6-d3af-3ca7a9e17e55"><li id="_d5d5744b-3faa-cf7d-79e2-0af058c2bea2"><p id="_827dae77-d0c3-b386-5d45-db3ae64570fd"><b><tt>TPKG_FLAG_SIGNED_V2</tt>, verification ENABLED</b> (<tt>openpgp-verify</tt> feature): verify the OpenPGP signature against the trusted keyring and each slot's SHA-256 — always strict (spec 09).</p>
+</li>
+<li id="_c92a11db-9af9-edfe-7dc5-a389aa2b5f86"><p id="_b583d681-6f50-7c32-5aaf-08a4c8608b67"><b><tt>TPKG_FLAG_SIGNED_V2</tt>, verification DISABLED</b> (unverified-first, the shipped default until roadmap 72's crypto toolkit): loud UNVERIFIED warning + audit journal, then enforce each slot's SHA-256 as integrity-vs-corruption (the anchor is unverified — documented, spec 09 §7).  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> here fails CLOSED with exit 71 naming the missing capability ("built without OpenPGP verification") — a strict-mode request is never silently downgraded to unverified.</p>
+</li>
+<li id="_e74947c2-826a-f653-606b-d631ba0a9ed9"><p id="_e2e34c79-6569-7583-34ae-764ace56d042"><b>Unsigned (v1)</b>: loud warning + audit journal (or exit 71 under <tt>TEBAKO_REQUIRE_SIGNED=1</tt>).</p>
+</li>
+</ul></div>
+</dd><dt><p>4</p></dt><dd id="_c168cf74-2d65-d4ec-5872-55513b5ff775"><p id="_9d69d607-1384-cf66-3d56-8636a681678f">Resolve the runtime per spec 05 §5 — negotiating the contract version (§6) fail-closed before any checksum acceptance.</p>
+</dd><dt><p>5</p></dt><dd id="_0c45e717-fc31-4324-243a-655c63c6af71"><p id="_5797d07a-8ae4-835f-3ef5-1bbe635e15b7">Image-era: ensure <tt>&#x3c;asset&#x3e;.tfs</tt> + trust markers in the cache entry (fetch + verify on miss — authenticity per spec 09 §4's runtime-fetch point first, then sha256 integrity as today), install read-only.</p>
+</dd><dt><p>6</p></dt><dd id="_8fe27a11-d303-7dfc-08fe-f70636f3998a"><p id="_e7feb719-f635-6384-c683-405a5bf94cf7">Exec the handoff. Never returns on success.</p>
+</dd></dl></div></div><div id="_cf3cb64f-48f3-fbbe-c6a2-adacb8946f98"><h1 id="_af54664b-6c74-4a6c-a703-0cd072c7bcfa"><a class="anchor" href="#_cf3cb64f-48f3-fbbe-c6a2-adacb8946f98"></a><a class="header" href="#_cf3cb64f-48f3-fbbe-c6a2-adacb8946f98">4. Exit codes (named, stable)</a></h1><table id="_a24c076d-f981-8cc0-baed-183f72d136fa" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 1</caption><thead><tr><th style="font-weight:bold;text-align:right;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">code</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">name</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">meaning</th></tr></thead><tbody><tr><td style="text-align:right;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_MANIFEST</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">trailer missing/corrupt/invalid</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">66</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_ABI</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">launcher_abi mismatch</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">67</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_RUNTIME_REF</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">unparseable/unsupported runtime_ref</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">68</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_OVERLAY</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">overlay/decrypt binding failure: unbound retained store, missing or non-opening key material, unwritable store, orphan binding, malformed <tt>TEBAKO_OVERLAYS</tt> / <tt>TEBAKO_DECRYPT</tt> (spec 24 §7; code constant <tt>tpkg::EX_TEBAKO_OVERLAY</tt>)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_UNAVAILABLE</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">runtime unresolvable (offline miss, download failure)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">70</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_SHA</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">sha256 mismatch (runtime or image)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">71</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_SIGNATURE</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">invalid signature; or unsigned under <tt>TEBAKO_REQUIRE_SIGNED=1</tt></td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">72</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_TRUST</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">signer key not in the trusted keyring</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">73</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_JAIL</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">jail policy could not be applied (malformed <tt>TEBAKO_JAIL</tt>; fail-closed — spec 08)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">74</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_IO</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">filesystem/lock/install failure</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">75</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_CONTRACT</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">runtime declares an unsupported <tt>contract_version</tt> (§6)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">76</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_INSTALL</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>--tebako-install</tt> refused (<tt>TPKG_FLAG_NO_INSTALL</tt>) or needs the CLI</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">77</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_CONTRACT_ERA</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the runtime declares a contract ERA newer than the loader speaks (§6; code constant <tt>tpkg::EX_TEBAKO_CONTRACT_ERA</tt>)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">78</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_LAYOUT</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the <tt>TEBAKO_MOUNT_ROOT</tt> override is ungranted by the env image's <tt>mount_root_override</tt> layout grant (spec 17 §1; code constant <tt>tebako-driver</tt>'s <tt>EX_TEBAKO_LAYOUT</tt>)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">79</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_CHECK</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">a payload check FAILed — the <tt>tebako check</tt> aggregate (spec 26 §2; code constant <tt>tpkg::EX_TEBAKO_CHECK</tt>)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">80</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_LEDGER</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">a ledger finding — <tt>tebako audit --verify</tt> met a chain mismatch or an invalid seal signature, the seal file holds an unparseable record, or <tt>--strict</tt> met unparseable journal lines (spec 40 §6; code constant <tt>tpkg::EX_TEBAKO_LEDGER</tt>)</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">81</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>EX_TEBAKO_SOLVE</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">a tree-solve finding — a named conflict, lockfile drift under <tt>--locked</tt>, an open runtime seam, or a malformed requirement set (spec 42 §5; code constant <tt>tebako_cli::solve::EX_TEBAKO_SOLVE</tt>)</td></tr></tbody></table><p id="_e4d3f902-f911-aaad-d5b3-0a995e87e1f5">stderr body: <tt>tebako-bootstrap: &#x3c;message&#x3e;\n</tt> — message bodies match the C++ reference bootstrap 1:1 (golden parity).</p></div><div id="_e497a9e8-3098-0351-e6ac-723818387f28"><h1 id="_dafc485c-59fa-4de0-872a-0c32c48fd925"><a class="anchor" href="#_e497a9e8-3098-0351-e6ac-723818387f28"></a><a class="header" href="#_e497a9e8-3098-0351-e6ac-723818387f28">5. Progress UX (locked 2026-07-26)</a></h1><p id="_656ab1a8-eaa8-7068-8048-e0363fae1bd3">When the loader fetches a runtime or image, the user SEES the work and the benefit. Rules:</p><div class="ul_wrap"><ul id="_bc0df9df-9e41-69d7-4bdc-4d1fe8943413"><li id="_898689cd-2910-7419-1aed-713d571a5e3c"><p id="_a20a0a13-0c49-7096-6eba-a0aa70187e85"><b>TTY-only:</b> full progress rendering iff stderr is a TTY and <tt>TERM != dumb</tt>; otherwise exactly two single lines (start + done), CI/ log-safe. Opt-outs:  <tt>NO_COLOR</tt>, <tt>TEBAKO_NO_PROGRESS=1</tt>, and the package's baked  <tt>TPKG_FLAG_QUIET_NOTICES</tt> (bit 3 — spec 23 §14).</p>
+</li>
+<li id="_a5030ba0-039e-3727-de17-9b948b710ca3"><p id="_8fd5f58f-1d1e-7189-b39a-bd6da7dec3bc"><b>Phases, one line each:</b> <tt>resolving &#x3c;runtime_ref&#x3e;</tt> → <tt>downloading &#x3c;asset&#x3e; (&#x3c;size&#x3e;)</tt> with the live bar → <tt>verifying sha256</tt> → <tt>installing (locked)</tt> → done.</p>
+</li>
+<li id="_460fcc2f-632a-d690-18bb-4a18d69a8da5"><p id="_acfbf2f6-213c-b80d-c611-98424161f927"><b>The bar</b> (hand-rolled ANSI, no deps — the size gate forbids indicatif-class crates):  <tt>\r[=====&#x3e;    ] 62%  14.2/23.0 MB  3.1 MB/s</tt> throttled to ≤ 10 redraws/s; unknown content-length → spinner frames + byte count.</p>
+</li>
+<li id="_303a2167-7317-ae21-65a3-0a37c16b24fe"><p id="_26df5cd2-2efa-81dc-9e7a-004ea85995db"><b>The benefit is stated:</b> on completion — <tt>installed ruby-3.4.2-0.15.9-linux-gnu-x86_64 (23.0 MB) — cached at ~/.tebako/runtimes/… and shared by every tebako app on this machine</tt>. A cache HIT prints one quiet line:  <tt>runtime ruby-3.4.2 (cached)</tt>. <tt>TEBAKO_NO_PROGRESS=1</tt> silences these informational lines entirely (the cache-hit,  <tt>installed …</tt>, and <tt>downloading …</tt> lines — progress is not results; tebako#400); the mode selection rule above still applies. <tt>TPKG_FLAG_QUIET_NOTICES</tt> (bit 3 — the developer's press-time declaration via the spec 23 §14 registry) applies the same silence to every run of the package, on every machine.</p>
+</li>
+<li id="_f7b74b62-7f93-bde8-fdc1-76ba03e722cb"><p id="_bd13a440-e42b-8d6b-adac-a013d065f50b">Progress output goes to <b>stderr</b>, never stdout (stdout belongs to the payload).</p>
+</li>
+<li id="_8b3b53c9-01bf-a5a7-539f-f93412de0139"><p id="_190f1d11-b7ba-b318-0163-e5bddc71d408">Implementation: a tiny <tt>tebako-term</tt> micro-crate (TTY detect, bar, spinner, phase lines) consumed by tebako-bootstrap; tebako-shim and tebako-cli reuse it (no third copy). tebako-http gains an <tt>on_progress(bytes_so_far, content_length)</tt> callback hooking the stream — the bar is transport-accurate, not estimated.</p>
+</li>
+</ul></div><div id="_ea146955-1c86-cbf5-5b7e-ea4733091de9"><h2 id="_88c008c0-9515-44ca-8176-7b836257a4b4"><a class="anchor" href="#_ea146955-1c86-cbf5-5b7e-ea4733091de9"></a><a class="header" href="#_ea146955-1c86-cbf5-5b7e-ea4733091de9">5a. The fetch-plan rendering (tebako-term v2, locked 2026-09-18)</a></h2>
+
+<p id="_08031998-3255-1a9f-5617-a4eb229b41ff">The spec 05 §6 fetch pipeline downloads a plan's artifacts CONCURRENTLY, and the user sees that concurrency — the docker-pull look. tebako-term v2 adds the plan surface (<tt>ProgressSet</tt>); the single-artifact contract above is its one-slot case.</p>
+
+<div class="ul_wrap"><ul id="_4aaf9717-e30e-df11-5874-52e0cf184be4"><li id="_3a5c7d19-92c0-957a-2f06-91dfe1fb47d5"><p id="_16176972-0a39-9d49-f3d9-2d08cf61cb95"><b>The plan header</b> (both modes, one line, printed before the first artifact starts):  <tt>fetching &#x3c;what&#x3e;: &#x3c;N&#x3e; artifacts, &#x3c;total&#x3e; total</tt> where  <tt>&#x3c;what&#x3e;</tt> names the resolution subject (e.g. <tt>runtime ruby 3.3.12</tt>) and <tt>&#x3c;total&#x3e;</tt> sums the known size hints (<tt>unknown</tt> when none are known). A cache hit for the whole plan prints no header — the hit lines stand alone as before.</p>
+</li>
+<li id="_72631238-8818-aaea-72fe-4a8fd036b705"><p id="_fc515120-704b-1657-8dcc-03d1294c384b"><b>One live line per concurrent worker</b> (TTY mode): the set renders as a fixed block of N slot lines at the bottom of the scrollback, repainted in place (<tt>\x1b[&#x3c;N&#x3e;A</tt> up + erase-line per slot), throttled to ≤ 10 redraws/s for the WHOLE block (not per slot). Each slot runs the phase sequence  <b>download bar → verifying (spinner) → done</b>; the done state keeps its line in the block until the plan completes (<tt>✓ &#x3c;asset&#x3e; (&#x3c;size&#x3e;)</tt>), a failed slot renders <tt>✗ &#x3c;asset&#x3e;</tt> and the plan's named error follows on a fresh line.</p>
+</li>
+<li id="_bafefef1-8c1f-70da-b4c7-b9454150c202"><p id="_2f844f8f-461a-c254-c3be-8ae6716e0573"><b>The bar grows up:</b> fractional unicode blocks (<tt>▏▎▍▌▋▊▉█</tt> — eighth-cell resolution), an EMA-smoothed rate (<tt>3.1 MB/s</tt>, α = 0.3 per redraw) plus an ETA (<tt>eta 12s</tt>, shown only once the EMA has converged past its warmup), the byte pair in the total's unit. Unknown content-length → a braille spinner (<tt>⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏</tt>)</p>
+<div class="ul_wrap"><ul id="_fdfa01c8-fd99-0793-51d8-12bddb82fe84"><li id="_de06fb50-89ab-d50b-81f3-97df275aba0e"><p id="_59c590c2-6198-171e-a122-b61842bf3838">byte count. Colors: cyan for an active slot, green for done, red</p>
+<p id="_e53bf93d-c6b1-146d-a74f-accae25a73dd">for failed — decorative only, and absent whenever the mode rule above selects plain (NO_COLOR included).</p>
+</li>
+</ul></div>
+</li>
+<li id="_1ea72a7c-fed8-2166-0314-52042cc235e1"><p id="_02217ab8-3717-c0f7-4e67-79673385df6b"><b>Plain mode grammar (pipe/CI/opt-out — byte-stable, testable):</b> exactly the plan header, then per artifact the pair <tt>downloading &#x3c;asset&#x3e; (&#x3c;size&#x3e;)</tt> / <tt>installed &#x3c;asset&#x3e; (&#x3c;size&#x3e;)</tt> (or  <tt>downloading &#x3c;asset&#x3e;</tt> when the length is unknown), then the summary line  <tt>fetched &#x3c;what&#x3e;: &#x3c;N&#x3e; artifacts, &#x3c;total&#x3e; in &#x3c;secs&#x3e;s</tt>. No control sequences, ever.  <tt>TEBAKO_NO_PROGRESS</tt> quiets the whole grammar (the header included) — progress is informational, never results; failures are named errors on stderr regardless of the gate.</p>
+</li>
+<li id="_d8cfc678-1a98-2333-6ae0-40cfa9951a3c"><p id="_5f10da72-bd2b-f30b-9252-68163091767f"><b>The wiring rule (locked):</b> every network artifact transfer — runtime pair downloads, payload slice fetches, registry index refreshes, trust-anchor key retrievals — renders through tebako-term;  <b>no caller prints its own download progress</b>. A registry YAML fetch (small, unknown length) renders as a one-line spinner phase in TTY mode and a single  <tt>fetching registry &#x3c;ref&#x3e;</tt> start line in plain mode (its done line is the resolution's own output). Callers that today emit nothing (the shim's dispatch-time fetch, the CLI's press resolver) gain the same surface — the download moment is one UX everywhere.</p>
+</li>
+</ul></div>
+</div></div><div id="_3c958e01-463b-2366-73a1-d762f6f3be71"><h1 id="_14966398-0525-4116-b624-8281e7a6f42e"><a class="anchor" href="#_3c958e01-463b-2366-73a1-d762f6f3be71"></a><a class="header" href="#_3c958e01-463b-2366-73a1-d762f6f3be71">6. Bootstrap↔runtime contract negotiation (roadmap 45)</a></h1><p id="_11e2c89b-e602-5d6e-506b-f097d14e771c">The launcher ABI (§1–§2) is the wire format; the <b>contract version</b> is its semantics version, declared by the runtime and enforced by the bootstrap. It exists so a future handoff change (env names, argv shape, image-handoff semantics) can be introduced without old bootstraps silently mis-executing new runtimes.</p><table id="_f80fd653-5cde-3d02-bfeb-9e3a650af2e0" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 2</caption><thead><tr><th style="font-weight:bold;text-align:right;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">contract</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">semantics</th></tr></thead><tbody><tr><td style="text-align:right;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">1</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">this document, §1–§5: <tt>--tebako-image</tt>/<tt>--tebako-entry</tt> argv, <tt>TEBAKO_RUNTIME_IMAGE</tt> env handoff, trailer/ABI gating as in §3</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">2</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">spec 17: image-path triples, bare-file slot tokens (<tt>0</tt> ≡ <tt>-</tt>), env-image-first multi-mount, direct <tt>--tebako-entry</tt> execution (no <tt>/local/stub.rb</tt> convention)</td></tr></tbody></table><p id="_d4e12f76-277f-2f03-4e01-ef235114664c"><b>Bump rule.</b> Any change to env/argv/handoff semantics — a renamed or repurposed variable, a new loader-consumed flag, a change in image precedence — increments the contract version by exactly 1. Additive payload-side changes that v1 runtimes may ignore (like §2's env image for v1 runtimes) do NOT bump the contract.</p><p id="_a9348b08-36d7-490f-111d-590b9e2c3d8a"><b>Declaration.</b> The runtime release manifest's per-package entry carries the contract SET —  <tt>"contract_era"</tt>, <tt>"contract_version"</tt>, <tt>"mount_root"</tt> — (spec 05 §5's manifest.json; the set is additive — older consumers ignore it). The runtime driver has the same values compiled in (<tt>TEBAKO_CONTRACT_VERSION</tt> and its siblings); the runtime repo's CI fails any release where the manifest and the driver disagree.</p><p id="_adb4ebdb-b219-8525-959f-02658e19aed2"><b>Negotiation rule (bootstrap, fail-closed — spec 18's era vocabulary).</b> During runtime/image resolution, before any checksum acceptance, the loader reads the entry's contract set (<tt>crates/tebako-resolve/src/contract.rs</tt> is the implementation of record; the current spoken values are era  <b>2</b> and contract <b>2</b> — the spec-17 argv/env grammar):</p><div class="ol_wrap"><ol type="1" id="_65f88d43-94af-c3f3-7a13-396ae8f9c448"><li id="_f25a2547-5932-b4fe-8245-1c907ffa6c3f"><p id="_42e3d48c-ab68-a858-be41-a373b27aae23">The manifest carries NO entry for the asset → not a contract question (the checksum path names that failure) → proceed.</p>
+</li>
+<li id="_fc745f52-ff58-69fb-3b0b-ffc9cec6b227"><p id="_db84bb91-b6cb-ff5e-fdb2-aa5c625b0c83">The entry's contract set is present and matches the loader's spoken era + contract → proceed (the declared, acceptable set).</p>
+</li>
+<li id="_060e6159-d7d1-50c2-2cc9-f0ad44d3f712"><p id="_69c9ca8e-99dd-81ee-d7ce-3b66a5eb3001">Any of the three fields absent, unparseable, zero, or empty → a pre-era entry — a NAMED refusal (<tt>ContractError::PreEra</tt>, exit 75) listing the missing fields, never a proceed.</p>
+</li>
+<li id="_661ff53d-ad6a-5d02-5852-345dbef75d05"><p id="_15436b19-387e-b21c-aea7-d52a749ef491">A declared era NEWER than the loader's → refused (<tt>ContractError::EraTooNew</tt>, exit 77 — <tt>EX_TEBAKO_CONTRACT_ERA</tt>) naming both generations and the remedy; a contract NEWER or OLDER than the spoken one → refused (<tt>ContractTooNew</tt>/<tt>ContractTooOld</tt>, exit 75) naming both.</p>
+</li>
+</ol></div><p id="_e46bfd43-7f6b-6f41-eccc-eeb52f863b53">A negotiation failure is never a crash and never a silent accept: it is a clean, explained refusal.</p></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

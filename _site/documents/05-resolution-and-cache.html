@@ -1,0 +1,2075 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>Resolution and machine cache (L3)</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 05</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">Resolution and machine cache (L3)</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_87298880-e9eb-8dbf-ae91-2da81be56c48">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_0dcb493a-d490-2a48-f134-4594f774bcd6">      
+  
+  1. runtime_ref (the resolution hint in the v1 trailer)
+</a></li>
+<li class="h1"><a href="#_a1f6e93e-dd66-0bd0-ba35-e89d8de20ef1">      
+  
+  2. Release index (runtime factory releases)
+</a></li>
+<li class="h1"><a href="#_bb9da5bb-7529-9820-f7be-f392411d2304">      
+  
+  3. Machine cache layout (<tt>~/.tebako</tt>)
+</a></li>
+<li class="h2"><a href="#_07795c72-baff-f6da-95ce-de37e03746fb">      
+  
+  3.0a The manifest mirrors and the extension-slice scan
+</a></li>
+<li class="h2"><a href="#_5c93a5aa-f085-4a62-e4db-e9a076f845ce">      
+  
+  3.1 Home discovery
+</a></li>
+<li class="h1"><a href="#_464158f1-f549-85cf-0cec-2ef5c2247201">      
+  
+  4. Install and trust rules (locked)
+</a></li>
+<li class="h1"><a href="#_631c3d8e-b926-fffd-8917-8564515faf91">      
+  
+  4a. Run-time payload resolution + lazy seeding (tebako#460, locked 2026-08-25 — the fat/lean unification)
+</a></li>
+<li class="h1"><a href="#_4227760f-c66f-f768-52f6-947679ff0c00">      
+  
+  5. Resolution chains
+</a></li>
+<li class="h1"><a href="#_8e6e4cf6-34c9-b56e-2357-e410fb857419">      
+  
+  6. The fetch pipeline (parallel pulls, streaming integrity — locked 2026-09-18)
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_87298880-e9eb-8dbf-ae91-2da81be56c48"><h1 class="ForewordTitle" id="_9c93489f-3118-4fd3-bf14-42ccce6180f4"><a class="anchor" href="#_87298880-e9eb-8dbf-ae91-2da81be56c48"></a><a class="header" href="#_87298880-e9eb-8dbf-ae91-2da81be56c48">Foreword</a></h1><p id="_696990c4-8258-41af-04fa-dbd30a7e32e7">Normative specification of runtime/payload resolution and the shared machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL (roadmap 07).</p></div><div id="_0dcb493a-d490-2a48-f134-4594f774bcd6"><h1 id="_518710ae-f074-4b46-9d66-9cfaa9c08a5b"><a class="anchor" href="#_0dcb493a-d490-2a48-f134-4594f774bcd6"></a><a class="header" href="#_0dcb493a-d490-2a48-f134-4594f774bcd6">1. runtime_ref (the resolution hint in the v1 trailer)</a></h1><figure id="_3019d524-3d9a-3752-83aa-4edcf837a99c" class="sourcecode" spellcheck="false" translation="no"><pre>&#x3c;lang&#x3e;@&#x3c;lang-version&#x3e;;tebako=&#x3c;tebako-version&#x3e;[;image][;sha256=&#x3c;64 hex&#x3e;]</pre><figcaption class="SourceTitle">Figure 1</figcaption></figure><div class="ul_wrap"><ul id="_d8a73e49-67b6-a14d-c5a1-59b2d96ec38d"><li id="_247f130e-b345-bd47-9fd9-cefb2c66f162"><p id="_24288332-9490-3c66-ccad-76b1854a3b66">Language-generic by construction; <tt>ruby@…</tt> is today's instance.</p>
+</li>
+<li id="_f443949d-ceb1-f43e-22ff-d3c242d22777"><p id="_64e96545-96e1-e5b1-7854-184d7c4a61d0"><tt>;sha256=</tt> — fat payload checksum (the embedded runtime slot).</p>
+</li>
+<li id="_562eb3d5-b491-e1ec-551c-38467fd5ba0e"><p id="_ce606600-145c-4a01-b0c5-515cd1a075aa"><tt>;image</tt> — bare flag: image-era runtime (interpreter + separate <tt>.tfs</tt>). The image's expected sha256 comes from the release index — the same trust source as the executable's own checksum. Bare-flag form keeps image-era fat refs inside the 127-byte field budget.</p>
+</li>
+<li id="_2c5a9e2e-59f3-517a-a218-29d67aeb64fe"><p id="_027d08d0-22db-b48f-4b08-9d2eb47b904e">Refs without <tt>;image</tt> behave byte-identically to v1: no image lookup, no download, no env.</p>
+</li>
+</ul></div></div><div id="_a1f6e93e-dd66-0bd0-ba35-e89d8de20ef1"><h1 id="_570b1552-292a-422f-9fd5-03f328eb89e5"><a class="anchor" href="#_a1f6e93e-dd66-0bd0-ba35-e89d8de20ef1"></a><a class="header" href="#_a1f6e93e-dd66-0bd0-ba35-e89d8de20ef1">2. Release index (runtime factory releases)</a></h1><p id="_1dd03735-466d-5d1a-a235-c74fb797bc76">The index is <b>per-package first</b> (tebako#493): the resolver's preference order is the per-package shard → the derived monolith → the line index. The fallbacks stay forever — pre-shard releases are immutable and remain installable (invariant 7); a missing, unreadable, or triple-mismatched shard falls through to the next form with the URL recorded for the failure message. Post-2026-09-12 release lines ship no monolith at all (spec 13 §2a's de-rendezvous, roadmap 85): on them the shard-first order never misses, and the monolith + line-index forms exist only for the immutable pre-de-rendezvous releases. Range enumeration (choosing the newest COMPATIBLE version line) flows through the factory's in-repo L3 registry (spec 04 §2), never through a release monolith.</p><div class="ul_wrap"><ul id="_aaf1a49c-35e7-1bf7-8c86-bda7e5782de0"><li id="_5b5e3124-55a9-9d6c-f087-6bb38dff9d7b"><p id="_a5ccf713-5be8-d81e-5c31-8d38e315150c"><tt>&#x3c;stem&#x3e;.manifest.json</tt> — the <b>per-package shard</b>, the sidecar-era authority. The stem is the exe asset's own name (<tt>tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;</tt> — suffix-less, §2's spelling rule below, on windows too). The shard is ONE manifest-entry object (the same fields the monolith's array items carry: the identity triple,  <tt>filename</tt>, <tt>sha256</tt>, the additive <tt>image</tt> / <tt>dll</tt> / contract-set keys). The resolver derives the stem from the requested triple, fetches exactly one small object, and reads the contract gate from it (normalized to the array shape at the resolver boundary — tebako-resolve owns the release-card reader semantics).</p>
+</li>
+<li id="_6277bc68-8ec9-2bd8-b748-4e92ab798eef"><p id="_95bab0f4-73d6-bbcd-51aa-f667bb84c27f"><tt>manifest.json</tt> — derived monolith; the same per-asset entries as an array, plus the additive image-era key  <tt>image: {filename, sha256, size_bytes}</tt> and the additive <tt>contract_version</tt> key (bootstrap↔runtime contract, spec 06 §6).</p>
+</li>
+<li id="_c9f07d98-4ec6-2e33-7e5a-c9fb3b58c81c"><p id="_d72cde20-7715-a0df-efa6-e75b5d16904b"><b>The entry's <tt>filename</tt> is the ONLY authoritative asset spelling</b> (spec 00 §10 SSOT; tebako#456). A consumer matches the entry by the identity triple (<tt>tebako_version</tt>, <tt>&#x3c;lang&#x3e;_version</tt>, <tt>platform</tt>) — never by a synthesized name — and flows  <tt>filename</tt> / <tt>image.filename</tt> / <tt>dll.filename</tt>+<tt>install_as</tt> verbatim into the download URL, the cache layout, and the pre-download contract gate. The  <tt>tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;[.exe]</tt> grammar is the factory's to declare, not the consumer's to derive (the factory publishes the windows exe SUFFIX-LESS). When no entry matches the identity triple (a pre-identity index), the synthesized spelling remains the fallback for the SHA256SUMS-only era, and the missing-entry refusal names the identity triple — the mis-lookup is diagnosed as what it is, never as a contract refusal of a hand-invented name.</p>
+</li>
+<li id="_df57b5e3-e252-a0c0-805a-06c4d98a794e"><p id="_357e14ee-52b5-6ff9-1f8a-210618dac3f6"><b>The grammar carries the language segment</b> (tebako#716): <tt>tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;</tt> — <tt>&#x3c;ver&#x3e;</tt> the tebako line,  <tt>&#x3c;lv&#x3e;</tt> the language version, and <tt>&#x3c;lang&#x3e;</tt> the runtime's <b>distribution identity</b>: the registry row's <tt>implementation</tt> when the factory ships several flavors of one engine (openjdk publishes <tt>temurin</tt> and <tt>graalvm</tt> rows side by side in the same release), else the engine name (<tt>ruby</tt>, <tt>python</tt>, …). The segment is dash-free <tt>[a-z0-9]+</tt> — a tebako line never carries <tt>-</tt>, so the dash is the unambiguous field separator. A flat directory holding several languages' runtimes is self-describing, and a cross-language version overlap can never collide byte-for-byte.  <b>Era law:</b> assets published before this amendment (the ≤ v0.16.32 line) spell <tt>tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;</tt> — immutable, sha256-pinned by live registries and shipped packages, keep-forever (invariant 7). The identity-triple match + verbatim  <tt>filename</tt> flow means consumers never branch on era for FLOWED names; a registry pick likewise flows the row's declared artifact stem into the shard probe verbatim, so the probe is exact in either era and never recomposes the identity. The few places a consumer synthesizes a name behave as follows: a REMOTE probe whose target's era is unknowable (the shard fetch on a registry-less channel, a bundle-sidecar existence probe) tries the new-era spelling first and falls back to the old-era, journaling both; the OCI lane (spec 38) opened after this amendment, so its selector-less default tag composes the new-era spelling only; the INDEX-LESS cache fallback (fat/carried installs, pre-identity manifests — all pre-#716-shaped by construction) composes the old-era spelling permanently.</p>
+</li>
+<li id="_25b4db72-a1c0-bca6-fdd4-bbd645fa6ea0"><p id="_577b81de-805c-4f03-b8b3-95a6f6c396e9"><tt>SHA256SUMS.txt</tt> — line-index fallback (<tt>&#x3c;sha&#x3e;  &#x3c;file&#x3e;</tt>), carries the <tt>&#x3c;asset&#x3e;.tfs</tt> lines in the image era.</p>
+</li>
+<li id="_dfd5f6f3-16f5-48a8-6fc8-360988705b48"><p id="_a3803295-9f67-dbe3-a3e9-f8fafd4688de">Every payload asset also carries its own <tt>&#x3c;asset&#x3e;.sha256</tt> sidecar (coreutils  <tt>&#x3c;sha&#x3e;  &#x3c;file&#x3e;</tt> — the store marker's exact shape). The sidecar is the per-asset pin; the shard's sha fields are re-anchored to the served bytes at publish time.</p>
+</li>
+<li id="_6b156cf2-d95c-6e85-4c20-a98f82f05f39"><p id="_fb7924d4-b4f2-a9da-0ec2-96dc72574b57"><b>Bundle-era lines (additive, 2026-09-24, spec 36):</b> a shard carrying the additive  <tt>bundle</tt> block is consumed as ONE fetch — the <tt>&#x3c;stem&#x3e;.tar.gz</tt> bundle + its sidecar (+ <tt>.asc</tt> when declared) — verified, then unpacked in-process into the §3 store layout with every member checked against the shard's per-member pins (<tt>InvalidBundle</tt>, spec 36 §7). A shard without <tt>bundle</tt> takes the per-file path, forever. A pre-bundle resolver on a bundle-era release fails LOUD at the exe fetch (the asset does not exist — exit-69 class, naming the identity triple), never an exec of wrong bytes.</p>
+</li>
+<li id="_2b41af03-3de7-2654-0bf2-0358ac3d7670"><p id="_c6ecd205-47f6-bc8a-bfb8-87b5d2afd197"><b>The download base is PER-ENGINE</b> (the chain below is SHIPPED in tebako-shim's dispatch-time fetch — tebako#567; the CLI's press-time resolver and the bootstrap consult  <tt>TEBAKO_RUNTIME_MIRROR</tt> + the default base only). First hit wins, and every download journals the base AND the channel that supplied it:</p>
+<div class="ol_wrap"><ol type="a" id="_41271a96-ed77-7e86-de45-2030cb64dd22"><li id="_cb6bf711-4f9d-ab11-52b6-5feeef5e267f"><p id="_fc0d2964-ab6d-cd9d-5766-e98f4316a8c7"><tt>runtimes: {&#x3c;engine&#x3e;: {source: &#x3c;base&#x3e;}}</tt> — the authored config pin (spec 07 §0; most specific: an operator who pins an engine's source means exactly that base for that engine).</p>
+</li>
+<li id="_ff02066b-d90f-3086-1fcc-cccf0e90ead1"><p id="_e86d1497-4d06-e984-8c09-5873bd5e8015"><tt>TEBAKO_RUNTIME_MIRROR</tt> (https or file://) — the operator's global override, applying to every engine WITHOUT a  <tt>source:</tt> pin. When a pin shadows a differing mirror value the shadowing is journaled, loud — never silent precedence.</p>
+</li>
+<li id="_106600bd-67cc-4595-8cf1-a00eb3c72774"><p id="_48688c21-b79b-a42f-f45f-0cf23ecb948f"><b>Registry-derived</b> — a registered registry (spec 04 §2) carrying a  <tt>kind: runtime</tt> entry whose <tt>engine:</tt> (+ <tt>implementation:</tt> when the edge names one) matches, with a version satisfying the edge's constraint: the base derives from that version's <tt>release.ref</tt> — or, when the host's row carries the additive per-row  <tt>release.ref</tt> (registry schema MINOR 6, tebako#711), from THAT ref: a version line unioning rows from several per-platform shard tags cannot name the serving tag at the version level, so the row carries it. This is the zero-config path — a third-party runtime becomes resolvable from  <tt>tebako add-registry &#x3c;its feedstock&#x3e;</tt> alone, no authored config required.</p>
+</li>
+<li id="_f2353dcc-86ea-f85f-cc24-8b972a408516"><p id="_2634ac48-d9a1-f4c7-6b8c-ff2809b7c6e2">The product default base <tt>https://github.com/tamatebako/tebako-runtime-ruby/releases/download</tt> (the ruby factory line — the back-compat floor every pre-chain consumer already speaks).</p>
+<p id="_1b4de1c4-9bbd-6061-e215-9830fa083519">An edge no channel answers is a NAMED error enumerating the channels tried (never a silent query of a base that hosts no such engine — a wrong-line 404 is diagnosed as what it is).</p>
+</li>
+</ol></div>
+</li>
+<li id="_a3b33aa4-02ad-8799-8e4c-bf1445ae586d"><p id="_37f6c91e-1862-181a-afb2-29231799b325">Signing of the index and the artifacts it names: spec 09 §5 (every consumable index form signed — the same-channel-MITM gap closes) and spec 09 §4's runtime-fetch verification point (the per-artifact <tt>signature</tt> check, the unsigned-line semantics, the exit codes). The fetch journal records the verification strength alongside the base and the channel that supplied it.</p>
+</li>
+</ul></div></div><div id="_bb9da5bb-7529-9820-f7be-f392411d2304"><h1 id="_4fa7ea10-025e-48d5-b245-72ba5bdaa94a"><a class="anchor" href="#_bb9da5bb-7529-9820-f7be-f392411d2304"></a><a class="header" href="#_bb9da5bb-7529-9820-f7be-f392411d2304">3. Machine cache layout (<tt>~/.tebako</tt>)</a></h1><figure id="_593ebb26-acde-0d9a-6c64-dd413ac288a7" class="sourcecode" spellcheck="false" translation="no"><pre>runtimes/&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;ver&#x3e;-&#x3c;triplet&#x3e;/<br />  tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;[.exe]   # interpreter (0755)<br />  sha256 / origin                                    # executable markers<br />  tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;.tfs     # image-era runtime (0444)<br />  &#x3c;image&#x3e;.sha256                                     # trust anchor ("&#x3c;sha&#x3e;  &#x3c;file&#x3e;\n")<br />  &#x3c;image&#x3e;.origin                                     # source URL<br />payloads/&#x3c;name&#x3e;/&#x3c;version&#x3e;.tfs                 # registry payloads (0444)<br />payloads/&#x3c;name&#x3e;/&#x3c;version&#x3e;.tfs.sha256          # trust anchor<br />payloads/&#x3c;name&#x3e;/&#x3c;version&#x3e;.manifest.yaml       # manifest mirror (embedded wins; else synthesized LOUDLY)<br />shims/                                        # spec 07<br />registries/&#x3c;sha&#x3e;.yaml (+.fetched-at)          # dispatch-time registry cache (24 h TTL, spec 07; §4's stale-serve)<br />config.yaml                                   # spec 07 (YAML — never JSON)<br />keys/                                         # press-local signing keys (spec 09)<br />keyring/trusted.pgp                           # the trusted signer keyring (`tebako keys import`; spec 09 §2)<br />trust/&#x3c;FINGERPRINT&#x3e;.pub                       # add-registry TOFU pins, read-only (spec 09 §9.1)<br />trust/ca/&#x3c;name&#x3e;.pem                           # the operator CA store, read-only (spec 22 §4 Rule R4)</pre><figcaption class="SourceTitle">Figure 2</figcaption></figure><p id="_de8ec826-f724-743b-25d3-fc6dfd186d3b">The interpreter/image file names in a cache entry keep the index entry's <tt>filename</tt> / <tt>image.filename</tt> spellings verbatim (§2 — on windows the exe is suffix-less; the loader execs by full path and CreateProcess needs no <tt>.exe</tt>). The diagram shows the post-tebako#716 spelling; entries installed from the immutable ≤ v0.16.32 lines keep their  <tt>&#x3c;ver&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;</tt> spellings forever — the two eras coexist in one store, and the directory name (<tt>&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;ver&#x3e;-&#x3c;triplet&#x3e;</tt>) is era-free. The <tt>[.exe]</tt> diagram notation marks the synthesized fallback spelling, used only when no index entry is available (fat-payload installs, pre-identity manifests).</p><div id="_07795c72-baff-f6da-95ce-de37e03746fb"><h2 id="_d4fcd4bd-efb3-43cc-a570-2358fc1dc3bf"><a class="anchor" href="#_07795c72-baff-f6da-95ce-de37e03746fb"></a><a class="header" href="#_07795c72-baff-f6da-95ce-de37e03746fb">3.0a The manifest mirrors and the extension-slice scan</a></h2>
+
+<p id="_cb158d12-0ed2-0118-407b-219ed4d16763">Every installed payload carries its L1 manifest beside the image as <tt>&#x3c;version&#x3e;.manifest.yaml</tt> (the embedded manifest transcribed at install; a legacy image without one gets a LOUDLY synthesized minimal mirror — identity only, no  <tt>augments</tt>). The mirrors are the dispatcher's store-local reading of the extension-slice graph (spec 07 §2 step 3a): the scan for slices augmenting the dispatched payload reads ONLY these files — never the network, never the registry caches (trust was already enforced at install; a run re-verifies nothing). A corrupt or unparseable mirror is a loud skip of that one payload (<tt>event=slice-skip reason=manifest-unreadable</tt>), never a dispatch failure.</p>
+</div><div id="_5c93a5aa-f085-4a62-e4db-e9a076f845ce"><h2 id="_2ad3b591-c9d6-4425-a12e-e9a48a1b6f27"><a class="anchor" href="#_5c93a5aa-f085-4a62-e4db-e9a076f845ce"></a><a class="header" href="#_5c93a5aa-f085-4a62-e4db-e9a076f845ce">3.1 Home discovery</a></h2>
+
+<p id="_84be43fd-39c8-efa4-517f-aa4154838583">The store root resolves by precedence (single owner: <tt>tpkg::runtime_store::tebako_home</tt>; every component — CLI, shim, bootstrap, driver, journal — reads through it):</p>
+
+<div class="ol_wrap"><ol type="1" id="_1ebdaaae-9560-8318-870b-93d835b9d9ae"><li id="_00caa94b-c515-d3ea-d6e1-d7790c64c73b"><p id="_f726f8d8-58b0-0c5d-2060-0c63bc417014"><b><tt>$TEBAKO_HOME</tt></b> (non-empty) — the explicit override.</p>
+</li>
+<li id="_87544fff-e72b-b0ac-af68-c20229e3abc9"><p id="_a716e883-38db-6f2b-cf53-306cb9a3b7eb"><b>The bundle-sibling tier</b> — the process image sits inside a tebako store tree, making that tree the home. Three seats:</p>
+<div class="ul_wrap"><ul id="_f012a259-ec01-a056-98c7-3dcd6a5ceabb"><li id="_4268aedb-bfb3-1ae6-f2da-7ff2fb61c43c"><p id="_0b7d747e-8838-b359-959c-b5018844571a"><tt>&#x3c;root&#x3e;/&#x3c;seat&#x3e;/&#x3c;tool&#x3e;</tt> beside a grammar-carrying <tt>&#x3c;root&#x3e;/home</tt> (the bundle layout's  <tt>bin/</tt>; the seat name is irrelevant — the grammar is the witness, so  <tt>/usr/local/bin</tt> never false-triggers);</p>
+</li>
+<li id="_a7117b02-847d-63d6-c8cf-4505d6c6def3"><p id="_06019355-2793-a074-da0d-a10c464474f0"><tt>&#x3c;home&#x3e;/shims/&#x3c;tool&#x3e;</tt> (the windows shim copies; a unix shim is a symlink, resolves to the real binary, and takes the first seat or no seat instead);</p>
+</li>
+<li id="_40d9ae3a-1077-157e-077c-741e50eb5d42"><p id="_1f0910cb-6110-b611-ec64-0c16472e14d4"><tt>&#x3c;home&#x3e;/runtimes/&#x3c;entry&#x3e;/&#x3c;exe&#x3e;</tt> (a store runtime — the driver's seat).</p>
+<p id="_3789b581-cd82-19df-99d5-0a10973f19c9">The <b>store-grammar markers</b> are: any of <tt>config.yaml</tt>, <tt>shims/</tt>, <tt>payloads/</tt>, <tt>runtimes/</tt>, <tt>registries/</tt>, <tt>keys/</tt>, <tt>trust/</tt>. A directory carrying none of them is not a home and the tier does not fire.</p>
+</li>
+</ul></div>
+</li>
+<li id="_9d5265e8-c004-f393-9482-5d1c3406eac9"><p id="_3cfab61e-d664-54d5-a46d-a35363696be6"><b>The platform default</b> — <tt>~/.tebako</tt>; windows: <tt>%LOCALAPPDATA%\tebako</tt> (falling back to <tt>%USERPROFILE%\.tebako</tt>).</p>
+</li>
+</ol></div>
+
+<p id="_048a5e6f-fe0c-5ce1-82e6-ce036a41bd83">The tier is identity-preserving for managed installs: every managed seat resolves to the home the default tier would pick anyway (or does not fire), so the tier only ever lights up for a foreign tree — a bundle (spec 16 §7's MSI/pkg  <tt>bin/</tt> + <tt>home/</tt> layout). When the bundle tier wins, the shim and the bootstrap export  <tt>TEBAKO_HOME</tt> early so the whole process tree — dispatch execs, the runtime driver, spawned grandchildren — agrees on the one home.</p>
+
+<p id="_ab22c05b-4f37-8df7-5ffb-f6b75dda4f50">A bundle home may be <b>read-only</b> (installed under <tt>Program Files</tt> / <tt>/opt</tt>): runs work (mounts never write), mutating verbs fail with a named IO error naming the unwritable path, and the audit journal degrades to best-effort silence.</p>
+</div></div><div id="_464158f1-f549-85cf-0cec-2ef5c2247201"><h1 id="_be3b30fe-cf4c-4f7d-a01e-970126a7c3f8"><a class="anchor" href="#_464158f1-f549-85cf-0cec-2ef5c2247201"></a><a class="header" href="#_464158f1-f549-85cf-0cec-2ef5c2247201">4. Install and trust rules (locked)</a></h1><div class="ul_wrap"><ul id="_73210d72-4686-309d-3d89-a41584610441"><li id="_b6ee7da9-0f56-ebaa-8f14-9a77ab7f8622"><p id="_22c9f775-fcb1-2720-3ed7-e45f98f518c6">Per-entry <b>flock</b> (120 s timeout with stale-lock hint); install is tmp + rename — a partial install is invisible.</p>
+</li>
+<li id="_c2ba6c9c-f10f-925d-62fc-8276ae4899de"><p id="_de8aa558-e0a1-c281-4ada-6642d2ed4980"><b>Commit order (locked 2026-09-16):</b> an install lands in three stages — the image + trust anchor stage first (dispatch-invisible bytes), the payload's  <tt>requires:</tt> closure walks second, and the <b>manifest mirror's save is the commit point</b>. A version whose mirror is absent was never installed, whatever else the record holds: consumers keying on "installed" (the closure's cached-pin short-circuit included) test the mirror, and an aborted attempt's staged bytes re-run the tail from the cache hit — never a re-download, never a half-installed record masquerading as standing.</p>
+</li>
+<li id="_572409e4-7f02-37f4-6e57-f127085eca18"><p id="_e55e6384-d300-d952-8ee6-90f57e0ed2ec">The <tt>.sha256</tt> marker IS the trust anchor: present ⇒ the artifact was sha256-verified at install; re-verify only on re-fetch,  <b>never per run</b>.</p>
+</li>
+<li id="_9b219eae-2175-df2e-04a9-c561cc0dd173"><p id="_0ea63d2d-dd88-f6d4-21fc-d051ba960acf">Image-era cache entries hold artifacts only — no extracted <tt>layout/</tt> tree; press seeds its environment by extracting in-process through the TFS ABI and rebuilds per press.</p>
+</li>
+<li id="_4b6037c0-9cc7-1c73-b6fd-da47b35cec5e"><p id="_8b9065d5-032f-411a-99a5-e6c0ba888834"><tt>TEBAKO_OFFLINE=1</tt> — cache hit or hard error.</p>
+</li>
+<li id="_93a4c5e9-7680-c08e-2cf6-dfbab4e2c9e3"><p id="_1140cb5c-05bb-c6f2-efc6-751726d77568"><b>Stale-registry serve on fetch failure (locked 2026-09-12, roadmap 86):</b> the dispatch-time registry cache (<tt>registries/&#x3c;sha&#x3e;.yaml</tt> + <tt>.fetched-at</tt>, 24 h TTL — spec 07) degrades LOUD, never hard: cache PRESENT but stale + the refresh fetch failed → the stale cache SERVES, with a stderr warning and a journal line (<tt>event=stale-registry-serve</tt>, naming the ref and the fetch error); cache ABSENT + fetch fails → the named resolution error, unchanged; a fresh cache and a successful refresh are unchanged. <tt>TEBAKO_OFFLINE=1</tt> stays cache-or-named-error, unchanged. This is NOT a silent fallback: the registry is an index — the trust anchor is the artifact's  <tt>.sha256</tt> / <tt>.asc</tt> verified at fetch time, never the registry's freshness, and a stale index can name only artifacts whose own anchors still verify at install.</p>
+</li>
+<li id="_cfcdc31a-cf21-f10e-b4c5-032dbeed9a6d"><p id="_024376f4-bffc-d667-af4e-06caf6ee6ed2"><tt>tebako cache list</tt> (runtimes and payloads) / <tt>cache prune [--runtimes] [--payloads] [--all | --older-than Nd]</tt> manage the cache. Bare  <tt>cache prune</tt> touches runtimes only; <tt>--payloads</tt> adds the payload arm, which NEVER removes a pinned version — the protected set (config  <tt>defaults:</tt> pins through the spec 07 §2 toolpin grammar, exact <tt>payload@version</tt> disable selectors, and each name's newest installed version, the roll-forward floor) binds even under  <tt>--all</tt>: prune never strands a pin. Per-directory  <tt>.tebako-tools.yaml</tt> pins are dispatch-time state and invisible to prune (a reachable one prints the caveat once). Removal deletes the version's whole record — the  <tt>.tfs</tt>, its  <tt>.sha256</tt> / <tt>.origin</tt> markers, the <tt>.manifest.yaml</tt> mirror, a materialized  <tt>.tree/</tt>, the install lock — and the name dir when it goes empty.</p>
+</li>
+<li id="_1e5884e1-3d24-190b-e139-10bd6758acb7"><p id="_f6fd68cb-e48f-c1f4-d6fb-85bdefcf5e44"><b>A run is a run</b>: executing a package NEVER installs its payload slices.  <tt>tebako install &#x3c;path&#x3e;</tt> installs a local package's payload slices explicitly — trailer slot digests are the anchors for signed (v2) packages, the computed digest for unsigned ones (the run's own enforcement strength, never upgraded); the runtime slot is NOT store-installed (it resolves into the runtime cache on first run, as always). Idempotent same-sha skip; same name+version with different content is never overwritten (loud warning + journal). Shims link only via the explicit  <tt>--shims</tt> (spec 07). <tt>TPKG_FLAG_NO_INSTALL</tt> packages refuse (spec 02 §5).</p>
+</li>
+<li id="_6a5e1be5-0814-ea00-0dec-24ff978913ff"><p id="_92ec4921-1807-8210-5937-fbd63ea849cd"><b>Lazy seeding (the scoped exception, locked 2026-08-25, tebako#460):</b> a package that CARRIES artifacts (the self-contained preset — spec 23 §13) MAY seed the machine cache with them at run time: the runtime pair (exe + env image) and each carried payload slice, so later packages share them. The exception is exactly this wide and no wider:</p>
+<div class="ul_wrap"><ul id="_337b8e2f-c4d8-8fe3-285c-be6a2cbc1ed8"><li id="_5295afa0-4c70-bd85-f3d6-33e86eb37476"><p id="_df755dc5-889b-b936-fd2a-a978cc726cd7">best-effort — a seed that cannot complete NEVER blocks or fails the run; the carried artifacts keep serving from the package;</p>
+</li>
+<li id="_94354829-df07-6171-a09d-dfa4ac2cf244"><p id="_17c7765d-3475-fe9b-f2bf-5fc63968917f">tmp + rename under the entry lock — a partial seed is invisible and the next run re-seeds;</p>
+</li>
+<li id="_d3d88957-e4e2-9283-d99c-8a695f3fe6d9"><p id="_e2d3c55b-a8ea-c88f-356d-d8f21efaefaf">idempotent — a same-sha entry skips;</p>
+</li>
+<li id="_748548fa-dfbe-57a6-259a-4a9ff6cd5609"><p id="_2f8273aa-78e9-7579-55a4-75f95d87e89b">trust anchors exactly as <tt>tebako install</tt>: trailer slot digests for signed (v2) packages, the computed digest for unsigned ones — the run's own enforcement strength, never upgraded;</p>
+</li>
+<li id="_8d47e163-2c96-daff-0153-b93638418d96"><p id="_eecdfeab-1bc9-ae4c-4053-ebb2503759f1">journaled (<tt>event=lazy-seed</tt>), and shown by <tt>tebako cache list</tt> with the seeding package as origin;</p>
+</li>
+<li id="_270fc307-e36c-a32a-f0db-ceb436aceba0"><p id="_68831f58-6940-7179-091e-7de75e0575a3"><tt>TEBAKO_OFFLINE=1</tt> does not block seeding (no network is involved);</p>
+</li>
+<li id="_c2a24b7c-da8f-d197-424f-cd62649a0b37"><p id="_501a7f09-ff8e-fa72-779f-6a3e000d372b"><tt>TPKG_FLAG_NO_INSTALL</tt> packages never seed (spec 02 §5).</p>
+<p id="_7fdde92e-7a09-a91c-79fd-a40f8f532872">The shared-runtime preset needs no exception: its artifacts arrive through the ordinary resolve-download-verify-install path.</p>
+</li>
+</ul></div>
+</li>
+</ul></div></div><div id="_631c3d8e-b926-fffd-8917-8564515faf91"><h1 id="_87ba5b96-68f0-461f-abdf-c25c60c032c4"><a class="anchor" href="#_631c3d8e-b926-fffd-8917-8564515faf91"></a><a class="header" href="#_631c3d8e-b926-fffd-8917-8564515faf91">4a. Run-time payload resolution + lazy seeding (tebako#460, locked 2026-08-25 — the fat/lean unification)</a></h1><p id="_659a7d90-858e-15d4-5790-7cdb37130482"><b>One pipeline, one lock.</b> <tt>press</tt> resolves the full composition closure at build time — the runtime_ref plus every payload ref, transitively — and locks concrete versions + sha256 digests into the L2 package manifest. What press tested is what runs, always.</p><p id="_6d876c3c-5d6b-bc8e-d586-4e02bb58d039"><b>The embed dial.</b> <tt>-m lean|fat</tt> is sugar over an embed set (<tt>--embed=all| none|name,…</tt>): <tt>fat</tt> embeds everything (runtime exe + env image + all payload slices, per #458's two-slot shape); lean embeds a subset. Embedding changes byte placement only — non-embedded slices resolve at run time  <b>by the locked digests</b>, never by fresh semver resolution, fail-closed on mismatch.</p><p id="_90649a26-cbb2-e5b4-1f8c-a0c9b389d37b"><b>Run-time payload resolution</b> mirrors the runtime's own chain exactly: registry fetch → sha256 verify → tmp+rename into  <tt>~/.tebako/payloads/</tt> → co-mount at the declared points. Transitive DEPENDS walk with cycle detection;  <tt>TEBAKO_OFFLINE=1</tt> is cache-or-named-error. Named errors: an unresolvable slice is the 75 class; a digest mismatch is the trust class; a cycle is 65.</p><p id="_e6f5d563-b8ee-246f-6d62-08115c70e579"><b>Lazy seeding (the one exception to §4's run-is-a-run).</b> A fat package's carried slices are byte-identical with registry artifacts; at first run the loader MAY copy absent slice regions into the machine cache (tmp+rename, the trailer-slot digest the trust anchor for signed packages / the computed digest for unsigned; journaled; idempotent same-sha skip). Strictly best-effort: never blocks, never fails, invisible when partial. The runtime pair seeds the runtime cache identically. Net: a fat download is a cache prime with a runnable side effect; fat and lean converge byte-for-byte.</p><p id="_1d7fb060-33db-c8b9-9596-984b7dc0f6d8"><b>Trust uniform:</b> embedded or resolved, the same sha256 anchors, the same unsigned-is-loud + journal rules, the same  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> fail-closed, verification at fetch/install — never per run.</p></div><div id="_4227760f-c66f-f768-52f6-947679ff0c00"><h1 id="_95c591bf-4f1c-42c8-a3e0-f119f2285ca6"><a class="anchor" href="#_4227760f-c66f-f768-52f6-947679ff0c00"></a><a class="header" href="#_4227760f-c66f-f768-52f6-947679ff0c00">5. Resolution chains</a></h1><p id="_c29d422f-c1b2-5fa9-2f30-e09b70e2da12"><b>Runtime for a payload (dispatch time):</b> payload's declared requirement (engine + optional implementation + constraint) → newest COMPATIBLE runtime already cached (no download) → else download the newest compatible from the runtime releases → verify → cache. Swapping runtimes never touches the payload.  <b>The min-runtime floor (spec 03 §2.9, schema_minor 15, tebako#666):</b> when the payload manifest declares <tt>min_runtime_tebako</tt>, cached runtimes whose own tebako version is below the floor are discarded BEFORE the compatible pick (they are named in the miss errors, never silently preferred) and the download path runs instead; a downloaded runtime below the floor (a pinned stale line) is the named stale-runtime refusal.  <tt>TEBAKO_OFFLINE=1</tt> stays cache-or-named-error with the floor named. The floor gates every runtime the dispatch resolves — the entrypoint's own and the spawned edges' (spec 30/32); a provider payload's floor gates the provider's pair.</p><p id="_9d39fee2-fe1d-8809-b7d8-c8dca5731403"><b>Runtime for a shared-runtime package (first run):</b> trailer runtime_ref → cache hit → use; miss → download from the index (per-package shard primary, manifest.json next, SHA256SUMS fallback — §2's order) → sha256-verify → flock'd atomic install. (Preset names per spec 23 §13.2:  <i>shared-runtime</i> is the default preset and the successor of the deprecated name  <i>lean</i>; <i>self-contained</i> succeeds <i>fat</i>.) Self-contained: the runtime pair is carried as two package slots — the interpreter exe and the env image (spec 19 §6.1): the exe stages into the runtime cache, the env image mounts from the package file through the ordinary <tt>&#x3c;self&#x3e;:&#x3c;slot&#x3e;:&#x3c;mount&#x3e;</tt> grammar, both verified against the trailer slot digests, and both seed the cache per §4's lazy-seed rule. (Pre-#458 packages carry the runtime as one legacy  <tt>format_id = 4</tt> slot, extracted and verified against  <tt>;sha256=</tt> — readers keep serving that form; presses never emit it.)</p><p id="_d4b973f1-0df8-b5e1-fc51-a3b088818ce3"><b>Compatibility model:</b> pure-language payloads take a range (<tt>&#x3e;= 3.3, &#x3c; 5.0</tt>) — any newer runtime works; native-extension payloads lock to the ABI line they were built against, which is TWO-dimensional: the version line (<tt>~&#x3e; 3.3.0</tt>) AND the platform line (<tt>abi: arm64-darwin-23</tt> — the runtime's own platform string; ruby:  <tt>Gem::Platform.local.to_s</tt>, from the staging runtime's  <tt>RbConfig::CONFIG["arch"]</tt>). A newer line needs a new payload build (or an SDK rebuild path); a wrong line on EITHER axis produces a named compatibility error, never a segfault. Runtimes publish their platform string as the per-package  <tt>abi</tt> key in the release index (spec 13); cached runtimes installed before the field existed stay eligible (the compat window — a payload's abi check never fails against an unknown line).</p><p id="_3975ab37-dfbb-1fea-0ace-157c5836d698"><b>Version ordering (the plain-wins rule — the single owner is <tt>tpkg::versions::compare</tt>; every consumer flows it).</b> Versions are dot-separated components, missing components zero. Within one component: a leading numeric prefix compares numerically (<tt>1.10 &#x3e; 1.9</tt>); at an equal prefix a PLAIN component ranks ABOVE a suffixed one (<tt>3.13.15 &#x3e; 3.13.15-jit</tt> — semver's release &#x3e; prerelease rule), so a factory's build variant (a  <tt>-jit</tt>, <tt>-debug</tt>, … line) never silently outranks its plain twin in a newest-satisfying pick; two suffixes order lexicographically; a component without a numeric prefix falls back to whole-component string order. Constraint MATCHING is unaffected: a variant version still satisfies an open constraint, so a platform where ONLY the variant exists still resolves — the variant simply never wins a max pick against the plain twin. A variant is SELECTED through the pin surface (the config  <tt>version:</tt> pin, the registry default), which names versions exactly and never compares.</p><p id="_d7f68b7c-f6e5-bd04-d4f4-9bee6ab5a051"><b>Variant suffixes in constraints (payload-manifest schema_minor 12).</b> The constraint grammar (spec 03) admits the SAME suffixed component shape versions carry — each dot-separated component is leading decimals plus an optional  <tt>-label</tt> (<tt>[0-9A-Za-z-]+</tt>) — so an exact pin can NAME a variant line (<tt>= 1.16.9-ruby4.0</tt> — the spec 03 §2.8 binding rule against a line-split base, one slice per base line). Matching semantics (<tt>tpkg::versions</tt>, the single owner): equality clauses are suffix-exact — the variant and its plain twin are DIFFERENT versions (<tt>= 1.16.9</tt> never matches  <tt>1.16.9-ruby4.0</tt>); ordering clauses follow <tt>compare()</tt> unchanged — a plain bound excludes variants ranking below it (<tt>&#x3e;= 1.16.9</tt> does not match <tt>1.16.9-ruby4.0</tt>), a suffixed bound admits its own line upward (<tt>&#x3e;= 1.16.9-ruby4.0</tt> matches the variant, the plain twin, and everything newer);  <tt>~&#x3e;</tt> computes its upper bound from the numeric core under the same component model as  <tt>compare()</tt> — the label's own dot counts (<tt>~&#x3e; 1.16.9-ruby4.0</tt> is a four-component spelling, so the bound is  <tt>&#x3c; 1.16.10</tt>; for <tt>&#x3c; 1.17</tt> write the explicit range). Readers older than minor 12 reject a suffixed clause by name (exit 65) — fail-closed, never a misread pin.</p><p id="_d88047ff-041e-d28b-fe4e-98b26dc31fde"><b>The implementation axis (spec 28 §8):</b> <tt>engine</tt> names the LANGUAGE — mri, jruby and truffleruby are all  <tt>engine: ruby</tt>, told apart by the runtime's  <tt>provides.implementation</tt>. A requirement WITHOUT <tt>implementation</tt> matches any cached runtime of the engine whose <tt>language_version</tt> satisfies the constraint (the pure-language case: one build, any implementation — jruby 9.4 declares  <tt>language_version: "3.1"</tt>, so a <tt>&#x3e;= 3.3</tt> requirement does not match it and a <tt>&#x3e;= 3.1</tt> one does). A requirement WITH  <tt>implementation</tt> reads its constraint against that implementation's OWN version line (<tt>{engine: ruby, implementation: jruby, constraint: "~&#x3e; 9.4"}</tt>) and matches no other implementation. An <tt>abi:</tt> in force requires <tt>implementation</tt> — ABI and platform lines are per-implementation by construction; a native requirement naming no implementation is a named manifest error (spec 03 §2.2). Compatibility never crosses implementations silently: the chosen runtime's implementation is journaled with the resolution event.</p><p id="_fd4a6949-ee51-b34c-59c1-6435e08e18b1"><b>The python wheel-tag mapping (<tt>engine: python</tt> — locked 2026-09-08).</b> Python native extensions carry CPython's own two-tag compatibility grammar (the PEP 425/600 wheel tags). Tebako does not invent a second grammar — it maps that one onto the two-dimensional ABI line above, once, here; the resolver and the factory REFERENCE this table and never re-derive it in code comments.</p><div class="ul_wrap"><ul id="_cbea41be-5639-ef97-6a2e-2ae3a9d25391"><li id="_4ab6df63-f6a0-3946-8e43-3dbb0ffaa3a5"><p id="_dbc3cb8a-842b-c319-1693-eec7965dd697"><b>Version line.</b> The wheel ABI tag <tt>cp3X</tt> (<tt>cp311</tt>, <tt>cp312</tt>, …) IS the version line  <tt>~&#x3e; 3.X.0</tt>: a native-extension payload baked against CPython 3.X declares  <tt>runtime_requirement: {engine: python, constraint: "~&#x3e; 3.X.0", abi: &#x3c;the built-against runtime's abi&#x3e;}</tt>. Pure-python payloads take the range form exactly as ruby's pure-language case (xml2rfc's  <tt>requires_python &#x3e;= 3.10</tt> is the first instance).</p>
+</li>
+<li id="_a5fa70b3-57a8-15af-5e59-fc508f839146"><p id="_6565e1cf-c3d1-e6bc-45a1-cca81be6b38e"><b>The stable ABI (<tt>abi3</tt>) is a bake-time concern, never a resolver concern (locked).</b> An upstream <tt>cp3Y-abi3</tt> wheel is compatible with every CPython line  <tt>&#x3e;= 3.Y</tt>; the factory consumes that width by baking the abi3 wheel into EACH targeted (line × triplet) payload variant. The baked variant records the TARGET runtime's line and  <tt>abi</tt> exactly like a line-specific build — the resolver's grammar gains no  <tt>abi3</tt> case and the compatibility width never leaks into the wire.</p>
+</li>
+<li id="_e6cb5caa-d822-5805-a419-d49ba91aa77f"><p id="_9ba73c58-02e2-a9e1-8447-afcd16f11908"><b>Platform line.</b> The python runtime's published <tt>abi</tt> key (spec 13) is the CPython extension-suffix stem (sysconfig  <tt>EXT_SUFFIX</tt> without the leading dot), e.g.  <tt>cpython-312-x86_64-linux-gnu.so</tt>. The payload records the built-against runtime's  <tt>abi</tt> verbatim; comparison is the exact-string rule above, unchanged. macOS's suffix is arch-neutral (<tt>cpython-312-darwin.so</tt>) — the arch axis rides the triplet alone there; no second arch axis is ever introduced.</p>
+</li>
+<li id="_9260a91d-78a9-9d7d-a116-bf149187a9b2"><p id="_da4f7d7c-198b-6ac2-2bd3-b8487bec311c"><b>Wheel platform tags ↔ triplets</b> — the one table:</p>
+<table id="_9dcb32fd-9dbe-6cb9-2c61-540632701ad1" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 1</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">wheel platform tag (PEP 425/600)</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">tebako triplet</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>manylinux_*_x86_64</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>linux-gnu-x86_64</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>manylinux_*_aarch64</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>linux-gnu-arm64</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>musllinux_*_x86_64</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>linux-musl-x86_64</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>musllinux_*_aarch64</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>linux-musl-arm64</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>macosx_*_x86_64</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>macos-x86_64</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>macosx_*_arm64</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>macos-arm64</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>macosx_*_universal2</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">split per-arch at bake time — the payload stays per-triplet</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>win_amd64</tt> / <tt>win_arm64</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">RESERVED — the windows python runtime is not yet shipped; readers MUST NOT guess a mapping</td></tr></tbody></table>
+
+<p id="_892841cb-68ee-d91e-e813-d06a7f66c2b4">The musllinux-vs-manylinux (libc) distinction rides the triplet axis ONLY (<tt>linux-musl</tt> vs <tt>linux-gnu</tt>) — no wheel-tag axis, no libc key, no ad-hoc second axis anywhere in the grammar. A tag's policy version (<tt>manylinux_2_28</tt>, <tt>musllinux_1_2</tt>, …) is a build-floor statement consumed at bake time, never a resolution axis: a runtime built against any floor serves its triplet.</p>
+</li>
+<li id="_28101c90-06ee-91e9-d8ca-4b8bbad5abb4"><p id="_99ebafe9-8275-756a-498d-5acce7b81006"><b>Wrong line = the named compatibility error</b> on either axis, unchanged (never a segfault): the python instance names the selector and lists the available cached variants per spec 28 §4/§10.</p>
+</li>
+</ul></div></div><div id="_8e6e4cf6-34c9-b56e-2357-e410fb857419"><h1 id="_da65b2b6-b0e2-453b-8dbf-0c5dba0fb0d9"><a class="anchor" href="#_8e6e4cf6-34c9-b56e-2357-e410fb857419"></a><a class="header" href="#_8e6e4cf6-34c9-b56e-2357-e410fb857419">6. The fetch pipeline (parallel pulls, streaming integrity — locked 2026-09-18)</a></h1><p id="_889a540f-bce7-8eb0-016d-ddd9c99857a2">Every dynamic pull of ARTIFACT bytes (runtime exe + env image + dll, payload slices, detached  <tt>.asc</tt> signature assets, trust-anchor keys — spec 09 §10) runs through the one fetch pipeline (<tt>tebako_resolve::plan</tt>), never through ad-hoc per-caller download loops. Release INDEX reads (shards, manifest monoliths, SHA256SUMS, registry YAML) stay small buffered GETs; the pipeline is for artifacts.</p><div class="ul_wrap"><ul id="_872c78c8-e87a-cc91-0e84-0da96a99bfdd"><li id="_18d4f3e7-a6e7-d6c8-bebf-a3f67aa7ace1"><p id="_f9f3b46f-221f-d0b4-e336-20c12f10d750"><b>The plan.</b> Resolution produces the whole closure up front; the pipeline takes it as an explicit  <tt>FetchPlan</tt>: a subject line (the progress header's  <tt>&#x3c;what&#x3e;</tt>) plus one item per artifact carrying <tt>{reference, sha256 pin, size hint, tmp dir, commit closure}</tt>. The commit closure owns the artifact's install semantics (signature verification, the store's lock + rename + markers) — the pipeline owns transport, integrity, and scheduling; neither crosses over.</p>
+</li>
+<li id="_6f0d2c5c-644a-f93d-ff9e-204a01439ecb"><p id="_5ae5b816-b4de-43d3-cfaf-c20ff48da73d"><b>Parallelism.</b> A std::thread worker pool — <tt>jobs</tt> from <tt>TEBAKO_FETCH_JOBS</tt> (env) over <tt>fetch_jobs</tt> (<tt>~/.tebako/config.yaml</tt>) over the default  <b>3</b> (docker's number); <tt>1</tt> is sequential (the debug shape). An unparseable or zero value is a NAMED error, never a silent clamp. No async runtime, no new dependencies (spec 14).</p>
+</li>
+<li id="_8630ffcf-a0b7-7951-2cd3-bd6ef04cc125"><p id="_9b922d33-2909-a218-efda-2825aaea8517"><b>Streaming integrity (one pass, constant memory).</b> Each worker streams its response body into the item's tmp file WHILE updating a streaming sha256 hasher; the pin compares at end-of-stream. The pre-pipeline shape (buffer the whole body into a  <tt>Vec&#x3c;u8&#x3e;</tt>, hash as a second pass — a 200 MB image pinning 200 MB of RAM) is RETIRED: artifact bytes never materialize whole in memory on the download path. A signature verification that needs the bytes reads the staged tmp file once, after ITS download completes — overlapped with the plan's remaining streams — and never after the rename.</p>
+</li>
+<li id="_9eda73c0-2842-de93-79c5-bdbe8c43aa7f"><p id="_fd5c9459-3e02-658d-d846-4f59cf4ebafc"><b>Retry discipline, per worker per connection.</b> The existing throttle/backoff law is unchanged (the tebako-http SSOT: Retry-After honored exactly, the 60 s × 2ⁿ hintless exponential, THROTTLE_ROUNDS rounds; DOWNLOAD_ATTEMPTS for transient failures) — it now runs per worker. A mid-stream failure retries the artifact FROM ZERO (tmp truncated, hasher reset): a resumed partial body would fail the pin anyway.</p>
+</li>
+<li id="_387bf350-12a2-3212-e21b-ec67b1dd197f"><p id="_33176b6d-6bb4-3d14-db65-d058138d02a3"><b>Failure law.</b> Any artifact's transport/hash/signature/commit failure CANCELS THE PLAN: in-flight streams abort at the next chunk, queued items never start, the pool joins, every tmp file of the plan is dropped, and the FIRST named error surfaces (its exit code unchanged — the taxonomy of spec 06 §4 / the caller's table is untouched). A partial install never appears in the store: tmp+rename (§4) already makes the bytes invisible, and the cancel path removes the tmp files — proven by test, not asserted.</p>
+</li>
+<li id="_aed37c45-7c12-6549-3809-dabe4df02186"><p id="_9c342c53-a1e8-fa37-bb1b-93804a04319c"><b>The store is concurrency-safe by design</b> (§4's per-entry flock + content-addressed byte-identical artifacts): two workers never share an entry — one plan holds disjoint store slots, and a foreign process installing the same entry serializes on the same flock with the same 120 s stale-lock-hint timeout. Parallel fetch changes nothing there (test-proven).</p>
+</li>
+<li id="_b1125fbc-2ec5-8df4-336b-06b6b3a2488d"><p id="_9450245f-8e27-5797-8152-764783df9e16"><b><tt>TEBAKO_OFFLINE=1</tt></b> keeps its cache-or-named-error semantics, evaluated per item before its stream starts;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> gates exactly where it gates today (the commit closure's signature policy is the caller's, unchanged in meaning).</p>
+</li>
+<li id="_4f1aee87-46c0-babc-bbc1-8b9f6787d526"><p id="_4053cfbc-c8ee-2c14-72f1-2a4875e897c8"><b>Rendering:</b> spec 06 §5a — the pipeline renders through tebako-term v2 and nothing else prints download progress.</p>
+</li>
+</ul></div></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

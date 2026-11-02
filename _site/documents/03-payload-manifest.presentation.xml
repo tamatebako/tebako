@@ -1,0 +1,735 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="presentation" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Payload manifest (L1)</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 03</docidentifier><docnumber>TBK SPEC 03</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition language="">1.0</edition><edition language="en">edition 1.0</edition><language current="true">en</language><script current="true">Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><localized-strings><localized-string key="scope" language="en">Scope</localized-string><localized-string key="symbolsabbrev" language="en">Symbols and abbreviated terms</localized-string><localized-string key="abbrev" language="en">Abbreviated terms</localized-string><localized-string key="symbols" language="en">Symbols</localized-string><localized-string key="table_of_contents" language="en">Contents</localized-string><localized-string key="introduction" language="en">Introduction</localized-string><localized-string key="foreword" language="en">Foreword</localized-string><localized-string key="abstract" language="en">Abstract</localized-string><localized-string key="acknowledgements" language="en">Acknowledgements</localized-string><localized-string key="executivesummary" language="en">Executive summary</localized-string><localized-string key="termsdef" language="en">Terms and definitions</localized-string><localized-string key="termsdefsymbolsabbrev" language="en">Terms, definitions, symbols and abbreviated terms</localized-string><localized-string key="termsdefsymbols" language="en">Terms, definitions and symbols</localized-string><localized-string key="termsdefabbrev" language="en">Terms, definitions and abbreviated terms</localized-string><localized-string key="normref" language="en">Normative references</localized-string><localized-string key="bibliography" language="en">Bibliography</localized-string><localized-string key="index" language="en">Index</localized-string><localized-string key="see" language="en">see</localized-string><localized-string key="see_also" language="en">see also</localized-string><localized-string key="preface" language="en">Preface</localized-string><localized-string key="section" language="en">Section</localized-string><localized-string key="clause" language="en">Clause</localized-string><localized-string key="annex" language="en">Annex</localized-string><localized-string key="appendix" language="en">Appendix</localized-string><localized-string key="continued" language="en">continued</localized-string><localized-string key="no_terms_boilerplate" language="en">No terms and definitions are listed in this document.
+</localized-string><localized-string key="internal_terms_boilerplate" language="en">For the purposes of this document, the following terms and definitions apply.
+</localized-string><localized-string key="norm_with_refs_pref" language="en">The following documents are referred to in the text in such a way that some or all of their content constitutes requirements of this document. For dated references, only the edition cited applies. For undated references, the latest edition of the referenced document (including any amendments) applies.</localized-string><localized-string key="norm_empty_pref" language="en">There are no normative references in this document.</localized-string><localized-string key="external_terms_boilerplate" language="en">For the purposes of this document, the terms and definitions given in % apply.
+</localized-string><localized-string key="internal_external_terms_boilerplate" language="en">For the purposes of this document, the terms and definitions given in % and the following apply.
+</localized-string><localized-string key="no_information_available" language="en">[NO INFORMATION AVAILABLE]</localized-string><localized-string key="term_defined_in" language="en">(%)</localized-string><localized-string key="binary_and" language="en">%1 <conn>and</conn> %2</localized-string><localized-string key="multiple_and" language="en">%1<enum-comma>,</enum-comma> <conn>and</conn> %2</localized-string><localized-string key="binary_or" language="en">%1 <conn>or</conn> %2</localized-string><localized-string key="multiple_or" language="en">%1<enum-comma>,</enum-comma> <conn>or</conn> %2</localized-string><localized-string key="chain_and" language="en">%1 <conn>and</conn> %2</localized-string><localized-string key="chain_or" language="en">%1 <conn>or</conn> %2</localized-string><localized-string key="chain_from" language="en">%1 <conn>from</conn> %2</localized-string><localized-string key="chain_to" language="en">%1 <conn>to</conn> %2</localized-string><localized-string key="nested_xref" language="en">%1<comma>,</comma> %2</localized-string><localized-string key="list_nested_xref" language="en">%1 %2</localized-string><localized-string key="SpelloutRules" language="en">spellout-ordinal</localized-string><localized-string key="OrdinalRules" language="en">digits-ordinal</localized-string><localized-string key="note" language="en">NOTE</localized-string><localized-string key="note_xref" language="en">Note</localized-string><localized-string key="termnote" language="en">Note % to entry</localized-string><localized-string key="para_xref" language="en">Paragraph</localized-string><localized-string key="list" language="en">List</localized-string><localized-string key="deflist" language="en">Definition List</localized-string><localized-string key="figure" language="en">Figure</localized-string><localized-string key="diagram" language="en">Diagram</localized-string><localized-string key="formula" language="en">Formula</localized-string><localized-string key="inequality" language="en">Formula</localized-string><localized-string key="table" language="en">Table</localized-string><localized-string key="requirement" language="en">Requirement</localized-string><localized-string key="recommendation" language="en">Recommendation</localized-string><localized-string key="permission" language="en">Permission</localized-string><localized-string key="box" language="en">Box</localized-string><localized-string key="no_identifier" language="en">(NO ID)</localized-string><localized-string key="recommendationtest" language="en">Recommendation test</localized-string><localized-string key="requirementtest" language="en">Requirement test</localized-string><localized-string key="permissiontest" language="en">Permission test</localized-string><localized-string key="recommendationclass" language="en">Recommendations class</localized-string><localized-string key="requirementclass" language="en">Requirements class</localized-string><localized-string key="permissionclass" language="en">Permissions class</localized-string><localized-string key="abstracttest" language="en">Abstract test</localized-string><localized-string key="conformanceclass" language="en">Conformance class</localized-string><localized-string key="key" language="en">Key</localized-string><localized-string key="example" language="en">EXAMPLE</localized-string><localized-string key="example_xref" language="en">Example</localized-string><localized-string key="where" language="en">where</localized-string><localized-string key="where_one" language="en">where</localized-string><localized-string key="wholeoftext" language="en">Whole of text</localized-string><localized-string key="draft_label" language="en">draft</localized-string><localized-string key="inform_annex" language="en">informative</localized-string><localized-string key="norm_annex" language="en">normative</localized-string><localized-string key="modified" language="en">modified</localized-string><localized-string key="adapted" language="en">adapted</localized-string><localized-string key="deprecated" language="en">DEPRECATED</localized-string><localized-string key="source" language="en">SOURCE</localized-string><localized-string key="and" language="en">and</localized-string><localized-string key="all_parts" language="en">All Parts</localized-string><localized-string key="edition_ordinal" language="en">{{ var1 | ordinal_word: '', '' }} edition</localized-string><localized-string key="edition_cardinal" language="en">edition {{ var1 }}</localized-string><localized-string key="edition" language="en">edition</localized-string><localized-string key="version" language="en">version</localized-string><localized-string key="toc_figures" language="en">List of figures</localized-string><localized-string key="toc_tables" language="en">List of tables</localized-string><localized-string key="toc_recommendations" language="en">List of recommendations</localized-string><localized-string key="toc_examples" language="en">List of examples</localized-string><localized-string key="month_january" language="en">January</localized-string><localized-string key="month_february" language="en">February</localized-string><localized-string key="month_march" language="en">March</localized-string><localized-string key="month_april" language="en">April</localized-string><localized-string key="month_may" language="en">May</localized-string><localized-string key="month_june" language="en">June</localized-string><localized-string key="month_july" language="en">July</localized-string><localized-string key="month_august" language="en">August</localized-string><localized-string key="month_september" language="en">September</localized-string><localized-string key="month_october" language="en">October</localized-string><localized-string key="month_november" language="en">November</localized-string><localized-string key="month_december" language="en">December</localized-string><localized-string key="obligation" language="en">Obligation</localized-string><localized-string key="admonition.danger" language="en">Danger</localized-string><localized-string key="admonition.warning" language="en">Warning</localized-string><localized-string key="admonition.caution" language="en">Caution</localized-string><localized-string key="admonition.important" language="en">Important</localized-string><localized-string key="admonition.safety_precautions" language="en">Safety Precautions</localized-string><localized-string key="admonition.editorial" language="en">Editorial Note</localized-string><localized-string key="title_prefixes.part" language="en">Part {{ var1 }}</localized-string><localized-string key="title_prefixes.amendment" language="en">Amendment {{ var1 }}</localized-string><localized-string key="title_prefixes.corrigendum" language="en">Corrigendum {{ var1 }}</localized-string><localized-string key="title_prefixes.addendum" language="en">Addendum {{ var1 }}</localized-string><localized-string key="title_prefixes.supplement" language="en">Supplement {{ var1 }}</localized-string><localized-string key="title_prefixes.annex" language="en">Annex {{ var1 }}</localized-string><localized-string key="title_prefixes.appendix" language="en">Appendix {{ var1 }}</localized-string><localized-string key="locality.section" language="en">Section</localized-string><localized-string key="locality.clause" language="en">Clause</localized-string><localized-string key="locality.part" language="en">Part</localized-string><localized-string key="locality.paragraph" language="en">Paragraph</localized-string><localized-string key="locality.chapter" language="en">Chapter</localized-string><localized-string key="locality.page" language="en">Page</localized-string><localized-string key="locality.table" language="en">Table</localized-string><localized-string key="locality.annex" language="en">Annex</localized-string><localized-string key="locality.figure" language="en">Figure</localized-string><localized-string key="locality.example" language="en">Example</localized-string><localized-string key="locality.note" language="en">Note</localized-string><localized-string key="locality.formula" language="en">Formula</localized-string><localized-string key="grammar_abbrevs.masculine" language="en">m</localized-string><localized-string key="grammar_abbrevs.feminine" language="en">f</localized-string><localized-string key="grammar_abbrevs.neuter" language="en">n</localized-string><localized-string key="grammar_abbrevs.common" language="en">common</localized-string><localized-string key="grammar_abbrevs.singular" language="en">sg</localized-string><localized-string key="grammar_abbrevs.dual" language="en">dual</localized-string><localized-string key="grammar_abbrevs.pl" language="en">pl</localized-string><localized-string key="grammar_abbrevs.isPreposition" language="en">prep</localized-string><localized-string key="grammar_abbrevs.isParticiple" language="en">part</localized-string><localized-string key="grammar_abbrevs.isAdjective" language="en">adj</localized-string><localized-string key="grammar_abbrevs.isAdverb" language="en">adv</localized-string><localized-string key="grammar_abbrevs.isNoun" language="en">noun</localized-string><localized-string key="grammar_abbrevs.isVerb" language="en">verb</localized-string><localized-string key="relatedterms.deprecates" language="en">deprecates</localized-string><localized-string key="relatedterms.supersedes" language="en">supersedes</localized-string><localized-string key="relatedterms.narrower" language="en">narrower</localized-string><localized-string key="relatedterms.broader" language="en">broader</localized-string><localized-string key="relatedterms.equivalent" language="en">equivalent</localized-string><localized-string key="relatedterms.compare" language="en">compare</localized-string><localized-string key="relatedterms.contrast" language="en">contrast</localized-string><localized-string key="relatedterms.see" language="en">see</localized-string><localized-string key="relatedterms.seealso" language="en">see also</localized-string><localized-string key="Clause.sg" language="en">Clause</localized-string><localized-string key="Clause.pl" language="en">Clauses</localized-string><localized-string key="Annex.sg" language="en">Annex</localized-string><localized-string key="Annex.pl" language="en">Annexes</localized-string><localized-string key="Appendix.sg" language="en">Appendix</localized-string><localized-string key="Appendix.pl" language="en">Appendixes</localized-string><localized-string key="Note.sg" language="en">Note</localized-string><localized-string key="Note.pl" language="en">Notes</localized-string><localized-string key="Note_%_to_entry.sg" language="en">Note % to entry</localized-string><localized-string key="Note_%_to_entry.pl" language="en">Notes % to entry</localized-string><localized-string key="List.sg" language="en">List</localized-string><localized-string key="List.pl" language="en">Lists</localized-string><localized-string key="Figure.sg" language="en">Figure</localized-string><localized-string key="Figure.pl" language="en">Figures</localized-string><localized-string key="Formula.sg" language="en">Formula</localized-string><localized-string key="Formula.pl" language="en">Formulas</localized-string><localized-string key="Table.sg" language="en">Table</localized-string><localized-string key="Table.pl" language="en">Tables</localized-string><localized-string key="Requirement.sg" language="en">Requirement</localized-string><localized-string key="Requirement.pl" language="en">Requirements</localized-string><localized-string key="Recommendation.sg" language="en">Recommendation</localized-string><localized-string key="Recommendation.pl" language="en">Recommendations</localized-string><localized-string key="Permission.sg" language="en">Permission</localized-string><localized-string key="Permission.pl" language="en">Permissions</localized-string><localized-string key="Example.sg" language="en">Example</localized-string><localized-string key="Example.pl" language="en">Examples</localized-string><localized-string key="Part.sg" language="en">Part</localized-string><localized-string key="Part.pl" language="en">Parts</localized-string><localized-string key="Section.sg" language="en">Section</localized-string><localized-string key="Section.pl" language="en">Sections</localized-string><localized-string key="Paragraph.sg" language="en">Paragraph</localized-string><localized-string key="Paragraph.pl" language="en">Paragraphs</localized-string><localized-string key="Chapter.sg" language="en">Chapter</localized-string><localized-string key="Chapter.pl" language="en">Chapters</localized-string><localized-string key="Page.sg" language="en">Page</localized-string><localized-string key="Page.pl" language="en">Pages</localized-string><localized-string key="punct.colon" language="en">:</localized-string><localized-string key="punct.comma" language="en">,</localized-string><localized-string key="punct.enum-comma" language="en">,</localized-string><localized-string key="punct.semicolon" language="en">;</localized-string><localized-string key="punct.period" language="en">.</localized-string><localized-string key="punct.close-paren" language="en">)</localized-string><localized-string key="punct.open-paren" language="en">(</localized-string><localized-string key="punct.close-bracket" language="en">]</localized-string><localized-string key="punct.open-bracket" language="en">[</localized-string><localized-string key="punct.question-mark" language="en">?</localized-string><localized-string key="punct.exclamation-mark" language="en">!</localized-string><localized-string key="punct.em-dash" language="en">—</localized-string><localized-string key="punct.en-dash" language="en">–</localized-string><localized-string key="punct.number-en-dash" language="en">–</localized-string><localized-string key="punct.open-quote" language="en">“</localized-string><localized-string key="punct.close-quote" language="en">”</localized-string><localized-string key="punct.open-nested-quote" language="en">‘</localized-string><localized-string key="punct.close-nested-quote" language="en">’</localized-string><localized-string key="punct.ellipse" language="en">…</localized-string><localized-string key="language" language="en">en</localized-string><localized-string key="script" language="en">Latn</localized-string></localized-strings><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata><source-highlighter-css>sourcecode table td { padding: 5px; }
+sourcecode table pre { margin: 0; }
+sourcecode, sourcecode .w {
+  color: #444444;
+}
+sourcecode .cp {
+  color: #CC00A3;
+}
+sourcecode .cs {
+  color: #CC00A3;
+}
+sourcecode .c, sourcecode .ch, sourcecode .cd, sourcecode .cm, sourcecode .cpf, sourcecode .c1 {
+  color: #FF0000;
+}
+sourcecode .kc {
+  color: #C34E00;
+}
+sourcecode .kd {
+  color: #0000FF;
+}
+sourcecode .kr {
+  color: #007575;
+}
+sourcecode .k, sourcecode .kn, sourcecode .kp, sourcecode .kt, sourcecode .kv {
+  color: #0000FF;
+}
+sourcecode .s, sourcecode .sb, sourcecode .sc, sourcecode .ld, sourcecode .sd, sourcecode .s2, sourcecode .se, sourcecode .sh, sourcecode .si, sourcecode .sx, sourcecode .sr, sourcecode .s1, sourcecode .ss {
+  color: #009C00;
+}
+sourcecode .sa {
+  color: #0000FF;
+}
+sourcecode .nb, sourcecode .bp {
+  color: #C34E00;
+}
+sourcecode .nt {
+  color: #0000FF;
+}
+
+</source-highlighter-css></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative" semx-id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c" semx-id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative" semx-id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808" semx-id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative" semx-id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" anchor="boilerplate-name" align="left" semx-id="_077ac38b-3176-f906-af47-8c49b5249609">The Tebako Project</p>
+
+<p id="boilerplate-address" anchor="boilerplate-address" align="left" semx-id="_80954cc8-1f49-9d20-5987-829595995a92">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com" id="_9bad0d39-a5a4-daf6-6d6c-ab28a4de254c"/><semx element="link" source="_9bad0d39-a5a4-daf6-6d6c-ab28a4de254c"><fmt-link target="mailto:copyright@ribose.com"/></semx><br/> <link target="https://www.ribose.com" id="_d795d106-505c-ac0e-e355-ac2b212f8fec">www.ribose.com</link><semx element="link" source="_d795d106-505c-ac0e-e355-ac2b212f8fec"><fmt-link target="https://www.ribose.com">www.ribose.com</fmt-link></semx></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><clause type="toc" id="_13d7055e-30fc-845a-c60e-8972faf092d9" displayorder="1"><fmt-title depth="1" id="_b7371af6-75a1-52fa-2891-5c5f9a06aa7c">Contents</fmt-title></clause>
+<foreword id="_f327ff54-6828-5ccb-78bb-0da57b8bf541" obligation="informative" semx-id="_f327ff54-6828-5ccb-78bb-0da57b8bf541" displayorder="2">
+<title id="_39f555c2-f081-1181-eab4-26637491561a" semx-id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title><fmt-title depth="1" id="_e21d5a0d-5d7c-f27a-d0d4-780199a274bb"><semx element="title" source="_39f555c2-f081-1181-eab4-26637491561a">Foreword</semx></fmt-title>
+<p id="_9267df6f-0510-5e27-ba32-34f52fa89ff9" semx-id="_9267df6f-0510-5e27-ba32-34f52fa89ff9">Normative specification of the in-image manifest: every payload is a <strong>self-describing artifact</strong>, not a blob. Status: SHIPPED (the block + the engine shipped; the §3 press/install gate wiring remains — the checks block's discoverability row).</p>
+</foreword></preface><sections>
+<clause id="_5ae5a296-5c18-594c-ed2b-9f506a046669" unnumbered="true" obligation="normative" semx-id="_5ae5a296-5c18-594c-ed2b-9f506a046669" displayorder="3">
+<title id="_9ea4bac2-ae5f-f3c7-f881-aef8d19b87b5" semx-id="_23c550c6-b312-43f3-06b3-3c123f793fac">1. Location and form</title><fmt-title depth="1" id="_5dca0165-5322-4cf2-3407-1c71a3ce7631"><semx element="title" source="_9ea4bac2-ae5f-f3c7-f881-aef8d19b87b5">1. Location and form</semx></fmt-title>
+<ul id="_559ccc55-6d66-04b1-1c86-4ac6dfc78c18" semx-id="_559ccc55-6d66-04b1-1c86-4ac6dfc78c18"><li id="_b3fca561-b183-1266-d6bd-037d97a3697e"><fmt-name id="_f99def11-7bf4-5b2e-0420-18e287c8592a"><semx element="autonum" source="_b3fca561-b183-1266-d6bd-037d97a3697e">o</semx></fmt-name><p id="_8f69c448-e14b-504a-58cb-05f6fd856a61" semx-id="_8f69c448-e14b-504a-58cb-05f6fd856a61">Path: <tt>/__tpkg__/manifest.yaml</tt> — inside the image, at a well-known location. No sidecars, no central service.</p>
+</li>
+<li id="_1bd7d26e-f91b-f55c-c73c-cfa6cb22a4f4"><fmt-name id="_c2467dcc-ded4-a1db-9acb-b429f90360b2"><semx element="autonum" source="_1bd7d26e-f91b-f55c-c73c-cfa6cb22a4f4">o</semx></fmt-name><p id="_8cf58bc9-de18-a049-5606-34d4f13a2f21" semx-id="_8cf58bc9-de18-a049-5606-34d4f13a2f21">Format: <strong>YAML</strong> (the locked convention for all authored configuration surfaces). The versioned grammar:  <tt>docs/spec/schemas/payload-manifest.yaml</tt> (the registry's authored form;  <tt>crates/tpkg/src/manifest.rs</tt> mirrors it).</p>
+</li>
+<li id="_cf280eac-686c-3627-9a40-7965950166d0"><fmt-name id="_c7f065c2-eb78-6dbe-531a-5b08c1607568"><semx element="autonum" source="_cf280eac-686c-3627-9a40-7965950166d0">o</semx></fmt-name><p id="_25290fcf-6afc-1089-ac63-139feaa99778" semx-id="_25290fcf-6afc-1089-ac63-139feaa99778">Integrity: the manifest is inside the image, so it is exactly as tamper-proof as the content and is covered by the image's digest and signature. Any consumer (bootstrap, dispatcher,  <tt>tfs</tt> CLI, a foreign project) reads it through TFS itself.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_568252b2-f34b-2507-e272-5f79a0ffe98f" unnumbered="true" obligation="normative" semx-id="_568252b2-f34b-2507-e272-5f79a0ffe98f" displayorder="4">
+<title id="_25e34214-83a4-5870-96d7-85dc595639ec" semx-id="_818d5188-965d-9f85-ea52-1273a64dae84">2. The three blocks</title><fmt-title depth="1" id="_b17a7b6e-281d-5757-7225-c25c8074c2a7"><semx element="title" source="_25e34214-83a4-5870-96d7-85dc595639ec">2. The three blocks</semx></fmt-title>
+<p id="_99d24486-94d0-8167-580f-254dd01dd0ba" semx-id="_99d24486-94d0-8167-580f-254dd01dd0ba">Every manifest is <strong>IDENTITY + PROVIDES + DEPENDS</strong> on a common provenance/trust layer.</p>
+
+<clause id="_a8b22330-e8e7-a684-2c78-8c08d4a8a3ed" unnumbered="true" obligation="normative" semx-id="_a8b22330-e8e7-a684-2c78-8c08d4a8a3ed">
+<title id="_83236123-9123-8f1f-c381-9fdce2ecbaa7" semx-id="_9179887a-3429-da61-824f-718d5247e29b">2.1 IDENTITY (all kinds)</title><fmt-title depth="2" id="_aaf9d0f8-5962-b566-fc18-6a65492ce7ac"><semx element="title" source="_83236123-9123-8f1f-c381-9fdce2ecbaa7">2.1 IDENTITY (all kinds)</semx></fmt-title>
+<sourcecode id="_90fdf3d0-e5ac-117d-6a69-e27d42d407de" lang="yaml" semx-id="_90fdf3d0-e5ac-117d-6a69-e27d42d407de" autonum="1"><fmt-name id="_e2ae817f-26e5-4481-7f3f-fbbf013aa1ff"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_90fdf3d0-e5ac-117d-6a69-e27d42d407de">1</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_90fdf3d0-e5ac-117d-6a69-e27d42d407de">1</semx></fmt-xref-label><body>schema_version: 1
+kind: app | data | toolkit | runtime | language
+name: metanorma
+version: 1.2.3
+producer: {tool: tebako-cli, tool_version: 0.16.0}
+created: 2026-07-26T00:00:00Z
+source: {src_sha256: "…", commit: "…", builder: "gha:run:123"}
+sbom: {ref: "…"}                      # optional
+digest:
+  tree_hash: "…"                      # plaintext merkle root over the tree MINUS the
+                                      # manifest path — semantic identity (CAS)
+  blob_sha256: "…"                    # transport identity — see the fixed-point rule
+signing: {state: unsigned | signed, keyid: "…", mechanism: openpgp}
+encryption: {state: none}             # or per-part list {paths, algorithm, envelope_refs} — NEVER keys
+annotations: {…}                      # free-form; unknown keys preserved</body><fmt-sourcecode lang="yaml" semx-id="_90fdf3d0-e5ac-117d-6a69-e27d42d407de" autonum="1" id="_a3adb21f-5ce4-acd0-b9e2-c933a2fa2393"><span class="na">schema_version</span><span class="pi">:</span> <span class="m">1</span>
+<span class="na">kind</span><span class="pi">:</span> <span class="s">app | data | toolkit | runtime | language</span>
+<span class="na">name</span><span class="pi">:</span> <span class="s">metanorma</span>
+<span class="na">version</span><span class="pi">:</span> <span class="s">1.2.3</span>
+<span class="na">producer</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">tool</span><span class="pi">:</span> <span class="nv">tebako-cli</span><span class="pi">,</span> <span class="nv">tool_version</span><span class="pi">:</span> <span class="nv">0.16.0</span><span class="pi">}</span>
+<span class="na">created</span><span class="pi">:</span> <span class="s">2026-07-26T00:00:00Z</span>
+<span class="na">source</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">src_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">,</span> <span class="nv">commit</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">,</span> <span class="nv">builder</span><span class="pi">:</span> <span class="s2">"</span><span class="s">gha:run:123"</span><span class="pi">}</span>
+<span class="na">sbom</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">}</span>                      <span class="c1"># optional</span>
+<span class="na">digest</span><span class="pi">:</span>
+  <span class="na">tree_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span>                      <span class="c1"># plaintext merkle root over the tree MINUS the</span>
+                                      <span class="c1"># manifest path — semantic identity (CAS)</span>
+  <span class="na">blob_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span>                    <span class="c1"># transport identity — see the fixed-point rule</span>
+<span class="na">signing</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">state</span><span class="pi">:</span> <span class="nv">unsigned | signed</span><span class="pi">,</span> <span class="nv">keyid</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">,</span> <span class="nv">mechanism</span><span class="pi">:</span> <span class="nv">openpgp</span><span class="pi">}</span>
+<span class="na">encryption</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">state</span><span class="pi">:</span> <span class="nv">none</span><span class="pi">}</span>             <span class="c1"># or per-part list {paths, algorithm, envelope_refs} — NEVER keys</span>
+<span class="na">annotations</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">…</span><span class="pi">}</span>                      <span class="c1"># free-form; unknown keys preserved</span></fmt-sourcecode></sourcecode>
+
+</clause>
+
+<clause id="_1f0254f8-b9b8-00c4-b7f5-e1a40fa91b12" unnumbered="true" obligation="normative" semx-id="_1f0254f8-b9b8-00c4-b7f5-e1a40fa91b12">
+<title id="_34226e8b-85d0-c34c-a975-f1919fa37728" semx-id="_c56a9fc7-c4c5-2642-eb7c-96937a823eb1">2.2 PROVIDES (kind-specialized)</title><fmt-title depth="2" id="_f63f54dc-6999-a6ed-4b38-56a6be17d10f"><semx element="title" source="_34226e8b-85d0-c34c-a975-f1919fa37728">2.2 PROVIDES (kind-specialized)</semx></fmt-title>
+<p id="_c5eeae83-2cc1-abc4-031e-586c7f62e4b9" semx-id="_c5eeae83-2cc1-abc4-031e-586c7f62e4b9"><strong>app</strong> (executable):</p>
+
+<sourcecode id="_62b346de-9921-486e-57d7-9f72e204f29a" lang="yaml" semx-id="_62b346de-9921-486e-57d7-9f72e204f29a" autonum="2"><fmt-name id="_7ca971e9-01df-e040-8466-a93d160a7f12"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_62b346de-9921-486e-57d7-9f72e204f29a">2</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_62b346de-9921-486e-57d7-9f72e204f29a">2</semx></fmt-xref-label><body>entrypoints:                          # ARRAY — multi-entry suites; N=1 for simple apps
+  - name: metanorma                   # the command name (shim registers under this)
+    path: /app/bin/metanorma          # inside the image
+    args_default: []                    # interpreter-side defaults composed BETWEEN interpreter
+                                        # and entry by the runtime driver (spec 17 §1 — the single
+                                        # owner, tebako#503) — java: ["-jar"]. A ZERO-runtime entry
+                                        # has no driver: the shim appends them as the program's
+                                        # leading args.
+    runtime_requirement: {engine: ruby, constraint: "&#x3e;= 3.3, &#x3c; 5.0"}
+      # OPTIONAL — omit entirely for native entrypoints (see below);
+      # range for pure-language; abi-line "~&#x3e; 3.3.0" for native-extension payloads.
+      # engine names the LANGUAGE — mri/jruby/truffleruby are all `ruby`;
+      # the OPTIONAL `implementation:` narrows to one (spec 28 §8).
+      # The value may ALSO be a LIST of such maps — `any_of` semantics,
+      # OR in declaration order — when the admissible set differs per
+      # implementation (spec 28 §8); an entry without `implementation:`
+      # matches at the language level (the runtime's language_version).
+    # native-extension entrypoints ALSO pin the implementation and the
+    # platform line:
+    runtime_requirement: {engine: ruby, implementation: mri, constraint: "~&#x3e; 3.3.0", abi: "arm64-darwin-23"}
+      # abi = the runtime's own platform string the extensions were built
+      # against (ruby: Gem::Platform.local.to_s). The version line and the
+      # platform line are ORTHOGONAL — resolution checks both (spec 05 §5).
+      # an `abi:` in force REQUIRES `implementation:` — an ABI is
+      # per-implementation by construction (spec 28 §8).
+  platforms: [x86_64-linux-gnu, aarch64-macos]  # native-ext apps are triplet-bound;
+                                                # universal only for pure-language
+capabilities: {exec: true, read: true}</body><fmt-sourcecode lang="yaml" semx-id="_62b346de-9921-486e-57d7-9f72e204f29a" autonum="2" id="_5bd3e9e9-3d3c-740f-d9db-d4a393660f0b"><span class="na">entrypoints</span><span class="pi">:</span>                          <span class="c1"># ARRAY — multi-entry suites; N=1 for simple apps</span>
+  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">metanorma</span>                   <span class="c1"># the command name (shim registers under this)</span>
+    <span class="na">path</span><span class="pi">:</span> <span class="s">/app/bin/metanorma</span>          <span class="c1"># inside the image</span>
+    <span class="na">args_default</span><span class="pi">:</span> <span class="pi">[]</span>                    <span class="c1"># interpreter-side defaults composed BETWEEN interpreter</span>
+                                        <span class="c1"># and entry by the runtime driver (spec 17 §1 — the single</span>
+                                        <span class="c1"># owner, tebako#503) — java: ["-jar"]. A ZERO-runtime entry</span>
+                                        <span class="c1"># has no driver: the shim appends them as the program's</span>
+                                        <span class="c1"># leading args.</span>
+    <span class="na">runtime_requirement</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">engine</span><span class="pi">:</span> <span class="nv">ruby</span><span class="pi">,</span> <span class="nv">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">3.3,</span><span class="nv"> </span><span class="s">&#x3c;</span><span class="nv"> </span><span class="s">5.0"</span><span class="pi">}</span>
+      <span class="c1"># OPTIONAL — omit entirely for native entrypoints (see below);</span>
+      <span class="c1"># range for pure-language; abi-line "~&#x3e; 3.3.0" for native-extension payloads.</span>
+      <span class="c1"># engine names the LANGUAGE — mri/jruby/truffleruby are all `ruby`;</span>
+      <span class="c1"># the OPTIONAL `implementation:` narrows to one (spec 28 §8).</span>
+      <span class="c1"># The value may ALSO be a LIST of such maps — `any_of` semantics,</span>
+      <span class="c1"># OR in declaration order — when the admissible set differs per</span>
+      <span class="c1"># implementation (spec 28 §8); an entry without `implementation:`</span>
+      <span class="c1"># matches at the language level (the runtime's language_version).</span>
+    <span class="c1"># native-extension entrypoints ALSO pin the implementation and the</span>
+    <span class="c1"># platform line:</span>
+    <span class="na">runtime_requirement</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">engine</span><span class="pi">:</span> <span class="nv">ruby</span><span class="pi">,</span> <span class="nv">implementation</span><span class="pi">:</span> <span class="nv">mri</span><span class="pi">,</span> <span class="nv">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">~&#x3e;</span><span class="nv"> </span><span class="s">3.3.0"</span><span class="pi">,</span> <span class="nv">abi</span><span class="pi">:</span> <span class="s2">"</span><span class="s">arm64-darwin-23"</span><span class="pi">}</span>
+      <span class="c1"># abi = the runtime's own platform string the extensions were built</span>
+      <span class="c1"># against (ruby: Gem::Platform.local.to_s). The version line and the</span>
+      <span class="c1"># platform line are ORTHOGONAL — resolution checks both (spec 05 §5).</span>
+      <span class="c1"># an `abi:` in force REQUIRES `implementation:` — an ABI is</span>
+      <span class="c1"># per-implementation by construction (spec 28 §8).</span>
+  <span class="na">platforms</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">x86_64-linux-gnu</span><span class="pi">,</span> <span class="nv">aarch64-macos</span><span class="pi">]</span>  <span class="c1"># native-ext apps are triplet-bound;</span>
+                                                <span class="c1"># universal only for pure-language</span>
+<span class="na">capabilities</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exec</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">read</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">}</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_165d9401-c80e-78b5-b8cd-cc5947af8b7e" semx-id="_165d9401-c80e-78b5-b8cd-cc5947af8b7e"><tt>capabilities</tt> may also carry <strong><tt>host</tt></strong> (any kind): the host-access jail the payload was built to need — a REQUEST the dispatch surfaces compose with the user's tightening, never a grant to itself. spec 08 §4 is normative for its shape (<tt>default</tt>, <tt>mounts</tt>, <tt>argument_files</tt>).</p>
+
+<p id="_d31cf9d5-e59f-ecf1-ee38-469df0de4e90" semx-id="_d31cf9d5-e59f-ecf1-ee38-469df0de4e90"><strong>Zero-runtime entrypoints (locked):</strong> an entrypoint whose executable is native (or self-contained) needs NO interpreter payload — inkscape-class slices, static binaries, shell-free tools. Such apps declare no <tt>runtime_requirement</tt> and the dispatcher mounts zero runtime payloads. Runtimes (ruby today; python, julia, others tomorrow) are just one payload kind among many — never an assumed layer. A SUITE is one package with N entrypoints — the shim layer exposes one command per entry, each dispatching to its own image and its own runtime requirement (spec 07).</p>
+
+<p id="_0af9e2b7-49bf-1b3f-79c3-d7703e14df95" semx-id="_0af9e2b7-49bf-1b3f-79c3-d7703e14df95"><strong>Completeness (locked 2026-08-29):</strong> <tt>entrypoints</tt> declares EVERY command the image carries that a user may invoke directly — it is the payload's command declaration, not a primary-executable field. A bundled CLI (a font manager, a bibliography tool) is as much a provided command as the app's namesake. The declaration is the COMPLETE inventory; exposure is an orthogonal per-entrypoint key:</p>
+
+<sourcecode id="_adfefb73-94de-7848-1b1a-a1ee0e92ba1f" lang="yaml" semx-id="_adfefb73-94de-7848-1b1a-a1ee0e92ba1f" autonum="3"><fmt-name id="_b936b7cc-6f31-2eb5-d5c8-7ed6ec184153"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_adfefb73-94de-7848-1b1a-a1ee0e92ba1f">3</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_adfefb73-94de-7848-1b1a-a1ee0e92ba1f">3</semx></fmt-xref-label><body>  - name: fontist
+    path: /bin/fontist
+    active: false     # OPTIONAL (default true) — declared but NOT
+                      # PATH-registered at install</body><fmt-sourcecode lang="yaml" semx-id="_adfefb73-94de-7848-1b1a-a1ee0e92ba1f" autonum="3" id="_976050df-c695-eeba-403d-341bcb23f573">  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">fontist</span>
+    <span class="na">path</span><span class="pi">:</span> <span class="s">/bin/fontist</span>
+    <span class="na">active</span><span class="pi">:</span> <span class="kc">false</span>     <span class="c1"># OPTIONAL (default true) — declared but NOT</span>
+                      <span class="c1"># PATH-registered at install</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_cfef0a49-b589-a137-8bb9-3a7325999956" semx-id="_cfef0a49-b589-a137-8bb9-3a7325999956"><tt>active</tt> is the payload author's default exposure. Install registers only the active set (spec 07 §1); an inactive-but-declared command stays dispatchable —  <tt>tebako shim enable &#x3c;name&#x3e;</tt> links it on demand, <tt>tebako run &#x3c;name&#x3e;</tt> reaches it directly, and the user's per-machine enable/disable always overrides the manifest default (spec 07 §3). Additive on the wire: pre-flag readers ignore the key and register every entrypoint (the pre-flag behavior). The declared names are also the only set a self-contained package's  <tt>entries[]</tt> may draw from (§6): the L2 entry names mirror the L1 declaration — one SSOT, cross-checked by <tt>tebako-pkg validate</tt> (tebako#494).</p>
+
+<p id="_e1dfcf01-0acb-2ce5-9488-c169d1f80860" semx-id="_e1dfcf01-0acb-2ce5-9488-c169d1f80860"><strong>runtime</strong> (provides an interpreter):</p>
+
+<sourcecode id="_9dfe50b8-7663-d436-5981-516f81dbd948" lang="yaml" semx-id="_9dfe50b8-7663-d436-5981-516f81dbd948" autonum="4"><fmt-name id="_be4fa0e0-7c5d-6f40-96a2-5133fecb5d56"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_9dfe50b8-7663-d436-5981-516f81dbd948">4</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_9dfe50b8-7663-d436-5981-516f81dbd948">4</semx></fmt-xref-label><body>provides: {engine: ruby, implementation: mri, version: 4.0.6, language_version: "4.0", abi_line: "4.0", platform: x86_64-linux-gnu}
+  # engine = the LANGUAGE; implementation (REQUIRED for kind: runtime) =
+  # which ruby this is (mri/jruby/truffleruby — spec 28 §8).
+  # version = the implementation's OWN version line (jruby: 9.4.8);
+  # language_version = the language level it implements (jruby 9.4 → "3.1";
+  # for mri the two are identical). spec 05 §5 matches on both.
+built_from: {src_sha256: "…", patch_set: "v0.2.8"}
+env: {GEM_PATH: …}
+entrypoints:                          # OPTIONAL (additive — schema_minor 4, spec 30 §2):
+  - name: jing                        # the commands this runtime boots as a SEPARATE
+    path: /bin/jing.jar               # process for a consumer's `kind: runtime` edge
+    args_default: ["-jar"]            # `expose:` list — the app-entrypoint grammar minus
+                                      # runtime_requirement (a runtime runs on itself).
+                                      # Absent/empty = the runtime serves only as a
+                                      # primary co-mounted runtime.
+windows_boot: materialize             # OPTIONAL (additive — schema_minor 11, spec 17 §7):
+                                      # the runtime's interpreter cannot consume the
+                                      # driver's mounted images on windows (zero-patch,
+                                      # no interposition tier) — boot from the extracted
+                                      # exec-cache tree instead. Absent = the interpreter
+                                      # reads the mounts directly (ruby). POSIX never reads it.
+capabilities: {exec: true, read: true, runtime: true}</body><fmt-sourcecode lang="yaml" semx-id="_9dfe50b8-7663-d436-5981-516f81dbd948" autonum="4" id="_ba6a1fb9-35f5-f952-5b22-feb7a200d72f"><span class="na">provides</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">engine</span><span class="pi">:</span> <span class="nv">ruby</span><span class="pi">,</span> <span class="nv">implementation</span><span class="pi">:</span> <span class="nv">mri</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="nv">4.0.6</span><span class="pi">,</span> <span class="nv">language_version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">4.0"</span><span class="pi">,</span> <span class="nv">abi_line</span><span class="pi">:</span> <span class="s2">"</span><span class="s">4.0"</span><span class="pi">,</span> <span class="nv">platform</span><span class="pi">:</span> <span class="nv">x86_64-linux-gnu</span><span class="pi">}</span>
+  <span class="c1"># engine = the LANGUAGE; implementation (REQUIRED for kind: runtime) =</span>
+  <span class="c1"># which ruby this is (mri/jruby/truffleruby — spec 28 §8).</span>
+  <span class="c1"># version = the implementation's OWN version line (jruby: 9.4.8);</span>
+  <span class="c1"># language_version = the language level it implements (jruby 9.4 → "3.1";</span>
+  <span class="c1"># for mri the two are identical). spec 05 §5 matches on both.</span>
+<span class="na">built_from</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">src_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">,</span> <span class="nv">patch_set</span><span class="pi">:</span> <span class="s2">"</span><span class="s">v0.2.8"</span><span class="pi">}</span>
+<span class="na">env</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">GEM_PATH</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}</span>
+<span class="na">entrypoints</span><span class="pi">:</span>                          <span class="c1"># OPTIONAL (additive — schema_minor 4, spec 30 §2):</span>
+  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">jing</span>                        <span class="c1"># the commands this runtime boots as a SEPARATE</span>
+    <span class="na">path</span><span class="pi">:</span> <span class="s">/bin/jing.jar</span>               <span class="c1"># process for a consumer's `kind: runtime` edge</span>
+    <span class="na">args_default</span><span class="pi">:</span> <span class="pi">[</span><span class="s2">"</span><span class="s">-jar"</span><span class="pi">]</span>            <span class="c1"># `expose:` list — the app-entrypoint grammar minus</span>
+                                      <span class="c1"># runtime_requirement (a runtime runs on itself).</span>
+                                      <span class="c1"># Absent/empty = the runtime serves only as a</span>
+                                      <span class="c1"># primary co-mounted runtime.</span>
+<span class="na">windows_boot</span><span class="pi">:</span> <span class="s">materialize</span>             <span class="c1"># OPTIONAL (additive — schema_minor 11, spec 17 §7):</span>
+                                      <span class="c1"># the runtime's interpreter cannot consume the</span>
+                                      <span class="c1"># driver's mounted images on windows (zero-patch,</span>
+                                      <span class="c1"># no interposition tier) — boot from the extracted</span>
+                                      <span class="c1"># exec-cache tree instead. Absent = the interpreter</span>
+                                      <span class="c1"># reads the mounts directly (ruby). POSIX never reads it.</span>
+<span class="na">capabilities</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exec</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">read</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">runtime</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">}</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_a94dbb85-e655-6e5a-c6a4-b4c8e79cfada" semx-id="_a94dbb85-e655-6e5a-c6a4-b4c8e79cfada"><strong>data</strong> (read-only):</p>
+
+<sourcecode id="_2f9e54de-4776-e788-e008-42578009453a" lang="yaml" semx-id="_2f9e54de-4776-e788-e008-42578009453a" autonum="5"><fmt-name id="_00186504-d380-5082-3469-7d41a0a0fe34"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_2f9e54de-4776-e788-e008-42578009453a">5</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_2f9e54de-4776-e788-e008-42578009453a">5</semx></fmt-xref-label><body>mount_semantics: {suggested: /usr/share/fonts}
+consumers: [any]
+capabilities: {exec: false, read: true}</body><fmt-sourcecode lang="yaml" semx-id="_2f9e54de-4776-e788-e008-42578009453a" autonum="5" id="_4ccef411-a8a1-4a73-fe19-1722ef2e63a4"><span class="na">mount_semantics</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">suggested</span><span class="pi">:</span> <span class="nv">/usr/share/fonts</span><span class="pi">}</span>
+<span class="na">consumers</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">any</span><span class="pi">]</span>
+<span class="na">capabilities</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exec</span><span class="pi">:</span> <span class="nv">false</span><span class="pi">,</span> <span class="nv">read</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">}</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_c2ede9d9-90dc-68b3-f535-a8853158ea57" semx-id="_c2ede9d9-90dc-68b3-f535-a8853158ea57"><strong>toolkit</strong> (native layer, e.g. gtk/qt): as runtime, minus the interpreter contract; PROVIDES names libraries/tools other payloads DEPEND on.</p>
+</clause>
+
+<clause id="_ed978378-f255-ad7d-e515-dfef358137f0" unnumbered="true" obligation="normative" semx-id="_ed978378-f255-ad7d-e515-dfef358137f0">
+<title id="_0f3ed7c6-731e-c9b7-eb75-c7be2c08adfa" semx-id="_57e88519-377d-79a6-e9b2-175e951da667">2.3 DEPENDS (<tt>requires:</tt>)</title><fmt-title depth="2" id="_86f4eca6-9680-d668-2ad3-3cb629173958"><semx element="title" source="_0f3ed7c6-731e-c9b7-eb75-c7be2c08adfa">2.3 DEPENDS (<tt>requires:</tt>)</semx></fmt-title>
+<sourcecode id="_2f2911c6-40e0-5772-c3cd-c13d1e21a1af" lang="yaml" semx-id="_2f2911c6-40e0-5772-c3cd-c13d1e21a1af" autonum="6"><fmt-name id="_4a392081-ab04-9ce3-dcd6-67c624874b11"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_2f2911c6-40e0-5772-c3cd-c13d1e21a1af">6</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_2f2911c6-40e0-5772-c3cd-c13d1e21a1af">6</semx></fmt-xref-label><body>requires:
+  - kind: language            # a language runtime edge
+    engine: ruby
+    implementation: jruby     # OPTIONAL — absent: any implementation of the
+                              # engine whose language_version satisfies the
+                              # constraint (spec 28 §8)
+    constraint: "~&#x3e; 3.3.0"
+  - kind: toolkit             # a native toolkit layer
+    name: gtk-layer
+    constraint: "&#x3e;= 3.24, &#x3c; 3.25"
+    triplets: [aarch64-macos, x86_64-linux-gnu]   # resolves on these hosts
+                                                  # only — skipped elsewhere
+                                                  # (the per-edge rule below)
+    mount: /__layers__/gtk
+  - kind: data
+    name: iso-codes
+    constraint: "&#x3e;= 2024.1"
+    mount: /__app__/share/iso-codes
+  - kind: runtime             # a SPAWNED runtime edge (additive — schema_minor 4,
+    engine: java              # spec 30): resolves through the RUNTIME index into the
+    implementation: temurin   # OPTIONAL (spec 28 §8)
+    constraint: "&#x3e;= 21"       # store's runtimes/ area and is NEVER co-mounted — its
+                              # wrapper exe executes FROM THE STORE.
+    expose: [java, keytool]   # OPTIONAL — the depended entries this payload surfaces
+                              # (spec 30 §3's shim surface)</body><fmt-sourcecode lang="yaml" semx-id="_2f2911c6-40e0-5772-c3cd-c13d1e21a1af" autonum="6" id="_76b2b412-e4f9-a4ec-1a36-bb4de19f6afa"><span class="na">requires</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">language</span>            <span class="c1"># a language runtime edge</span>
+    <span class="na">engine</span><span class="pi">:</span> <span class="s">ruby</span>
+    <span class="na">implementation</span><span class="pi">:</span> <span class="s">jruby</span>     <span class="c1"># OPTIONAL — absent: any implementation of the</span>
+                              <span class="c1"># engine whose language_version satisfies the</span>
+                              <span class="c1"># constraint (spec 28 §8)</span>
+    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">~&#x3e;</span><span class="nv"> </span><span class="s">3.3.0"</span>
+  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">toolkit</span>             <span class="c1"># a native toolkit layer</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">gtk-layer</span>
+    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">3.24,</span><span class="nv"> </span><span class="s">&#x3c;</span><span class="nv"> </span><span class="s">3.25"</span>
+    <span class="na">triplets</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">aarch64-macos</span><span class="pi">,</span> <span class="nv">x86_64-linux-gnu</span><span class="pi">]</span>   <span class="c1"># resolves on these hosts</span>
+                                                  <span class="c1"># only — skipped elsewhere</span>
+                                                  <span class="c1"># (the per-edge rule below)</span>
+    <span class="na">mount</span><span class="pi">:</span> <span class="s">/__layers__/gtk</span>
+  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">data</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">iso-codes</span>
+    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">2024.1"</span>
+    <span class="na">mount</span><span class="pi">:</span> <span class="s">/__app__/share/iso-codes</span>
+  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">runtime</span>             <span class="c1"># a SPAWNED runtime edge (additive — schema_minor 4,</span>
+    <span class="na">engine</span><span class="pi">:</span> <span class="s">java</span>              <span class="c1"># spec 30): resolves through the RUNTIME index into the</span>
+    <span class="na">implementation</span><span class="pi">:</span> <span class="s">temurin</span>   <span class="c1"># OPTIONAL (spec 28 §8)</span>
+    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">21"</span>       <span class="c1"># store's runtimes/ area and is NEVER co-mounted — its</span>
+                              <span class="c1"># wrapper exe executes FROM THE STORE.</span>
+    <span class="na">expose</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">java</span><span class="pi">,</span> <span class="nv">keytool</span><span class="pi">]</span>   <span class="c1"># OPTIONAL — the depended entries this payload surfaces</span>
+                              <span class="c1"># (spec 30 §3's shim surface)</span></fmt-sourcecode></sourcecode>
+
+
+<ul id="_7661c089-77e7-0df3-f91a-7a274f2b6d70" semx-id="_7661c089-77e7-0df3-f91a-7a274f2b6d70"><li id="_a342b1ac-a8e1-9b31-eb37-d30bf7acb9bc"><fmt-name id="_6393a1af-c3f8-ae37-51ea-6c243471f0e0"><semx element="autonum" source="_a342b1ac-a8e1-9b31-eb37-d30bf7acb9bc">o</semx></fmt-name><p id="_cd9fc599-a874-3ce0-5413-591e4ae40c02" semx-id="_cd9fc599-a874-3ce0-5413-591e4ae40c02">Dependency edges may also name <strong>provided executables</strong> (e.g. an app requiring the  <tt>inkscape</tt> command resolves against the PROVIDES of the inkscape payload) — the provides/requires graph resolves capabilities, not just payload names.</p>
+</li>
+<li id="_7669e84a-1a67-76bc-ad21-fa9a1c1e5e64"><fmt-name id="_fff289e5-8ba9-9d49-7691-3dd4e2e1d8db"><semx element="autonum" source="_7669e84a-1a67-76bc-ad21-fa9a1c1e5e64">o</semx></fmt-name><p id="_46e22c90-dc21-b2d7-4280-0e898f63b220" semx-id="_46e22c90-dc21-b2d7-4280-0e898f63b220">A <strong><tt>kind: runtime</tt></strong> edge is spec 30's spawned dependency: the depended runtime is dispatched as a CHILD process through its store-resident wrapper (never co-mounted, never materialized); resolution placement, the spawn wire, the jail union, and the shim surface are spec 30 §2–§5's. EXCEPTION: when the DECLARING payload is itself  <tt>kind: runtime</tt> and the edge carries NO <tt>expose:</tt>, the edge is an OWNER edge — runtime-on-runtime composition (spec 33): the depended runtime owns the boot's process, and the declarer contributes a second env image plus the  <tt>on_runtime</tt> argv template.</p>
+</li>
+<li id="_5fe5205c-66f5-76ec-3b4e-093a01f9cbd6"><fmt-name id="_d14371ba-154c-001c-2202-ea060dade20b"><semx element="autonum" source="_5fe5205c-66f5-76ec-3b4e-093a01f9cbd6">o</semx></fmt-name><p id="_957dadab-dfbd-5d8d-bd0a-7183af99100b" semx-id="_957dadab-dfbd-5d8d-bd0a-7183af99100b"><strong>MOUNT RULE (locked):</strong> the mount point is declared in the CONSUMER's manifest (docker-compose volume semantics): the consumer's code knows where it looks for things; the provider never dictates its mount location. The dispatcher resolves the capability, then mounts at the consumer-declared path — top-level or inside the app's memfs namespace.</p>
+</li>
+<li id="_a0dedd7b-399c-6ade-3fed-81a7c6c5842f"><fmt-name id="_5881ca22-9f84-e4de-72c6-22ef2b1d1200"><semx element="autonum" source="_a0dedd7b-399c-6ade-3fed-81a7c6c5842f">o</semx></fmt-name><p id="_06fbbe6c-e995-8c27-4921-ac66f992681d" semx-id="_06fbbe6c-e995-8c27-4921-ac66f992681d"><strong>Resolution algorithm:</strong> read manifest → build the graph → topological order (runtime first, layers, app last) → per node: cache hit on (constraint × triplet) → use, else fetch (signature-verified, spec 09) → verify → cache (0444 + markers) → compose the mount stack with the manifest's declared env → exec. The SAME signed  <tt>.tfs</tt> artifact type at every graph level — one coherent algebra.</p>
+</li>
+<li id="_2e19a878-7332-25c6-94d8-6444553a6953"><fmt-name id="_7473210b-c658-3bbd-50e1-43fd0655ba48"><semx element="autonum" source="_2e19a878-7332-25c6-94d8-6444553a6953">o</semx></fmt-name><p id="_8758de51-6b4a-3b43-828e-2b7a17af7d94" semx-id="_8758de51-6b4a-3b43-828e-2b7a17af7d94"><strong>PER-EDGE PLATFORM CONDITIONING (<tt>triplets:</tt>, additive — schema_minor 9, locked 2026-09-12, roadmap 86):</strong> every edge kind EXCEPT <tt>kind: language</tt> accepts the OPTIONAL <tt>triplets:</tt> list — the §3 axis's vcpkg-form triplets, non-empty, no duplicates (validated at parse). This generalizes the toolkit edge's existing spelling to  <tt>data</tt>, <tt>runtime</tt>, and <tt>executable</tt> edges — one spelling per axis (spec 00 invariant 10): payload-level coverage is <tt>platforms:</tt>, edge-level conditioning is <tt>triplets:</tt>.</p>
+<ul id="_d2a42d1a-6637-93f0-4478-efa2aafc85b8" semx-id="_d2a42d1a-6637-93f0-4478-efa2aafc85b8"><li id="_28eb7aa8-7f24-0a4a-fd83-3c5df97e1eab"><fmt-name id="_97b537fe-5eca-adb7-aabd-4da162ef787c"><semx element="autonum" source="_28eb7aa8-7f24-0a4a-fd83-3c5df97e1eab">—</semx></fmt-name><p id="_97f8f5eb-36a5-0d6a-4334-2dab5e585d38" semx-id="_97f8f5eb-36a5-0d6a-4334-2dab5e585d38"><strong>Absent = universal.</strong> An edge without <tt>triplets:</tt> resolves on every host — byte-identical with pre-minor-9 behavior.</p>
+</li>
+<li id="_5a5a9bb9-57c7-8c61-89d7-092e6a692b48"><fmt-name id="_e9cbfa64-c22a-fd36-d772-9037803a14a5"><semx element="autonum" source="_5a5a9bb9-57c7-8c61-89d7-092e6a692b48">—</semx></fmt-name><p id="_7311053d-f302-ce0f-81f4-9b31f9ca357e" semx-id="_7311053d-f302-ce0f-81f4-9b31f9ca357e">A host outside the list SKIPS the edge: no resolution, no fetch, no install row, no lock row, no mount, no spawn surface, no exposed-name registration. The skip is LOUD — one journal line (<tt>event=edge-platform-skip</tt>, the shim's journal convention) plus a stderr note at press / install / dispatch — never silent, never an error. A multi-host compose (spec 23) evaluates coverage per target host: the edge lands in the lock rows of the covering hosts only.</p>
+</li>
+<li id="_21575c6d-5079-1041-3d81-e23963ddb081"><fmt-name id="_f6e7225c-6bdb-4cf5-c7cd-9b85b6542036"><semx element="autonum" source="_21575c6d-5079-1041-3d81-e23963ddb081">—</semx></fmt-name><p id="_3d4f1993-65cb-75c3-2750-f8b5380e7a37" semx-id="_3d4f1993-65cb-75c3-2750-f8b5380e7a37">A skipped edge's exposed commands are absent from the shim surface on the skipping host; dispatching one anyway (a stale shim, a hand-written invocation) is a named error — "not available on this platform", exit 69 — never a silent fallback to another provider.</p>
+</li>
+<li id="_069ff33f-8ce5-588c-8506-d507c664b271"><fmt-name id="_c87b06dd-707c-4f26-366d-53a1819d80e9"><semx element="autonum" source="_069ff33f-8ce5-588c-8506-d507c664b271">—</semx></fmt-name><p id="_81f78d61-8d3f-e893-286a-54c79bc7f768" semx-id="_81f78d61-8d3f-e893-286a-54c79bc7f768"><strong><tt>kind: language</tt> FORBIDS the key</strong> — a skipped language edge would boot a payload with no runtime, an incoherent composition; the payload-level  <tt>platforms:</tt> axis already owns "where this payload runs". A language edge carrying  <tt>triplets:</tt> is a named manifest error at parse, steering the author to  <tt>platforms:</tt>.</p>
+</li>
+<li id="_edaa3586-34b5-9474-624e-ebfe9c2abe1d"><fmt-name id="_0f661ed2-ec22-58fc-9e6a-d3836343013e"><semx element="autonum" source="_edaa3586-34b5-9474-624e-ebfe9c2abe1d">—</semx></fmt-name><p id="_d06d546b-6e9d-b6d5-eb54-c70d320a3e08" semx-id="_d06d546b-6e9d-b6d5-eb54-c70d320a3e08"><strong><tt>critical:</tt> interaction:</strong> the skip applies regardless of <tt>critical: true</tt> — <tt>critical</tt> governs reader-ERA refusal (a pre-minor reader must refuse an edge it cannot interpret), never platform reach. "This host must have the dep" is said with <tt>platforms:</tt> on the payload, not with <tt>critical</tt> on the edge.</p>
+</li>
+<li id="_aa1ff809-6a4f-8f92-6ddb-4f178e259585"><fmt-name id="_69ce9039-9250-dae5-1428-2ede4b3a443e"><semx element="autonum" source="_aa1ff809-6a4f-8f92-6ddb-4f178e259585">—</semx></fmt-name><p id="_1261379f-9a51-4dc0-4c44-7ecc5a4bb49a" semx-id="_1261379f-9a51-4dc0-4c44-7ecc5a4bb49a">Reader compatibility: a pre-minor-9 reader ignores <tt>triplets:</tt> on non-toolkit edges (the unknown-field rule) and resolves the edge universally — the safe direction: an extra dependency resolved, never a needed dependency skipped.</p>
+</li>
+</ul>
+</li>
+</ul>
+</clause>
+
+<clause id="_ff0b79cf-262c-2b1a-4d14-2ffeae233d9d" unnumbered="true" obligation="normative" semx-id="_ff0b79cf-262c-2b1a-4d14-2ffeae233d9d">
+<title id="_866618f9-b02b-ec21-8ee0-74a7ea61baf7" semx-id="_de60ae36-9bc6-5b04-cdbe-f8bb9767d38a">2.4 MATERIALIZE (<tt>materialize:</tt>, additive — schema_minor 1)</title><fmt-title depth="2" id="_fa621b80-372b-b515-24b5-57e254ee4d51"><semx element="title" source="_866618f9-b02b-ec21-8ee0-74a7ea61baf7">2.4 MATERIALIZE (<tt>materialize:</tt>, additive — schema_minor 1)</semx></fmt-title>
+<sourcecode id="_8b229da4-2b60-9494-3e2a-940aaa8cc447" lang="yaml" semx-id="_8b229da4-2b60-9494-3e2a-940aaa8cc447" autonum="7"><fmt-name id="_48dea1c1-724d-9b25-6123-0e8a8d826afd"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_8b229da4-2b60-9494-3e2a-940aaa8cc447">7</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_8b229da4-2b60-9494-3e2a-940aaa8cc447">7</semx></fmt-xref-label><body>materialize:
+  - /lib/ssl/certs/cacert.pem    # an absolute in-image path, no '..' components</body><fmt-sourcecode lang="yaml" semx-id="_8b229da4-2b60-9494-3e2a-940aaa8cc447" autonum="7" id="_99e43867-538d-645c-084a-fffbe98ffe38"><span class="na">materialize</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="s">/lib/ssl/certs/cacert.pem</span>    <span class="c1"># an absolute in-image path, no '..' components</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_783f8f33-9bf5-452d-614f-c5416fe51ad9" semx-id="_783f8f33-9bf5-452d-614f-c5416fe51ad9">A top-level list (any kind may declare it; old readers ignore it under the unknown-field rule) naming  <strong>regular files a C library must read through its own IO</strong> — the interpreter's patched IO never gets asked, so the bytes must exist on the host filesystem. The OpenSSL CA cert is the canonical entry. The driver extracts each declared path after the mounts and the jail, before the interpreter handoff, to <tt>&#x3c;TEBAKO_EXEC_CACHE&#x3e;/resources/&#x3c;image-key&#x3e;/&#x3c;P&#x3e;</tt> — whole-file, read-only, digest-verified. A declared path absent from the image, or not a regular file, is the manifest lying: boot fails by name (exit 65), never a skipped entry. The full mechanics and the trust chain are spec 22 §4 (class R); the grammar is registered in <tt>docs/spec/schemas/payload-manifest.yaml</tt>.</p>
+</clause>
+
+<clause id="_ef15a072-40b4-b7af-7354-21eb26950e23" unnumbered="true" obligation="normative" semx-id="_ef15a072-40b4-b7af-7354-21eb26950e23">
+<title id="_8a466590-f3ad-e713-7a8f-b7eea4be38fb" semx-id="_4e91f1a0-dc56-d495-687f-747d77dadfc5">2.5 LIBRARY ALIASES (<tt>library_aliases:</tt>, additive — schema_minor 2)</title><fmt-title depth="2" id="_26fcd47e-0cda-db1c-8c22-39dbcccc65a5"><semx element="title" source="_8a466590-f3ad-e713-7a8f-b7eea4be38fb">2.5 LIBRARY ALIASES (<tt>library_aliases:</tt>, additive — schema_minor 2)</semx></fmt-title>
+<sourcecode id="_abfac63a-0369-be29-c5b6-83168738c1e8" lang="yaml" semx-id="_abfac63a-0369-be29-c5b6-83168738c1e8" autonum="8"><fmt-name id="_bcc40c7e-0b97-9ecc-2d6a-93b22a9afa1d"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_abfac63a-0369-be29-c5b6-83168738c1e8">8</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_abfac63a-0369-be29-c5b6-83168738c1e8">8</semx></fmt-xref-label><body>library_aliases:
+  - name: libfoo-3.dll        # the exact bare name a loader call presents —
+                              # no path separator, no drive qualifier
+                              # (validated at parse)
+    path: /lib/libfoo-3.dll   # the in-image absolute file the name resolves to</body><fmt-sourcecode lang="yaml" semx-id="_abfac63a-0369-be29-c5b6-83168738c1e8" autonum="8" id="_f93ab765-0564-098d-db62-6000ae9a54a2"><span class="na">library_aliases</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">libfoo-3.dll</span>        <span class="c1"># the exact bare name a loader call presents —</span>
+                              <span class="c1"># no path separator, no drive qualifier</span>
+                              <span class="c1"># (validated at parse)</span>
+    <span class="na">path</span><span class="pi">:</span> <span class="s">/lib/libfoo-3.dll</span>   <span class="c1"># the in-image absolute file the name resolves to</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_cdeae111-c016-794c-3d3f-fa9262180b43" semx-id="_cdeae111-c016-794c-3d3f-fa9262180b43">A top-level list (any kind may declare it; old readers ignore it under the unknown-field rule) naming the ONLY bare library names that resolve to the image's own files — the declarative half of the windows Class-L bare-name rule (semantics: spec 22 §2.1). A loader call presenting a bare name matching no entry is a HOST reference and passes through untouched: host-by-default, no probing, no heuristics, no silent fallback. Matching is verbatim and case-insensitive (the windows loader's own comparison); the name is never extension-completed (<tt>foo</tt> does not match  <tt>foo.dll</tt>). <tt>path</tt> must be an absolute in-image path of a regular file, no  <tt>..</tt> components — an absent or non-file target is the manifest lying (a named 65 at boot, the §2.4 precedent). A duplicate  <tt>name</tt> within one image is a named manifest error; two co-mounted images declaring the same  <tt>name</tt> is a named boot error (authoring ambiguity, the spec 17 §2 slug precedent), never a silent winner. No platform filter: native images are triplet-bound (§3), so an alias is platform surface by construction. The grammar is registered in <tt>docs/spec/schemas/payload-manifest.yaml</tt>.</p>
+</clause>
+
+<clause id="_5370a56c-a4f9-8763-596c-eee4a8fa69d8" unnumbered="true" obligation="normative" semx-id="_5370a56c-a4f9-8763-596c-eee4a8fa69d8">
+<title id="_f0ccfe1f-6ed5-99ca-ace6-4c03b2caa481" semx-id="_541dd632-f104-c931-e3c4-1ae4effb1be6">2.6 CHECKS (<tt>checks:</tt>, additive — schema_minor 3)</title><fmt-title depth="2" id="_5be9ff48-35d2-f2a1-fa7c-a6c7da26d4ea"><semx element="title" source="_f0ccfe1f-6ed5-99ca-ace6-4c03b2caa481">2.6 CHECKS (<tt>checks:</tt>, additive — schema_minor 3)</semx></fmt-title>
+<sourcecode id="_7a5af073-8b04-7c7e-0ab5-aa2a6e0dcf03" lang="yaml" semx-id="_7a5af073-8b04-7c7e-0ab5-aa2a6e0dcf03" autonum="9"><fmt-name id="_eb825d60-5dab-4fdb-50bf-19f43244e47b"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_7a5af073-8b04-7c7e-0ab5-aa2a6e0dcf03">9</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_7a5af073-8b04-7c7e-0ab5-aa2a6e0dcf03">9</semx></fmt-xref-label><body>checks:
+  html-xml:                        # the check name — [A-Za-z0-9][A-Za-z0-9._-]*
+    entry: /bin/metanorma          # in-image executable; "self" on kind
+                                   # runtime only (the runtime exe itself)
+    argv: ["--type", "iso", "{scratch}/test-iso.adoc", "--agree-to-terms"]
+    fixtures: /__tpkg__/check/html-xml   # exec-only; CONTENTS land at the
+                                         # host scratch root
+    expect: {exit: 0, files: ["test-iso.xml", "test-iso.html"]}
+    timeout: 180
+  layout:                          # no entry ⇒ STRUCTURAL (the data-slice
+    expect:                        # shape): the engine mounts and asserts
+      image_files: [/templates/org/cover.adoc]   # in-image, exist + non-empty</body><fmt-sourcecode lang="yaml" semx-id="_7a5af073-8b04-7c7e-0ab5-aa2a6e0dcf03" autonum="9" id="_5880626b-054f-d80b-6382-f728e34ef8c6"><span class="na">checks</span><span class="pi">:</span>
+  <span class="na">html-xml</span><span class="pi">:</span>                        <span class="c1"># the check name — [A-Za-z0-9][A-Za-z0-9._-]*</span>
+    <span class="na">entry</span><span class="pi">:</span> <span class="s">/bin/metanorma</span>          <span class="c1"># in-image executable; "self" on kind</span>
+                                   <span class="c1"># runtime only (the runtime exe itself)</span>
+    <span class="na">argv</span><span class="pi">:</span> <span class="pi">[</span><span class="s2">"</span><span class="s">--type"</span><span class="pi">,</span> <span class="s2">"</span><span class="s">iso"</span><span class="pi">,</span> <span class="s2">"</span><span class="s">{scratch}/test-iso.adoc"</span><span class="pi">,</span> <span class="s2">"</span><span class="s">--agree-to-terms"</span><span class="pi">]</span>
+    <span class="na">fixtures</span><span class="pi">:</span> <span class="s">/__tpkg__/check/html-xml</span>   <span class="c1"># exec-only; CONTENTS land at the</span>
+                                         <span class="c1"># host scratch root</span>
+    <span class="na">expect</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exit</span><span class="pi">:</span> <span class="nv">0</span><span class="pi">,</span> <span class="nv">files</span><span class="pi">:</span> <span class="pi">[</span><span class="s2">"</span><span class="s">test-iso.xml"</span><span class="pi">,</span> <span class="s2">"</span><span class="s">test-iso.html"</span><span class="pi">]}</span>
+    <span class="na">timeout</span><span class="pi">:</span> <span class="m">180</span>
+  <span class="na">layout</span><span class="pi">:</span>                          <span class="c1"># no entry ⇒ STRUCTURAL (the data-slice</span>
+    <span class="na">expect</span><span class="pi">:</span>                        <span class="c1"># shape): the engine mounts and asserts</span>
+      <span class="na">image_files</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">/templates/org/cover.adoc</span><span class="pi">]</span>   <span class="c1"># in-image, exist + non-empty</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_ed86f38b-ea02-0a64-8a27-897bc1a4d310" semx-id="_ed86f38b-ea02-0a64-8a27-897bc1a4d310">A top-level map (any kind may declare checks; old readers ignore it under the unknown-field rule) naming the payload's own acceptance contracts — "given my declared needs, I do my one real thing". ONE key decides the shape (MECE, never a  <tt>kind:</tt> flag): <tt>entry</tt> present ⇒ an exec check; absent ⇒ a structural check, which declares no  <tt>argv</tt>/<tt>fixtures</tt> and asserts via  <tt>expect.image_files</tt>. <tt>expect.files</tt> are scratch-relative existence + non-empty assertions; byte-golden assertions do not exist by construction. A malformed block is a named validation error at press / <tt>tfs validate</tt> (exit 65), never discovered at run time. The semantics — the engine, the three moments, SKIP/FAIL discipline — are spec 26; the grammar is registered in <tt>docs/spec/schemas/payload-manifest.yaml</tt>.</p>
+</clause>
+
+<clause id="_fb129e30-cd1a-0c36-b23f-6fe6fc99e9b4" unnumbered="true" obligation="normative" semx-id="_fb129e30-cd1a-0c36-b23f-6fe6fc99e9b4">
+<title id="_4bbf688f-ad84-eff0-ea91-931c3c24d798" semx-id="_817cf40a-c908-c3ca-919e-aa811b44377a">2.7 INTERP ENV (<tt>interp_env:</tt>, additive — schema_minor 8) — IMPLEMENTED 2026-10-07 (tebako#559)</title><fmt-title depth="2" id="_0937fcec-5505-62be-60ff-6d7ea32e6920"><semx element="title" source="_4bbf688f-ad84-eff0-ea91-931c3c24d798">2.7 INTERP ENV (<tt>interp_env:</tt>, additive — schema_minor 8) — IMPLEMENTED 2026-10-07 (tebako#559)</semx></fmt-title>
+<sourcecode id="_9da8178a-01ba-2f07-ff0d-0a320cc81810" lang="yaml" semx-id="_9da8178a-01ba-2f07-ff0d-0a320cc81810" autonum="10"><fmt-name id="_9c75f9a3-ac86-01ad-afba-eee81f62d55d"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_9da8178a-01ba-2f07-ff0d-0a320cc81810">10</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_9da8178a-01ba-2f07-ff0d-0a320cc81810">10</semx></fmt-xref-label><body>interp_env:
+  RUBY_YJIT_ENABLE: "1"          # interpreter-option defaults, literal strings
+  RUBY_GC_HEAP_FREE_SLOTS: "500000"</body><fmt-sourcecode lang="yaml" semx-id="_9da8178a-01ba-2f07-ff0d-0a320cc81810" autonum="10" id="_8350d040-aaed-d4dd-9e5e-89c094c410ed"><span class="na">interp_env</span><span class="pi">:</span>
+  <span class="na">RUBY_YJIT_ENABLE</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1"</span>          <span class="c1"># interpreter-option defaults, literal strings</span>
+  <span class="na">RUBY_GC_HEAP_FREE_SLOTS</span><span class="pi">:</span> <span class="s2">"</span><span class="s">500000"</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_3e6fcc53-218e-571c-ffab-04d3369e8759" semx-id="_3e6fcc53-218e-571c-ffab-04d3369e8759">A top-level map (any kind may declare; old readers ignore it under the unknown-field rule) carrying  <strong>interpreter-option defaults the slice author owns</strong>: what options the interpreter starts with is a packaging-time decision (the runtime/payload slice developer's), with the local user always able to override. The dispatcher exports each merged key into the runtime process's environment at dispatch, so the interpreter reads it at its own boot (ruby's  <tt>RUBY_YJIT_ENABLE</tt>, python's <tt>PYTHON_JIT</tt>, the JVM family's option vars — the channel is generic, never a ruby wart).</p>
+
+<p id="_54a55ff5-a117-b787-7c03-be0c4d5b49b1" semx-id="_54a55ff5-a117-b787-7c03-be0c4d5b49b1">MECE against the existing env surfaces: <tt>provides.env:</tt> (runtime kind) is the runtime's COMPOSED process-env defaults (path-class included, spec 07 §9);  <tt>interp_env:</tt> is the per-slice interpreter-OPTION channel — scalar only, never path-class, never a  <tt>TEBAKO_*</tt> control var (those are dispatcher/driver-owned; both violations are named manifest errors). Values are literal strings: no expansion, no execution, no references — additive and declarative by construction; a malformed block is a named validation error at press /  <tt>tfs validate</tt> (exit 65), never discovered at run time.</p>
+
+<p id="_904c3300-1c50-c397-746f-b9f5eccde7ef" semx-id="_904c3300-1c50-c397-746f-b9f5eccde7ef">The composition chain and the override order live in spec 07 §9; the driver-side application rule in spec 17 §2.2; the audit surface in spec 15 §4. A declaration is a DEFAULT, never a requirement: a pre-minor-8 consumer ignores the key and ships the interpreter's built-in behavior.</p>
+</clause>
+
+<clause id="_0749aaa8-0f7e-341d-5af8-5c6052696344" unnumbered="true" obligation="normative" semx-id="_0749aaa8-0f7e-341d-5af8-5c6052696344">
+<title id="_a186ddf3-55a0-3091-8a38-02982e5ce3ba" semx-id="_49af90df-bc8b-eef5-48ef-4ae76926f746">2.8 AUGMENTS (<tt>augments:</tt>) and EXTENSION POINTS (<tt>extension_points:</tt>) — additive, schema_minor 10</title><fmt-title depth="2" id="_7030390b-a366-5388-187a-9a188a38f662"><semx element="title" source="_a186ddf3-55a0-3091-8a38-02982e5ce3ba">2.8 AUGMENTS (<tt>augments:</tt>) and EXTENSION POINTS (<tt>extension_points:</tt>) — additive, schema_minor 10</semx></fmt-title>
+<p id="_aa6e47ea-997b-8767-b098-45eefe63acdb" semx-id="_aa6e47ea-997b-8767-b098-45eefe63acdb">The reverse dependency edge: a slice that extends a base payload it cannot be enumerated BY. The mount rule (§2.3) is unchanged — the CONSUMER declares; here there are two consumers and both keep their say: the BASE declares WHERE extensions land, the SLICE declares WHICH base it extends. Neither touches the other's bytes.</p>
+
+<p id="_fa08ea76-92ad-ee51-19de-3a13ad4372bc" semx-id="_fa08ea76-92ad-ee51-19de-3a13ad4372bc"><strong>Base side — PROVIDES gains <tt>extension_points:</tt></strong> (any kind that can host in-process content; practically  <tt>app</tt>):</p>
+
+<sourcecode id="_72942e53-137e-262c-7228-f7ef26326274" lang="yaml" semx-id="_72942e53-137e-262c-7228-f7ef26326274" autonum="11"><fmt-name id="_db2ecb81-9c09-0ba7-c406-535b9c37d999"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_72942e53-137e-262c-7228-f7ef26326274">11</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_72942e53-137e-262c-7228-f7ef26326274">11</semx></fmt-xref-label><body>provides:
+  entrypoints: [...]
+  extension_points:
+    - name: flavors              # symbolic; slices reference it by name
+      mount: /flavors.d          # VFS-absolute; the slices mount BELOW it
+      layout: gem-home           # enum: gem-home | files (extensible)</body><fmt-sourcecode lang="yaml" semx-id="_72942e53-137e-262c-7228-f7ef26326274" autonum="11" id="_bb2a7ee6-58aa-c3ca-9c78-0c3bcd2c0f34"><span class="na">provides</span><span class="pi">:</span>
+  <span class="na">entrypoints</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">...</span><span class="pi">]</span>
+  <span class="na">extension_points</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">flavors</span>              <span class="c1"># symbolic; slices reference it by name</span>
+      <span class="na">mount</span><span class="pi">:</span> <span class="s">/flavors.d</span>          <span class="c1"># VFS-absolute; the slices mount BELOW it</span>
+      <span class="na">layout</span><span class="pi">:</span> <span class="s">gem-home</span>           <span class="c1"># enum: gem-home | files (extensible)</span></fmt-sourcecode></sourcecode>
+
+
+<ul id="_9bdf12ac-be80-4597-a230-5a4d52b89f12" semx-id="_9bdf12ac-be80-4597-a230-5a4d52b89f12"><li id="_4f97cc57-c3d7-44aa-a466-c3feb79a9cf2"><fmt-name id="_998dc3ae-44b4-3b8f-aeea-931c1058206b"><semx element="autonum" source="_4f97cc57-c3d7-44aa-a466-c3feb79a9cf2">o</semx></fmt-name><p id="_16faec17-5a70-fe2f-13c7-cc9fdfb7d523" semx-id="_16faec17-5a70-fe2f-13c7-cc9fdfb7d523"><tt>layout: gem-home</tt> — each mounted child is a mini GEM_HOME (<tt>gems/</tt>, <tt>specifications/</tt>); composition is the language ecosystem's own multi-home search list (GEM_PATH), never a union mount: two slices carrying different versions of one gem stay VISIBLE-and-resolvable (requirement-based activation) instead of one shadowing the other by mount precedence.</p>
+</li>
+<li id="_e4f50da5-54fd-4f50-8fe1-1b9cda53e975"><fmt-name id="_b249e283-e28b-5856-46ec-124a93c1d33b"><semx element="autonum" source="_e4f50da5-54fd-4f50-8fe1-1b9cda53e975">o</semx></fmt-name><p id="_bd4f495e-244d-5217-cf1a-dd7a5ada1b45" semx-id="_bd4f495e-244d-5217-cf1a-dd7a5ada1b45"><tt>layout: files</tt> — opaque content the application reads itself (fonts, codelists). The app enumerates  <tt>&#x3c;mount&#x3e;/&#x3c;slice&#x3e;/…</tt>.</p>
+</li>
+</ul>
+
+<p id="_0995091b-4d0f-d5fb-cb6c-b53ab1c54330" semx-id="_0995091b-4d0f-d5fb-cb6c-b53ab1c54330"><strong>Base side, dedup inventory — PROVIDES gains <tt>gems:</tt></strong> (any payload staging a gem home; REQUIRED when it declares a  <tt>gem-home</tt> extension point):</p>
+
+<sourcecode id="_c6baac76-62ba-bc5f-4973-7bd4126be862" lang="yaml" semx-id="_c6baac76-62ba-bc5f-4973-7bd4126be862" autonum="12"><fmt-name id="_e47abbec-037b-c342-e98c-005d1ae76f6c"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_c6baac76-62ba-bc5f-4973-7bd4126be862">12</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_c6baac76-62ba-bc5f-4973-7bd4126be862">12</semx></fmt-xref-label><body>provides:
+  gems:
+    - {name: nokogiri, version: "1.18.9"}
+    - {name: metanorma-cli, version: "1.16.9"}</body><fmt-sourcecode lang="yaml" semx-id="_c6baac76-62ba-bc5f-4973-7bd4126be862" autonum="12" id="_53dccf26-0c58-b6bf-097a-d6bc7a5c0145"><span class="na">provides</span><span class="pi">:</span>
+  <span class="na">gems</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="pi">{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">nokogiri</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.18.9"</span><span class="pi">}</span>
+    <span class="pi">-</span> <span class="pi">{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">metanorma-cli</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.16.9"</span><span class="pi">}</span></fmt-sourcecode></sourcecode>
+
+
+<ul id="_8594ad3e-82d0-4830-caa7-f521fbb2914e" semx-id="_8594ad3e-82d0-4830-caa7-f521fbb2914e"><li id="_a744d32a-dd9e-08aa-2bcd-7ba55a0083cb"><fmt-name id="_d50d43ed-81c5-d12b-210a-a535ee803c69"><semx element="autonum" source="_a744d32a-dd9e-08aa-2bcd-7ba55a0083cb">o</semx></fmt-name><p id="_4aebb436-36d1-33c0-1b76-8d129d2fddc3" semx-id="_4aebb436-36d1-33c0-1b76-8d129d2fddc3">Generated, never hand-authored (spec 00 §10): the builder scans the staged gem home's  <tt>specifications/*.gemspec</tt> before the image seals. One generator, two consumers — the dispatcher reads the manifest key (the overlap journal, spec 07 §2 step 3a); the release exports the same inventory as its  <tt>closure.json</tt> asset, the slice press's subtraction source. A second hand-written copy anywhere is a bug.</p>
+</li>
+</ul>
+
+<p id="_458252c5-3e76-ae61-4fef-9968e7a2ce35" semx-id="_458252c5-3e76-ae61-4fef-9968e7a2ce35"><strong>Slice side — a new top-level block <tt>augments:</tt></strong> (sibling of <tt>requires:</tt>):</p>
+
+<sourcecode id="_73758e5d-2bc8-e61a-cf02-7716a3530f20" lang="yaml" semx-id="_73758e5d-2bc8-e61a-cf02-7716a3530f20" autonum="13"><fmt-name id="_42f564fa-3ab8-b7b5-9120-b629283520d4"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_73758e5d-2bc8-e61a-cf02-7716a3530f20">13</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_73758e5d-2bc8-e61a-cf02-7716a3530f20">13</semx></fmt-xref-label><body>augments:
+  - payload: metanorma           # the base payload's name
+    constraint: "= 1.16.2"       # vs the base's RESOLVED version
+    extension_point: flavors     # names the base's declared point
+    built_against:               # provenance, written by the press
+      version: "1.16.2"          #   tooling — the exact base release
+      closure_sha256: "…"        #   whose inventory was subtracted</body><fmt-sourcecode lang="yaml" semx-id="_73758e5d-2bc8-e61a-cf02-7716a3530f20" autonum="13" id="_86eb5698-1988-0445-5d37-785829c30161"><span class="na">augments</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="na">payload</span><span class="pi">:</span> <span class="s">metanorma</span>           <span class="c1"># the base payload's name</span>
+    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">=</span><span class="nv"> </span><span class="s">1.16.2"</span>       <span class="c1"># vs the base's RESOLVED version</span>
+    <span class="na">extension_point</span><span class="pi">:</span> <span class="s">flavors</span>     <span class="c1"># names the base's declared point</span>
+    <span class="na">built_against</span><span class="pi">:</span>               <span class="c1"># provenance, written by the press</span>
+      <span class="na">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.16.2"</span>          <span class="c1">#   tooling — the exact base release</span>
+      <span class="na">closure_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span>        <span class="c1">#   whose inventory was subtracted</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_5cbcf5c8-61ff-ccca-6315-68d2c5e893f9" semx-id="_5cbcf5c8-61ff-ccca-6315-68d2c5e893f9"><tt>augments</tt> IS a dependency declaration, and the slice is NOT self-contained by construction (a deduped slice's gems resolve against the BASE's gem home at run time). Dispatch semantics live in spec 07 §2 step 3a; the store scan in spec 05 §3. The scope locks:</p>
+
+<ul id="_67cf3e59-3467-6968-f073-724e3ee6194c" semx-id="_67cf3e59-3467-6968-f073-724e3ee6194c"><li id="_c7fff6fc-07c8-3547-cfff-59601a8f32e9"><fmt-name id="_733e77cb-19e5-2668-2d6c-475b32f77fcb"><semx element="autonum" source="_c7fff6fc-07c8-3547-cfff-59601a8f32e9">o</semx></fmt-name><p id="_e489b192-782b-10fb-87ef-3501ca143745" semx-id="_e489b192-782b-10fb-87ef-3501ca143745"><strong>Root-only.</strong> <tt>augments</tt> attaches slices to the DISPATCHED (root) payload. A slice augmenting a slice is the named NestedAugment error;  <tt>augments</tt> on a root payload's own manifest is ignored (journaled  <tt>slice-ignored</tt>) — attachment is declared by the slice, never claimed by the base.</p>
+</li>
+<li id="_f908e7e8-4d8a-80d5-1b34-350704c1355d"><fmt-name id="_e84f9f2f-f694-8aa9-c2a4-3f90257e72e7"><semx element="autonum" source="_f908e7e8-4d8a-80d5-1b34-350704c1355d">o</semx></fmt-name><p id="_8e93110a-a0d5-5bf0-b446-5c6553d41a6f" semx-id="_8e93110a-a0d5-5bf0-b446-5c6553d41a6f"><strong>Content-only.</strong> Slices are in-process CONTENT (gem homes, files) — <tt>capabilities.exec: false</tt>. An extension carrying executables rides the forward  <tt>requires</tt>/<tt>expose</tt> machinery (spec 30), never <tt>augments</tt>. MECE.</p>
+</li>
+<li id="_2787fa6d-37f5-d897-1f83-31c999e13050"><fmt-name id="_e2c7ed9a-42d8-d4ce-0192-f257865c528d"><semx element="autonum" source="_2787fa6d-37f5-d897-1f83-31c999e13050">o</semx></fmt-name><p id="_ca5494b6-76cb-cede-0468-f6078a850713" semx-id="_ca5494b6-76cb-cede-0468-f6078a850713"><strong>No runtime of its own.</strong> The slice's <tt>requires</tt> language edge is satisfied by the BASE's resolved runtime (abi line included — a mismatch is the dispatch-time loud skip, never a segfault).</p>
+</li>
+<li id="_7f155d1f-df89-dfc6-3155-db6904e4574d"><fmt-name id="_57e6600e-35ac-92db-90c5-36bb1a95dc7c"><semx element="autonum" source="_7f155d1f-df89-dfc6-3155-db6904e4574d">o</semx></fmt-name><p id="_b829d380-7e96-17a2-7e5e-1060026103f6" semx-id="_b829d380-7e96-17a2-7e5e-1060026103f6"><strong>The binding rule.</strong> A slice deduped against the base's closure pins EXACTLY (<tt>constraint: "= x.y.z"</tt> — one slice release per base release, shipped in lockstep): subtraction is sound only against the exact inventory it subtracted, and the slice's tests ran against exactly that base. When the base ships runtime LINES as suffixed versions (spec 28;  <tt>1.16.9</tt> and <tt>1.16.9-ruby4.0</tt> of one payload version), the closures differ per line, so the pin names the LINE's exact version (<tt>= 1.16.9-ruby4.0</tt> — the schema_minor-12 grammar, spec 05 §5) and one slice release exists per (slice, base LINE) pair. Range constraints remain legal for content that honestly spans (<tt>layout: files</tt> asset packs); gem-closure slices MUST pin exactly. Pre-minor-10 readers ignore both keys (the slice then simply attaches nothing — loud at install, never silent); pre-minor-12 readers reject a suffixed pin by name (exit 65). <strong>Family completion:</strong> when the lines' closure INVENTORIES are identical (press-verified at build time against every family row's published closure assets — never assumed), ONE slice release MAY serve the whole family: it carries one exact-pin  <tt>augments</tt> edge per family row (each with its own  <tt>built_against</tt> provenance naming that row), and the dispatcher attaches when any edge matches (spec 07 §2 step 3a). The binding rule is unchanged — every edge pins exactly the row whose inventory the press verified identical to the subtraction source.</p>
+<p id="_3297cde1-6ec0-66bf-5861-27da69563b6b" semx-id="_3297cde1-6ec0-66bf-5861-27da69563b6b"><strong>The line-split idiom, worked</strong> (first production use: the metanorma flavor slices, metanorma/packed-metanorma-bsi and -nist, 2026-09-27 — the living instance to copy). A pure-ruby slice that serves every runtime line of a base family cannot use ONE exact pin: equality clauses are suffix-exact in the versions grammar (<tt>= 1.17.0</tt> never matches <tt>1.17.0-ruby3.3</tt>). Nor should it reach for a range (<tt>&#x3e;= 1.17.0-ruby3.3, &#x3c; 1.17.1</tt>): a range is legal for content that honestly spans, but a gem-closure slice subtracts a specific inventory, and the binding rule wants each served row named. The shipped spelling is one edge per row:</p>
+
+<sourcecode id="_528b3688-8f3b-a672-ff03-585f0c62017e" lang="yaml" semx-id="_528b3688-8f3b-a672-ff03-585f0c62017e" autonum="14"><fmt-name id="_d363b4fb-4594-b5eb-01d4-f20c94a18bdf"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_528b3688-8f3b-a672-ff03-585f0c62017e">14</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_528b3688-8f3b-a672-ff03-585f0c62017e">14</semx></fmt-xref-label><body>augments:
+  - payload: metanorma
+    constraint: "= 1.17.0"
+    extension_point: flavors
+    built_against: {version: "1.17.0", closure_sha256: "…"}
+  - payload: metanorma
+    constraint: "= 1.17.0-ruby3.3"
+    extension_point: flavors
+    built_against: {version: "1.17.0-ruby3.3", closure_sha256: "…"}</body><fmt-sourcecode lang="yaml" semx-id="_528b3688-8f3b-a672-ff03-585f0c62017e" autonum="14" id="_c1717482-1117-cc4c-5dc7-d2d2e681be20"><span class="na">augments</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="na">payload</span><span class="pi">:</span> <span class="s">metanorma</span>
+    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">=</span><span class="nv"> </span><span class="s">1.17.0"</span>
+    <span class="na">extension_point</span><span class="pi">:</span> <span class="s">flavors</span>
+    <span class="na">built_against</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.17.0"</span><span class="pi">,</span> <span class="nv">closure_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">}</span>
+  <span class="pi">-</span> <span class="na">payload</span><span class="pi">:</span> <span class="s">metanorma</span>
+    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">=</span><span class="nv"> </span><span class="s">1.17.0-ruby3.3"</span>
+    <span class="na">extension_point</span><span class="pi">:</span> <span class="s">flavors</span>
+    <span class="na">built_against</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.17.0-ruby3.3"</span><span class="pi">,</span> <span class="nv">closure_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">}</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_8943dfb1-e777-5f26-9ad1-20daebc188bf" semx-id="_8943dfb1-e777-5f26-9ad1-20daebc188bf">Soundness: the press subtracts the INTERSECTION of the family's platform/line closures — a gem is subtracted only if present in every closure the slice will mount beside — and refuses (build error) when the inventories are not identical. One subtraction therefore serves every named row; the dispatcher's any-edge match (v2.8.19) attaches the slice to whichever row the user's version pin selected. A new base line (say  <tt>-ruby3.5</tt>) is a NEW row the slice does not name: dispatch skips loudly (the unattached-flavor journal), and the slice press adds the edge after verifying the new row's closure identity — never a silent range stretch.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_2c1da3d6-6da3-62ee-9307-3726fc1eb235" unnumbered="true" obligation="normative" semx-id="_2c1da3d6-6da3-62ee-9307-3726fc1eb235">
+<title id="_f38161aa-9251-c27a-e8e6-34a6958635dc" semx-id="_b70ab5e2-f0ca-3171-f227-747f6e7a7468">2.9 MIN RUNTIME TEBAKO (<tt>min_runtime_tebako:</tt>, additive — schema_minor 15, tebako#666)</title><fmt-title depth="2" id="_dec725a5-6412-d0a0-9a3c-b4491013b5a0"><semx element="title" source="_f38161aa-9251-c27a-e8e6-34a6958635dc">2.9 MIN RUNTIME TEBAKO (<tt>min_runtime_tebako:</tt>, additive — schema_minor 15, tebako#666)</semx></fmt-title>
+<p id="_57d7a039-eda1-1131-e45e-6d0ede725cf9" semx-id="_57d7a039-eda1-1131-e45e-6d0ede725cf9">An OPTIONAL top-level key naming the minimum tebako tooling version of the runtime this payload runs on:</p>
+
+<sourcecode id="_e9e5fde7-e14b-938c-ac0e-21e83ba5a669" lang="yaml" semx-id="_e9e5fde7-e14b-938c-ac0e-21e83ba5a669" autonum="15"><fmt-name id="_2aecf68f-aef3-e0fc-80cb-73339524093f"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_e9e5fde7-e14b-938c-ac0e-21e83ba5a669">15</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_e9e5fde7-e14b-938c-ac0e-21e83ba5a669">15</semx></fmt-xref-label><body>min_runtime_tebako: "2.8.8"</body><fmt-sourcecode lang="yaml" semx-id="_e9e5fde7-e14b-938c-ac0e-21e83ba5a669" autonum="15" id="_ecab1c67-5c82-8e6a-9839-34cc5101cb8d"><span class="na">min_runtime_tebako</span><span class="pi">:</span> <span class="s2">"</span><span class="s">2.8.8"</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_3dcdd542-eb79-ad4d-5060-edd51d299a98" semx-id="_3dcdd542-eb79-ad4d-5060-edd51d299a98">The author sets it when the payload starts depending on a newer runtime/driver capability (a mount-ancestor route, a spec-32 <tt>kind: executable</tt> edge, …). The value is 1–4 dot-separated components of the schema_minor-12 component grammar (leading decimals, optional <tt>-label</tt> suffix); anything else is a named manifest error at parse. Absent = no floor. Old readers ignore the key (the unknown-field rule) — which is exactly why the key exists: the failure mode it retires is a stale cached runtime failing a newer payload with payload-blaming wording.</p>
+
+<p id="_cdeb6b3c-5a6f-6e94-0c7f-086fdb3a429b" semx-id="_cdeb6b3c-5a6f-6e94-0c7f-086fdb3a429b">Semantics (the three consumers, all fail-closed with named errors):</p>
+
+<ul id="_4c34302f-f6e1-3f53-c961-9ec0d6e21fd6" semx-id="_4c34302f-f6e1-3f53-c961-9ec0d6e21fd6"><li id="_2987c2f7-e2fa-6bec-c0e2-7afc4b964f6a"><fmt-name id="_af925ace-dd6b-6d57-5f12-d0a2fe273be7"><semx element="autonum" source="_2987c2f7-e2fa-6bec-c0e2-7afc4b964f6a">o</semx></fmt-name><p id="_96f7bd5a-2c1f-b04b-c202-e853e47879e7" semx-id="_96f7bd5a-2c1f-b04b-c202-e853e47879e7"><strong>Resolution (spec 05 §5):</strong> "newest compatible cached" discards cached runtimes whose own tebako version is below the floor and fetches instead; the miss errors NAME the skipped entries. <tt>TEBAKO_OFFLINE=1</tt> keeps fail-closed behavior — cache-or-named-error, with the floor named. A downloaded runtime below the floor (a pinned stale line) is the named stale-runtime refusal.</p>
+</li>
+<li id="_abd3d578-f8e4-6706-823c-aad280abb3a5"><fmt-name id="_254cb71e-0dee-c465-5824-407f204e0090"><semx element="autonum" source="_abd3d578-f8e4-6706-823c-aad280abb3a5">o</semx></fmt-name><p id="_092e643c-b87c-2ce3-be92-9bc1db2c3023" semx-id="_092e643c-b87c-2ce3-be92-9bc1db2c3023"><strong>The driver (spec 17 §8):</strong> a runtime whose tooling version is below the floor refuses the manifest by name — "the runtime is too old for this payload's manifest (needs X, have Y)" — both when the manifest parses (the key itself is old-reader-safe) and when the parse FAILED (the manifest uses grammar this runtime predates; the floor is then read by a tolerant top-level scan of the raw YAML). Never "corrupt manifest / self-description lies" for the stale-runtime class.</p>
+</li>
+<li id="_91b2b73b-ffa1-b00d-9fe8-d2ffc6d2610c"><fmt-name id="_89083e54-d094-5724-7a85-5edab5b39b7e"><semx element="autonum" source="_91b2b73b-ffa1-b00d-9fe8-d2ffc6d2610c">o</semx></fmt-name><p id="_52348712-9c2e-3cca-96a2-b014b52f49f4" semx-id="_52348712-9c2e-3cca-96a2-b014b52f49f4"><strong>The floor constrains every runtime the payload's dispatch resolves</strong> — its own entrypoint runtime and the spawned runtimes of its <tt>requires</tt> edges (a provider payload's floor likewise gates the provider's own pair).</p>
+</li>
+</ul>
+
+<p id="_cc4caf4b-cc9d-8cea-542d-1a8a8dab6572" semx-id="_cc4caf4b-cc9d-8cea-542d-1a8a8dab6572">The floor is a MINIMUM, not a pin: it never narrows which compatible runtime wins above it, and it never substitutes for the <tt>runtime_requirement</tt> constraint (the interpreter version axis is the requirement's; the tooling axis is the floor's).</p>
+</clause>
+
+<clause id="_ec3e94c3-ff33-f1f6-8be5-57a1a5255a37" unnumbered="true" obligation="normative" semx-id="_ec3e94c3-ff33-f1f6-8be5-57a1a5255a37">
+<title id="_2bba1531-3a8b-102a-986e-904147f83e9a" semx-id="_f39ca512-650a-67e4-6d45-b99221117614">2.10 ENV PASS (<tt>env_pass:</tt>, additive — schema_minor 16, tebako#737)</title><fmt-title depth="2" id="_87636bd4-8983-46f0-c171-10131593cb29"><semx element="title" source="_2bba1531-3a8b-102a-986e-904147f83e9a">2.10 ENV PASS (<tt>env_pass:</tt>, additive — schema_minor 16, tebako#737)</semx></fmt-title>
+<p id="_b0cf3da6-9e0e-d853-f3ef-94ed1517387d" semx-id="_b0cf3da6-9e0e-d853-f3ef-94ed1517387d">The packager's opt-in to the driver's credential scrub. A packaged app must not exfiltrate the packager's credentials by default: at boot's end, after every contract read, the driver BLANKS every <tt>TEBAKO_*</tt> environment variable that is not part of the boot contract (spec 17 §1/§7's handoff surface, spec 08 §2's jail, spec 22 §6's exec cache, spec 22 §3's child injection, spec 25 §2's trace, and the <tt>TEBAKO_MOUNT_*</tt> discovery prefix) — <tt>TEBAKO_GITHUB_TOKEN</tt> above all. The scrub journals each NAME at debug, never a value.</p>
+
+<sourcecode id="_815a826f-b130-aafc-03f9-e06dc3224029" lang="yaml" semx-id="_815a826f-b130-aafc-03f9-e06dc3224029" autonum="16"><fmt-name id="_529d66fb-7a43-9e0a-a2fd-d2fb3e64bc31"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_815a826f-b130-aafc-03f9-e06dc3224029">16</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_815a826f-b130-aafc-03f9-e06dc3224029">16</semx></fmt-xref-label><body>env_pass:
+  - TEBAKO_FLAVOR_KEY</body><fmt-sourcecode lang="yaml" semx-id="_815a826f-b130-aafc-03f9-e06dc3224029" autonum="16" id="_428c45c4-2e47-d101-5293-649667432811"><span class="na">env_pass</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="s">TEBAKO_FLAVOR_KEY</span></fmt-sourcecode></sourcecode>
+
+
+<ul id="_81d80215-f66d-6313-c58a-470e3526ae9e" semx-id="_81d80215-f66d-6313-c58a-470e3526ae9e"><li id="_41020de6-fc38-4d0d-2074-82a00ec6ea82"><fmt-name id="_995da1cf-e4c1-fd2e-78cc-f213332867c3"><semx element="autonum" source="_41020de6-fc38-4d0d-2074-82a00ec6ea82">o</semx></fmt-name><p id="_5f150736-58a1-0f2e-c607-f2d951027d3a" semx-id="_5f150736-58a1-0f2e-c607-f2d951027d3a">Every entry is a <tt>TEBAKO_</tt>-prefixed variable name (uppercase alphanumerics and underscore); anything else is a named manifest error at parse. The opt-in may only name what the scrub itself could take.</p>
+</li>
+<li id="_21938617-1c2c-85a5-3bee-bfd16f18e0a7"><fmt-name id="_6cdb43c6-b575-0ea6-b7c8-deffa1c88ef0"><semx element="autonum" source="_21938617-1c2c-85a5-3bee-bfd16f18e0a7">o</semx></fmt-name><p id="_ca8ce026-20fd-2b42-3b05-b180bd574413" semx-id="_ca8ce026-20fd-2b42-3b05-b180bd574413">The driver reads the list from the FIRST image's embedded manifest (the app payload); an absent/unreadable manifest means NO opt-in — the scrub fails safe. A standalone boot (no images) scrubs with no opt-in.</p>
+</li>
+<li id="_186b7dbd-7733-332c-a708-62a2b04ea271"><fmt-name id="_cd9cc5aa-8f69-1b3c-b692-9dfdb81fc6a0"><semx element="autonum" source="_186b7dbd-7733-332c-a708-62a2b04ea271">o</semx></fmt-name><p id="_e991c4ab-bcef-daf3-081f-aa444929784c" semx-id="_e991c4ab-bcef-daf3-081f-aa444929784c">Old readers ignore the key; the scrub is driver behavior, not a resolution input — the failure mode the key retires is a packaged run silently carrying the press host's credentials.</p>
+</li>
+</ul>
+</clause>
+</clause>
+
+<clause id="_a324bf48-0c1c-bc97-9a45-38b1c58e0e34" unnumbered="true" obligation="normative" semx-id="_a324bf48-0c1c-bc97-9a45-38b1c58e0e34" displayorder="5">
+<title id="_4482d25a-f094-e874-952f-f4d53667de52" semx-id="_849bbf1c-578f-873e-deb1-2598752d2f8d">3. Platform axis (locked, vcpkg-triplet form)</title><fmt-title depth="1" id="_9a246793-9c36-fcf8-a68a-c64b33269ed7"><semx element="title" source="_4482d25a-f094-e874-952f-f4d53667de52">3. Platform axis (locked, vcpkg-triplet form)</semx></fmt-title>
+<p id="_2dc9bd95-6af6-5830-63bc-febb1a5f8079" semx-id="_2dc9bd95-6af6-5830-63bc-febb1a5f8079"><tt>platforms</tt> is EITHER <tt>"universal"</tt> (pure-ruby/data) OR an explicit list:</p>
+
+<ul id="_c4c66fb1-8bce-4262-2093-17c48e83a486" semx-id="_c4c66fb1-8bce-4262-2093-17c48e83a486"><li id="_c176405f-0fd4-b17e-3d83-ed61fd95010a"><fmt-name id="_b4020c11-9807-f8b6-0fbe-062fd55d2114"><semx element="autonum" source="_c176405f-0fd4-b17e-3d83-ed61fd95010a">o</semx></fmt-name><p id="_5843c4f0-852b-c566-d214-0ca04e1ef4d8" semx-id="_5843c4f0-852b-c566-d214-0ca04e1ef4d8"><tt>aarch64-macos</tt>, <tt>x86_64-macos</tt></p>
+</li>
+<li id="_6fe4f3d6-9033-9f3b-54ae-f1d78bcb372e"><fmt-name id="_4dbef45e-5484-2a28-16cc-eec25ff2c929"><semx element="autonum" source="_6fe4f3d6-9033-9f3b-54ae-f1d78bcb372e">o</semx></fmt-name><p id="_50242a9d-0659-5e20-a572-48c09657daf9" semx-id="_50242a9d-0659-5e20-a572-48c09657daf9"><tt>x86_64-linux-gnu</tt>, <tt>aarch64-linux-gnu</tt></p>
+</li>
+<li id="_446ef021-95d8-c6d7-dbb3-f6435bc5d7dc"><fmt-name id="_1070b02f-9f78-fe21-6e9a-05a202df3af4"><semx element="autonum" source="_446ef021-95d8-c6d7-dbb3-f6435bc5d7dc">o</semx></fmt-name><p id="_870a8660-2719-81cd-9ad3-3c3f3372a2b4" semx-id="_870a8660-2719-81cd-9ad3-3c3f3372a2b4"><tt>x86_64-linux-musl</tt>, <tt>aarch64-linux-musl</tt></p>
+</li>
+<li id="_916c3f2c-e8ff-0666-3a22-a472bee742c1"><fmt-name id="_0e1ffae0-fe3a-c2be-aaa4-2dff0bb19b37"><semx element="autonum" source="_916c3f2c-e8ff-0666-3a22-a472bee742c1">o</semx></fmt-name><p id="_02fff8d4-5eea-90ac-8a8c-d499de40c8dc" semx-id="_02fff8d4-5eea-90ac-8a8c-d499de40c8dc"><tt>x86_64-windows-ucrt</tt>, <tt>aarch64-windows-ucrt</tt></p>
+</li>
+</ul>
+
+<p id="_a3f3caf1-7fab-7b9e-7b67-a85566ecc7ac" semx-id="_a3f3caf1-7fab-7b9e-7b67-a85566ecc7ac">(<tt>aarch64-windows-ucrt</tt> joined the axis at payload-manifest schema_minor 13; pre-13 readers reject it by name — exit 65 — which is the designed fail-closed behavior for a triplet outside an old reader's axis.)</p>
+
+<p id="_bde0432c-f950-930c-316e-d6b0cc11b267" semx-id="_bde0432c-f950-930c-316e-d6b0cc11b267">ONE <tt>Platform</tt> type (tpkg crate) owns the triplet ↔ release-asset-name mapping (<tt>aarch64-macos</tt> ↔ <tt>macos-arm64</tt>, <tt>x86_64-linux-gnu</tt> ↔ <tt>linux-gnu-x86_64</tt>, <tt>x86_64-windows-ucrt</tt> ↔ <tt>windows-ucrt64</tt>, …) — dispatcher, release tooling, and registry consume the SAME mapping.</p>
+</clause>
+
+<clause id="_c4d5a8c1-1ba8-12ad-1a49-8e9a6b883b27" unnumbered="true" obligation="normative" semx-id="_c4d5a8c1-1ba8-12ad-1a49-8e9a6b883b27" displayorder="6">
+<title id="_e8899840-89ef-97a4-fd5a-19e5eb8a6e41" semx-id="_daf7553e-f6aa-206e-626f-42f6de631d13">4. The three tiers (no duplicated authority)</title><fmt-title depth="1" id="_d0359021-54cb-9997-b0a8-897b07897a7e"><semx element="title" source="_e8899840-89ef-97a4-fd5a-19e5eb8a6e41">4. The three tiers (no duplicated authority)</semx></fmt-title>
+<ol id="_4a870589-5958-cf89-9ca6-4dd1bd3a3b6e" type="arabic" semx-id="_4a870589-5958-cf89-9ca6-4dd1bd3a3b6e"><li id="_3832867d-8b32-924d-a85e-c10b630264bc"><fmt-name id="_96ecb5f1-3fbf-25e0-9a1f-6c01acd3a296"><semx element="autonum" source="_3832867d-8b32-924d-a85e-c10b630264bc">1</semx><span class="fmt-label-delim">.</span></fmt-name><p id="_2328f8a0-4de4-2e73-dc30-c0534eb2e74f" semx-id="_2328f8a0-4de4-2e73-dc30-c0534eb2e74f"><strong>In-image manifest</strong> (this spec) — THE rich layer; signed/encrypted with the image.</p>
+</li>
+<li id="_a39ee2a9-f9d2-1198-7b2b-b696365d9153"><fmt-name id="_baf847ba-736b-cf87-3a0a-227819b1104a"><semx element="autonum" source="_a39ee2a9-f9d2-1198-7b2b-b696365d9153">2</semx><span class="fmt-label-delim">.</span></fmt-name><p id="_b370452f-145b-7d46-7f0f-f917b2eca633" semx-id="_b370452f-145b-7d46-7f0f-f917b2eca633"><strong>tpkg trailer</strong> (spec 02) — stays minimal: mount/exec directives, per-slot digests, signature; REFERENCES manifests by image digest, never duplicates them.</p>
+</li>
+<li id="_a136706c-0f99-8fd6-ea48-91810ef93e9b"><fmt-name id="_456cce68-4802-e3bd-91c1-7dd95fdecf81"><semx element="autonum" source="_a136706c-0f99-8fd6-ea48-91810ef93e9b">3</semx><span class="fmt-label-delim">.</span></fmt-name><p id="_4c01d07a-635f-88c3-8955-8030405ed1c1" semx-id="_4c01d07a-635f-88c3-8955-8030405ed1c1"><strong>Registry manifest</strong> (<tt>tpkg-registry.yaml</tt>, spec 04) — MIRRORS only resolution-relevant fields (kind, name, version, constraints, platforms, entrypoints) so the dispatcher resolves without downloading every payload.</p>
+</li>
+</ol>
+</clause>
+
+<clause id="_0952f4b8-fef7-e5b3-76df-719256210dab" unnumbered="true" obligation="normative" semx-id="_0952f4b8-fef7-e5b3-76df-719256210dab" displayorder="7">
+<title id="_4487fbd2-4976-8303-88d4-b6a556f8494e" semx-id="_0af1cea5-a05d-e678-d9e7-b4fcf7124efd">5. Production and consumption</title><fmt-title depth="1" id="_6741c73d-9a52-c637-ba6c-29b16151a0dd"><semx element="title" source="_4487fbd2-4976-8303-88d4-b6a556f8494e">5. Production and consumption</semx></fmt-title>
+<ul id="_5a2d22c5-13d6-0f66-70a5-21612b7840bd" semx-id="_5a2d22c5-13d6-0f66-70a5-21612b7840bd"><li id="_4423bb22-b7df-bbec-d6c9-692825bafeab"><fmt-name id="_47fb9ae7-083c-dc7e-0087-26595a660d78"><semx element="autonum" source="_4423bb22-b7df-bbec-d6c9-692825bafeab">o</semx></fmt-name><p id="_51ffa882-f8ae-4693-b41a-2d7983995e6b" semx-id="_51ffa882-f8ae-4693-b41a-2d7983995e6b"><tt>tebako press</tt> / <tt>tfs mkimage</tt> embed the manifest at build time (kind inferred: app for pressed apps; data for plain images; runtime for runtime packages —  <tt>provides</tt> filled from the factory's versions data).</p>
+</li>
+<li id="_a30c7847-aed2-353c-45d3-56bdf6ebc904"><fmt-name id="_b6778f60-8e6c-cbad-3c12-d70444481e8d"><semx element="autonum" source="_a30c7847-aed2-353c-45d3-56bdf6ebc904">o</semx></fmt-name><p id="_22be7842-7b4d-7490-83bb-985a4d366c1e" semx-id="_22be7842-7b4d-7490-83bb-985a4d366c1e"><strong>Payload exclusion at imaging time (additive, 2026-10-09, tebako#333):</strong> <tt>tebako press --exclude &#x3c;glob&#x3e;</tt> (repeatable) and <tt>tfs mkimage --exclude &#x3c;glob&#x3e;</tt> leave matching paths out of the BUILT image — one grammar, one semantics, one implementation shared by both commands. A pattern matches the payload-root-relative path (slash-separated, no leading  <tt>/</tt>): <tt>*</tt>, <tt>?</tt>, and <tt>[...]</tt> classes follow fnmatch flag-0 semantics (a  <tt>*</tt> run spans <tt>/</tt>), <tt>\</tt> quotes the next character, and a matched directory prunes its whole subtree (a trailing  <tt>/</tt> on the pattern is accepted and stripped — it names the directory). Exclusion is imaging-time only: excluded paths are absent from the image, and the manifest never records the list (the image simply lacks them). The feedstock Tebakofile's  <tt>exclude:</tt> list (spec 13 §9) is the same grammar, handed to the imager verbatim.</p>
+</li>
+<li id="_aa9b0ec7-b48b-f714-8307-fa2e8ec5c981"><fmt-name id="_29842c54-d69d-5500-3deb-984c6da0b25a"><semx element="autonum" source="_aa9b0ec7-b48b-f714-8307-fa2e8ec5c981">o</semx></fmt-name><p id="_62200e6c-fe6e-cfd0-a641-354e21539fa5" semx-id="_62200e6c-fe6e-cfd0-a641-354e21539fa5"><tt>tfs info</tt> prints the manifest; <tt>tfs stat</tt> exposes digests.</p>
+</li>
+<li id="_6a1295b5-2995-e0d2-44c2-cbf273f44487"><fmt-name id="_449b7cd4-1214-53a1-a668-951869495d89"><semx element="autonum" source="_6a1295b5-2995-e0d2-44c2-cbf273f44487">o</semx></fmt-name><p id="_85667aae-a0b0-4c7b-81be-ba61379299cd" semx-id="_85667aae-a0b0-4c7b-81be-ba61379299cd">The dispatcher (spec 07) resolves runtime compatibility FROM the manifest (<tt>runtime_requirement</tt> vs cached runtimes' <tt>provides</tt>).</p>
+</li>
+<li id="_baab55ab-7570-45b9-9e9e-53d578f13475"><fmt-name id="_f7207796-d21f-c106-179d-0427545e54d1"><semx element="autonum" source="_baab55ab-7570-45b9-9e9e-53d578f13475">o</semx></fmt-name><p id="_e4dffc0d-e484-3bd6-1461-5434fc262d64" semx-id="_e4dffc0d-e484-3bd6-1461-5434fc262d64">The bootstrap reads entrypoint/requirement from the manifest when present; the trailer stays the minimal path.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_d3c246fd-d0b3-0765-fa8f-6f60827217cf" unnumbered="true" obligation="normative" semx-id="_d3c246fd-d0b3-0765-fa8f-6f60827217cf" displayorder="8">
+<title id="_838e1199-1207-2a83-1262-8569e9d50b87" semx-id="_46f7369a-d804-e70b-d03c-11596184acaf">6. The package manifest (L2, extension block type 2)</title><fmt-title depth="1" id="_5b305986-2346-03f7-2c96-98ad81a3b717"><semx element="title" source="_838e1199-1207-2a83-1262-8569e9d50b87">6. The package manifest (L2, extension block type 2)</semx></fmt-title>
+<p id="_51f9cae3-f6a2-972d-c63e-8450732fdff5" semx-id="_51f9cae3-f6a2-972d-c63e-8450732fdff5">Locked 2026-07-26 (OCI model: manifest beside the layers, readable without backend knowledge — spec 02 §5b). The package manifest is a YAML extension block in the container, OUTSIDE every payload image. It owns composition; payload manifests (this spec) own self-description.</p>
+
+<sourcecode id="_7ebef31b-e3c9-f714-02ff-22c6123bc14f" lang="yaml" semx-id="_7ebef31b-e3c9-f714-02ff-22c6123bc14f" autonum="17"><fmt-name id="_31c70431-9efe-9208-99a2-ee430fe0394e"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_7ebef31b-e3c9-f714-02ff-22c6123bc14f">17</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_7ebef31b-e3c9-f714-02ff-22c6123bc14f">17</semx></fmt-xref-label><body>schema_version: 1
+package: {name: metanorma, version: 1.2.3, producer: {…}, created: …}
+entries:                          # one per invocable command (N=1 for simple apps)
+  - name: metanorma
+    slot: 0                       # which payload image
+    entrypoint: metanorma         # which PROVIDES entrypoint inside it
+    runtime_ref: ruby@3.4.2;tebako=0.15.9   # per-entry — suites/multi-runtime
+    interp_env: {RUBY_YJIT_ENABLE: "1"}     # the press-time
+                                  # composition of slot 0's L1 interp_env,
+                                  # packager-refined (spec 07 §9's chain)
+  - name: mn2pdf
+    slot: 1
+    entrypoint: mn2pdf
+    runtime_ref: ruby@3.3.7;tebako=0.15.9
+jail: {…}                         # package-level request (spec 08)
+env: {…}                          # package-level env (composition rules: spec 07)
+mounts:                           # per-slot mount semantics (locked 2026-08-04)
+  - slot: 0
+    point: /__tfs__
+    mode: union                   # exclusive (default) | union; cow/enc reserved
+    precedence: after-env         # union only: this image shadows the env image
+lock:                             # the press-time composition lock (spec 23 §4/§13)
+  runtime: {version: 0.16.19, carry: false}
+  slices: [{name: metanorma, version: 1.2.3, carry: true, slot: 0, sha256: …}]
+  spawned:                        # spec 30 edges, press-locked (spec 23 §13.6)
+    - engine: java
+      constraint: "&#x3e;= 21, &#x3c; 26"   # mirrored from slot 0's L1 requires
+      expose: [java]              # mirrored from slot 0's L1 requires
+      version: "21.0.12"          # the press-time pick
+      tebako: "2.1.5"
+      carry: true
+      exe:   {slot: 1, sha256: …} # carried pair — never mounted
+      image: {slot: 2, sha256: …}</body><fmt-sourcecode lang="yaml" semx-id="_7ebef31b-e3c9-f714-02ff-22c6123bc14f" autonum="17" id="_e9850c7a-169f-f984-5386-b1aa8c7b2240"><span class="na">schema_version</span><span class="pi">:</span> <span class="m">1</span>
+<span class="na">package</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">metanorma</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="nv">1.2.3</span><span class="pi">,</span> <span class="nv">producer</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">…</span><span class="pi">},</span> <span class="nv">created</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}</span>
+<span class="na">entries</span><span class="pi">:</span>                          <span class="c1"># one per invocable command (N=1 for simple apps)</span>
+  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">metanorma</span>
+    <span class="na">slot</span><span class="pi">:</span> <span class="m">0</span>                       <span class="c1"># which payload image</span>
+    <span class="na">entrypoint</span><span class="pi">:</span> <span class="s">metanorma</span>         <span class="c1"># which PROVIDES entrypoint inside it</span>
+    <span class="na">runtime_ref</span><span class="pi">:</span> <span class="s">ruby@3.4.2;tebako=0.15.9</span>   <span class="c1"># per-entry — suites/multi-runtime</span>
+    <span class="na">interp_env</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">RUBY_YJIT_ENABLE</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1"</span><span class="pi">}</span>     <span class="c1"># the press-time</span>
+                                  <span class="c1"># composition of slot 0's L1 interp_env,</span>
+                                  <span class="c1"># packager-refined (spec 07 §9's chain)</span>
+  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">mn2pdf</span>
+    <span class="na">slot</span><span class="pi">:</span> <span class="m">1</span>
+    <span class="na">entrypoint</span><span class="pi">:</span> <span class="s">mn2pdf</span>
+    <span class="na">runtime_ref</span><span class="pi">:</span> <span class="s">ruby@3.3.7;tebako=0.15.9</span>
+<span class="na">jail</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">…</span><span class="pi">}</span>                         <span class="c1"># package-level request (spec 08)</span>
+<span class="na">env</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">…</span><span class="pi">}</span>                          <span class="c1"># package-level env (composition rules: spec 07)</span>
+<span class="na">mounts</span><span class="pi">:</span>                           <span class="c1"># per-slot mount semantics (locked 2026-08-04)</span>
+  <span class="pi">-</span> <span class="na">slot</span><span class="pi">:</span> <span class="m">0</span>
+    <span class="na">point</span><span class="pi">:</span> <span class="s">/__tfs__</span>
+    <span class="na">mode</span><span class="pi">:</span> <span class="s">union</span>                   <span class="c1"># exclusive (default) | union; cow/enc reserved</span>
+    <span class="na">precedence</span><span class="pi">:</span> <span class="s">after-env</span>         <span class="c1"># union only: this image shadows the env image</span>
+<span class="na">lock</span><span class="pi">:</span>                             <span class="c1"># the press-time composition lock (spec 23 §4/§13)</span>
+  <span class="na">runtime</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">version</span><span class="pi">:</span> <span class="nv">0.16.19</span><span class="pi">,</span> <span class="nv">carry</span><span class="pi">:</span> <span class="nv">false</span><span class="pi">}</span>
+  <span class="na">slices</span><span class="pi">:</span> <span class="pi">[{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">metanorma</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="nv">1.2.3</span><span class="pi">,</span> <span class="nv">carry</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">slot</span><span class="pi">:</span> <span class="nv">0</span><span class="pi">,</span> <span class="nv">sha256</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}]</span>
+  <span class="na">spawned</span><span class="pi">:</span>                        <span class="c1"># spec 30 edges, press-locked (spec 23 §13.6)</span>
+    <span class="pi">-</span> <span class="na">engine</span><span class="pi">:</span> <span class="s">java</span>
+      <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">21,</span><span class="nv"> </span><span class="s">&#x3c;</span><span class="nv"> </span><span class="s">26"</span>   <span class="c1"># mirrored from slot 0's L1 requires</span>
+      <span class="na">expose</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">java</span><span class="pi">]</span>              <span class="c1"># mirrored from slot 0's L1 requires</span>
+      <span class="na">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">21.0.12"</span>          <span class="c1"># the press-time pick</span>
+      <span class="na">tebako</span><span class="pi">:</span> <span class="s2">"</span><span class="s">2.1.5"</span>
+      <span class="na">carry</span><span class="pi">:</span> <span class="kc">true</span>
+      <span class="na">exe</span><span class="pi">:</span>   <span class="pi">{</span><span class="nv">slot</span><span class="pi">:</span> <span class="nv">1</span><span class="pi">,</span> <span class="nv">sha256</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}</span> <span class="c1"># carried pair — never mounted</span>
+      <span class="na">image</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">slot</span><span class="pi">:</span> <span class="nv">2</span><span class="pi">,</span> <span class="nv">sha256</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}</span></fmt-sourcecode></sourcecode>
+
+
+<ul id="_6e05d9bc-ae55-5d07-6449-e6eaadbbfb6a" semx-id="_6e05d9bc-ae55-5d07-6449-e6eaadbbfb6a"><li id="_9519b197-7a45-7caa-2c8d-fb73a9569680"><fmt-name id="_0ebe80c3-9aa3-fb3b-8c0e-9fd0d10d9a3d"><semx element="autonum" source="_9519b197-7a45-7caa-2c8d-fb73a9569680">o</semx></fmt-name><p id="_1ae79ec6-71d1-5cc9-b9a4-ae301fa0e596" semx-id="_1ae79ec6-71d1-5cc9-b9a4-ae301fa0e596"><tt>runtime_ref</tt> per entry kills the 128-byte single-field limit (suites, multi-runtime packages); the trailer's v1 field stays for v1 loaders.</p>
+</li>
+<li id="_27150b0d-98c1-d8e7-364f-7df61b3e2156"><fmt-name id="_a2b11e23-bbdc-6289-ce45-733b99529488"><semx element="autonum" source="_27150b0d-98c1-d8e7-364f-7df61b3e2156">o</semx></fmt-name><p id="_976b7abe-4a07-fd7e-7912-f5bac6bdb0e4" semx-id="_976b7abe-4a07-fd7e-7912-f5bac6bdb0e4"><tt>entries[].name</tt> / <tt>entries[].entrypoint</tt> mirror the slot payload's L1 <tt>provides.entrypoints[]</tt> (§2.2 completeness — one SSOT): every L2 entry names a DECLARED L1 entrypoint of its slot, enforced by  <tt>tebako-pkg validate</tt> (tebako#494). Two entries MAY share one slot — same image, different in-image entrypoints: the multi-command single-payload form (one app slice carrying several CLIs, e.g. metanorma + fontist).</p>
+</li>
+<li id="_e915de29-1ada-00ec-7a00-d4dba795f1b1"><fmt-name id="_e8463125-5f9c-6f0e-2cab-9f3553527cd0"><semx element="autonum" source="_e915de29-1ada-00ec-7a00-d4dba795f1b1">o</semx></fmt-name><p id="_41d2fc11-879a-956e-5354-0abedc9a2c06" semx-id="_41d2fc11-879a-956e-5354-0abedc9a2c06"><tt>entries[].interp_env</tt> (IMPLEMENTED 2026-10-07, tebako#559 — §2.7's L2 face): the press-time COMPOSITION of the slot payload's L1  <tt>interp_env</tt> with the packager's refinement (a packager key wins over the same L1 key; L1 keys pass through untouched otherwise). The mirror exists because the size-gated bootstrap reads no image bytes: the standalone dispatcher consumes exactly this block, never the in-image L1.  <tt>tebako-pkg validate</tt> cross-checks the composition against the slot's L1 (every L1 key present with its declared or the refined value; a dropped L1 key is a named validation error, the tebako#494 class) — the block is a faithful mirror plus declared overrides, never an independent authority. Managed dispatch (registry payloads, no L2) reads the store's L1 manifest mirror instead (spec 07 §9's chain).</p>
+</li>
+<li id="_608c6a35-f634-c6fc-ec21-619521c9cc41"><fmt-name id="_467675fc-174f-dd26-36ae-af077ee0f557"><semx element="autonum" source="_608c6a35-f634-c6fc-ec21-619521c9cc41">o</semx></fmt-name><p id="_91323410-71ae-dc45-6628-5fcfa0e1ff8f" semx-id="_91323410-71ae-dc45-6628-5fcfa0e1ff8f">v1-era packages without the block behave exactly as today (stub.rb / local conventions); the block is additive.</p>
+</li>
+<li id="_e6770347-725f-050b-aa38-3e938da8bd42"><fmt-name id="_2469098a-9e47-329d-1499-5bd16357d2ec"><semx element="autonum" source="_e6770347-725f-050b-aa38-3e938da8bd42">o</semx></fmt-name><p id="_2cbdbed4-6c01-c0b8-210e-340db52c8e7f" semx-id="_2cbdbed4-6c01-c0b8-210e-340db52c8e7f"><tt>mounts</tt> is optional; a slot without a <tt>mounts</tt> row mounts <strong>exclusive</strong> (spec 17's historical behavior — a duplicate point is a named error).  <tt>mode: union</tt> merges the image over the images already mounted at  <tt>point</tt> with declared precedence — read-only images only, directories merge, file conflicts resolve by precedence order (the env image is always lowest).  <tt>precedence</tt> values: <tt>after-env</tt> (over the runtime's env image — the pressed-app form) or  <tt>after:&#x3c;slot&#x3e;</tt> (over another payload slot). The union set is journaled at boot (spec 17 §1).  <tt>cow</tt>/<tt>enc</tt> are RESERVED mode spellings on the same axis (the transforms law: overlays exist only in the Rust TFS) and are named errors until their specs land.</p>
+</li>
+<li id="_3c30eee6-3522-9353-269a-6bd11677e175"><fmt-name id="_cb7f0f40-2f74-e097-c69b-96d57d050198"><semx element="autonum" source="_3c30eee6-3522-9353-269a-6bd11677e175">o</semx></fmt-name><p id="_b58dd752-67ca-bc7b-2930-53765e526092" semx-id="_b58dd752-67ca-bc7b-2930-53765e526092"><tt>lock</tt> is optional (absent on pre-spectrum packages — they resolve exactly as before).  <tt>lock.spawned[]</tt> mirrors the app payload's L1 <tt>requires[].kind: runtime</tt> edges (engine/implementation/constraint/ expose) plus the press-time pick and carry verdict (spec 23 §13.6); <tt>tebako-pkg validate</tt> cross-checks the mirror against slot 0's L1 (the tebako#494 class), and the bootstrap resolves the rows at dispatch into the store's  <tt>runtimes/</tt> area + <tt>TEBAKO_SPAWN_LOCK</tt> (spec 30 §2).</p>
+</li>
+</ul>
+
+<p id="_409d57c2-bf18-dbcd-0aff-114ddd8fdd49" semx-id="_409d57c2-bf18-dbcd-0aff-114ddd8fdd49"><strong>toolkit</strong> (native layer, e.g. inkscape/gtk — the distro-ports model, spec 13 §9):</p>
+
+<sourcecode id="_85a6c9ad-6fa9-9188-2615-c7f2d1b25823" lang="yaml" semx-id="_85a6c9ad-6fa9-9188-2615-c7f2d1b25823" autonum="18"><fmt-name id="_e0a28752-8669-8218-dda4-d44ee943cf91"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_85a6c9ad-6fa9-9188-2615-c7f2d1b25823">18</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_85a6c9ad-6fa9-9188-2615-c7f2d1b25823">18</semx></fmt-xref-label><body>provides:
+  executables: [{name: inkscape, path: /bin/inkscape, version: 1.3}]
+  libraries: [{name: xml2, path: /lib, abi: "2.12"}]
+exec_tier: dynamic | wrapped | tfs-native | static   # spec 07 §8
+exec_closure: [/bin, /lib, /share/inkscape]          # static tier only
+capabilities: {exec: true, read: true}</body><fmt-sourcecode lang="yaml" semx-id="_85a6c9ad-6fa9-9188-2615-c7f2d1b25823" autonum="18" id="_c244c18e-b390-50c0-02f0-f1835e25c705"><span class="na">provides</span><span class="pi">:</span>
+  <span class="na">executables</span><span class="pi">:</span> <span class="pi">[{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">inkscape</span><span class="pi">,</span> <span class="nv">path</span><span class="pi">:</span> <span class="nv">/bin/inkscape</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="nv">1.3</span><span class="pi">}]</span>
+  <span class="na">libraries</span><span class="pi">:</span> <span class="pi">[{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">xml2</span><span class="pi">,</span> <span class="nv">path</span><span class="pi">:</span> <span class="nv">/lib</span><span class="pi">,</span> <span class="nv">abi</span><span class="pi">:</span> <span class="s2">"</span><span class="s">2.12"</span><span class="pi">}]</span>
+<span class="na">exec_tier</span><span class="pi">:</span> <span class="s">dynamic | wrapped | tfs-native | static</span>   <span class="c1"># spec 07 §8</span>
+<span class="na">exec_closure</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">/bin</span><span class="pi">,</span> <span class="nv">/lib</span><span class="pi">,</span> <span class="nv">/share/inkscape</span><span class="pi">]</span>          <span class="c1"># static tier only</span>
+<span class="na">capabilities</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exec</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">read</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">}</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_f75ad163-5523-2169-6b78-4201c7ebfd91" semx-id="_f75ad163-5523-2169-6b78-4201c7ebfd91"><tt>exec_tier</tt> tells the dispatcher HOW to run its executables (preload shim / link-wrapped / already-TFS-native / extract-closure) — consumers never care which path a tool took.</p>
+</clause>
+
+<clause id="_5a1b9f8c-31c5-47fb-cdc7-e1ffe50d7ddb" unnumbered="true" obligation="normative" semx-id="_5a1b9f8c-31c5-47fb-cdc7-e1ffe50d7ddb" displayorder="9">
+<title id="_d7823715-c0cb-f982-8040-398e6fbcf3b6" semx-id="_9438bdc0-0501-2bf3-37cc-d23202586bf8">7. The digest fixed-point rule (locked 2026-07-26)</title><fmt-title depth="1" id="_dedfef0d-f020-5ed6-a56b-3e886493d7bc"><semx element="title" source="_d7823715-c0cb-f982-8040-398e6fbcf3b6">7. The digest fixed-point rule (locked 2026-07-26)</semx></fmt-title>
+<p id="_1ae4509e-f98f-d5f8-3dac-284c9bdb0f91" semx-id="_1ae4509e-f98f-d5f8-3dac-284c9bdb0f91">A manifest inside the image it describes CANNOT name that image's sha256 (self-reference has no fixed point). Therefore:</p>
+
+<ul id="_a5b315a0-4787-8956-b23c-156390faa423" semx-id="_a5b315a0-4787-8956-b23c-156390faa423"><li id="_454b8180-cb6b-7647-c2bb-c52c8f2ebf8f"><fmt-name id="_6124076f-b26d-85d8-7214-e876bd0ae756"><semx element="autonum" source="_454b8180-cb6b-7647-c2bb-c52c8f2ebf8f">o</semx></fmt-name><p id="_1f0aeade-3d6d-4edf-8849-de1c82d9aed5" semx-id="_1f0aeade-3d6d-4edf-8849-de1c82d9aed5"><tt>tree_hash</tt> is computed over the payload tree EXCLUDING <tt>/__tpkg__/</tt> (manifest-excluded merkle root — well-defined, and it is what CAS/dedup/signing use). The construction (SHA-256, 4 KiB chunks, length-prefixed domain-separated serialization) is locked as <tt>tfs-merkle-1</tt> in <tt>crates/tpkg/src/merkle.rs</tt>; <tt>tfs mkimage</tt> and <tt>tebako press</tt> stamp it at image creation, <tt>tfs info --verify</tt> recomputes and compares (roadmap 37, SHIPPED; verification-on-READ inside the VFS is a later milestone).</p>
+</li>
+<li id="_f0d62676-fc30-d2db-e91a-3f35a764d80e"><fmt-name id="_08d7e2bb-86d0-c286-c71c-3830813159d6"><semx element="autonum" source="_f0d62676-fc30-d2db-e91a-3f35a764d80e">o</semx></fmt-name><p id="_28e03cad-f6eb-5ee3-0bc8-5ccbc56aff94" semx-id="_28e03cad-f6eb-5ee3-0bc8-5ccbc56aff94"><tt>blob_sha256</tt> is NOT stored inside an embedded manifest: it lives one tier out — in the registry mirror (tier 3) and/or the tpkg trailer's per-slot digest array (tier 2, spec 02 §4). Producers fill it there; consumers verify the image against the OUTER record, never against a self-digest. An embedded manifest carrying a  <tt>blob_sha256</tt> is read as advisory provenance only (e.g. the digest of the source image it was built from), never as a verification input (spec 15 §5).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_985a38a6-9b00-19ed-0fe1-4895d45d3742" unnumbered="true" obligation="normative" semx-id="_985a38a6-9b00-19ed-0fe1-4895d45d3742" displayorder="10">
+<title id="_f7d262b3-bdda-7093-cc06-0d5c17f9412a" semx-id="_08f6375e-fa20-af88-9177-1f1814249aa8">8. Executable dependency edges (locked 2026-07-27)</title><fmt-title depth="1" id="_a6dc96fb-b0e9-9476-3e02-1f00fd436f39"><semx element="title" source="_f7d262b3-bdda-7093-cc06-0d5c17f9412a">8. Executable dependency edges (locked 2026-07-27)</semx></fmt-title>
+<p id="_a43a60ab-d7b3-0c25-38af-824ef5c5fb70" semx-id="_a43a60ab-d7b3-0c25-38af-824ef5c5fb70"><tt>requires</tt> gains a fourth edge kind for the provides/requires capability graph (the inkscape case):</p>
+
+<sourcecode id="_8f8735e4-9e6a-a6d6-14b2-00e2c7448b42" lang="yaml" semx-id="_8f8735e4-9e6a-a6d6-14b2-00e2c7448b42" autonum="19"><fmt-name id="_3305d5c4-e0c3-655d-3d08-9dbf84a5e582"><span class="fmt-caption-label"><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_8f8735e4-9e6a-a6d6-14b2-00e2c7448b42">19</semx></span></fmt-name><fmt-xref-label><span class="fmt-element-name">Figure</span> <semx element="autonum" source="_8f8735e4-9e6a-a6d6-14b2-00e2c7448b42">19</semx></fmt-xref-label><body>requires:
+  - kind: executable          # an executable another payload PROVIDES
+    name: inkscape
+    constraint: "&#x3e;= 1.3"
+    mount: /opt/inkscape      # consumer-declared, as always</body><fmt-sourcecode lang="yaml" semx-id="_8f8735e4-9e6a-a6d6-14b2-00e2c7448b42" autonum="19" id="_2c016775-52f5-d5b5-40f5-9f6a4d56d4b5"><span class="na">requires</span><span class="pi">:</span>
+  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">executable</span>          <span class="c1"># an executable another payload PROVIDES</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">inkscape</span>
+    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">1.3"</span>
+    <span class="na">mount</span><span class="pi">:</span> <span class="s">/opt/inkscape</span>      <span class="c1"># consumer-declared, as always</span></fmt-sourcecode></sourcecode>
+
+
+<p id="_6ffb0ecd-33b7-281a-21f7-e6ef16c17daf" semx-id="_6ffb0ecd-33b7-281a-21f7-e6ef16c17daf">Resolution: the dispatcher searches installed + available payloads for a PROVIDES.executables entry matching  <tt>name</tt> + <tt>constraint</tt> (exact name, never a prefix/guess). Exactly one candidate → use it. Zero → named <tt>DependencyNotFound(executable, constraint)</tt> with a registry hint. More than one → named  <tt>AmbiguousProvider</tt> listing candidates (payload, version, source registry) — the user pins with a payload-kind edge instead. The providing payload is mounted at the consumer-declared <tt>mount</tt>; its executables run per its own <tt>exec_tier</tt> (spec 07 §8).</p>
+
+<p id="_3dca3c7d-1853-1558-1697-a65950ad7974" semx-id="_3dca3c7d-1853-1558-1697-a65950ad7974">The edge gains the OPTIONAL <tt>expose:</tt> list (additive — schema_minor 5, spec 32): an expose-carrying executable edge gains the SPAWNED payload surface — each exposed name dispatches the provider payload's own full spec-17 dispatch as a child process (its own runtime edge, its own mounts, its own jail union).  <tt>mount</tt> and <tt>expose</tt> are orthogonal axes (VFS surface vs spawn surface; both may hold together), the capability match widens to  <tt>provides.executables</tt> ∪ <tt>provides.entrypoints[].name</tt>, and every exposed name must resolve to a runtime-carrying entrypoint of the resolved provider (press/install cross-checked — a runtime-less match is a named error, never an exec-tier fallback). An exposed name never takes the exec-tier path — the spawn dispatch owns it. The child plan, the spawn-lock row, the lock's  <tt>spawned[]</tt> payload row, the shim surface, the jail interaction, and the failure modes are spec 32 §2–§7's.</p>
+</clause>
+</sections>
+</metanorma>

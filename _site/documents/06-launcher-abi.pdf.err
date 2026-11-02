@@ -1,0 +1,22 @@
+WARNING: error in the font '/Users/mulgogi/.metanorma/fonts/NISC18030.ttf' registering.
+Page #1: Font "Noto Sans Mono CJK HK,normal,300" not found. Substituting with "Noto Sans Mono CJK HK,normal,400".
+Page #1: Font "Noto Sans Mono CJK JP,normal,300" not found. Substituting with "Noto Sans Mono CJK JP,normal,400".
+Page #1: Font "Noto Sans Mono CJK KR,normal,300" not found. Substituting with "Noto Sans Mono CJK KR,normal,400".
+Page #1: Font "Noto Sans Mono CJK SC,normal,300" not found. Substituting with "Noto Sans Mono CJK SC,normal,400".
+Page #1: Font "Noto Sans Mono CJK TC,normal,300" not found. Substituting with "Noto Sans Mono CJK TC,normal,400".
+WARNING: error in the font '/Users/mulgogi/.metanorma/fonts/NISC18030.ttf' registering.
+Page #2: Font "Noto Sans Mono CJK HK,normal,300" not found. Substituting with "Noto Sans Mono CJK HK,normal,400".
+Page #2: Font "Noto Sans Mono CJK JP,normal,300" not found. Substituting with "Noto Sans Mono CJK JP,normal,400".
+Page #2: Font "Noto Sans Mono CJK KR,normal,300" not found. Substituting with "Noto Sans Mono CJK KR,normal,400".
+Page #2: Font "Noto Sans Mono CJK SC,normal,300" not found. Substituting with "Noto Sans Mono CJK SC,normal,400".
+Page #2: Font "Noto Sans Mono CJK TC,normal,300" not found. Substituting with "Noto Sans Mono CJK TC,normal,400".
+Glyph "✗" (0x2717, a23) not available in font "NotoSansMono-Light".
+Glyph "⠋" (0x280b) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".
+Glyph "⠙" (0x2819) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".
+Glyph "⠹" (0x2839) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".
+Glyph "⠸" (0x2838) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".
+Glyph "⠼" (0x283c) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".
+Glyph "⠴" (0x2834) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".
+Glyph "⦦" (0x29a6) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".
+Glyph "⦧" (0x29a7) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".
+Glyph "⦏" (0x298f) not available in font "NotoSansMono-Light". Found in the character sequence "⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏".

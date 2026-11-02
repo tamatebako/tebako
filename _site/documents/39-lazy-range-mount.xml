@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Lazy range-fetch mounting of runtime images</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 39</docidentifier><docnumber>TBK SPEC 39</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_73d4e627-1132-9505-6552-e5b536c49627" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_235389a2-6cf0-5e9b-ec45-89c73eec9c8a">Status: <strong>SHIPPED</strong> (locked direction 2026-09-30, tebako#696 — spec-first per spec 14). PRs 1–6 shipped the spec + schemas, the Range transport (tebako-http), the byte-source seam + caching remote source + lazy store record (tfs/tpkg), the loader + driver wire (resolve plan lazy arm, shim/bootstrap wire, the state-detecting env-image mount, the background seal thread,  <tt>tebako cache seal</tt> + the listing/doctor surfaces), the publish path (in-process blksum generation + the additive  <tt>image.blksum</tt> index field), and the OCI range arm + the bench arms (§8, spec 27 §10.5). Since then the downstream legs have landed: the lazy-capable runtime releases, the §10 parity data, the <strong>default flip</strong> (§7 — lazy-on by default, locked), and the <strong>cached-blksum arm</strong> (§3 — the install-time sidecar prefetch that keeps the mount-open zero-network). Nothing here changes what a shipped loader, driver, or resolver does with a store that carries none of the new artifacts: a sidecar-less release takes the loud eager fallback and every published image remains runnable exactly as today.</p>
+
+<p id="_3b0795c0-7bda-3ba2-27dc-f5d9ebf27e99">Normative specification of <strong>lazy mounting</strong>: the runtime env image is mounted over HTTPS with HTTP Range reads, the machine cache is seeded block-group by block-group on demand, and a background seal pass turns the partially-seeded entry into an ordinary, fully-verified store entry. This spec owns the remote-locator hook recorded in spec 20 §7 ("Remote locators (http/s3/ipfs) → a future streaming spec").</p>
+</foreword></preface><sections>
+<clause id="_18c55105-f6d1-d6ab-5b08-0efffb103b51" unnumbered="true" obligation="normative">
+<title id="_7af73e28-eac0-57dd-05f4-ed5bbb6351e3">1. Why — and why LimniFS fits lazy pull better than eStargz fits tar</title>
+<p id="_9af9ef07-732a-3604-4896-6ba8403f88a0">First run of a lean (shared-runtime) package downloads the whole runtime pair (100–300 MB) before one user byte executes. Containerd's lazy-pull line (eStargz/SOCI/nydus) proved the fix at the format level; Harter et al. (FAST'16) measured pulls at 76% of container start time while only 6.4% of pulled bytes are ever read.</p>
+
+<p id="_64218f43-7306-a9f6-ae4c-25be829c38b3">eStargz needed a <strong>format change</strong> to make lazy pull possible: tar is a streaming format with no index, so stargz added a TOC, per-member gzip streams, and landmark headers — a new wire shape that only new images carry. LimniFS needs none of that. It is seekable  <strong>by construction</strong> (spec 20 §4): the inline metadata blob resolves path → inode → drop slices; the slab record tables carry each drop's byte offset and length; <tt>pread</tt> materializes only the drops intersecting the requested window (a seekable-container drop decodes only the covering 256 KiB frames). Every LimniFS image ever published is already a lazily-fetchable set of byte ranges. The lazy feature is therefore a READER-side change only — no format change, no new in-image section, no republication of image bytes (§9).</p>
+
+<p id="_4d6801cf-c23f-4f6c-9a0f-1f8111a3a30d">Scope, locked for v1: the runtime <strong>env image</strong> (<tt>TEBAKO_RUNTIME_IMAGE</tt>) in managed dispatch (tebako-shim) and standalone dispatch (tebako-bootstrap). The interpreter exe is always fetched whole — the kernel execs a file, not a mount. Payload slices ride the same machinery later (§11).</p>
+</clause>
+
+<clause id="_31ec3f05-96ee-e7a3-31e3-bfb5e8cd3e10" unnumbered="true" obligation="normative">
+<title id="_fb6f30d1-3599-0646-435c-88abd0f1284f">2. The seam: a mount-source kind, NOT a format backend</title>
+<p id="_f1dd66bd-8b82-ba3e-7661-469655a7237b">The issue's sketch ("a new TFS backend <tt>http-range</tt> beside zip/dwarfs-t/squashfs/tar") is refined against the shipped seam. The spec 11  <tt>Backend</tt> trait (<tt>crates/tfs/src/backend.rs</tt>) is <strong>path-addressed and format-keyed</strong>: <tt>stat</tt>/<tt>pread</tt>/<tt>read_dir</tt>/<tt>read_link</tt> by in-image path, selected by magic detection (spec 20 §3). Transport is not a format —  <tt>format_id</tt> answers only "how do I read these bytes" (orthogonality law, spec 00). An HTTP Range transport placed at the Backend seam would either fake a format (wrong) or re-implement one (duplicated authority).</p>
+
+<p id="_5752b9af-201a-448f-5143-201debbfc59a">The correct layer is the one below the format backend. Spec 11 §5's mount-source kinds (host-file, memory, file-region, VFS-file-region) all serve positioned byte reads into the mount constructors (<tt>crates/tfs/src/mount.rs</tt>). This spec adds a <strong>fifth mount-source kind: remote-range</strong>, behind a byte-source abstraction:</p>
+
+<sourcecode id="_015a1789-74da-8fdf-bae9-7adb18c23495"><body>transforms (COW / ENC — Rust TFS only, spec 00 invariant 5, spec 11 §4)
+  → format backend (limnifs; detection unchanged)
+    → ByteSource: host file | memory | file region | VFS region | REMOTE-RANGE</body></sourcecode>
+
+
+<ul id="_5c3da3e1-b1ee-6b5a-8c35-4a6d8cf1aa83"><li><p id="_7c9cf3f1-d104-255e-ebbd-e25fec6f83eb"><strong>The transforms-law answer (precise):</strong> the lazy source sits UNDER the format backend, at the byte layer. COW and ENC stack ABOVE the format backend exactly as today — a COW overlay over a lazily-mounted env image writes to its HostDir store and never touches the network; an ENC transform decrypts bytes the source already supplied. The transforms law is untouched: the remote source is read-only, and no backend learns to write.</p>
+</li>
+<li><p id="_87a3a064-9510-72f2-2173-5b63b3e11da3"><strong>The <tt>Backend</tt> trait is unchanged.</strong> No new trait methods; detection unchanged (the 512-byte sniff is one small range read at open); <tt>writable()</tt> stays <tt>None</tt>.</p>
+</li>
+<li><p id="_5b849da8-59af-375d-ef9a-a27cc560a973"><strong>The limnifs adapter gains a sourced open</strong> beside <tt>LimnifsBackend::from_image(Vec&lt;u8&gt;)</tt> (<tt>crates/tfs/src/backends_limnifs.rs</tt>): mount-open fetches, through the caching byte source, the manifest prefix (header → feature flags → metadata reference + inline metadata blob → slab index → history — the self-delimiting walk the adapter already performs) and each slab's  <strong>record table</strong>; slab drop payload bytes are fetched on demand at  <tt>pread</tt> time. Prerequisite (upstream, limnifs repo):  <tt>limnifs-core</tt> gains a paged <tt>SlabSource</tt> variant (today:  <tt>Memory</tt>/<tt>Mapped</tt> only) and a record-table parse over a positioned reader. Reader-side only — no format change. The dwarfs backend's in-place positioned reads make a dwarfs-over-range source possible later across the C++ callback boundary; recorded, NOT committed (§11).</p>
+</li>
+<li><p id="_d5e4bfb9-fd3d-ef7a-0d4f-9f2b5201db6c"><strong>Feature gating (spec 20 §5's rule applied):</strong> the remote-range source is a cargo feature  <tt>backend-remote</tt> on <tt>tfs</tt>, default ON for tebako-driver and the toolchain, never in tebako-bootstrap (which never mounts, spec 20 §1 — §9). A lazy mount attempted on a build without the feature fails with the NAMED  <tt>ENOTSUP</tt> — the compiled-out rule, unchanged.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_c012a419-a528-cffb-40a4-f59ebb46c675" unnumbered="true" obligation="normative">
+<title id="_5fc5205a-922e-8bbd-0d28-654a7bc9bf8a">3. The trust decision (locked): per-block-group digests at read, whole-file sha256 at seal</title>
+<p id="_b7001b3d-e2ec-a262-7924-dd54610466aa">The issue's open question — whole-file sha256 at seal vs per-block-group digests at read — is decided:  <strong>per-block-group digests at read is the PRIMARY design; the whole-file sha256 verifies at seal as the mandatory second anchor.</strong> The rejected alternative (whole-file verify only at seal) is rejected on the threat model, not on convenience.</p>
+
+<p id="_da20a717-fe01-ca95-38e9-44029c8617ff"><strong>Threat model.</strong> Today's law (spec 05 §4): verification at fetch/install, never per run — the payload never executes a byte that was not verified against the  <tt>.sha256</tt> trust anchor first. A seal-only lazy design breaks that law for the entire seeding window: a malicious or compromised registry (or a TLS-intercepting path the enterprise roots admit, spec 04 §4) could serve self-consistent bad blocks, and the payload would EXECUTE them on first run; the seal would fail loudly only afterwards. That is a strict weakening of the shipped trust posture and is unacceptable. (The image's own content addressing — LimniFS drop ids are <tt>BLAKE3(plaintext)</tt>, spec 20 §1 — detects corruption and bit-rot but is NOT a trust root: a hostile registry serves a self-consistent evil image whose ids match its own evil metadata.)</p>
+
+<p id="_ca1eeea8-d0b8-08b8-f1a2-6629f965e794"><strong>The design.</strong></p>
+
+<ul id="_e548ba6f-ab67-4c99-8c11-e2541e8db291"><li><p id="_5e667ba7-bf44-f745-8994-cf478b6a1da6"><strong>Fetch unit = the block group</strong>, a locked <strong>4 MiB</strong> span of the IMAGE bytes (the wire bytes — format-agnostic, so the same source later serves dwarfs; the final group is short). Groups align all cache, verification, and progress accounting (§4, §7).</p>
+</li>
+<li><p id="_c416216f-cb29-cede-42f3-068eb1238b81"><strong>The digest sidecar</strong> — <tt>&lt;image&gt;.blksum.json</tt>, published beside the image by the PUBLISHER (the runtime factory / the feedstock publish leg;  <tt>tebako publish</tt> generates it in-process in the same invocation that stages the release bytes): a versioned JSON document (<tt>schema/tpkg-blksum-v1.schema.json</tt>) carrying <tt>schema_version</tt>, <tt>group_size</tt>, <tt>size_bytes</tt>, the whole-image <tt>sha256</tt>, and one sha256 per group. A resolver NEVER derives it (derivation would require the whole file — pointless — and would arrive unanchored). Three callers reach the ONE emitter (<tt>tpkg::lazy::write_sidecar</tt>): <tt>tebako publish</tt> (in-process, for payloads it stages), <tt>tebako blksum</tt> and  <tt>tfs blksum</tt>. The last two exist because a runtime factory images with  <tt>tfs</tt> and publishes through its own tooling — without a verb on the binary the leg already runs, a runtime pair can ship with no sidecar and lazy seeding can never engage (tebako#868). No second implementation of the group scheme exists, by construction.</p>
+</li>
+<li><p id="_51a52dd0-8b92-7eb3-80b6-84e61ce8ddfd"><strong>The sidecar's own anchor</strong> rides the existing channel, additively: the release shard/registry row gains  <tt>image.blksum: {filename, sha256}</tt> (mirror-only, spec 03 §4's tier-3 rule); where the index is signed (spec 09 §5) the field is covered exactly like  <tt>image.sha256</tt>. The sidecar is fetched and verified against that pin BEFORE the first range read; a sidecar whose bytes do not match its pin is the named <tt>Sha256Mismatch</tt> (70) — nothing mounts.</p>
+</li>
+<li><p id="_8e82c4db-5034-39e5-48fe-c6d349b93880"><strong>Trust at read (the protection point, exactly):</strong> every Range GET's bytes are sha256-verified against the sidecar's group digest BEFORE they enter the block cache and BEFORE any byte is served. A group whose digest mismatches is dropped, refetched once, and on a second mismatch is the named  <tt>Sha256Mismatch</tt> (70) — the mount fails closed, never a silent serve. This is today's verify-at-fetch law at group granularity; the per-run law holds unchanged (a cached group serves without re-verification — the cache is trusted once written, exactly like today's sealed entries). The user is therefore protected from the FIRST byte of the FIRST run — no execution of unverified bytes, ever.</p>
+</li>
+<li><p id="_9c25e480-914b-e097-09d1-fc0f6e64766b"><strong>Whole-file sha256 at seal (mandatory second anchor):</strong> the seal pass (§5) assembles the entry's  <tt>.tfs</tt> from the verified groups and verifies the whole-file sha256 against the original pin before the entry flips to SEALED. The  <tt>.sha256</tt> sidecar written at seal is byte-identical in shape and meaning to today's anchor. Defense in depth, and what makes a sealed entry indistinguishable from an eagerly installed one.</p>
+</li>
+<li><p id="_73fad788-f6da-df17-e6d9-fd8aff0dec70"><strong>Missing sidecar → LOUD eager fallback (locked).</strong> Lazy is requested but the release publishes no sidecar (every pre-2026 image): the loader fetches the whole image exactly as today (whole-file sha256 verify — EQUAL trust strength, no downgrade), with a stderr warning + journal line (<tt>event=lazy-fallback reason=blksum-missing</tt>) naming the artifact. Never a hard error — every published image must stay runnable — and never silent (invariant 9; the spec 05 §4 stale-serve precedent for loud degradation).</p>
+</li>
+<li><p id="_70e39177-e1df-b0ed-6a3c-b4cd5017b47a"><strong>The cached-blksum arm (locked, with the §7 flip).</strong> The loader fetches and pin-verifies the sidecar at INSTALL time regardless — the seed decision needs it — so the install also writes it into the entry (<tt>&lt;image&gt;.blksum.json</tt>, tmp+rename, BEFORE the descriptor's commit rename). The mount-open consults the cache FIRST: a verified hit is a zero-network open (nothing the exec phase owes the wire); a miss fetches as before and writes through (best-effort — the verified blksum is already in hand, so a cache-write failure never fails the mount); a cached file off its pin or torn is the named <tt>Sha256Mismatch</tt> (70) / <tt>BlksumInvalid</tt> (65), never a silent drop-and-refetch — the cache is a publisher-anchored document's copy. Two consequences the flip needs: the offline refusal for a FRESH seed fires at the install/pull phase (pre-exec) instead of surfacing as a mount-open 69 mid-exec, and the mount-open of every entry seeded after this arm performs no sidecar GET at all.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_ba1b844b-cc98-5cdf-e6e8-435cca7c7dec" unnumbered="true" obligation="normative">
+<title id="_c1895d77-b229-fd1d-6177-d0d5a4116c4e">4. Cache design and the store-state amendment</title>
+<p id="_db1f5a8f-5122-cda6-19f6-063849fcfa8f">Layout (inside the existing runtime entry, spec 05 §3 — LAZY_SEEDING state only):</p>
+
+<sourcecode id="_4de86443-6a3a-9b66-b918-f9b7f4389963"><body>runtimes/&lt;lang&gt;-&lt;lv&gt;-&lt;ver&gt;-&lt;triplet&gt;/
+  tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;[.exe]  # exe — always whole, always verified (0755)
+  sha256 / origin                                   # exe markers, unchanged
+  &lt;image&gt;.lazy.json                                 # the seed descriptor — present ⇔ LAZY_SEEDING
+  &lt;image&gt;.blksum.json                               # the install-time sidecar cache (§3's cached-blksum arm)
+  &lt;image&gt;.blocks/&lt;NNNNNN&gt;.blk                       # verified group payloads (0444)
+  &lt;image&gt;.tfs                                       # appears ONLY at seal (0444)
+  &lt;image&gt;.tfs.sha256 / &lt;image&gt;.tfs.origin           # written at seal — today's shapes, unchanged</body></sourcecode>
+
+
+<ul id="_c0e62017-df40-d0df-9329-896c821ed8a9"><li><p id="_1d495e54-5777-6c49-4f88-6ed4cedd4ab7"><strong>The seed descriptor</strong> (<tt>&lt;image&gt;.lazy.json</tt>, versioned JSON, the blksum schema's sibling  <tt>schema/tpkg-lazy-seed-v1.schema.json</tt>): source URL (the concrete origin), the whole-image sha256 pin, the blksum sidecar's sha256,  <tt>group_size</tt>, <tt>size_bytes</tt>, group count. Written tmp+rename under the entry's flock (spec 05 §4) by the loader INSTEAD of the image download. A descriptor that fails validation at open is the named  <tt>LazyDescriptorInvalid</tt> (65) — never a guess.</p>
+</li>
+<li><p id="_14a20485-91db-949b-4226-337a134c607c"><strong>The block map IS the directory.</strong> Present <tt>*.blk</tt> files are the seeded set; no separate bitmap, no journal. Open scans the directory and validates each group's size against the descriptor; a size-mismatched or unparseable group file is discarded and refetched.</p>
+</li>
+<li><p id="_5fefdb8a-51ad-856b-9bcc-a976ea55b687"><strong>Crash consistency:</strong> per group, fetch → verify → write tmp → rename, under the entry's flock. A crash mid-write leaves a  <tt>.part</tt> that the next open drops. A group file present = verified, by construction.</p>
+</li>
+<li><p id="_ae08ce9f-44e4-a65f-3aa2-5c7cb4726120"><strong>The store-law amendment (scoped, locked):</strong> spec 05 §4's "a runtime is either fully installed or not" gains exactly one middle state. A LAZY_SEEDING entry (exe + markers present and verified, descriptor present and valid, image ABSENT) IS runnable — that is the feature — and counts as INSTALLED for resolution (the newest-compatible-cached pick, spec 05 §5, must see it, or every run re-resolves and re-seeds), but is reported distinctly by every listing surface (§7). The commit point for the lazy install is the descriptor's rename; the commit point for the SEALED entry stays the  <tt>.sha256</tt> anchor's rename. No other store invariant moves: tmp+rename everywhere, per-entry flock (120 s, stale-lock hint), read-only artifacts, a run re-verifies nothing that is cached.  <tt>cache prune</tt> removes a lazy entry like any other (descriptor, blocks, and all).</p>
+</li>
+<li><p id="_f44feecf-3f65-bcb1-dc34-5d51d8188c6c"><strong>The exe is never lazy</strong> and the runtime store entry's exe half installs exactly as today (the spec 05 §5 chain, the spec 06 §3 contract gate, the spec 09 §4 verification point — all before the seed descriptor is written).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_71e98146-88b2-2a43-2b68-b608e3dd60f2" unnumbered="true" obligation="normative">
+<title id="_b8b1966b-3911-4a5b-e631-cb2dd7a22b7c">5. The seal path and the state machine</title>
+<p id="_e2f3e028-37f0-526f-2958-bcb33b61a0a3"><strong>States (named, on disk):</strong></p>
+
+<sourcecode id="_cb18a8f3-06c4-9763-31e6-d0ea50482612"><body>EMPTY → (loader: exe install + descriptor rename) → LAZY_SEEDING
+LAZY_SEEDING → (seal: all groups present → assemble → whole-sha ok
+                → .tfs + .sha256 rename → blocks + descriptor + blksum
+                cache removed) → SEALED
+SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics</body></sourcecode>
+
+
+<ul id="_7ff454f9-bdae-2507-05fe-823719e60a95"><li><p id="_437f3859-bcd5-63e0-5e3a-693b35972c3c"><strong>The background seal thread</strong> lives in the DRIVER (inside the runtime exe — the process that holds the mount): spawned after the env image mounts, it fetches the missing groups in index order, one at a time, on the same byte source (and therefore the same verification). Its scheduling law:  <strong>on-demand reads always preempt</strong> — a touching read's group fetch jumps the queue; the seal fills gaps around demand. It renders NO progress inside a running payload (stderr belongs to the payload after handoff — spec 11 §11 discipline; seal activity logs to tebako-log at  <tt>debug</tt>, component <tt>driver</tt>).</p>
+</li>
+<li><p id="_8f7a4c56-2067-8b2c-783b-ee39fb868989"><strong>Cancellation and resumption:</strong> process exit simply stops the thread — the block cache persists; the next run (any package sharing the entry) resumes from the directory scan. Seal is best-effort forever: a run NEVER blocks on it, never fails because of it (a seal-side fetch failure logs and retries next run).  <tt>TEBAKO_LAZY_SEAL=0</tt> disables the background thread (the debug/airgap shape; on-demand seeding still works).</p>
+</li>
+<li><p id="_54dbb979-0e57-4bdc-a5d3-f2053be82131"><strong>The commit:</strong> with all groups present, seal assembles <tt>&lt;image&gt;.tfs</tt> by concatenation into a tmp file, streams the whole-file sha256 over it (one pass, constant memory — the spec 05 §6 discipline), compares the original pin (mismatch → named 70, the assembled tmp dropped, the groups kept — a group verified against a publisher-anchored sidecar cannot silently disagree with the pin; a disagreement is evidence of a publisher-side or anchor-side fault and is reported, never healed), renames  <tt>.tfs</tt> (0444), then <tt>.tfs.sha256</tt> + <tt>.tfs.origin</tt> (the anchor's rename is the commit point), then removes the blocks and the descriptor. A crash anywhere before the anchor rename leaves LAZY_SEEDING, fully resumable.</p>
+</li>
+<li><p id="_e0c5f881-f723-a479-9bcc-f64bdd76b0cc"><strong>The explicit verb:</strong> <tt>tebako cache seal [&lt;entry&gt;|--all]</tt> runs the same pass synchronously from the toolchain — full tebako-term ProgressSet rendering (§7). Operators who want first-run-lazy but warm-cache-complete run it at their convenience.</p>
+</li>
+<li><p id="_a90f1c03-e110-91b2-1e03-27c83c43f33a">Subsequent mounts of a SEALED entry take the ordinary whole-file path — the lazy machinery is out of the loop entirely.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_433af5b3-f568-0f98-82d7-4d8f7da02005" unnumbered="true" obligation="normative">
+<title id="_4132e6e0-50b9-586d-f88f-457bc61098d8">6. Failure semantics (named, never a partial mount)</title>
+<ul id="_b9a5e289-6ec0-34d1-145d-7a7d670df8c0"><li><p id="_f433c3b0-1ba6-3e69-9e47-c50557d6e5de"><strong>Mount-open failures</strong> (prefix or record-table fetch fails, sidecar pin mismatch, descriptor invalid): the env image mount fails BEFORE the boot proceeds — the driver's existing unmount-everything law (spec 17 §1;  <tt>crates/tebako-driver/src/driver.rs</tt>) applies verbatim: never a partial mount, the named error surfaces.</p>
+</li>
+<li><p id="_ca8f4c92-db61-dba5-6867-e5f046bf70ad"><strong>Network partition mid-mount:</strong> a touching read whose group cannot be fetched after the retry law exhausts returns  <strong>EIO on that read</strong> (the errno channel), named on the tebako-log with URL, group index, and the transport cause. The payload sees an ordinary IO error; the mount and every cached group remain valid; the next run resumes. Never a fabricated zero-fill, never a silent short read of unverified bytes.</p>
+</li>
+<li><p id="_8830ef68-0d0b-f769-7d2a-f852105ca4aa"><strong>Retry/backoff:</strong> tebako-http's law, unchanged and unrepeated — Retry-After honored exactly, the 60 s × 2ⁿ hintless exponential, THROTTLE_ROUNDS, DOWNLOAD_ATTEMPTS (spec 05 §6,  <tt>crates/tebako-http</tt>). A mid-stream group failure retries THE GROUP from zero (a partial group would fail its digest anyway — the pipeline's artifact rule at group scale).</p>
+</li>
+<li><p id="_ceccc1e1-c9f3-fa17-28b4-022b39750cac"><strong><tt>TEBAKO_OFFLINE=1</tt>:</strong> cache-or-named-error at group granularity. Cached groups serve (a fully-seeded-touched working set runs offline); a miss is EIO on the touching read, or — at mount-open, when the prefix is not yet cached — the named offline refusal. Unchanged semantics, finer grain.</p>
+</li>
+<li><p id="_f2618ff1-4d50-b5bd-294c-d033b340b232"><strong>Exit codes (reuse, never extend — the 65–79 space stands):</strong></p>
+<table id="_bc23d89d-9081-e1a8-105f-1abb38e9123f"><thead><tr id="_db056f0c-086c-5f12-4d37-ef1c19e93130"><th id="_4537b7a3-313a-b089-1c84-e0321bb7a786" valign="top" align="left">condition</th>
+<th id="_4be34a96-68f5-5acd-1ee8-62c8ba50cee0" valign="top" align="left">class</th>
+</tr></thead>
+<tbody><tr id="_83d8702e-b46a-4559-7631-00488440c169"><td id="_5ad35fab-665e-7714-b4fe-c6ecf82e6773" valign="top" align="left">descriptor invalid, lazy config malformed, non-HTTPS source</td>
+<td id="_4368c0f1-e124-090f-328e-6c602b3e84fc" valign="top" align="left">65 usage</td>
+</tr><tr id="_e0c1b4a8-177a-5325-1097-6f32e787e718"><td id="_b3f6e44e-2410-7a5a-d952-d2224471b3ab" valign="top" align="left">mount-open fetch failure; offline miss; server unusable</td>
+<td id="_ce14e245-2afb-4c75-d709-8ec554f99ec0" valign="top" align="left">69 unavailable</td>
+</tr><tr id="_8cd521af-e38b-6290-8867-5ada2b2aea9c"><td id="_36461770-285b-4695-caf1-342ee58392e4" valign="top" align="left">sidecar pin mismatch; group digest mismatch (2nd); whole-sha mismatch at seal</td>
+<td id="_363fc46c-b7b5-e721-509d-6faff052ec22" valign="top" align="left">70 integrity</td>
+</tr><tr id="_b29c27df-e718-2bc8-0e5b-8a7f268c8ad2"><td id="_e425b157-31f5-3c30-e5f1-3e7a24e619ff" valign="top" align="left">cached blksum torn (65) / off its pin (70) — the §3 cache arm</td>
+<td id="_aa894fe7-b333-a1a4-57f6-f3b35b46f31e" valign="top" align="left">65 / 70</td>
+</tr><tr id="_51ca44b3-b8bc-2b52-07c8-fd2c3dfac700"><td id="_a7038c6e-4d74-48a3-3313-a155ed55e66d" valign="top" align="left">store IO (lock, block write, assemble, rename)</td>
+<td id="_67c4e9a5-bc56-1fb2-9196-ed42c06faa8e" valign="top" align="left">74 IO</td>
+</tr></tbody>
+</table>
+
+<p id="_7b75df82-9328-759e-710f-413fe6c39f52">spec 09's 71/72 bind the sidecar's signed-index chain exactly as they bind the image's today;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> fails closed before the first range read, unchanged.</p>
+</li>
+<li><p id="_514643cc-c831-6337-d854-a4c4a3b108dd"><strong>HTTPS-only (locked):</strong> the source URL is <tt>https://</tt> or <tt>file://</tt> (the test/airgap spelling), enforced by tebako-http's existing refusal — plus the spec 38 §8 LOOPBACK carve-out (<tt>localhost</tt>, <tt>127.0.0.0/8</tt>, <tt>::1</tt> over plain HTTP) for the §10 fixture only. There is no insecure-source spelling and never will be. TLS roots, proxy policy, and credentials ride tebako-http's one agent (spec 04 §4/§5) — no second client, and the credential book confines range requests exactly like whole-file GETs.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_02b0b9c7-1351-3d7f-57d5-e454e85a6512" unnumbered="true" obligation="normative">
+<title id="_0bbe2e14-f0fe-35a9-edf6-29d1c13cfeaf">7. UX: mount mode, progress, doctor</title>
+<ul id="_404a5b93-7b28-d20c-3008-fd77a10ceed5"><li><p id="_c96f157f-b2d2-833e-187f-75c5442037e0"><strong>The mount-mode chain (the flip LOCKED 2026-10-07, spec-00-style note).</strong> The default is <strong>lazy-on</strong>: a runtime install on a release serving the lazy wire seeds the env image instead of fetching it whole. Resolution:  <tt>TEBAKO_RUNTIME_LAZY</tt> (env) over <tt>runtime_lazy</tt> in <tt>~/.tebako/config.yaml</tt> over the product default ON — env wins per key (the  <tt>TEBAKO_FETCH_JOBS</tt> / spec 04 §4 precedence rule), an unparseable value is a NAMED error (65), never a silent clamp. Eager stays first-class as the opt-out (<tt>TEBAKO_RUNTIME_LAZY=0</tt>, <tt>runtime_lazy: false</tt>). The division of authority is locked: the PUBLISHER controls enablement only — it ships the blksum sidecar or not (§3; there is no publisher forcing knob and never will be, because correctness is mode-independent); the USER/MACHINE controls the effective mode through the chain above. Hard rules outrank every tier, unchanged:  <tt>TEBAKO_OFFLINE=1</tt> is cache-or-named-error (a fresh seed refuses at the pull phase, §3's cached-blksum arm); fat packages never fetch; a sidecar-less release takes the loud eager fallback. The flip's gate was §10's parity data; the landed numbers are recorded there.</p>
+</li>
+<li><p id="_b3eedb91-e37e-e476-ec2e-4ae7d1ce755e"><strong>The bundle-era gate (spec 36 §3's co-publish).</strong> Both loaders (shim and bootstrap) evaluate the lazy arm BEFORE the spec 36 §4 era branch. On a shard declaring  <tt>bundle</tt>, the arm engages ONLY when the shard also carries the co-publish witness (<tt>per_file_assets: true</tt>, runtime-manifest MINOR 2 — the exe/image/dll are then served standalone by construction); a bundle-declaring shard without the witness stays eager by construction (its one tar fetch IS the runtime). When the arm engages on a bundle-declaring shard, the install fetches the exe (+ the windows DLL) by the shard's per-file pins and seeds the image; the bundle is never fetched. Every other rule of this section is unchanged: a missing sidecar is the loud eager fallback, a torn pin the named error, a mismatch exit 70. The eager default on bundle-era lines stays the bundle fetch.</p>
+</li>
+<li><p id="_ac868186-c9af-af5b-f932-837ce7b4d6f4"><strong>The host-tier gate (tebako#853).</strong> The lazy wire is chosen only where the HOST's boot tier can read a seeded entry (<tt>tpkg::lazy::host_boot_reads_lazy</tt> — the single owner of that answer, consulted by the shim and both bootstrap planners). The POSIX tiers read through the lazy byte source and qualify; the windows materialize tier (spec 17 §7) extracts a host tree from the env image FILE, and a seeded entry has none until the seal commits — so on windows the opt-in takes the loud eager fallback (<tt>event=lazy-fallback reason=windows-materialize-tier</tt>, the journal line included) and the first run works; an OCI source names its own host-independent cause first (<tt>reason=oci-bundle-era-only</tt>). A seeded entry that arrives on a windows store by other means still refuses by name in the driver, unchanged.</p>
+</li>
+<li><p id="_cd86ae8f-cd26-f105-0445-8d1a33e9e0aa"><strong>Progress.</strong> The loader's lazy first run renders through tebako-term (the spec 06 §5/§5a wiring rule — nothing else prints download progress): the exe's ordinary artifact bar, then one line — <tt>runtime env image &lt;name&gt; (&lt;size&gt;) — lazy: seeding on demand, sealing in background</tt>. <tt>tebako cache seal</tt> renders the block map as a ProgressSet slot —  <tt>sealing &lt;image&gt; [&lt;bar&gt;] 62% (groups 831/1340, 3.1 MB/s)</tt> — group-accurate, not estimated. Plain mode and <tt>TEBAKO_NO_PROGRESS=1</tt> behave per spec 06 §5a, unchanged.</p>
+</li>
+<li><p id="_18210706-bd53-ed42-bb4e-a250412a97ec"><strong><tt>tebako doctor</tt></strong> (spec 35) store section gains the seed state per runtime entry:  <tt>LAZY_SEEDING — 231/1340 groups (17%), source &lt;host&gt;, seal resumable</tt> or <tt>SEALED</tt>; a descriptor/block-dir inconsistency is reported by name (never healed silently).</p>
+</li>
+<li><p id="_48749974-1987-c05e-7053-73c4528824d1"><strong><tt>tebako cache list</tt></strong> marks lazy entries (<tt>(seeding 17%)</tt>); the origin marker carries the source URL as today.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_65fb1849-bdb1-97f3-ba72-fbcd5aefd023" unnumbered="true" obligation="normative">
+<title id="_7554d168-d67e-b2fd-41e8-5c186bff944f">8. Interaction with spec 38 (OCI)</title>
+<p id="_54e6afc0-762d-5f90-caae-3f15c88ef4a0">The byte source is transport-shaped, not URL-shaped: it consumes a range-fetch closure. An OCI blob GET (<tt>/v2/&lt;repo&gt;/blobs/&lt;digest&gt;</tt>, spec 38 §5) supports Range on every conformant registry, and the blob digest IS the artifact sha256 (spec 38 §3's trust-anchor equivalence) — so a range source over an OCI blob needs NO grammar, NO divergence: the OCI adapter supplies its closure (Bearer flow and confinement of spec 38 §6 included), the blksum sidecar publishes as one more §3 artifact class.</p>
+
+<p id="_9cfdf751-fa4f-1e3b-244a-5a1fff59f7ca"><strong>The closure arm (locked 2026-10-01 with PR 6).</strong> The OCI client's blob fetch carries the range arm: one positioned GET (<tt>Range: bytes=&lt;offset&gt;-&lt;end&gt;</tt>, the caller-decided credential header attached verbatim per dance attempt), answering 206 with a Content-Range validated against the request (exact start, exact length) or 200 — the §3 loud-eager-fallback signal, byte-identical in meaning with the plain-HTTPS transport's. A range window carries no whole-blob digest check by construction: the per-group digests of §3 are the integrity layer, exactly as over plain HTTPS. The blksum sidecar's OCI spellings are spec 38 §3's (that section owns the class table and the tag rules): artifactType <tt>application/vnd.tebako.blksum.v1</tt>, layer media type <tt>application/vnd.tebako.blksum.v1+json</tt>, the sibling digest-tag <tt>sha256-&lt;64 hex of the IMAGE blob's digest&gt;.blksum.json</tt> with the <tt>org.tebako.blksum.subject</tt> annotation naming the image digest. The sidecar's layer digest IS the blksum document's sha256 — the seed descriptor's  <tt>blksum_sha256</tt> pin binds it with no second file, and a resolve of the sibling tag that finds nothing is the §3 blksum-missing signal (the loud eager fallback), never an error.</p>
+
+<p id="_ff893453-7be3-da0f-dcf7-891e7bee063d"><strong>Recorded, not committed (the run-time wiring).</strong> PR 6 ships the transport arm, the sidecar class, the resolve-side sidecar resolution, and the publish push — the pieces any OCI-staged lazy entry needs. The two downstream legs land with their own specs' PRs: OCI runtime distribution itself is spec 38's PR 4 (runtime bundles over OCI), and the driver's mount-open OCI arm (state-detecting an OCI-sourced seed descriptor, the run-time credential chain for a mount that outlives the install) is designed with that leg — this spec commits the closure shape only.</p>
+</clause>
+
+<clause id="_4422d6df-6279-e94b-38a4-dfba40b741df" unnumbered="true" obligation="normative">
+<title id="_c323ec30-f6d8-9c3a-3364-b8d245429d6c">9. What does NOT change (locked)</title>
+<ul id="_b7b0c739-7f38-d193-8c98-77d7525a1cf2"><li><p id="_2bc636fc-8076-8d9f-2016-bd517732735b"><strong>Published image bytes.</strong> No format change, no new in-image section, no format_id, no trailer field. Every LimniFS image ever published is lazily mountable as-is (§1).</p>
+</li>
+<li><p id="_670610a4-70ce-a2d9-6b53-b4605931e685"><strong>The <tt>.sha256</tt> anchor.</strong> Sealed entries are byte-identical in layout, anchors, and semantics with eagerly installed ones (§5).</p>
+</li>
+<li><p id="_4fc6f269-38c3-66ed-faa0-177aa5e7b771"><strong>The mount-table law.</strong> Longest-prefix dispatch, duplicate-point EEXIST, unmount-everything on failure (spec 11 §2, spec 17 §1) — lazy changes where bytes come from, never how mounts compose.</p>
+</li>
+<li><p id="_dc575504-0cef-e0b0-444e-15deb6719648"><strong>The transport window.</strong> A demand fetch runs with the engine's read lock held, and the fetch's OWN machinery may call back into the interposed libc surface — on macOS the resolver reads <tt>networkd_settings</tt> through <tt>open</tt>, which would re-enter the engine behind the lock: a deadlock (tebako#851: one thread in the VFS read, the other in  <tt>getaddrinfo → … → open_impl</tt>). While a fetch is in flight the shim therefore PASSES EVERY interposed call THROUGH to the host; the window is PROCESS-WIDE (the resolver runs on its own thread), not thread-local. The window is the transport's own machinery, never a payload's read; a concurrent payload read on another thread during a fetch is the known narrow exposure, and the follow-up is a lock-free mount-prefix fast path that scopes the bypass to paths outside every mount.</p>
+</li>
+<li><p id="_01d52aae-d1b9-2cce-64c4-e344b26d3775"><strong>The mount-table identity.</strong> A lazy env-image mount serializes into <tt>TEBAKO_TFS_MOUNTS</tt> by its entry path, exactly like a file mount. A re-establishing consumer — the interpreter's preload shim, and every exec'd child — state-detects that path the same way the driver does: the sealed file mounts whole, the ABSENT file with a valid descriptor beside it mounts the caching range source, and neither file nor descriptor keeps the ordinary named open error. The lazy promise holds at both layers: only the groups demand touches are fetched.</p>
+</li>
+<li><p id="_60cdb417-5470-0f04-b692-23f947562fdb"><strong>The handoff grammar.</strong> <tt>TEBAKO_RUNTIME_IMAGE=&lt;path&gt;</tt> and the <tt>--tebako-image</tt> triples are byte-identical (spec 17 §1); the path names the entry whose on-disk state (§4) the driver reads. No contract-version bump:  <tt>TEBAKO_RUNTIME_LAZY</tt> is an operator env in the  <tt>TEBAKO_MOUNT_ROOT</tt> / <tt>TEBAKO_JAIL</tt> class (spec 17), not a handoff-semantics change (spec 06 §6's bump rule). A pre-lazy driver handed a LAZY_SEEDING entry fails CLOSED — the image file is absent, the existing named unavailable error (69) fires, and the remedy is an eager run or a runtime rebuild; never a mis-mount.</p>
+</li>
+<li><p id="_03aa4baf-69ee-3125-e07d-4f28ff429e8d"><strong>The 3 MiB bootstrap gate.</strong> The mount happens in the DRIVER inside the runtime exe (spec 17; the bootstrap never mounts and never links TFS — spec 20 §1). The lazy machinery (byte source, block cache, seal thread) lives in  <tt>tfs</tt> + <tt>tebako-driver</tt> + <tt>tebako-http</tt> — compiled into the runtime exe and the toolchain, neither size-gated. The bootstrap's only new code is the seed-record arm of its existing resolve-install path (write the descriptor instead of streaming the image — a tebako-resolve plan item with a lazy commit closure); the CI size gate measures and enforces the delta, as always (invariant 2). The same machinery is also linked into the preload shim (the interpreter's own engine instance re-establishes the mount, §9's identity rule), which is not size-gated either.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_a04d2ea1-df19-0442-52c4-f41b30f02fb3" unnumbered="true" obligation="normative">
+<title id="_f8cda81e-0a84-7100-eeb5-735fde3444ec">10. Test plan (the tiers of spec 14; each failure above maps to one tier)</title>
+<ul id="_cc49c05a-a684-7e5c-c6dc-cbca7feb74f2"><li><p id="_a34dad9b-70dc-fb56-6e30-cf3e8e2d1732"><strong>Unit</strong> (tfs / tpkg / tebako-http): range math and group indexing (edge: short final group); descriptor and blksum schema round-trips, every malformed class by name; Content-Range parsing, 206-vs-200 detection, ETag/If-Range revalidation; the directory-scan block map (size-mismatch discard, tmp drop); the state machine's transitions and commit points; config/env precedence.</p>
+</li>
+<li><p id="_2941ed88-2d7c-1050-7d3d-46b946f8ae82"><strong>Property</strong> (proptest, the existing harnesses): arbitrary read patterns over a mock byte source answer IDENTICALLY to whole-image reads of the same bytes (the parity property); arbitrary crash points (kill between every fsync/rename) leave a resumable LAZY_SEEDING or a complete SEALED, never a third state; arbitrary garbage descriptors never panic and never parse silently.</p>
+</li>
+<li><p id="_508aaf78-ba02-5003-5e85-94a686c8adfc"><strong>Contract</strong> (in-process HTTP fixture — CI tooling, never shipped; the spec 38 §8 loopback carve-out): a Range-capable fixture server with artificial latency, injected 500s/429s, mid-stream kills, truncated bodies, 200-instead-of-206, and byte-level corruption per group. Legs: cold mount → on-demand seeding → answers equal the file-mounted golden tree (spec 20 §8's backend-pair parity class, the dwarfs/limnifs oracle extended to lazy-vs-file); group digest mismatch → refetch → named 70; partition mid-boot → named 69; partition mid-run → EIO on the touching read only; offline with partial cache; seal from partial, seal resumption after kill, seal commit ordering; the 200-fallback (whole body arrives — loud eager path).</p>
+</li>
+<li><p id="_38b6b098-b800-3017-20d2-55c2f1cf86f6"><strong>E2e</strong> (<tt>ci/</tt>, tiered): shim dispatch with lazy on — first cold run boots the entrypoint against a fixture-hosted runtime, second run serves touched paths with the fixture DOWN (touched-set offline proof),  <tt>tebako cache seal</tt> completes and the third run is ordinary; the standalone bootstrap leg (size gate asserted); the touch-everything pathology (a full-tree walk: total fetched bytes ≤ eager bytes + one sidecar + per-group request overhead, bounded and recorded — never worse than eager × (1 + ε)); the blksum-missing image takes the loud eager fallback;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> pass/fail legs per spec 09.</p>
+</li>
+<li><p id="_e78aa1c1-4c78-7aa9-64db-39cf489327ce"><strong>Parity data for the default flip (spec 27) — LANDED.</strong> The tebako-bench harness's lazy arm ran the full 7-leg platform matrix green (bench run 37517037555, zero failed runs): warm second-run parity 1.00× everywhere; cold one-time streaming overhead bounded at +0.56 s (windows) to +5.5 s (linux-musl-x86_64) on the loopback fixture — the ε of the pathology law (total fetched bytes ≤ eager bytes + one sidecar + per-group request overhead), and the number a real network inverts, since first run fetches only the touched groups; lazy cold RSS below eager's (e.g. 25 vs 34 MiB at boot). No regression class in the warm or pathology arms. On this data the §7 flip shipped (locked 2026-10-07): the default is lazy-on, the eager opt-out is  <tt>TEBAKO_RUNTIME_LAZY=0</tt> / <tt>runtime_lazy: false</tt>.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_5c304eec-bc62-9b2a-8ba3-b8f779bf508d" unnumbered="true" obligation="normative">
+<title id="_d22c5437-473a-59a7-00b8-5fbdb4505bdd">11. Open questions (each with this spec's recommendation)</title>
+<ol id="_fe561c69-ca47-9200-514e-2f183fd9ccad" type="arabic"><li><p id="_4ee5d7ad-e143-871a-9be0-3a1b653f6e56"><strong>Backend vs byte source.</strong> Recommended and locked (§2): a mount-source kind below the format backend. The issue's "http-range backend" is the right instinct at the wrong layer — transport is not a format.</p>
+</li>
+<li><p id="_22cf4de5-1d38-b862-0942-8efa4d373726"><strong>Whole-file sha at seal vs per-block digests at read.</strong> Recommended and locked (§3): per-group digests at read (publisher-authored, channel-anchored sidecar) + mandatory whole-file verify at seal. Seal-only verification executes unverified bytes — rejected on the threat model.</p>
+</li>
+<li><p id="_699a2a44-6fc7-a97f-20c8-300593146c41"><strong>Group size.</strong> Recommended and locked: 4 MiB of image bytes. Smaller multiplies request count against rate-limited hosts; larger wastes fetch on sparse touches. One constant, tunable only by a measured follow-up (the §10 bench arms).</p>
+</li>
+<li><p id="_dc832f2d-7938-47b4-852a-c6d9fd3e8c25"><strong>Missing sidecar.</strong> Recommended and locked (§3): loud eager fallback (equal trust, warned, journaled) — never a hard error against the long tail of already-published images.</p>
+</li>
+<li><p id="_ecaca241-3247-cf96-0020-d48bbddf2dee"><strong>Lazy payload slices.</strong> Recommended: env image v1; payloads ride the identical machinery behind the same flag later (their registry rows already carry sha256 anchors; the sidecar field is additive). Recorded, not committed.</p>
+</li>
+<li><p id="_5b9d2c70-093d-7ca1-cb77-6df3c9613631"><strong>Dwarfs over range.</strong> Recommended: recorded hook only (§2) — the C++ callback boundary is real work and limnifs is the default; decided by measured demand, not speculation.</p>
+</li>
+<li><p id="_1ee81144-31ca-93ee-bd7e-08a4c738c8a4"><strong>Seal assembly.</strong> Recommended and locked (§5): assemble from the verified groups (no second network pass) — the whole-file sha is computed over the local concatenation.</p>
+</li>
+<li><p id="_59fc4cf8-5e3d-f89e-9711-f3d16ee2360a"><strong>The exe.</strong> Recommended and locked: always eager (kernel exec needs a whole file). The exe is the minority of the pair's bytes; the env image is the win.</p>
+</li>
+<li><p id="_0ef9de24-8475-edcd-700e-55b29280cb65"><strong>A second verification algorithm (BLAKE3 groups).</strong> Recommended: no. sha256 everywhere keeps ONE anchor vocabulary with the store, the sidecars, and spec 38's layer digests; LimniFS's BLAKE3 ids remain image-internal integrity (spec 20 §7's recorded addendum, unchanged).</p>
+</li>
+</ol>
+</clause>
+
+<clause id="_cc6902a0-78f7-6298-c640-600d681ad1f6" unnumbered="true" obligation="normative">
+<title id="_5c1ede3c-9811-1007-ad96-6c8c9ff36c33">Implementation plan (spec PR first; each PR independently mergeable)</title>
+<ol id="_4adfe224-6a20-fb43-aba8-7e22b8452b30" type="arabic"><li><p id="_b487f472-e28b-a768-6754-cf14a13d7a5e"><strong>PR 1 — the spec.</strong> This document + the <tt>00-INDEX.md</tt> entry + <tt>schema/tpkg-blksum-v1.schema.json</tt> + <tt>schema/tpkg-lazy-seed-v1.schema.json</tt>. No code.</p>
+</li>
+<li><p id="_716e35ab-fc6b-d869-c7c7-c231bcd83da1"><strong>PR 2 — the transport.</strong> <tt>crates/tebako-http/src/lib.rs</tt>: the Range GET entry point (Range header, 206/Content-Range validation, If-Range/ETag revalidation, the loopback carve-out), unit + contract tiers with the fixture server.</p>
+</li>
+<li><p id="_193ff7b7-8505-e677-0624-95994762d71b"><strong>PR 3 — the byte source and the lazy store record.</strong> <tt>crates/tpkg/src/lazy.rs</tt> (descriptor + blksum models, the store-record read/write/scan under  <tt>tpkg::runtime_store</tt>), <tt>crates/tfs/src/source.rs</tt> + <tt>crates/tfs/src/source_remote.rs</tt> (the byte-source seam, the caching remote source,  <tt>backend-remote</tt> feature),  <tt>crates/tfs/src/mount.rs</tt> (the fifth mount-source kind), <tt>crates/tfs/src/backends_limnifs.rs</tt> (the sourced open — prefix + record-table fetch), the limnifs-core paged-<tt>SlabSource</tt> pin (upstream first). Unit/property tiers + the parity class.</p>
+</li>
+<li><p id="_0ff70fef-4fb8-7eea-7b4d-20237fe8c453"><strong>PR 4 — the loader + driver wiring.</strong> <tt>crates/tebako-resolve/src/plan.rs</tt> (the lazy commit closure writing the seed record), the shim/bootstrap resolve paths (<tt>TEBAKO_RUNTIME_LAZY</tt> + config), <tt>crates/tebako-driver/src/driver.rs</tt> (state-detecting env-image mount, the seal thread, EIO mapping),  <tt>crates/tebako-cli/src/doctor.rs</tt></p>
+<ul id="_6e7e8552-a02c-0adf-dece-5240def35710"><li><p id="_14fc2326-ed1d-1bcf-52f0-f8e965e28425">the cache list/seal surfaces. E2e legs of §10.</p>
+</li>
+</ul>
+</li>
+<li><p id="_f6954fd9-2884-921b-539a-08be53bbaad1"><strong>PR 5 — the publish path.</strong> <tt>crates/tebako-cli/src/publish.rs</tt> (blksum generation in-process), the shard/registry additive <tt>image.blksum</tt> field (validation + schema), the factory release legs (factory repos, stacked on PR 5's product half).</p>
+</li>
+<li><p id="_d5addc16-fe85-0583-0c3c-a3e9ab00f3be"><strong>PR 6 — OCI range + the flip data.</strong> The spec 38 §5 closure arm; the tebako-bench lazy arm (spec 27 harness); the default-flip PR only after §10's rule is met.</p>
+</li>
+</ol>
+</clause>
+</sections>
+</metanorma>

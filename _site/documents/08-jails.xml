@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Jails: host-access policy</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 08</docidentifier><docnumber>TBK SPEC 08</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_49376182-b2fc-984e-da94-3887d80c369c" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_16ed7306-4019-e20c-8ec8-316a95a3606d">Normative specification of host-filesystem access control for running payloads. Status: SHIPPED (roadmaps 09 + 30 + 35) — the TFS enforcement point (§1–§3) is SHIPPED in  <tt>crates/tfs</tt> (policy model, <tt>tebako_fs_host_policy</tt>, per-route EPERM/EROFS gating, symlink re-validation, jail acceptance suite); the  <tt>TEBAKO_JAIL</tt> env form of the policy (§1) is SHIPPED with roadmap 30's preload shim (<tt>tfs exec --jail</tt> carries it to native binaries); manifest integration (§4 — <tt>capabilities.host</tt> in <tt>crates/tpkg</tt>), the press/dispatch surfaces (<tt>tebako press --jail</tt> writing the package manifest's <tt>jail:</tt> block, <tt>tebako run</tt>/<tt>tebako-shim</tt> <tt>--jail|--mount|--no-host</tt>), the bootstrap's manifest∩user composition at handoff, and the audit-journal logging of violations (<tt>event=jail-deny</tt>) are SHIPPED with roadmap 35. Enforcement exists because every file access already flows through the TFS layer — one choke point covers every consumer.</p>
+</foreword></preface><sections>
+<clause id="_ec41cdba-f2e2-bf11-0142-6302f00ec7ab" unnumbered="true" obligation="normative">
+<title id="_08808d6f-c9c4-31c9-9a82-2574d470dd39">1. Policy model (docker <tt>-v</tt> semantics)</title>
+<sourcecode id="_d32d4f67-1f77-17c4-dc47-a4fc37034acc" lang="yaml"><body>jail:
+  default: open | deny          # open = today's behavior (cwd + writes pass through)
+  mounts:
+    - host: $HOME/sources
+      mount: /work
+      access: ro | rw
+  argument_files: auto-allowed  # the input file you hand the command is allowed even under deny</body></sourcecode>
+
+
+<p id="_efb88575-56c5-c4e9-9807-5f04a0131511"><strong>Three profiles:</strong> .  <strong>full access</strong> (<tt>open</tt>) — host cwd + writes pass through (today). .  <strong>directory-scoped</strong> — cwd mapped to <tt>/work</tt>, rw; nothing else. .  <strong>file-scoped tight jail</strong> (<tt>deny</tt> + argument files only) — run an untrusted payload against one input, nothing else.</p>
+
+<p id="_4922717b-6f42-9e70-8c71-ba8102d7a4b6"><strong>The <tt>TEBAKO_JAIL</tt> env form (the form the runtime driver and the preload shim consume — the loader's wire spelling of a policy).</strong> ABNF:</p>
+
+<sourcecode id="_a2e37ab6-1df9-84a4-b5c1-2ab06115b777"><body>policy      = default *(";" grant)
+default     = "open" / "deny"
+grant       = host-grant / argfile-grant
+host-grant  = host-path ":" mount-path ":" access
+host-path   = 1*(%x21-3A / %x3C-7E)        ; any visible char except ';'
+mount-path  = 1*(%x21-3A / %x3C-7E)        ; the in-VFS point, same alphabet
+access      = "ro" / "rw"
+argfile-grant = "@" 1*(%x21-7E)            ; an argv file path, read-allowed</body></sourcecode>
+
+
+<p id="_ddf29e78-a11f-52ec-d3db-b8e98d5c5c23"><tt>open</tt> grants host cwd + writes (today's behavior); <tt>deny</tt> is the default-deny floor. Each  <tt>;host:mount:access</tt> grants the host path at the mount point with the named access;  <tt>;@path</tt> auto-allows an argument file even under deny. The grammar's alphabet excludes  <tt>;</tt> (the grant separator); a windows drive-qualified floor spelling is NOT carried (the right-split cannot — every consumer re-derives the floor at its own bind, §2's inheritance rule). Examples:  <tt>deny;/home/u/src:/work:rw</tt>, <tt>deny;/home/u/src:/work:rw;@/home/u/in.csv</tt>, <tt>open</tt>.</p>
+</clause>
+
+<clause id="_1c4531cd-6ba6-b0fd-386b-7235153535f5" unnumbered="true" obligation="normative">
+<title id="_0f8784ef-d572-3974-5c0a-ebbbdc97fd33">2. Semantics</title>
+<ul id="_2760afd7-60f6-65cf-1fa6-b4bc59754a7a"><li><p id="_28b58057-786b-b479-ef27-7ea3ccb0be0d">Writes to an <tt>ro</tt> mount fail <tt>EROFS</tt>; paths outside every mount fail <tt>EPERM</tt>. Payload images themselves are always ro (spec 11).</p>
+</li>
+<li><p id="_bd17544f-10ec-e8d3-841e-3ef6d77fcf2e">Symlinks resolve inside the granted view: realpath checked at bind time, re-validated on each open.</p>
+</li>
+<li><p id="_05f51e47-9e31-cdac-5c6d-6a21cf306590"><strong>Precedence (locked):</strong> the package's manifest REQUESTS access (<tt>capabilities.host</tt>); the user can always TIGHTEN it (<tt>tebako run --jail pkg</tt>, <tt>--mount src:/work:rw</tt>, <tt>--no-host</tt>) — user policy always wins. Signed/trusted payloads may get wider latitude by policy choice, never by bypass.</p>
+</li>
+<li><p id="_7508ced8-5274-b6d7-333a-97931b40425c">Violations are logged to the tebako audit journal with path + syscall class.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_fe13e820-baae-0140-5545-74cedcd4354d" unnumbered="true" obligation="normative">
+<title id="_66223961-b039-a918-002a-da34eff7263b">2.1 The platform floor (locked 2026-08-14)</title>
+<p id="_152ff235-33cb-6fa3-ca5f-a1697e8961c6">Every policy bound under the <tt>deny</tt> default gains the <strong>platform floor</strong>: a fixed per-platform set of read-only grants covering the surface a spawned interpreter or runtime physically cannot boot without. The floor exists because the failure mode for a missing platform grant was never a policy verdict — under a scratch-only jail (<tt>deny;&lt;scratch&gt;:&lt;scratch&gt;:rw</tt>) the JVM crashed with a SIGSEGV at <tt>getMacOSXLocale</tt> (its locale/framework init NULL-derefs when reads under  <tt>/usr</tt> are denied; spec 22 phase-E dogfood, 2026-08-13). A jail whose denial crashes the child in someone else's library is wrongly constructed: denying the platform surface never produced a working process, so the floor grants it always.</p>
+
+<ul id="_eab334ef-2894-4161-3f99-4dd2fb73f77d"><li><p id="_fef85720-4891-81ca-56b9-09ce73136bb2"><strong>Entries (evidence-driven):</strong></p>
+<ul id="_1b7e336b-dcdc-799d-c03e-0d391d03ae16"><li><p id="_38f662a1-cdce-857c-2e17-ff3d151e8719">macOS — <tt>/usr</tt>, <tt>/System</tt>, <tt>/Library</tt> (the proven set above).</p>
+</li>
+<li><p id="_6bee3f9b-3ce1-7c75-6bc0-e415aa0765bf">windows — <tt>%SystemRoot%\System32</tt> (the loader's DLL root; no process resolves its imports without it),  <tt>%SystemRoot%\SysWOW64</tt> (the 32-bit view for 32-bit children),  <tt>%SystemRoot%\Fonts</tt> (the GDI font tree GUI runtimes enumerate — the JVM's AWT init reads it).  <tt>%SystemRoot%</tt> resolves at bind (<tt>C:\Windows</tt> when unset).</p>
+</li>
+<li><p id="_6eb485ae-2fa8-41a7-a2da-f74c6cfb6242">Other unix — none today; an entry joins a list only with a proven platform-process consumer, cited by run. The lists are amended by evidence, never by anticipation.</p>
+</li>
+</ul>
+</li>
+<li><p id="_48c04441-be12-382c-a92c-8abcb8b0cf86"><strong>Supersede rule:</strong> an authored mount covering a floor path (same or an ancestor prefix) supersedes the floor entry — the floor never narrows what the author allowed. Widening a floor path to  <tt>rw</tt> is therefore one authored grant away; there is no way to drop a floor path short of not denying (see below) — that is the point of a floor.</p>
+</li>
+<li><p id="_3d5c7b71-6e46-aa3e-48df-a40dcda841f3"><strong>Bind semantics:</strong> the floor applies at <tt>HostPolicy::bind</tt> (§3's single choke), only under the  <tt>deny</tt> default — under <tt>open</tt> it grants nothing the default does not already allow, so the no-policy path stays byte-identical (<tt>never_denies</tt> keeps its exact meaning). A floor path absent on the host is skipped silently (it is a courtesy surface, not an authored request whose absence must fail the bind).</p>
+</li>
+<li><p id="_d9174897-97c7-b855-f1e1-d475e777fd0b"><strong>Ancestor traverse (locked 2026-08-14; extended 2026-10-08):</strong> every bound grant — authored mount, floor entry, or  <tt>@file</tt> argument-file grant — implies its strict ancestors are traversable: each ancestor answers an exact-path READ — never a prefix (no sideways exposure), never a write. Canonicalization walks are universal: the JVM reads its cwd and every ancestor at VM init, and the factory's jailed_exec leg died with "Could not determine current working directory" when the chain was denied (PR #95 macOS legs). The  <tt>deny:arg</tt> profile's file grants join the same rule (2026-10-08, tebako#539): a granted input file you cannot stat your way to is unusable — the JVM died at VM init under  <tt>deny:arg</tt> with a granted file in a denied cwd chain. The set is derived at bind — never authored, never serialized. It is what makes an authored  <tt>$CWD</tt>-style grant sufficient in practice: the payload names the directory it works in; the platform walk to reach it passes by construction.</p>
+</li>
+<li><p id="_dcd81c84-f45d-53fc-e707-d6f958bfc9d7"><strong>Inheritance:</strong> floor mounts are NOT serialized into <tt>TEBAKO_JAIL</tt> — the env grammar's  <tt>host:mount:ro|rw</tt> right-split cannot carry a windows drive-qualified floor spelling, and it never needs to: every consumer re-derives the floor at its own bind (supersede makes that idempotent), so a spawned child's inherited spec plus its bind yields a policy identical to the parent's. Enforcement treats authored and floor mounts as one longest-prefix set.</p>
+</li>
+<li><p id="_3dac4689-a3c2-cf6c-b8d8-f4b3b4416adf"><strong>The boundary (what never joins):</strong> the floor is SYSTEM surface only. The workload's own tool tree (a JRE, a third-party install) and the user's home stay authored grants — an operator's  <tt>deny</tt> must not silently read-expose private data, and the prefix grammar cannot express the "stat-only" grant the macOS CFPreferences home probe needs (spec 22 §3.4's journal-pinned chain, 2026-08-14: floor → named  <tt>jvm.cfg</tt> error → named <tt>InternalError</tt> → boot with <tt>&lt;jre&gt;:ro</tt></p>
+<ul id="_26df903b-f57e-4d12-8959-25e149848695"><li><p id="_cab88933-6cae-9c76-2859-c5bf812c3dd0"><tt>&lt;home&gt;:ro</tt>). The floor's promise is the end of the segfault</p>
+<p id="_c73e1afe-fcf9-2569-5223-616373cd80ef">class: every missing grant surfaces as the workload's own named error, pinned in the audit journal — never a crash in someone else's library.</p>
+</li>
+</ul>
+</li>
+</ul>
+</clause>
+
+<clause id="_1781dd6b-30ed-c55a-e5d0-44ca786e78eb" unnumbered="true" obligation="normative">
+<title id="_52650a32-1cb4-2ead-b344-590d191aa447">3. Enforcement point (the single choke)</title>
+<p id="_06930d49-ceed-6916-3050-a8b573520d89">New TFS C ABI entry:</p>
+
+<sourcecode id="_bd9cf9bd-2267-ec92-1961-3243bb53650d" lang="c"><body>int tebako_fs_host_policy(int default_open /* 0 = deny */,
+                          const tebako_host_mount_t* mounts, size_t n_mounts,
+                          const char* const* arg_files, size_t n_arg_files);</body></sourcecode>
+
+
+<ul id="_21c6e2bb-1434-dcd3-be5a-fc0f717a38a0"><li><p id="_00a29f15-f3c3-e9e9-ba7e-a0ccefcf5fe4">The host-passthrough path of every IO route consults the policy: prefix match + access bit per mount.  <tt>tebako_fs_stat/open/opendir/…</tt> return  <tt>EPERM</tt> (denied) / <tt>EROFS</tt> (ro write).</p>
+</li>
+<li><p id="_b024d6ba-9836-19a6-e7d4-088e96616457">The policy is about HOST paths; memfs mounts are unaffected.</p>
+</li>
+<li><p id="_cf2bd4c7-5224-f5fc-a3e9-1c1bf45f440d">Implemented in the Rust TFS (<tt>crates/tfs</tt>) — the same layer that owns routing, so bootstrap, runtime driver,  <tt>tebako run</tt>, and <tt>tfs</tt> all enforce identically with no per-app work.</p>
+</li>
+</ul>
+
+<clause id="_5ed948fe-c0b2-88e8-76c9-43f8803b0158" unnumbered="true" obligation="normative">
+<title id="_350473fd-3675-4e9f-74e2-7a0b5100025e">Shipped semantics (crates/tfs, roadmap 09)</title>
+<ul id="_65a0255a-3d74-3b51-b480-6dec7c959891"><li><p id="_21d35359-8ea9-c252-822b-d717fdd26439">The policy is <strong>process state, not namespace state</strong>: <tt>tebako_fs_unmount</tt> does not reset it (fail-closed); a later <tt>tebako_fs_host_policy</tt> call replaces it. Install it after the payload mounts are established — the mount family's image read is itself policy-gated once a policy is active.</p>
+</li>
+<li><p id="_7b1efdc5-5f0b-83b3-d3c9-3b96f1452758">Gated host-passthrough decisions: <tt>open</tt> (read and write modes), <tt>stat</tt>, <tt>opendir</tt>, <tt>dlmap2file</tt>, <tt>extract_all</tt>'s destination (a host write), and the mount family's image read. An allowed host path keeps the historic answer ENOENT ("not ours, pass through") for reads AND writes — under  <tt>open</tt> a host write attempt therefore answers ENOENT, not EROFS, so the consumer's pass-through can perform the write (profile 1: "cwd + writes pass through"). Held memfs content is byte-for-byte unchanged (write opens on it stay EROFS).</p>
+</li>
+<li><p id="_cb6ac1e4-9abc-4bd0-f6c2-de970ef5d687">The per-process materialization tree is NOT a host path for policy purposes (tebako#502, 2026-08-30): a dlmap-marker path (<tt>…/tebako-dl-&lt;hex&gt;/…</tt> — closure copies and the home-layout whole-tree roots  <tt>tebako-home-&lt;handle&gt;/…</tt>) the image does not answer is the runtime's own extraction served by its host copy. Every route (<tt>open</tt>/<tt>stat</tt>/<tt>opendir</tt>/<tt>dlmap2file</tt>) answers it ENOENT without consulting the policy: the hex leaf is per-process (unauthorable at bind — the path does not exist to canonicalize), the content rode in through the ungated extraction writes, and the tree is removed at process exit. This is what lets a wrapper-pattern runtime (spec 22 §3's exec cache) compose with a  <tt>deny</tt> jail.</p>
+</li>
+<li><p id="_e2e59f32-57f3-c206-4494-f5792529b022">"Host path" means <strong>any path the mounts do not hold</strong> — outside every mount, or covered by a mount but absent from its image (spec 11 §2): the app payload mounts at  <tt>/</tt> and the host filesystem stays reachable exactly through this rule.</p>
+</li>
+<li><p id="_d3ba896f-37ac-9f3c-947e-c40d3d0ebf8d"><strong>The consumer must route, not just the engine</strong> (tebako#917): a runtime whose IO shims call this family only for the paths the mounts COVER hands every uncovered path to the kernel, where this policy cannot see it. Such a shim asks  <tt>int tebako_fs_host_guard(void)</tt> — 1 when the installed policy judges an uncovered path (a deny or record default) — and routes every absolute path through the family while it answers 1. An allowed path still answers ENOENT, the pass-through signal these shims already honour, so an unguarded run is unchanged and a guarded one denies where it said it would. Coverage is a namespace test; a namespace test is not an enforcement point.</p>
+</li>
+<li><p id="_88083c07-65c2-2a38-d9f2-13701faea4b8">A mount's access bit applies even under an <tt>open</tt> default (an ro bind is ro in an otherwise open namespace, docker-style); longest host prefix wins on path-component boundaries; argument files are an exact read-only grant, even under deny.</p>
+</li>
+<li><p id="_673dfc4a-49cb-585b-905a-a8246298e1ca">Bind-time realpath covers mount sources and argument files (a missing one fails the install with its errno); every gated decision re-canonicalizes the target, so symlinks swapped in after install resolve to their target and escapes fail EPERM.</p>
+</li>
+</ul>
+</clause>
+</clause>
+
+<clause id="_8b23de55-f4d0-ecba-27a2-73904dedb28f" unnumbered="true" obligation="normative">
+<title id="_75374356-9599-7768-9cda-109a7a01d887">4. Manifest integration</title>
+<p id="_cc25fce2-c8d9-ce1a-540d-df08ad072728">The payload manifest (spec 03) gains <tt>capabilities.host</tt> — the access the payload was built to need (e.g. metanorma: read the input file's directory, write the output directory). Dispatch surfaces (spec 07) compose: manifest request ∩ user policy = effective jail.</p>
+
+<clause id="_e47ec730-3972-1491-8ee2-d5adcae58407" unnumbered="true" obligation="normative">
+<title id="_aa803d6f-830a-ccca-22c9-e338b89cba71">Shipped surfaces (roadmap 35)</title>
+<ul id="_28229078-4507-7bc2-89a1-6df5ae2a5111"><li><p id="_05df3ea2-67f8-73ae-61cd-d1fa015580f4"><strong>Model:</strong> <tt>crates/tpkg/src/jail.rs</tt> owns the authored shape (YAML block ↔  <tt>TEBAKO_JAIL</tt> env form ↔ <tt>--jail</tt> cli spec: <tt>open</tt> | <tt>deny</tt> | <tt>deny:arg</tt> | a YAML file | the env grammar) and the locked precedence algebra (<tt>intersect</tt> / <tt>effective</tt>): deny defaults win; each side's grants are capped by the other side's allowance at the same prefix (ro is sticky, a user  <tt>--no-host</tt> drops request grants); argument files union and  <tt>auto-allowed</tt> resolves argv files into read-only grants at dispatch. The payload manifest's  <tt>capabilities.host</tt> and the package manifest's  <tt>jail:</tt> block are both this type.</p>
+</li>
+<li><p id="_8bae3225-ef92-7347-4818-efa905d38de3"><strong>Press:</strong> <tt>tebako press --jail &lt;spec&gt;</tt> writes the policy into the type-2 package manifest's  <tt>jail:</tt> block (spec 02 §5b / spec 03 §6); block-less packages are byte-identical to before.</p>
+</li>
+<li><p id="_cae98243-3c5e-ca01-0dea-e65f06c74253"><strong>Bootstrap:</strong> composes package <tt>jail:</tt> ∩ <tt>TEBAKO_JAIL</tt> at handoff and exports the effective policy as  <tt>TEBAKO_JAIL</tt> (+ <tt>TEBAKO_JAIL_SOURCE</tt> =  <tt>manifest</tt> | <tt>user</tt> | <tt>manifest+user</tt>, + <tt>TEBAKO_JAIL_JOURNAL</tt> → <tt>$TEBAKO_HOME/journal.log</tt>). Malformed policy fails closed, exit 73 (<tt>EX_TEBAKO_JAIL</tt>). No policy: nothing exported (legacy byte-identical).</p>
+</li>
+<li><p id="_0cb33d87-a504-e1dd-5005-7137784ec9c0"><strong>Dispatch:</strong> <tt>tebako run &lt;pkg&gt; [--jail &lt;spec&gt;] [--mount &lt;host:mount:ro|rw&gt;]... [--no-host] [--] [args...]</tt> and the same flags on <tt>tebako-shim</tt> (consumed before <tt>--</tt>; the payload mirror carries <tt>capabilities.host</tt> from install time).</p>
+</li>
+<li><p id="_dc672f59-3082-4574-6845-99b8bd3e530f"><strong>Audit journal (§2):</strong> every denial in the TFS layer appends <tt>&lt;ts&gt; event=jail-deny path=&lt;p&gt; op=read|write source=&lt;s&gt;</tt> to the tebako journal (<tt>TEBAKO_JAIL_JOURNAL</tt> &gt; <tt>$TEBAKO_HOME/journal.log</tt> &gt; <tt>~/.tebako/journal.log</tt>), best-effort — journaling never fails the operation it audits.</p>
+</li>
+</ul>
+</clause>
+</clause>
+
+<clause id="_4f310c68-9a7e-24e3-e001-f9a702cb6efb" unnumbered="true" obligation="normative">
+<title id="_8fcb8633-a7e7-4ce4-325b-d3b17ab06e10">5. Scope (honest, locked 2026-07-26)</title>
+<p id="_525e925a-fb4d-06b4-b611-50e8a2d2fb59">Jails are FILESYSTEM-ONLY. <tt>capabilities.network</tt> is advisory metadata (displayed by the info surface, spec 15), not an enforcement promise. Coverage: every IO route through TFS — all interpreted payloads AND native binaries running under the preload interposition shim (spec 07 §8 tier 1, whose IO flows through the same  <tt>host_policy</tt>). NOT covered: statically-linked binaries (direct syscalls, no interposition point) and any process that escapes the shim — stated honestly in the manifest and docs. OS-level network confinement (seatbelt/seccomp/WFP) is a possible later layer, never claimed today.</p>
+
+<p id="_f70bcf21-21bd-fc62-7dd6-c266ffbb05df">The shim's coverage is SYMBOL-level (tebako#439): a jail holds only for the libc entry points the shim interposes — the named list in <tt>crates/libtfs-preload</tt> (lib.rs "Interposed surface"), which includes the LFS64/fortify/versioned twins (<tt>open64</tt>/<tt>openat64</tt>/<tt>fopen64</tt>, <tt>__read_chk</tt>/<tt>__openat_2</tt>, the <tt>__xstat</tt> family through <tt>__fxstatat64</tt>) because glibc hands  <tt>_FILE_OFFSET_BITS=64</tt>/<tt>_FORTIFY_SOURCE</tt>/pre-2.33 callers DISTINCT symbols that never touch the plain names (the #439 hole: OpenSSL's  <tt>o_fopen.c</tt> defines <tt>_FILE_OFFSET_BITS=64</tt> itself, so every  <tt>BIO_new_file</tt>/<tt>X509_LOOKUP_load_file</tt> bound <tt>fopen64</tt> straight to libc). The WRITE class rides the same gate (tebako#444, closing the pre-existing hole the #439 read-class audit left):  <tt>open</tt>/<tt>openat</tt> with <tt>O_WRONLY</tt>/<tt>O_CREAT</tt>/<tt>O_RDWR</tt> were policy-gated by the engine's open from the start, and  <tt>fopen</tt>'s write/append/update modes (<tt>w</tt>/<tt>a</tt> bases, every  <tt>+</tt> update form including <tt>r+</tt>, the <tt>x</tt>-forms) plus <tt>creat</tt> now route through  <tt>host_policy</tt> BEFORE the real libc call touches the host — a jailed write outside an rw grant is EPERM by name, a write against an ro grant EROFS, and a write naming a memfs-held path is EROFS under any policy (payload images are always read-only). Known-uncovered at this layer: the remaining fortify open family (<tt>__open_2</tt>/<tt>__open64_2</tt>/<tt>__openat64_2</tt> — no importer observed in the 0.16.6 linux-gnu runtime) and raw  <tt>syscall(2)</tt> IO. Separately, the runtime EXE's own statically-linked native libraries are gated only for symbols the exe itself defines (spec 22 §2:  <tt>dlopen</tt>/<tt>dlerror</tt> today — defining the file-IO family in the exe is follow-up wiring in the runtime factory, tebako-runtime-ruby); an interpreter's patched IO and preload-delivered children are covered.</p>
+</clause>
+
+<clause id="_ea12b301-aae4-ea97-6c56-be5bfd53431a" unnumbered="true" obligation="normative">
+<title id="_c7873d9c-5e02-d09c-ea5d-03e10832e965">6. Executor-layer trust (locked 2026-07-27)</title>
+<p id="_37971fff-c86e-7d2e-c87d-d384b662d379">Tebako is the EXECUTOR of everything it runs — the parent that spawns and owns the child. Mediating a child's syscalls (preload interposition for dynamic children, seccomp user-notification for static children on Linux) is the execution contract, not hijacking: a hostile party would have to become the executor or the kernel to hold the same position, and both are outside the jail's threat model by definition. Jails bind the CHILD downward; they claim nothing about the executor or kernel upward.</p>
+</clause>
+
+<clause id="_95a30b25-a26c-0d3a-86ce-840fc2f04adb" unnumbered="true" obligation="normative">
+<title id="_36e11c0e-0452-8725-ce14-b7097a6c5722">7. Conformance: the attack matrix (locked 2026-10-23)</title>
+<p id="_8db32ea6-f461-b81a-e02a-193c17aad238">A jail is only as good as the attacks it has been shown to stop. Every vector below is either  <strong>blocked and proven by a named test</strong>, or <strong>named out of scope with the reason</strong> — there is no third state. The host-filesystem vectors live in  <tt>crates/tfs/tests/jails.rs</tt>; the environment vector lives beside its implementation (<tt>crates/tebako-driver/src/env_scrub.rs</tt>). Both run on every platform leg of every CI run and therefore on every release: a regression reddens the release matrix, not a dashboard nobody reads.</p>
+
+<table id="_1eba207d-d4da-59b5-13ab-d848abd6c97b"><thead><tr id="_e6327ff5-1c9f-9f15-0587-98b42e78bd32"><th id="_590c98ea-424a-7895-9f5b-01766113396f" valign="top" align="left">#</th>
+<th id="_0f5d4b61-7db2-037e-6081-30e6fd2d813f" valign="top" align="left">vector</th>
+<th id="_2c12101d-d942-7fa5-c6d6-d3f6385888dd" valign="top" align="left">verdict</th>
+<th id="_dbe870dc-1b6d-7164-3a0d-ac370cd34ec4" valign="top" align="left">the proof</th>
+</tr></thead>
+<tbody><tr id="_d8a44aff-8b80-b53d-b2dc-b9baff93386f"><td id="_e49d3e93-9dff-ee0a-b98c-0525d8f38dc7" valign="top" align="left">1</td>
+<td id="_484dcfbe-239c-5a97-3bab-d127ca739bdc" valign="top" align="left">lexical escape: <tt>..</tt>, doubled separators, <tt>.</tt> components inside a grant</td>
+<td id="_cbc8b2bd-59e4-6266-a24a-d93d97b5aa20" valign="top" align="left">blocked</td>
+<td id="_407cf07a-f323-106f-7790-5c8c295ea70a" valign="top" align="left"><tt>dot_dot_paths_normalize_lexically</tt></td>
+</tr><tr id="_0f6fdb36-a6ba-978c-d2d8-d9e6806959c5"><td id="_a5930d4b-3db7-ace8-88c5-a6cd203d6507" valign="top" align="left">2</td>
+<td id="_ea253e4e-3d7f-7460-f6db-23a94140c195" valign="top" align="left">symlink escape: a link inside a granted tree pointing at a denied sibling (directory and file level)</td>
+<td id="_8e75a465-8027-8c20-8a64-70fbe83f93eb" valign="top" align="left">blocked (EPERM)</td>
+<td id="_aedfaa51-2628-53d8-18ab-84c66660cf92" valign="top" align="left"><tt>symlink_escape_attempt_fails</tt></td>
+</tr><tr id="_20bb4965-a416-d407-774c-c739b429c9dc"><td id="_46bbecf5-4ae5-f91b-dea1-a1e5e021e0b6" valign="top" align="left">3</td>
+<td id="_a895b57b-af35-f29a-438e-7ec63da5a045" valign="top" align="left">TOCTOU: the tree is swapped for a symlink AFTER the policy was bound</td>
+<td id="_9082f67c-b047-8677-0af4-101bbf10ce41" valign="top" align="left">blocked (EPERM)</td>
+<td id="_a6dfb196-9410-19b9-acfb-cf93fce6ddc4" valign="top" align="left"><tt>symlink_swap_after_bind_fails_on_revalidation</tt> — every open re-validates through realpath</td>
+</tr><tr id="_c482ed19-7f9c-6cfd-10a9-2062007df17f"><td id="_659ec849-550a-9c08-7ae5-3deb9e43df9c" valign="top" align="left">4</td>
+<td id="_efd61270-c06c-de1e-c8b1-4ed86483b94f" valign="top" align="left">case folding: a denied path asked for with different case on a case-insensitive host</td>
+<td id="_25014381-c1a8-ed41-f95d-7cb1deb58df5" valign="top" align="left">blocked (EPERM)</td>
+<td id="_1ce245b6-026b-d5d1-fefb-5af4d50be2b8" valign="top" align="left"><tt>case_variants_of_a_denied_path_are_denied</tt> — the decision is taken on the canonical path (macOS <tt>realpath</tt> returns the on-disk case), so it never depends on what the filesystem thinks about case</td>
+</tr><tr id="_127a38f5-0570-a28a-972f-17b1f3b5254a"><td id="_842ff835-aacb-8cc4-1ce0-a67a0b8f5a3a" valign="top" align="left">5</td>
+<td id="_c9225d4c-786b-acda-449c-500a0cc77e7e" valign="top" align="left">write into a held (image) tree</td>
+<td id="_c2ea90fc-3534-cc4f-9dc6-9ee05ab9e68b" valign="top" align="left">blocked (EROFS)</td>
+<td id="_152cdbd9-fbb6-1395-6ff7-ce6c18950979" valign="top" align="left"><tt>ro_mount_refuses_writes_with_erofs</tt></td>
+</tr><tr id="_352bedc2-796a-efb1-2d07-1baefcb1f665"><td id="_5dd71868-ffcc-408f-aeea-7755b552fc58" valign="top" align="left">6</td>
+<td id="_82f158e0-b0a2-1226-af27-fc30047f5972" valign="top" align="left">write outside every grant under an rw mount</td>
+<td id="_e6c33e36-341b-f8f6-dc26-406f31ef2a82" valign="top" align="left">blocked (EPERM)</td>
+<td id="_685a90a0-4cfc-39c9-b635-911c4402df92" valign="top" align="left"><tt>directory_scoped_mount_rw_works_and_sibling_denies</tt></td>
+</tr><tr id="_6f3ef021-17ec-bc14-222a-fd3acadb0a5f"><td id="_b6682259-c45a-aaba-acc7-8fee446ab572" valign="top" align="left">7</td>
+<td id="_056f4d38-893e-d559-e700-25ff6496113a" valign="top" align="left">enumeration of a denied host directory</td>
+<td id="_d86671e4-1b44-07b9-0abe-21297494e3b0" valign="top" align="left">blocked (EPERM, nothing listed)</td>
+<td id="_c29db065-865f-6e9d-9217-a21625ad7ee9" valign="top" align="left"><tt>deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected</tt></td>
+</tr><tr id="_8d345bd8-d881-e7fe-4952-b764d7525b00"><td id="_8e620c61-b6e7-8516-7efc-acf767a2f524" valign="top" align="left">8</td>
+<td id="_30746de5-8afb-0130-b079-2ea16b4990e4" valign="top" align="left">reads/stats of a denied host file</td>
+<td id="_864f977f-43ac-ae9f-8b21-2de3f9e3ee0e" valign="top" align="left">blocked (EPERM, never ENOENT — the denial is a decision, not a miss)</td>
+<td id="_b5d2485f-6266-9e0d-cda9-23dcf47cb642" valign="top" align="left"><tt>deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected</tt></td>
+</tr><tr id="_c5c7a002-9926-e1ef-aec8-82e80a75b730"><td id="_c512bfd9-0d65-617f-085c-bc0688c9b7a6" valign="top" align="left">9</td>
+<td id="_0eb86d72-009f-41c2-ec83-d10fefc565f4" valign="top" align="left">extract-all as an ungated host write</td>
+<td id="_4e42e31c-698e-96ad-ac04-da033f3a884c" valign="top" align="left">blocked (gated)</td>
+<td id="_ae893b26-a23f-81dc-2f7d-74115c74c01c" valign="top" align="left"><tt>extract_all_is_a_gated_host_write</tt></td>
+</tr><tr id="_7bacf5d0-de21-3a3d-120b-e537c2c5d87f"><td id="_ec1a34ea-6b84-d301-4088-874c451b5961" valign="top" align="left">10</td>
+<td id="_5231e8ba-f372-866d-2fc0-d4d0910dfd7a" valign="top" align="left">covered-but-not-held path under a <tt>/</tt> mount (the mount must not become a hole)</td>
+<td id="_0788a436-6381-f7e6-5c05-28ea88de4fb3" valign="top" align="left">gated (the host decision runs)</td>
+<td id="_ad3db604-88f2-10b2-e312-6de07a633d37" valign="top" align="left"><tt>covered_but_not_held_paths_fall_through_to_the_host_decision</tt></td>
+</tr><tr id="_5d391b95-e6ee-ced6-4d3d-d4102820bfa4"><td id="_0049595f-a1ff-e2fe-c59d-bc438a22575c" valign="top" align="left">11</td>
+<td id="_b71dba23-f99e-19d7-bfeb-c5cc1febc19c" valign="top" align="left">image reads through the policy</td>
+<td id="_0e0345c2-5dd1-3429-b060-cdf74c687b0b" valign="top" align="left">gated</td>
+<td id="_ce475647-9936-15cc-983f-b76b2a808837" valign="top" align="left"><tt>mount_family_reads_the_image_through_the_policy</tt></td>
+</tr><tr id="_d256543f-edab-43e6-0347-c4ac21deadc0"><td id="_8cda2784-4208-66ac-19da-4918af5e44e4" valign="top" align="left">12</td>
+<td id="_52024eca-3589-046a-4ccb-e1b5447eedd8" valign="top" align="left">unmount under a live policy</td>
+<td id="_afc7a144-d734-c573-3c02-77278a8c56d0" valign="top" align="left">fail-closed</td>
+<td id="_20b35a42-6ef3-67a2-1d9d-47c4babf9b45" valign="top" align="left"><tt>policy_survives_unmount_fail_closed</tt></td>
+</tr><tr id="_8b41353e-583f-b8f2-e610-5a03cf3c1eea"><td id="_df9a96e2-0907-7734-4d29-6853ffd45ed7" valign="top" align="left">13</td>
+<td id="_34334619-3462-2dbb-6a80-784b34e6260a" valign="top" align="left">malformed policy spec</td>
+<td id="_765286c7-da39-6f88-bac4-374e714addf5" valign="top" align="left">fail-closed (named)</td>
+<td id="_20e07c04-eedc-96c3-ba57-ca2e51cee89d" valign="top" align="left"><tt>policy_install_validates_its_arguments</tt></td>
+</tr><tr id="_6f9a6d0a-ac3f-6543-88f4-242c67f12628"><td id="_57e85054-d5f9-c793-6144-4c5a3798e83f" valign="top" align="left">14</td>
+<td id="_2aeb88ac-2cd1-cc6a-1357-cf800920224c" valign="top" align="left">argument-file grant: only the declared file, nothing beside it</td>
+<td id="_ed88979b-08d0-337a-b178-20a57901ae3c" valign="top" align="left">blocked</td>
+<td id="_4b3ae375-bd3f-66f8-539c-03b375849850" valign="top" align="left"><tt>tight_jail_allows_only_the_argument_file</tt></td>
+</tr><tr id="_777129ac-04df-7d7b-d0e2-176234202bc4"><td id="_5dc6b86a-0c57-5ca3-cbfe-f80c54191a37" valign="top" align="left">15</td>
+<td id="_71080b10-d65f-bb27-be45-a65d84781a12" valign="top" align="left">packager/CI credentials reaching the payload: <tt>TEBAKO_GITHUB_TOKEN</tt> and every other packager-side <tt>TEBAKO_*</tt> variable past the handoff</td>
+<td id="_e870db8a-8bc5-1e38-9434-990abcd1e88f" valign="top" align="left">blocked (blanked, never logged; <tt>env_pass</tt> is the explicit opt-in)</td>
+<td id="_6b56b6c3-f17c-7f7e-e319-dc8fae60ff7a" valign="top" align="left"><tt>the_packager_token_is_scrubbed_and_the_contract_kept</tt>, <tt>the_env_pass_opt_in_carries_its_declared_names</tt>, <tt>the_factory_smoke_contract_survives_the_scrub</tt> (spec 03 §2.10, tebako#737)</td>
+</tr><tr id="_441c0642-65fb-f356-f61f-f325f9042204"><td id="_52e648c8-e7d6-8d01-054f-301d8014f182" valign="top" align="left">16</td>
+<td id="_5e171da6-01aa-c483-275e-d4793d8f45b8" valign="top" align="left">Windows alternate data stream (<tt>file.txt:stream</tt>) on a denied base</td>
+<td id="_64855715-bb65-66c0-c9d7-76a874b6170c" valign="top" align="left">PLANNED — the decision rides the base path (a stream suffix is not a path component), and the proof lands with the windows leg that can exercise it</td>
+<td id="_4a2ad59c-c919-2383-7906-836985d1b98d" valign="top" align="left">— (named, not claimed)</td>
+</tr><tr id="_a8020af4-8eb3-bb54-6b03-8c95c2da86c4"><td id="_48b78621-1998-5fdd-1d4f-6401a57eb32a" valign="top" align="left">17</td>
+<td id="_1771b450-e627-eb49-fd28-4f7918237aa7" valign="top" align="left">statically-linked binary, or raw <tt>syscall(2)</tt> IO</td>
+<td id="_1cf54b6b-eea6-68c7-3600-031e531da5c7" valign="top" align="left">OUT OF SCOPE — no interposition point; §5 states it in the manifest and the docs</td>
+<td id="_9b933753-91b9-b426-58d3-117686e0cc92" valign="top" align="left">§5</td>
+</tr><tr id="_9dab82a6-3669-f551-09e2-1ec7980160e5"><td id="_0f1b5dd9-b065-0de7-6ef2-d2d118f29a96" valign="top" align="left">18</td>
+<td id="_5d627a87-314a-5980-682b-ecb6f4105966" valign="top" align="left">fortify open family still uncovered (<tt>__open_2</tt>/<tt>__open64_2</tt>/<tt>__openat64_2</tt>)</td>
+<td id="_6e23ee09-23ea-429a-4f9c-f3a0f9fd0aa2" valign="top" align="left">OUT OF SCOPE — no importer observed in the shipped runtimes; the symbol list is the interposed surface's SSOT</td>
+<td id="_ea60104c-e306-faa4-4e93-0afe709e0ea7" valign="top" align="left">§5</td>
+</tr><tr id="_4b2c013f-8551-6154-d71f-2d53019520fd"><td id="_21c20e38-502e-164a-9710-ed1fe781eca7" valign="top" align="left">19</td>
+<td id="_9c7791d0-c44d-6e92-eca2-9e91cd451a07" valign="top" align="left">the runtime EXE's own statically-linked stat/open definitions</td>
+<td id="_3e9fbd8a-65fe-11ec-7503-16a0b23be69a" valign="top" align="left">OUT OF SCOPE today — gated only for the symbols the exe defines (spec 22 §2); follow-up wiring lives in the runtime factory</td>
+<td id="_8da79846-878d-7edd-6f93-0b97247f521b" valign="top" align="left">§5</td>
+</tr><tr id="_8f00f1bf-164c-fa8a-3768-94e24aba7b2d"><td id="_08f369b2-9d19-e35c-e4a6-32290754ec7f" valign="top" align="left">20</td>
+<td id="_93419f18-fc7e-d44a-aee0-3b7f4f0c1f20" valign="top" align="left">a payload's own sockets (network confinement)</td>
+<td id="_b3842669-e0f2-5387-b4ac-585f9175a1e0" valign="top" align="left">OUT OF SCOPE today — <tt>capabilities.network</tt> is advisory metadata; the network axis is SOTA arc 05's second item, not a claim of this spec</td>
+<td id="_f0562606-3891-469f-6226-9d8e80756da0" valign="top" align="left">§5</td>
+</tr></tbody>
+</table>
+
+<p id="_9ffb0520-d560-9eae-1f95-c2acf596bf90">Row 16 is the one open vector that is IN scope and not yet proven: it is named here so nobody reads the matrix as "done", and it does not close until a windows test stands behind it.</p>
+</clause>
+</sections>
+</metanorma>

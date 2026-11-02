@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Launcher ABI (bootstrap → runtime)</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 06</docidentifier><docnumber>TBK SPEC 06</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_9225e1b7-a9bf-69b6-6e61-53945029e5db" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_5aac6b34-8330-60c4-b3cc-fddc9d80b0bb">Normative specification of the handoff contract. Version: <strong>1</strong>. Status: SHIPPED (macOS/Linux; Windows exec/lock port PARTIAL — roadmap 02).</p>
+</foreword></preface><sections>
+<clause id="_c4dd8548-d13b-5d0a-9d33-8883b26a46b8" unnumbered="true" obligation="normative">
+<title id="_67354cb7-80d2-cf3e-4370-1ad4687a9176">1. The handoff</title>
+<sourcecode id="_df2c85a2-0ef4-847b-1925-beadab238bd0"><body>&lt;runtime&gt; --tebako-image &lt;self&gt;:&lt;slot&gt;:&lt;mount&gt; ...
+          --tebako-entry &lt;argv0&gt; &lt;user args...&gt;</body></sourcecode>
+
+
+<ul id="_b4173ee8-bf53-1076-dd26-4884ec512072"><li><p id="_d9d16327-d7fb-a850-40d8-dcbee4d87576">One <tt>--tebako-image</tt> triple per payload slot to mount: <tt>&lt;self&gt;</tt> = the package's own path, <tt>&lt;slot&gt;</tt> = slot index, <tt>&lt;mount&gt;</tt> = the slot's mount point.</p>
+</li>
+<li><p id="_fe916e82-20b8-aa96-2af2-0703bd58558c">Slots whose role is runtime are <strong>never</strong> handed over as mounts.</p>
+</li>
+<li><p id="_d7c95e2e-db58-c280-ee29-4247b154f1aa"><tt>--tebako-entry</tt> separates loader-consumed args from user args; <tt>&lt;argv0&gt;</tt> is the entrypoint name inside the mounted tree.</p>
+</li>
+<li><p id="_a9c7f7d8-0504-6b47-03d3-e45e37802bb5"><tt>--tebako-extract</tt> is a runtime-side option riding the user-arg passthrough (the loader never interprets it).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_cb27362e-a75a-f37e-1870-61fcfb9392f4" unnumbered="true" obligation="normative">
+<title id="_e154c539-de18-c7e9-407a-48a881ef4e48">2. Image-era addition (additive, ABI stays 1)</title>
+<p id="_8d61a5a6-a78d-b3b0-b0c3-026b731af25c">When the runtime_ref carries <tt>;image</tt> (spec 05 §1), the loader exports:</p>
+
+<sourcecode id="_eb14fc2a-3f83-5ad7-5c7f-030472df392c"><body>TEBAKO_RUNTIME_IMAGE=&lt;absolute path of the cached .tfs&gt;</body></sourcecode>
+
+
+<p id="_6e2e0f54-758a-2933-afd7-50721d49c3ba">The runtime driver prefers the env image over any embedded image (one-file driver patch,  <tt>docs/tebako-main.cpp.30b.patch</tt>); v1 runtimes ignore the env and use their embedded image — graceful degradation, no republish of v1-era runtimes needed.</p>
+</clause>
+
+<clause id="_e4824777-b77c-209b-9818-18b7564abccf" unnumbered="true" obligation="normative">
+<title id="_a846ce03-d5fd-e87d-abcb-6200e8a0c4d7">3. Loader behavior contract (tebako-bootstrap)</title>
+<dl id="_141b099c-ba15-334e-201a-2f19de2b11be"><dt>1</dt>
+<dd id="_a830204d-a5db-9a40-503a-bc919df1171e"><p id="_91450a2c-a0ae-2e6d-3de0-a72209ad4219">Read own trailer (spec 02; absent → classic-bundle error path).</p>
+</dd>
+<dt>2</dt>
+<dd id="_d8686e36-5efd-8524-6e56-12e7321875d8"><p id="_51e00ccb-3991-6143-3116-bf98c8b845a0">Require <tt>launcher_abi == 1</tt> (else exit 66).</p>
+</dd>
+<dt>2a</dt>
+<dd id="_8ff3649d-4d45-3f47-188b-f7a8099854e9"><p id="_32e1452d-6631-969e-800f-6f655e130921"><strong><tt>--tebako-install</tt> verb:</strong> after the chain + ABI gates — the package's  <tt>TPKG_FLAG_NO_INSTALL</tt> refuses (exit 76); any other package answers with the named guidance to <tt>tebako install &lt;path&gt;</tt> (exit 76 — the manifest read needs the TFS engine the size-capped bootstrap deliberately does not carry). A run is a run: the verb is the ONLY way slices reach the store.</p>
+</dd>
+<dt>3</dt>
+<dd id="_4f4c822a-35a5-2333-adb3-67b8a3604e25"><p id="_0197b12e-b247-b691-6a2c-b0c938781636">Trust handling, by build and trailer flag:</p>
+<ul id="_5829da31-494b-9db6-d3af-3ca7a9e17e55"><li><p id="_827dae77-d0c3-b386-5d45-db3ae64570fd"><strong><tt>TPKG_FLAG_SIGNED_V2</tt>, verification ENABLED</strong> (<tt>openpgp-verify</tt> feature): verify the OpenPGP signature against the trusted keyring and each slot's SHA-256 — always strict (spec 09).</p>
+</li>
+<li><p id="_b583d681-6f50-7c32-5aaf-08a4c8608b67"><strong><tt>TPKG_FLAG_SIGNED_V2</tt>, verification DISABLED</strong> (unverified-first, the shipped default until roadmap 72's crypto toolkit): loud UNVERIFIED warning + audit journal, then enforce each slot's SHA-256 as integrity-vs-corruption (the anchor is unverified — documented, spec 09 §7).  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> here fails CLOSED with exit 71 naming the missing capability ("built without OpenPGP verification") — a strict-mode request is never silently downgraded to unverified.</p>
+</li>
+<li><p id="_e2e34c79-6569-7583-34ae-764ace56d042"><strong>Unsigned (v1)</strong>: loud warning + audit journal (or exit 71 under <tt>TEBAKO_REQUIRE_SIGNED=1</tt>).</p>
+</li>
+</ul>
+</dd>
+<dt>4</dt>
+<dd id="_c168cf74-2d65-d4ec-5872-55513b5ff775"><p id="_9d69d607-1384-cf66-3d56-8636a681678f">Resolve the runtime per spec 05 §5 — negotiating the contract version (§6) fail-closed before any checksum acceptance.</p>
+</dd>
+<dt>5</dt>
+<dd id="_0c45e717-fc31-4324-243a-655c63c6af71"><p id="_5797d07a-8ae4-835f-3ef5-1bbe635e15b7">Image-era: ensure <tt>&lt;asset&gt;.tfs</tt> + trust markers in the cache entry (fetch + verify on miss — authenticity per spec 09 §4's runtime-fetch point first, then sha256 integrity as today), install read-only.</p>
+</dd>
+<dt>6</dt>
+<dd id="_8fe27a11-d303-7dfc-08fe-f70636f3998a"><p id="_e7feb719-f635-6384-c683-405a5bf94cf7">Exec the handoff. Never returns on success.</p>
+</dd>
+</dl>
+</clause>
+
+<clause id="_cf3cb64f-48f3-fbbe-c6a2-adacb8946f98" unnumbered="true" obligation="normative">
+<title id="_9fb5146c-7509-8990-39ea-d22cdf7d679d">4. Exit codes (named, stable)</title>
+<table id="_a24c076d-f981-8cc0-baed-183f72d136fa"><thead><tr id="_0cd627dd-60ca-a3e8-ab36-9db9abcb956a"><th id="_26eef811-8254-9a22-f8eb-ff7b776ace9f" valign="top" align="right">code</th>
+<th id="_d5b36207-111d-e041-f358-1a38688179cf" valign="top" align="left">name</th>
+<th id="_3877c5b3-b02a-e809-5dc3-05973015ee26" valign="top" align="left">meaning</th>
+</tr></thead>
+<tbody><tr id="_77a530de-c155-4833-8d96-aee554f24934"><td id="_9619fab0-139e-f918-5798-c23da2e11ba6" valign="top" align="right">65</td>
+<td id="_8c3d24ba-0808-69f3-6d90-89e6968e75f0" valign="top" align="left"><tt>EX_TEBAKO_MANIFEST</tt></td>
+<td id="_e477d048-ff16-7c46-1736-24792e886a28" valign="top" align="left">trailer missing/corrupt/invalid</td>
+</tr><tr id="_d4445f99-768b-12b7-a3b4-5c4e907d1779"><td id="_247966d6-72f5-8f77-d752-feaebefccf02" valign="top" align="right">66</td>
+<td id="_702f3a13-5f1d-8cfa-cabb-b553b83ee390" valign="top" align="left"><tt>EX_TEBAKO_ABI</tt></td>
+<td id="_8a938a13-1f77-2155-a723-6824c7f31920" valign="top" align="left">launcher_abi mismatch</td>
+</tr><tr id="_62548dbc-b7ae-6ae5-f5ad-5aef8b3af0b1"><td id="_94063156-c1b7-5e7c-ceeb-46227183c3b4" valign="top" align="right">67</td>
+<td id="_303baf64-6834-525d-8aa7-26ede5464603" valign="top" align="left"><tt>EX_TEBAKO_RUNTIME_REF</tt></td>
+<td id="_7994e03a-aff6-5296-04fb-f96acbe495af" valign="top" align="left">unparseable/unsupported runtime_ref</td>
+</tr><tr id="_668d7e59-544f-b207-72c6-1e1ca4170b5b"><td id="_cf68f80e-7a8f-bb8b-e4d2-7adcae227691" valign="top" align="right">68</td>
+<td id="_ba46e06c-0b64-e26e-e0c1-ed2cb6098fde" valign="top" align="left"><tt>EX_TEBAKO_OVERLAY</tt></td>
+<td id="_978a9972-69dc-ae31-b701-9d3ff2380617" valign="top" align="left">overlay/decrypt binding failure: unbound retained store, missing or non-opening key material, unwritable store, orphan binding, malformed <tt>TEBAKO_OVERLAYS</tt> / <tt>TEBAKO_DECRYPT</tt> (spec 24 §7; code constant <tt>tpkg::EX_TEBAKO_OVERLAY</tt>)</td>
+</tr><tr id="_eaa4f081-f61b-d129-b2bd-d649f8e9ff93"><td id="_bc7e324f-41bf-0b1d-f21d-33b8447368d4" valign="top" align="right">69</td>
+<td id="_0aad5595-23c0-06ec-4153-b2da4d18c290" valign="top" align="left"><tt>EX_TEBAKO_UNAVAILABLE</tt></td>
+<td id="_825b622f-f949-5b5d-db88-98519a40dfef" valign="top" align="left">runtime unresolvable (offline miss, download failure)</td>
+</tr><tr id="_0fbd26be-58e5-3e29-c60b-64bc1c4904a3"><td id="_84d46e3c-0c9f-247e-62e5-32ba7dd1ee21" valign="top" align="right">70</td>
+<td id="_ad5a0102-9d75-8fba-4ead-b2d30a896a1f" valign="top" align="left"><tt>EX_TEBAKO_SHA</tt></td>
+<td id="_ef0e1694-7754-e974-8c2d-6e0706bf65e1" valign="top" align="left">sha256 mismatch (runtime or image)</td>
+</tr><tr id="_3bbeae4c-b040-0580-43ce-0db58395d3ba"><td id="_8b43deb7-2d04-7b49-d4a0-7d317facb749" valign="top" align="right">71</td>
+<td id="_4396591a-ae0b-a5ae-a9d7-9af06c167370" valign="top" align="left"><tt>EX_TEBAKO_SIGNATURE</tt></td>
+<td id="_3b6e67e1-abf7-5cce-b19d-1d559ac14d5a" valign="top" align="left">invalid signature; or unsigned under <tt>TEBAKO_REQUIRE_SIGNED=1</tt></td>
+</tr><tr id="_33ef8b1f-60c2-2c57-d844-9687fd02ade0"><td id="_09365ea1-b21c-090d-1c58-f5c3de46a754" valign="top" align="right">72</td>
+<td id="_a271ef28-832a-491c-fd2c-663fccbd7897" valign="top" align="left"><tt>EX_TEBAKO_TRUST</tt></td>
+<td id="_b56eb4be-340c-aae3-f914-2c46f16f45af" valign="top" align="left">signer key not in the trusted keyring</td>
+</tr><tr id="_05dd9939-b6bb-066b-6b0e-f14cb45dce3d"><td id="_28918c04-b59a-d46b-2507-cec9893bf217" valign="top" align="right">73</td>
+<td id="_a1b68ae6-7048-1aa0-b05f-8f5091a62245" valign="top" align="left"><tt>EX_TEBAKO_JAIL</tt></td>
+<td id="_31247514-7032-6978-cbf7-c397b9ea80be" valign="top" align="left">jail policy could not be applied (malformed <tt>TEBAKO_JAIL</tt>; fail-closed — spec 08)</td>
+</tr><tr id="_fcebf685-5f15-be95-aa65-bc650714b37f"><td id="_5a6b4a5f-b74f-e998-186c-a435c606317d" valign="top" align="right">74</td>
+<td id="_2330d489-5a02-0849-ab00-8ee1a2b4fb8e" valign="top" align="left"><tt>EX_TEBAKO_IO</tt></td>
+<td id="_df348bfd-20ac-9d6c-368f-3b58d316338b" valign="top" align="left">filesystem/lock/install failure</td>
+</tr><tr id="_ddd54bcf-7fd8-f7e3-ff43-f5a7a0c22699"><td id="_a8637c14-4d4f-fc1c-322a-0ba3c1afe0c5" valign="top" align="right">75</td>
+<td id="_eff50b21-9a0f-4bba-3628-3c8681ab6bf4" valign="top" align="left"><tt>EX_TEBAKO_CONTRACT</tt></td>
+<td id="_58644356-6648-ce47-8891-4f2555d04b26" valign="top" align="left">runtime declares an unsupported <tt>contract_version</tt> (§6)</td>
+</tr><tr id="_06de13df-fddf-c4c2-7ea1-d86db9669b7d"><td id="_da2f22c5-ee5c-6a98-925b-c4ef21ae0bc8" valign="top" align="right">76</td>
+<td id="_35da7ba7-013e-a35d-8171-b5374c1cc5b9" valign="top" align="left"><tt>EX_TEBAKO_INSTALL</tt></td>
+<td id="_426698ba-1c3e-0e08-8005-355b694687b3" valign="top" align="left"><tt>--tebako-install</tt> refused (<tt>TPKG_FLAG_NO_INSTALL</tt>) or needs the CLI</td>
+</tr><tr id="_63fa213c-f007-d32e-ec6e-1bc8d912ab98"><td id="_e0d24787-c466-18c5-e46e-e5ae2d50b8de" valign="top" align="right">77</td>
+<td id="_0ed9d067-f261-8c3a-dca9-aab5a776079c" valign="top" align="left"><tt>EX_TEBAKO_CONTRACT_ERA</tt></td>
+<td id="_15177000-3451-76b8-932b-bce14f66837f" valign="top" align="left">the runtime declares a contract ERA newer than the loader speaks (§6; code constant <tt>tpkg::EX_TEBAKO_CONTRACT_ERA</tt>)</td>
+</tr><tr id="_4376f48d-eae8-fa1e-606c-9877c0390f7f"><td id="_be830fd6-ba6e-06f5-efe5-91b2043b1d6c" valign="top" align="right">78</td>
+<td id="_1e139837-a8d8-e482-f6c4-1d433004c59e" valign="top" align="left"><tt>EX_TEBAKO_LAYOUT</tt></td>
+<td id="_4bfd01b7-beb8-df1f-9a23-690c9ecc75f1" valign="top" align="left">the <tt>TEBAKO_MOUNT_ROOT</tt> override is ungranted by the env image's <tt>mount_root_override</tt> layout grant (spec 17 §1; code constant <tt>tebako-driver</tt>'s <tt>EX_TEBAKO_LAYOUT</tt>)</td>
+</tr><tr id="_de9770f6-c92f-88c5-5e98-0cfc8e37b930"><td id="_5fd6d531-e66a-021b-f43f-5cdf16ba9859" valign="top" align="right">79</td>
+<td id="_ac897932-1ee5-d327-cde4-fa971caf2929" valign="top" align="left"><tt>EX_TEBAKO_CHECK</tt></td>
+<td id="_54c8a452-7231-a723-d829-9abe3bf12a3f" valign="top" align="left">a payload check FAILed — the <tt>tebako check</tt> aggregate (spec 26 §2; code constant <tt>tpkg::EX_TEBAKO_CHECK</tt>)</td>
+</tr><tr id="_294795cf-3743-5123-b092-3a55b2b67920"><td id="_79e82dc8-9fe0-7f5a-0d70-cdd9314c9850" valign="top" align="right">80</td>
+<td id="_9d49d93f-c024-9d2d-8081-f6f307aab76d" valign="top" align="left"><tt>EX_TEBAKO_LEDGER</tt></td>
+<td id="_00b58a93-9449-8469-0058-c908d98a33de" valign="top" align="left">a ledger finding — <tt>tebako audit --verify</tt> met a chain mismatch or an invalid seal signature, the seal file holds an unparseable record, or <tt>--strict</tt> met unparseable journal lines (spec 40 §6; code constant <tt>tpkg::EX_TEBAKO_LEDGER</tt>)</td>
+</tr><tr id="_701a33c8-38d1-75ef-ee86-7de98bab55ea"><td id="_cdbacb0e-bfb8-cad3-bd77-0c4a2d46feb3" valign="top" align="right">81</td>
+<td id="_0bb59ca5-b8f6-d9f2-401e-cb271d56f6fc" valign="top" align="left"><tt>EX_TEBAKO_SOLVE</tt></td>
+<td id="_2270caeb-32c3-5462-f4b8-aaaf5dc700c5" valign="top" align="left">a tree-solve finding — a named conflict, lockfile drift under <tt>--locked</tt>, an open runtime seam, or a malformed requirement set (spec 42 §5; code constant <tt>tebako_cli::solve::EX_TEBAKO_SOLVE</tt>)</td>
+</tr></tbody>
+</table>
+
+<p id="_e4d3f902-f911-aaad-d5b3-0a995e87e1f5">stderr body: <tt>tebako-bootstrap: &lt;message&gt;\n</tt> — message bodies match the C++ reference bootstrap 1:1 (golden parity).</p>
+</clause>
+
+<clause id="_e497a9e8-3098-0351-e6ac-723818387f28" unnumbered="true" obligation="normative">
+<title id="_2937044f-d89f-c6ce-d7a2-7719fae99482">5. Progress UX (locked 2026-07-26)</title>
+<p id="_656ab1a8-eaa8-7068-8048-e0363fae1bd3">When the loader fetches a runtime or image, the user SEES the work and the benefit. Rules:</p>
+
+<ul id="_bc0df9df-9e41-69d7-4bdc-4d1fe8943413"><li><p id="_a20a0a13-0c49-7096-6eba-a0aa70187e85"><strong>TTY-only:</strong> full progress rendering iff stderr is a TTY and <tt>TERM != dumb</tt>; otherwise exactly two single lines (start + done), CI/ log-safe. Opt-outs:  <tt>NO_COLOR</tt>, <tt>TEBAKO_NO_PROGRESS=1</tt>, and the package's baked  <tt>TPKG_FLAG_QUIET_NOTICES</tt> (bit 3 — spec 23 §14).</p>
+</li>
+<li><p id="_8fd5f58f-1d1e-7189-b39a-bd6da7dec3bc"><strong>Phases, one line each:</strong> <tt>resolving &lt;runtime_ref&gt;</tt> → <tt>downloading &lt;asset&gt; (&lt;size&gt;)</tt> with the live bar → <tt>verifying sha256</tt> → <tt>installing (locked)</tt> → done.</p>
+</li>
+<li><p id="_acfbf2f6-213c-b80d-c611-98424161f927"><strong>The bar</strong> (hand-rolled ANSI, no deps — the size gate forbids indicatif-class crates):  <tt>\r[=====&gt;    ] 62%  14.2/23.0 MB  3.1 MB/s</tt> throttled to ≤ 10 redraws/s; unknown content-length → spinner frames + byte count.</p>
+</li>
+<li><p id="_26df5cd2-2efa-81dc-9e7a-004ea85995db"><strong>The benefit is stated:</strong> on completion — <tt>installed ruby-3.4.2-0.15.9-linux-gnu-x86_64 (23.0 MB) — cached at ~/.tebako/runtimes/… and shared by every tebako app on this machine</tt>. A cache HIT prints one quiet line:  <tt>runtime ruby-3.4.2 (cached)</tt>. <tt>TEBAKO_NO_PROGRESS=1</tt> silences these informational lines entirely (the cache-hit,  <tt>installed …</tt>, and <tt>downloading …</tt> lines — progress is not results; tebako#400); the mode selection rule above still applies. <tt>TPKG_FLAG_QUIET_NOTICES</tt> (bit 3 — the developer's press-time declaration via the spec 23 §14 registry) applies the same silence to every run of the package, on every machine.</p>
+</li>
+<li><p id="_bd13a440-e42b-8d6b-adac-a013d065f50b">Progress output goes to <strong>stderr</strong>, never stdout (stdout belongs to the payload).</p>
+</li>
+<li><p id="_190f1d11-b7ba-b318-0163-e5bddc71d408">Implementation: a tiny <tt>tebako-term</tt> micro-crate (TTY detect, bar, spinner, phase lines) consumed by tebako-bootstrap; tebako-shim and tebako-cli reuse it (no third copy). tebako-http gains an <tt>on_progress(bytes_so_far, content_length)</tt> callback hooking the stream — the bar is transport-accurate, not estimated.</p>
+</li>
+</ul>
+
+<clause id="_ea146955-1c86-cbf5-5b7e-ea4733091de9" unnumbered="true" obligation="normative">
+<title id="_b1fd3b75-7b50-a3b3-953c-5a20807187f8">5a. The fetch-plan rendering (tebako-term v2, locked 2026-09-18)</title>
+<p id="_08031998-3255-1a9f-5617-a4eb229b41ff">The spec 05 §6 fetch pipeline downloads a plan's artifacts CONCURRENTLY, and the user sees that concurrency — the docker-pull look. tebako-term v2 adds the plan surface (<tt>ProgressSet</tt>); the single-artifact contract above is its one-slot case.</p>
+
+<ul id="_4aaf9717-e30e-df11-5874-52e0cf184be4"><li><p id="_16176972-0a39-9d49-f3d9-2d08cf61cb95"><strong>The plan header</strong> (both modes, one line, printed before the first artifact starts):  <tt>fetching &lt;what&gt;: &lt;N&gt; artifacts, &lt;total&gt; total</tt> where  <tt>&lt;what&gt;</tt> names the resolution subject (e.g. <tt>runtime ruby 3.3.12</tt>) and <tt>&lt;total&gt;</tt> sums the known size hints (<tt>unknown</tt> when none are known). A cache hit for the whole plan prints no header — the hit lines stand alone as before.</p>
+</li>
+<li><p id="_fc515120-704b-1657-8dcc-03d1294c384b"><strong>One live line per concurrent worker</strong> (TTY mode): the set renders as a fixed block of N slot lines at the bottom of the scrollback, repainted in place (<tt>\x1b[&lt;N&gt;A</tt> up + erase-line per slot), throttled to ≤ 10 redraws/s for the WHOLE block (not per slot). Each slot runs the phase sequence  <strong>download bar → verifying (spinner) → done</strong>; the done state keeps its line in the block until the plan completes (<tt>✓ &lt;asset&gt; (&lt;size&gt;)</tt>), a failed slot renders <tt>✗ &lt;asset&gt;</tt> and the plan's named error follows on a fresh line.</p>
+</li>
+<li><p id="_2f844f8f-461a-c254-c3be-8ae6716e0573"><strong>The bar grows up:</strong> fractional unicode blocks (<tt>▏▎▍▌▋▊▉█</tt> — eighth-cell resolution), an EMA-smoothed rate (<tt>3.1 MB/s</tt>, α = 0.3 per redraw) plus an ETA (<tt>eta 12s</tt>, shown only once the EMA has converged past its warmup), the byte pair in the total's unit. Unknown content-length → a braille spinner (<tt>⠋⠙⠹⠸⠼⠴⦦⦧⦇⦏</tt>)</p>
+<ul id="_fdfa01c8-fd99-0793-51d8-12bddb82fe84"><li><p id="_59c590c2-6198-171e-a122-b61842bf3838">byte count. Colors: cyan for an active slot, green for done, red</p>
+<p id="_e53bf93d-c6b1-146d-a74f-accae25a73dd">for failed — decorative only, and absent whenever the mode rule above selects plain (NO_COLOR included).</p>
+</li>
+</ul>
+</li>
+<li><p id="_02217ab8-3717-c0f7-4e67-79673385df6b"><strong>Plain mode grammar (pipe/CI/opt-out — byte-stable, testable):</strong> exactly the plan header, then per artifact the pair <tt>downloading &lt;asset&gt; (&lt;size&gt;)</tt> / <tt>installed &lt;asset&gt; (&lt;size&gt;)</tt> (or  <tt>downloading &lt;asset&gt;</tt> when the length is unknown), then the summary line  <tt>fetched &lt;what&gt;: &lt;N&gt; artifacts, &lt;total&gt; in &lt;secs&gt;s</tt>. No control sequences, ever.  <tt>TEBAKO_NO_PROGRESS</tt> quiets the whole grammar (the header included) — progress is informational, never results; failures are named errors on stderr regardless of the gate.</p>
+</li>
+<li><p id="_5f10da72-bd2b-f30b-9252-68163091767f"><strong>The wiring rule (locked):</strong> every network artifact transfer — runtime pair downloads, payload slice fetches, registry index refreshes, trust-anchor key retrievals — renders through tebako-term;  <strong>no caller prints its own download progress</strong>. A registry YAML fetch (small, unknown length) renders as a one-line spinner phase in TTY mode and a single  <tt>fetching registry &lt;ref&gt;</tt> start line in plain mode (its done line is the resolution's own output). Callers that today emit nothing (the shim's dispatch-time fetch, the CLI's press resolver) gain the same surface — the download moment is one UX everywhere.</p>
+</li>
+</ul>
+</clause>
+</clause>
+
+<clause id="_3c958e01-463b-2366-73a1-d762f6f3be71" unnumbered="true" obligation="normative">
+<title id="_1996a8c0-4c7d-11ef-a4ca-ca1ebf382ff6">6. Bootstrap↔runtime contract negotiation (roadmap 45)</title>
+<p id="_11e2c89b-e602-5d6e-506b-f097d14e771c">The launcher ABI (§1–§2) is the wire format; the <strong>contract version</strong> is its semantics version, declared by the runtime and enforced by the bootstrap. It exists so a future handoff change (env names, argv shape, image-handoff semantics) can be introduced without old bootstraps silently mis-executing new runtimes.</p>
+
+<table id="_f80fd653-5cde-3d02-bfeb-9e3a650af2e0"><thead><tr id="_d5e3c0b4-4351-2908-3fdb-0789d0320f5a"><th id="_2e374054-985a-0f1b-2ed0-3e1be8af7b9b" valign="top" align="right">contract</th>
+<th id="_74fba5f2-e433-13eb-befb-61d38ad56465" valign="top" align="left">semantics</th>
+</tr></thead>
+<tbody><tr id="_2f6db586-e8e7-5ed7-ac86-2d5c71ae8ada"><td id="_7528ed65-24e8-d284-a3c0-6d0907d4d95c" valign="top" align="right">1</td>
+<td id="_2a3c1e60-faca-3b22-ebd2-153ac175c14a" valign="top" align="left">this document, §1–§5: <tt>--tebako-image</tt>/<tt>--tebako-entry</tt> argv, <tt>TEBAKO_RUNTIME_IMAGE</tt> env handoff, trailer/ABI gating as in §3</td>
+</tr><tr id="_362f866b-7f04-ca2d-e3bc-48f9ebb4763f"><td id="_c58337de-e969-c15f-522b-d59e68380cea" valign="top" align="right">2</td>
+<td id="_5e0a0652-bce6-3d8e-0b90-21fe4cd1e0af" valign="top" align="left">spec 17: image-path triples, bare-file slot tokens (<tt>0</tt> ≡ <tt>-</tt>), env-image-first multi-mount, direct <tt>--tebako-entry</tt> execution (no <tt>/local/stub.rb</tt> convention)</td>
+</tr></tbody>
+</table>
+
+<p id="_d4e12f76-277f-2f03-4e01-ef235114664c"><strong>Bump rule.</strong> Any change to env/argv/handoff semantics — a renamed or repurposed variable, a new loader-consumed flag, a change in image precedence — increments the contract version by exactly 1. Additive payload-side changes that v1 runtimes may ignore (like §2's env image for v1 runtimes) do NOT bump the contract.</p>
+
+<p id="_a9348b08-36d7-490f-111d-590b9e2c3d8a"><strong>Declaration.</strong> The runtime release manifest's per-package entry carries the contract SET —  <tt>"contract_era"</tt>, <tt>"contract_version"</tt>, <tt>"mount_root"</tt> — (spec 05 §5's manifest.json; the set is additive — older consumers ignore it). The runtime driver has the same values compiled in (<tt>TEBAKO_CONTRACT_VERSION</tt> and its siblings); the runtime repo's CI fails any release where the manifest and the driver disagree.</p>
+
+<p id="_adb4ebdb-b219-8525-959f-02658e19aed2"><strong>Negotiation rule (bootstrap, fail-closed — spec 18's era vocabulary).</strong> During runtime/image resolution, before any checksum acceptance, the loader reads the entry's contract set (<tt>crates/tebako-resolve/src/contract.rs</tt> is the implementation of record; the current spoken values are era  <strong>2</strong> and contract <strong>2</strong> — the spec-17 argv/env grammar):</p>
+
+<ol id="_65f88d43-94af-c3f3-7a13-396ae8f9c448" type="arabic"><li><p id="_42e3d48c-ab68-a858-be41-a373b27aae23">The manifest carries NO entry for the asset → not a contract question (the checksum path names that failure) → proceed.</p>
+</li>
+<li><p id="_db84bb91-b6cb-ff5e-fdb2-aa5c625b0c83">The entry's contract set is present and matches the loader's spoken era + contract → proceed (the declared, acceptable set).</p>
+</li>
+<li><p id="_69c9ca8e-99dd-81ee-d7ce-3b66a5eb3001">Any of the three fields absent, unparseable, zero, or empty → a pre-era entry — a NAMED refusal (<tt>ContractError::PreEra</tt>, exit 75) listing the missing fields, never a proceed.</p>
+</li>
+<li><p id="_15436b19-387e-b21c-aea7-d52a749ef491">A declared era NEWER than the loader's → refused (<tt>ContractError::EraTooNew</tt>, exit 77 — <tt>EX_TEBAKO_CONTRACT_ERA</tt>) naming both generations and the remedy; a contract NEWER or OLDER than the spoken one → refused (<tt>ContractTooNew</tt>/<tt>ContractTooOld</tt>, exit 75) naming both.</p>
+</li>
+</ol>
+
+<p id="_e46bfd43-7f6b-6f41-eccc-eeb52f863b53">A negotiation failure is never a crash and never a silent accept: it is a clean, explained refusal.</p>
+</clause>
+</sections>
+</metanorma>

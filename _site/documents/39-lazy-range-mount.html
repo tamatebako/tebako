@@ -1,0 +1,2088 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>Lazy range-fetch mounting of runtime images</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 39</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">Lazy range-fetch mounting of runtime images</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_73d4e627-1132-9505-6552-e5b536c49627">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_18c55105-f6d1-d6ab-5b08-0efffb103b51">      
+  
+  1. Why — and why LimniFS fits lazy pull better than eStargz fits tar
+</a></li>
+<li class="h1"><a href="#_31ec3f05-96ee-e7a3-31e3-bfb5e8cd3e10">      
+  
+  2. The seam: a mount-source kind, NOT a format backend
+</a></li>
+<li class="h1"><a href="#_c012a419-a528-cffb-40a4-f59ebb46c675">      
+  
+  3. The trust decision (locked): per-block-group digests at read, whole-file sha256 at seal
+</a></li>
+<li class="h1"><a href="#_ba1b844b-cc98-5cdf-e6e8-435cca7c7dec">      
+  
+  4. Cache design and the store-state amendment
+</a></li>
+<li class="h1"><a href="#_71e98146-88b2-2a43-2b68-b608e3dd60f2">      
+  
+  5. The seal path and the state machine
+</a></li>
+<li class="h1"><a href="#_433af5b3-f568-0f98-82d7-4d8f7da02005">      
+  
+  6. Failure semantics (named, never a partial mount)
+</a></li>
+<li class="h1"><a href="#_02b0b9c7-1351-3d7f-57d5-e454e85a6512">      
+  
+  7. UX: mount mode, progress, doctor
+</a></li>
+<li class="h1"><a href="#_65fb1849-bdb1-97f3-ba72-fbcd5aefd023">      
+  
+  8. Interaction with spec 38 (OCI)
+</a></li>
+<li class="h1"><a href="#_4422d6df-6279-e94b-38a4-dfba40b741df">      
+  
+  9. What does NOT change (locked)
+</a></li>
+<li class="h1"><a href="#_a04d2ea1-df19-0442-52c4-f41b30f02fb3">      
+  
+  10. Test plan (the tiers of spec 14; each failure above maps to one tier)
+</a></li>
+<li class="h1"><a href="#_5c304eec-bc62-9b2a-8ba3-b8f779bf508d">      
+  
+  11. Open questions (each with this spec's recommendation)
+</a></li>
+<li class="h1"><a href="#_cc6902a0-78f7-6298-c640-600d681ad1f6">      
+  
+  Implementation plan (spec PR first; each PR independently mergeable)
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_73d4e627-1132-9505-6552-e5b536c49627"><h1 class="ForewordTitle" id="_db7b29e9-283e-4ecc-a993-2c40596b47d0"><a class="anchor" href="#_73d4e627-1132-9505-6552-e5b536c49627"></a><a class="header" href="#_73d4e627-1132-9505-6552-e5b536c49627">Foreword</a></h1><p id="_235389a2-6cf0-5e9b-ec45-89c73eec9c8a">Status: <b>SHIPPED</b> (locked direction 2026-09-30, tebako#696 — spec-first per spec 14). PRs 1–6 shipped the spec + schemas, the Range transport (tebako-http), the byte-source seam + caching remote source + lazy store record (tfs/tpkg), the loader + driver wire (resolve plan lazy arm, shim/bootstrap wire, the state-detecting env-image mount, the background seal thread,  <tt>tebako cache seal</tt> + the listing/doctor surfaces), the publish path (in-process blksum generation + the additive  <tt>image.blksum</tt> index field), and the OCI range arm + the bench arms (§8, spec 27 §10.5). Since then the downstream legs have landed: the lazy-capable runtime releases, the §10 parity data, the <b>default flip</b> (§7 — lazy-on by default, locked), and the <b>cached-blksum arm</b> (§3 — the install-time sidecar prefetch that keeps the mount-open zero-network). Nothing here changes what a shipped loader, driver, or resolver does with a store that carries none of the new artifacts: a sidecar-less release takes the loud eager fallback and every published image remains runnable exactly as today.</p><p id="_3b0795c0-7bda-3ba2-27dc-f5d9ebf27e99">Normative specification of <b>lazy mounting</b>: the runtime env image is mounted over HTTPS with HTTP Range reads, the machine cache is seeded block-group by block-group on demand, and a background seal pass turns the partially-seeded entry into an ordinary, fully-verified store entry. This spec owns the remote-locator hook recorded in spec 20 §7 ("Remote locators (http/s3/ipfs) → a future streaming spec").</p></div><div id="_18c55105-f6d1-d6ab-5b08-0efffb103b51"><h1 id="_ffb61139-fae9-4ae4-b845-c0ff0c4694f2"><a class="anchor" href="#_18c55105-f6d1-d6ab-5b08-0efffb103b51"></a><a class="header" href="#_18c55105-f6d1-d6ab-5b08-0efffb103b51">1. Why — and why LimniFS fits lazy pull better than eStargz fits tar</a></h1><p id="_9af9ef07-732a-3604-4896-6ba8403f88a0">First run of a lean (shared-runtime) package downloads the whole runtime pair (100–300 MB) before one user byte executes. Containerd's lazy-pull line (eStargz/SOCI/nydus) proved the fix at the format level; Harter et al. (FAST'16) measured pulls at 76% of container start time while only 6.4% of pulled bytes are ever read.</p><p id="_64218f43-7306-a9f6-ae4c-25be829c38b3">eStargz needed a <b>format change</b> to make lazy pull possible: tar is a streaming format with no index, so stargz added a TOC, per-member gzip streams, and landmark headers — a new wire shape that only new images carry. LimniFS needs none of that. It is seekable  <b>by construction</b> (spec 20 §4): the inline metadata blob resolves path → inode → drop slices; the slab record tables carry each drop's byte offset and length; <tt>pread</tt> materializes only the drops intersecting the requested window (a seekable-container drop decodes only the covering 256 KiB frames). Every LimniFS image ever published is already a lazily-fetchable set of byte ranges. The lazy feature is therefore a READER-side change only — no format change, no new in-image section, no republication of image bytes (§9).</p><p id="_4d6801cf-c23f-4f6c-9a0f-1f8111a3a30d">Scope, locked for v1: the runtime <b>env image</b> (<tt>TEBAKO_RUNTIME_IMAGE</tt>) in managed dispatch (tebako-shim) and standalone dispatch (tebako-bootstrap). The interpreter exe is always fetched whole — the kernel execs a file, not a mount. Payload slices ride the same machinery later (§11).</p></div><div id="_31ec3f05-96ee-e7a3-31e3-bfb5e8cd3e10"><h1 id="_821dae87-1ab1-495d-8175-79c35dfc45dc"><a class="anchor" href="#_31ec3f05-96ee-e7a3-31e3-bfb5e8cd3e10"></a><a class="header" href="#_31ec3f05-96ee-e7a3-31e3-bfb5e8cd3e10">2. The seam: a mount-source kind, NOT a format backend</a></h1><p id="_f1dd66bd-8b82-ba3e-7661-469655a7237b">The issue's sketch ("a new TFS backend <tt>http-range</tt> beside zip/dwarfs-t/squashfs/tar") is refined against the shipped seam. The spec 11  <tt>Backend</tt> trait (<tt>crates/tfs/src/backend.rs</tt>) is <b>path-addressed and format-keyed</b>: <tt>stat</tt>/<tt>pread</tt>/<tt>read_dir</tt>/<tt>read_link</tt> by in-image path, selected by magic detection (spec 20 §3). Transport is not a format —  <tt>format_id</tt> answers only "how do I read these bytes" (orthogonality law, spec 00). An HTTP Range transport placed at the Backend seam would either fake a format (wrong) or re-implement one (duplicated authority).</p><p id="_5752b9af-201a-448f-5143-201debbfc59a">The correct layer is the one below the format backend. Spec 11 §5's mount-source kinds (host-file, memory, file-region, VFS-file-region) all serve positioned byte reads into the mount constructors (<tt>crates/tfs/src/mount.rs</tt>). This spec adds a <b>fifth mount-source kind: remote-range</b>, behind a byte-source abstraction:</p><figure id="_015a1789-74da-8fdf-bae9-7adb18c23495" class="sourcecode" spellcheck="false" translation="no"><pre>transforms (COW / ENC — Rust TFS only, spec 00 invariant 5, spec 11 §4)<br />  → format backend (limnifs; detection unchanged)<br />    → ByteSource: host file | memory | file region | VFS region | REMOTE-RANGE</pre><figcaption class="SourceTitle">Figure 1</figcaption></figure><div class="ul_wrap"><ul id="_5c3da3e1-b1ee-6b5a-8c35-4a6d8cf1aa83"><li id="_2cd5a5f6-66c9-0722-80ff-0e3ce078d3d6"><p id="_7c9cf3f1-d104-255e-ebbd-e25fec6f83eb"><b>The transforms-law answer (precise):</b> the lazy source sits UNDER the format backend, at the byte layer. COW and ENC stack ABOVE the format backend exactly as today — a COW overlay over a lazily-mounted env image writes to its HostDir store and never touches the network; an ENC transform decrypts bytes the source already supplied. The transforms law is untouched: the remote source is read-only, and no backend learns to write.</p>
+</li>
+<li id="_6b593bf0-911c-9c24-885d-5ae3ae4aee5a"><p id="_87a3a064-9510-72f2-2173-5b63b3e11da3"><b>The <tt>Backend</tt> trait is unchanged.</b> No new trait methods; detection unchanged (the 512-byte sniff is one small range read at open); <tt>writable()</tt> stays <tt>None</tt>.</p>
+</li>
+<li id="_7cd06e2b-1eee-4a5f-3208-75f1e8c6878a"><p id="_5b849da8-59af-375d-ef9a-a27cc560a973"><b>The limnifs adapter gains a sourced open</b> beside <tt>LimnifsBackend::from_image(Vec&#x3c;u8&#x3e;)</tt> (<tt>crates/tfs/src/backends_limnifs.rs</tt>): mount-open fetches, through the caching byte source, the manifest prefix (header → feature flags → metadata reference + inline metadata blob → slab index → history — the self-delimiting walk the adapter already performs) and each slab's  <b>record table</b>; slab drop payload bytes are fetched on demand at  <tt>pread</tt> time. Prerequisite (upstream, limnifs repo):  <tt>limnifs-core</tt> gains a paged <tt>SlabSource</tt> variant (today:  <tt>Memory</tt>/<tt>Mapped</tt> only) and a record-table parse over a positioned reader. Reader-side only — no format change. The dwarfs backend's in-place positioned reads make a dwarfs-over-range source possible later across the C++ callback boundary; recorded, NOT committed (§11).</p>
+</li>
+<li id="_9067e292-c725-18dd-e938-407e7e37ac91"><p id="_d5e4bfb9-fd3d-ef7a-0d4f-9f2b5201db6c"><b>Feature gating (spec 20 §5's rule applied):</b> the remote-range source is a cargo feature  <tt>backend-remote</tt> on <tt>tfs</tt>, default ON for tebako-driver and the toolchain, never in tebako-bootstrap (which never mounts, spec 20 §1 — §9). A lazy mount attempted on a build without the feature fails with the NAMED  <tt>ENOTSUP</tt> — the compiled-out rule, unchanged.</p>
+</li>
+</ul></div></div><div id="_c012a419-a528-cffb-40a4-f59ebb46c675"><h1 id="_beb50927-0c88-4150-b264-4fe0c80ccb57"><a class="anchor" href="#_c012a419-a528-cffb-40a4-f59ebb46c675"></a><a class="header" href="#_c012a419-a528-cffb-40a4-f59ebb46c675">3. The trust decision (locked): per-block-group digests at read, whole-file sha256 at seal</a></h1><p id="_b7001b3d-e2ec-a262-7924-dd54610466aa">The issue's open question — whole-file sha256 at seal vs per-block-group digests at read — is decided:  <b>per-block-group digests at read is the PRIMARY design; the whole-file sha256 verifies at seal as the mandatory second anchor.</b> The rejected alternative (whole-file verify only at seal) is rejected on the threat model, not on convenience.</p><p id="_da20a717-fe01-ca95-38e9-44029c8617ff"><b>Threat model.</b> Today's law (spec 05 §4): verification at fetch/install, never per run — the payload never executes a byte that was not verified against the  <tt>.sha256</tt> trust anchor first. A seal-only lazy design breaks that law for the entire seeding window: a malicious or compromised registry (or a TLS-intercepting path the enterprise roots admit, spec 04 §4) could serve self-consistent bad blocks, and the payload would EXECUTE them on first run; the seal would fail loudly only afterwards. That is a strict weakening of the shipped trust posture and is unacceptable. (The image's own content addressing — LimniFS drop ids are <tt>BLAKE3(plaintext)</tt>, spec 20 §1 — detects corruption and bit-rot but is NOT a trust root: a hostile registry serves a self-consistent evil image whose ids match its own evil metadata.)</p><p id="_ca1eeea8-d0b8-08b8-f1a2-6629f965e794"><b>The design.</b></p><div class="ul_wrap"><ul id="_e548ba6f-ab67-4c99-8c11-e2541e8db291"><li id="_53cef9cb-0dc2-a513-3111-b98db50451c7"><p id="_5e667ba7-bf44-f745-8994-cf478b6a1da6"><b>Fetch unit = the block group</b>, a locked <b>4 MiB</b> span of the IMAGE bytes (the wire bytes — format-agnostic, so the same source later serves dwarfs; the final group is short). Groups align all cache, verification, and progress accounting (§4, §7).</p>
+</li>
+<li id="_899bf676-6255-efd7-bb6d-74100e834caf"><p id="_c416216f-cb29-cede-42f3-068eb1238b81"><b>The digest sidecar</b> — <tt>&#x3c;image&#x3e;.blksum.json</tt>, published beside the image by the PUBLISHER (the runtime factory / the feedstock publish leg;  <tt>tebako publish</tt> generates it in-process in the same invocation that stages the release bytes): a versioned JSON document (<tt>schema/tpkg-blksum-v1.schema.json</tt>) carrying <tt>schema_version</tt>, <tt>group_size</tt>, <tt>size_bytes</tt>, the whole-image <tt>sha256</tt>, and one sha256 per group. A resolver NEVER derives it (derivation would require the whole file — pointless — and would arrive unanchored). Three callers reach the ONE emitter (<tt>tpkg::lazy::write_sidecar</tt>): <tt>tebako publish</tt> (in-process, for payloads it stages), <tt>tebako blksum</tt> and  <tt>tfs blksum</tt>. The last two exist because a runtime factory images with  <tt>tfs</tt> and publishes through its own tooling — without a verb on the binary the leg already runs, a runtime pair can ship with no sidecar and lazy seeding can never engage (tebako#868). No second implementation of the group scheme exists, by construction.</p>
+</li>
+<li id="_52251fee-63c2-1c9e-9a7c-7c3d4c06ae5d"><p id="_51a52dd0-8b92-7eb3-80b6-84e61ce8ddfd"><b>The sidecar's own anchor</b> rides the existing channel, additively: the release shard/registry row gains  <tt>image.blksum: {filename, sha256}</tt> (mirror-only, spec 03 §4's tier-3 rule); where the index is signed (spec 09 §5) the field is covered exactly like  <tt>image.sha256</tt>. The sidecar is fetched and verified against that pin BEFORE the first range read; a sidecar whose bytes do not match its pin is the named <tt>Sha256Mismatch</tt> (70) — nothing mounts.</p>
+</li>
+<li id="_810d87ba-f712-0c5d-bef0-2aa44b083b26"><p id="_8e82c4db-5034-39e5-48fe-c6d349b93880"><b>Trust at read (the protection point, exactly):</b> every Range GET's bytes are sha256-verified against the sidecar's group digest BEFORE they enter the block cache and BEFORE any byte is served. A group whose digest mismatches is dropped, refetched once, and on a second mismatch is the named  <tt>Sha256Mismatch</tt> (70) — the mount fails closed, never a silent serve. This is today's verify-at-fetch law at group granularity; the per-run law holds unchanged (a cached group serves without re-verification — the cache is trusted once written, exactly like today's sealed entries). The user is therefore protected from the FIRST byte of the FIRST run — no execution of unverified bytes, ever.</p>
+</li>
+<li id="_80e9acb1-10f4-b405-c8d5-45815ac84eb9"><p id="_9c25e480-914b-e097-09d1-fc0f6e64766b"><b>Whole-file sha256 at seal (mandatory second anchor):</b> the seal pass (§5) assembles the entry's  <tt>.tfs</tt> from the verified groups and verifies the whole-file sha256 against the original pin before the entry flips to SEALED. The  <tt>.sha256</tt> sidecar written at seal is byte-identical in shape and meaning to today's anchor. Defense in depth, and what makes a sealed entry indistinguishable from an eagerly installed one.</p>
+</li>
+<li id="_3a752268-2d85-c0bf-aa96-58b0580268fa"><p id="_73fad788-f6da-df17-e6d9-fd8aff0dec70"><b>Missing sidecar → LOUD eager fallback (locked).</b> Lazy is requested but the release publishes no sidecar (every pre-2026 image): the loader fetches the whole image exactly as today (whole-file sha256 verify — EQUAL trust strength, no downgrade), with a stderr warning + journal line (<tt>event=lazy-fallback reason=blksum-missing</tt>) naming the artifact. Never a hard error — every published image must stay runnable — and never silent (invariant 9; the spec 05 §4 stale-serve precedent for loud degradation).</p>
+</li>
+<li id="_e7988a83-f994-6166-486a-61d0022e9402"><p id="_70e39177-e1df-b0ed-6a3c-b4cd5017b47a"><b>The cached-blksum arm (locked, with the §7 flip).</b> The loader fetches and pin-verifies the sidecar at INSTALL time regardless — the seed decision needs it — so the install also writes it into the entry (<tt>&#x3c;image&#x3e;.blksum.json</tt>, tmp+rename, BEFORE the descriptor's commit rename). The mount-open consults the cache FIRST: a verified hit is a zero-network open (nothing the exec phase owes the wire); a miss fetches as before and writes through (best-effort — the verified blksum is already in hand, so a cache-write failure never fails the mount); a cached file off its pin or torn is the named <tt>Sha256Mismatch</tt> (70) / <tt>BlksumInvalid</tt> (65), never a silent drop-and-refetch — the cache is a publisher-anchored document's copy. Two consequences the flip needs: the offline refusal for a FRESH seed fires at the install/pull phase (pre-exec) instead of surfacing as a mount-open 69 mid-exec, and the mount-open of every entry seeded after this arm performs no sidecar GET at all.</p>
+</li>
+</ul></div></div><div id="_ba1b844b-cc98-5cdf-e6e8-435cca7c7dec"><h1 id="_d1fa4d64-9e5c-4d22-9d50-6f30f3bc56ae"><a class="anchor" href="#_ba1b844b-cc98-5cdf-e6e8-435cca7c7dec"></a><a class="header" href="#_ba1b844b-cc98-5cdf-e6e8-435cca7c7dec">4. Cache design and the store-state amendment</a></h1><p id="_db1f5a8f-5122-cda6-19f6-063849fcfa8f">Layout (inside the existing runtime entry, spec 05 §3 — LAZY_SEEDING state only):</p><figure id="_4de86443-6a3a-9b66-b918-f9b7f4389963" class="sourcecode" spellcheck="false" translation="no"><pre>runtimes/&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;ver&#x3e;-&#x3c;triplet&#x3e;/<br />  tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;[.exe]  # exe — always whole, always verified (0755)<br />  sha256 / origin                                   # exe markers, unchanged<br />  &#x3c;image&#x3e;.lazy.json                                 # the seed descriptor — present ⇔ LAZY_SEEDING<br />  &#x3c;image&#x3e;.blksum.json                               # the install-time sidecar cache (§3's cached-blksum arm)<br />  &#x3c;image&#x3e;.blocks/&#x3c;NNNNNN&#x3e;.blk                       # verified group payloads (0444)<br />  &#x3c;image&#x3e;.tfs                                       # appears ONLY at seal (0444)<br />  &#x3c;image&#x3e;.tfs.sha256 / &#x3c;image&#x3e;.tfs.origin           # written at seal — today's shapes, unchanged</pre><figcaption class="SourceTitle">Figure 2</figcaption></figure><div class="ul_wrap"><ul id="_c0e62017-df40-d0df-9329-896c821ed8a9"><li id="_3332924d-558e-3a9d-0d76-bd5bb28b9d3f"><p id="_1d495e54-5777-6c49-4f88-6ed4cedd4ab7"><b>The seed descriptor</b> (<tt>&#x3c;image&#x3e;.lazy.json</tt>, versioned JSON, the blksum schema's sibling  <tt>schema/tpkg-lazy-seed-v1.schema.json</tt>): source URL (the concrete origin), the whole-image sha256 pin, the blksum sidecar's sha256,  <tt>group_size</tt>, <tt>size_bytes</tt>, group count. Written tmp+rename under the entry's flock (spec 05 §4) by the loader INSTEAD of the image download. A descriptor that fails validation at open is the named  <tt>LazyDescriptorInvalid</tt> (65) — never a guess.</p>
+</li>
+<li id="_44309277-51c9-38a8-0106-4bf60f2914b4"><p id="_14a20485-91db-949b-4226-337a134c607c"><b>The block map IS the directory.</b> Present <tt>*.blk</tt> files are the seeded set; no separate bitmap, no journal. Open scans the directory and validates each group's size against the descriptor; a size-mismatched or unparseable group file is discarded and refetched.</p>
+</li>
+<li id="_03dc74df-5e2c-95f0-57b9-4c6df9f8c80c"><p id="_5fefdb8a-51ad-856b-9bcc-a976ea55b687"><b>Crash consistency:</b> per group, fetch → verify → write tmp → rename, under the entry's flock. A crash mid-write leaves a  <tt>.part</tt> that the next open drops. A group file present = verified, by construction.</p>
+</li>
+<li id="_711f378f-684a-e9f0-43bc-a0a58d7b67ac"><p id="_ae08ce9f-44e4-a65f-3aa2-5c7cb4726120"><b>The store-law amendment (scoped, locked):</b> spec 05 §4's "a runtime is either fully installed or not" gains exactly one middle state. A LAZY_SEEDING entry (exe + markers present and verified, descriptor present and valid, image ABSENT) IS runnable — that is the feature — and counts as INSTALLED for resolution (the newest-compatible-cached pick, spec 05 §5, must see it, or every run re-resolves and re-seeds), but is reported distinctly by every listing surface (§7). The commit point for the lazy install is the descriptor's rename; the commit point for the SEALED entry stays the  <tt>.sha256</tt> anchor's rename. No other store invariant moves: tmp+rename everywhere, per-entry flock (120 s, stale-lock hint), read-only artifacts, a run re-verifies nothing that is cached.  <tt>cache prune</tt> removes a lazy entry like any other (descriptor, blocks, and all).</p>
+</li>
+<li id="_f72a654b-9c9a-05d9-438a-c385478a3a1d"><p id="_f44feecf-3f65-bcb1-dc34-5d51d8188c6c"><b>The exe is never lazy</b> and the runtime store entry's exe half installs exactly as today (the spec 05 §5 chain, the spec 06 §3 contract gate, the spec 09 §4 verification point — all before the seed descriptor is written).</p>
+</li>
+</ul></div></div><div id="_71e98146-88b2-2a43-2b68-b608e3dd60f2"><h1 id="_726dd290-e7ea-40fa-96a8-bafc6d933b54"><a class="anchor" href="#_71e98146-88b2-2a43-2b68-b608e3dd60f2"></a><a class="header" href="#_71e98146-88b2-2a43-2b68-b608e3dd60f2">5. The seal path and the state machine</a></h1><p id="_e2f3e028-37f0-526f-2958-bcb33b61a0a3"><b>States (named, on disk):</b></p><figure id="_cb18a8f3-06c4-9763-31e6-d0ea50482612" class="sourcecode" spellcheck="false" translation="no"><pre>EMPTY → (loader: exe install + descriptor rename) → LAZY_SEEDING<br />LAZY_SEEDING → (seal: all groups present → assemble → whole-sha ok<br />                → .tfs + .sha256 rename → blocks + descriptor + blksum<br />                cache removed) → SEALED<br />SEALED ≡ today's ordinary entry — byte-identical layout, anchors, semantics</pre><figcaption class="SourceTitle">Figure 3</figcaption></figure><div class="ul_wrap"><ul id="_7ff454f9-bdae-2507-05fe-823719e60a95"><li id="_f38b8318-5b35-95ab-74d7-659f5c8f64cb"><p id="_437f3859-bcd5-63e0-5e3a-693b35972c3c"><b>The background seal thread</b> lives in the DRIVER (inside the runtime exe — the process that holds the mount): spawned after the env image mounts, it fetches the missing groups in index order, one at a time, on the same byte source (and therefore the same verification). Its scheduling law:  <b>on-demand reads always preempt</b> — a touching read's group fetch jumps the queue; the seal fills gaps around demand. It renders NO progress inside a running payload (stderr belongs to the payload after handoff — spec 11 §11 discipline; seal activity logs to tebako-log at  <tt>debug</tt>, component <tt>driver</tt>).</p>
+</li>
+<li id="_c1197418-96bf-3e05-22be-fc133f8eb56e"><p id="_8f7a4c56-2067-8b2c-783b-ee39fb868989"><b>Cancellation and resumption:</b> process exit simply stops the thread — the block cache persists; the next run (any package sharing the entry) resumes from the directory scan. Seal is best-effort forever: a run NEVER blocks on it, never fails because of it (a seal-side fetch failure logs and retries next run).  <tt>TEBAKO_LAZY_SEAL=0</tt> disables the background thread (the debug/airgap shape; on-demand seeding still works).</p>
+</li>
+<li id="_dc5a3421-b8fc-2da3-00b5-8b3cc774c7c1"><p id="_54dbb979-0e57-4bdc-a5d3-f2053be82131"><b>The commit:</b> with all groups present, seal assembles <tt>&#x3c;image&#x3e;.tfs</tt> by concatenation into a tmp file, streams the whole-file sha256 over it (one pass, constant memory — the spec 05 §6 discipline), compares the original pin (mismatch → named 70, the assembled tmp dropped, the groups kept — a group verified against a publisher-anchored sidecar cannot silently disagree with the pin; a disagreement is evidence of a publisher-side or anchor-side fault and is reported, never healed), renames  <tt>.tfs</tt> (0444), then <tt>.tfs.sha256</tt> + <tt>.tfs.origin</tt> (the anchor's rename is the commit point), then removes the blocks and the descriptor. A crash anywhere before the anchor rename leaves LAZY_SEEDING, fully resumable.</p>
+</li>
+<li id="_6b509ce7-de1a-0709-451b-f52cd25672de"><p id="_e0c5f881-f723-a479-9bcc-f64bdd76b0cc"><b>The explicit verb:</b> <tt>tebako cache seal [&#x3c;entry&#x3e;|--all]</tt> runs the same pass synchronously from the toolchain — full tebako-term ProgressSet rendering (§7). Operators who want first-run-lazy but warm-cache-complete run it at their convenience.</p>
+</li>
+<li id="_ec102e25-2914-2a6d-e43b-41f01568ffbe"><p id="_a90f1c03-e110-91b2-1e03-27c83c43f33a">Subsequent mounts of a SEALED entry take the ordinary whole-file path — the lazy machinery is out of the loop entirely.</p>
+</li>
+</ul></div></div><div id="_433af5b3-f568-0f98-82d7-4d8f7da02005"><h1 id="_dd71c570-d1d6-44d9-95d8-fd187278528c"><a class="anchor" href="#_433af5b3-f568-0f98-82d7-4d8f7da02005"></a><a class="header" href="#_433af5b3-f568-0f98-82d7-4d8f7da02005">6. Failure semantics (named, never a partial mount)</a></h1><div class="ul_wrap"><ul id="_b9a5e289-6ec0-34d1-145d-7a7d670df8c0"><li id="_8b6cb53e-ce57-a7b9-3900-6a3440286761"><p id="_f433c3b0-1ba6-3e69-9e47-c50557d6e5de"><b>Mount-open failures</b> (prefix or record-table fetch fails, sidecar pin mismatch, descriptor invalid): the env image mount fails BEFORE the boot proceeds — the driver's existing unmount-everything law (spec 17 §1;  <tt>crates/tebako-driver/src/driver.rs</tt>) applies verbatim: never a partial mount, the named error surfaces.</p>
+</li>
+<li id="_2632ec27-0102-02ee-8f1c-173187d68a61"><p id="_ca8f4c92-db61-dba5-6867-e5f046bf70ad"><b>Network partition mid-mount:</b> a touching read whose group cannot be fetched after the retry law exhausts returns  <b>EIO on that read</b> (the errno channel), named on the tebako-log with URL, group index, and the transport cause. The payload sees an ordinary IO error; the mount and every cached group remain valid; the next run resumes. Never a fabricated zero-fill, never a silent short read of unverified bytes.</p>
+</li>
+<li id="_807f38ef-8bef-d353-3bc1-38067f0f4e69"><p id="_8830ef68-0d0b-f769-7d2a-f852105ca4aa"><b>Retry/backoff:</b> tebako-http's law, unchanged and unrepeated — Retry-After honored exactly, the 60 s × 2ⁿ hintless exponential, THROTTLE_ROUNDS, DOWNLOAD_ATTEMPTS (spec 05 §6,  <tt>crates/tebako-http</tt>). A mid-stream group failure retries THE GROUP from zero (a partial group would fail its digest anyway — the pipeline's artifact rule at group scale).</p>
+</li>
+<li id="_2006168f-f3dc-b55f-0ce6-d8e50f2d410b"><p id="_ceccc1e1-c9f3-fa17-28b4-022b39750cac"><b><tt>TEBAKO_OFFLINE=1</tt>:</b> cache-or-named-error at group granularity. Cached groups serve (a fully-seeded-touched working set runs offline); a miss is EIO on the touching read, or — at mount-open, when the prefix is not yet cached — the named offline refusal. Unchanged semantics, finer grain.</p>
+</li>
+<li id="_d8fe15ce-5f88-12e6-0bdd-f9c39dee01e1"><p id="_f2618ff1-4d50-b5bd-294c-d033b340b232"><b>Exit codes (reuse, never extend — the 65–79 space stands):</b></p>
+<table id="_bc23d89d-9081-e1a8-105f-1abb38e9123f" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 1</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">condition</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">class</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">descriptor invalid, lazy config malformed, non-HTTPS source</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">65 usage</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">mount-open fetch failure; offline miss; server unusable</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69 unavailable</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">sidecar pin mismatch; group digest mismatch (2nd); whole-sha mismatch at seal</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">70 integrity</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">cached blksum torn (65) / off its pin (70) — the §3 cache arm</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65 / 70</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">store IO (lock, block write, assemble, rename)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">74 IO</td></tr></tbody></table>
+
+<p id="_7b75df82-9328-759e-710f-413fe6c39f52">spec 09's 71/72 bind the sidecar's signed-index chain exactly as they bind the image's today;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> fails closed before the first range read, unchanged.</p>
+</li>
+<li id="_9b3dc498-7175-0018-52c5-a18f25d4ed16"><p id="_514643cc-c831-6337-d854-a4c4a3b108dd"><b>HTTPS-only (locked):</b> the source URL is <tt>https://</tt> or <tt>file://</tt> (the test/airgap spelling), enforced by tebako-http's existing refusal — plus the spec 38 §8 LOOPBACK carve-out (<tt>localhost</tt>, <tt>127.0.0.0/8</tt>, <tt>::1</tt> over plain HTTP) for the §10 fixture only. There is no insecure-source spelling and never will be. TLS roots, proxy policy, and credentials ride tebako-http's one agent (spec 04 §4/§5) — no second client, and the credential book confines range requests exactly like whole-file GETs.</p>
+</li>
+</ul></div></div><div id="_02b0b9c7-1351-3d7f-57d5-e454e85a6512"><h1 id="_6b1e49ee-cdd6-44d6-8560-a595bfa28bc5"><a class="anchor" href="#_02b0b9c7-1351-3d7f-57d5-e454e85a6512"></a><a class="header" href="#_02b0b9c7-1351-3d7f-57d5-e454e85a6512">7. UX: mount mode, progress, doctor</a></h1><div class="ul_wrap"><ul id="_404a5b93-7b28-d20c-3008-fd77a10ceed5"><li id="_35a217ea-a06d-6231-27b7-57f124eb7299"><p id="_c96f157f-b2d2-833e-187f-75c5442037e0"><b>The mount-mode chain (the flip LOCKED 2026-10-07, spec-00-style note).</b> The default is <b>lazy-on</b>: a runtime install on a release serving the lazy wire seeds the env image instead of fetching it whole. Resolution:  <tt>TEBAKO_RUNTIME_LAZY</tt> (env) over <tt>runtime_lazy</tt> in <tt>~/.tebako/config.yaml</tt> over the product default ON — env wins per key (the  <tt>TEBAKO_FETCH_JOBS</tt> / spec 04 §4 precedence rule), an unparseable value is a NAMED error (65), never a silent clamp. Eager stays first-class as the opt-out (<tt>TEBAKO_RUNTIME_LAZY=0</tt>, <tt>runtime_lazy: false</tt>). The division of authority is locked: the PUBLISHER controls enablement only — it ships the blksum sidecar or not (§3; there is no publisher forcing knob and never will be, because correctness is mode-independent); the USER/MACHINE controls the effective mode through the chain above. Hard rules outrank every tier, unchanged:  <tt>TEBAKO_OFFLINE=1</tt> is cache-or-named-error (a fresh seed refuses at the pull phase, §3's cached-blksum arm); fat packages never fetch; a sidecar-less release takes the loud eager fallback. The flip's gate was §10's parity data; the landed numbers are recorded there.</p>
+</li>
+<li id="_d66f29cd-fed1-927d-e7c4-81956dc52e2b"><p id="_b3eedb91-e37e-e476-ec2e-4ae7d1ce755e"><b>The bundle-era gate (spec 36 §3's co-publish).</b> Both loaders (shim and bootstrap) evaluate the lazy arm BEFORE the spec 36 §4 era branch. On a shard declaring  <tt>bundle</tt>, the arm engages ONLY when the shard also carries the co-publish witness (<tt>per_file_assets: true</tt>, runtime-manifest MINOR 2 — the exe/image/dll are then served standalone by construction); a bundle-declaring shard without the witness stays eager by construction (its one tar fetch IS the runtime). When the arm engages on a bundle-declaring shard, the install fetches the exe (+ the windows DLL) by the shard's per-file pins and seeds the image; the bundle is never fetched. Every other rule of this section is unchanged: a missing sidecar is the loud eager fallback, a torn pin the named error, a mismatch exit 70. The eager default on bundle-era lines stays the bundle fetch.</p>
+</li>
+<li id="_c4259ced-ab61-c5da-80d9-8e71339ed153"><p id="_ac868186-c9af-af5b-f932-837ce7b4d6f4"><b>The host-tier gate (tebako#853).</b> The lazy wire is chosen only where the HOST's boot tier can read a seeded entry (<tt>tpkg::lazy::host_boot_reads_lazy</tt> — the single owner of that answer, consulted by the shim and both bootstrap planners). The POSIX tiers read through the lazy byte source and qualify; the windows materialize tier (spec 17 §7) extracts a host tree from the env image FILE, and a seeded entry has none until the seal commits — so on windows the opt-in takes the loud eager fallback (<tt>event=lazy-fallback reason=windows-materialize-tier</tt>, the journal line included) and the first run works; an OCI source names its own host-independent cause first (<tt>reason=oci-bundle-era-only</tt>). A seeded entry that arrives on a windows store by other means still refuses by name in the driver, unchanged.</p>
+</li>
+<li id="_93d0b193-c776-f6eb-15cb-9a4a227110c4"><p id="_cd86ae8f-cd26-f105-0445-8d1a33e9e0aa"><b>Progress.</b> The loader's lazy first run renders through tebako-term (the spec 06 §5/§5a wiring rule — nothing else prints download progress): the exe's ordinary artifact bar, then one line — <tt>runtime env image &#x3c;name&#x3e; (&#x3c;size&#x3e;) — lazy: seeding on demand, sealing in background</tt>. <tt>tebako cache seal</tt> renders the block map as a ProgressSet slot —  <tt>sealing &#x3c;image&#x3e; [&#x3c;bar&#x3e;] 62% (groups 831/1340, 3.1 MB/s)</tt> — group-accurate, not estimated. Plain mode and <tt>TEBAKO_NO_PROGRESS=1</tt> behave per spec 06 §5a, unchanged.</p>
+</li>
+<li id="_46501873-e588-bb73-df55-0b24cc6fd5b0"><p id="_18210706-bd53-ed42-bb4e-a250412a97ec"><b><tt>tebako doctor</tt></b> (spec 35) store section gains the seed state per runtime entry:  <tt>LAZY_SEEDING — 231/1340 groups (17%), source &#x3c;host&#x3e;, seal resumable</tt> or <tt>SEALED</tt>; a descriptor/block-dir inconsistency is reported by name (never healed silently).</p>
+</li>
+<li id="_c1f9ec59-3c31-75fd-bfe8-e60a83f57dbc"><p id="_48749974-1987-c05e-7053-73c4528824d1"><b><tt>tebako cache list</tt></b> marks lazy entries (<tt>(seeding 17%)</tt>); the origin marker carries the source URL as today.</p>
+</li>
+</ul></div></div><div id="_65fb1849-bdb1-97f3-ba72-fbcd5aefd023"><h1 id="_548c1113-1b49-4688-ad25-8de475d0fdd2"><a class="anchor" href="#_65fb1849-bdb1-97f3-ba72-fbcd5aefd023"></a><a class="header" href="#_65fb1849-bdb1-97f3-ba72-fbcd5aefd023">8. Interaction with spec 38 (OCI)</a></h1><p id="_54e6afc0-762d-5f90-caae-3f15c88ef4a0">The byte source is transport-shaped, not URL-shaped: it consumes a range-fetch closure. An OCI blob GET (<tt>/v2/&#x3c;repo&#x3e;/blobs/&#x3c;digest&#x3e;</tt>, spec 38 §5) supports Range on every conformant registry, and the blob digest IS the artifact sha256 (spec 38 §3's trust-anchor equivalence) — so a range source over an OCI blob needs NO grammar, NO divergence: the OCI adapter supplies its closure (Bearer flow and confinement of spec 38 §6 included), the blksum sidecar publishes as one more §3 artifact class.</p><p id="_9cfdf751-fa4f-1e3b-244a-5a1fff59f7ca"><b>The closure arm (locked 2026-10-01 with PR 6).</b> The OCI client's blob fetch carries the range arm: one positioned GET (<tt>Range: bytes=&#x3c;offset&#x3e;-&#x3c;end&#x3e;</tt>, the caller-decided credential header attached verbatim per dance attempt), answering 206 with a Content-Range validated against the request (exact start, exact length) or 200 — the §3 loud-eager-fallback signal, byte-identical in meaning with the plain-HTTPS transport's. A range window carries no whole-blob digest check by construction: the per-group digests of §3 are the integrity layer, exactly as over plain HTTPS. The blksum sidecar's OCI spellings are spec 38 §3's (that section owns the class table and the tag rules): artifactType <tt>application/vnd.tebako.blksum.v1</tt>, layer media type <tt>application/vnd.tebako.blksum.v1+json</tt>, the sibling digest-tag <tt>sha256-&#x3c;64 hex of the IMAGE blob's digest&#x3e;.blksum.json</tt> with the <tt>org.tebako.blksum.subject</tt> annotation naming the image digest. The sidecar's layer digest IS the blksum document's sha256 — the seed descriptor's  <tt>blksum_sha256</tt> pin binds it with no second file, and a resolve of the sibling tag that finds nothing is the §3 blksum-missing signal (the loud eager fallback), never an error.</p><p id="_ff893453-7be3-da0f-dcf7-891e7bee063d"><b>Recorded, not committed (the run-time wiring).</b> PR 6 ships the transport arm, the sidecar class, the resolve-side sidecar resolution, and the publish push — the pieces any OCI-staged lazy entry needs. The two downstream legs land with their own specs' PRs: OCI runtime distribution itself is spec 38's PR 4 (runtime bundles over OCI), and the driver's mount-open OCI arm (state-detecting an OCI-sourced seed descriptor, the run-time credential chain for a mount that outlives the install) is designed with that leg — this spec commits the closure shape only.</p></div><div id="_4422d6df-6279-e94b-38a4-dfba40b741df"><h1 id="_7d7fff6e-dac9-47be-8648-4345ddd22856"><a class="anchor" href="#_4422d6df-6279-e94b-38a4-dfba40b741df"></a><a class="header" href="#_4422d6df-6279-e94b-38a4-dfba40b741df">9. What does NOT change (locked)</a></h1><div class="ul_wrap"><ul id="_b7b0c739-7f38-d193-8c98-77d7525a1cf2"><li id="_08c95cde-a7c5-4dd8-f70b-ec5b685ff29e"><p id="_2bc636fc-8076-8d9f-2016-bd517732735b"><b>Published image bytes.</b> No format change, no new in-image section, no format_id, no trailer field. Every LimniFS image ever published is lazily mountable as-is (§1).</p>
+</li>
+<li id="_f49708bd-c46d-0b4d-ae7b-b762a247f939"><p id="_670610a4-70ce-a2d9-6b53-b4605931e685"><b>The <tt>.sha256</tt> anchor.</b> Sealed entries are byte-identical in layout, anchors, and semantics with eagerly installed ones (§5).</p>
+</li>
+<li id="_f0202f93-7635-c5c0-351d-0948c242eea7"><p id="_4fc6f269-38c3-66ed-faa0-177aa5e7b771"><b>The mount-table law.</b> Longest-prefix dispatch, duplicate-point EEXIST, unmount-everything on failure (spec 11 §2, spec 17 §1) — lazy changes where bytes come from, never how mounts compose.</p>
+</li>
+<li id="_bbdf93e6-a22f-f2b3-b95d-2fc31ea12e80"><p id="_dc575504-0cef-e0b0-444e-15deb6719648"><b>The transport window.</b> A demand fetch runs with the engine's read lock held, and the fetch's OWN machinery may call back into the interposed libc surface — on macOS the resolver reads <tt>networkd_settings</tt> through <tt>open</tt>, which would re-enter the engine behind the lock: a deadlock (tebako#851: one thread in the VFS read, the other in  <tt>getaddrinfo → … → open_impl</tt>). While a fetch is in flight the shim therefore PASSES EVERY interposed call THROUGH to the host; the window is PROCESS-WIDE (the resolver runs on its own thread), not thread-local. The window is the transport's own machinery, never a payload's read; a concurrent payload read on another thread during a fetch is the known narrow exposure, and the follow-up is a lock-free mount-prefix fast path that scopes the bypass to paths outside every mount.</p>
+</li>
+<li id="_28fea22f-bfa3-e8b3-d196-3b4e52f6014d"><p id="_01d52aae-d1b9-2cce-64c4-e344b26d3775"><b>The mount-table identity.</b> A lazy env-image mount serializes into <tt>TEBAKO_TFS_MOUNTS</tt> by its entry path, exactly like a file mount. A re-establishing consumer — the interpreter's preload shim, and every exec'd child — state-detects that path the same way the driver does: the sealed file mounts whole, the ABSENT file with a valid descriptor beside it mounts the caching range source, and neither file nor descriptor keeps the ordinary named open error. The lazy promise holds at both layers: only the groups demand touches are fetched.</p>
+</li>
+<li id="_b3ea03ec-c29f-0ffd-9593-e061eaab9b93"><p id="_60cdb417-5470-0f04-b692-23f947562fdb"><b>The handoff grammar.</b> <tt>TEBAKO_RUNTIME_IMAGE=&#x3c;path&#x3e;</tt> and the <tt>--tebako-image</tt> triples are byte-identical (spec 17 §1); the path names the entry whose on-disk state (§4) the driver reads. No contract-version bump:  <tt>TEBAKO_RUNTIME_LAZY</tt> is an operator env in the  <tt>TEBAKO_MOUNT_ROOT</tt> / <tt>TEBAKO_JAIL</tt> class (spec 17), not a handoff-semantics change (spec 06 §6's bump rule). A pre-lazy driver handed a LAZY_SEEDING entry fails CLOSED — the image file is absent, the existing named unavailable error (69) fires, and the remedy is an eager run or a runtime rebuild; never a mis-mount.</p>
+</li>
+<li id="_d6e42bd8-0c0f-0990-65c9-75cd35464b49"><p id="_03aa4baf-69ee-3125-e07d-4f28ff429e8d"><b>The 3 MiB bootstrap gate.</b> The mount happens in the DRIVER inside the runtime exe (spec 17; the bootstrap never mounts and never links TFS — spec 20 §1). The lazy machinery (byte source, block cache, seal thread) lives in  <tt>tfs</tt> + <tt>tebako-driver</tt> + <tt>tebako-http</tt> — compiled into the runtime exe and the toolchain, neither size-gated. The bootstrap's only new code is the seed-record arm of its existing resolve-install path (write the descriptor instead of streaming the image — a tebako-resolve plan item with a lazy commit closure); the CI size gate measures and enforces the delta, as always (invariant 2). The same machinery is also linked into the preload shim (the interpreter's own engine instance re-establishes the mount, §9's identity rule), which is not size-gated either.</p>
+</li>
+</ul></div></div><div id="_a04d2ea1-df19-0442-52c4-f41b30f02fb3"><h1 id="_5870b18d-429b-4acf-ab51-a6ef2aa5a2d1"><a class="anchor" href="#_a04d2ea1-df19-0442-52c4-f41b30f02fb3"></a><a class="header" href="#_a04d2ea1-df19-0442-52c4-f41b30f02fb3">10. Test plan (the tiers of spec 14; each failure above maps to one tier)</a></h1><div class="ul_wrap"><ul id="_cc49c05a-a684-7e5c-c6dc-cbca7feb74f2"><li id="_11ca9c7f-812f-67d0-5203-61b24cfd3d20"><p id="_a34dad9b-70dc-fb56-6e30-cf3e8e2d1732"><b>Unit</b> (tfs / tpkg / tebako-http): range math and group indexing (edge: short final group); descriptor and blksum schema round-trips, every malformed class by name; Content-Range parsing, 206-vs-200 detection, ETag/If-Range revalidation; the directory-scan block map (size-mismatch discard, tmp drop); the state machine's transitions and commit points; config/env precedence.</p>
+</li>
+<li id="_eafd2f79-74d8-7945-2c13-8cdd1fbf4074"><p id="_2941ed88-2d7c-1050-7d3d-46b946f8ae82"><b>Property</b> (proptest, the existing harnesses): arbitrary read patterns over a mock byte source answer IDENTICALLY to whole-image reads of the same bytes (the parity property); arbitrary crash points (kill between every fsync/rename) leave a resumable LAZY_SEEDING or a complete SEALED, never a third state; arbitrary garbage descriptors never panic and never parse silently.</p>
+</li>
+<li id="_b38e56e5-b91e-5117-2504-d51a89d3993b"><p id="_508aaf78-ba02-5003-5e85-94a686c8adfc"><b>Contract</b> (in-process HTTP fixture — CI tooling, never shipped; the spec 38 §8 loopback carve-out): a Range-capable fixture server with artificial latency, injected 500s/429s, mid-stream kills, truncated bodies, 200-instead-of-206, and byte-level corruption per group. Legs: cold mount → on-demand seeding → answers equal the file-mounted golden tree (spec 20 §8's backend-pair parity class, the dwarfs/limnifs oracle extended to lazy-vs-file); group digest mismatch → refetch → named 70; partition mid-boot → named 69; partition mid-run → EIO on the touching read only; offline with partial cache; seal from partial, seal resumption after kill, seal commit ordering; the 200-fallback (whole body arrives — loud eager path).</p>
+</li>
+<li id="_d4a6f97c-652e-2cb6-5e60-53c1a9e77aef"><p id="_38b6b098-b800-3017-20d2-55c2f1cf86f6"><b>E2e</b> (<tt>ci/</tt>, tiered): shim dispatch with lazy on — first cold run boots the entrypoint against a fixture-hosted runtime, second run serves touched paths with the fixture DOWN (touched-set offline proof),  <tt>tebako cache seal</tt> completes and the third run is ordinary; the standalone bootstrap leg (size gate asserted); the touch-everything pathology (a full-tree walk: total fetched bytes ≤ eager bytes + one sidecar + per-group request overhead, bounded and recorded — never worse than eager × (1 + ε)); the blksum-missing image takes the loud eager fallback;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> pass/fail legs per spec 09.</p>
+</li>
+<li id="_0a9c0655-fc6f-9ae3-2d06-365d5dcecfb8"><p id="_e78aa1c1-4c78-7aa9-64db-39cf489327ce"><b>Parity data for the default flip (spec 27) — LANDED.</b> The tebako-bench harness's lazy arm ran the full 7-leg platform matrix green (bench run 37517037555, zero failed runs): warm second-run parity 1.00× everywhere; cold one-time streaming overhead bounded at +0.56 s (windows) to +5.5 s (linux-musl-x86_64) on the loopback fixture — the ε of the pathology law (total fetched bytes ≤ eager bytes + one sidecar + per-group request overhead), and the number a real network inverts, since first run fetches only the touched groups; lazy cold RSS below eager's (e.g. 25 vs 34 MiB at boot). No regression class in the warm or pathology arms. On this data the §7 flip shipped (locked 2026-10-07): the default is lazy-on, the eager opt-out is  <tt>TEBAKO_RUNTIME_LAZY=0</tt> / <tt>runtime_lazy: false</tt>.</p>
+</li>
+</ul></div></div><div id="_5c304eec-bc62-9b2a-8ba3-b8f779bf508d"><h1 id="_3a94d238-d9c7-4544-84e8-6dddf3eb3d37"><a class="anchor" href="#_5c304eec-bc62-9b2a-8ba3-b8f779bf508d"></a><a class="header" href="#_5c304eec-bc62-9b2a-8ba3-b8f779bf508d">11. Open questions (each with this spec's recommendation)</a></h1><div class="ol_wrap"><ol type="1" id="_fe561c69-ca47-9200-514e-2f183fd9ccad"><li id="_a1c6aaf3-a631-678d-a527-df320015bdcc"><p id="_4ee5d7ad-e143-871a-9be0-3a1b653f6e56"><b>Backend vs byte source.</b> Recommended and locked (§2): a mount-source kind below the format backend. The issue's "http-range backend" is the right instinct at the wrong layer — transport is not a format.</p>
+</li>
+<li id="_72f790f8-5def-9026-d00b-5fd9aad123c6"><p id="_22cf4de5-1d38-b862-0942-8efa4d373726"><b>Whole-file sha at seal vs per-block digests at read.</b> Recommended and locked (§3): per-group digests at read (publisher-authored, channel-anchored sidecar) + mandatory whole-file verify at seal. Seal-only verification executes unverified bytes — rejected on the threat model.</p>
+</li>
+<li id="_780108c1-bac8-afbf-b943-49428211a120"><p id="_699a2a44-6fc7-a97f-20c8-300593146c41"><b>Group size.</b> Recommended and locked: 4 MiB of image bytes. Smaller multiplies request count against rate-limited hosts; larger wastes fetch on sparse touches. One constant, tunable only by a measured follow-up (the §10 bench arms).</p>
+</li>
+<li id="_4df2091d-b2d3-66ec-47dc-3167eefd05c5"><p id="_dc832f2d-7938-47b4-852a-c6d9fd3e8c25"><b>Missing sidecar.</b> Recommended and locked (§3): loud eager fallback (equal trust, warned, journaled) — never a hard error against the long tail of already-published images.</p>
+</li>
+<li id="_0a7e729d-9cda-0316-4484-39155fb85626"><p id="_ecaca241-3247-cf96-0020-d48bbddf2dee"><b>Lazy payload slices.</b> Recommended: env image v1; payloads ride the identical machinery behind the same flag later (their registry rows already carry sha256 anchors; the sidecar field is additive). Recorded, not committed.</p>
+</li>
+<li id="_a8a20dc3-b535-c13f-e537-fba879866016"><p id="_5b9d2c70-093d-7ca1-cb77-6df3c9613631"><b>Dwarfs over range.</b> Recommended: recorded hook only (§2) — the C++ callback boundary is real work and limnifs is the default; decided by measured demand, not speculation.</p>
+</li>
+<li id="_641f8a21-c22f-2985-b642-9bae20a8f09c"><p id="_1ee81144-31ca-93ee-bd7e-08a4c738c8a4"><b>Seal assembly.</b> Recommended and locked (§5): assemble from the verified groups (no second network pass) — the whole-file sha is computed over the local concatenation.</p>
+</li>
+<li id="_90c1036c-a5a2-036f-52c3-6cd5d5181ed3"><p id="_59fc4cf8-5e3d-f89e-9711-f3d16ee2360a"><b>The exe.</b> Recommended and locked: always eager (kernel exec needs a whole file). The exe is the minority of the pair's bytes; the env image is the win.</p>
+</li>
+<li id="_95b3db1e-2873-041e-5b51-627f6bc80870"><p id="_0ef9de24-8475-edcd-700e-55b29280cb65"><b>A second verification algorithm (BLAKE3 groups).</b> Recommended: no. sha256 everywhere keeps ONE anchor vocabulary with the store, the sidecars, and spec 38's layer digests; LimniFS's BLAKE3 ids remain image-internal integrity (spec 20 §7's recorded addendum, unchanged).</p>
+</li>
+</ol></div></div><div id="_cc6902a0-78f7-6298-c640-600d681ad1f6"><h1 id="_96d1522b-d70b-4326-9ed5-755331bacb5e"><a class="anchor" href="#_cc6902a0-78f7-6298-c640-600d681ad1f6"></a><a class="header" href="#_cc6902a0-78f7-6298-c640-600d681ad1f6">Implementation plan (spec PR first; each PR independently mergeable)</a></h1><div class="ol_wrap"><ol type="1" id="_4adfe224-6a20-fb43-aba8-7e22b8452b30"><li id="_14cf9f55-1b3b-8923-bf41-cbc27b3940c3"><p id="_b487f472-e28b-a768-6754-cf14a13d7a5e"><b>PR 1 — the spec.</b> This document + the <tt>00-INDEX.md</tt> entry + <tt>schema/tpkg-blksum-v1.schema.json</tt> + <tt>schema/tpkg-lazy-seed-v1.schema.json</tt>. No code.</p>
+</li>
+<li id="_14124a3f-7429-52ad-af73-6aadb35076f7"><p id="_716e35ab-fc6b-d869-c7c7-c231bcd83da1"><b>PR 2 — the transport.</b> <tt>crates/tebako-http/src/lib.rs</tt>: the Range GET entry point (Range header, 206/Content-Range validation, If-Range/ETag revalidation, the loopback carve-out), unit + contract tiers with the fixture server.</p>
+</li>
+<li id="_d6447712-7f8a-e4d7-9107-6558fcfd7dab"><p id="_193ff7b7-8505-e677-0624-95994762d71b"><b>PR 3 — the byte source and the lazy store record.</b> <tt>crates/tpkg/src/lazy.rs</tt> (descriptor + blksum models, the store-record read/write/scan under  <tt>tpkg::runtime_store</tt>), <tt>crates/tfs/src/source.rs</tt> + <tt>crates/tfs/src/source_remote.rs</tt> (the byte-source seam, the caching remote source,  <tt>backend-remote</tt> feature),  <tt>crates/tfs/src/mount.rs</tt> (the fifth mount-source kind), <tt>crates/tfs/src/backends_limnifs.rs</tt> (the sourced open — prefix + record-table fetch), the limnifs-core paged-<tt>SlabSource</tt> pin (upstream first). Unit/property tiers + the parity class.</p>
+</li>
+<li id="_3330faa8-2fad-4f7a-63fc-03d7cddfff7f"><p id="_0ff70fef-4fb8-7eea-7b4d-20237fe8c453"><b>PR 4 — the loader + driver wiring.</b> <tt>crates/tebako-resolve/src/plan.rs</tt> (the lazy commit closure writing the seed record), the shim/bootstrap resolve paths (<tt>TEBAKO_RUNTIME_LAZY</tt> + config), <tt>crates/tebako-driver/src/driver.rs</tt> (state-detecting env-image mount, the seal thread, EIO mapping),  <tt>crates/tebako-cli/src/doctor.rs</tt></p>
+<div class="ul_wrap"><ul id="_6e7e8552-a02c-0adf-dece-5240def35710"><li id="_71853b24-1c1a-f882-ec67-4264460c44e0"><p id="_14fc2326-ed1d-1bcf-52f0-f8e965e28425">the cache list/seal surfaces. E2e legs of §10.</p>
+</li>
+</ul></div>
+</li>
+<li id="_bbdf4c2c-714f-6da4-7917-8ffe73122a00"><p id="_f6954fd9-2884-921b-539a-08be53bbaad1"><b>PR 5 — the publish path.</b> <tt>crates/tebako-cli/src/publish.rs</tt> (blksum generation in-process), the shard/registry additive <tt>image.blksum</tt> field (validation + schema), the factory release legs (factory repos, stacked on PR 5's product half).</p>
+</li>
+<li id="_a605a526-381c-d638-e6dd-10d9d8fe3720"><p id="_d5addc16-fe85-0583-0c3c-a3e9ab00f3be"><b>PR 6 — OCI range + the flip data.</b> The spec 38 §5 closure arm; the tebako-bench lazy arm (spec 27 harness); the default-flip PR only after §10's rule is met.</p>
+</li>
+</ol></div></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

@@ -1,0 +1,2202 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>Payload manifest (L1)</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 03</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">Payload manifest (L1)</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_f327ff54-6828-5ccb-78bb-0da57b8bf541">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_5ae5a296-5c18-594c-ed2b-9f506a046669">      
+  
+  1. Location and form
+</a></li>
+<li class="h1"><a href="#_568252b2-f34b-2507-e272-5f79a0ffe98f">      
+  
+  2. The three blocks
+</a></li>
+<li class="h2"><a href="#_a8b22330-e8e7-a684-2c78-8c08d4a8a3ed">      
+  
+  2.1 IDENTITY (all kinds)
+</a></li>
+<li class="h2"><a href="#_1f0254f8-b9b8-00c4-b7f5-e1a40fa91b12">      
+  
+  2.2 PROVIDES (kind-specialized)
+</a></li>
+<li class="h2"><a href="#_ed978378-f255-ad7d-e515-dfef358137f0">      
+  
+  2.3 DEPENDS (<tt>requires:</tt>)
+</a></li>
+<li class="h2"><a href="#_ff0b79cf-262c-2b1a-4d14-2ffeae233d9d">      
+  
+  2.4 MATERIALIZE (<tt>materialize:</tt>, additive — schema_minor 1)
+</a></li>
+<li class="h2"><a href="#_ef15a072-40b4-b7af-7354-21eb26950e23">      
+  
+  2.5 LIBRARY ALIASES (<tt>library_aliases:</tt>, additive — schema_minor 2)
+</a></li>
+<li class="h2"><a href="#_5370a56c-a4f9-8763-596c-eee4a8fa69d8">      
+  
+  2.6 CHECKS (<tt>checks:</tt>, additive — schema_minor 3)
+</a></li>
+<li class="h2"><a href="#_fb129e30-cd1a-0c36-b23f-6fe6fc99e9b4">      
+  
+  2.7 INTERP ENV (<tt>interp_env:</tt>, additive — schema_minor 8) — IMPLEMENTED 2026-10-07 (tebako#559)
+</a></li>
+<li class="h2"><a href="#_0749aaa8-0f7e-341d-5af8-5c6052696344">      
+  
+  2.8 AUGMENTS (<tt>augments:</tt>) and EXTENSION POINTS (<tt>extension_points:</tt>) — additive, schema_minor 10
+</a></li>
+<li class="h2"><a href="#_2c1da3d6-6da3-62ee-9307-3726fc1eb235">      
+  
+  2.9 MIN RUNTIME TEBAKO (<tt>min_runtime_tebako:</tt>, additive — schema_minor 15, tebako#666)
+</a></li>
+<li class="h2"><a href="#_ec3e94c3-ff33-f1f6-8be5-57a1a5255a37">      
+  
+  2.10 ENV PASS (<tt>env_pass:</tt>, additive — schema_minor 16, tebako#737)
+</a></li>
+<li class="h1"><a href="#_a324bf48-0c1c-bc97-9a45-38b1c58e0e34">      
+  
+  3. Platform axis (locked, vcpkg-triplet form)
+</a></li>
+<li class="h1"><a href="#_c4d5a8c1-1ba8-12ad-1a49-8e9a6b883b27">      
+  
+  4. The three tiers (no duplicated authority)
+</a></li>
+<li class="h1"><a href="#_0952f4b8-fef7-e5b3-76df-719256210dab">      
+  
+  5. Production and consumption
+</a></li>
+<li class="h1"><a href="#_d3c246fd-d0b3-0765-fa8f-6f60827217cf">      
+  
+  6. The package manifest (L2, extension block type 2)
+</a></li>
+<li class="h1"><a href="#_5a1b9f8c-31c5-47fb-cdc7-e1ffe50d7ddb">      
+  
+  7. The digest fixed-point rule (locked 2026-07-26)
+</a></li>
+<li class="h1"><a href="#_985a38a6-9b00-19ed-0fe1-4895d45d3742">      
+  
+  8. Executable dependency edges (locked 2026-07-27)
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_f327ff54-6828-5ccb-78bb-0da57b8bf541"><h1 class="ForewordTitle" id="_87f6c49d-c0d5-4c1c-9f76-082f6fdd0235"><a class="anchor" href="#_f327ff54-6828-5ccb-78bb-0da57b8bf541"></a><a class="header" href="#_f327ff54-6828-5ccb-78bb-0da57b8bf541">Foreword</a></h1><p id="_9267df6f-0510-5e27-ba32-34f52fa89ff9">Normative specification of the in-image manifest: every payload is a <b>self-describing artifact</b>, not a blob. Status: SHIPPED (the block + the engine shipped; the §3 press/install gate wiring remains — the checks block's discoverability row).</p></div><div id="_5ae5a296-5c18-594c-ed2b-9f506a046669"><h1 id="_d57d01fc-6e02-4410-8c7a-794d1771c779"><a class="anchor" href="#_5ae5a296-5c18-594c-ed2b-9f506a046669"></a><a class="header" href="#_5ae5a296-5c18-594c-ed2b-9f506a046669">1. Location and form</a></h1><div class="ul_wrap"><ul id="_559ccc55-6d66-04b1-1c86-4ac6dfc78c18"><li id="_b3fca561-b183-1266-d6bd-037d97a3697e"><p id="_8f69c448-e14b-504a-58cb-05f6fd856a61">Path: <tt>/__tpkg__/manifest.yaml</tt> — inside the image, at a well-known location. No sidecars, no central service.</p>
+</li>
+<li id="_1bd7d26e-f91b-f55c-c73c-cfa6cb22a4f4"><p id="_8cf58bc9-de18-a049-5606-34d4f13a2f21">Format: <b>YAML</b> (the locked convention for all authored configuration surfaces). The versioned grammar:  <tt>docs/spec/schemas/payload-manifest.yaml</tt> (the registry's authored form;  <tt>crates/tpkg/src/manifest.rs</tt> mirrors it).</p>
+</li>
+<li id="_cf280eac-686c-3627-9a40-7965950166d0"><p id="_25290fcf-6afc-1089-ac63-139feaa99778">Integrity: the manifest is inside the image, so it is exactly as tamper-proof as the content and is covered by the image's digest and signature. Any consumer (bootstrap, dispatcher,  <tt>tfs</tt> CLI, a foreign project) reads it through TFS itself.</p>
+</li>
+</ul></div></div><div id="_568252b2-f34b-2507-e272-5f79a0ffe98f"><h1 id="_6056fcd3-1557-48ae-904d-5f17da17649a"><a class="anchor" href="#_568252b2-f34b-2507-e272-5f79a0ffe98f"></a><a class="header" href="#_568252b2-f34b-2507-e272-5f79a0ffe98f">2. The three blocks</a></h1><p id="_99d24486-94d0-8167-580f-254dd01dd0ba">Every manifest is <b>IDENTITY + PROVIDES + DEPENDS</b> on a common provenance/trust layer.</p><div id="_a8b22330-e8e7-a684-2c78-8c08d4a8a3ed"><h2 id="_652f7269-90e8-4fb5-a300-e35f140cc9c5"><a class="anchor" href="#_a8b22330-e8e7-a684-2c78-8c08d4a8a3ed"></a><a class="header" href="#_a8b22330-e8e7-a684-2c78-8c08d4a8a3ed">2.1 IDENTITY (all kinds)</a></h2>
+
+<figure id="_90fdf3d0-e5ac-117d-6a69-e27d42d407de" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">schema_version</span><span class="pi">:</span> <span class="m">1</span><br /><span class="na">kind</span><span class="pi">:</span> <span class="s">app | data | toolkit | runtime | language</span><br /><span class="na">name</span><span class="pi">:</span> <span class="s">metanorma</span><br /><span class="na">version</span><span class="pi">:</span> <span class="s">1.2.3</span><br /><span class="na">producer</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">tool</span><span class="pi">:</span> <span class="nv">tebako-cli</span><span class="pi">,</span> <span class="nv">tool_version</span><span class="pi">:</span> <span class="nv">0.16.0</span><span class="pi">}</span><br /><span class="na">created</span><span class="pi">:</span> <span class="s">2026-07-26T00:00:00Z</span><br /><span class="na">source</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">src_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">,</span> <span class="nv">commit</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">,</span> <span class="nv">builder</span><span class="pi">:</span> <span class="s2">"</span><span class="s">gha:run:123"</span><span class="pi">}</span><br /><span class="na">sbom</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">}</span>                      <span class="c1"># optional</span><br /><span class="na">digest</span><span class="pi">:</span><br />  <span class="na">tree_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span>                      <span class="c1"># plaintext merkle root over the tree MINUS the</span><br />                                      <span class="c1"># manifest path — semantic identity (CAS)</span><br />  <span class="na">blob_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span>                    <span class="c1"># transport identity — see the fixed-point rule</span><br /><span class="na">signing</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">state</span><span class="pi">:</span> <span class="nv">unsigned | signed</span><span class="pi">,</span> <span class="nv">keyid</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">,</span> <span class="nv">mechanism</span><span class="pi">:</span> <span class="nv">openpgp</span><span class="pi">}</span><br /><span class="na">encryption</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">state</span><span class="pi">:</span> <span class="nv">none</span><span class="pi">}</span>             <span class="c1"># or per-part list {paths, algorithm, envelope_refs} — NEVER keys</span><br /><span class="na">annotations</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">…</span><span class="pi">}</span>                      <span class="c1"># free-form; unknown keys preserved</span></pre><figcaption class="SourceTitle">Figure 1</figcaption></figure>
+
+</div><div id="_1f0254f8-b9b8-00c4-b7f5-e1a40fa91b12"><h2 id="_ee6e2004-d0dd-42e6-b3ff-7099ee916758"><a class="anchor" href="#_1f0254f8-b9b8-00c4-b7f5-e1a40fa91b12"></a><a class="header" href="#_1f0254f8-b9b8-00c4-b7f5-e1a40fa91b12">2.2 PROVIDES (kind-specialized)</a></h2>
+
+<p id="_c5eeae83-2cc1-abc4-031e-586c7f62e4b9"><b>app</b> (executable):</p>
+
+<figure id="_62b346de-9921-486e-57d7-9f72e204f29a" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">entrypoints</span><span class="pi">:</span>                          <span class="c1"># ARRAY — multi-entry suites; N=1 for simple apps</span><br />  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">metanorma</span>                   <span class="c1"># the command name (shim registers under this)</span><br />    <span class="na">path</span><span class="pi">:</span> <span class="s">/app/bin/metanorma</span>          <span class="c1"># inside the image</span><br />    <span class="na">args_default</span><span class="pi">:</span> <span class="pi">[]</span>                    <span class="c1"># interpreter-side defaults composed BETWEEN interpreter</span><br />                                        <span class="c1"># and entry by the runtime driver (spec 17 §1 — the single</span><br />                                        <span class="c1"># owner, tebako#503) — java: ["-jar"]. A ZERO-runtime entry</span><br />                                        <span class="c1"># has no driver: the shim appends them as the program's</span><br />                                        <span class="c1"># leading args.</span><br />    <span class="na">runtime_requirement</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">engine</span><span class="pi">:</span> <span class="nv">ruby</span><span class="pi">,</span> <span class="nv">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">3.3,</span><span class="nv"> </span><span class="s">&#x3c;</span><span class="nv"> </span><span class="s">5.0"</span><span class="pi">}</span><br />      <span class="c1"># OPTIONAL — omit entirely for native entrypoints (see below);</span><br />      <span class="c1"># range for pure-language; abi-line "~&#x3e; 3.3.0" for native-extension payloads.</span><br />      <span class="c1"># engine names the LANGUAGE — mri/jruby/truffleruby are all `ruby`;</span><br />      <span class="c1"># the OPTIONAL `implementation:` narrows to one (spec 28 §8).</span><br />      <span class="c1"># The value may ALSO be a LIST of such maps — `any_of` semantics,</span><br />      <span class="c1"># OR in declaration order — when the admissible set differs per</span><br />      <span class="c1"># implementation (spec 28 §8); an entry without `implementation:`</span><br />      <span class="c1"># matches at the language level (the runtime's language_version).</span><br />    <span class="c1"># native-extension entrypoints ALSO pin the implementation and the</span><br />    <span class="c1"># platform line:</span><br />    <span class="na">runtime_requirement</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">engine</span><span class="pi">:</span> <span class="nv">ruby</span><span class="pi">,</span> <span class="nv">implementation</span><span class="pi">:</span> <span class="nv">mri</span><span class="pi">,</span> <span class="nv">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">~&#x3e;</span><span class="nv"> </span><span class="s">3.3.0"</span><span class="pi">,</span> <span class="nv">abi</span><span class="pi">:</span> <span class="s2">"</span><span class="s">arm64-darwin-23"</span><span class="pi">}</span><br />      <span class="c1"># abi = the runtime's own platform string the extensions were built</span><br />      <span class="c1"># against (ruby: Gem::Platform.local.to_s). The version line and the</span><br />      <span class="c1"># platform line are ORTHOGONAL — resolution checks both (spec 05 §5).</span><br />      <span class="c1"># an `abi:` in force REQUIRES `implementation:` — an ABI is</span><br />      <span class="c1"># per-implementation by construction (spec 28 §8).</span><br />  <span class="na">platforms</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">x86_64-linux-gnu</span><span class="pi">,</span> <span class="nv">aarch64-macos</span><span class="pi">]</span>  <span class="c1"># native-ext apps are triplet-bound;</span><br />                                                <span class="c1"># universal only for pure-language</span><br /><span class="na">capabilities</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exec</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">read</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">}</span></pre><figcaption class="SourceTitle">Figure 2</figcaption></figure>
+
+
+<p id="_165d9401-c80e-78b5-b8cd-cc5947af8b7e"><tt>capabilities</tt> may also carry <b><tt>host</tt></b> (any kind): the host-access jail the payload was built to need — a REQUEST the dispatch surfaces compose with the user's tightening, never a grant to itself. spec 08 §4 is normative for its shape (<tt>default</tt>, <tt>mounts</tt>, <tt>argument_files</tt>).</p>
+
+<p id="_d31cf9d5-e59f-ecf1-ee38-469df0de4e90"><b>Zero-runtime entrypoints (locked):</b> an entrypoint whose executable is native (or self-contained) needs NO interpreter payload — inkscape-class slices, static binaries, shell-free tools. Such apps declare no <tt>runtime_requirement</tt> and the dispatcher mounts zero runtime payloads. Runtimes (ruby today; python, julia, others tomorrow) are just one payload kind among many — never an assumed layer. A SUITE is one package with N entrypoints — the shim layer exposes one command per entry, each dispatching to its own image and its own runtime requirement (spec 07).</p>
+
+<p id="_0af9e2b7-49bf-1b3f-79c3-d7703e14df95"><b>Completeness (locked 2026-08-29):</b> <tt>entrypoints</tt> declares EVERY command the image carries that a user may invoke directly — it is the payload's command declaration, not a primary-executable field. A bundled CLI (a font manager, a bibliography tool) is as much a provided command as the app's namesake. The declaration is the COMPLETE inventory; exposure is an orthogonal per-entrypoint key:</p>
+
+<figure id="_adfefb73-94de-7848-1b1a-a1ee0e92ba1f" class="sourcecode" spellcheck="false" translation="no"><pre>  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">fontist</span><br />    <span class="na">path</span><span class="pi">:</span> <span class="s">/bin/fontist</span><br />    <span class="na">active</span><span class="pi">:</span> <span class="kc">false</span>     <span class="c1"># OPTIONAL (default true) — declared but NOT</span><br />                      <span class="c1"># PATH-registered at install</span></pre><figcaption class="SourceTitle">Figure 3</figcaption></figure>
+
+
+<p id="_cfef0a49-b589-a137-8bb9-3a7325999956"><tt>active</tt> is the payload author's default exposure. Install registers only the active set (spec 07 §1); an inactive-but-declared command stays dispatchable —  <tt>tebako shim enable &#x3c;name&#x3e;</tt> links it on demand, <tt>tebako run &#x3c;name&#x3e;</tt> reaches it directly, and the user's per-machine enable/disable always overrides the manifest default (spec 07 §3). Additive on the wire: pre-flag readers ignore the key and register every entrypoint (the pre-flag behavior). The declared names are also the only set a self-contained package's  <tt>entries[]</tt> may draw from (§6): the L2 entry names mirror the L1 declaration — one SSOT, cross-checked by <tt>tebako-pkg validate</tt> (tebako#494).</p>
+
+<p id="_e1dfcf01-0acb-2ce5-9488-c169d1f80860"><b>runtime</b> (provides an interpreter):</p>
+
+<figure id="_9dfe50b8-7663-d436-5981-516f81dbd948" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">provides</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">engine</span><span class="pi">:</span> <span class="nv">ruby</span><span class="pi">,</span> <span class="nv">implementation</span><span class="pi">:</span> <span class="nv">mri</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="nv">4.0.6</span><span class="pi">,</span> <span class="nv">language_version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">4.0"</span><span class="pi">,</span> <span class="nv">abi_line</span><span class="pi">:</span> <span class="s2">"</span><span class="s">4.0"</span><span class="pi">,</span> <span class="nv">platform</span><span class="pi">:</span> <span class="nv">x86_64-linux-gnu</span><span class="pi">}</span><br />  <span class="c1"># engine = the LANGUAGE; implementation (REQUIRED for kind: runtime) =</span><br />  <span class="c1"># which ruby this is (mri/jruby/truffleruby — spec 28 §8).</span><br />  <span class="c1"># version = the implementation's OWN version line (jruby: 9.4.8);</span><br />  <span class="c1"># language_version = the language level it implements (jruby 9.4 → "3.1";</span><br />  <span class="c1"># for mri the two are identical). spec 05 §5 matches on both.</span><br /><span class="na">built_from</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">src_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">,</span> <span class="nv">patch_set</span><span class="pi">:</span> <span class="s2">"</span><span class="s">v0.2.8"</span><span class="pi">}</span><br /><span class="na">env</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">GEM_PATH</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}</span><br /><span class="na">entrypoints</span><span class="pi">:</span>                          <span class="c1"># OPTIONAL (additive — schema_minor 4, spec 30 §2):</span><br />  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">jing</span>                        <span class="c1"># the commands this runtime boots as a SEPARATE</span><br />    <span class="na">path</span><span class="pi">:</span> <span class="s">/bin/jing.jar</span>               <span class="c1"># process for a consumer's `kind: runtime` edge</span><br />    <span class="na">args_default</span><span class="pi">:</span> <span class="pi">[</span><span class="s2">"</span><span class="s">-jar"</span><span class="pi">]</span>            <span class="c1"># `expose:` list — the app-entrypoint grammar minus</span><br />                                      <span class="c1"># runtime_requirement (a runtime runs on itself).</span><br />                                      <span class="c1"># Absent/empty = the runtime serves only as a</span><br />                                      <span class="c1"># primary co-mounted runtime.</span><br /><span class="na">windows_boot</span><span class="pi">:</span> <span class="s">materialize</span>             <span class="c1"># OPTIONAL (additive — schema_minor 11, spec 17 §7):</span><br />                                      <span class="c1"># the runtime's interpreter cannot consume the</span><br />                                      <span class="c1"># driver's mounted images on windows (zero-patch,</span><br />                                      <span class="c1"># no interposition tier) — boot from the extracted</span><br />                                      <span class="c1"># exec-cache tree instead. Absent = the interpreter</span><br />                                      <span class="c1"># reads the mounts directly (ruby). POSIX never reads it.</span><br /><span class="na">capabilities</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exec</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">read</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">runtime</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">}</span></pre><figcaption class="SourceTitle">Figure 4</figcaption></figure>
+
+
+<p id="_a94dbb85-e655-6e5a-c6a4-b4c8e79cfada"><b>data</b> (read-only):</p>
+
+<figure id="_2f9e54de-4776-e788-e008-42578009453a" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">mount_semantics</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">suggested</span><span class="pi">:</span> <span class="nv">/usr/share/fonts</span><span class="pi">}</span><br /><span class="na">consumers</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">any</span><span class="pi">]</span><br /><span class="na">capabilities</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exec</span><span class="pi">:</span> <span class="nv">false</span><span class="pi">,</span> <span class="nv">read</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">}</span></pre><figcaption class="SourceTitle">Figure 5</figcaption></figure>
+
+
+<p id="_c2ede9d9-90dc-68b3-f535-a8853158ea57"><b>toolkit</b> (native layer, e.g. gtk/qt): as runtime, minus the interpreter contract; PROVIDES names libraries/tools other payloads DEPEND on.</p>
+</div><div id="_ed978378-f255-ad7d-e515-dfef358137f0"><h2 id="_3f0df3a1-daa7-4a11-86ba-996e1a288e19"><a class="anchor" href="#_ed978378-f255-ad7d-e515-dfef358137f0"></a><a class="header" href="#_ed978378-f255-ad7d-e515-dfef358137f0">2.3 DEPENDS (<tt>requires:</tt>)</a></h2>
+
+<figure id="_2f2911c6-40e0-5772-c3cd-c13d1e21a1af" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">requires</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">language</span>            <span class="c1"># a language runtime edge</span><br />    <span class="na">engine</span><span class="pi">:</span> <span class="s">ruby</span><br />    <span class="na">implementation</span><span class="pi">:</span> <span class="s">jruby</span>     <span class="c1"># OPTIONAL — absent: any implementation of the</span><br />                              <span class="c1"># engine whose language_version satisfies the</span><br />                              <span class="c1"># constraint (spec 28 §8)</span><br />    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">~&#x3e;</span><span class="nv"> </span><span class="s">3.3.0"</span><br />  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">toolkit</span>             <span class="c1"># a native toolkit layer</span><br />    <span class="na">name</span><span class="pi">:</span> <span class="s">gtk-layer</span><br />    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">3.24,</span><span class="nv"> </span><span class="s">&#x3c;</span><span class="nv"> </span><span class="s">3.25"</span><br />    <span class="na">triplets</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">aarch64-macos</span><span class="pi">,</span> <span class="nv">x86_64-linux-gnu</span><span class="pi">]</span>   <span class="c1"># resolves on these hosts</span><br />                                                  <span class="c1"># only — skipped elsewhere</span><br />                                                  <span class="c1"># (the per-edge rule below)</span><br />    <span class="na">mount</span><span class="pi">:</span> <span class="s">/__layers__/gtk</span><br />  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">data</span><br />    <span class="na">name</span><span class="pi">:</span> <span class="s">iso-codes</span><br />    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">2024.1"</span><br />    <span class="na">mount</span><span class="pi">:</span> <span class="s">/__app__/share/iso-codes</span><br />  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">runtime</span>             <span class="c1"># a SPAWNED runtime edge (additive — schema_minor 4,</span><br />    <span class="na">engine</span><span class="pi">:</span> <span class="s">java</span>              <span class="c1"># spec 30): resolves through the RUNTIME index into the</span><br />    <span class="na">implementation</span><span class="pi">:</span> <span class="s">temurin</span>   <span class="c1"># OPTIONAL (spec 28 §8)</span><br />    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">21"</span>       <span class="c1"># store's runtimes/ area and is NEVER co-mounted — its</span><br />                              <span class="c1"># wrapper exe executes FROM THE STORE.</span><br />    <span class="na">expose</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">java</span><span class="pi">,</span> <span class="nv">keytool</span><span class="pi">]</span>   <span class="c1"># OPTIONAL — the depended entries this payload surfaces</span><br />                              <span class="c1"># (spec 30 §3's shim surface)</span></pre><figcaption class="SourceTitle">Figure 6</figcaption></figure>
+
+
+<div class="ul_wrap"><ul id="_7661c089-77e7-0df3-f91a-7a274f2b6d70"><li id="_a342b1ac-a8e1-9b31-eb37-d30bf7acb9bc"><p id="_cd9fc599-a874-3ce0-5413-591e4ae40c02">Dependency edges may also name <b>provided executables</b> (e.g. an app requiring the  <tt>inkscape</tt> command resolves against the PROVIDES of the inkscape payload) — the provides/requires graph resolves capabilities, not just payload names.</p>
+</li>
+<li id="_7669e84a-1a67-76bc-ad21-fa9a1c1e5e64"><p id="_46e22c90-dc21-b2d7-4280-0e898f63b220">A <b><tt>kind: runtime</tt></b> edge is spec 30's spawned dependency: the depended runtime is dispatched as a CHILD process through its store-resident wrapper (never co-mounted, never materialized); resolution placement, the spawn wire, the jail union, and the shim surface are spec 30 §2–§5's. EXCEPTION: when the DECLARING payload is itself  <tt>kind: runtime</tt> and the edge carries NO <tt>expose:</tt>, the edge is an OWNER edge — runtime-on-runtime composition (spec 33): the depended runtime owns the boot's process, and the declarer contributes a second env image plus the  <tt>on_runtime</tt> argv template.</p>
+</li>
+<li id="_5fe5205c-66f5-76ec-3b4e-093a01f9cbd6"><p id="_957dadab-dfbd-5d8d-bd0a-7183af99100b"><b>MOUNT RULE (locked):</b> the mount point is declared in the CONSUMER's manifest (docker-compose volume semantics): the consumer's code knows where it looks for things; the provider never dictates its mount location. The dispatcher resolves the capability, then mounts at the consumer-declared path — top-level or inside the app's memfs namespace.</p>
+</li>
+<li id="_a0dedd7b-399c-6ade-3fed-81a7c6c5842f"><p id="_06fbbe6c-e995-8c27-4921-ac66f992681d"><b>Resolution algorithm:</b> read manifest → build the graph → topological order (runtime first, layers, app last) → per node: cache hit on (constraint × triplet) → use, else fetch (signature-verified, spec 09) → verify → cache (0444 + markers) → compose the mount stack with the manifest's declared env → exec. The SAME signed  <tt>.tfs</tt> artifact type at every graph level — one coherent algebra.</p>
+</li>
+<li id="_2e19a878-7332-25c6-94d8-6444553a6953"><p id="_8758de51-6b4a-3b43-828e-2b7a17af7d94"><b>PER-EDGE PLATFORM CONDITIONING (<tt>triplets:</tt>, additive — schema_minor 9, locked 2026-09-12, roadmap 86):</b> every edge kind EXCEPT <tt>kind: language</tt> accepts the OPTIONAL <tt>triplets:</tt> list — the §3 axis's vcpkg-form triplets, non-empty, no duplicates (validated at parse). This generalizes the toolkit edge's existing spelling to  <tt>data</tt>, <tt>runtime</tt>, and <tt>executable</tt> edges — one spelling per axis (spec 00 invariant 10): payload-level coverage is <tt>platforms:</tt>, edge-level conditioning is <tt>triplets:</tt>.</p>
+<div class="ul_wrap"><ul id="_d2a42d1a-6637-93f0-4478-efa2aafc85b8"><li id="_28eb7aa8-7f24-0a4a-fd83-3c5df97e1eab"><p id="_97f8f5eb-36a5-0d6a-4334-2dab5e585d38"><b>Absent = universal.</b> An edge without <tt>triplets:</tt> resolves on every host — byte-identical with pre-minor-9 behavior.</p>
+</li>
+<li id="_5a5a9bb9-57c7-8c61-89d7-092e6a692b48"><p id="_7311053d-f302-ce0f-81f4-9b31f9ca357e">A host outside the list SKIPS the edge: no resolution, no fetch, no install row, no lock row, no mount, no spawn surface, no exposed-name registration. The skip is LOUD — one journal line (<tt>event=edge-platform-skip</tt>, the shim's journal convention) plus a stderr note at press / install / dispatch — never silent, never an error. A multi-host compose (spec 23) evaluates coverage per target host: the edge lands in the lock rows of the covering hosts only.</p>
+</li>
+<li id="_21575c6d-5079-1041-3d81-e23963ddb081"><p id="_3d4f1993-65cb-75c3-2750-f8b5380e7a37">A skipped edge's exposed commands are absent from the shim surface on the skipping host; dispatching one anyway (a stale shim, a hand-written invocation) is a named error — "not available on this platform", exit 69 — never a silent fallback to another provider.</p>
+</li>
+<li id="_069ff33f-8ce5-588c-8506-d507c664b271"><p id="_81f78d61-8d3f-e893-286a-54c79bc7f768"><b><tt>kind: language</tt> FORBIDS the key</b> — a skipped language edge would boot a payload with no runtime, an incoherent composition; the payload-level  <tt>platforms:</tt> axis already owns "where this payload runs". A language edge carrying  <tt>triplets:</tt> is a named manifest error at parse, steering the author to  <tt>platforms:</tt>.</p>
+</li>
+<li id="_edaa3586-34b5-9474-624e-ebfe9c2abe1d"><p id="_d06d546b-6e9d-b6d5-eb54-c70d320a3e08"><b><tt>critical:</tt> interaction:</b> the skip applies regardless of <tt>critical: true</tt> — <tt>critical</tt> governs reader-ERA refusal (a pre-minor reader must refuse an edge it cannot interpret), never platform reach. "This host must have the dep" is said with <tt>platforms:</tt> on the payload, not with <tt>critical</tt> on the edge.</p>
+</li>
+<li id="_aa1ff809-6a4f-8f92-6ddb-4f178e259585"><p id="_1261379f-9a51-4dc0-4c44-7ecc5a4bb49a">Reader compatibility: a pre-minor-9 reader ignores <tt>triplets:</tt> on non-toolkit edges (the unknown-field rule) and resolves the edge universally — the safe direction: an extra dependency resolved, never a needed dependency skipped.</p>
+</li>
+</ul></div>
+</li>
+</ul></div>
+</div><div id="_ff0b79cf-262c-2b1a-4d14-2ffeae233d9d"><h2 id="_eb208cf6-6bab-45cb-8b0e-403e9e7f6f03"><a class="anchor" href="#_ff0b79cf-262c-2b1a-4d14-2ffeae233d9d"></a><a class="header" href="#_ff0b79cf-262c-2b1a-4d14-2ffeae233d9d">2.4 MATERIALIZE (<tt>materialize:</tt>, additive — schema_minor 1)</a></h2>
+
+<figure id="_8b229da4-2b60-9494-3e2a-940aaa8cc447" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">materialize</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="s">/lib/ssl/certs/cacert.pem</span>    <span class="c1"># an absolute in-image path, no '..' components</span></pre><figcaption class="SourceTitle">Figure 7</figcaption></figure>
+
+
+<p id="_783f8f33-9bf5-452d-614f-c5416fe51ad9">A top-level list (any kind may declare it; old readers ignore it under the unknown-field rule) naming  <b>regular files a C library must read through its own IO</b> — the interpreter's patched IO never gets asked, so the bytes must exist on the host filesystem. The OpenSSL CA cert is the canonical entry. The driver extracts each declared path after the mounts and the jail, before the interpreter handoff, to <tt>&#x3c;TEBAKO_EXEC_CACHE&#x3e;/resources/&#x3c;image-key&#x3e;/&#x3c;P&#x3e;</tt> — whole-file, read-only, digest-verified. A declared path absent from the image, or not a regular file, is the manifest lying: boot fails by name (exit 65), never a skipped entry. The full mechanics and the trust chain are spec 22 §4 (class R); the grammar is registered in <tt>docs/spec/schemas/payload-manifest.yaml</tt>.</p>
+</div><div id="_ef15a072-40b4-b7af-7354-21eb26950e23"><h2 id="_0b30f540-e322-4820-a293-5b01bacb891e"><a class="anchor" href="#_ef15a072-40b4-b7af-7354-21eb26950e23"></a><a class="header" href="#_ef15a072-40b4-b7af-7354-21eb26950e23">2.5 LIBRARY ALIASES (<tt>library_aliases:</tt>, additive — schema_minor 2)</a></h2>
+
+<figure id="_abfac63a-0369-be29-c5b6-83168738c1e8" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">library_aliases</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">libfoo-3.dll</span>        <span class="c1"># the exact bare name a loader call presents —</span><br />                              <span class="c1"># no path separator, no drive qualifier</span><br />                              <span class="c1"># (validated at parse)</span><br />    <span class="na">path</span><span class="pi">:</span> <span class="s">/lib/libfoo-3.dll</span>   <span class="c1"># the in-image absolute file the name resolves to</span></pre><figcaption class="SourceTitle">Figure 8</figcaption></figure>
+
+
+<p id="_cdeae111-c016-794c-3d3f-fa9262180b43">A top-level list (any kind may declare it; old readers ignore it under the unknown-field rule) naming the ONLY bare library names that resolve to the image's own files — the declarative half of the windows Class-L bare-name rule (semantics: spec 22 §2.1). A loader call presenting a bare name matching no entry is a HOST reference and passes through untouched: host-by-default, no probing, no heuristics, no silent fallback. Matching is verbatim and case-insensitive (the windows loader's own comparison); the name is never extension-completed (<tt>foo</tt> does not match  <tt>foo.dll</tt>). <tt>path</tt> must be an absolute in-image path of a regular file, no  <tt>..</tt> components — an absent or non-file target is the manifest lying (a named 65 at boot, the §2.4 precedent). A duplicate  <tt>name</tt> within one image is a named manifest error; two co-mounted images declaring the same  <tt>name</tt> is a named boot error (authoring ambiguity, the spec 17 §2 slug precedent), never a silent winner. No platform filter: native images are triplet-bound (§3), so an alias is platform surface by construction. The grammar is registered in <tt>docs/spec/schemas/payload-manifest.yaml</tt>.</p>
+</div><div id="_5370a56c-a4f9-8763-596c-eee4a8fa69d8"><h2 id="_2228670b-3a57-46a9-b15f-4adf5d42f5a3"><a class="anchor" href="#_5370a56c-a4f9-8763-596c-eee4a8fa69d8"></a><a class="header" href="#_5370a56c-a4f9-8763-596c-eee4a8fa69d8">2.6 CHECKS (<tt>checks:</tt>, additive — schema_minor 3)</a></h2>
+
+<figure id="_7a5af073-8b04-7c7e-0ab5-aa2a6e0dcf03" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">checks</span><span class="pi">:</span><br />  <span class="na">html-xml</span><span class="pi">:</span>                        <span class="c1"># the check name — [A-Za-z0-9][A-Za-z0-9._-]*</span><br />    <span class="na">entry</span><span class="pi">:</span> <span class="s">/bin/metanorma</span>          <span class="c1"># in-image executable; "self" on kind</span><br />                                   <span class="c1"># runtime only (the runtime exe itself)</span><br />    <span class="na">argv</span><span class="pi">:</span> <span class="pi">[</span><span class="s2">"</span><span class="s">--type"</span><span class="pi">,</span> <span class="s2">"</span><span class="s">iso"</span><span class="pi">,</span> <span class="s2">"</span><span class="s">{scratch}/test-iso.adoc"</span><span class="pi">,</span> <span class="s2">"</span><span class="s">--agree-to-terms"</span><span class="pi">]</span><br />    <span class="na">fixtures</span><span class="pi">:</span> <span class="s">/__tpkg__/check/html-xml</span>   <span class="c1"># exec-only; CONTENTS land at the</span><br />                                         <span class="c1"># host scratch root</span><br />    <span class="na">expect</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exit</span><span class="pi">:</span> <span class="nv">0</span><span class="pi">,</span> <span class="nv">files</span><span class="pi">:</span> <span class="pi">[</span><span class="s2">"</span><span class="s">test-iso.xml"</span><span class="pi">,</span> <span class="s2">"</span><span class="s">test-iso.html"</span><span class="pi">]}</span><br />    <span class="na">timeout</span><span class="pi">:</span> <span class="m">180</span><br />  <span class="na">layout</span><span class="pi">:</span>                          <span class="c1"># no entry ⇒ STRUCTURAL (the data-slice</span><br />    <span class="na">expect</span><span class="pi">:</span>                        <span class="c1"># shape): the engine mounts and asserts</span><br />      <span class="na">image_files</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">/templates/org/cover.adoc</span><span class="pi">]</span>   <span class="c1"># in-image, exist + non-empty</span></pre><figcaption class="SourceTitle">Figure 9</figcaption></figure>
+
+
+<p id="_ed86f38b-ea02-0a64-8a27-897bc1a4d310">A top-level map (any kind may declare checks; old readers ignore it under the unknown-field rule) naming the payload's own acceptance contracts — "given my declared needs, I do my one real thing". ONE key decides the shape (MECE, never a  <tt>kind:</tt> flag): <tt>entry</tt> present ⇒ an exec check; absent ⇒ a structural check, which declares no  <tt>argv</tt>/<tt>fixtures</tt> and asserts via  <tt>expect.image_files</tt>. <tt>expect.files</tt> are scratch-relative existence + non-empty assertions; byte-golden assertions do not exist by construction. A malformed block is a named validation error at press / <tt>tfs validate</tt> (exit 65), never discovered at run time. The semantics — the engine, the three moments, SKIP/FAIL discipline — are spec 26; the grammar is registered in <tt>docs/spec/schemas/payload-manifest.yaml</tt>.</p>
+</div><div id="_fb129e30-cd1a-0c36-b23f-6fe6fc99e9b4"><h2 id="_8cecca94-3ae2-446c-87cc-589ba8d747a9"><a class="anchor" href="#_fb129e30-cd1a-0c36-b23f-6fe6fc99e9b4"></a><a class="header" href="#_fb129e30-cd1a-0c36-b23f-6fe6fc99e9b4">2.7 INTERP ENV (<tt>interp_env:</tt>, additive — schema_minor 8) — IMPLEMENTED 2026-10-07 (tebako#559)</a></h2>
+
+<figure id="_9da8178a-01ba-2f07-ff0d-0a320cc81810" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">interp_env</span><span class="pi">:</span><br />  <span class="na">RUBY_YJIT_ENABLE</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1"</span>          <span class="c1"># interpreter-option defaults, literal strings</span><br />  <span class="na">RUBY_GC_HEAP_FREE_SLOTS</span><span class="pi">:</span> <span class="s2">"</span><span class="s">500000"</span></pre><figcaption class="SourceTitle">Figure 10</figcaption></figure>
+
+
+<p id="_3e6fcc53-218e-571c-ffab-04d3369e8759">A top-level map (any kind may declare; old readers ignore it under the unknown-field rule) carrying  <b>interpreter-option defaults the slice author owns</b>: what options the interpreter starts with is a packaging-time decision (the runtime/payload slice developer's), with the local user always able to override. The dispatcher exports each merged key into the runtime process's environment at dispatch, so the interpreter reads it at its own boot (ruby's  <tt>RUBY_YJIT_ENABLE</tt>, python's <tt>PYTHON_JIT</tt>, the JVM family's option vars — the channel is generic, never a ruby wart).</p>
+
+<p id="_54a55ff5-a117-b787-7c03-be0c4d5b49b1">MECE against the existing env surfaces: <tt>provides.env:</tt> (runtime kind) is the runtime's COMPOSED process-env defaults (path-class included, spec 07 §9);  <tt>interp_env:</tt> is the per-slice interpreter-OPTION channel — scalar only, never path-class, never a  <tt>TEBAKO_*</tt> control var (those are dispatcher/driver-owned; both violations are named manifest errors). Values are literal strings: no expansion, no execution, no references — additive and declarative by construction; a malformed block is a named validation error at press /  <tt>tfs validate</tt> (exit 65), never discovered at run time.</p>
+
+<p id="_904c3300-1c50-c397-746f-b9f5eccde7ef">The composition chain and the override order live in spec 07 §9; the driver-side application rule in spec 17 §2.2; the audit surface in spec 15 §4. A declaration is a DEFAULT, never a requirement: a pre-minor-8 consumer ignores the key and ships the interpreter's built-in behavior.</p>
+</div><div id="_0749aaa8-0f7e-341d-5af8-5c6052696344"><h2 id="_3700e749-8a83-4630-b0de-7a3c4b19c200"><a class="anchor" href="#_0749aaa8-0f7e-341d-5af8-5c6052696344"></a><a class="header" href="#_0749aaa8-0f7e-341d-5af8-5c6052696344">2.8 AUGMENTS (<tt>augments:</tt>) and EXTENSION POINTS (<tt>extension_points:</tt>) — additive, schema_minor 10</a></h2>
+
+<p id="_aa6e47ea-997b-8767-b098-45eefe63acdb">The reverse dependency edge: a slice that extends a base payload it cannot be enumerated BY. The mount rule (§2.3) is unchanged — the CONSUMER declares; here there are two consumers and both keep their say: the BASE declares WHERE extensions land, the SLICE declares WHICH base it extends. Neither touches the other's bytes.</p>
+
+<p id="_fa08ea76-92ad-ee51-19de-3a13ad4372bc"><b>Base side — PROVIDES gains <tt>extension_points:</tt></b> (any kind that can host in-process content; practically  <tt>app</tt>):</p>
+
+<figure id="_72942e53-137e-262c-7228-f7ef26326274" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">provides</span><span class="pi">:</span><br />  <span class="na">entrypoints</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">...</span><span class="pi">]</span><br />  <span class="na">extension_points</span><span class="pi">:</span><br />    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">flavors</span>              <span class="c1"># symbolic; slices reference it by name</span><br />      <span class="na">mount</span><span class="pi">:</span> <span class="s">/flavors.d</span>          <span class="c1"># VFS-absolute; the slices mount BELOW it</span><br />      <span class="na">layout</span><span class="pi">:</span> <span class="s">gem-home</span>           <span class="c1"># enum: gem-home | files (extensible)</span></pre><figcaption class="SourceTitle">Figure 11</figcaption></figure>
+
+
+<div class="ul_wrap"><ul id="_9bdf12ac-be80-4597-a230-5a4d52b89f12"><li id="_4f97cc57-c3d7-44aa-a466-c3feb79a9cf2"><p id="_16faec17-5a70-fe2f-13c7-cc9fdfb7d523"><tt>layout: gem-home</tt> — each mounted child is a mini GEM_HOME (<tt>gems/</tt>, <tt>specifications/</tt>); composition is the language ecosystem's own multi-home search list (GEM_PATH), never a union mount: two slices carrying different versions of one gem stay VISIBLE-and-resolvable (requirement-based activation) instead of one shadowing the other by mount precedence.</p>
+</li>
+<li id="_e4f50da5-54fd-4f50-8fe1-1b9cda53e975"><p id="_bd4f495e-244d-5217-cf1a-dd7a5ada1b45"><tt>layout: files</tt> — opaque content the application reads itself (fonts, codelists). The app enumerates  <tt>&#x3c;mount&#x3e;/&#x3c;slice&#x3e;/…</tt>.</p>
+</li>
+</ul></div>
+
+<p id="_0995091b-4d0f-d5fb-cb6c-b53ab1c54330"><b>Base side, dedup inventory — PROVIDES gains <tt>gems:</tt></b> (any payload staging a gem home; REQUIRED when it declares a  <tt>gem-home</tt> extension point):</p>
+
+<figure id="_c6baac76-62ba-bc5f-4973-7bd4126be862" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">provides</span><span class="pi">:</span><br />  <span class="na">gems</span><span class="pi">:</span><br />    <span class="pi">-</span> <span class="pi">{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">nokogiri</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.18.9"</span><span class="pi">}</span><br />    <span class="pi">-</span> <span class="pi">{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">metanorma-cli</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.16.9"</span><span class="pi">}</span></pre><figcaption class="SourceTitle">Figure 12</figcaption></figure>
+
+
+<div class="ul_wrap"><ul id="_8594ad3e-82d0-4830-caa7-f521fbb2914e"><li id="_a744d32a-dd9e-08aa-2bcd-7ba55a0083cb"><p id="_4aebb436-36d1-33c0-1b76-8d129d2fddc3">Generated, never hand-authored (spec 00 §10): the builder scans the staged gem home's  <tt>specifications/*.gemspec</tt> before the image seals. One generator, two consumers — the dispatcher reads the manifest key (the overlap journal, spec 07 §2 step 3a); the release exports the same inventory as its  <tt>closure.json</tt> asset, the slice press's subtraction source. A second hand-written copy anywhere is a bug.</p>
+</li>
+</ul></div>
+
+<p id="_458252c5-3e76-ae61-4fef-9968e7a2ce35"><b>Slice side — a new top-level block <tt>augments:</tt></b> (sibling of <tt>requires:</tt>):</p>
+
+<figure id="_73758e5d-2bc8-e61a-cf02-7716a3530f20" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">augments</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="na">payload</span><span class="pi">:</span> <span class="s">metanorma</span>           <span class="c1"># the base payload's name</span><br />    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">=</span><span class="nv"> </span><span class="s">1.16.2"</span>       <span class="c1"># vs the base's RESOLVED version</span><br />    <span class="na">extension_point</span><span class="pi">:</span> <span class="s">flavors</span>     <span class="c1"># names the base's declared point</span><br />    <span class="na">built_against</span><span class="pi">:</span>               <span class="c1"># provenance, written by the press</span><br />      <span class="na">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.16.2"</span>          <span class="c1">#   tooling — the exact base release</span><br />      <span class="na">closure_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span>        <span class="c1">#   whose inventory was subtracted</span></pre><figcaption class="SourceTitle">Figure 13</figcaption></figure>
+
+
+<p id="_5cbcf5c8-61ff-ccca-6315-68d2c5e893f9"><tt>augments</tt> IS a dependency declaration, and the slice is NOT self-contained by construction (a deduped slice's gems resolve against the BASE's gem home at run time). Dispatch semantics live in spec 07 §2 step 3a; the store scan in spec 05 §3. The scope locks:</p>
+
+<div class="ul_wrap"><ul id="_67cf3e59-3467-6968-f073-724e3ee6194c"><li id="_c7fff6fc-07c8-3547-cfff-59601a8f32e9"><p id="_e489b192-782b-10fb-87ef-3501ca143745"><b>Root-only.</b> <tt>augments</tt> attaches slices to the DISPATCHED (root) payload. A slice augmenting a slice is the named NestedAugment error;  <tt>augments</tt> on a root payload's own manifest is ignored (journaled  <tt>slice-ignored</tt>) — attachment is declared by the slice, never claimed by the base.</p>
+</li>
+<li id="_f908e7e8-4d8a-80d5-1b34-350704c1355d"><p id="_8e93110a-a0d5-5bf0-b446-5c6553d41a6f"><b>Content-only.</b> Slices are in-process CONTENT (gem homes, files) — <tt>capabilities.exec: false</tt>. An extension carrying executables rides the forward  <tt>requires</tt>/<tt>expose</tt> machinery (spec 30), never <tt>augments</tt>. MECE.</p>
+</li>
+<li id="_2787fa6d-37f5-d897-1f83-31c999e13050"><p id="_ca5494b6-76cb-cede-0468-f6078a850713"><b>No runtime of its own.</b> The slice's <tt>requires</tt> language edge is satisfied by the BASE's resolved runtime (abi line included — a mismatch is the dispatch-time loud skip, never a segfault).</p>
+</li>
+<li id="_7f155d1f-df89-dfc6-3155-db6904e4574d"><p id="_b829d380-7e96-17a2-7e5e-1060026103f6"><b>The binding rule.</b> A slice deduped against the base's closure pins EXACTLY (<tt>constraint: "= x.y.z"</tt> — one slice release per base release, shipped in lockstep): subtraction is sound only against the exact inventory it subtracted, and the slice's tests ran against exactly that base. When the base ships runtime LINES as suffixed versions (spec 28;  <tt>1.16.9</tt> and <tt>1.16.9-ruby4.0</tt> of one payload version), the closures differ per line, so the pin names the LINE's exact version (<tt>= 1.16.9-ruby4.0</tt> — the schema_minor-12 grammar, spec 05 §5) and one slice release exists per (slice, base LINE) pair. Range constraints remain legal for content that honestly spans (<tt>layout: files</tt> asset packs); gem-closure slices MUST pin exactly. Pre-minor-10 readers ignore both keys (the slice then simply attaches nothing — loud at install, never silent); pre-minor-12 readers reject a suffixed pin by name (exit 65). <b>Family completion:</b> when the lines' closure INVENTORIES are identical (press-verified at build time against every family row's published closure assets — never assumed), ONE slice release MAY serve the whole family: it carries one exact-pin  <tt>augments</tt> edge per family row (each with its own  <tt>built_against</tt> provenance naming that row), and the dispatcher attaches when any edge matches (spec 07 §2 step 3a). The binding rule is unchanged — every edge pins exactly the row whose inventory the press verified identical to the subtraction source.</p>
+<p id="_3297cde1-6ec0-66bf-5861-27da69563b6b"><b>The line-split idiom, worked</b> (first production use: the metanorma flavor slices, metanorma/packed-metanorma-bsi and -nist, 2026-09-27 — the living instance to copy). A pure-ruby slice that serves every runtime line of a base family cannot use ONE exact pin: equality clauses are suffix-exact in the versions grammar (<tt>= 1.17.0</tt> never matches <tt>1.17.0-ruby3.3</tt>). Nor should it reach for a range (<tt>&#x3e;= 1.17.0-ruby3.3, &#x3c; 1.17.1</tt>): a range is legal for content that honestly spans, but a gem-closure slice subtracts a specific inventory, and the binding rule wants each served row named. The shipped spelling is one edge per row:</p>
+
+<figure id="_528b3688-8f3b-a672-ff03-585f0c62017e" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">augments</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="na">payload</span><span class="pi">:</span> <span class="s">metanorma</span><br />    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">=</span><span class="nv"> </span><span class="s">1.17.0"</span><br />    <span class="na">extension_point</span><span class="pi">:</span> <span class="s">flavors</span><br />    <span class="na">built_against</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.17.0"</span><span class="pi">,</span> <span class="nv">closure_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">}</span><br />  <span class="pi">-</span> <span class="na">payload</span><span class="pi">:</span> <span class="s">metanorma</span><br />    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">=</span><span class="nv"> </span><span class="s">1.17.0-ruby3.3"</span><br />    <span class="na">extension_point</span><span class="pi">:</span> <span class="s">flavors</span><br />    <span class="na">built_against</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1.17.0-ruby3.3"</span><span class="pi">,</span> <span class="nv">closure_sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><span class="pi">}</span></pre><figcaption class="SourceTitle">Figure 14</figcaption></figure>
+
+
+<p id="_8943dfb1-e777-5f26-9ad1-20daebc188bf">Soundness: the press subtracts the INTERSECTION of the family's platform/line closures — a gem is subtracted only if present in every closure the slice will mount beside — and refuses (build error) when the inventories are not identical. One subtraction therefore serves every named row; the dispatcher's any-edge match (v2.8.19) attaches the slice to whichever row the user's version pin selected. A new base line (say  <tt>-ruby3.5</tt>) is a NEW row the slice does not name: dispatch skips loudly (the unattached-flavor journal), and the slice press adds the edge after verifying the new row's closure identity — never a silent range stretch.</p>
+</li>
+</ul></div>
+</div><div id="_2c1da3d6-6da3-62ee-9307-3726fc1eb235"><h2 id="_71b7a5ca-0bbb-43d3-ad23-1cbc24059682"><a class="anchor" href="#_2c1da3d6-6da3-62ee-9307-3726fc1eb235"></a><a class="header" href="#_2c1da3d6-6da3-62ee-9307-3726fc1eb235">2.9 MIN RUNTIME TEBAKO (<tt>min_runtime_tebako:</tt>, additive — schema_minor 15, tebako#666)</a></h2>
+
+<p id="_57d7a039-eda1-1131-e45e-6d0ede725cf9">An OPTIONAL top-level key naming the minimum tebako tooling version of the runtime this payload runs on:</p>
+
+<figure id="_e9e5fde7-e14b-938c-ac0e-21e83ba5a669" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">min_runtime_tebako</span><span class="pi">:</span> <span class="s2">"</span><span class="s">2.8.8"</span></pre><figcaption class="SourceTitle">Figure 15</figcaption></figure>
+
+
+<p id="_3dcdd542-eb79-ad4d-5060-edd51d299a98">The author sets it when the payload starts depending on a newer runtime/driver capability (a mount-ancestor route, a spec-32 <tt>kind: executable</tt> edge, …). The value is 1–4 dot-separated components of the schema_minor-12 component grammar (leading decimals, optional <tt>-label</tt> suffix); anything else is a named manifest error at parse. Absent = no floor. Old readers ignore the key (the unknown-field rule) — which is exactly why the key exists: the failure mode it retires is a stale cached runtime failing a newer payload with payload-blaming wording.</p>
+
+<p id="_cdeb6b3c-5a6f-6e94-0c7f-086fdb3a429b">Semantics (the three consumers, all fail-closed with named errors):</p>
+
+<div class="ul_wrap"><ul id="_4c34302f-f6e1-3f53-c961-9ec0d6e21fd6"><li id="_2987c2f7-e2fa-6bec-c0e2-7afc4b964f6a"><p id="_96f7bd5a-2c1f-b04b-c202-e853e47879e7"><b>Resolution (spec 05 §5):</b> "newest compatible cached" discards cached runtimes whose own tebako version is below the floor and fetches instead; the miss errors NAME the skipped entries. <tt>TEBAKO_OFFLINE=1</tt> keeps fail-closed behavior — cache-or-named-error, with the floor named. A downloaded runtime below the floor (a pinned stale line) is the named stale-runtime refusal.</p>
+</li>
+<li id="_abd3d578-f8e4-6706-823c-aad280abb3a5"><p id="_092e643c-b87c-2ce3-be92-9bc1db2c3023"><b>The driver (spec 17 §8):</b> a runtime whose tooling version is below the floor refuses the manifest by name — "the runtime is too old for this payload's manifest (needs X, have Y)" — both when the manifest parses (the key itself is old-reader-safe) and when the parse FAILED (the manifest uses grammar this runtime predates; the floor is then read by a tolerant top-level scan of the raw YAML). Never "corrupt manifest / self-description lies" for the stale-runtime class.</p>
+</li>
+<li id="_91b2b73b-ffa1-b00d-9fe8-d2ffc6d2610c"><p id="_52348712-9c2e-3cca-96a2-b014b52f49f4"><b>The floor constrains every runtime the payload's dispatch resolves</b> — its own entrypoint runtime and the spawned runtimes of its <tt>requires</tt> edges (a provider payload's floor likewise gates the provider's own pair).</p>
+</li>
+</ul></div>
+
+<p id="_cc4caf4b-cc9d-8cea-542d-1a8a8dab6572">The floor is a MINIMUM, not a pin: it never narrows which compatible runtime wins above it, and it never substitutes for the <tt>runtime_requirement</tt> constraint (the interpreter version axis is the requirement's; the tooling axis is the floor's).</p>
+</div><div id="_ec3e94c3-ff33-f1f6-8be5-57a1a5255a37"><h2 id="_52a56695-764b-4c4a-b7e2-a71d414346f9"><a class="anchor" href="#_ec3e94c3-ff33-f1f6-8be5-57a1a5255a37"></a><a class="header" href="#_ec3e94c3-ff33-f1f6-8be5-57a1a5255a37">2.10 ENV PASS (<tt>env_pass:</tt>, additive — schema_minor 16, tebako#737)</a></h2>
+
+<p id="_b0cf3da6-9e0e-d853-f3ef-94ed1517387d">The packager's opt-in to the driver's credential scrub. A packaged app must not exfiltrate the packager's credentials by default: at boot's end, after every contract read, the driver BLANKS every <tt>TEBAKO_*</tt> environment variable that is not part of the boot contract (spec 17 §1/§7's handoff surface, spec 08 §2's jail, spec 22 §6's exec cache, spec 22 §3's child injection, spec 25 §2's trace, and the <tt>TEBAKO_MOUNT_*</tt> discovery prefix) — <tt>TEBAKO_GITHUB_TOKEN</tt> above all. The scrub journals each NAME at debug, never a value.</p>
+
+<figure id="_815a826f-b130-aafc-03f9-e06dc3224029" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">env_pass</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="s">TEBAKO_FLAVOR_KEY</span></pre><figcaption class="SourceTitle">Figure 16</figcaption></figure>
+
+
+<div class="ul_wrap"><ul id="_81d80215-f66d-6313-c58a-470e3526ae9e"><li id="_41020de6-fc38-4d0d-2074-82a00ec6ea82"><p id="_5f150736-58a1-0f2e-c607-f2d951027d3a">Every entry is a <tt>TEBAKO_</tt>-prefixed variable name (uppercase alphanumerics and underscore); anything else is a named manifest error at parse. The opt-in may only name what the scrub itself could take.</p>
+</li>
+<li id="_21938617-1c2c-85a5-3bee-bfd16f18e0a7"><p id="_ca8ce026-20fd-2b42-3b05-b180bd574413">The driver reads the list from the FIRST image's embedded manifest (the app payload); an absent/unreadable manifest means NO opt-in — the scrub fails safe. A standalone boot (no images) scrubs with no opt-in.</p>
+</li>
+<li id="_186b7dbd-7733-332c-a708-62a2b04ea271"><p id="_e991c4ab-bcef-daf3-081f-aa444929784c">Old readers ignore the key; the scrub is driver behavior, not a resolution input — the failure mode the key retires is a packaged run silently carrying the press host's credentials.</p>
+</li>
+</ul></div>
+</div></div><div id="_a324bf48-0c1c-bc97-9a45-38b1c58e0e34"><h1 id="_26052efd-a412-47aa-8d62-43e57fcade09"><a class="anchor" href="#_a324bf48-0c1c-bc97-9a45-38b1c58e0e34"></a><a class="header" href="#_a324bf48-0c1c-bc97-9a45-38b1c58e0e34">3. Platform axis (locked, vcpkg-triplet form)</a></h1><p id="_2dc9bd95-6af6-5830-63bc-febb1a5f8079"><tt>platforms</tt> is EITHER <tt>"universal"</tt> (pure-ruby/data) OR an explicit list:</p><div class="ul_wrap"><ul id="_c4c66fb1-8bce-4262-2093-17c48e83a486"><li id="_c176405f-0fd4-b17e-3d83-ed61fd95010a"><p id="_5843c4f0-852b-c566-d214-0ca04e1ef4d8"><tt>aarch64-macos</tt>, <tt>x86_64-macos</tt></p>
+</li>
+<li id="_6fe4f3d6-9033-9f3b-54ae-f1d78bcb372e"><p id="_50242a9d-0659-5e20-a572-48c09657daf9"><tt>x86_64-linux-gnu</tt>, <tt>aarch64-linux-gnu</tt></p>
+</li>
+<li id="_446ef021-95d8-c6d7-dbb3-f6435bc5d7dc"><p id="_870a8660-2719-81cd-9ad3-3c3f3372a2b4"><tt>x86_64-linux-musl</tt>, <tt>aarch64-linux-musl</tt></p>
+</li>
+<li id="_916c3f2c-e8ff-0666-3a22-a472bee742c1"><p id="_02fff8d4-5eea-90ac-8a8c-d499de40c8dc"><tt>x86_64-windows-ucrt</tt>, <tt>aarch64-windows-ucrt</tt></p>
+</li>
+</ul></div><p id="_a3f3caf1-7fab-7b9e-7b67-a85566ecc7ac">(<tt>aarch64-windows-ucrt</tt> joined the axis at payload-manifest schema_minor 13; pre-13 readers reject it by name — exit 65 — which is the designed fail-closed behavior for a triplet outside an old reader's axis.)</p><p id="_bde0432c-f950-930c-316e-d6b0cc11b267">ONE <tt>Platform</tt> type (tpkg crate) owns the triplet ↔ release-asset-name mapping (<tt>aarch64-macos</tt> ↔ <tt>macos-arm64</tt>, <tt>x86_64-linux-gnu</tt> ↔ <tt>linux-gnu-x86_64</tt>, <tt>x86_64-windows-ucrt</tt> ↔ <tt>windows-ucrt64</tt>, …) — dispatcher, release tooling, and registry consume the SAME mapping.</p></div><div id="_c4d5a8c1-1ba8-12ad-1a49-8e9a6b883b27"><h1 id="_6f8a9355-564d-41d6-a802-8fde982c8662"><a class="anchor" href="#_c4d5a8c1-1ba8-12ad-1a49-8e9a6b883b27"></a><a class="header" href="#_c4d5a8c1-1ba8-12ad-1a49-8e9a6b883b27">4. The three tiers (no duplicated authority)</a></h1><div class="ol_wrap"><ol type="1" id="_4a870589-5958-cf89-9ca6-4dd1bd3a3b6e"><li id="_3832867d-8b32-924d-a85e-c10b630264bc"><p id="_2328f8a0-4de4-2e73-dc30-c0534eb2e74f"><b>In-image manifest</b> (this spec) — THE rich layer; signed/encrypted with the image.</p>
+</li>
+<li id="_a39ee2a9-f9d2-1198-7b2b-b696365d9153"><p id="_b370452f-145b-7d46-7f0f-f917b2eca633"><b>tpkg trailer</b> (spec 02) — stays minimal: mount/exec directives, per-slot digests, signature; REFERENCES manifests by image digest, never duplicates them.</p>
+</li>
+<li id="_a136706c-0f99-8fd6-ea48-91810ef93e9b"><p id="_4c01d07a-635f-88c3-8955-8030405ed1c1"><b>Registry manifest</b> (<tt>tpkg-registry.yaml</tt>, spec 04) — MIRRORS only resolution-relevant fields (kind, name, version, constraints, platforms, entrypoints) so the dispatcher resolves without downloading every payload.</p>
+</li>
+</ol></div></div><div id="_0952f4b8-fef7-e5b3-76df-719256210dab"><h1 id="_dad97888-becf-474b-bb92-8396d11ce6f2"><a class="anchor" href="#_0952f4b8-fef7-e5b3-76df-719256210dab"></a><a class="header" href="#_0952f4b8-fef7-e5b3-76df-719256210dab">5. Production and consumption</a></h1><div class="ul_wrap"><ul id="_5a2d22c5-13d6-0f66-70a5-21612b7840bd"><li id="_4423bb22-b7df-bbec-d6c9-692825bafeab"><p id="_51ffa882-f8ae-4693-b41a-2d7983995e6b"><tt>tebako press</tt> / <tt>tfs mkimage</tt> embed the manifest at build time (kind inferred: app for pressed apps; data for plain images; runtime for runtime packages —  <tt>provides</tt> filled from the factory's versions data).</p>
+</li>
+<li id="_a30c7847-aed2-353c-45d3-56bdf6ebc904"><p id="_22be7842-7b4d-7490-83bb-985a4d366c1e"><b>Payload exclusion at imaging time (additive, 2026-10-09, tebako#333):</b> <tt>tebako press --exclude &#x3c;glob&#x3e;</tt> (repeatable) and <tt>tfs mkimage --exclude &#x3c;glob&#x3e;</tt> leave matching paths out of the BUILT image — one grammar, one semantics, one implementation shared by both commands. A pattern matches the payload-root-relative path (slash-separated, no leading  <tt>/</tt>): <tt>*</tt>, <tt>?</tt>, and <tt>[...]</tt> classes follow fnmatch flag-0 semantics (a  <tt>*</tt> run spans <tt>/</tt>), <tt>\</tt> quotes the next character, and a matched directory prunes its whole subtree (a trailing  <tt>/</tt> on the pattern is accepted and stripped — it names the directory). Exclusion is imaging-time only: excluded paths are absent from the image, and the manifest never records the list (the image simply lacks them). The feedstock Tebakofile's  <tt>exclude:</tt> list (spec 13 §9) is the same grammar, handed to the imager verbatim.</p>
+</li>
+<li id="_aa9b0ec7-b48b-f714-8307-fa2e8ec5c981"><p id="_62200e6c-fe6e-cfd0-a641-354e21539fa5"><tt>tfs info</tt> prints the manifest; <tt>tfs stat</tt> exposes digests.</p>
+</li>
+<li id="_6a1295b5-2995-e0d2-44c2-cbf273f44487"><p id="_85667aae-a0b0-4c7b-81be-ba61379299cd">The dispatcher (spec 07) resolves runtime compatibility FROM the manifest (<tt>runtime_requirement</tt> vs cached runtimes' <tt>provides</tt>).</p>
+</li>
+<li id="_baab55ab-7570-45b9-9e9e-53d578f13475"><p id="_e4dffc0d-e484-3bd6-1461-5434fc262d64">The bootstrap reads entrypoint/requirement from the manifest when present; the trailer stays the minimal path.</p>
+</li>
+</ul></div></div><div id="_d3c246fd-d0b3-0765-fa8f-6f60827217cf"><h1 id="_dbd621a1-0352-4b8d-be0b-3fc3aeb01b71"><a class="anchor" href="#_d3c246fd-d0b3-0765-fa8f-6f60827217cf"></a><a class="header" href="#_d3c246fd-d0b3-0765-fa8f-6f60827217cf">6. The package manifest (L2, extension block type 2)</a></h1><p id="_51f9cae3-f6a2-972d-c63e-8450732fdff5">Locked 2026-07-26 (OCI model: manifest beside the layers, readable without backend knowledge — spec 02 §5b). The package manifest is a YAML extension block in the container, OUTSIDE every payload image. It owns composition; payload manifests (this spec) own self-description.</p><figure id="_7ebef31b-e3c9-f714-02ff-22c6123bc14f" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">schema_version</span><span class="pi">:</span> <span class="m">1</span><br /><span class="na">package</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">metanorma</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="nv">1.2.3</span><span class="pi">,</span> <span class="nv">producer</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">…</span><span class="pi">},</span> <span class="nv">created</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}</span><br /><span class="na">entries</span><span class="pi">:</span>                          <span class="c1"># one per invocable command (N=1 for simple apps)</span><br />  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">metanorma</span><br />    <span class="na">slot</span><span class="pi">:</span> <span class="m">0</span>                       <span class="c1"># which payload image</span><br />    <span class="na">entrypoint</span><span class="pi">:</span> <span class="s">metanorma</span>         <span class="c1"># which PROVIDES entrypoint inside it</span><br />    <span class="na">runtime_ref</span><span class="pi">:</span> <span class="s">ruby@3.4.2;tebako=0.15.9</span>   <span class="c1"># per-entry — suites/multi-runtime</span><br />    <span class="na">interp_env</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">RUBY_YJIT_ENABLE</span><span class="pi">:</span> <span class="s2">"</span><span class="s">1"</span><span class="pi">}</span>     <span class="c1"># the press-time</span><br />                                  <span class="c1"># composition of slot 0's L1 interp_env,</span><br />                                  <span class="c1"># packager-refined (spec 07 §9's chain)</span><br />  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">mn2pdf</span><br />    <span class="na">slot</span><span class="pi">:</span> <span class="m">1</span><br />    <span class="na">entrypoint</span><span class="pi">:</span> <span class="s">mn2pdf</span><br />    <span class="na">runtime_ref</span><span class="pi">:</span> <span class="s">ruby@3.3.7;tebako=0.15.9</span><br /><span class="na">jail</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">…</span><span class="pi">}</span>                         <span class="c1"># package-level request (spec 08)</span><br /><span class="na">env</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">…</span><span class="pi">}</span>                          <span class="c1"># package-level env (composition rules: spec 07)</span><br /><span class="na">mounts</span><span class="pi">:</span>                           <span class="c1"># per-slot mount semantics (locked 2026-08-04)</span><br />  <span class="pi">-</span> <span class="na">slot</span><span class="pi">:</span> <span class="m">0</span><br />    <span class="na">point</span><span class="pi">:</span> <span class="s">/__tfs__</span><br />    <span class="na">mode</span><span class="pi">:</span> <span class="s">union</span>                   <span class="c1"># exclusive (default) | union; cow/enc reserved</span><br />    <span class="na">precedence</span><span class="pi">:</span> <span class="s">after-env</span>         <span class="c1"># union only: this image shadows the env image</span><br /><span class="na">lock</span><span class="pi">:</span>                             <span class="c1"># the press-time composition lock (spec 23 §4/§13)</span><br />  <span class="na">runtime</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">version</span><span class="pi">:</span> <span class="nv">0.16.19</span><span class="pi">,</span> <span class="nv">carry</span><span class="pi">:</span> <span class="nv">false</span><span class="pi">}</span><br />  <span class="na">slices</span><span class="pi">:</span> <span class="pi">[{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">metanorma</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="nv">1.2.3</span><span class="pi">,</span> <span class="nv">carry</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">slot</span><span class="pi">:</span> <span class="nv">0</span><span class="pi">,</span> <span class="nv">sha256</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}]</span><br />  <span class="na">spawned</span><span class="pi">:</span>                        <span class="c1"># spec 30 edges, press-locked (spec 23 §13.6)</span><br />    <span class="pi">-</span> <span class="na">engine</span><span class="pi">:</span> <span class="s">java</span><br />      <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">21,</span><span class="nv"> </span><span class="s">&#x3c;</span><span class="nv"> </span><span class="s">26"</span>   <span class="c1"># mirrored from slot 0's L1 requires</span><br />      <span class="na">expose</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">java</span><span class="pi">]</span>              <span class="c1"># mirrored from slot 0's L1 requires</span><br />      <span class="na">version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">21.0.12"</span>          <span class="c1"># the press-time pick</span><br />      <span class="na">tebako</span><span class="pi">:</span> <span class="s2">"</span><span class="s">2.1.5"</span><br />      <span class="na">carry</span><span class="pi">:</span> <span class="kc">true</span><br />      <span class="na">exe</span><span class="pi">:</span>   <span class="pi">{</span><span class="nv">slot</span><span class="pi">:</span> <span class="nv">1</span><span class="pi">,</span> <span class="nv">sha256</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}</span> <span class="c1"># carried pair — never mounted</span><br />      <span class="na">image</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">slot</span><span class="pi">:</span> <span class="nv">2</span><span class="pi">,</span> <span class="nv">sha256</span><span class="pi">:</span> <span class="nv">…</span><span class="pi">}</span></pre><figcaption class="SourceTitle">Figure 17</figcaption></figure><div class="ul_wrap"><ul id="_6e05d9bc-ae55-5d07-6449-e6eaadbbfb6a"><li id="_9519b197-7a45-7caa-2c8d-fb73a9569680"><p id="_1ae79ec6-71d1-5cc9-b9a4-ae301fa0e596"><tt>runtime_ref</tt> per entry kills the 128-byte single-field limit (suites, multi-runtime packages); the trailer's v1 field stays for v1 loaders.</p>
+</li>
+<li id="_27150b0d-98c1-d8e7-364f-7df61b3e2156"><p id="_976b7abe-4a07-fd7e-7912-f5bac6bdb0e4"><tt>entries[].name</tt> / <tt>entries[].entrypoint</tt> mirror the slot payload's L1 <tt>provides.entrypoints[]</tt> (§2.2 completeness — one SSOT): every L2 entry names a DECLARED L1 entrypoint of its slot, enforced by  <tt>tebako-pkg validate</tt> (tebako#494). Two entries MAY share one slot — same image, different in-image entrypoints: the multi-command single-payload form (one app slice carrying several CLIs, e.g. metanorma + fontist).</p>
+</li>
+<li id="_e915de29-1ada-00ec-7a00-d4dba795f1b1"><p id="_41d2fc11-879a-956e-5354-0abedc9a2c06"><tt>entries[].interp_env</tt> (IMPLEMENTED 2026-10-07, tebako#559 — §2.7's L2 face): the press-time COMPOSITION of the slot payload's L1  <tt>interp_env</tt> with the packager's refinement (a packager key wins over the same L1 key; L1 keys pass through untouched otherwise). The mirror exists because the size-gated bootstrap reads no image bytes: the standalone dispatcher consumes exactly this block, never the in-image L1.  <tt>tebako-pkg validate</tt> cross-checks the composition against the slot's L1 (every L1 key present with its declared or the refined value; a dropped L1 key is a named validation error, the tebako#494 class) — the block is a faithful mirror plus declared overrides, never an independent authority. Managed dispatch (registry payloads, no L2) reads the store's L1 manifest mirror instead (spec 07 §9's chain).</p>
+</li>
+<li id="_608c6a35-f634-c6fc-ec21-619521c9cc41"><p id="_91323410-71ae-dc45-6628-5fcfa0e1ff8f">v1-era packages without the block behave exactly as today (stub.rb / local conventions); the block is additive.</p>
+</li>
+<li id="_e6770347-725f-050b-aa38-3e938da8bd42"><p id="_2cbdbed4-6c01-c0b8-210e-340db52c8e7f"><tt>mounts</tt> is optional; a slot without a <tt>mounts</tt> row mounts <b>exclusive</b> (spec 17's historical behavior — a duplicate point is a named error).  <tt>mode: union</tt> merges the image over the images already mounted at  <tt>point</tt> with declared precedence — read-only images only, directories merge, file conflicts resolve by precedence order (the env image is always lowest).  <tt>precedence</tt> values: <tt>after-env</tt> (over the runtime's env image — the pressed-app form) or  <tt>after:&#x3c;slot&#x3e;</tt> (over another payload slot). The union set is journaled at boot (spec 17 §1).  <tt>cow</tt>/<tt>enc</tt> are RESERVED mode spellings on the same axis (the transforms law: overlays exist only in the Rust TFS) and are named errors until their specs land.</p>
+</li>
+<li id="_3c30eee6-3522-9353-269a-6bd11677e175"><p id="_b58dd752-67ca-bc7b-2930-53765e526092"><tt>lock</tt> is optional (absent on pre-spectrum packages — they resolve exactly as before).  <tt>lock.spawned[]</tt> mirrors the app payload's L1 <tt>requires[].kind: runtime</tt> edges (engine/implementation/constraint/ expose) plus the press-time pick and carry verdict (spec 23 §13.6); <tt>tebako-pkg validate</tt> cross-checks the mirror against slot 0's L1 (the tebako#494 class), and the bootstrap resolves the rows at dispatch into the store's  <tt>runtimes/</tt> area + <tt>TEBAKO_SPAWN_LOCK</tt> (spec 30 §2).</p>
+</li>
+</ul></div><p id="_409d57c2-bf18-dbcd-0aff-114ddd8fdd49"><b>toolkit</b> (native layer, e.g. inkscape/gtk — the distro-ports model, spec 13 §9):</p><figure id="_85a6c9ad-6fa9-9188-2615-c7f2d1b25823" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">provides</span><span class="pi">:</span><br />  <span class="na">executables</span><span class="pi">:</span> <span class="pi">[{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">inkscape</span><span class="pi">,</span> <span class="nv">path</span><span class="pi">:</span> <span class="nv">/bin/inkscape</span><span class="pi">,</span> <span class="nv">version</span><span class="pi">:</span> <span class="nv">1.3</span><span class="pi">}]</span><br />  <span class="na">libraries</span><span class="pi">:</span> <span class="pi">[{</span><span class="nv">name</span><span class="pi">:</span> <span class="nv">xml2</span><span class="pi">,</span> <span class="nv">path</span><span class="pi">:</span> <span class="nv">/lib</span><span class="pi">,</span> <span class="nv">abi</span><span class="pi">:</span> <span class="s2">"</span><span class="s">2.12"</span><span class="pi">}]</span><br /><span class="na">exec_tier</span><span class="pi">:</span> <span class="s">dynamic | wrapped | tfs-native | static</span>   <span class="c1"># spec 07 §8</span><br /><span class="na">exec_closure</span><span class="pi">:</span> <span class="pi">[</span><span class="nv">/bin</span><span class="pi">,</span> <span class="nv">/lib</span><span class="pi">,</span> <span class="nv">/share/inkscape</span><span class="pi">]</span>          <span class="c1"># static tier only</span><br /><span class="na">capabilities</span><span class="pi">:</span> <span class="pi">{</span><span class="nv">exec</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">,</span> <span class="nv">read</span><span class="pi">:</span> <span class="nv">true</span><span class="pi">}</span></pre><figcaption class="SourceTitle">Figure 18</figcaption></figure><p id="_f75ad163-5523-2169-6b78-4201c7ebfd91"><tt>exec_tier</tt> tells the dispatcher HOW to run its executables (preload shim / link-wrapped / already-TFS-native / extract-closure) — consumers never care which path a tool took.</p></div><div id="_5a1b9f8c-31c5-47fb-cdc7-e1ffe50d7ddb"><h1 id="_1c537292-3e9d-4ccf-858b-51e02a61abe3"><a class="anchor" href="#_5a1b9f8c-31c5-47fb-cdc7-e1ffe50d7ddb"></a><a class="header" href="#_5a1b9f8c-31c5-47fb-cdc7-e1ffe50d7ddb">7. The digest fixed-point rule (locked 2026-07-26)</a></h1><p id="_1ae4509e-f98f-d5f8-3dac-284c9bdb0f91">A manifest inside the image it describes CANNOT name that image's sha256 (self-reference has no fixed point). Therefore:</p><div class="ul_wrap"><ul id="_a5b315a0-4787-8956-b23c-156390faa423"><li id="_454b8180-cb6b-7647-c2bb-c52c8f2ebf8f"><p id="_1f0aeade-3d6d-4edf-8849-de1c82d9aed5"><tt>tree_hash</tt> is computed over the payload tree EXCLUDING <tt>/__tpkg__/</tt> (manifest-excluded merkle root — well-defined, and it is what CAS/dedup/signing use). The construction (SHA-256, 4 KiB chunks, length-prefixed domain-separated serialization) is locked as <tt>tfs-merkle-1</tt> in <tt>crates/tpkg/src/merkle.rs</tt>; <tt>tfs mkimage</tt> and <tt>tebako press</tt> stamp it at image creation, <tt>tfs info --verify</tt> recomputes and compares (roadmap 37, SHIPPED; verification-on-READ inside the VFS is a later milestone).</p>
+</li>
+<li id="_f0d62676-fc30-d2db-e91a-3f35a764d80e"><p id="_28e03cad-f6eb-5ee3-0bc8-5ccbc56aff94"><tt>blob_sha256</tt> is NOT stored inside an embedded manifest: it lives one tier out — in the registry mirror (tier 3) and/or the tpkg trailer's per-slot digest array (tier 2, spec 02 §4). Producers fill it there; consumers verify the image against the OUTER record, never against a self-digest. An embedded manifest carrying a  <tt>blob_sha256</tt> is read as advisory provenance only (e.g. the digest of the source image it was built from), never as a verification input (spec 15 §5).</p>
+</li>
+</ul></div></div><div id="_985a38a6-9b00-19ed-0fe1-4895d45d3742"><h1 id="_cc45b52f-2ecd-472d-b422-f845770269b4"><a class="anchor" href="#_985a38a6-9b00-19ed-0fe1-4895d45d3742"></a><a class="header" href="#_985a38a6-9b00-19ed-0fe1-4895d45d3742">8. Executable dependency edges (locked 2026-07-27)</a></h1><p id="_a43a60ab-d7b3-0c25-38af-824ef5c5fb70"><tt>requires</tt> gains a fourth edge kind for the provides/requires capability graph (the inkscape case):</p><figure id="_8f8735e4-9e6a-a6d6-14b2-00e2c7448b42" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">requires</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="na">kind</span><span class="pi">:</span> <span class="s">executable</span>          <span class="c1"># an executable another payload PROVIDES</span><br />    <span class="na">name</span><span class="pi">:</span> <span class="s">inkscape</span><br />    <span class="na">constraint</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&#x3e;=</span><span class="nv"> </span><span class="s">1.3"</span><br />    <span class="na">mount</span><span class="pi">:</span> <span class="s">/opt/inkscape</span>      <span class="c1"># consumer-declared, as always</span></pre><figcaption class="SourceTitle">Figure 19</figcaption></figure><p id="_6ffb0ecd-33b7-281a-21f7-e6ef16c17daf">Resolution: the dispatcher searches installed + available payloads for a PROVIDES.executables entry matching  <tt>name</tt> + <tt>constraint</tt> (exact name, never a prefix/guess). Exactly one candidate → use it. Zero → named <tt>DependencyNotFound(executable, constraint)</tt> with a registry hint. More than one → named  <tt>AmbiguousProvider</tt> listing candidates (payload, version, source registry) — the user pins with a payload-kind edge instead. The providing payload is mounted at the consumer-declared <tt>mount</tt>; its executables run per its own <tt>exec_tier</tt> (spec 07 §8).</p><p id="_3dca3c7d-1853-1558-1697-a65950ad7974">The edge gains the OPTIONAL <tt>expose:</tt> list (additive — schema_minor 5, spec 32): an expose-carrying executable edge gains the SPAWNED payload surface — each exposed name dispatches the provider payload's own full spec-17 dispatch as a child process (its own runtime edge, its own mounts, its own jail union).  <tt>mount</tt> and <tt>expose</tt> are orthogonal axes (VFS surface vs spawn surface; both may hold together), the capability match widens to  <tt>provides.executables</tt> ∪ <tt>provides.entrypoints[].name</tt>, and every exposed name must resolve to a runtime-carrying entrypoint of the resolved provider (press/install cross-checked — a runtime-less match is a named error, never an exec-tier fallback). An exposed name never takes the exec-tier path — the spawn dispatch owns it. The child plan, the spawn-lock row, the lock's  <tt>spawned[]</tt> payload row, the shim surface, the jail interaction, and the failure modes are spec 32 §2–§7's.</p></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

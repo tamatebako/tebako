@@ -1,0 +1,1998 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>The registry book: federation, aliases, credentials, the official seed</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 37</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">The registry book: federation, aliases, credentials, the official seed</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_f6e570dc-6514-f432-eee5-408586e41b71">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_2ed2f7d1-a784-2747-4d28-18f9720dd6fb">      
+  
+  1. Why (the two hosting worlds, one machine)
+</a></li>
+<li class="h1"><a href="#_96d4b9f0-6301-0e8e-c243-860607670a4e">      
+  
+  2. The registry book (the config model)
+</a></li>
+<li class="h1"><a href="#_3c4eab3a-ed5d-cd18-9c73-221aa02d07a3">      
+  
+  3. Name resolution (bare, qualified, pinned)
+</a></li>
+<li class="h1"><a href="#_c6fb176a-4c79-165f-162a-58f99f13abb9">      
+  
+  4. The federation grammar (spec 04 §1 amendment)
+</a></li>
+<li class="h1"><a href="#_f3569d4a-c225-7f6c-1591-e027a1a1eafd">      
+  
+  5. The credential model (locked confinement)
+</a></li>
+<li class="h1"><a href="#_09af68b8-b08d-c1d7-2173-fada89396dca">      
+  
+  6. The official seed (spec 16 amendment)
+</a></li>
+<li class="h1"><a href="#_cd61f72c-027d-4367-cdea-5b67b5966f2a">      
+  
+  7. Origin binding (upgrade confinement)
+</a></li>
+<li class="h1"><a href="#_3e921201-4f3c-ae43-ca77-45bb2538365e">      
+  
+  8. Private runtimes (schema MINOR 1, shipped by this spec)
+</a></li>
+<li class="h1"><a href="#_1b412a40-46df-5d66-d590-adba9768c20b">      
+  
+  9. Internal instances (the three operator tiers)
+</a></li>
+<li class="h1"><a href="#_5b305bda-1b02-bd9f-faf4-67431f1b3341">      
+  
+  10. Named errors (new or re-scoped here)
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_f6e570dc-6514-f432-eee5-408586e41b71"><h1 class="ForewordTitle" id="_b2afdfed-a4ac-4a49-8a07-386e5f561c57"><a class="anchor" href="#_f6e570dc-6514-f432-eee5-408586e41b71"></a><a class="header" href="#_f6e570dc-6514-f432-eee5-408586e41b71">Foreword</a></h1><p id="_4fbc66ca-5408-3779-6414-c4ddaa9df066">Status: <b>SHIPPED</b> — §2's registry book (the config model, alias grammar + derivation,  <tt>DuplicateRegistryAlias</tt> / <tt>DuplicateDefaultRegistry</tt>, <tt>add-registry --name/--require-signed/ --default</tt>, the <tt>list-registries</tt> book rendering), §2.2's per-registry fail-closed signature policy (<tt>UnsignedRegistryPayload</tt>, exit 70), §3's qualified form (<tt>alias/name</tt> + the <tt>registry:</tt> pin scopes), §4's federation grammar (the explicit-host  <tt>tfs+&#x3c;svc&#x3e;://host/…</tt> forms, the  <tt>tfs+https://</tt> registry location, the <tt>UnsupportedService</tt> / <tt>SshTransportUnsupported</tt> refusals), §5's credential model (the two-tier book, the locked confinement, the fetch journal, <tt>CredentialRequired</tt> / <tt>InvalidCredentialEntry</tt> / <tt>DuplicateCredentialSelector</tt>), §6's official seed (<tt>tebako setup</tt> and the installer's written config; the tebako-packages/registry aggregate flowing the feedstocks' authored rows), §7's origin binding (the <tt>.tfs.registry</tt> marker, the confined version chains, the journaled rebind), §8's private runtimes (the DEPENDS-edge  <tt>registry:</tt> pin — payload-manifest schema_minor 14 — the federated release-download locator deriving  <tt>kind: runtime</tt> rows on GitHub/GHE/GitLab, and <tt>require_signed</tt> riding runtime rows), and §9's three operator tiers (their resolution paths —  <tt>tfs+https://</tt>, explicit-host git services, <tt>file://</tt> + bundles — all ride the shipped grammar; the tier how-tos live on tebako.org). (Locked direction 2026-09-24; design reviewed with the owner across the 2026-09-24 session — the alias grammar, the credential confinement model, and the federation forms below are the agreed shape). Nothing here changes what shipped resolvers do with a config that carries none of the new keys.</p><p id="_245f3573-10d6-6ef1-4719-97785d9648b6">Normative specification of the <b>registry book</b>: the named, policy-bearing list of registries in  <tt>~/.tebako/config.yaml</tt> that turns spec 04 §2's "any git host repo" into a federation — public official payloads and private runtime/executable/data payloads resolving side by side on one machine, with leak-proof credentials and confusion-proof names. The registry stays developer-hosted zero-infrastructure YAML; this spec adds the bookkeeping that makes MANY of them safe to mix.</p></div><div id="_2ed2f7d1-a784-2747-4d28-18f9720dd6fb"><h1 id="_b3991eb6-692d-4638-960f-a1aafb567a34"><a class="anchor" href="#_2ed2f7d1-a784-2747-4d28-18f9720dd6fb"></a><a class="header" href="#_2ed2f7d1-a784-2747-4d28-18f9720dd6fb">1. Why (the two hosting worlds, one machine)</a></h1><p id="_e6d27ba1-4892-540d-6c8f-b534acde10a5">A real deployment mixes two worlds: public payloads from the official registry (Homebrew's core-tap role) and private payloads from an operator's own instance (Docker's enterprise-registry role) — a consultancy's GitHub for public tools, their own GitLab for client work; Ribose's public tebako-packages org, plus gated flavor registries where BSI's tokens must never read NIST's repos. Today's model already fails-closed on ambiguity (spec 04 §2: N registries carrying one name is the named  <tt>AmbiguousRegistries</tt>, never a priority pick) — but it has no aliases for ergonomic scoping, no per-registry policy, credentials only for github.com, and no grammar for a service API at an operator's OWN host. This spec closes exactly those four gaps. What it never adds: a resolution priority, a default service compiled into any binary, a silent fallback.</p></div><div id="_96d4b9f0-6301-0e8e-c243-860607670a4e"><h1 id="_5172c9da-b1f3-496e-b377-d797c196e1ca"><a class="anchor" href="#_96d4b9f0-6301-0e8e-c243-860607670a4e"></a><a class="header" href="#_96d4b9f0-6301-0e8e-c243-860607670a4e">2. The registry book (the config model)</a></h1><p id="_877c2e9a-5493-167d-445f-0bdfd015f7a5"><tt>registries:</tt> entries gain OPTIONAL keys; a bare string entry keeps meaning what it means today (spec 04 §2, schema-compatible — old readers see the same refs):</p><figure id="_f37368bb-a673-b75e-853b-ad58d7493044" class="sourcecode" spellcheck="false" translation="no"><pre><span class="c1"># ~/.tebako/config.yaml</span><br /><span class="na">registries</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">official</span>                       <span class="c1"># the local alias (§3's handle)</span><br />    <span class="na">ref</span><span class="pi">:</span> <span class="s">tfs:github:tebako-packages/registry</span><br />    <span class="na">default</span><span class="pi">:</span> <span class="kc">true</span>                        <span class="c1"># publish/UX anchor ONLY — §2.1</span><br />  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">nist</span><br />    <span class="na">ref</span><span class="pi">:</span> <span class="s">tfs:github:metanorma/metanorma-flavor-nist</span><br />    <span class="na">require_signed</span><span class="pi">:</span> <span class="kc">true</span>                 <span class="c1"># fail-closed trust policy — §2.2</span></pre><figcaption class="SourceTitle">Figure 1</figcaption></figure><div class="ul_wrap"><ul id="_0f7b385c-7509-57a0-fb56-5de4a5d8dbf8"><li id="_f3d7fd09-4ab8-0126-2dde-72d215680599"><p id="_2f3527cc-6292-0d02-b630-62365874a371"><b>Alias grammar:</b> <tt>name</tt> matches <tt>[a-z][a-z0-9-]*</tt>, unique across the book; when omitted, the alias DERIVES from the ref's  <tt>owner/repo</tt> as <tt>repo</tt> (a collision with an existing alias is the named <tt>DuplicateRegistryAlias</tt> at config load, listing both entries — never a silent rename). Aliases are LOCAL names for local config — they are never published, never embedded in payloads, never part of any wire format.</p>
+</li>
+<li id="_a2b35c13-9412-0cab-906c-fbf94dbcaf76"><p id="_a37754bc-a2e1-f32b-35ad-c78d8469a0af"><b>2.1 The <tt>default</tt> flag is a publish/UX anchor, never a resolution tiebreaker.</b> Exactly one entry MAY carry <tt>default: true</tt> (two → <tt>DuplicateDefaultRegistry</tt>, config-load time). The default registry is (a) the target of  <tt>tebako publish</tt> when <tt>--registry</tt> is absent, (b) rendered first in listings and in the registry-listing body of named errors. Resolution has NO default: §3's rules are identical whether or not a default exists. (Invariant 9 stands: no default SERVICE; a default LABEL on user-owned config is not a service.)</p>
+</li>
+<li id="_209c8ec0-a287-c5ca-833d-038cc35f9b4b"><p id="_dcfa6489-bb74-cb3e-c624-1ad8609568fb"><b>2.2 <tt>require_signed: true</tt></b> makes every install whose plan resolves through that registry fail-closed unless the resolved row carries a <tt>signature:</tt> block that verifies against the machine's trust anchors (spec 09) — the registry-level form of  <tt>TEBAKO_REQUIRE_SIGNED=1</tt>, scoped so a private operator can demand signatures on THEIR payloads without unsigned public payloads becoming second-class. A per-registry <tt>keyring: &#x3c;ref&#x3e;</tt> (PLANNED with the trust-anchor distribution work, spec 09 §10) pins WHICH keys count; absent it, the machine trust store decides.</p>
+</li>
+<li id="_6d2841cb-01b0-6566-d724-8a4787630f20"><p id="_6ff3d496-f9e5-73de-db39-38bc841c8c26"><tt>tebako add-registry</tt> grows <tt>--name &#x3c;alias&#x3e;</tt>, <tt>--require-signed</tt>, <tt>--default</tt>; <tt>list-registries</tt> renders the book (alias, ref, policy flags, cache freshness). The shipped config still has ZERO registries (§6's seed is the installer's authored content, not a compiled-in value).</p>
+</li>
+</ul></div></div><div id="_3c4eab3a-ed5d-cd18-9c73-221aa02d07a3"><h1 id="_f082fb85-0c55-4aa1-b5df-2acc87e89c59"><a class="anchor" href="#_3c4eab3a-ed5d-cd18-9c73-221aa02d07a3"></a><a class="header" href="#_3c4eab3a-ed5d-cd18-9c73-221aa02d07a3">3. Name resolution (bare, qualified, pinned)</a></h1><p id="_724f223d-9c1c-9a42-f542-b2b0509401e4">Three forms, each with exactly one home — the ambiguity law is unchanged:</p><div class="ol_wrap"><ol type="1" id="_9aaabbc1-bf53-48c2-ec2f-c41ae0138806"><li id="_acb8f63b-468b-1655-a5ab-ca5977bd3873"><p id="_238a4a9f-1ae9-1a47-f39a-4e0419488baf"><b>Bare <tt>name</tt></b> — searches EVERY registered registry (shipped behavior, locked): zero hits → the named not-found error listing the registered registries; exactly one → plan; more than one → <tt>AmbiguousRegistries</tt> naming every carrier. No priorities, no first-hit, in either direction — a public registry can never shadow a private name NOR the reverse.</p>
+</li>
+<li id="_e02e2071-711d-5134-1683-5881a79cf97c"><p id="_1de67b42-355a-5f30-6ebb-25f151a6209a"><b>Qualified <tt>alias/name</tt></b> (NEW) — scopes resolution to the one registry whose alias is  <tt>alias</tt>. Unknown alias → the named <tt>UnknownRegistryAlias</tt> listing the book's aliases. This is the ergonomic disambiguator short of a full reference (the Cargo <tt>registry = "…"</tt> / Homebrew <tt>tap/formula</tt> role): <tt>tebako install nist/metanorma-bsi</tt> can never touch the official registry's rows.</p>
+</li>
+<li id="_60fac482-9171-be80-1b67-154fd0a1a9c1"><p id="_0b077a22-2f53-da5a-be40-219fd26a801c"><b>Full reference</b> — unchanged (spec 04 §1); no registry involved at all.</p>
+</li>
+</ol></div><p id="_4a92836e-5d70-66d3-50ab-18a60551b8e5">Pin surfaces (<tt>.tebako-tools.yaml</tt>, the config's per-tool <tt>version:</tt> pins, spec 23 composition edges) gain an optional  <tt>registry: &#x3c;alias&#x3e;</tt> key naming the registry the pin resolves through — the same scoping, authored. A pin naming an alias not in the book is  <tt>UnknownRegistryAlias</tt> at pin-resolution time, fail-closed.</p></div><div id="_c6fb176a-4c79-165f-162a-58f99f13abb9"><h1 id="_cc29d3f4-fbe1-4de1-91a1-b9f262a662d6"><a class="anchor" href="#_c6fb176a-4c79-165f-162a-58f99f13abb9"></a><a class="header" href="#_c6fb176a-4c79-165f-162a-58f99f13abb9">4. The federation grammar (spec 04 §1 amendment)</a></h1><p id="_7290e575-3d7f-64a7-8549-338c52d2479e">The service adapters' canonical SaaS hosts stay the bare forms; the operator's own host is EXPLICIT in the scheme — the adapter is still never inferred:</p><figure id="_b5666413-b771-c34a-82a9-f3df46a3e78b" class="sourcecode" spellcheck="false" translation="no"><pre>tfs:github:owner/repo:ver[#asset]              → github.com (unchanged)<br />tfs+github://ghe.corp.internal/owner/repo:ver[#asset]<br />    → the GitHub API shape at that host (GitHub Enterprise Server;<br />      base https://&#x3c;host&#x3e;/api/v3). ALSO the Gitea/Forgejo form — those<br />      services implement the GitHub releases/contents API; a CI<br />      conformance leg proves the claim, the grammar never special-cases<br />      them.<br />tfs+gitlab://gitlab.corp.internal/group/sub/repo:ver[#asset]<br />    → GitLab API v4 at that host (self-hosted; nested groups unchanged)<br />tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml<br />    → NEW REGISTRY LOCATION: the registry file itself over plain HTTPS<br />      (spec 04 §2's "no other locations" is amended by THIS form only —<br />      a static server, an S3 bucket behind a CDN, an Artifactory/Nexus<br />      generic repo). Artifact refs inside such a registry are ordinary<br />      spec 04 references — typically sibling `tfs+https:` URLs.</pre><figcaption class="SourceTitle">Figure 2</figcaption></figure><div class="ul_wrap"><ul id="_b623b9b2-ba54-a188-48ca-48a559ee15c6"><li id="_2539a9bf-5709-0d0d-c50c-5449aeaaccf7"><p id="_7ce00597-78a8-2e5c-cd51-dad876dc17e2"><b>Bitbucket Data Center is NOT a host variant of <tt>tfs:bb:</tt></b> — its API differs from Bitbucket Cloud's. It is the named <tt>UnsupportedService</tt> ("bitbucket data center is not bitbucket cloud; host the registry over tfs+git: or tfs+https:") until a real consumer funds the adapter.</p>
+</li>
+<li id="_1283c30a-7fcd-118c-feb9-846d275990d7"><p id="_1b375193-b4fc-a1af-308e-f18d49257725"><b>SSH is the named <tt>SshTransportUnsupported</tt></b> ("git over ssh needs the system ssh binary — forbidden by the no-shell-outs law; use a token over https, or file:"). A pure-Rust SSH transport (russh-class) can land later behind the SAME  <tt>tfs+git:</tt> grammar with no reference change; until then, fail closed by name.</p>
+</li>
+<li id="_213de110-8d09-210b-639a-dee5bbccd695"><p id="_d8bd2a06-9f9d-feaf-285f-5b2e6c128fba">Host-parameterized adapters are ONE code path with a base-URL parameter — the SaaS forms are the parameter's canonical value, never a second implementation to drift.</p>
+</li>
+</ul></div></div><div id="_f3569d4a-c225-7f6c-1591-e027a1a1eafd"><h1 id="_dce18eb9-24fb-40a0-8485-165c0dca747d"><a class="anchor" href="#_f3569d4a-c225-7f6c-1591-e027a1a1eafd"></a><a class="header" href="#_f3569d4a-c225-7f6c-1591-e027a1a1eafd">5. The credential model (locked confinement)</a></h1><figure id="_c2d7152d-141e-e16b-bcab-2e822ef88dcd" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">credentials</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="na">registry</span><span class="pi">:</span> <span class="s">nist</span>                <span class="c1"># tier 1: exact registry-alias match</span><br />    <span class="na">token_env</span><span class="pi">:</span> <span class="s">NIST_GH_TOKEN</span><br />  <span class="pi">-</span> <span class="na">host</span><span class="pi">:</span> <span class="s">ghe.corp.internal</span>       <span class="c1"># tier 2: host fallback</span><br />    <span class="na">token_env</span><span class="pi">:</span> <span class="s">GHE_PAT</span></pre><figcaption class="SourceTitle">Figure 3</figcaption></figure><div class="ul_wrap"><ul id="_2d919b5c-beff-088e-1d57-898e58c5ccfd"><li id="_2db5bec7-49af-cd9f-0f6a-35798204904d"><p id="_fe0c907d-c635-41e8-be9f-273e072ad8c5"><b>Two tiers, most-specific-wins, exactly one match.</b> A fetch looks up tier 1 by the alias of the registry whose row directed the fetch (registry-file fetches match their own alias), then tier 2 by the URL's host, then anonymous. There is no third tier and no chain.</p>
+</li>
+<li id="_5b09c204-b5fe-c85b-850b-0711093515fb"><p id="_c52d241e-e379-22c8-e3ed-c83636b7e47f"><b>The registry is the trust unit, the host is the convenience.</b> The decisive case: two flavor registries on github.com whose tokens must not cross-read — per-host keying cannot express it, per-alias can. Two registries sharing one token name the same  <tt>token_env</tt> twice; repetition is the price of a match rule with zero precedence ambiguity.</p>
+</li>
+<li id="_372edd6b-698d-e08e-d555-ec003594a473"><p id="_d60240e2-4733-5f0b-b6d9-aa7a4a1cabee"><b>Config holds env var NAMES, never secrets.</b> A credential whose env var is unset behaves as absent (the fetch goes anonymous → the service's ordinary 401/403 →  <tt>CredentialRequired</tt> naming the registry and the env var it looked for).</p>
+</li>
+<li id="_436d95b9-15d7-c067-8e5c-a0e7f9377ac7"><p id="_076d37f9-b5b2-2197-6a92-26aa34252700"><b>Confinement (locked, generalizing the 2026-09-15 GitHub amendment to every adapter):</b> a credential is presented ONLY to the host it was minted for — tier 1 credentials to the registry ref's own host (plus that service's API host, per the service's documented mapping), tier 2 to the named host — NEVER to a redirect target, NEVER cross-host. A registry row whose  <tt>release.ref</tt> points at a DIFFERENT host falls to that host's own tier-2 entry or fails named; the directing registry's credential does not follow.</p>
+</li>
+<li id="_90cac6dd-2b08-75b3-99fc-cdf3574dd478"><p id="_347929b8-26d7-03f5-a372-87a99543d995"><b>The adapter owns the header shape</b> by service class (GitHub/GHE: <tt>Authorization: Bearer</tt>; GitLab: <tt>PRIVATE-TOKEN</tt>; Bitbucket Cloud: basic). Authored config never spells header mechanics.</p>
+</li>
+<li id="_c49c9930-d3ad-ada7-7bb4-d3e2ed9f965f"><p id="_570b67d9-0b51-5f71-5372-ffb2f1160386">Every fetch journals host + credential CLASS (<tt>token:env:NIST_GH_TOKEN</tt>, <tt>anonymous</tt>) with the value REDACTED — the mixed-federation audit trail. The ambient  <tt>TEBAKO_GITHUB_TOKEN</tt>/<tt>GITHUB_TOKEN</tt> amendment is unchanged and ranks as tier 2 for github.com when no tier-1 entry matched.</p>
+</li>
+</ul></div></div><div id="_09af68b8-b08d-c1d7-2173-fada89396dca"><h1 id="_60bdf610-f70e-4494-b6f9-4d87cd87eee1"><a class="anchor" href="#_09af68b8-b08d-c1d7-2173-fada89396dca"></a><a class="header" href="#_09af68b8-b08d-c1d7-2173-fada89396dca">6. The official seed (spec 16 amendment)</a></h1><p id="_843327ea-2fa6-301b-2a60-29a1cbbfaed5">The installer's written config (and <tt>tebako setup</tt> on a config-less machine) SEEDS the official entry — authored, user-visible, user-removable config content:</p><figure id="_09792c40-0dd1-9ab4-8bab-f219b74cf379" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">registries</span><span class="pi">:</span><br />  <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">official</span><br />    <span class="na">ref</span><span class="pi">:</span> <span class="s">tfs:github:tebako-packages/registry</span><br />    <span class="na">default</span><span class="pi">:</span> <span class="kc">true</span></pre><figcaption class="SourceTitle">Figure 4</figcaption></figure><div class="ul_wrap"><ul id="_6adfb4be-a450-2ab4-fbbd-4f480209bdc4"><li id="_cbafc364-f69b-39f0-b458-307f24ed33be"><p id="_cf99aa31-9892-5f83-daab-7c3de1b101d4">No binary carries this value; <tt>tebako</tt> built from source with no installer still ships zero registries. The seed is DISTRIBUTION content (spec 16's install.sh / setup flow), exactly how Homebrew's installer clones the core tap without brew hardcoding it.</p>
+</li>
+<li id="_932e344c-149b-7bdc-c991-7c525163946e"><p id="_d74f0600-6f4a-3480-160e-e19305c1c277">The official registry repo is a GENERATED AGGREGATE: each feedstock repo's own  <tt>tpkg-registry.yaml</tt> remains the authored authority (SSOT); the aggregate is CI-flowed from them with parity asserted per row — never hand-edited. Removal/withdrawal flows the same way (<tt>status: withdrawn</tt> rows aggregate verbatim).</p>
+</li>
+<li id="_6497fb8a-e255-316b-4a02-e419a28af59a"><p id="_603ee0e3-41e3-4f49-73cb-2ae244a2dea5"><tt>tebako bundle --config &#x3c;org.yaml&#x3e;</tt> (spec 16 §4) overlays registries as today — the airgapped/enterprise image-builder path is untouched; its overlay can REPLACE the seeded book wholesale.</p>
+</li>
+</ul></div></div><div id="_cd61f72c-027d-4367-cdea-5b67b5966f2a"><h1 id="_912270c0-933c-41e6-907d-2399215aaaaa"><a class="anchor" href="#_cd61f72c-027d-4367-cdea-5b67b5966f2a"></a><a class="header" href="#_cd61f72c-027d-4367-cdea-5b67b5966f2a">7. Origin binding (upgrade confinement)</a></h1><p id="_77c49f15-25fb-d4c7-7ba0-1c95d5c7a051">A store entry's markers already record WHERE bytes came from; the book adds WHICH REGISTRY resolved them — the  <tt>.tfs.registry</tt> marker beside <tt>.tfs.origin</tt>, carrying the resolving registry's canonical REFERENCE (never an alias; aliases are local and volatile). Dispatch-time version chains (spec 07 §1's chain, spec 05 §5) and unscoped install-time name searches alike consult the payload's ORIGIN registry only: a same-named payload appearing in another registered registry is never a silent "upgrade" of an installed one (the confusion attack that priority-based ecosystems — rubygems sources, docker's implicit docker.io — leak by construction). An authored  <tt>registry:</tt> scope (§3) outranks the binding. Switching registries is an explicit act:  <tt>tebako install &#x3c;alias&#x3e;/&#x3c;name&#x3e;</tt> reinstalls and rebinds the origin; the journal records the rebind (<tt>event=origin-rebind</tt>). A rebind whose registry-declared digest disagrees with the cached bytes is refused (<tt>Sha256Mismatch</tt>, exit 70) — the cache never overwrites a standing entry, so bytes are never re-tagged to a registry that never published them: uninstall first, then install from the new registry.</p></div><div id="_3e921201-4f3c-ae43-ca77-45bb2538365e"><h1 id="_b0580a26-1f39-4f82-adb8-7b8bad537779"><a class="anchor" href="#_3e921201-4f3c-ae43-ca77-45bb2538365e"></a><a class="header" href="#_3e921201-4f3c-ae43-ca77-45bb2538365e">8. Private runtimes (schema MINOR 1, shipped by this spec)</a></h1><p id="_ab26eecf-847c-1c8a-3eb3-ca95e7c6e9fe">Spec 04 §2's <tt>kind: runtime</tt> registry entries move PLANNED → SHIPPED: a registry row of kind runtime carries  <tt>engine:</tt> (+ optional <tt>implementation:</tt>), and a payload's kind-runtime DEPENDS edge (spec 30 §1) discovers it by (engine, implementation?, constraint) across the REGISTERED book under §3's rules (qualified form included: <tt>runtime_requirement</tt> gains no alias field — the EDGE carries <tt>registry:</tt> per §3's pin-surface rule). The matched version's <tt>release.ref</tt> derives the download base exactly as spec 05 §2's per-engine chain; the trust pipeline (sha pins, bundle-era rows, <tt>require_signed</tt>) is identical to the factory index's. A private ruby or openjdk line is thereby hostable next to public payloads with zero product-side special cases.</p></div><div id="_1b412a40-46df-5d66-d590-adba9768c20b"><h1 id="_e49a6b3c-4b03-4c2c-a41c-2eb8a5ad2551"><a class="anchor" href="#_1b412a40-46df-5d66-d590-adba9768c20b"></a><a class="header" href="#_1b412a40-46df-5d66-d590-adba9768c20b">9. Internal instances (the three operator tiers)</a></h1><p id="_89198c59-1b12-60e3-f8a2-dd868ecd27bd">The grammar above makes three hosting tiers first-class; the HOW-TO lives on tebako.org, the normative part is only that these resolve:</p><div class="ol_wrap"><ol type="1" id="_2b7a49b2-725b-adf8-71a6-cdc4df587a36"><li id="_6454431b-0361-ffe3-5080-70409b401fb7"><p id="_9ea36b03-4712-d4b0-28f8-4e1787ed9fcb"><b>Zero software</b> — a static HTTPS server (nginx, S3+CDN, Artifactory/Nexus generic repo) serving  <tt>*.tfs</tt> + sidecars + one <tt>tpkg-registry.yaml</tt>, registered as <tt>tfs+https://…/tpkg-registry.yaml</tt>.</p>
+</li>
+<li id="_f7fe486a-039b-4043-56b6-0a60c6610f1a"><p id="_6e835044-72de-a134-7826-5ae6074ef9d2"><b>The git host they already run</b> — GHE / self-hosted GitLab / Gitea / Forgejo via §4's explicit-host forms; releases are the artifact storage exactly as on the SaaS hosts.</p>
+</li>
+<li id="_80ae15df-5034-c575-9a38-776260e0e4a9"><p id="_bc98e57d-ffa6-0ccf-e040-a66e8bffe7b8"><b>Airgap</b> — <tt>file://</tt> mirror or a <tt>tebako bundle</tt> pre-seeded store (shipped; spec 16 §4), no network surface at all.</p>
+</li>
+</ol></div><p id="_24a59327-10da-f87d-e0ed-b254b2092106">All three compose with the enterprise-networking amendment (spec 04 §4: proxies, custom CA roots) unchanged — internal TLS inspection is a transport concern the federation grammar never sees.</p></div><div id="_5b305bda-1b02-bd9f-faf4-67431f1b3341"><h1 id="_c64b1c3a-9a62-4d0d-be18-797a326656d3"><a class="anchor" href="#_5b305bda-1b02-bd9f-faf4-67431f1b3341"></a><a class="header" href="#_5b305bda-1b02-bd9f-faf4-67431f1b3341">10. Named errors (new or re-scoped here)</a></h1><table id="_e551f2fe-4846-47e4-4891-22ee4f7d14d7" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 1</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">Name</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">Exit class</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">Moment</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>UnknownRegistryAlias</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">65 usage</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>alias/name</tt> or <tt>registry:</tt> pin names no book entry — lists aliases</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>DuplicateRegistryAlias</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">config load; both entries named</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>DuplicateDefaultRegistry</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">config load; two <tt>default: true</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>AmbiguousRegistries</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">(shipped) bare name in &#x3e;1 registry — the anti-confusion anchor</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>UnsupportedService</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">Bitbucket Data Center refs — the tfs+git:/tfs+https: steer</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>SshTransportUnsupported</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">any ssh/git@ URL — the token-over-https steer</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>CredentialRequired</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69 unavailable</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">401/403 with no matching credential — names the registry + env var looked for</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>InvalidCredentialEntry</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65 usage</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">config load; a credentials entry names both <tt>registry:</tt> and <tt>host:</tt>, neither, or a malformed <tt>token_env</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>DuplicateCredentialSelector</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">config load; two entries key the same alias or host</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>UnsignedRegistryPayload</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">70 integrity</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>require_signed</tt> row without a verifying signature — fail-closed</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>Sha256Mismatch</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">70 integrity</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">(re-scoped from spec 04 §3) a rebind whose registry-declared digest disagrees with the cached bytes — uninstall first</td></tr></tbody></table><p id="_9795b14f-5b44-f887-fe16-60c07e6c2c6c">Each maps to exactly one CI tier's assertion; none is a fallback — a failure here changes NOTHING about what is installed or resolved elsewhere.</p></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

@@ -1,0 +1,2067 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>Trace observability: the interception bus, diagnosis, and coverage</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 25</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">Trace observability: the interception bus, diagnosis, and coverage</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_318196e2-7150-46ea-6b54-3bc3a375c290">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_29c45a1d-c0a3-c708-7e2b-186005b9411e">      
+  
+  1. Laws
+</a></li>
+<li class="h1"><a href="#_4bf5e240-5c99-5342-3c01-01ea4de30ea2">      
+  
+  2. The interception bus (<tt>tfs::trace</tt>)
+</a></li>
+<li class="h1"><a href="#_3aabae08-d37c-f2a3-9be5-43b3963c5fcb">      
+  
+  3. The event envelope (schema v1)
+</a></li>
+<li class="h1"><a href="#_60a07c4e-8f36-18b3-4d93-95fab26bb2b0">      
+  
+  4. <tt>tebako trace run</tt> — discovery
+</a></li>
+<li class="h1"><a href="#_25f599b4-b5bb-91c2-c6dd-c7c2bd147bb6">      
+  
+  5. <tt>tebako trace explain</tt> — diagnosis
+</a></li>
+<li class="h1"><a href="#_f418ed6f-3e1c-c9f3-cd62-ce78ca18db73">      
+  
+  6. <tt>tebako trace cover</tt> — coverage
+</a></li>
+<li class="h2"><a href="#_aa06c8f6-dad8-f8c0-e926-3bdf330addb8">      
+  
+  6.1 The three-layer model (normative)
+</a></li>
+<li class="h2"><a href="#_662a320a-6d65-51a1-33ef-557805b84ced">      
+  
+  6.2 The outside format — retrace-shaped JSON (SSOT: retrace)
+</a></li>
+<li class="h2"><a href="#_d248f632-252b-119b-0c4e-d2a798655633">      
+  
+  6.3 The correlator — self-contained Rust
+</a></li>
+<li class="h2"><a href="#_7941209d-59f9-2cf5-e994-6285baa322b0">      
+  
+  6.4 The contract with the retrace project
+</a></li>
+<li class="h1"><a href="#_dc50f9f0-7f22-8833-42a0-0083f14370db">      
+  
+  7. Testing and gates
+</a></li>
+<li class="h1"><a href="#_c7aff195-4a47-78c7-b492-d57b31b053d6">      
+  
+  8. Phasing
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_318196e2-7150-46ea-6b54-3bc3a375c290"><h1 class="ForewordTitle" id="_915b3e4e-6f50-44e0-9996-74fee921f059"><a class="anchor" href="#_318196e2-7150-46ea-6b54-3bc3a375c290"></a><a class="header" href="#_318196e2-7150-46ea-6b54-3bc3a375c290">Foreword</a></h1><p id="_db1b657d-7e01-3fe2-a6fe-f7952a476b98"><b>Status: PARTIAL (phase T1 shipped 2026-08-19: the <tt>tfs::trace</tt> interception bus +  <tt>docs/spec/schemas/trace-event.yaml</tt> + <tt>tebako trace run</tt>; phase T2 shipped 2026-08-20: the <tt>spawn</tt>/<tt>resolve</tt> emission — the preload's posix_spawn surface and the driver's image-triple resolution; phase T3 shipped:  <tt>tebako trace cover</tt> (§6.3) 2026-08-20 — the escapes report, golden-parity with retrace's shared correlate fixtures — and 2026-08-21 the procmon converter (<tt>tebako trace import procmon</tt>, §6.2), byte-parity with upstream procmon2retrace on the golden 06 fixture; phase T4 shipped 2026-08-21:  <tt>tebako trace explain</tt> (§5) — the capture replay with the signature table in data. All four phases' CODE is on main; the PARTIAL remainder is dogfood, not code: the §8 legs (retrace libc-layer on both platforms; the kernel-layer leg as §6.4 lands) and the real incident-13 captures' archival into the explain fixtures. Owner-signed 2026-08-19 — architecture A: the in-tfs event bus +  <tt>tebako trace</tt> front-ends; outside capture rides the three-layer producer model of §6.1, with retrace as the libc-boundary layer on BOTH platforms).</b></p><p id="_09b9ad6d-cd84-904f-af1f-1e114b26e136">A payload author virtualizing an application on tebako must answer three questions, and today each is answered by hand-rolled one-off diagnostics (the incident-13 msys dogfood chain: four CI rounds of  <tt>eprintln</tt> gates and in-probe bisection to name one Windows loader failure):</p><div class="ol_wrap"><ol type="1" id="_b3bbc82b-d278-3265-a9e8-17e35b3f994a"><li id="_3314d2f2-d5c7-45ec-99a4-431603e673eb"><p id="_a33ce29f-016b-6757-b2c2-8e288e2ee6c6"><b>Discovery</b> — what does my application touch, so what must I declare? (mounts,  <tt>needs:</tt>, <tt>materialize:</tt>, entrypoints)</p>
+</li>
+<li id="_b8e2bb94-fc80-e585-eb14-854b3d99cae0"><p id="_1e83d898-4957-0d97-fb79-a02ffb451604"><b>Diagnosis</b> — my packaged application fails; which hop failed? (mount → manifest → resolve → materialize → OS bind)</p>
+</li>
+<li id="_4bba82e4-5fe9-4847-4947-9974d89c831f"><p id="_01f821cc-618c-9394-2bf5-1641be962bde"><b>Coverage</b> — is anything my application does NOT virtualized? (raw syscalls, unpatched IATs, loader-internal probes — the escapes)</p>
+</li>
+</ol></div><p id="_b72d51c1-7cb4-4e12-6158-3bf91d5551e6">This spec defines one substrate and three front-ends:</p><div class="ul_wrap"><ul id="_492c6f72-a33f-f2d8-ab93-1a28835bb473"><li id="_99d23356-5131-0898-1f72-cf670e27d695"><p id="_e8cde715-1328-bd02-cb2f-19540668dbfd"><b>The interception bus</b> (§2): every tebako interception point emits one structured event. The bus lives in the Rust  <tt>tfs</tt> crate — the shipping VFS implementation on every platform — so it is cross-platform and runtime-independent by construction: events name syscall/loader-level facts (paths, verdicts, errnos), never language facts. Ruby, Julia, and Python payloads are equally covered because every runtime bottoms out at the same libc/loader boundary the bus instruments.</p>
+</li>
+<li id="_5734ea94-a920-4857-2f9c-850d58d8ecc6"><p id="_65a08635-8d37-78be-ac7c-25a5c5c41a8d"><b><tt>tebako trace run</tt></b> (§4): discovery — collect a run's events and emit a suggested manifest.</p>
+</li>
+<li id="_a242d1b9-9ede-c770-42fe-8023cc9cd10f"><p id="_e2f928f4-8d86-3959-fd32-a6f5b3e6b537"><b><tt>tebako trace explain</tt></b> (§5): diagnosis — replay a capture into the hop chain and name the first red hop.</p>
+</li>
+<li id="_f8414e75-3b4b-82ba-9f23-37ae79f22b34"><p id="_0fd3cf60-7bf6-ccda-78ef-d20ca482fc18"><b><tt>tebako trace cover</tt></b> (§6): coverage — correlate the inside stream with an outside capture and report what escaped.</p>
+</li>
+</ul></div></div><div id="_29c45a1d-c0a3-c708-7e2b-186005b9411e"><h1 id="_3aa9b8c8-9d43-48d9-986c-82136029a116"><a class="anchor" href="#_29c45a1d-c0a3-c708-7e2b-186005b9411e"></a><a class="header" href="#_29c45a1d-c0a3-c708-7e2b-186005b9411e">1. Laws</a></h1><div class="ol_wrap"><ol type="1" id="_4157905d-a875-bfdf-175b-6d69c477432a"><li id="_4d2ee599-9420-3c87-e580-95c78264964d"><p id="_875e7fac-df2e-b257-f15d-182423af0d46"><b>Observability never gates.</b> A trace-channel failure degrades to a loud stderr note; the payload run proceeds and its exit code is unaffected. A tracer must never become a failure mode.</p>
+</li>
+<li id="_d16d0454-f84e-891a-3c1b-c7abc5c74e42"><p id="_9053db02-b7f2-8445-70b9-fe01c86cc4ad"><b>Runtime-independent.</b> Events name OS-level facts only. No event may carry a language-runtime concept (a gem, a module, a Julia package) — runtimes are payloads; the bus sits below them.</p>
+</li>
+<li id="_effd8de5-ac1d-9c67-62ec-1f7c7229c513"><p id="_70becea6-831c-ff0c-e68a-36d32292906d"><b>Cross-platform inside; layered outside.</b> The inside stream is identical on linux, macOS, and windows. The outside view is the three-layer producer model (§6.1): the libc boundary is retrace's on BOTH platforms (preload on POSIX; the preload-msvc / preload-mingw inline-hook backends on windows, retrace ADR-0009); kernel-level producers (ptrace, eBPF, ETW/procmon) join ONLY as retrace-shaped JSON, via bridges or offline converters (§6.2). Every outside source is an import format, never a runtime dependency.</p>
+</li>
+<li id="_b0c57752-05f2-1549-46d5-dea91cfe8ed2"><p id="_516178b2-4785-0993-7d77-a5a2ea179dfb"><b>No shell-outs.</b> Captures are files parsed in-process. Arming or reading a trace never spawns a tool (spec 00 invariant 1).</p>
+</li>
+<li id="_bee7bcab-1758-0483-54c7-5c7efc25e79b"><p id="_be7a02c4-6ec4-e315-cff5-d78828e2c48f"><b>The correlation law.</b> The inside stream can never prove its own completeness: an escape is invisible from inside by definition (macOS 15's dyld rpath probes never reach the interposed  <tt>open</tt> — the exec-closure walk exists because of this). "What isn't tebako intercepting" is answerable ONLY by subtracting the inside stream from an outside capture — and only up to the outside capture's own layer (§6.1).</p>
+</li>
+<li id="_2550cff9-2bb8-af7c-f84c-a70a012ec5f5"><p id="_dc90963c-ec6f-7a7b-e366-12dc14796f5f"><b>MECE with spec 23 §8.</b> The <tt>record</tt> policy mode already owns host-path needs discovery (the audit journal →  <tt>tfs needs --from-journal</tt>). This spec does not re-invent it: the jail channel of the bus IS that journal, formalized; §4's discovery extends the draft to the axes §8 does not cover (<tt>materialize:</tt>, entrypoints, runtime deps).</p>
+</li>
+<li id="_b090bc04-aa5e-418c-e85a-11972e1be44f"><p id="_24f0d4e4-d69f-d1ca-74d4-83a3e766d0c8"><b>Human gate.</b> A generated suggestion never edits a manifest by itself (spec 23 §8's law, unchanged).</p>
+</li>
+</ol></div></div><div id="_4bf5e240-5c99-5342-3c01-01ea4de30ea2"><h1 id="_26f38018-1e34-41ef-898e-b6ee61b7d7b8"><a class="anchor" href="#_4bf5e240-5c99-5342-3c01-01ea4de30ea2"></a><a class="header" href="#_4bf5e240-5c99-5342-3c01-01ea4de30ea2">2. The interception bus (<tt>tfs::trace</tt>)</a></h1><p id="_433f4445-e2f7-4281-8f1f-93f9df7974b0"><b>Emission points</b> — exactly the interception points the driver/TFS already implements, one event per decision:</p><table id="_6a7d30a2-4055-8045-7e9a-9e28b1a4e798" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 1</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">op</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">emitted where</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">verdict values</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>mount</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">mount table insert/remove</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>ok</tt> / <tt>error:&#x3c;errno&#x3e;</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>open</tt> / <tt>stat</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">path dispatch (spec 11)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>image:&#x3c;mount&#x3e;</tt> / <tt>host</tt> / <tt>denied:&#x3c;rule&#x3e;</tt> / <tt>error:&#x3c;errno&#x3e;</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>dlopen</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>dlmap2file</tt> / <tt>dlalias2file</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>materialized:&#x3c;host-path&#x3e;</tt> / <tt>host</tt> / <tt>error:&#x3c;errno&#x3e;</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>exec</tt> / <tt>spawn</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">exec routing (spec 17/22) — one routing decision, two syscall surfaces: <tt>exec</tt> is the execve surface (process replacement), <tt>spawn</tt> the posix_spawn surface (a child is created — the correlator's process-tree signal)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>routed:&#x3c;entry&#x3e;</tt> / <tt>host</tt> / <tt>error:&#x3c;errno&#x3e;</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>materialize</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">exec-cache extraction</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>ok:&#x3c;host-path&#x3e;</tt> / <tt>cache-hit</tt> / <tt>error:&#x3c;errno&#x3e;</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>jail</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">policy bind / check (spec 08, 23 §8)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>allow:&#x3c;rule&#x3e;</tt> / <tt>deny:&#x3c;rule&#x3e;</tt> / <tt>record</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>resolve</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">the driver's <tt>--tebako-image &#x3c;path&#x3e;:&#x3c;slot&#x3e;:&#x3c;mount&#x3e;</tt> resolution (trailer probe → whole file or slot region — the payload/slot identity the correlator matches outside reads against). <b>PLANNED:</b> the L3 runtime/payload cache resolution (tebako-resolve — loader-side, outside the runtime process; its channel story lands with the phase that needs it)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>whole</tt> / <tt>slot:&#x3c;n&#x3e;</tt> / <tt>error:&#x3c;errno&#x3e;</tt> — PLANNED L3 half: <tt>cache</tt> / <tt>fetched</tt> / <tt>error</tt></td></tr></tbody></table><p id="_a4552830-d93e-8e2e-c4e1-7801e5d73acb">The <tt>dlopen</tt> event's <tt>detail</tt> carries the closure walk as structure — the parsed format, the dep list, each dep's resolve verdict (<tt>materialized</tt> / <tt>host-system</tt>) — what incident 13's round 4 added as <tt>eprintln</tt> lines. Those gates convert to events; <tt>TEBAKO_DEBUG_TFS</tt> remains as the human-readable degraded view over the same emission points.</p><p id="_f70bb97b-a906-b849-445d-8de4b2712df1"><b>Arming.</b> <tt>TEBAKO_TRACE=&#x3c;host-path&#x3e;</tt> (env) or <tt>--tebako-trace &#x3c;host-path&#x3e;</tt> on the driver argument grammar (spec 17 — the env-scrubbed handoff rides the argument, the lesson of incident 13 round 5). The flag is an additive optional driver argument: spec 17's grammar extends by option, never by version bump (the trailer-flags rule, spec 02). Both set: the argument wins. The channel is opened and pre-registered at driver boot, before any mount — writes are append-only, process-internal, and NEVER policy-gated (the journal channel's discipline, <tt>crates/tfs/src/journal.rs</tt>, already proven under <tt>deny</tt>).</p><p id="_961a8272-10f4-0d14-f8ca-4a0bf7a65ec8"><b>Cost when off.</b> Disarmed, an emission point is one <tt>Option::is_none()</tt> branch. The bus compiles into the runtime/driver side only; the bootstrap's &#x3c; 3 MB size gate is untouched (spec 00 invariant 2).</p><p id="_b7eb073d-ca95-b9a6-cd7e-fbee5c6eb3da"><b>Children.</b> Spawned children re-derive the channel at their own driver boot on BOTH platforms:  <tt>TEBAKO_TRACE</tt> is in the inherited environment, the child's driver arms, and its events append to the same file. (The fd-inheritance spelling this section used to carry is not the mechanism — env re-derivation covers both platforms uniformly. On fork, the already-open fd IS inherited until the child's own arm, so pre-arm child events still land in the same channel.) All writers append atomically; events may interleave — every event carries  <tt>pid</tt>/<tt>tid</tt> so the front-ends regroup.</p></div><div id="_3aabae08-d37c-f2a3-9be5-43b3963c5fcb"><h1 id="_18453d52-f57a-49fc-a668-a62f61cf35c9"><a class="anchor" href="#_3aabae08-d37c-f2a3-9be5-43b3963c5fcb"></a><a class="header" href="#_3aabae08-d37c-f2a3-9be5-43b3963c5fcb">3. The event envelope (schema v1)</a></h1><p id="_a5154e35-0744-8489-3d1b-971bd61982a6">One JSON object per line (JSONL; streamable, diffable, robust to a crashed tail). Authored configs stay YAML (invariant 6); the event STREAM is telemetry and is JSON. The versioned schema lives at <tt>docs/spec/schemas/trace-event.yaml</tt> (lands with phase T1); the normative shape:</p><figure id="_6529399d-71f8-ff5f-52d9-8ef61f025e2c" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">v</span><span class="pi">:</span> <span class="m">1</span>                    <span class="c1"># envelope version — additive only, never bumped</span><br /><span class="na">ts</span><span class="pi">:</span> <span class="s">&#x3c;rfc3339μs&#x3e;</span>         <span class="c1"># driver clock</span><br /><span class="na">pid: &#x3c;int&#x3e; ; tid</span><span class="pi">:</span> <span class="s">&#x3c;int&#x3e;</span><br /><span class="na">op</span><span class="pi">:</span> <span class="s">&#x3c;table §2&#x3e;</span><br /><span class="na">path</span><span class="pi">:</span> <span class="s">&#x3c;vfs-or-host path, exactly as dispatched&#x3e;</span><br /><span class="na">verdict</span><span class="pi">:</span> <span class="s">&#x3c;table §2&#x3e;</span><br /><span class="na">detail</span><span class="pi">:</span> <span class="pi">{</span> <span class="nv">...</span> <span class="pi">}</span>         <span class="c1"># per-op: dlopen deps, jail rule, exec argv0, …</span><br /><span class="na">dur_us</span><span class="pi">:</span> <span class="s">&#x3c;int&#x3e;</span>           <span class="c1"># the interception's own cost</span><br /><span class="na">errno</span><span class="pi">:</span> <span class="s">&#x3c;int, optional&#x3e;</span>  <span class="c1"># when verdict names an error</span></pre><figcaption class="SourceTitle">Figure 1</figcaption></figure><p id="_60d4fa19-f027-bd4a-2525-0d5585271c7a">CI validates every emitted event against the schema (a property test drives the whole op matrix and validates the stream).</p></div><div id="_60a07c4e-8f36-18b3-4d93-95fab26bb2b0"><h1 id="_e9e6020a-7d29-4e98-8735-c0b463442f4d"><a class="anchor" href="#_60a07c4e-8f36-18b3-4d93-95fab26bb2b0"></a><a class="header" href="#_60a07c4e-8f36-18b3-4d93-95fab26bb2b0">4. <tt>tebako trace run</tt> — discovery</a></h1><p id="_f1c031f2-4260-592d-dc4d-4e62cc03d815">Runs an application composition under <tt>policy: record</tt> with the bus armed, then synthesizes a  <b>suggested manifest</b> — a commented YAML fragment, never applied (law 7):</p><div class="ul_wrap"><ul id="_9f1a807e-a66f-aca9-272e-0c8fa2708f9d"><li id="_f94d204c-8902-392f-28c7-a647a8e70e2e"><p id="_83fbda68-7c13-116c-d529-09ec9a145c88">host reads → <tt>needs:</tt>/<tt>jail:</tt> ro grants (this half is spec 23 §8's generator, unchanged — the bus's jail channel feeds it);</p>
+</li>
+<li id="_1bfcf67e-62cf-c677-5620-6d715e619460"><p id="_4472d19b-0a34-ecd4-8f19-98f6782c6118">host writes → rw grants (strongest-observed-op wins, §8's rule);</p>
+</li>
+<li id="_7651cab6-23bc-c3ed-a3c3-b1b3929406ae"><p id="_814113a7-065f-71be-0afa-0f1b99c53053">a VFS-resident file read through a RAW host fd (a native library's own  <tt>fopen</tt> — the exec-cache answer consumed it) → a <tt>materialize:</tt> candidate — the sassc class-R case, caught automatically instead of discovered by a failing import;</p>
+</li>
+<li id="_43901d88-b9f9-f12b-768c-3182ee9afb25"><p id="_21bea208-eccf-8ff8-3a7d-0edc3e6d8a98">an in-image <tt>dlopen</tt> whose deps all resolve in-image → a NOTE "closure-covered — nothing to declare";</p>
+</li>
+<li id="_2d03fbec-553c-aeea-1b48-12c6460a53dd"><p id="_101e140d-853e-7d6d-1a97-74b713d4dd15">a spawned host-absolute executable → an entrypoint/runtime-dep note;</p>
+</li>
+<li id="_193657ec-d602-b596-d250-f1ebb90f39a0"><p id="_d509b558-34b8-ef34-421f-5dc762b25786">floor, store, and exec-cache paths are excluded (§8's exclusion law).</p>
+</li>
+</ul></div><p id="_4717649d-c3d3-eb57-5e43-41398dbbb851">Output: the draft fragment on stdout (or <tt>--out</tt>), each entry carrying its  <tt>why:</tt> evidence line (<tt>observed: &#x3c;n&#x3e; events, first at &#x3c;ts&#x3e;</tt>). The author reviews, flips ro↔rw, deletes noise, fills  <tt>why</tt>.</p></div><div id="_25f599b4-b5bb-91c2-c6dd-c7c2bd147bb6"><h1 id="_a149de91-39a8-48df-8d5f-3ba4b693ea38"><a class="anchor" href="#_25f599b4-b5bb-91c2-c6dd-c7c2bd147bb6"></a><a class="header" href="#_25f599b4-b5bb-91c2-c6dd-c7c2bd147bb6">5. <tt>tebako trace explain</tt> — diagnosis</a></h1><p id="_50d58908-6102-9ef6-f19f-1cfbf0c5c3d7">Replays a capture (or a live run's stream) into the hop chain — mount → manifest read → resolve → materialize → OS bind — and prints the first hop whose verdict is red, with the signature table seeded from the incident corpus:</p><table id="_f6ea1c1a-f5c9-89dd-c42d-35494784e016" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 2</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">signature in the stream</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">named hop</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">no <tt>mount</tt> event for the env image + prelude-class child stderr</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">env image never mounted (handoff env lost)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>dlopen</tt> verdict naming the OS loader's module-not-found (windows error 126; the POSIX <tt>dlopen</tt> ENOENT analogue) with every dep <tt>materialized</tt>|<tt>host-system</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the OS bind itself — bisect candidates printed</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>jail</tt> <tt>deny</tt> immediately preceding a dependent <tt>open</tt> error</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">policy denial (the EACCES class)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>materialize</tt> <tt>error</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">exec-cache write failure</td></tr></tbody></table><p id="_c6a2368a-2fa4-37d8-6d04-37f54a3e80fe">The table lives in data (a YAML map in the CLI crate), extended as incidents teach new signatures — never hard-coded into the bus.</p></div><div id="_f418ed6f-3e1c-c9f3-cd62-ce78ca18db73"><h1 id="_bb8db7c1-f65f-403a-afa4-d5fe8be41ec9"><a class="anchor" href="#_f418ed6f-3e1c-c9f3-cd62-ce78ca18db73"></a><a class="header" href="#_f418ed6f-3e1c-c9f3-cd62-ce78ca18db73">6. <tt>tebako trace cover</tt> — coverage</a></h1><p id="_c19e9dd9-d160-075a-86a5-8ea6ab49d160">The escapes report (law 5). Inputs: an inside capture (the bus) and an outside capture of the same run.</p><div id="_aa06c8f6-dad8-f8c0-e926-3bdf330addb8"><h2 id="_6408f7bc-8665-47f0-aced-81d53bc266d5"><a class="anchor" href="#_aa06c8f6-dad8-f8c0-e926-3bdf330addb8"></a><a class="header" href="#_aa06c8f6-dad8-f8c0-e926-3bdf330addb8">6.1 The three-layer model (normative)</a></h2>
+
+<table id="_06503397-b57f-bd0b-b63d-14eed5ca9776" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 3</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">layer</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">POSIX</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">windows</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">who sees it</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">inside the VFS</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">the tfs bus (§2)</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">the tfs bus (§2)</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">tebako</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">libc boundary</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">retrace preload</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">retrace inline hooks (preload-msvc / preload-mingw, retrace ADR-0009)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">retrace — both platforms</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">kernel syscall</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">retrace ptrace backend; strace → strace2retrace (converter, §6.2); eBPF bridge</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">ETW / procmon (via converter, §6.2)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">kernel tracers</td></tr></tbody></table>
+
+<p id="_0db69c41-dd45-7f13-a6af-8ffd591c3fb5">Escapes split into two classes at the libc boundary:</p>
+
+<div class="ul_wrap"><ul id="_77a1549f-b574-9a1f-1181-683c8adece09"><li id="_fb463e57-6d7d-42bd-dc76-4e4b0f6a19a6"><p id="_7d48c038-fad9-fed5-5ece-8e8576cfa974"><b>libc-routed escapes</b> — the application called <tt>open(2)</tt> / <tt>CreateFileW</tt> directly, below tebako's interposition but through libc. Visible to retrace on BOTH platforms today.</p>
+</li>
+<li id="_aaf84d14-7fcd-56ab-38e1-718b1d8b050e"><p id="_659d6bba-6bbc-2330-b7f3-f190b98aefed"><b>sub-libc escapes</b> — raw <tt>syscall(2)</tt> / <tt>NtCreateFile</tt>, loader-internal probes (the macOS dyld rpath class). Invisible to libc hooks by construction; only a kernel-layer producer sees them.</p>
+</li>
+</ul></div>
+
+<p id="_080fee93-2117-99e7-5403-0f2b7f4997d1">A coverage report is only as strong as its outside capture's layer: a libc-boundary capture certifies libc-routed escapes only; sub-libc certification requires a kernel-layer capture. The report MUST name the producing layer of its outside input.</p>
+</div><div id="_662a320a-6d65-51a1-33ef-557805b84ced"><h2 id="_dffe3b95-a6b4-4a67-9614-d842d2c065d9"><a class="anchor" href="#_662a320a-6d65-51a1-33ef-557805b84ced"></a><a class="header" href="#_662a320a-6d65-51a1-33ef-557805b84ced">6.2 The outside format — retrace-shaped JSON (SSOT: retrace)</a></h2>
+
+<p id="_31e771d2-6ec4-2e4a-58cc-e82266f18716">The outside capture format is the retrace trace document, owned and versioned by the retrace project (riboseinc/retrace). Tebako never authors a competing outside format. Every producer normalizes INTO that shape; the correlator stays format-uniform:</p>
+
+<div class="ul_wrap"><ul id="_4cb9abb2-7de2-2aad-ec87-0bcc7e713447"><li id="_bff819b2-62d4-571b-69e7-530e2e1f0b58"><p id="_fbb4c339-7eec-5964-51f3-eab0032e85b1"><b>retrace preload / inline hooks</b> — native JSON output today (one JSON array document per capture).</p>
+</li>
+<li id="_da23f100-83f4-a2e7-2ca9-b6e50a87429f"><p id="_f4eb6457-6cd8-0e73-c316-745179ed1f60"><b>retrace ptrace backend</b> — native, POSIX kernel layer.</p>
+</li>
+<li id="_735e0bf9-1f80-698e-0b99-157b51a7ce78"><p id="_040abb99-26e7-f809-2b91-d205ecd0443e"><b>eBPF bridge</b> (<tt>ebpf-bridge/</tt>) — emits retrace-shaped JSON.</p>
+</li>
+<li id="_4481a9cb-2eb1-9665-0ac4-48ef97b5af73"><p id="_c924c1ea-dd17-ac1b-3f23-be3194d917cc"><b>procmon / ETW</b> (windows kernel layer) — an OFFLINE converter (procmon CSV/XML export → retrace JSON), the same decision as the Frida/eBPF bridges: producers normalize into the format, never the reverse. The converter ships in the tebako CLI as an import verb (<tt>tebako trace import procmon &#x3c;csv&#x3e;</tt>), pure Rust, in-process (law 4).</p>
+</li>
+</ul></div>
+</div><div id="_d248f632-252b-119b-0c4e-d2a798655633"><h2 id="_2c749054-ae3c-4694-bc02-d2f1f505f6ce"><a class="anchor" href="#_d248f632-252b-119b-0c4e-d2a798655633"></a><a class="header" href="#_d248f632-252b-119b-0c4e-d2a798655633">6.3 The correlator — self-contained Rust</a></h2>
+
+<p id="_6c3fd675-613e-aef2-93f0-29dd1a7ecf41"><tt>tebako trace cover</tt> implements the correlation IN the tebako CLI, in safe Rust: canonicalize host paths on both sides (same atoms as spec 23 §8's generator); subtract every outside-observed op that an inside event already accounts for; the remainder is the escapes list, grouped by surface class (fs / exec / dlopen / spawn), with a per-class coverage percentage and the producing layer named (§6.1). Exit code 0 = no escapes, 1 = escapes found — CI-gateable. Intentionally-unserved surfaces (documented passthroughs, e.g. the platform floor) are declared in the composition so the report separates KNOWN-UNSERVED from ESCAPE.</p>
+
+<p id="_8e7cb949-24d6-b68a-ea9c-e1ba674aa0df"><b>The shipped surface (phase T3, the correlator half).</b></p>
+
+<figure id="_55c34ca8-8386-eedf-b578-1550e6837801" class="sourcecode" spellcheck="false" translation="no"><pre>tebako trace cover --inside &#x3c;tfs.json|jsonl&#x3e; --outside &#x3c;retrace.json&#x3e;<br />                   --prefix &#x3c;path&#x3e; [--pid N] [--window SECS]<br />                   [--exclude-probes] [--json] [--layer libc|kernel]</pre><figcaption class="SourceTitle">Figure 2</figcaption></figure>
+
+
+<div class="ul_wrap"><ul id="_d62f7963-7532-de3e-55dd-9b71ac91b375"><li id="_43cf5b2e-6894-db87-de42-ee61fa9ce79a"><p id="_3b8e3021-6878-42a4-0ef6-13e0457454b7"><b>stdout is the golden contract</b>: one <tt>escape &#x3c;path&#x3e; func=&#x3c;f&#x3e; tid=&#x3c;t&#x3e; pid=&#x3c;p&#x3e; class=&#x3c;probe|read|write|none&#x3e;</tt> line per escape (retrace's report grammar since its v2.9.0), or retrace's escape array under  <tt>--json</tt>. Byte-compared in CI against retrace's shared golden tree (<tt>tools/correlate/golden/</tt>, copied byte-verbatim to  <tt>crates/tebako-cli/tests/fixtures/correlate/</tt>) — every case, stdout bytes and exit code. Nothing else ever writes stdout for this subcommand (the version banner rides stderr).</p>
+</li>
+<li id="_fce3a905-0d57-8229-55d2-c7a78a2573ec"><p id="_48deda2f-8562-d4c9-3914-771edab9eb2e"><b>stderr</b> (outside the golden contract) carries the summary (<tt>inside=N entries, M paths; prefix=P; escapes=E</tt>), the escapes grouped by surface class with per-class coverage percentages, and the producing layer named by  <tt>--layer</tt> (default <tt>libc</tt> — §6.1's honesty rule: the report certifies its named layer only; sub-libc escapes are UNCERTIFIABLE under a libc-boundary capture).</p>
+</li>
+<li id="_897f6c12-f945-a29b-ed99-e494af2550e7"><p id="_80ea08f8-83c2-13ec-3958-e4dccfb7be2a"><b>Exit codes</b> are retrace-correlate's: 0 no escapes, 1 escapes found, 2 usage or I/O error.</p>
+</li>
+<li id="_c15af4a6-1522-7c57-b13d-c4c0ab1173fc"><p id="_5e9e850f-3c32-2800-eae7-09c2c06b9aba"><b>The kernel is retrace's</b> (the <tt>retrace-correlate</tt> port): the tolerant stream scan (array document / JSONL / truncated tail), any-depth path extraction, NT-form normalization (<tt>\??\</tt>, <tt>//?/</tt>, <tt>\\?\</tt>, the <tt>\Device\HarddiskVolumeN</tt> drive guess), drive-letter- insensitive path comparison with a case-SENSITIVE component-boundary prefix test, pid/time-window coverage (a pid-less entry is a wildcard; the bus's string  <tt>ts</tt> never feeds <tt>--window</tt> — window mode takes retrace-shaped inside captures with numeric  <tt>time</tt>), the name-keyed probe/write classification (a NAME-NOT-FOUND probe on an unserved under-prefix path IS an escape — existence is information), one escape per outside entry (the first under-prefix uncovered path in field order),  <tt>--exclude-probes</tt> for the jail-grant policy. Documented deviations, error paths only: a non-numeric <tt>--pid</tt>/<tt>--window</tt> and an unknown <tt>--layer</tt> are named usage errors (exit 2) where upstream's atol/atof silently read 0 (spec 00 law 9).</p>
+</li>
+</ul></div>
+
+<p id="_825deba2-c7ea-8081-67c6-8d30260beada">The correlator is tebako-owned because the invariants leave no other home: invariant 1 (no shell-outs in shipped artifacts) forbids invoking a retrace binary; invariant 3 (C/C++ only in dwarfs-t) forbids linking one. The correlation kernel (normalize + set difference + threshold) is small and pure. If the retrace project ships its own <tt>retrace-correlate</tt> for the generic market, the two implementations assert parity on shared golden fixtures in CI — invariant 10's parity escape hatch: the FORMAT is retrace's single source; the ALGORITHM has two implementations that must agree. (retrace's  <tt>retrace-correlate</tt> landed ahead of this phase — the golden tree above is that parity hatch, exercised.)</p>
+</div><div id="_7941209d-59f9-2cf5-e994-6285baa322b0"><h2 id="_1aa52ace-0fe6-4346-ac5c-9c68a0c65edb"><a class="anchor" href="#_7941209d-59f9-2cf5-e994-6285baa322b0"></a><a class="header" href="#_7941209d-59f9-2cf5-e994-6285baa322b0">6.4 The contract with the retrace project</a></h2>
+
+<p id="_1515a65e-ae3a-a242-1f5d-0401fe7243dc">Verified against riboseinc/retrace @ v2.6.1 (d06c6af); later shipments tracked below the table (the full correspondence lives in the work queue). Tebako phases coverage features as these land upstream; none block T1/T2:</p>
+
+<table id="_6d4fd120-bdfd-f511-b0a1-d53fd13db585" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 4</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">prerequisite</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">state today</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">tebako impact until it lands</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>retrace-audit</tt> + <tt>path_contains</tt> policy op</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">SHIPPED (tools/audit-converter; property-tested — P-POLICY-CONTAINS-SOUNDNESS)</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">the policy-matching half of coverage exists; usable on outside captures immediately</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">pid + tid per log entry</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">SHIPPED (v2.7.0) — the correlator joins on pid/tid when present</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">multi-process compositions regroup the outside stream</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">ntdll-depth hooks (<tt>NtCreateFile</tt> / <tt>NtOpenFile</tt> / <tt>LdrLoadDll</tt>) + NT-path normalization (<tt>\??\C:\…</tt>)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">ABSENT at v2.6.1 — the windows backends interpose at the ucrt layer; a native payload calling Win32 directly already escapes that layer TODAY (libsass's importer reads via raw <tt>CreateFileW</tt> with <tt>\\?\</tt> prefixes — invisible at ucrt)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">windows sub-libc escapes stay invisible until both the hooks and a converter exist</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">streaming / JSONL output</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">today one JSON array document per capture (leading-comma emission; a crashed tail invalidates the document)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the correlator tolerates a trailing partial record</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>retrace-correlate</tt> (the set-difference tool)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">SHIPPED (v2.7.0, with the shared golden tree incl. 06-libsass-importer; the report grammar stabilized in v2.9.0)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">tebako ships its own (§6.3) and asserts byte-parity on the shared tree in CI — the parity hatch is exercised</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">ptrace-backend param deref (arch_spec)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">ABSENT at v2.14.0 — the ptrace backend ships no arch_spec of its own: aarch64 entries carry the syscall NAME with NIL params (<tt>openat(AT_FDCWD, "/tmp/x", O_RDONLY)</tt> arrives as <tt>"path":"(nil)"</tt>), and on x86_64 the wild frame deref SIGSEGVs on attach (tebako CI run 32451535675, job 96680888031)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the linux kernel-layer dogfood rides strace + upstream's OWN <tt>strace2retrace</tt> converter (the §6.2 normalizer pattern — same kernel truth, real paths) until this lands or the eBPF bridge ships</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">windows live capture (win-run injection + ucrt inline hooks)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">NEVER smoke-tested upstream at v2.14.0 (msys.yml exercises only the library scaffold + headers); BROKEN on windows-latest in tebako CI (run 32453723170, job 96686997021): the hook installation completes in the child (<tt>hooked 'fopen' …</tt> diagnostics print), then <tt>LoadLibraryA(retrace.dll)</tt> fails inside <tt>retrace_core_boot()</tt> — the loader converts a DllMain crash into <tt>ERROR_DLL_INIT_FAILED</tt>, the inject thread's exit code reads 0, and win-run reports "failed to launch" (<tt>win_common/inject.c:73</tt>)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">the windows libc-layer dogfood is a prerequisite probe: a standalone control isolates our half, a <tt>RETRACE_LOGGER_RING=0</tt> candidate pin gets the full chain gates when it captures (the MinGW build compiles the lock-free ring the MSVC build stubs out), and otherwise the leg pins the documented broken signature — drift in either direction fails it. The procmon converter (§6.2) carries the windows chain certification meanwhile</td></tr></tbody></table>
+</div></div><div id="_dc50f9f0-7f22-8833-42a0-0083f14370db"><h1 id="_c4ea0b19-f9fc-4461-bc55-ffbf45daf9e5"><a class="anchor" href="#_dc50f9f0-7f22-8833-42a0-0083f14370db"></a><a class="header" href="#_dc50f9f0-7f22-8833-42a0-0083f14370db">7. Testing and gates</a></h1><div class="ul_wrap"><ul id="_1b05b4b9-1a65-91e8-3aa1-34ac2d07421a"><li id="_d4d4ee23-d1cf-5efb-3723-ddbb0d6344ae"><p id="_54251a00-23fc-8eff-19f5-512b17cacd8a">Golden fixtures: the incident-13 dogfood captures (real <tt>[tfs]</tt> streams) converted to the schema must round-trip through the validator and through  <tt>explain</tt> (whose red hop must match the incident's hand-derived answer).</p>
+</li>
+<li id="_143d8bd5-060f-76b9-8073-fc9e920f5767"><p id="_8f5240f6-f4a7-be18-a41c-7e4490096048">Property: driving the public tfs op matrix emits exactly one schema-valid event per op.</p>
+</li>
+<li id="_3aab99cc-adb6-fc45-249e-0989527dec84"><p id="_f8672bef-04f0-a3d2-928e-47193026c4b6">Correlator: synthetic inside/outside pairs with deliberate escapes — a libc-routed fixture (a direct  <tt>fopen</tt> below the interposition) under a retrace preload capture, and a raw-<tt>syscall(2)</tt> fixture binary (built by CI, not shipped) under a KERNEL-layer capture — must be caught at 100%. The raw-syscall fixture paired with only a libc-boundary capture must report the escape as UNCERTIFIABLE, not as covered (§6.1's honesty rule).</p>
+</li>
+<li id="_8c8adc8c-94c1-2f8a-5e6a-0f73ea0848bf"><p id="_6171a476-fb72-4900-4289-5f8f2662caaf">Converter: a procmon CSV fixture converts to retrace-shaped JSON the correlator consumes identically to a native retrace capture.</p>
+</li>
+<li id="_2798821c-2d5f-3c7b-0320-a6c955123978"><p id="_972537cd-e2d5-f15b-fead-7c1fdb55b438">Parity (when <tt>retrace-correlate</tt> lands upstream): the shared golden fixtures produce identical escapes reports from both correlators.</p>
+</li>
+<li id="_fd7ee514-bcf9-b43b-1dc8-6b203e5f92e9"><p id="_95a54272-e7c7-487a-40a7-82b6cd62573d">The factory's msys dogfood converts from <tt>TEBAKO_DEBUG_TFS</tt> gates to the bus as phase T1's dogfood — the harness stops hand-rolling diagnostics.</p>
+</li>
+<li id="_3491129a-df94-dba7-3d6b-074e08711827"><p id="_52f36017-9190-f41d-18eb-4a2c3cb465ff">Size/hygiene: bootstrap gate untouched; no new dependencies outside the workspace (<tt>tebako-json</tt> for emission); <tt>unsafe</tt> nowhere (the bus is safe Rust over the journal's fd).</p>
+</li>
+</ul></div></div><div id="_c7aff195-4a47-78c7-b492-d57b31b053d6"><h1 id="_bee18288-e1fd-4f05-b8c3-e3372fd5c59b"><a class="anchor" href="#_c7aff195-4a47-78c7-b492-d57b31b053d6"></a><a class="header" href="#_c7aff195-4a47-78c7-b492-d57b31b053d6">8. Phasing</a></h1><table id="_d5bdba16-266d-bf96-f46b-7884fdbd268a" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 5</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">phase</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">contents</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">dogfood</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">T1</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">the bus + schema + <tt>run</tt> (discovery)</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">the msys dogfood rides the bus; a payload author onboards a fresh gem without hand diagnostics</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">T2</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the <tt>spawn</tt>/<tt>resolve</tt> emission: the preload's posix_spawn surface reports <tt>spawn</tt> (a child-process decision — the correlator's process-tree signal), and the driver emits one <tt>resolve</tt> event per <tt>--tebako-image</tt> triple (the payload/slot identity: whole / <tt>slot:&#x3c;n&#x3e;</tt> + offset/size/mount, or the named failure class)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">a traced boot of a broken composition names the failing triple in the capture itself — no stderr spelunking; a traced run's spawns regroup by pid</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">T3</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>cover</tt> (certification) + the procmon converter</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>cover</tt> SHIPPED 2026-08-20 (the §6.3 correlator + the shared golden tree green in CI); the converter (<tt>import</tt>, §6.2) SHIPPED 2026-08-21 (byte-parity with procmon2retrace on the golden 06 case, the converted stream driving cover to expected.txt/exit.txt). Remaining dogfood: a leg under retrace on both platforms (libc layer); a kernel-layer leg (ptrace/eBPF on linux, procmon-converter on windows) as the §6.4 prerequisites land; escapes report in CI</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">T4</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>explain</tt> (diagnosis)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">SHIPPED 2026-08-21: the replay + the signature table in data (<tt>explain-signatures.yaml</tt>), fixtures replaying the incident classes to their hand-derived answers (§7's gate shape). Remaining dogfood: replay the real incident-13 captures; the named hop matches history</td></tr></tbody></table><p id="_354aca02-7fee-2c22-e98d-234a7fec892b">(Re-phased 2026-08-20: emission completeness precedes the front-ends — the original T2 (<tt>explain</tt>) is T4, the original T3 (<tt>cover</tt> + the converter) stays T3, and T2 is the spawn/resolve emission the correlator's inputs depend on.)</p><p id="_75eea55b-4f33-a0f9-20d3-fb59e0ce52bb">Each phase ships behind its own PR chain against this spec; the spec moves PLANNED → PARTIAL → SHIPPED per phase (spec 00's status law).</p></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

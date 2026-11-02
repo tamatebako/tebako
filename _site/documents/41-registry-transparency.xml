@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Registry transparency: completeness proofs for the public fabric</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 41</docidentifier><docnumber>TBK SPEC 41</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_585f61c2-b09d-dd61-55e0-785694a086f2" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_2514f0a6-5c21-a8e1-c2e2-068ea82e7078"><strong>Status: PLANNED</strong> (the design is locked here first; §5's verbs ship together with this spec in the same change).</p>
+</foreword></preface><sections>
+<clause id="_7d56430b-72a6-4f82-b112-791c0ab83dd2" unnumbered="true" obligation="normative">
+<title id="_fa2ac9b6-83db-fb8f-d6b6-25a4ba0032b6">1. The property nobody has</title>
+<p id="_31ae50cc-85a4-910a-4f88-d94ed3a80cba">A signature over a registry proves that whoever holds the key wrote <em>those bytes</em>. It says nothing about what was there last month. Yanking a row and re-signing is indistinguishable from the row never existing, and that is the one attack a mirror cannot detect: every mirror is happy to serve the smaller file.</p>
+
+<p id="_6b73ff58-a684-fd28-473e-baa2f3448b91">Completeness is the missing property, and it needs machinery rather than good intentions:</p>
+
+<ul id="_c1dda00a-6874-b992-0f57-0b90dc84f5f9"><li><p id="_cb9f4f8a-194c-f6f1-3c0f-f1f2e387acc0"><strong>append-only</strong>: the registry's history is a log that only grows;</p>
+</li>
+<li><p id="_deeaa0f1-4fe9-c481-ce63-acfc5cb2847b"><strong>provable</strong>: one row's presence is provable without shipping the log;</p>
+</li>
+<li><p id="_096c2a89-4502-4766-f86e-3129caeb6370"><strong>auditable</strong>: a row that disappeared without saying so is a NAMED alarm, not a diff somebody has to notice.</p>
+</li>
+</ul>
+
+<p id="_9b32a289-7c15-691a-d15a-ec80cf9d3c47">The machinery is an RFC 6962-shaped Merkle log (Certificate Transparency's shape) because it is the one construction third-party tooling already implements: inclusion proofs of  <tt>log2(n)</tt> hashes, and a chain of heads that proves the log only grew.</p>
+</clause>
+
+<clause id="_09b6978b-2b6b-13fb-7d9d-d176dd4000b8" unnumbered="true" obligation="normative">
+<title id="_effe8c6c-a9d6-6d46-a9d5-cc507ef67954">2. The canonical snapshot</title>
+<p id="_75cc9fee-d14e-02c3-ce87-b2427ff88ed9"><tt>tebako registry snapshot &lt;alias|path&gt;</tt> renders every row of a registry document as ONE canonical line. Determinism is the premise — a snapshot that shifts when nothing changed is worthless as evidence:</p>
+
+<sourcecode id="_e9233721-ef45-8c84-8395-7b871c872a44"><body>&lt;kind&gt; &lt;name&gt;@&lt;version&gt; &lt;platform&gt; &lt;sha256|-&gt; &lt;state&gt; &lt;keyid|-&gt;</body></sourcecode>
+
+
+<table id="_3341ebea-fcb5-c7b9-e9f3-a93949f62c4c"><thead><tr id="_4136e170-deaf-d764-7023-8adc108d5d93"><th id="_bce29096-c322-6a27-d308-55c3caa93d7c" valign="top" align="left">field</th>
+<th id="_47b74e16-29a8-b178-2191-16432fadb5e3" valign="top" align="left">rule</th>
+</tr></thead>
+<tbody><tr id="_2ca36127-d371-56ca-1a0a-5ba0939ac064"><td id="_4ada0fc2-87d4-2741-3aca-806a500d0ef6" valign="top" align="left"><tt>kind</tt></td>
+<td id="_49333b02-ac1c-49c3-2479-f567289d5560" valign="top" align="left">the document's <tt>kind:</tt> value, verbatim</td>
+</tr><tr id="_fd22c7b2-dc7b-0041-df09-9d7cbe9099a2"><td id="_ad1b738d-410e-7364-10bb-ce949c104262" valign="top" align="left"><tt>name@version</tt></td>
+<td id="_499d1e36-7c12-75ee-6df8-a7c36b703fd9" valign="top" align="left">verbatim from the document (one line per row, so a version entry with N platform legs is N lines)</td>
+</tr><tr id="_10b05d70-1ece-2841-f1e0-22cae870932d"><td id="_5afa7740-b421-1de3-a22d-77a5a244ece0" valign="top" align="left"><tt>platform</tt></td>
+<td id="_a5ea48be-0609-9738-105f-bb223659f903" valign="top" align="left">the triplet, or <tt>universal</tt>; a variant arm renders <tt>&lt;variant-id&gt;:&lt;universal|triplet&gt;</tt> — the arm id never stands alone, so a universal arm can never be mistaken for a triplet</td>
+</tr><tr id="_717e03ad-610b-62f4-cb9f-c1da9bccc57f"><td id="_251315a5-ace3-a4e4-40bd-010c8015c5f0" valign="top" align="left"><tt>sha256</tt></td>
+<td id="_1aff83a5-3c01-0810-2c61-7f06a238205c" valign="top" align="left">the row's anchor digest, lowercase hex; <tt>-</tt> when the row declares none (a runtime index row)</td>
+</tr><tr id="_2ee4e735-9586-2262-b768-e43e23c7eb68"><td id="_747b9b31-85f1-6647-ad4f-06139ff622aa" valign="top" align="left"><tt>state</tt></td>
+<td id="_82a291f8-7996-f5b1-c544-b02e70626522" valign="top" align="left"><tt>active</tt>, or <tt>withdrawn</tt> — spec 04's <tt>status:</tt> value verbatim, never a second spelling (§6)</td>
+</tr><tr id="_49ce4d09-ffbc-2049-0cc0-363f23992e91"><td id="_550edd94-8b77-e53f-38ec-9bf00b56da4f" valign="top" align="left"><tt>keyid</tt></td>
+<td id="_dd515c46-c57c-2492-6e91-7055af6330b6" valign="top" align="left">the row's declared signer keyid when present, else <tt>-</tt></td>
+</tr></tbody>
+</table>
+
+<p id="_f14ab32b-8a50-6852-06b4-ed001178d879"><strong>Order</strong>: <tt>(kind, name, version, platform)</tt> — byte order, never document order.  <strong>No</strong> timestamps, host names, comments or map iteration order enter a line: an author may reorder the YAML, rewrite its comments, or re-indent it, and the snapshot does not move. Two authors producing the same set of rows produce the same snapshot.</p>
+
+<clause id="_2ed1b948-d9bd-3bcb-3ec6-33598971f694" unnumbered="true" obligation="normative">
+<title id="_d45bf60a-b734-15ee-03a0-c481081624ed">2.1 Where each column comes from (SSOT, never a re-derivation)</title>
+<ul id="_9028ac7f-3047-0c9c-7c61-4bb97d5bea22"><li><p id="_8559e88e-9c04-33e0-89bc-060aa1771ac7"><strong><tt>platform</tt></strong> — a <tt>variants:</tt> arm renders its id from <tt>tebako_resolve::registry::variant_id()</tt> (spec 28 §2's one derivation). A second implementation of that derivation would produce snapshots that disagree with resolution, which is the one thing a transparency log cannot survive.</p>
+</li>
+<li><p id="_da0efa18-ebf3-1b8b-b9a8-292eeda1b00b"><strong><tt>sha256</tt></strong> — the platform row's own <tt>sha256</tt>. A <tt>platforms: universal</tt> row carries NO digest column in the registry model (<tt>ReleaseRef</tt> holds a reference, not a hash; the anchor is the release's  <tt>SHA256SUMS</tt> plus its attestation). Such a row renders  <tt>-</tt>, and that is the honest value: this log proves the ROW SET is complete, while the release's own sums and attestations prove the BYTES. A  <tt>?sha256=</tt> pin inside the ref, when present, is rendered as that pin.</p>
+</li>
+<li><p id="_c8aa4681-2a4e-76d2-89b6-65334bc08092"><strong><tt>state</tt></strong> — spec 04's <tt>status:</tt> verbatim (<tt>withdrawn</tt> when yanked), <tt>active</tt> when absent. Never a second vocabulary (§6).</p>
+</li>
+<li><p id="_3bb942ba-6400-a5e5-dc06-a77c70c8ee00"><strong><tt>keyid</tt></strong> — the row's declared signer (<tt>signature.keyid</tt>) when present, else  <tt>-</tt>.</p>
+</li>
+</ul>
+
+<p id="_260bb957-6a67-7cad-7e46-ed7ef693d682"><tt>--json</tt> emits the <tt>registry_log_schema: 1</tt> document:</p>
+
+<sourcecode id="_865b7017-4b2f-53c8-cb79-114247fe7bbd" lang="json"><body>{"registry_log_schema": 1, "registry": "official", "rows": 412,
+ "lines": ["…"], "root": "…", "head_hash": "…"}</body></sourcecode>
+
+</clause>
+</clause>
+
+<clause id="_21fcfc13-96ec-bf40-751f-53b804fe2af4" unnumbered="true" obligation="normative">
+<title id="_f8b76783-747d-5e1f-ccbb-30892cac87e1">3. The tree</title>
+<p id="_530f99c0-2a4a-8b6f-a28e-cf0308317591">Leaves and nodes are domain-separated, so a leaf hash can never be mistaken for an interior node:</p>
+
+<sourcecode id="_da1d674e-a49c-ee4d-acbd-c72a732f2a1d"><body>leaf(line_i)  = SHA-256(0x00 ‖ line_i bytes)
+node(l, r)    = SHA-256(0x01 ‖ l ‖ r)
+empty         = SHA-256("")                    (a registry with no rows)</body></sourcecode>
+
+
+<p id="_0bce28d3-eb46-745f-2d65-fd9bdc3b7e7f">The fold is RFC 6962's: the largest power of two strictly smaller than the leaf count splits the tree, recursively. An odd tail is carried up, never padded — padding is what breaks third-party verifiers.</p>
+
+<p id="_99fd6472-981a-4234-c034-d123ba69b929"><strong>Inclusion proof</strong> for leaf <tt>i</tt> of <tt>n</tt>: the sibling hashes bottom-up, serialized as a JSON array of lowercase hex, plus the leaf's index and the tree's leaf count. A verifier recomputes the root from the line and the proof; nothing else is needed.</p>
+</clause>
+
+<clause id="_0bc8996d-8d40-d6ed-6b2f-b83a80ad4a6e" unnumbered="true" obligation="normative">
+<title id="_2c93f66b-5cf8-7dd6-7c35-ad5963521fe7">4. The log head and the chain law</title>
+<p id="_37415b66-75c7-aef2-7b00-6e32ea2c7a18">Each snapshot is appended to the registry's log as one head record:</p>
+
+<sourcecode id="_bc8b9884-ab0f-0c85-c0a5-2b6513ae22f5"><body>&lt;seq&gt; ts=&lt;unix&gt; root=&lt;hex&gt; rows=&lt;n&gt; prev=&lt;hex|-&gt; key=&lt;keyid&gt; sig=&lt;hex|-&gt;</body></sourcecode>
+
+
+<ul id="_1d3c6daa-f44b-f67a-30b0-00c16de5bd75"><li><p id="_cbb44fac-0b30-ad87-e6ef-3738f2ed638e"><tt>seq</tt> — 0, 1, 2, … ; strictly increasing, no gaps (a gap is a named error: the log was edited).</p>
+</li>
+<li><p id="_832d9235-e486-63b5-4714-445889d5d236"><tt>prev</tt> — the previous head's <tt>root</tt> (<tt>-</tt> for <tt>seq 0</tt>). A head whose <tt>prev</tt> does not match the previous head's <tt>root</tt> is a <strong>fork</strong>, named as such: the log diverged and nothing after that point can be trusted.</p>
+</li>
+<li><p id="_cf341339-97c3-4f43-3384-8517313974ba"><tt>rows</tt> — the snapshot's leaf count; monotonic non-decreasing unless tombstones account for the difference (§6).</p>
+</li>
+<li><p id="_14ec5841-34e8-8be4-7a1d-91283861f85e"><tt>sig</tt> — detached OpenPGP over</p>
+<sourcecode id="_dbaa9bfe-454d-5669-5bc0-ccaf21f12273"><body>tebako-registry-log-1\n&lt;seq&gt;\n&lt;ts&gt;\n&lt;root&gt;\n&lt;rows&gt;\n&lt;prev&gt;\n</body></sourcecode>
+
+
+<p id="_21a62a39-e9cb-7735-2f56-c52eae1f8a0f">signed by the registry's declared head key (spec 09 §9.1's <tt>signing:</tt> block — the key the registry already carries; no new key class). The signature is verified against the pinned trust store, and an unknown signer is  <tt>unknown-key</tt> (reported, never upgraded to trusted).</p>
+</li>
+</ul>
+
+<p id="_a1f40120-7aa8-98d5-668b-bb2836e92124">The log file is a head record per line, in <tt>seq</tt> order:</p>
+
+<sourcecode id="_67849f8b-1f8c-0c2a-dfb3-777169dd33e3"><body>&lt;registry&gt;.log          (beside the registry it describes)</body></sourcecode>
+
+</clause>
+
+<clause id="_22108a5a-d3f8-789c-6f9c-96d5449a4206" unnumbered="true" obligation="normative">
+<title id="_790776cc-8795-7d18-5dc6-d40137f98b49">5. The verbs</title>
+<sourcecode id="_9be066f3-3297-b712-0889-877230452d1e"><body>tebako registry snapshot &lt;alias|path&gt; [--json] [--out &lt;path&gt;]
+tebako registry log verify &lt;log&gt; [--registry &lt;path&gt;] [--json]
+tebako registry log prove &lt;log&gt; --registry &lt;path&gt; --row &lt;name&gt;@&lt;version&gt;
+               [--json] [--verify-root &lt;hex&gt;]</body></sourcecode>
+
+
+<ul id="_b1654f72-6518-7675-59be-1cf7c39583da"><li><p id="_2b07b7e9-7dab-9441-48ee-caf215b82492"><strong><tt>snapshot</tt></strong> renders §2's lines and root. <tt>--out</tt> writes them beside the registry for publication; without it they go to stdout (<tt>--json</tt> emits the document).</p>
+</li>
+<li><p id="_4c299ede-d307-be41-f4fd-2121f161ab7b"><strong><tt>log verify</tt></strong> checks, in order: every head's signature; the <tt>seq</tt> continuity; the  <tt>prev</tt> chain (a fork is named at the head where it happens); and — when  <tt>--registry</tt> is given — whether the document IS the row set the newest head sealed, by RECOMPUTING THE ROOT from the document's canonical rows. One number answers both halves: if the roots agree, no row could have been added, removed or edited without moving it. A  <tt>rows</tt> decrease is reported separately (the chain alone cannot see tombstones), and a forced deletion therefore surfaces by name.</p>
+</li>
+<li><p id="_37aaa955-16a1-ffd6-e27b-18c49ed7be0d"><strong><tt>log prove</tt></strong> emits the inclusion proof for <tt>--row</tt> against the newest head, and one proof per matching row: a version is often several rows (one per platform), and hiding all but one would understate what the registry says. It needs  <tt>--registry</tt> as well as <tt>--row</tt>, because the canonical line cannot be reconstructed from a name alone — the line IS what is proved. <tt>--verify-root &lt;hex&gt;</tt> checks the proof against a root the caller obtained out of band: a user holding ONE 32-byte value can prove a row's membership without trusting the download that carried it.</p>
+</li>
+</ul>
+
+<p id="_1a4a90a8-41a5-903e-094c-2058c373ce31">Output discipline follows the toolchain's rule: <tt>--json</tt> documents on stdout alone (banner to stderr), human lines on stdout otherwise, exit codes per §7.</p>
+</clause>
+
+<clause id="_11ff426b-30d6-318f-2496-495121020079" unnumbered="true" obligation="normative">
+<title id="_68fed2ed-8011-f716-5460-71d79c282d80">6. The tombstone law</title>
+<p id="_ff5dcf0a-8fee-bd64-a9de-c29bd35b0085">A row may leave a registry; it may not leave <em>silently</em>. The vocabulary for leaving already exists and this spec does not invent a second one: spec 04's  <tt>status: withdrawn</tt> (roadmap 85) is the tombstone — the resolver refuses a withdrawn row by name (<tt>WithdrawnPayload</tt>), listing surfaces render it as withdrawn, and release assets stay immutable.</p>
+
+<p id="_30e72e4b-0dce-68a8-8745-a8b0d588e519">Under the completeness law the ROW STAYS: <tt>tebako registry retire</tt> sets <tt>status: withdrawn</tt> on the version instead of deleting it, so the next snapshot renders the row as  <tt>withdrawn</tt> and keeps it in the tree forever. A registry whose rows only ever disappear is a registry nobody can audit.</p>
+
+<p id="_b1fd9846-0fee-99e2-e0c1-b18750268812">Withdrawal is the only legal way for a name to vanish from a snapshot or for  <tt>rows</tt> to fall. <tt>--force</tt> still removes a row outright — an operator may need it — but the next  <tt>log verify</tt> reports the disappearance by row name, and a forced removal is precisely the alarm the log exists to raise: never quiet.</p>
+</clause>
+
+<clause id="_50bec58b-0e75-7bba-9ae2-62faad273e91" unnumbered="true" obligation="normative">
+<title id="_ae23d4c3-2f7f-b328-5fa2-8513310c753d">7. Named errors and exit codes</title>
+<table id="_c150be89-2bce-31d3-20f4-e1bdf50f76c7"><thead><tr id="_ecab2c6e-484c-7b08-fa92-0d32329246fb"><th id="_8f497471-c190-bc99-bfaa-22a64a3ae2c2" valign="top" align="right">code</th>
+<th id="_8695cef5-5644-256a-bf8b-c3f6de24a956" valign="top" align="left">class</th>
+<th id="_8fdc8808-99dd-030b-bc98-80bc10a1f364" valign="top" align="left">meaning</th>
+</tr></thead>
+<tbody><tr id="_ca331de5-5686-8cb0-b109-9d01c5390ea8"><td id="_66efab2c-da68-62b8-a192-aac07f3c0052" valign="top" align="right">71</td>
+<td id="_f8aeeb7a-9424-4230-d63f-b72827316d50" valign="top" align="left"><tt>EX_TEBAKO_SIGNATURE</tt></td>
+<td id="_d0b25308-6871-bf1d-7b43-f31246eabd72" valign="top" align="left">a head's signature does not validate</td>
+</tr><tr id="_6cd1371c-e6d3-39d0-f035-126c0a6da59e"><td id="_f5d62e65-f4bd-3769-f381-275c265534cf" valign="top" align="right">72</td>
+<td id="_67af846e-96c6-e52e-a5e3-90b86ad07096" valign="top" align="left"><tt>EX_TEBAKO_TRUST</tt></td>
+<td id="_ac4e5d73-c189-de1e-ba2f-75b40b82821e" valign="top" align="left">a head's signer key is not in the trust store (<tt>unknown-key</tt> in JSON; the chain is still reported)</td>
+</tr><tr id="_33d97044-5568-7b4e-1593-f5f90bf5cfa1"><td id="_83ea1640-c48e-91c7-95e7-4f1ac273ad5f" valign="top" align="right">80</td>
+<td id="_8fa65814-ea22-afb6-8898-ea3eb8e50446" valign="top" align="left"><tt>EX_TEBAKO_LEDGER</tt></td>
+<td id="_21ae1aa3-91e2-0224-8433-abbffde69144" valign="top" align="left">an integrity finding: a <tt>seq</tt> gap, a fork, a <tt>prev</tt> mismatch, a proof that does not verify, a row missing without a tombstone, or a tree/file inconsistency (spec 40 §6's ledger class — both streams are record streams whose integrity findings are one kind of event)</td>
+</tr><tr id="_13d130b0-0637-b466-5e78-e9d361a66ca4"><td id="_1471d746-ccff-75e0-fb1d-da2ae010ed23" valign="top" align="right">74</td>
+<td id="_83bb6e3c-efa3-1820-84b6-9c9424afdbf1" valign="top" align="left"><tt>EX_TEBAKO_IO</tt></td>
+<td id="_556093c9-d310-764d-1904-95d220a23b11" valign="top" align="left">a log or registry cannot be read or written</td>
+</tr><tr id="_e4d974b9-51d5-3332-a91b-be39433ea9f5"><td id="_34aef218-b411-14c4-d4be-d138744dec66" valign="top" align="right">64</td>
+<td id="_d4f9e54e-7bf3-a2a3-29b8-8190e1150d9d" valign="top" align="left"><tt>EX_USAGE</tt></td>
+<td id="_f31d3968-92f1-dd16-704e-a83590ca1eef" valign="top" align="left">unknown flag, unparseable row reference, <tt>--verify-proof</tt> without a proof source</td>
+</tr></tbody>
+</table>
+
+<p id="_f25d4b16-6209-4a18-da31-5abbdcfe9f18">Every message names the row, the head, or the file — never "invalid input".</p>
+</clause>
+
+<clause id="_3d21c977-3504-7502-f0c8-47343d657ef9" unnumbered="true" obligation="normative">
+<title id="_247a8dcb-8a70-9925-5a92-64c7fed898e2">8. What this spec does not own</title>
+<ul id="_ee02e636-6e7c-e27c-65d8-86ff2bcf33a8"><li><p id="_898f84ff-884d-dfee-f565-e9061ae6dfcf">Registry document grammar and the <tt>signing:</tt> block: spec 04 and spec 37.</p>
+</li>
+<li><p id="_e2eeea8f-bed7-9cee-b3b7-a052a6ffed4a">The signature mechanism and the trust store: spec 09.</p>
+</li>
+<li><p id="_11eb5089-918e-857f-7df9-6c09e1c253eb">Publication cadence and hosting: spec 13 and spec 37. This spec says what a published log must satisfy, never when to publish one.</p>
+</li>
+<li><p id="_6e887043-24e4-1e1b-9b44-d79a128658a0">Rotation of the head key: spec 09 §11's successor statement — a log signed under a successor key chains through  <tt>prev</tt> like any other head.</p>
+</li>
+</ul>
+</clause>
+</sections>
+</metanorma>

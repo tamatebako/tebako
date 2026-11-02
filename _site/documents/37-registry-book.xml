@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">The registry book: federation, aliases, credentials, the official seed</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 37</docidentifier><docnumber>TBK SPEC 37</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_f6e570dc-6514-f432-eee5-408586e41b71" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_4fbc66ca-5408-3779-6414-c4ddaa9df066">Status: <strong>SHIPPED</strong> — §2's registry book (the config model, alias grammar + derivation,  <tt>DuplicateRegistryAlias</tt> / <tt>DuplicateDefaultRegistry</tt>, <tt>add-registry --name/--require-signed/ --default</tt>, the <tt>list-registries</tt> book rendering), §2.2's per-registry fail-closed signature policy (<tt>UnsignedRegistryPayload</tt>, exit 70), §3's qualified form (<tt>alias/name</tt> + the <tt>registry:</tt> pin scopes), §4's federation grammar (the explicit-host  <tt>tfs+&lt;svc&gt;://host/…</tt> forms, the  <tt>tfs+https://</tt> registry location, the <tt>UnsupportedService</tt> / <tt>SshTransportUnsupported</tt> refusals), §5's credential model (the two-tier book, the locked confinement, the fetch journal, <tt>CredentialRequired</tt> / <tt>InvalidCredentialEntry</tt> / <tt>DuplicateCredentialSelector</tt>), §6's official seed (<tt>tebako setup</tt> and the installer's written config; the tebako-packages/registry aggregate flowing the feedstocks' authored rows), §7's origin binding (the <tt>.tfs.registry</tt> marker, the confined version chains, the journaled rebind), §8's private runtimes (the DEPENDS-edge  <tt>registry:</tt> pin — payload-manifest schema_minor 14 — the federated release-download locator deriving  <tt>kind: runtime</tt> rows on GitHub/GHE/GitLab, and <tt>require_signed</tt> riding runtime rows), and §9's three operator tiers (their resolution paths —  <tt>tfs+https://</tt>, explicit-host git services, <tt>file://</tt> + bundles — all ride the shipped grammar; the tier how-tos live on tebako.org). (Locked direction 2026-09-24; design reviewed with the owner across the 2026-09-24 session — the alias grammar, the credential confinement model, and the federation forms below are the agreed shape). Nothing here changes what shipped resolvers do with a config that carries none of the new keys.</p>
+
+<p id="_245f3573-10d6-6ef1-4719-97785d9648b6">Normative specification of the <strong>registry book</strong>: the named, policy-bearing list of registries in  <tt>~/.tebako/config.yaml</tt> that turns spec 04 §2's "any git host repo" into a federation — public official payloads and private runtime/executable/data payloads resolving side by side on one machine, with leak-proof credentials and confusion-proof names. The registry stays developer-hosted zero-infrastructure YAML; this spec adds the bookkeeping that makes MANY of them safe to mix.</p>
+</foreword></preface><sections>
+<clause id="_2ed2f7d1-a784-2747-4d28-18f9720dd6fb" unnumbered="true" obligation="normative">
+<title id="_3b7825ac-ee02-5470-6dc5-743f10553ee3">1. Why (the two hosting worlds, one machine)</title>
+<p id="_e6d27ba1-4892-540d-6c8f-b534acde10a5">A real deployment mixes two worlds: public payloads from the official registry (Homebrew's core-tap role) and private payloads from an operator's own instance (Docker's enterprise-registry role) — a consultancy's GitHub for public tools, their own GitLab for client work; Ribose's public tebako-packages org, plus gated flavor registries where BSI's tokens must never read NIST's repos. Today's model already fails-closed on ambiguity (spec 04 §2: N registries carrying one name is the named  <tt>AmbiguousRegistries</tt>, never a priority pick) — but it has no aliases for ergonomic scoping, no per-registry policy, credentials only for github.com, and no grammar for a service API at an operator's OWN host. This spec closes exactly those four gaps. What it never adds: a resolution priority, a default service compiled into any binary, a silent fallback.</p>
+</clause>
+
+<clause id="_96d4b9f0-6301-0e8e-c243-860607670a4e" unnumbered="true" obligation="normative">
+<title id="_7c62f15a-b661-5ad6-1285-221cfb269ce6">2. The registry book (the config model)</title>
+<p id="_877c2e9a-5493-167d-445f-0bdfd015f7a5"><tt>registries:</tt> entries gain OPTIONAL keys; a bare string entry keeps meaning what it means today (spec 04 §2, schema-compatible — old readers see the same refs):</p>
+
+<sourcecode id="_f37368bb-a673-b75e-853b-ad58d7493044" lang="yaml"><body># ~/.tebako/config.yaml
+registries:
+  - name: official                       # the local alias (§3's handle)
+    ref: tfs:github:tebako-packages/registry
+    default: true                        # publish/UX anchor ONLY — §2.1
+  - name: nist
+    ref: tfs:github:metanorma/metanorma-flavor-nist
+    require_signed: true                 # fail-closed trust policy — §2.2</body></sourcecode>
+
+
+<ul id="_0f7b385c-7509-57a0-fb56-5de4a5d8dbf8"><li><p id="_2f3527cc-6292-0d02-b630-62365874a371"><strong>Alias grammar:</strong> <tt>name</tt> matches <tt>[a-z][a-z0-9-]*</tt>, unique across the book; when omitted, the alias DERIVES from the ref's  <tt>owner/repo</tt> as <tt>repo</tt> (a collision with an existing alias is the named <tt>DuplicateRegistryAlias</tt> at config load, listing both entries — never a silent rename). Aliases are LOCAL names for local config — they are never published, never embedded in payloads, never part of any wire format.</p>
+</li>
+<li><p id="_a37754bc-a2e1-f32b-35ad-c78d8469a0af"><strong>2.1 The <tt>default</tt> flag is a publish/UX anchor, never a resolution tiebreaker.</strong> Exactly one entry MAY carry <tt>default: true</tt> (two → <tt>DuplicateDefaultRegistry</tt>, config-load time). The default registry is (a) the target of  <tt>tebako publish</tt> when <tt>--registry</tt> is absent, (b) rendered first in listings and in the registry-listing body of named errors. Resolution has NO default: §3's rules are identical whether or not a default exists. (Invariant 9 stands: no default SERVICE; a default LABEL on user-owned config is not a service.)</p>
+</li>
+<li><p id="_dcfa6489-bb74-cb3e-c624-1ad8609568fb"><strong>2.2 <tt>require_signed: true</tt></strong> makes every install whose plan resolves through that registry fail-closed unless the resolved row carries a <tt>signature:</tt> block that verifies against the machine's trust anchors (spec 09) — the registry-level form of  <tt>TEBAKO_REQUIRE_SIGNED=1</tt>, scoped so a private operator can demand signatures on THEIR payloads without unsigned public payloads becoming second-class. A per-registry <tt>keyring: &lt;ref&gt;</tt> (PLANNED with the trust-anchor distribution work, spec 09 §10) pins WHICH keys count; absent it, the machine trust store decides.</p>
+</li>
+<li><p id="_6ff3d496-f9e5-73de-db39-38bc841c8c26"><tt>tebako add-registry</tt> grows <tt>--name &lt;alias&gt;</tt>, <tt>--require-signed</tt>, <tt>--default</tt>; <tt>list-registries</tt> renders the book (alias, ref, policy flags, cache freshness). The shipped config still has ZERO registries (§6's seed is the installer's authored content, not a compiled-in value).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_3c4eab3a-ed5d-cd18-9c73-221aa02d07a3" unnumbered="true" obligation="normative">
+<title id="_7f899307-86b3-3ed6-7d3e-220db3e489d4">3. Name resolution (bare, qualified, pinned)</title>
+<p id="_724f223d-9c1c-9a42-f542-b2b0509401e4">Three forms, each with exactly one home — the ambiguity law is unchanged:</p>
+
+<ol id="_9aaabbc1-bf53-48c2-ec2f-c41ae0138806" type="arabic"><li><p id="_238a4a9f-1ae9-1a47-f39a-4e0419488baf"><strong>Bare <tt>name</tt></strong> — searches EVERY registered registry (shipped behavior, locked): zero hits → the named not-found error listing the registered registries; exactly one → plan; more than one → <tt>AmbiguousRegistries</tt> naming every carrier. No priorities, no first-hit, in either direction — a public registry can never shadow a private name NOR the reverse.</p>
+</li>
+<li><p id="_1de67b42-355a-5f30-6ebb-25f151a6209a"><strong>Qualified <tt>alias/name</tt></strong> (NEW) — scopes resolution to the one registry whose alias is  <tt>alias</tt>. Unknown alias → the named <tt>UnknownRegistryAlias</tt> listing the book's aliases. This is the ergonomic disambiguator short of a full reference (the Cargo <tt>registry = "…"</tt> / Homebrew <tt>tap/formula</tt> role): <tt>tebako install nist/metanorma-bsi</tt> can never touch the official registry's rows.</p>
+</li>
+<li><p id="_0b077a22-2f53-da5a-be40-219fd26a801c"><strong>Full reference</strong> — unchanged (spec 04 §1); no registry involved at all.</p>
+</li>
+</ol>
+
+<p id="_4a92836e-5d70-66d3-50ab-18a60551b8e5">Pin surfaces (<tt>.tebako-tools.yaml</tt>, the config's per-tool <tt>version:</tt> pins, spec 23 composition edges) gain an optional  <tt>registry: &lt;alias&gt;</tt> key naming the registry the pin resolves through — the same scoping, authored. A pin naming an alias not in the book is  <tt>UnknownRegistryAlias</tt> at pin-resolution time, fail-closed.</p>
+</clause>
+
+<clause id="_c6fb176a-4c79-165f-162a-58f99f13abb9" unnumbered="true" obligation="normative">
+<title id="_c73b33e9-254c-7596-5c38-a9d2e96d4915">4. The federation grammar (spec 04 §1 amendment)</title>
+<p id="_7290e575-3d7f-64a7-8549-338c52d2479e">The service adapters' canonical SaaS hosts stay the bare forms; the operator's own host is EXPLICIT in the scheme — the adapter is still never inferred:</p>
+
+<sourcecode id="_b5666413-b771-c34a-82a9-f3df46a3e78b"><body>tfs:github:owner/repo:ver[#asset]              → github.com (unchanged)
+tfs+github://ghe.corp.internal/owner/repo:ver[#asset]
+    → the GitHub API shape at that host (GitHub Enterprise Server;
+      base https://&lt;host&gt;/api/v3). ALSO the Gitea/Forgejo form — those
+      services implement the GitHub releases/contents API; a CI
+      conformance leg proves the claim, the grammar never special-cases
+      them.
+tfs+gitlab://gitlab.corp.internal/group/sub/repo:ver[#asset]
+    → GitLab API v4 at that host (self-hosted; nested groups unchanged)
+tfs+https://artifacts.corp.internal/tebako/tpkg-registry.yaml
+    → NEW REGISTRY LOCATION: the registry file itself over plain HTTPS
+      (spec 04 §2's "no other locations" is amended by THIS form only —
+      a static server, an S3 bucket behind a CDN, an Artifactory/Nexus
+      generic repo). Artifact refs inside such a registry are ordinary
+      spec 04 references — typically sibling `tfs+https:` URLs.</body></sourcecode>
+
+
+<ul id="_b623b9b2-ba54-a188-48ca-48a559ee15c6"><li><p id="_7ce00597-78a8-2e5c-cd51-dad876dc17e2"><strong>Bitbucket Data Center is NOT a host variant of <tt>tfs:bb:</tt></strong> — its API differs from Bitbucket Cloud's. It is the named <tt>UnsupportedService</tt> ("bitbucket data center is not bitbucket cloud; host the registry over tfs+git: or tfs+https:") until a real consumer funds the adapter.</p>
+</li>
+<li><p id="_1b375193-b4fc-a1af-308e-f18d49257725"><strong>SSH is the named <tt>SshTransportUnsupported</tt></strong> ("git over ssh needs the system ssh binary — forbidden by the no-shell-outs law; use a token over https, or file:"). A pure-Rust SSH transport (russh-class) can land later behind the SAME  <tt>tfs+git:</tt> grammar with no reference change; until then, fail closed by name.</p>
+</li>
+<li><p id="_d8bd2a06-9f9d-feaf-285f-5b2e6c128fba">Host-parameterized adapters are ONE code path with a base-URL parameter — the SaaS forms are the parameter's canonical value, never a second implementation to drift.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_f3569d4a-c225-7f6c-1591-e027a1a1eafd" unnumbered="true" obligation="normative">
+<title id="_787d2bf7-c276-cbf1-7f6d-1b8ad3b593f5">5. The credential model (locked confinement)</title>
+<sourcecode id="_c2d7152d-141e-e16b-bcab-2e822ef88dcd" lang="yaml"><body>credentials:
+  - registry: nist                # tier 1: exact registry-alias match
+    token_env: NIST_GH_TOKEN
+  - host: ghe.corp.internal       # tier 2: host fallback
+    token_env: GHE_PAT</body></sourcecode>
+
+
+<ul id="_2d919b5c-beff-088e-1d57-898e58c5ccfd"><li><p id="_fe0c907d-c635-41e8-be9f-273e072ad8c5"><strong>Two tiers, most-specific-wins, exactly one match.</strong> A fetch looks up tier 1 by the alias of the registry whose row directed the fetch (registry-file fetches match their own alias), then tier 2 by the URL's host, then anonymous. There is no third tier and no chain.</p>
+</li>
+<li><p id="_c52d241e-e379-22c8-e3ed-c83636b7e47f"><strong>The registry is the trust unit, the host is the convenience.</strong> The decisive case: two flavor registries on github.com whose tokens must not cross-read — per-host keying cannot express it, per-alias can. Two registries sharing one token name the same  <tt>token_env</tt> twice; repetition is the price of a match rule with zero precedence ambiguity.</p>
+</li>
+<li><p id="_d60240e2-4733-5f0b-b6d9-aa7a4a1cabee"><strong>Config holds env var NAMES, never secrets.</strong> A credential whose env var is unset behaves as absent (the fetch goes anonymous → the service's ordinary 401/403 →  <tt>CredentialRequired</tt> naming the registry and the env var it looked for).</p>
+</li>
+<li><p id="_076d37f9-b5b2-2197-6a92-26aa34252700"><strong>Confinement (locked, generalizing the 2026-09-15 GitHub amendment to every adapter):</strong> a credential is presented ONLY to the host it was minted for — tier 1 credentials to the registry ref's own host (plus that service's API host, per the service's documented mapping), tier 2 to the named host — NEVER to a redirect target, NEVER cross-host. A registry row whose  <tt>release.ref</tt> points at a DIFFERENT host falls to that host's own tier-2 entry or fails named; the directing registry's credential does not follow.</p>
+</li>
+<li><p id="_347929b8-26d7-03f5-a372-87a99543d995"><strong>The adapter owns the header shape</strong> by service class (GitHub/GHE: <tt>Authorization: Bearer</tt>; GitLab: <tt>PRIVATE-TOKEN</tt>; Bitbucket Cloud: basic). Authored config never spells header mechanics.</p>
+</li>
+<li><p id="_570b67d9-0b51-5f71-5372-ffb2f1160386">Every fetch journals host + credential CLASS (<tt>token:env:NIST_GH_TOKEN</tt>, <tt>anonymous</tt>) with the value REDACTED — the mixed-federation audit trail. The ambient  <tt>TEBAKO_GITHUB_TOKEN</tt>/<tt>GITHUB_TOKEN</tt> amendment is unchanged and ranks as tier 2 for github.com when no tier-1 entry matched.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_09af68b8-b08d-c1d7-2173-fada89396dca" unnumbered="true" obligation="normative">
+<title id="_fc1283d8-0626-d478-0c54-7e919ffbc023">6. The official seed (spec 16 amendment)</title>
+<p id="_843327ea-2fa6-301b-2a60-29a1cbbfaed5">The installer's written config (and <tt>tebako setup</tt> on a config-less machine) SEEDS the official entry — authored, user-visible, user-removable config content:</p>
+
+<sourcecode id="_09792c40-0dd1-9ab4-8bab-f219b74cf379" lang="yaml"><body>registries:
+  - name: official
+    ref: tfs:github:tebako-packages/registry
+    default: true</body></sourcecode>
+
+
+<ul id="_6adfb4be-a450-2ab4-fbbd-4f480209bdc4"><li><p id="_cf99aa31-9892-5f83-daab-7c3de1b101d4">No binary carries this value; <tt>tebako</tt> built from source with no installer still ships zero registries. The seed is DISTRIBUTION content (spec 16's install.sh / setup flow), exactly how Homebrew's installer clones the core tap without brew hardcoding it.</p>
+</li>
+<li><p id="_d74f0600-6f4a-3480-160e-e19305c1c277">The official registry repo is a GENERATED AGGREGATE: each feedstock repo's own  <tt>tpkg-registry.yaml</tt> remains the authored authority (SSOT); the aggregate is CI-flowed from them with parity asserted per row — never hand-edited. Removal/withdrawal flows the same way (<tt>status: withdrawn</tt> rows aggregate verbatim).</p>
+</li>
+<li><p id="_603ee0e3-41e3-4f49-73cb-2ae244a2dea5"><tt>tebako bundle --config &lt;org.yaml&gt;</tt> (spec 16 §4) overlays registries as today — the airgapped/enterprise image-builder path is untouched; its overlay can REPLACE the seeded book wholesale.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_cd61f72c-027d-4367-cdea-5b67b5966f2a" unnumbered="true" obligation="normative">
+<title id="_3ebb6aa8-43b3-8eed-c78e-dc75e0a496f3">7. Origin binding (upgrade confinement)</title>
+<p id="_77c49f15-25fb-d4c7-7ba0-1c95d5c7a051">A store entry's markers already record WHERE bytes came from; the book adds WHICH REGISTRY resolved them — the  <tt>.tfs.registry</tt> marker beside <tt>.tfs.origin</tt>, carrying the resolving registry's canonical REFERENCE (never an alias; aliases are local and volatile). Dispatch-time version chains (spec 07 §1's chain, spec 05 §5) and unscoped install-time name searches alike consult the payload's ORIGIN registry only: a same-named payload appearing in another registered registry is never a silent "upgrade" of an installed one (the confusion attack that priority-based ecosystems — rubygems sources, docker's implicit docker.io — leak by construction). An authored  <tt>registry:</tt> scope (§3) outranks the binding. Switching registries is an explicit act:  <tt>tebako install &lt;alias&gt;/&lt;name&gt;</tt> reinstalls and rebinds the origin; the journal records the rebind (<tt>event=origin-rebind</tt>). A rebind whose registry-declared digest disagrees with the cached bytes is refused (<tt>Sha256Mismatch</tt>, exit 70) — the cache never overwrites a standing entry, so bytes are never re-tagged to a registry that never published them: uninstall first, then install from the new registry.</p>
+</clause>
+
+<clause id="_3e921201-4f3c-ae43-ca77-45bb2538365e" unnumbered="true" obligation="normative">
+<title id="_581c924f-91ac-6c03-f567-57b2f1fb2592">8. Private runtimes (schema MINOR 1, shipped by this spec)</title>
+<p id="_ab26eecf-847c-1c8a-3eb3-ca95e7c6e9fe">Spec 04 §2's <tt>kind: runtime</tt> registry entries move PLANNED → SHIPPED: a registry row of kind runtime carries  <tt>engine:</tt> (+ optional <tt>implementation:</tt>), and a payload's kind-runtime DEPENDS edge (spec 30 §1) discovers it by (engine, implementation?, constraint) across the REGISTERED book under §3's rules (qualified form included: <tt>runtime_requirement</tt> gains no alias field — the EDGE carries <tt>registry:</tt> per §3's pin-surface rule). The matched version's <tt>release.ref</tt> derives the download base exactly as spec 05 §2's per-engine chain; the trust pipeline (sha pins, bundle-era rows, <tt>require_signed</tt>) is identical to the factory index's. A private ruby or openjdk line is thereby hostable next to public payloads with zero product-side special cases.</p>
+</clause>
+
+<clause id="_1b412a40-46df-5d66-d590-adba9768c20b" unnumbered="true" obligation="normative">
+<title id="_82278e90-52ca-2d7d-587d-1652fb0b2d49">9. Internal instances (the three operator tiers)</title>
+<p id="_89198c59-1b12-60e3-f8a2-dd868ecd27bd">The grammar above makes three hosting tiers first-class; the HOW-TO lives on tebako.org, the normative part is only that these resolve:</p>
+
+<ol id="_2b7a49b2-725b-adf8-71a6-cdc4df587a36" type="arabic"><li><p id="_9ea36b03-4712-d4b0-28f8-4e1787ed9fcb"><strong>Zero software</strong> — a static HTTPS server (nginx, S3+CDN, Artifactory/Nexus generic repo) serving  <tt>*.tfs</tt> + sidecars + one <tt>tpkg-registry.yaml</tt>, registered as <tt>tfs+https://…/tpkg-registry.yaml</tt>.</p>
+</li>
+<li><p id="_6e835044-72de-a134-7826-5ae6074ef9d2"><strong>The git host they already run</strong> — GHE / self-hosted GitLab / Gitea / Forgejo via §4's explicit-host forms; releases are the artifact storage exactly as on the SaaS hosts.</p>
+</li>
+<li><p id="_bc98e57d-ffa6-0ccf-e040-a66e8bffe7b8"><strong>Airgap</strong> — <tt>file://</tt> mirror or a <tt>tebako bundle</tt> pre-seeded store (shipped; spec 16 §4), no network surface at all.</p>
+</li>
+</ol>
+
+<p id="_24a59327-10da-f87d-e0ed-b254b2092106">All three compose with the enterprise-networking amendment (spec 04 §4: proxies, custom CA roots) unchanged — internal TLS inspection is a transport concern the federation grammar never sees.</p>
+</clause>
+
+<clause id="_5b305bda-1b02-bd9f-faf4-67431f1b3341" unnumbered="true" obligation="normative">
+<title id="_4f7ae012-91e3-7fc3-f5d2-280ae19b0edc">10. Named errors (new or re-scoped here)</title>
+<table id="_e551f2fe-4846-47e4-4891-22ee4f7d14d7"><thead><tr id="_ce8e73e3-40ad-eb94-013b-bb5a5052041f"><th id="_c08ebe6f-7953-e00d-bd4e-a61eeb5107b0" valign="top" align="left">Name</th>
+<th id="_06b251ac-542a-7281-2fe1-f7b3c8cbbe5b" valign="top" align="left">Exit class</th>
+<th id="_dfb4ffad-4b19-4335-d9cb-2530806b559c" valign="top" align="left">Moment</th>
+</tr></thead>
+<tbody><tr id="_e06a6371-8314-7f40-f7a0-96cc20a71645"><td id="_8eaabca9-0f3e-df7f-98df-34b59f7d8232" valign="top" align="left"><tt>UnknownRegistryAlias</tt></td>
+<td id="_a1f33671-7b0f-8923-7f58-1c9815f0a88e" valign="top" align="left">65 usage</td>
+<td id="_c1db00f6-2f77-126d-997d-5f65e3cc7962" valign="top" align="left"><tt>alias/name</tt> or <tt>registry:</tt> pin names no book entry — lists aliases</td>
+</tr><tr id="_b13a7642-7482-e375-2e24-c8dca5fa345e"><td id="_8ef55c34-8c67-a3f3-5f56-1570698154f7" valign="top" align="left"><tt>DuplicateRegistryAlias</tt></td>
+<td id="_1d2ae086-3adc-ce58-36d7-720d3b156bea" valign="top" align="left">65</td>
+<td id="_7cc8b7e1-1d11-0a37-4772-020f5d615c72" valign="top" align="left">config load; both entries named</td>
+</tr><tr id="_8377469b-fea5-4b67-4e83-4496c936fb37"><td id="_50268a6d-9b62-c71c-4f0c-c944e6e51122" valign="top" align="left"><tt>DuplicateDefaultRegistry</tt></td>
+<td id="_766c7ef0-784b-0889-8abd-088ad0af6a62" valign="top" align="left">65</td>
+<td id="_e39693aa-b27e-0cfd-ba8d-119f3d89e9ef" valign="top" align="left">config load; two <tt>default: true</tt></td>
+</tr><tr id="_bad63d54-d6ea-0739-4470-0731add02e22"><td id="_b290537e-2f0b-2868-b5d6-a8fd8d916f39" valign="top" align="left"><tt>AmbiguousRegistries</tt></td>
+<td id="_20513244-0657-b8e5-39ba-782f3cf8c49c" valign="top" align="left">65</td>
+<td id="_cd776c2c-f225-deba-5462-2eebe318b6cb" valign="top" align="left">(shipped) bare name in &gt;1 registry — the anti-confusion anchor</td>
+</tr><tr id="_c55b68af-e765-779a-f089-544d2c7a0b1f"><td id="_f5259d5b-51d9-dc10-ad46-d3bb97337468" valign="top" align="left"><tt>UnsupportedService</tt></td>
+<td id="_0d252f47-a401-8963-2f66-de349ddea21e" valign="top" align="left">65</td>
+<td id="_bf2726a2-08d9-53ad-fe8a-813b8f9360e2" valign="top" align="left">Bitbucket Data Center refs — the tfs+git:/tfs+https: steer</td>
+</tr><tr id="_71b23e0f-6cc7-6bd1-2087-4d73ed9cfdf7"><td id="_10e8e25d-fa5d-5e80-2cbe-2419ffe65db0" valign="top" align="left"><tt>SshTransportUnsupported</tt></td>
+<td id="_1d6cdb05-7c56-7f7b-bbc9-6a375e69cc45" valign="top" align="left">65</td>
+<td id="_bd6ef388-2305-9292-86c8-9cb9f0758573" valign="top" align="left">any ssh/git@ URL — the token-over-https steer</td>
+</tr><tr id="_90542eb4-b15b-9636-47de-b862ce5d64be"><td id="_6662af66-5c19-0871-ff48-002bbc61778f" valign="top" align="left"><tt>CredentialRequired</tt></td>
+<td id="_ce41245a-f13d-7a07-3e6e-56e8cceedc7f" valign="top" align="left">69 unavailable</td>
+<td id="_da159c55-cfdd-1351-ead8-6ed2bf07d42a" valign="top" align="left">401/403 with no matching credential — names the registry + env var looked for</td>
+</tr><tr id="_2e1a295f-7016-b471-fc61-833840a4b2b9"><td id="_0f8a40e1-1095-5337-a5ab-49b3e1100593" valign="top" align="left"><tt>InvalidCredentialEntry</tt></td>
+<td id="_b4c778c9-3540-1045-aa8b-743337190d8b" valign="top" align="left">65 usage</td>
+<td id="_5e8fca35-522c-4f77-afb0-f761174de6bd" valign="top" align="left">config load; a credentials entry names both <tt>registry:</tt> and <tt>host:</tt>, neither, or a malformed <tt>token_env</tt></td>
+</tr><tr id="_6b441ec2-cb2f-7cf9-1223-0b46de009caa"><td id="_83ace2bd-b312-3fa5-8158-23cf5b660784" valign="top" align="left"><tt>DuplicateCredentialSelector</tt></td>
+<td id="_372e17a7-11b6-9602-2b56-0c551967fc2c" valign="top" align="left">65</td>
+<td id="_bd0a0505-476a-214c-3df6-25f2695609ea" valign="top" align="left">config load; two entries key the same alias or host</td>
+</tr><tr id="_ff9991f7-6f76-13eb-df84-4c7f45009a2f"><td id="_5e8f8e3e-c81b-e939-762c-77f87bb6e3fa" valign="top" align="left"><tt>UnsignedRegistryPayload</tt></td>
+<td id="_8f0cbc54-3b5f-738c-1d39-2240bec80a5f" valign="top" align="left">70 integrity</td>
+<td id="_e9429dc7-a451-4ce0-83c3-9dc90ea0d420" valign="top" align="left"><tt>require_signed</tt> row without a verifying signature — fail-closed</td>
+</tr><tr id="_efe32a34-ce95-1d93-b68f-c75fac110a8c"><td id="_c96aef6c-2b0d-b791-ed47-7223067bd79e" valign="top" align="left"><tt>Sha256Mismatch</tt></td>
+<td id="_e30fa623-7059-eff0-ef21-4d1c32ac6af6" valign="top" align="left">70 integrity</td>
+<td id="_3299fa46-8a80-7e10-0199-8782fa43278e" valign="top" align="left">(re-scoped from spec 04 §3) a rebind whose registry-declared digest disagrees with the cached bytes — uninstall first</td>
+</tr></tbody>
+</table>
+
+<p id="_9795b14f-5b44-f887-fe16-60c07e6c2c6c">Each maps to exactly one CI tier's assertion; none is a fallback — a failure here changes NOTHING about what is installed or resolved elsewhere.</p>
+</clause>
+</sections>
+</metanorma>

@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Trust and signing (authentication)</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 09</docidentifier><docnumber>TBK SPEC 09</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_d6820d0c-eba7-f164-0f40-599bd52edaef" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_90020bb6-411f-058c-2f7c-3ba3c24d4dfc">Normative specification of integrity and authenticity for every binary part: bootstrap, runtime payloads, data payloads, and release indexes. Status: signing machinery SHIPPED (M29 phase 2); the classical root key ceremony EXECUTED 2026-09-09 (§7); release signing SHIPPED — each platform leg's publish invocation signs its own released parts and index shards behind <tt>TEBAKO_RELEASE_SIGNING_ENABLED</tt> (§6; the finalize-pass sign step was retired by spec 13 §2a's de-rendezvous, 2026-09-12). Runtime FETCH-TIME verification (§4's resolve-path point, §5's signed index forms, spec 13 §2a's per-artifact  <tt>signature</tt>) is SHIPPED in the CLI's press-time resolver and the shim's dispatch-time fetch (roadmap 80/G1, tebako#567's chain); the bootstrap's first-run runtime download is the remaining leg (PLANNED — until it lands, the bootstrap verifies sha256 only and never reads  <tt>signature</tt> declarations: the pre-G1 behavior, landing together with the  <tt>openpgp-verify</tt> capability flip of the rollout note below). Payload verification (§4's install-time point, extended 2026-09-13 to the press-time compose-closure and spawn-walk payload fetches) is SHIPPED; the store-side anchor stays the  <tt>.sha256</tt> sidecar.</p>
+
+<quote id="_e5c3fbae-6ffa-7fa8-ecec-df6371c45070"><p id="_8f3381a2-5ae8-42bc-7661-8b40fb8377b8"><strong>Rollout phase — unverified-first (roadmap 72).</strong> The shipped tebako-bootstrap is built WITHOUT OpenPGP verification (the <tt>openpgp-verify</tt> cargo feature is off): signed packages execute with a loud UNVERIFIED warning + audit journal, unsigned packages with the legacy warning;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> fails closed (exit 71) because a strict-mode request must never silently downgrade. OpenPGP verification returns via the crypto toolkit payload (<tt>tebako-crypto</tt>, rnp+botan full+PQC, fetched on demand and Ed25519-verified by the bootstrap) — this spec is the TARGET model; the phase-1 deltas live in spec 06 §3.</p>
+</quote>
+</foreword></preface><sections>
+<clause id="_f9c9196d-94ae-32e6-e250-238d13734e05" unnumbered="true" obligation="normative">
+<title id="_42b20d6a-af1c-4e40-6212-ad6d08a1e5e7">1. Threat model</title>
+<p id="_9da6c91c-fde3-a979-ce9e-9d6b1dca325c">Parts travel over mirrors/CDN and are shared between machines. HTTPS + sha256 against a same-channel manifest protects the TRANSPORT, not the OBJECT: whoever swaps the artifact swaps the manifest too. The tpkg crc32 is integrity-vs-accident only — documented as non-authentic (spec 02 §2). For the relationship to the OS-level trust gates (Gatekeeper, Authenticode) — who validates the bootstrap versus what tebako validates below it — see spec 12 §5.</p>
+</clause>
+
+<clause id="_c6f65100-4a45-5e73-f29e-64b5d8bc6631" unnumbered="true" obligation="normative">
+<title id="_90b3b84d-f5f2-d2ea-d050-51fae3da8831">2. The chain of trust</title>
+<ol id="_86a9afc5-1e80-f6a2-b491-c9229058a2b1" type="arabic"><li><p id="_06bb33b9-71c0-e477-377a-43c04cca97d8"><strong>Root of trust:</strong> the tamatebako release signing keypair (OpenPGP via rnp-rs — the ONE signature mechanism for trailers, manifests, and release indexes alike: one keyring, one verify path). Root fingerprint published on tebako.org AND embedded in the loader/CLI at release time (<tt>EMBEDDED_ROOT_FINGERPRINT</tt>; dev override <tt>TEBAKO_TRUSTED_ROOT</tt>). The CLI additionally embeds the root PUBLIC KEY (<tt>tebako_signer::ROOT_PUBLIC_KEY</tt>, byte-identical with <tt>https://www.tebako.org/.well-known/tebako-key.asc</tt>), so first-party signature verification needs no key distribution at all (§9's zero-interaction rule); the size-gated bootstrap stays fingerprint-only, the public key reaching its keyrings through the normal channels.</p>
+</li>
+<li><p id="_f501648a-dbbc-dad5-3418-7e500bb91091"><strong>Production (releases):</strong> every released part (runtime payloads, bootstrap, src tarballs, libraries) ships a detached  <tt>.asc</tt> per artifact PLUS a signed release manifest — one verify path for all.</p>
+</li>
+<li><p id="_bb45c9ac-8098-c528-3cbf-bafb3255bff7"><strong>Packages:</strong> the tpkg v2 extension (spec 02 §4) carries per-slot SHA-256 + signer keyid + the OpenPGP signature over the canonical trailer bytes.</p>
+</li>
+<li><p id="_e7dd248b-f7dd-10f9-68e5-9f865ce1192f"><strong>Rotation:</strong> a signed successor-key statement (<tt>TEBAKO-ROOT-SUCCESSOR-V1</tt> — canonical lines binding predecessor → successor fingerprint, detached signature from the predecessor) lets any machine forward trust with no out-of-band step: the loader applies the statement chain from a trusted root and TOFU-registers the successor. Revocation procedure documented and rehearsed.</p>
+</li>
+</ol>
+</clause>
+
+<clause id="_fba4e987-dc92-89cb-8cce-2868d6d0ac48" unnumbered="true" obligation="normative">
+<title id="_b7162c61-1de2-6af0-be0a-72c9553c91f2">3. Opt-in rules (locked)</title>
+<ul id="_acb196f3-dfa1-f34d-5f3b-06127b6b6b91"><li><p id="_413823be-f438-e11a-4894-48b6855439eb">Signing is <strong>per-package opt-in</strong>: <tt>tebako-pkg bundle --sign[=keyid]</tt>. Without it the package is plain v1, byte-identical to pre-signing — no key, no prompt, no ceremony. A press-local key is generated and cached under  <tt>$TEBAKO_HOME/keys</tt> only on the first explicit <tt>--sign</tt>.</p>
+</li>
+<li><p id="_e844dcea-85ef-edee-8501-935233b91a91">Rewrite operations (insert-image/remove-image/set-runtime/reassemble) preserve the input's signing state.</p>
+</li>
+<li><p id="_431e9a75-f9e4-4c47-8e2c-9f884f901acb"><strong>Only the presence of a signature is optional — verification of signed packages is always strict</strong> (exits 71/72, spec 06 §4).</p>
+</li>
+<li><p id="_1c2f1d30-a562-ff19-1c79-d7eb180f3d8c"><strong>v1-legacy rule:</strong> unsigned v1 packages exist in the wild and stay runnable — accepted as LEGACY with a loud stderr warning  <strong>on first acceptance per machine</strong> (marker <tt>$TEBAKO_HOME/warned-legacy/&lt;sha256(path|size|mtime)&gt;</tt>; a re-pressed or replaced binary warns again) plus an audit-journal entry on  <strong>every</strong> acceptance (tebako#400: the per-run repetition was unactionable noise; the durable remedy is  <tt>tebako press --sign</tt> — v2-signed trailers never warn). A package whose developer declared  <tt>quiet_notices</tt> (spec 23 §14) carries  <tt>TPKG_FLAG_QUIET_NOTICES</tt> (bit 3) and suppresses this warning and the spec 06 §5 progress lines on every run — the bit rides inside the signed region, so it cannot be forged onto a signed package, and the journal entry is written regardless. <tt>TEBAKO_REQUIRE_SIGNED=1</tt> is the explicit opt-in hard-fail for hardened environments — never the default; it is checked FIRST and outranks the quiet bit.</p>
+</li>
+<li><p id="_ce649e57-3c89-d850-c008-132af8bc80a6"><strong>Fail closed everywhere:</strong> no insecure-skip flag.</p>
+</li>
+<li><p id="_651afd9a-1607-77e1-dcc0-70bb77fb72c2">Encryption is likewise per-image opt-in (spec 10).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_2c5e7043-0ab0-3101-b289-e68145c39383" unnumbered="true" obligation="normative">
+<title id="_c192ad89-7421-6e60-012e-73141d672741">4. Verification points</title>
+<ul id="_ad4c8a05-ed32-6a1e-9e75-1d78cd812ae1"><li><p id="_77e0b9cc-266c-9c2b-4579-77e1d2b04f63"><strong>Press time:</strong> the CLI verifies release signatures before using any part (fail closed). Trusted keyring in  <tt>$TEBAKO_HOME</tt>; our root key embedded (the fingerprint in the loader, the full public key in the CLI); additional keys TOFU-registered with a named prompt. The point covers every part a press CONSUMES: the runtime pair (the runtime-fetch point's press leg, above) and every registry payload the compose closure (spec 23 §13) or the spawn walk (spec 23 §13.6, spec 32 §6) fetches — a declared  <tt>signature</tt> verifies BEFORE the bytes enter the payload cache and before the press pins their digest into the lock, so a tampered slice can never be laundered into a lock pin that downstream installs and runs then trust. The matrix is the install-time point's, unchanged: signed verifies strict (71 invalid / 72 untrusted / 72 signer-key-changed); unsigned warns loud + journals (<tt>event=legacy-unsigned-accepted</tt>) and fails closed (71) under <tt>TEBAKO_REQUIRE_SIGNED=1</tt>; a cache hit stands on its trust anchor (spec 05 §4 — verified when the bytes entered, never re-verified per use). This is spec 23 §13.4's trust uniformity made literal: carried and shared slices pass the same gate at the same moment.</p>
+</li>
+<li><p id="_692eefc9-3e05-ad5e-17a8-231aa2eaebfd"><strong>Install time:</strong> registry-pinned payload signatures verify against the trusted keyring PLUS the embedded root public key — a tamatebako-signed payload verifies Trusted on a fresh machine, no registration step.</p>
+</li>
+<li><p id="_c5324d2e-e3c3-e20d-936f-c70eb41cf744"><strong>Runtime fetch (resolve time — the per-binary fetch paths: the shim's dispatch-time download and the CLI's press-time resolver SHIPPED (roadmap 80/G1); the bootstrap's runtime download is the remaining leg, PLANNED):</strong> the resolver verifies the consumed index form's detached signature (§5) BEFORE trusting its digests, then verifies each fetched artifact whose entry declares  <tt>signature</tt> (spec 13 §2a) — always strict: an invalid signature → exit 71; a signer keyid whose primary is not in the trusted keyring → exit 72; a declared  <tt>.asc</tt> that does not fetch → exit 71 (a signing declaration without its signature asset is an invalid signing state, never a skip). The sha256 check then runs as today (exit 70). An entry with NO signature anywhere (a pre-signing release line — those releases are keep-forever, spec 13 §8) is accepted with a loud stderr warning + audit journal (<tt>event=unsigned-runtime-fetch</tt>) on every fetch — the download moment IS the trust decision here (§9's two-models rule) — and refused with exit 71 under  <tt>TEBAKO_REQUIRE_SIGNED=1</tt>. A bootstrap built without <tt>openpgp-verify</tt> treats declared runtime signatures exactly as it treats signed trailers (spec 06 §3): loud UNVERIFIED warning + journal, sha256 enforced as integrity-only, exit 71 under <tt>TEBAKO_REQUIRE_SIGNED=1</tt> naming the missing capability. The store markers keep their spec 05 §4 semantics — verification happens at fetch/install, never per run.</p>
+</li>
+<li><p id="_bf2c5b4c-4be3-3466-1ccb-9dd1d5447958"><strong>First run:</strong> the loader verifies the trailer signature against the keyring, then each slot's sha256 before mounting/extracting (streaming, one pass at install time; the trust-anchor marker avoids re-hashing every run — spec 05 §4).</p>
+</li>
+<li><p id="_b3609a68-4419-c691-39a7-a16e98fa6909"><strong>Runtime driver:</strong> re-verifies an image's sha256 against the trailer before mount (integrity; authenticity already established by the trailer signature).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_511941f8-ef89-4374-7b0f-76d6656a5f08" unnumbered="true" obligation="normative">
+<title id="_015ba550-6e02-df34-dff3-e5b23a7c62a3">5. Release index authentication</title>
+<p id="_489b8942-dad0-d5b3-e64c-0f5939cf2e59">Every index form a resolver can consume ships a detached <tt>.asc</tt> from the factory's release key, and the resolver verifies the signature of the form it consumed BEFORE trusting its hashes — closing the gap where a MITM swaps both package and unsigned manifest. Same keyring, same verify path. Per runtime factory release (spec 13 §2a): each per-package shard <tt>&lt;stem&gt;.manifest.json</tt> ships <tt>&lt;stem&gt;.manifest.json.asc</tt> (the sidecar-era authority is signed first), every per-asset  <tt>&lt;asset&gt;.sha256</tt> sidecar ships  <tt>&lt;asset&gt;.sha256.asc</tt>, and every payload asset (the interpreter exe, the env image, a windows dll) ships its own <tt>&lt;asset&gt;.asc</tt>. <strong>No artifact is ever "covered by" another artifact's signature</strong> (2026-09-12, roadmap 85): every served name carries its own <tt>.asc</tt> on signing-enabled lines, signed by the invocation holding the fresh bytes.  <strong>Bundle-era lines (additive, 2026-09-24, spec 36) keep the rule exactly</strong>: the served names are the bundle, its sidecar, and the shard — three  <tt>.asc</tt>s per leg — and the bundle's MEMBERS are not served names; their authenticity flows from the signed shard's per-member pins verified post-unpack (spec 36 §4), never from an assumption about the container. The monoliths are never release assets (spec 13 §2a's de-rendezvous), so no  <tt>manifest.json.asc</tt> / <tt>SHA256SUMS.txt.asc</tt> exist on a release; a consumer-side derived index verifies by re-derivation from the signed shards. The entry's  <tt>signature: {keyid, asc}</tt> fields name the per-artifact sidecars — the same SSOT rule as  <tt>filename</tt>: the factory declares the spellings, consumers flow them verbatim and never synthesize.  <tt>keyid</tt> names the signer's PRIMARY keyid (§9's primary-vs-subkey rule). All of it is additive: pre-signing releases carry none of it and stay installable under §4's unsigned-fetch rule (keep-forever, spec 13 §8); a release that declares a  <tt>signature</tt> for an artifact MUST ship that  <tt>.asc</tt> — a declaration without its signature asset is an invalid signing state (§4: exit 71 at fetch, and the factory's publish fails before that, spec 13 §2a).</p>
+</clause>
+
+<clause id="_dc420256-8b0e-a556-4e72-15fbb348fb17" unnumbered="true" obligation="normative">
+<title id="_8b12323d-c652-1317-9cd4-3c3c08fa633c">6. Tooling</title>
+<p id="_772c18cd-efcf-05cf-72f6-534e21726f0e"><tt>tebako-pkg sign</tt> (detached <tt>.asc</tt> per artifact + signed <tt>SHA256SUMS</tt>) and  <tt>tebako-pkg verify</tt> (Trusted/Untrusted/Invalid per artifact). Factory release flows invoke  <tt>tebako-pkg sign</tt> in CI (secrets-held armored root export; the private key never leaves CI secrets/hardware).</p>
+</clause>
+
+<clause id="_c94114f3-918f-2c08-2e50-da209683e245" unnumbered="true" obligation="normative">
+<title id="_0c2a8613-705f-a405-8186-6b8fa091e8b3">7. Ceremony status (roadmap 10)</title>
+<p id="_79eba214-aefb-5215-8da2-f9c12bf77239">The production root key ceremony was executed 2026-09-09: the classical Ed25519 root  <tt>9E210CA8E9FDE9E6587740B2EFC3C250F7862A48</tt> exists in the offline store,  <tt>EMBEDDED_ROOT_FINGERPRINT</tt> is filled, the fingerprint and public key are published on tebako.org (the trust-anchor page and <tt>/.well-known/tebako-key.asc</tt>), the CI secrets are wired (the finalize job signs releases behind  <tt>TEBAKO_RELEASE_SIGNING_ENABLED</tt>), and the sign/verify drill was rehearsed against a released tebako-pkg before go-live (trusted and tamper-invalid both proven).</p>
+
+<p id="_0d0008d2-6d31-2368-a117-feaad0b1309d">Recorded deviations from the <tt>docs/root-ceremony.md</tt> runbook (roadmap 36), each with its follow-up: no PQC root and no pre-made successor statement yet (the rnp line in use lacks ML-DSA — lands with the tebako-crypto toolkit, roadmap 72); the CI signing-subkey export is unprotected (tebako-signer passphrase-unlock follow-up); software storage in place of hardware tokens; the encryption subkey is X25519 in place of day-one ML-KEM; the revocation certificate is the tool-generated self-revocation. The full deviation record lives with the offline key store.</p>
+</clause>
+
+<clause id="_d2c1a164-5a8c-2ce8-a153-d040bb4f9c99" unnumbered="true" obligation="normative">
+<title id="_a4c2b403-3304-bc33-cf3e-32a431315826">8. Revocation (locked 2026-07-27)</title>
+<p id="_505e336c-ce75-edb4-f533-5587e8bd09b0">Rotation (successor statement) moves trust forward; REVOCATION kills a key with no successor — for compromise or retirement:</p>
+
+<sourcecode id="_658ee908-2661-4fb5-43a5-702af815bd9b"><body>-----BEGIN TEBAKO REVOCATION STATEMENT-----
+format: TEBAKO-ROOT-REVOCATION-V1
+fingerprint: &lt;40-hex revoked root&gt;
+created: &lt;unix seconds&gt;
+reason: compromise | retired | superseded
+-----BEGIN PGP SIGNATURE-----
+&lt;detached signature from the REVOKED key itself (self-revocation)
+ — or from the surviving PREDECESSOR root in a chain&gt;</body></sourcecode>
+
+
+<ul id="_5c90e2bd-da10-763c-d776-d17f62cfbb3d"><li><p id="_6474f312-12de-41e0-f057-76bd7d2b14c9">A self-revocation is proof of possession; a predecessor-signed revocation covers a lost key (the predecessor authorized the chain).</p>
+</li>
+<li><p id="_df85d6cc-1faf-80ad-042a-fa699fe8aa07">Consumers apply revocations from the successors dir alongside rotation statements: a revoked fingerprint is rejected even if it previously verified (fail-closed, named  <tt>RevokedKey</tt> → exit 72).</p>
+</li>
+<li><p id="_949b4ccc-8401-e5dd-2a7a-09800729b179">Revocations are additive files (<tt>&lt;fingerprint&gt;.revoke.asc</tt>), never edited history; the audit journal records every application.</p>
+</li>
+<li><p id="_612a7dc6-1e2e-7b01-b7cd-52c5ab310f3c">The ceremony doc (roadmap 36) includes rehearsing this once.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_15c54379-3b94-3c28-7175-8dd9744024d8" unnumbered="true" obligation="normative">
+<title id="_e4090ae9-63e1-b755-5450-0de23709554e">9. Third-party identity and key distribution</title>
+<p id="_2855aab6-e1e3-5ac6-2d17-65f92db02167">First-party slices verify against the embedded tamatebako root (§2). Third-party authors are not tamatebako; their slices and fat/slim binaries verify against THEIR OWN keys, and the question that decides everything is how a user's machine learns the right fingerprint. The method is the three-channel pattern — no channel alone is trusted, two channels agreeing are the trust event:</p>
+
+<ol id="_cc90823a-1bd1-3247-b37e-1872fed8ca25" type="arabic"><li><p id="_ce573c34-b359-1705-5eed-acfa6179ed1c"><strong>The registry (location-as-identity, primary channel).</strong> A registry ref pins an authenticated location (<tt>tfs:github:metanorma/metanorma</tt> is GitHub's guarantee that this is the metanorma org). The registry index carries a  <tt>signing:</tt> block at its head: armored public key, fingerprint, and an optional canonical key URL.  <tt>tebako add-registry</tt> fetches the index, verifies the block's key IS its declared fingerprint (an inconsistent block is the registry's malformation, exit 65 — never a trust question), displays the fingerprint and the cross-check URLs, and asks for confirmation (TOFU). On confirmation the key is pinned to  <tt>$TEBAKO_HOME/trust/&lt;FINGERPRINT&gt;.pub</tt> and the registry's config book entry records the fingerprint (<tt>signing_fingerprint:</tt>) so re-adds short-circuit and <tt>tebako keys list</tt> shows the binding [shipped — tebako#617]. An already-trusted key (embedded root, keyring, an earlier pin) asks nothing. Non-interactive flows supply the expected fingerprint out of band via <tt>--expect-fingerprint &lt;hex&gt;</tt> — never a blind yes; a mismatch is the trust class (exit 72) printing both fingerprints.</p>
+</li>
+<li><p id="_a49afe56-dc50-849e-1cdb-decf1f70727c"><strong>Out-of-band confirmation (second channel, never auto-trusted).</strong> Authors publish the same fingerprint where their audience already trusts them:  <tt>https://&lt;author-domain&gt;/.well-known/tebako-key.asc</tt> (the well-known convention), their docs/README, and for GitHub-hosted projects the org's  <tt>.github</tt> repository (zero new infrastructure). The CLI prints these URLs for the user to compare; it never upgrades trust from the second channel silently.</p>
+</li>
+<li><p id="_73714f93-5b53-cc30-2b46-7d1bc47271b4"><strong>Fingerprint-addressed directories (no trust needed).</strong> OpenPGP keyservers are used as directories: fetch BY fingerprint, authenticate the fetched key against the channels above. A swapped key has the wrong fingerprint by construction, so the directory itself needs no trust.</p>
+</li>
+</ol>
+
+<p id="_5fa031ba-dff5-8112-e17e-2c0327582ef0"><strong>Continuity is the security property.</strong> After the first confirmation, every artifact from that identity must verify against the pinned key. A key mismatch fails closed (<tt>SignerKeyChanged</tt>, exit 72) and displays both fingerprints; a valid successor chain (§8 rotation) forwards automatically after displaying the chain proof, re-pinning the new key.</p>
+
+<p id="_e8f89c78-fc7a-8374-4a84-0afce625e26a"><strong>A signature pin names the PRIMARY keyid — the identity, not the instrument.</strong> A well-formed release key signs data with a signing SUBKEY (a certify-only primary never signs; the 2026-09-09 root is this shape), so the signature's issuer keyid is the subkey's, while the identity a registry pins is the primary's (its low 64 bits, 16 lowercase hex). Verification therefore resolves the verified issuer to its primary through the keyring before comparing (<tt>tebako_signer::primary_keyid_of</tt>); a pin naming the issuer subkey directly also matches (exact compare first). Consequence: rotating the signing SUBKEY under an unchanged primary never invalidates existing registry pins. Publishers pin the primary —  <tt>tebako-pkg sign</tt> and <tt>tebako publish</tt> both report it (the sign line names the primary keyid; when a subkey did the signing, the issuer is reported alongside for transparency).</p>
+
+<p id="_14e36e14-43f9-affd-20e9-ee99536f6f3c"><strong>Per artifact class:</strong></p>
+
+<ul id="_0e365ab8-b7d0-3b34-9c50-47b77a93150f"><li><p id="_4e11e50f-f61a-5c7d-d457-2de5c350760c">Registry index: verified against the pinned registry key on every refresh.</p>
+</li>
+<li><p id="_d5a9d9ca-4242-bdff-83b6-5ee5dd3aeafb">Payload slices: signed trailer verified against the author's pinned key; per-slot digests chain off it (§4).</p>
+</li>
+<li><p id="_cf43a629-f742-82cf-6a7b-edfd82ab3bad">Runtime slices (tamatebako): the embedded root — nothing to register.</p>
+</li>
+<li><p id="_321c7e48-701d-aa59-0843-73e2973e8a40">Runtime slices (third-party — discovered through a registry's <tt>kind: runtime</tt> entry, spec 05 §2's registry-derived base): the publishing registry's pinned key — the channel that supplied the download base also anchors the key, so a third-party runtime adds no ceremony past the add-registry TOFU. The entry's  <tt>signature.keyid</tt> must resolve to that pinned primary (mismatch →  <tt>SignerKeyChanged</tt>, exit 72).</p>
+</li>
+<li><p id="_40597744-02b3-f3e9-5808-a77873f44f86">Third-party fat/slim binaries: verified at install/import against the pinned author key (the same verify path); the author may ALSO OS-codesign with their own Developer ID — Apple/Microsoft gates then vouch at execution time, orthogonally and complementarily (spec 12 §5).</p>
+</li>
+</ul>
+
+<p id="_735a0266-2d47-ae1b-3db6-49a91e20fd1d"><strong>The two distribution models decide what a warning is worth (tebako#400).</strong> Who made the trust decision, and when, differs by package shape — the notice policy follows from it:</p>
+
+<ul id="_a2f0ef21-b192-1f68-392a-efbcad76fa60"><li><p id="_0adaa8a8-6293-d87f-7dc5-997f0fc50491"><strong>Fat binary (bootstrap + payload downloaded as ONE artifact).</strong> The user's trust decision is explicit and happens ONCE, at download time — fetching the binary from a location they chose, like any binary download. A per-run signature warning on such a package is unactionable noise: the user cannot re-verify at run time what they already decided to fetch and run. The developer may therefore declaratively suppress it for every run of the package (<tt>quiet_notices</tt>, spec 23 §14 — shipped; the bit rides inside the signed region, and  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> still outranks it).</p>
+</li>
+<li><p id="_79744680-69f7-d0e8-2370-eb37a1325a75"><strong>Separately-resolved lean payloads.</strong> The package names its runtime and slices; the loader RESOLVES them at first run from whatever the registries serve at that moment. The download-time decision no longer covers the payload bytes — here the signature IS the trust mechanism (§4's verification points), and the warnings on unsigned resolutions stay justified and loud.</p>
+</li>
+</ul>
+
+<p id="_88e53c5b-21f5-117c-60a1-19906f14757a"><strong>Press signing (shipped — tebako#400 S1).</strong> Signing stays per-package OPT-IN (§3): a press with no signing declaration on any channel produces the v1-unsigned trailer, byte-identical to pre-signing output, and never touches key material. The declaration rides the  <tt>sign</tt> registry setting (spec 23 §14) through three channels, resolved  <strong>CLI → env → compose document → default (unsigned)</strong> — auto-sign must never surprise:</p>
+
+<ul id="_896f9b78-493a-c253-e7b1-74639b1ff733"><li><p id="_39fa35cb-eda9-96b7-8822-dfcce09314dc"><tt>tebako press --sign</tt> signs the produced package with the press-local key (generated and cached under  <tt>$TEBAKO_HOME/keys</tt> on first explicit use, auto-registered into the local trusted keyring); <tt>--sign=&lt;keyid&gt;</tt> signs with the named secret key from <tt>$TEBAKO_HOME/keys</tt> — a keyid matching no key is a NAMED error raised before any heavy work, never a silent fallback to the default key.</p>
+</li>
+<li><p id="_fceacf35-8fb0-aafe-a89a-24d42167120c"><tt>TEBAKO_SIGN=1</tt> is the machine-wide declaration and the compose document's  <tt>sign: true</tt> the repo-carried one; both sign with the press-local key (a keyid is per-machine material and never rides a git-shared document).</p>
+</li>
+<li><p id="_99ab3d0c-425a-98f9-d51f-3418856687b6"><tt>--no-sign</tt> (or <tt>TEBAKO_SIGN=0</tt>) wins over every lower channel. An opt-out that overrides a lower channel's  <tt>sign</tt> declaration is LOUD — a stderr warning plus an audit-journal entry (<tt>event=press-sign-opt-out</tt>) — because silently dropping an authored signature declaration would be a quiet trust downgrade (invariant 9).</p>
+</li>
+</ul>
+
+<p id="_ced82f47-e35e-c58c-3c13-dc5962faf2bf"><strong>Developer ergonomics (target UX; status in braces).</strong> <tt>tebako keygen</tt> creates a keypair in  <tt>$TEBAKO_HOME/keys/</tt> and prints the fingerprint with the exact text to paste into docs + the well-known location [partial: key creation exists];  <tt>tebako press --sign[=&lt;keyid&gt;]</tt> signs the produced package, with  <tt>TEBAKO_SIGN</tt> / the compose <tt>sign:</tt> key as the machine-wide and repo-carried declarations and  <tt>--no-sign</tt> as the loud opt-out [shipped];  <tt>tebako publish</tt> signs every artifact + the index and writes the  <tt>signing:</tt> block into the registry index automatically [shipped in install-UX];  <tt>tebako key rotate</tt> creates + signs + publishes a successor statement in one command [planned]; revocation follows §8 [format locked].</p>
+
+<p id="_8a10fd8e-fdef-02d4-3ad4-955dd420122c"><strong>User ergonomics.</strong> First-party: zero interaction, ever (embedded root — the CLI carries the root public key, so first-party artifacts verify Trusted on a fresh machine). Third-party: one informed consent per author (the TOFU prompt), then silent verification forever.  <tt>tebako keys list|remove</tt> manage the signing-key trust inputs (the keyring and the add-registry pin store) [shipped — tebako#617; the  <tt>trust</tt> verb family is the TLS CA store, spec 22 §4];  <tt>tebako doctor</tt> re-verifies installed artifacts against pinned keys [roadmap 50]. Unverified artifacts always produce the loud warning + journal (§3);  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> refuses them outright.</p>
+</clause>
+
+<clause id="_f772585d-1a7b-1c35-179e-7c97c901460e" unnumbered="true" obligation="normative">
+<title id="_631e75f9-4a83-727d-3719-6e5d5486aab8">10. Key retrieval from the trust-anchor channel (locked 2026-09-18)</title>
+<p id="_aa0e6a6d-766d-b8a3-4dd7-a9a42db38535">A signed artifact whose pinned <tt>signature.keyid</tt> is absent from the local keyring used to be a dead end ("register the publisher's key, then retry"). For keys ON THE TAMATEBAKO ROOT CHAIN the machine can now close that gap itself: the pubkey is fetched from the trust-anchor publication (§2's tebako.org channel) and admitted ONLY through the chain —  <strong>trust never extends silently, and never extends by TOFU.</strong></p>
+
+<ul id="_2a660f33-016d-644a-be1d-ab7732a788cb"><li><p id="_fe5df449-5720-3f2b-f378-6b49ae633bf2"><strong>The well-known grammar (the tebako.org publication owns these spellings; consumers flow them, never re-derive):</strong></p>
+<ul id="_00be8110-8f81-ae49-bc9c-07a1b5ac3d04"><li><p id="_7ba126df-4387-32bd-8ead-5f5af7d73d8d"><tt>https://www.tebako.org/.well-known/tebako-keys/&lt;keyid&gt;.asc</tt> — the armored public key whose PRIMARY keyid (16 lowercase hex) is <tt>&lt;keyid&gt;</tt>. The root's own key answers here as well as at the legacy  <tt>tebako-key.asc</tt> (which stays the human-facing spelling).</p>
+</li>
+<li><p id="_90b207e0-bde7-fc78-1c07-0beb396dc02b"><tt>https://www.tebako.org/.well-known/tebako-successors/&lt;predecessor-fingerprint&gt;.asc</tt> — the  <tt>TEBAKO-ROOT-SUCCESSOR-V1</tt> statement (§2's rotation format) rotating FROM  <tt>&lt;predecessor-fingerprint&gt;</tt> (40 uppercase hex).</p>
+<p id="_dc306d01-0bfe-0e5a-edd1-3e7f2c9b68a2">The directory is a DIRECTORY (§9.3's keyserver rule): a fetched key authenticates by chaining, never by the channel that served it. <tt>TEBAKO_ANCHOR_BASE</tt> overrides the publication base (air-gapped mirrors, tests) — an AVAILABILITY knob, never a trust knob: admission still requires chaining to the embedded root.</p>
+</li>
+</ul>
+</li>
+<li><p id="_5d83af91-7a67-544a-d50a-1f7387b48029"><strong>The admission rule.</strong> A retrieved key is usable — for this verification and for registration into the trusted keyring — iff:</p>
+<ol id="_897e3090-1468-cd91-b70d-8aee927bbd81" type="alphabet"><li><p id="_f088aeb1-00cc-6e86-fd27-ca3d6499e2e6">its primary fingerprint IS the embedded root (<tt>EMBEDDED_ROOT_FINGERPRINT</tt> / <tt>TEBAKO_TRUSTED_ROOT</tt>); or</p>
+</li>
+<li><p id="_3c0f0a77-9b15-7219-8641-11de6ef4e762">it chains to a locally trusted root through verified successor statements: starting at the embedded root fingerprint, each hop fetches  <tt>tebako-successors/&lt;current&gt;.asc</tt> and verifies the statement against the current root's key (the embedded public key, the trusted keyring, or a key retrieved and admitted earlier in the same walk); the walk ends at the retrieved key's fingerprint (admitted, basis = the verified path) or where no further statement exists (NOT admitted). The walk is bounded (8 hops) — a cycle is a dead end, not a hang; or</p>
+</li>
+<li><p id="_0be9d32d-e3e2-e934-f20d-fabb87cda983">it is already in the trusted keyring (no fetch at all).</p>
+<p id="_11e5e02d-cd14-80b5-94e0-631ac8c805e2">Anything else is the NAMED error <tt>KeyRetrievalFailed</tt> (exit 72, the trust-failure class): the message prints the retrieved key's fingerprint LOUDLY for out-of-band confirmation and names the manual path (<tt>tebako keys import &lt;file&gt;</tt>) — the same refusal shape as today, now with the fingerprint to compare. A  <tt>tebako-keys</tt> URL that does not resolve (404) is the same named error class naming the URL.</p>
+</li>
+</ol>
+</li>
+<li><p id="_951bb262-ed89-14fb-740e-8fa7996181c9"><strong>Concurrency.</strong> Retrieval is a tiny independent fetch and runs CONCURRENT with the plan's artifact streams (spec 05 §6); an artifact's signature verification starts when both its bytes and its key are present. A retrieved-and-admitted key is registered into the trusted keyring (§2's rotation rule: the loader TOFU-registers a verified successor) so the next verification is local.</p>
+</li>
+<li><p id="_7454dad7-c9af-0f2d-ca5e-84f88ba8cb92"><strong>The audit journal</strong> records every retrieval: one row per event with the pinned keyid, the admitted fingerprint, the source URL, and the chain basis (<tt>embedded-root</tt> / <tt>successor:&lt;path&gt;</tt> / <tt>already-trusted</tt>) — trust events are exactly what the journal is for. Failed retrievals journal too (<tt>event=key-retrieval-failed</tt>).</p>
+</li>
+<li><p id="_687f5888-3f74-a81f-7779-f5453d04bb35"><strong><tt>TEBAKO_OFFLINE=1</tt> skips retrieval entirely</strong> (no network): the verification keeps the pre-ceremony outcome — the pinned keyid is absent, the named untrusted-signer error (exit 72) stands.</p>
+</li>
+</ul>
+</clause>
+</sections>
+</metanorma>

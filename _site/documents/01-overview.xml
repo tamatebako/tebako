@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">System overview</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 01</docidentifier><docnumber>TBK SPEC 01</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><sections><clause id="_93f20eaf-467f-39f8-1fa7-c60e444b8cb7" unnumbered="true" obligation="normative">
+<title id="_bb333833-5d1b-4448-aa34-55f60b995316">What tebako is</title>
+<p id="_b01a6a78-6e76-0c27-f34c-c184c005df57">Tebako is a <strong>packaging and loading ecosystem</strong> — not a Ruby tool. Ruby is the first runtime instance. The system is generic across four axes:</p>
+
+<ul id="_587f0375-0dc3-5e8b-f1c3-96ae76ecaeb8"><li><p id="_b26eaadc-fa17-1022-796c-0e8d6fd453dc"><strong>Any runtime.</strong> A runtime is a payload that <em>provides</em> an interpreter (ruby today; python, julia, qtk, anything later). The loader neither knows nor cares what language it starts.</p>
+</li>
+<li><p id="_04f40b6b-1d63-c9ed-746b-881da48a81d8"><strong>Any platform.</strong> Artifacts are per platform triplet (spec 03 §platform axis); payloads may also be  <tt>universal</tt>.</p>
+</li>
+<li><p id="_459236e4-4adf-ea10-adb4-a1080109e8cf"><strong>Any payload.</strong> Application code, data, fonts, native tools, runtimes themselves — all images of the same kind, differing only in what their manifests declare.</p>
+</li>
+<li><p id="_10a00d59-850d-de4b-eaf8-70d2858ab4f7"><strong>Any composition.</strong> Payloads stitch onto a single binary, and payloads recursively mount other payloads at paths (spec 11 §encapsulation).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_3bd94493-2fda-b183-e25a-b6f06bd4a413" unnumbered="true" obligation="normative">
+<title id="_fb182703-c148-aab8-75e5-c8c7fcb9f4e2">Core capabilities</title>
+<ol id="_036a8508-6aeb-4689-840c-4f94ae9a1d2e" type="arabic"><li><p id="_99da0987-aac9-ec4d-3d25-bc869b8ddc74"><strong>Stitch</strong> — N payload images + bootstrap into one executable (fat), or a small executable resolving parts on demand (lean).</p>
+</li>
+<li><p id="_cdefb028-e17d-9a91-7500-d78f6d1611a0"><strong>Load</strong> — mount payloads (recursively) into one VFS; transfer control to the declared entrypoint.</p>
+</li>
+<li><p id="_edc2be54-afcb-2386-b434-5a2dbf30320b"><strong>Share</strong> — runtimes and payloads download once into a machine-wide content cache; every package on the machine reuses them.</p>
+</li>
+<li><p id="_1c6dbc6d-a914-cd84-d33a-3ab5d664fbe6"><strong>Shim</strong> — tebako manages shims for EVERY executable every installed payload provides; one payload may provide MULTIPLE executables, each becoming a registered command (spec 07).</p>
+</li>
+<li><p id="_096be5a2-1c70-472f-553f-1215be4ab76d"><strong>Jail</strong> — declarative host-filesystem policy per run, enforced by the VFS layer (spec 08).</p>
+</li>
+<li><p id="_46d93cab-6c0b-36ab-227d-4b0b38391749"><strong>Trust</strong> — opt-in per package: authentication, signatures, encryption (specs 09, 10). Unsigned stays first-class.</p>
+</li>
+</ol>
+</clause>
+
+<clause id="_02bc84b5-afed-c920-bd14-f3ada879b76a" unnumbered="true" obligation="normative">
+<title id="_b6235206-097a-ae3f-ebef-b2a5222b960b">Repositories and languages</title>
+<p id="_7cf30779-ea23-133c-af37-59dd32a8a34c">Tebako-owned C/C++ exists in exactly <strong>one</strong> repository: <tt>dwarfs-t</tt>. (The  <tt>tamatebako/ruby</tt> fork carries upstream ruby's own C source plus patches — vendored upstream, not ours;  <tt>tebako-runtime-ruby</tt> is build orchestration that links the Rust staticlibs  <tt>tfs</tt> + <tt>tebako-driver</tt>.) Everywhere else: Rust, pure Ruby, or Docker. Owner-locked.</p>
+
+<table id="_43bfa0bf-3536-d317-72d1-753acd157322"><thead><tr id="_c0a39e31-df69-0b63-2b6c-a1a493be416a"><th id="_c59116aa-9319-061e-92b8-a67e2119cc18" valign="top" align="left">Repo</th>
+<th id="_b43fcefd-b3f7-5fbf-33ea-24dd6a99c9af" valign="top" align="left">Language</th>
+<th id="_ef981099-1817-dfc5-e793-61969d28b67b" valign="top" align="left">Role</th>
+</tr></thead>
+<tbody><tr id="_b7cb8b79-d445-6833-2eee-a9ece0d21a46"><td id="_e4a32610-3039-8762-f647-708e6e7da229" valign="top" align="left"><tt>tamatebako/ruby</tt></td>
+<td id="_a1547ec0-d600-4f17-0922-e5ab80c4e2f6" valign="top" align="left">Ruby tooling + C (ruby)</td>
+<td id="_c3c488d7-a47a-5f83-0bef-13d4ba39a98f" valign="top" align="left">Patch sets (canonical <tt>.patch</tt> files + <tt>versions.yml</tt>); release = patched source tarballs per version × scenario. The <em>source factory</em>.</td>
+</tr><tr id="_f56a6a81-56e2-e101-bf5e-9a104ef992d7"><td id="_ca3cb347-d9f4-ff00-4ebc-deda1552ce0d" valign="top" align="left"><tt>tebako-runtime-ruby</tt></td>
+<td id="_d538671b-7c47-4f2a-dbd8-19d0ef738fac" valign="top" align="left">Ruby builder + C/CMake</td>
+<td id="_f88858e3-1e6b-c911-58e2-58648a72c423" valign="top" align="left">Builds runtime payloads per version × triplet; release = interpreters + <tt>.tfs</tt> images + index. The <em>runtime factory</em> (first instance; python/julia factories follow the same shape).</td>
+</tr><tr id="_db2c61d3-157c-5eac-e412-400ce48c568e"><td id="_63f70cad-199b-dab0-7e40-d259913bed33" valign="top" align="left"><tt>tamatebako/dwarfs-t</tt></td>
+<td id="_3c2a201f-5469-da99-5de6-5c926a505554" valign="top" align="left">C++</td>
+<td id="_d1105827-ff7a-bb0a-4ae0-76aaadccbafe" valign="top" align="left">The DwarFS-T image format: <tt>libdwarfs_c</tt> reader + creation-time Writer. The only surviving C++ library; read-only at runtime forever.</td>
+</tr><tr id="_dd7dba1d-5af0-7a84-f765-03295f67b089"><td id="_4eccce96-40fa-6af7-2948-c8f7e3ed37e1" valign="top" align="left"><tt>tamatebako/dwarfs-rs</tt></td>
+<td id="_4f536dd4-547f-f67c-4bb2-9f43b48f9e08" valign="top" align="left">Rust (FFI)</td>
+<td id="_4a714088-4531-3bdc-4d71-866ee7bbe88b" valign="top" align="left"><tt>dwarfs-t</tt> / <tt>dwarfs-t-sys</tt> safe bindings to <tt>libdwarfs_c</tt>. Standalone by design — not tebako-specific.</td>
+</tr><tr id="_00ae5b33-68f2-44ff-a066-85c60ebefc84"><td id="_87514b53-a0dd-61b3-c2ab-438dbe356b3c" valign="top" align="left"><tt>tamatebako/tebako</tt></td>
+<td id="_7411c8ea-90fc-dd6e-a50a-c82084631637" valign="top" align="left">Rust only</td>
+<td id="_b9d5f940-7972-603d-920c-dcaab8281b02" valign="top" align="left"><strong>The product</strong>: packager, loader, VFS, formats, trust. (The repo-swap 2026-07-27: formerly <tt>tebako-rs</tt>; the C++/gem era is archived at <tt>tamatebako/tebako-v1</tt>.)</td>
+</tr><tr id="_25a8c264-bed1-66e8-d4ff-787b83673047"><td id="_4f21aaf6-f1e1-d78b-0ff5-944a67ad893a" valign="top" align="left"><tt>tebako-ci-containers</tt></td>
+<td id="_ace5741c-b8ff-b960-4c84-c4b2d237b28c" valign="top" align="left">Dockerfile</td>
+<td id="_44b23f17-a9ff-bff5-df5d-a39d6b1cea34" valign="top" align="left">Toolchain images for the three factories.</td>
+</tr><tr id="_851ba2ca-ce2e-c6ec-c6e0-643a92cab0de"><td id="_e2311a11-4caa-3d34-48b0-4db7230dad2d" valign="top" align="left"><tt>tebako.org</tt></td>
+<td id="_56c40a07-4779-522d-d9d5-45e659c1e231" valign="top" align="left">AsciiDoc/Astro</td>
+<td id="_834bb157-141d-8c9b-0041-75341af082de" valign="top" align="left">Docs, blog, trust-anchor publication.</td>
+</tr><tr id="_e7549f68-1b77-70d9-ea2b-2053b26581fe"><td id="_9bd17dae-d845-5c2c-79a3-ee1c01494e1f" valign="top" align="left"><tt>tamatebako/tebako</tt> (gem)</td>
+<td id="_a965684f-2300-f0c5-9bdb-7a0f7bb633dc" valign="top" align="left">Ruby</td>
+<td id="_c2db7bea-0540-9d79-25a4-b40fe077fdea" valign="top" align="left">RETIRED as orchestrator (2026-07-26); maintenance mode. Endgame: a ~100-line pure-Ruby installer shim that fetches the platform binary (no FFI), or full archival.</td>
+</tr><tr id="_2514196d-8ec1-ca16-4758-8a454f895a9b"><td id="_73b3ac8f-1d66-a8b5-62a9-6d98216f2653" valign="top" align="left"><tt>tamatebako/libtfs</tt> (C++)</td>
+<td id="_83304d51-78e9-a911-a346-9223a71167ee" valign="top" align="left">C++</td>
+<td id="_631baeb4-55f5-d13c-5ab2-55de992d5219" valign="top" align="left">LEGACY; superseded by <tt>crates/tfs</tt> (164-test contract parity).</td>
+</tr></tbody>
+</table>
+</clause>
+
+<clause id="_eec4b04a-6202-2f5e-d095-f7312ab22b82" unnumbered="true" obligation="normative">
+<title id="_ecc066d2-51a3-b16a-0014-5ea320652e18">tebako-rs crate roles (MECE, open/closed)</title>
+<table id="_0d2eb45a-e642-031e-3573-fd7ce06750b7"><thead><tr id="_903969d9-0fa0-875d-caa5-01df74dac64c"><th id="_f2ea46f5-72a8-a1e2-61a5-ca89b482b8a1" valign="top" align="left">Crate</th>
+<th id="_2d917ad3-bd02-8ad2-2348-e696dc647475" valign="top" align="left">Kind</th>
+<th id="_dce28e54-46b0-99ea-c2c5-c4531d0df198" valign="top" align="left">Role</th>
+</tr></thead>
+<tbody><tr id="_37dda732-606c-d1ec-0bef-863444a487fe"><td id="_c7fd9b7e-9dae-2548-2c0a-d8ff62b4f1cd" valign="top" align="left"><tt>tpkg</tt></td>
+<td id="_3a05f461-a2e3-4680-3ff8-0f52f59a1bf8" valign="top" align="left">lib</td>
+<td id="_f168e56e-35f0-25e7-d03b-e20b4ac0e731" valign="top" align="left">L0 wire format, single source of truth (spec 02). <tt>#![forbid(unsafe_code)]</tt>.</td>
+</tr><tr id="_7768a036-b405-d322-9a54-8d5b2ae473e1"><td id="_e258ff4e-7182-4615-d4de-2a2f28491fb4" valign="top" align="left"><tt>tfs</tt></td>
+<td id="_2d0c346b-83b4-9c9b-98a7-e6f705349d89" valign="top" align="left">lib (cdylib+staticlib+rlib)</td>
+<td id="_0370172a-d44c-cc95-0c60-b01856791282" valign="top" align="left">The Rust TFS (spec 11): <tt>tebako_fs_*</tt> C ABI, mount table, dispatch, backends ZIP/DwarFS/SquashFS. Sole home of future COW/ENC transforms.</td>
+</tr><tr id="_be61a024-f08d-eca0-6434-40de9aeb60a1"><td id="_4c258142-7308-71b4-f094-0b0c06a3c2da" valign="top" align="left"><tt>sqfs-sys</tt></td>
+<td id="_809c4119-c393-a452-3fea-83b6446439c7" valign="top" align="left">lib (FFI)</td>
+<td id="_e52aea85-836a-9f5a-903f-43565d849dac" valign="top" align="left">libsquashfs-tools-ng FFI, ABI-pinned.</td>
+</tr><tr id="_237aef62-3f62-1268-726f-b7329ffd6302"><td id="_e7767d53-7d1a-9aaa-278e-292617f7dd49" valign="top" align="left"><tt>tebako-pkg</tt></td>
+<td id="_49de128c-2998-3603-2730-099cb01c53f5" valign="top" align="left">bin</td>
+<td id="_1c189c89-6957-81b1-90d2-4ed564f1b92e" valign="top" align="left">Container surgery: <tt>info/bundle/unbundle/reassemble/insert-image/remove-image/set-runtime/sign/verify</tt>.</td>
+</tr><tr id="_42c3e0bd-564b-4f5b-7149-ced701a9729f"><td id="_4047efbe-0ab4-7603-d77c-d477bf584751" valign="top" align="left"><tt>tfs-cli</tt></td>
+<td id="_b6fc4b05-6487-d79b-11cb-36fece7733b1" valign="top" align="left">bin</td>
+<td id="_0b47ba13-2b2f-613a-0041-db1e0562c60f" valign="top" align="left">The <tt>tfs</tt> image tool: <tt>info/ls/tree/cat/stat/extract/find/mkimage</tt> (in-process Writer).</td>
+</tr><tr id="_10bf0a2f-12c8-c7cd-cecf-8262bba29853"><td id="_39c1e00f-747b-dc68-5ce9-9291654fdef7" valign="top" align="left"><tt>tebako-cli</tt></td>
+<td id="_a086bf17-dd01-221e-de25-cfb94e8f1258" valign="top" align="left">bin</td>
+<td id="_85742131-b216-30e8-3a9f-a91beaa1df8b" valign="top" align="left">The packager: <tt>press</tt> (lean/fat), <tt>cache list/prune</tt>.</td>
+</tr><tr id="_5de1f52b-c22f-35b4-3032-ba212b287790"><td id="_b82ae3ff-c2d7-ced3-cde2-04ebadcf4f06" valign="top" align="left"><tt>tebako-bootstrap</tt></td>
+<td id="_edde5c32-5322-80c2-9de3-113431eecb71" valign="top" align="left">bin</td>
+<td id="_fdcff27b-a28e-27f8-6dd1-ead0db89f706" valign="top" align="left">The loader (spec 06): trailer parse, resolution, verification, ABI-v1 handoff. &lt; 3 MB static, size-gated (unverified-first: rnp/botan feature-gated out; OpenPGP moves to the roadmap-72 crypto toolkit).</td>
+</tr><tr id="_15e19e39-abb1-bf06-cbc5-f8140d6649cf"><td id="_0a1a5cdf-354b-3a17-e286-216cead8d536" valign="top" align="left"><tt>tebako-driver</tt></td>
+<td id="_4196cb36-5a74-e108-fd39-770c8dd08106" valign="top" align="left">lib (staticlib+rlib)</td>
+<td id="_cfdaf9a6-28fb-9597-eced-3def0246764f" valign="top" align="left">The spec-17 runtime driver: mounts the env image + payload images into the process-global TFS context, applies <tt>TEBAKO_JAIL</tt>, rewrites argv to the entrypoint. Linked into every runtime executable. The Rust successor of the v1 C++ <tt>tebako-main</tt>.</td>
+</tr><tr id="_a0ea08e9-b25a-69ae-62f9-543ed2d2544c"><td id="_3d5ecb69-e80b-3bee-a97f-898b0d077f8c" valign="top" align="left"><tt>tebako-http</tt></td>
+<td id="_6264e449-c524-4c4c-0ed6-6905afdd3a69" valign="top" align="left">lib</td>
+<td id="_292eb91d-ad6a-5363-f15f-c1fa9f35fe52" valign="top" align="left">In-process HTTPS (ureq+rustls, webpki-roots bundled; OS roots opt-in).</td>
+</tr><tr id="_4688a7a2-e860-1067-c25a-c33ed42779a9"><td id="_21cb0ea4-ed75-8ebb-3683-ba092a1a0ffc" valign="top" align="left"><tt>tebako-signer</tt></td>
+<td id="_1691b23a-ac3e-3bc4-4d36-bfbf7bc2f91f" valign="top" align="left">lib</td>
+<td id="_ace7586c-6c5d-e1a3-40e9-aab9f9c372b7" valign="top" align="left">OpenPGP via <tt>rnp-rs</tt> (crates.io, <tt>vendored</tt>); successor-key rotation.</td>
+</tr><tr id="_adeb193d-6d3b-884a-6239-bb25e94fca4a"><td id="_47f046e7-97cb-d4fa-29a4-169d45f0b840" valign="top" align="left"><tt>tests/contract</tt></td>
+<td id="_c2c28628-8a23-3097-2830-cf27b59efaac" valign="top" align="left">tests</td>
+<td id="_a075e967-118f-81ae-6b16-740895b02ee6" valign="top" align="left">The parity oracle: the C++ c_api suite through the Rust ABI (164 tests).</td>
+</tr></tbody>
+</table>
+</clause>
+
+<clause id="_58e86595-b119-c509-8cb5-8fd39ee5d85e" unnumbered="true" obligation="normative">
+<title id="_741476d2-5b99-d36a-626c-b319c67e05cc">Per-language tpkg bindings</title>
+<p id="_364041da-7228-bf64-8665-42456962b734">The tpkg contract is manipulated per language — never by shelling a foreign binary:  <tt>crates/tpkg</tt> (Rust), <tt>tpkg.h</tt> (C, cbindgen — lands with its first real C consumer),  <tt>tpkg.rb</tt> (Ruby, formalized from the gem's trailer reading).</p>
+</clause>
+</sections>
+</metanorma>
