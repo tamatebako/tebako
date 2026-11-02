@@ -8,6 +8,16 @@ use crate::{
     TPKG_VERSION,
 };
 
+/// The flag bits a v2-era reader understands (spec 18 S4): LEAN,
+/// SIGNED_V2, NO_INSTALL, QUIET_NOTICES (bits 0–3). An unknown set bit
+/// is a named refusal — flags are load-bearing, never skipped (the
+/// forward-compat law: a v2-flag package from a newer writer is refused,
+/// never silently accepted).
+pub(crate) const KNOWN_PACKAGE_FLAGS: u32 = crate::TPKG_FLAG_LEAN
+    | crate::TPKG_FLAG_SIGNED_V2
+    | crate::TPKG_FLAG_NO_INSTALL
+    | crate::TPKG_FLAG_QUIET_NOTICES;
+
 /// One payload slot (the in-Rust form of C `tpkg_slot`).
 ///
 /// `mount_point` is the full fixed-width field (NUL-padded on the wire);
@@ -209,6 +219,12 @@ impl Manifest {
         if self.version != TPKG_VERSION {
             return Err(TpkgError::Version);
         }
+        // spec 18 S4: an unknown package_flags bit is a named refusal,
+        // never a silent accept — flags are load-bearing, so a bit this
+        // reader does not understand must not pass silently.
+        if self.package_flags & !KNOWN_PACKAGE_FLAGS != 0 {
+            return Err(TpkgError::Invalid);
+        }
         if self.slots.is_empty() || self.slots.len() > TPKG_MAX_SLOTS as usize {
             return Err(TpkgError::Slots);
         }
@@ -313,5 +329,24 @@ mod carries_package_manifest_tests {
             .expect("the critical bit rides the type word"),
         );
         assert!(m.carries_package_manifest());
+    }
+
+    #[test]
+    fn an_unknown_package_flag_is_a_named_refusal() {
+        // spec 18 S4: flags are load-bearing, never skipped — a bit this
+        // reader does not understand is refused, not silently accepted.
+        let mut m = manifest();
+        let mut slot = crate::Slot::default();
+        slot.size = 1;
+        m.slots.push(slot);
+        assert!(m.validate().is_ok(), "a clean manifest validates");
+        m.package_flags = crate::TPKG_FLAG_LEAN;
+        assert!(m.validate().is_ok(), "a known flag validates");
+        m.package_flags = 0x10; // bit 4 — unknown to a v2-era reader
+        assert_eq!(
+            m.validate(),
+            Err(TpkgError::Invalid),
+            "an unknown flag bit is refused (spec 18 S4)"
+        );
     }
 }

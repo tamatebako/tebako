@@ -27,8 +27,8 @@ pub enum SlotRef {
     /// `-` — the whole file (bare images only; a packaged file is a
     /// named error at mount time).
     Whole,
-    /// A numeric slot. On a bare file `0` ≡ [`SlotRef::Whole`] (spec 07
-    /// §0: registry payloads mount whole); on a packaged file it names
+    /// A numeric slot. On a bare file `0` ≡ [`SlotRef::Whole`] (spec 17
+    /// §1: registry payloads mount whole); on a packaged file it names
     /// the trailer-described region.
     Slot(u32),
 }

@@ -45,7 +45,7 @@ pub const PAYLOAD_SCHEMA_VERSION: u32 = 1;
 /// is the parse-FAILURE path, where a declared minor above this one is
 /// the difference between "the payload speaks a newer schema" and "the
 /// payload is corrupt" (tebako#536).
-pub const PAYLOAD_SCHEMA_MINOR: u32 = 16;
+pub const PAYLOAD_SCHEMA_MINOR: u32 = 17;
 
 /// Error returned by payload-manifest operations.
 ///
@@ -662,6 +662,13 @@ pub struct Identity {
     pub created: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<Source>,
+    /// The contract era this payload's manifest speaks (spec 18's
+    /// contract-graph vocabulary): absent = era 1 (the undeclared
+    /// pre-era), a declared value is >= 2 — consumers that require the
+    /// contract refuse by name (spec 18 §2.2), never guess. Additive;
+    /// old readers ignore the key (the unknown-field rule).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub era: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sbom: Option<Sbom>,
     pub digest: Digest,
@@ -3167,6 +3174,7 @@ mod tests {
             kind,
             name: "x".to_string(),
             version: "1.0.0".to_string(),
+            era: None,
             producer: Producer {
                 tool: "tebako-cli".to_string(),
                 tool_version: "0.16.0".to_string(),

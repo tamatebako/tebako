@@ -79,6 +79,8 @@ republish of v1-era runtimes needed.
 | 74 | `EX_TEBAKO_IO` | filesystem/lock/install failure |
 | 75 | `EX_TEBAKO_CONTRACT` | runtime declares an unsupported `contract_version` (§6) |
 | 76 | `EX_TEBAKO_INSTALL` | `--tebako-install` refused (`TPKG_FLAG_NO_INSTALL`) or needs the CLI |
+| 77 | `EX_TEBAKO_CONTRACT_ERA` | the runtime declares a contract ERA newer than the loader speaks (§6; code constant `tpkg::EX_TEBAKO_CONTRACT_ERA`) |
+| 78 | `EX_TEBAKO_LAYOUT` | the `TEBAKO_MOUNT_ROOT` override is ungranted by the env image's `mount_root_override` layout grant (spec 17 §1; code constant `tebako-driver`'s `EX_TEBAKO_LAYOUT`) |
 | 79 | `EX_TEBAKO_CHECK` | a payload check FAILed — the `tebako check` aggregate (spec 26 §2; code constant `tpkg::EX_TEBAKO_CHECK`) |
 | 80 | `EX_TEBAKO_LEDGER` | a ledger finding — `tebako audit --verify` met a chain mismatch or an invalid seal signature, the seal file holds an unparseable record, or `--strict` met unparseable journal lines (spec 40 §6; code constant `tpkg::EX_TEBAKO_LEDGER`) |
 | 81 | `EX_TEBAKO_SOLVE` | a tree-solve finding — a named conflict, lockfile drift under `--locked`, an open runtime seam, or a malformed requirement set (spec 42 §5; code constant `tebako_cli::solve::EX_TEBAKO_SOLVE`) |
@@ -189,22 +191,31 @@ payload-side changes that v1 runtimes may ignore (like §2's env image
 for v1 runtimes) do NOT bump the contract.
 
 **Declaration.** The runtime release manifest's per-package entry carries
-`"contract_version": <uint>` (spec 05 §5's manifest.json; additive —
-older consumers ignore it). The runtime driver has the same value
-compiled in (`TEBAKO_CONTRACT_VERSION`); the runtime repo's CI fails any
-release where the manifest and the driver disagree.
+the contract SET — `"contract_era"`, `"contract_version"`,
+`"mount_root"` — (spec 05 §5's manifest.json; the set is additive —
+older consumers ignore it). The runtime driver has the same values
+compiled in (`TEBAKO_CONTRACT_VERSION` and its siblings); the runtime
+repo's CI fails any release where the manifest and the driver disagree.
 
-**Negotiation rule (bootstrap, fail-closed).** During runtime/image
-resolution, before any checksum acceptance:
+**Negotiation rule (bootstrap, fail-closed — spec 18's era
+vocabulary).** During runtime/image resolution, before any checksum
+acceptance, the loader reads the entry's contract set
+(`crates/tebako-resolve/src/contract.rs` is the implementation of
+record; the current spoken values are era **2** and contract **2** —
+the spec-17 argv/env grammar):
 
-1. Manifest entry declares `contract_version == SUPPORTED_CONTRACT`
-   (currently 1) → proceed.
-2. Field absent or unparseable → a pre-contract release, which is
-   contract 1 by definition → proceed while 1 is the supported contract.
-3. Any other declared value → refuse: nothing is installed, the cache is
-   untouched, exit 75 (`EX_TEBAKO_CONTRACT`) naming both generations and
-   the remedy (upgrade tebako, or pin an older runtime).
+1. The manifest carries NO entry for the asset → not a contract
+   question (the checksum path names that failure) → proceed.
+2. The entry's contract set is present and matches the loader's spoken
+   era + contract → proceed (the declared, acceptable set).
+3. Any of the three fields absent, unparseable, zero, or empty → a
+   pre-era entry — a NAMED refusal (`ContractError::PreEra`, exit 75)
+   listing the missing fields, never a proceed.
+4. A declared era NEWER than the loader's → refused
+   (`ContractError::EraTooNew`, exit 77 — `EX_TEBAKO_CONTRACT_ERA`)
+   naming both generations and the remedy; a contract NEWER or OLDER
+   than the spoken one → refused (`ContractTooNew`/`ContractTooOld`,
+   exit 75) naming both.
 
 A negotiation failure is never a crash and never a silent accept: it is
-a clean, explained refusal. When contract 2 exists, `SUPPORTED_CONTRACT`
-becomes a range and rule 1 accepts any value in it.
+a clean, explained refusal.

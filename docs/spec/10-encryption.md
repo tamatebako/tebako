@@ -114,3 +114,51 @@ construction (per-block AES-256-GCM, HKDF-SHA256 subtree keys, PKESK
 DEK envelopes, the `/__tpkg__/envelopes.yaml` grant manifest) is
 documented normatively in `crates/tfs/src/backends_enc.rs` and
 `crates/tpkg/src/envelope.rs`.
+
+## 4a. The wire format (normative — the byte layout an independent
+implementation must match)
+
+Directory structure, names, symlink targets and the `/__tpkg__/`
+metadata directory stay plaintext (metadata hiding is this spec's
+deferred option); every other regular file's CONTENT is replaced by its
+encrypted form:
+
+```text
+offset  size  field
+     0     8  magic "tfsenc01"
+     8     8  u64le plaintext_size
+    16     —  per block i (block = 4096 bytes; full-block slot 4112):
+                ciphertext_i (block_len bytes) || GCM tag_i (16 bytes)
+```
+
+Per block, AES-256-GCM with:
+
+- key = the file key `FK(path)` (below),
+- nonce = `u32le(0) || u64le(block_index)` (12 bytes) — unique per
+  (key, block): file keys are unique per file, block indexes never
+  repeat within a file, and images are immutable, so no (key, nonce)
+  pair ever seals two different plaintexts. A CHANGED tree's
+  re-encryption MUST rotate the DEK (§2's prospective rotation), which
+  re-keys every nonce domain.
+- AAD = `"tfsenc01" || u64le(plaintext_size) || u64le(block_index)` —
+  binds each block to its file size and position (blocks cannot be
+  relocated, truncated away silently, or transplanted between files of
+  different sizes).
+
+Keys: one root DEK per image (32 random bytes), with HKDF-SHA256 path
+keys for selective disclosure (§2):
+
+```text
+K("")            = DEK                        (the image root key)
+K(dir/name)      = HKDF-SHA256(ikm = K(dir),  salt = none,
+                               info = "tfs-enc-1/dir\0"  || name)
+FK(dir/file)     = HKDF-SHA256(ikm = K(dir),  salt = none,
+                               info = "tfs-enc-1/file\0" || name)
+```
+
+One-way per level: K(/a/b) opens /a/b/** but not /a/c or /a. Sharing a
+subtree = wrapping THAT subtree's key to the recipient. The DEK (or a
+subtree key) is wrapped to recipients as OpenPGP PKESK packets and
+recorded in `/__tpkg__/envelopes.yaml` (tpkg's EnvelopeManifest); the
+payload manifest's `encryption.parts` reference grants by id and NEVER
+carry keys (spec 03 §2.1).

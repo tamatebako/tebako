@@ -118,11 +118,15 @@ and NEVER policy-gated (the journal channel's discipline,
 side only; the bootstrap's < 3 MB size gate is untouched (spec 00
 invariant 2).
 
-**Children.** Spawned children inherit the armed channel by fd
-inheritance where the platform allows (POSIX); on windows each child's
-driver re-opens the same path for append (the record mode's
-re-derivation, spec 23 §8). All writers append atomically; events may
-interleave — every event carries `pid`/`tid` so the front-ends regroup.
+**Children.** Spawned children re-derive the channel at their own driver
+boot on BOTH platforms: `TEBAKO_TRACE` is in the inherited environment,
+the child's driver arms, and its events append to the same file. (The
+fd-inheritance spelling this section used to carry is not the mechanism
+— env re-derivation covers both platforms uniformly. On fork, the
+already-open fd IS inherited until the child's own arm, so pre-arm
+child events still land in the same channel.) All writers append
+atomically; events may interleave — every event carries `pid`/`tid` so
+the front-ends regroup.
 
 ## 3. The event envelope (schema v1)
 

@@ -51,9 +51,13 @@ means "the repo", a git form never means "the release".
 | scheme | adapter |
 |--------|---------|
 | `tfs:github:` / `tfs:gitlab:` / `tfs:bb:` | that service's releases API |
+| `tfs+github://` / `tfs+gitlab://` (spec 37 §4) | that host's releases API (GHE / self-hosted) |
 | `tfs+git:` | git protocol adapter |
+| `tfs+oci://` (spec 38 §2) | the OCI Distribution registry |
 | `tfs+https:` (or bare http(s)) | http fetch |
 | `file://` | local file |
+| `tfs+bb://` / `tfs+bitbucket://` (Data Center) | the named `UnsupportedService` refusal — never a guess |
+| `tfs+git+ssh://` | the named `SshTransportUnsupported` refusal |
 | anything else | **named error listing the classes** |
 
 There is **NO default service or namespace** anywhere: every reference is
