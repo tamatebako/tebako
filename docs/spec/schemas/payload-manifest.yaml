@@ -434,6 +434,20 @@ grammar:
       scan. Old readers ignore the key (unknown-field rule). A value
       outside the grammar is a named manifest error at parse (exit 65).
 
+  env_pass:
+    type: list-of-strings
+    optional: true
+    description: |
+      The packager's env pass-through list (spec 03 §2.10, additive —
+      schema_minor 16, tebako#737): TEBAKO_* variable names the
+      packaged run KEEPS despite the driver's packager-credential
+      scrub (every non-contract TEBAKO_* variable is blanked at boot —
+      a packaged app must not exfiltrate the packager's credentials,
+      TEBAKO_GITHUB_TOKEN above all). Names are TEBAKO_-prefixed
+      uppercase alphanumerics/underscore; anything else is a named
+      manifest error at parse. Absent = the scrub takes everything
+      non-contract.
+
 refusals:
   - case: identity.schema_version missing
     behavior: era-1 named refusal (never a silent default)
@@ -474,7 +488,8 @@ refusals:
   - case: "on_runtime.mount spelled /, carrying '..' components, or argv_template holding an unknown placeholder or a path escaping the mount after expansion (schema_minor 6)"
     behavior: named validation error at parse, resp. a named boot error (exit 65) — the template is data, never guessed (spec 33 §2)
   - case: "a kind: language edge carrying triplets: (schema_minor 9)"
-    behavior: named validation error at parse (exit 65) — a skipped language edge would boot a payload with no runtime; platform reach is the payload-level platforms: axis's statement (spec 03 §2.3)
+    behavior: "named validation error at parse (exit 65) — a skipped language edge would boot a payload with no runtime; platform reach is the payload-level platforms: axis's statement (spec 03 §2.3)"
+
   - case: "a requires edge's triplets: list empty or carrying a duplicate (all kinds; schema_minor 9)"
     behavior: named validation error at parse (exit 65) — the toolkit edge's existing list grammar, generalized (spec 03 §2.3)
   - case: "dispatching a command whose expose edge was platform-skipped on this host (schema_minor 9)"
@@ -488,16 +503,3 @@ refusals:
 
 deprecated: [] # no field is in a deprecation window
 
-  env_pass:
-    type: list-of-strings
-    optional: true
-    description: |
-      The packager's env pass-through list (spec 03 §2.10, additive —
-      schema_minor 16, tebako#737): TEBAKO_* variable names the
-      packaged run KEEPS despite the driver's packager-credential
-      scrub (every non-contract TEBAKO_* variable is blanked at boot —
-      a packaged app must not exfiltrate the packager's credentials,
-      TEBAKO_GITHUB_TOKEN above all). Names are TEBAKO_-prefixed
-      uppercase alphanumerics/underscore; anything else is a named
-      manifest error at parse. Absent = the scrub takes everything
-      non-contract.

@@ -29,3 +29,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ruby docs/spec-site/tools/sync.rb
+
+  # The schemas are the implementer's contract-of-record — a schema that
+  # does not parse blocks a generated toolchain (payload-manifest.yaml
+  # and registry-log.yaml both shipped unparseable once; nothing read
+  # them, so nothing noticed). Parse every one on every spec change.
+  schema-parse:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every schema
+        run: |
+          set -euo pipefail
+          for f in docs/spec/schemas/*.yaml; do
+            ruby -ryaml -e 'YAML.load_file(ARGV[0])' "$f" || { echo "::error::$f does not parse"; exit 1; }
+          done
+          echo "all $(ls docs/spec/schemas/*.yaml | wc -l) schemas parse"
