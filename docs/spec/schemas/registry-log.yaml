@@ -95,7 +95,7 @@ documents:
     keys: [registry_log_schema, registry, rows, root, lines]
   verify:
     registry_log_schema: 1
-    keys: [registry_log_schema, log, heads, sound, signature, problems, row_drops, registry?]
+    keys: [registry_log_schema, log, heads, sound, signature, problems, row_drops, 'registry?']
     registry_keys: [rows, sealed_rows, root_match, detail]
   prove:
     registry_log_schema: 1
