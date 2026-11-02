@@ -46,8 +46,11 @@ fn arb_manifest() -> impl Strategy<Value = Manifest> {
         .prop_map(|(package_flags, launcher_abi, runtime_ref, slots)| {
             let mut m = Manifest {
                 // TPKG_FLAG_SIGNED_V2 is not arbitrary: it requires the
-                // v2 extension (covered by the v2 test suite)
-                package_flags: package_flags & !TPKG_FLAG_SIGNED_V2,
+                // v2 extension (covered by the v2 test suite). The other
+                // bits stay within the known mask — spec 18 S4's
+                // unknown-flag refusal rejects anything else.
+                package_flags: package_flags
+                    & (TPKG_FLAG_LEAN | TPKG_FLAG_NO_INSTALL | TPKG_FLAG_QUIET_NOTICES),
                 launcher_abi,
                 slots,
                 ..Default::default()

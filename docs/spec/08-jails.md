@@ -33,6 +33,29 @@ jail:
 3. **file-scoped tight jail** (`deny` + argument files only) — run an
    untrusted payload against one input, nothing else.
 
+**The `TEBAKO_JAIL` env form (the form the runtime driver and the preload
+shim consume — the loader's wire spelling of a policy).** ABNF:
+
+```abnf
+policy      = default *(";" grant)
+default     = "open" / "deny"
+grant       = host-grant / argfile-grant
+host-grant  = host-path ":" mount-path ":" access
+host-path   = 1*(%x21-3A / %x3C-7E)        ; any visible char except ';'
+mount-path  = 1*(%x21-3A / %x3C-7E)        ; the in-VFS point, same alphabet
+access      = "ro" / "rw"
+argfile-grant = "@" 1*(%x21-7E)            ; an argv file path, read-allowed
+```
+
+`open` grants host cwd + writes (today's behavior); `deny` is the
+default-deny floor. Each `;host:mount:access` grants the host path at the
+mount point with the named access; `;@path` auto-allows an argument file
+even under deny. The grammar's alphabet excludes `;` (the grant
+separator); a windows drive-qualified floor spelling is NOT carried (the
+right-split cannot — every consumer re-derives the floor at its own
+bind, §2's inheritance rule). Examples: `deny;/home/u/src:/work:rw`,
+`deny;/home/u/src:/work:rw;@/home/u/in.csv`, `open`.
+
 ## 2. Semantics
 
 - Writes to an `ro` mount fail `EROFS`; paths outside every mount fail

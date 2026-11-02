@@ -1,14 +1,17 @@
 # Spec 03 — Payload manifest (L1)
 
 Normative specification of the in-image manifest: every payload is a
-**self-describing artifact**, not a blob. Status: PARTIAL (roadmap 06).
+**self-describing artifact**, not a blob. Status: SHIPPED (the block + the
+engine shipped; the §3 press/install gate wiring remains — the checks
+block's discoverability row).
 
 ## 1. Location and form
 
 - Path: `/__tpkg__/manifest.yaml` — inside the image, at a well-known
   location. No sidecars, no central service.
 - Format: **YAML** (the locked convention for all authored configuration
-  surfaces). Versioned JSON Schema: `schema/tpkg-manifest-v1.schema.json`.
+  surfaces). The versioned grammar: `docs/spec/schemas/payload-manifest.yaml`
+  (the registry's authored form; `crates/tpkg/src/manifest.rs` mirrors it).
 - Integrity: the manifest is inside the image, so it is exactly as
   tamper-proof as the content and is covered by the image's digest and
   signature. Any consumer (bootstrap, dispatcher, `tfs` CLI, a foreign

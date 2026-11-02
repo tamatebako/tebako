@@ -87,8 +87,9 @@ trust enforcement is a reader capability, not a format barrier.
 | 264 | sig_len | OpenPGP detached signature (binary packets) |
 | 264+sig_len | 4 | u32be sig_len (1..=65536) |
 
-Canonical signed bytes: `slot table ‖ digests ‖ keyid ‖ header` —
-everything except the signature and its length field.
+Canonical signed bytes: `slot table ‖ ext blocks ‖ digests ‖ keyid ‖ header` —
+everything except the signature and its length field. The extension
+blocks (§5b) sit inside the signed region: the signature covers them.
 
 ## 5. The installability flag (bit2 `NO_INSTALL`)
 
@@ -184,5 +185,5 @@ multi-runtime packages live in the type-2 manifest (no size cap).
 
 ## 7. Errors (Rust `TpkgError` ↔ C `TPKG_ERR_*`, 1:1)
 
-`NoTrailer`, `Magic`, `Crc`, `Version`, `Slots`, `Bounds`, `Invalid` —
-`strerror` strings byte-identical with the C implementation.
+`NoTrailer`, `Magic`, `Crc`, `Io`, `Bounds`, `Slots`, `Invalid`, `Arg`,
+`Version` — `strerror` strings byte-identical with the C implementation.

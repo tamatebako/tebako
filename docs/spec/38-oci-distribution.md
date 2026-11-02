@@ -1,10 +1,9 @@
 # Spec 38 — OCI distribution (`tfs+oci:`)
 
-Status: **PLANNED** (locked direction 2026-09-30, tebako#695 — spec-first
-per spec 14; the grammar, the artifact model, and the credential
-amendments below are the agreed shape before any code lands). Nothing
-here changes what shipped resolvers do with a config or a registry that
-carries none of the new keys.
+Status: **SHIPPED** — the grammar, the artifact model, and the credential
+amendments are implemented (`crates/tebako-oci/` +
+`crates/tebako-resolve/src/oci.rs`); the resolver speaks `tfs+oci://`
+(`crates/tebako-resolve/src/reference.rs`).
 
 Normative specification of the **OCI distribution channel**: payload
 images, runtime bundles, and registry indexes published to any OCI

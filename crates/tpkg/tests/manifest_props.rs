@@ -258,6 +258,7 @@ fn arb_identity(kind: PayloadKind) -> impl Strategy<Value = Identity> {
                 created: "2026-07-26T00:00:00Z".to_string(),
                 source: None,
                 sbom: None,
+                era: None,
                 digest: Digest {
                     tree_hash: format!("sha256:{tree}"),
                     blob_sha256: blob,
