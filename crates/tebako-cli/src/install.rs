@@ -3104,6 +3104,7 @@ fn synthesize_manifest(
             created: rfc3339_utc(now_unix()),
             source: None,
             sbom: None,
+            era: None,
             digest: tpkg::Digest {
                 tree_hash: format!("sha256:{}", "0".repeat(64)),
                 blob_sha256: entry.sha256.clone(),
