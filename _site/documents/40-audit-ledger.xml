@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">The audit ledger: queries, the anchor, and the auditor's walk</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 40</docidentifier><docnumber>TBK SPEC 40</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_e7f05070-be5d-a666-3790-d15e91e33eea" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_1fc89e25-4bc9-1775-102e-1d0f91b5ed84"><strong>Status: SHIPPED.</strong> The event vocabulary predates this spec (the writers own their events, §2.3); this spec owns the READ contract and the anchor: the filter grammar, the output documents, the chain, the named errors — and the walk an auditor with no tebako knowledge follows to prove, offline, what ran on a host.</p>
+</foreword></preface><sections>
+<clause id="_ad4be5bd-b422-a5e2-0bcc-d1f5ee907a0d" unnumbered="true" obligation="normative">
+<title id="_69c5a5e1-818a-d3e9-4543-47b1de8a0b8d">1. The ledger and its one job</title>
+<p id="_9e6e1537-2f04-d0a0-5a6c-efbbd909cc26">Every tebako process writes one append-only line per decision worth auditing into a single host-local file:</p>
+
+<sourcecode id="_be7e66de-43dc-b98a-c59f-24d6a93d86cc"><body>$TEBAKO_HOME/journal.log          (TEBAKO_JAIL_JOURNAL overrides the path)</body></sourcecode>
+
+
+<p id="_7f9707ce-a993-dd47-3f08-40682bf45d16">The line shape is shared by both writers — the bootstrap (the loader's fetch / verify / mount / exec decisions) and  <tt>tfs::journal</tt> (the driver's and preload's policy, VFS, overlay and decrypt decisions):</p>
+
+<sourcecode id="_56bc357c-c707-2995-239b-fda60084d84a"><body>&lt;unix seconds&gt; event=&lt;name&gt; &lt;key&gt;=&lt;value&gt; …</body></sourcecode>
+
+
+<p id="_a511fbe5-1725-efe1-ff0c-214425d0ba38">The ledger answers exactly one question — <strong>"what ran here, and why did it run?"</strong> — for one host, from one file, with no network and no other tebako artifact. It is not aggregated, not sharded, not rotated by the tools (an operator may rotate it;  <tt>--seal</tt> before rotation is the discipline that keeps the seam auditable).</p>
+
+<p id="_0b54eb44-0195-c2b5-636a-c6507e42f785"><strong>The read-only law.</strong> A query (<tt>tebako audit …</tt> without <tt>--seal</tt>) creates nothing, appends nothing, stamps nothing, migrates nothing. It runs on a host whose  <tt>~/.tebako</tt> was written by an older tebako, and it must not move that store's layout forward on the way in. The single writing verb is  <tt>--seal</tt>, and the only file it writes is the anchor (§4).</p>
+</clause>
+
+<clause id="_53511b43-0362-7191-d3d3-fafaa23e8e79" unnumbered="true" obligation="normative">
+<title id="_5a86077b-796b-213e-bfc0-8c19da583573">2. Reading rules (normative)</title>
+<clause id="_ae067e20-9943-854b-0ead-57ccdf19c0dd" unnumbered="true" obligation="normative">
+<title id="_ab705c01-3632-1822-d4bb-f5091e65ab2b">2.1 Line grammar</title>
+<ul id="_dd2406b6-704e-f840-7d29-8390a73ead67"><li><p id="_b57385ee-3e0a-c72b-8758-b465a285cae2">The first space-delimited token is the timestamp: unix seconds, decimal.  <tt>0</tt> is legitimate (a clock failure never fails the audited operation).</p>
+</li>
+<li><p id="_2dbd75c2-2a25-8398-0e5d-33cd385d0d45">Every following token is <tt>key=value</tt>, split at the FIRST <tt>=</tt>, so a value may itself contain  <tt>=</tt> (URLs with query strings, base64).</p>
+</li>
+<li><p id="_fb156db5-a94f-5de5-88bd-a42b046152a3">A token that carries no <tt>=</tt> CONTINUES the previous value, joined by one space. Writers record paths, and paths contain spaces: a legitimate  <tt>path=/a b/c</tt> must not turn into damage. A leading token without  <tt>=</tt> before any key exists is damage.</p>
+</li>
+<li><p id="_71f24633-eb6b-12f9-ca86-513c67b0136f"><tt>event=</tt> is the required key: a line without it, or with an unreadable timestamp, is  <tt>malformed</tt> (§2.2).</p>
+</li>
+<li><p id="_b63c0f15-f744-a858-ea58-12c3cac892fb">A trailing newline terminates the record; a final record without one is still a record (the bytes are the record).</p>
+</li>
+<li><p id="_9bb43843-7dd0-42cd-0a2b-0ad93b26e3c2">Duplicate keys: the FIRST statement stands (§5's <tt>fields_map_rule</tt>) — a writer's second mention of a key never retroactively rewrites what it already said.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_0e5c0576-520b-d77f-a307-23245fb4d6e3" unnumbered="true" obligation="normative">
+<title id="_2e18d36f-e404-0f0c-7b12-6f15af97d420">2.2 Damage is surfaced, never swallowed</title>
+<p id="_8ca026ff-8225-5189-d755-231b8024d6f9">A line that does not parse is a <tt>malformed</tt> record: it is counted, carries its 1-based line number, and appears in the JSON document's <tt>malformed</tt> array with its raw bytes. A ledger that quietly drops what it cannot read is worse than one that admits damage. A query's exit code stays 0 for malformed lines unless  <tt>--strict</tt> is given (§6) — the default posture is "show me everything, including the damage", because an operator diagnosing a host should not have to guess what was hidden.</p>
+
+<p id="_81dbeec2-03ee-d59f-c8ed-b6a3be10957e">A malformed line is still a LINE: it occupies its position in the file and it is covered by the anchor's chain exactly like a readable one (a deleted line moves every later record, readable or not). "Record" and "line" are therefore interchangeable in the anchor's vocabulary (§4).</p>
+</clause>
+
+<clause id="_17580a77-f993-d40d-54f7-7a98aa3d0442" unnumbered="true" obligation="normative">
+<title id="_27514ceb-3475-4fe1-aaf6-0c8263510f69">2.3 The vocabulary (by the question it answers)</title>
+<p id="_b668a4b9-b58b-a531-ac01-64af732bdd31">The writers own their event names — this table is the census, and it exists so an auditor can phrase a filter. It is not exhaustive: an unknown  <tt>event=</tt> value is a first-class record, filterable like any other (forward compatibility is the point of a ledger).</p>
+
+<table id="_fad11d69-a9b3-3bc7-124e-2f3ee466c27a"><thead><tr id="_ee0f0636-1fe7-a4f9-9869-c4ad574da25b"><th id="_dd52eee4-b971-4508-247a-f748bb90f585" valign="top" align="left">question</th>
+<th id="_ff9e315a-f9cc-03cb-7e32-8a4d21b5dfde" valign="top" align="left">events</th>
+</tr></thead>
+<tbody><tr id="_24a79984-8194-4a1d-9c0d-7cfb134dbc3c"><td id="_e465df35-0a38-bc78-7edd-8117bdfa09f2" valign="top" align="left">What did we fetch, and from where?</td>
+<td id="_fd0aba04-6b72-03b5-4eb0-2b7cd83bf050" valign="top" align="left"><tt>fetch</tt>, <tt>delta-fetch</tt>, <tt>mirror-materialized</tt>, <tt>payload-mirror-served</tt>, <tt>bundle-staged</tt>, <tt>bundle-runtime-warm</tt>, <tt>key-retrieval</tt></td>
+</tr><tr id="_a4d12478-d9d1-7038-cefb-4246383dde55"><td id="_31299b44-fc5e-fd1a-abf6-d0f9af592959" valign="top" align="left">Did it verify, and against what?</td>
+<td id="_7f896ab0-014f-dcdb-0474-be61a25194bd" valign="top" align="left"><tt>runtime-fetch-verified</tt>, <tt>runtime-index-verified</tt>, <tt>bundle-fetch-verified</tt>, <tt>bundle-fetch-unverified</tt>, <tt>payload-signature-trusted</tt>, <tt>bundle-trusted-root</tt>, <tt>bundle-trusted-forwarded</tt>, <tt>legacy-unsigned-accepted</tt>, <tt>unsigned-runtime-fetch</tt>, <tt>trust-bridge-java-gap</tt>, <tt>key-retrieval-failed</tt></td>
+</tr><tr id="_fc8e0b00-cd95-cde2-4747-f47c6042017e"><td id="_5e5684da-661f-244c-48e3-0c716f3d8870" valign="top" align="left">What got installed, bound or retired?</td>
+<td id="_e3dc7d9f-df44-c348-e47f-edc64f738546" valign="top" align="left"><tt>payload-installed</tt>, <tt>payload-uninstalled</tt>, <tt>runtime-own-install</tt>, <tt>runtime-own-shim</tt>, <tt>origin-rebind</tt>, <tt>trusted-key-removed</tt>, <tt>trust-ca-added</tt>, <tt>trust-ca-removed</tt>, <tt>registry-row-retired</tt>, <tt>registry-key-pinned</tt></td>
+</tr><tr id="_50f97b72-b161-b0cd-dfd4-62360a82f8bf"><td id="_ad7f7c9d-4f5a-a383-cac6-3f999fa99963" valign="top" align="left">What was mounted and composed?</td>
+<td id="_8474cd7f-a5c4-f4a8-8b89-08554015289b" valign="top" align="left"><tt>composition</tt>, <tt>overlay</tt>, <tt>decrypt</tt>, <tt>lazy-seed</tt>, <tt>lazy-fallback</tt>, <tt>slice-augment</tt>, <tt>slice-overlap</tt>, <tt>slice-skip</tt>, <tt>visibility</tt></td>
+</tr><tr id="_5c3fd521-b9db-fee4-bf28-5c4b67d379fb"><td id="_8582c585-fddb-30e7-a3ed-928ff6b6abef" valign="top" align="left">What was resolved and executed?</td>
+<td id="_4c25668c-191b-32f6-6767-bbff8c761e6a" valign="top" align="left"><tt>runtime-edge-resolved</tt>, <tt>provider-runtime-resolved</tt>, <tt>executable-edge-resolved</tt>, <tt>unlocked-pick</tt>, <tt>spawn-shim-note</tt></td>
+</tr><tr id="_8f46bf07-05cb-d7d7-f1a7-4f00715d82e4"><td id="_e0fe4359-35b6-3a84-1492-a02fc7ddb656" valign="top" align="left">What did the policy decide?</td>
+<td id="_b73d1133-b1ed-8378-520e-ff45f081a007" valign="top" align="left"><tt>jail-deny</tt>, <tt>jail-allow</tt>, <tt>vfs-deny</tt>, <tt>vfs-write</tt>, <tt>lib-load</tt>, <tt>network-config</tt></td>
+</tr><tr id="_ef013dc9-d31c-7168-ec9d-edb7531267b7"><td id="_a6ad7b0c-615a-d86b-3009-ee28b7282a09" valign="top" align="left">What did a press decide?</td>
+<td id="_131de2f8-893a-520e-9003-340cbf54a50b" valign="top" align="left"><tt>press-sign-opt-out</tt>, <tt>stale-registry-serve</tt>, <tt>edge-platform-skip</tt></td>
+</tr></tbody>
+</table>
+</clause>
+</clause>
+
+<clause id="_0358575e-da0d-9c05-da19-ae9c8d5ea096" unnumbered="true" obligation="normative">
+<title id="_ff98720c-ab78-5a08-8640-89fd2e75da1c">3. The query surface</title>
+<sourcecode id="_5a819033-3f59-ea4e-3a5a-fec1c354c201"><body>tebako audit [filters] [--count] [--json] [--strict]</body></sourcecode>
+
+
+<clause id="_05ba9274-30b0-b7c1-f091-7ab9556d8439" unnumbered="true" obligation="normative">
+<title id="_6edd3250-2358-1a26-f189-bd02cd76e096">3.1 Filters</title>
+<table id="_fcc0cee4-01b8-16b1-cede-81115184962e"><thead><tr id="_64b2c020-b1a8-8a1a-03e9-f0d5b0f54784"><th id="_373864a4-422a-33df-7b69-74c1df9d9763" valign="top" align="left">flag</th>
+<th id="_88ced5bb-3f5a-1435-de3b-516adb9d4d9b" valign="top" align="left">meaning</th>
+</tr></thead>
+<tbody><tr id="_8b547e97-0930-70ad-611c-6be990980f41"><td id="_f9e4cd1b-ca57-00ba-d190-f9923ee1173c" valign="top" align="left"><tt>--since &lt;t&gt;</tt></td>
+<td id="_26dc4106-92e2-a4ca-7dbb-16228fc761c9" valign="top" align="left">keep records with <tt>ts &gt;= t</tt>. <tt>t</tt> is unix seconds or RFC 3339 UTC (<tt>YYYY-MM-DDTHH:MM:SSZ</tt>).</td>
+</tr><tr id="_93c956f4-68f6-0f4f-cdf4-8863d0d7a208"><td id="_fcb94ecf-1406-25f7-64a4-e458131b7475" valign="top" align="left"><tt>--until &lt;t&gt;</tt></td>
+<td id="_8edad43f-0598-69bd-079a-0a5c234783c1" valign="top" align="left">keep records with <tt>ts &lt;= t</tt>. Same grammar.</td>
+</tr><tr id="_d311d50f-f8fa-565e-86af-978b2a122e49"><td id="_337900b1-c369-5a48-0849-deb47413c8e7" valign="top" align="left"><tt>--event &lt;e&gt;[,&lt;e&gt;…]</tt></td>
+<td id="_a52b5083-fbd1-af88-9727-8f4797dec571" valign="top" align="left">keep records whose <tt>event=</tt> is one of the listed names. Repeatable; the union of all occurrences. Exact match, never a prefix.</td>
+</tr><tr id="_c0cb2bb3-d4e0-423a-6d0b-fa7e7aed4f19"><td id="_608c2671-37f7-4395-ca67-c0957bb0b958" valign="top" align="left"><tt>--artifact &lt;needle&gt;</tt></td>
+<td id="_0ed000ec-035b-2361-7ad2-ae7e4462a71b" valign="top" align="left">keep records whose body (everything after the timestamp) CONTAINS <tt>needle</tt> — the artifact reference as the writer recorded it: a payload name, a version, a sha256, a URL fragment. Case-sensitive, documented as a substring so nobody mistakes it for a structured field.</td>
+</tr><tr id="_a3d06a49-e099-1e02-f799-96f0732d9e8c"><td id="_840aab44-fa2f-ea7c-4ae1-f931d06d1c52" valign="top" align="left"><tt>--tail &lt;n&gt;</tt></td>
+<td id="_b9951f74-9aa0-4bdd-db24-f1a24a27763e" valign="top" align="left">after filtering, keep only the last <tt>n</tt> records.</td>
+</tr></tbody>
+</table>
+
+<p id="_34563c1c-0ee1-e7b3-3736-63d900f44a5b">Filters compose with AND across flags, OR within <tt>--event</tt>. No filter means the whole ledger. A time filter's grammar is exact: local time is never inferred, because a silently shifted window is a silently wrong answer.</p>
+
+<p id="_43f330e2-15c1-8455-690a-93e95c9a44c0"><tt>--seal</tt> takes NO filters (an anchor covers the whole file or it is not an anchor) and  <tt>--seal</tt> with <tt>--verify</tt> is refused by name: one writes, the other checks.</p>
+</clause>
+
+<clause id="_8559971a-b5de-846a-ee95-62a566c10afe" unnumbered="true" obligation="normative">
+<title id="_e7926b92-4a61-ec44-7793-23d7d408f2f3">3.2 Output</title>
+<p id="_e584b2da-3f4f-a8ac-2c6d-2c6b740c9513"><strong>Default (line mode).</strong> The matching records, verbatim — the ledger's own bytes, in file order — so a reader can pipe them to  <tt>sha256sum</tt> and compare against a seal. A one-line summary (<tt>N of M record(s)</tt>) goes to STDERR, never into the stream: the stdout of a query is a ledger excerpt, not a report about one.</p>
+
+<p id="_fa654613-e517-ae37-0d94-1cd8d8737d50"><strong><tt>--count</tt>.</strong> Exactly the match count on stdout, nothing else.</p>
+
+<p id="_00451edf-dc57-ea2f-3966-b33b412aa599"><strong><tt>--json</tt>.</strong> The <tt>audit_schema: 1</tt> document (§5) on stdout alone; the version banner moves to stderr, like every other machine contract in this toolchain.</p>
+
+<p id="_32a8a773-482c-a292-e9fe-9932373600c4">File order is preserved in every mode. A ledger's order IS evidence; re-sorting it would destroy the only thing the file cannot be rebuilt without.</p>
+</clause>
+</clause>
+
+<clause id="_aaacf492-161d-7271-2330-3adea9742576" unnumbered="true" obligation="normative">
+<title id="_acc1ed93-a6ba-9029-2acf-80ee3eae1d33">4. The anchor: tamper evidence</title>
+<p id="_4b413da8-c989-a3c8-3c4e-72a3f74855f1">An append-only file with no anchor proves nothing — anyone can edit a line, or delete a run's records entirely, and the file still looks like a ledger. The anchor is a chained digest, sealed on demand and verified on demand, stored BESIDE the journal it covers and named by it:</p>
+
+<sourcecode id="_040ac458-b349-1c79-8589-37f9b0fd332f"><body>&lt;journal&gt;.seal          e.g. $TEBAKO_HOME/journal.log.seal</body></sourcecode>
+
+
+<p id="_f7aff795-f24c-be80-967a-c76f33992aba">Beside, not inside: the journal stays a pure record stream, every reader of it keeps working, and an explicit  <tt>TEBAKO_JAIL_JOURNAL</tt> override carries its seal along instead of splitting the pair across two homes.</p>
+
+<clause id="_3cd1e0cf-fdf2-27ee-1b02-2466a656c95e" unnumbered="true" obligation="normative">
+<title id="_9f1b1f76-e2d1-cd70-9da0-5bb48d7813fe">4.1 The chain</title>
+<sourcecode id="_1eb2ed2f-23c7-ccbf-cffd-cd31df8407fb"><body>h_0   = SHA-256("tebako-ledger-v1\n")                      (32 bytes)
+h_i   = SHA-256(h_{i-1} ‖ line_i)                          (32 bytes)</body></sourcecode>
+
+
+<p id="_019e38a8-a0c6-580c-0d14-ec9e70408e66">where <tt>‖</tt> is byte concatenation of the raw 32-byte digest with the line's exact bytes INCLUDING its terminating newline. Any edit, any deletion, any insertion shifts every subsequent digest — the anchor's whole value is that it cannot be recomputed without re-sealing, and a re-seal is itself a new record (§4.3).</p>
+
+<p id="_2c07f6bf-a2cf-f54f-3274-62c7857eed14">The terminator is normalized: a final record whose newline an editor added or stripped is the same ledger. That one cosmetic difference is the only edit the anchor does not report, and it is reported as nothing because it changes nothing an auditor reads.</p>
+</clause>
+
+<clause id="_53b28f7a-e5f7-5ed4-c6cb-8e91576df9e1" unnumbered="true" obligation="normative">
+<title id="_bd4af675-10cd-aedf-ad1a-172c4127cb03">4.2 Seal records</title>
+<p id="_0a1ebd35-98ae-6d12-67dd-bcf2fdc8ca05">One line per seal, appended to the seal file:</p>
+
+<sourcecode id="_a759aad2-4d9e-4489-f4a8-7435d465102f"><body>&lt;unix seconds&gt; head=&lt;sha256 hex&gt; lines=&lt;n&gt; key=&lt;keyid hex|-&gt; sig=&lt;hex|-&gt;</body></sourcecode>
+
+
+<ul id="_20229649-194a-c557-765d-2e335939bcd2"><li><p id="_0030423f-888a-c08a-0994-98d7e97518bb"><tt>head</tt> — the chain digest over the journal's first <tt>lines</tt> lines.</p>
+</li>
+<li><p id="_7d8dacce-24b1-39f6-d5d0-e2c725352924"><tt>lines</tt> — how many lines the seal covers (the file's state at seal time; later lines are the unsealed tail).</p>
+</li>
+<li><p id="_e6f74cc5-d113-09c7-4572-9376d63eae64"><tt>key</tt> / <tt>sig</tt> — the seal's authenticity. When a signing key is available (the machine's press-local key, spec 09), the canonical payload</p>
+<sourcecode id="_36212db9-364f-1c7a-c840-8556841a4347"><body>tebako-ledger-seal-v1\n&lt;head&gt;\n&lt;lines&gt;\n&lt;ts&gt;\n</body></sourcecode>
+
+
+<p id="_9b952b28-8a77-d8ed-1bf6-4c437909fde0">is signed detached (OpenPGP — the one mechanism this project uses) and <tt>sig</tt> carries the armored signature hex-encoded. With no key, both fields are  <tt>-</tt>.</p>
+</li>
+</ul>
+
+<p id="_921cfad6-6ab0-98e0-28ee-8e24e7606e8c"><strong>The unsigned seal is honest about what it is.</strong> It detects edits (a changed line no longer hashes to the sealed head) but not forgery (somebody with write access can rewrite the log and re-seal). The verb says so on stderr every time it writes one:</p>
+
+<sourcecode id="_baa8e2eb-c768-7fd1-8766-b4be90941fee"><body>tebako: WARNING: ledger sealed WITHOUT a signature — this detects
+edits, not forgery (configure a key with 'tebako keys')</body></sourcecode>
+
+
+<p id="_65239aa6-f4d2-9d70-eac8-d04ef1281e27">A signed seal, verified against the trusted keyring or a pinned key, is the enterprise answer.</p>
+
+<p id="_a8911613-34aa-b7f4-b0c1-ca1f8fc47a31">A seal that cannot be produced because the key store refuses is a LOUD unsigned seal, never a failed seal: an unanchorable ledger is worse than an unsigned anchor. A  <tt>TEBAKO_SIGN</tt> that is not a boolean is a named usage error, never a silent choice.</p>
+</clause>
+
+<clause id="_821dc135-b108-da5a-3965-2591598e930f" unnumbered="true" obligation="normative">
+<title id="_11d78d24-61dc-63be-4c52-76451749e628">4.3 Verification</title>
+<sourcecode id="_2f73e93d-7fa5-642e-6a9a-8d3353b0b9cb"><body>tebako audit --verify [--json] [--strict]</body></sourcecode>
+
+
+<ul id="_ce6c211b-4403-d3e6-d383-0f877237967e"><li><p id="_b36ba08a-3417-be37-9009-b74727056824">Recompute the chain over the WHOLE journal and compare it against the seals. The LAST seal speaks for the file; the earlier ones LOCATE the damage.</p>
+</li>
+<li><p id="_1740e20b-ad85-9ae4-878f-13fbbf0ad7ae">Walking the seals in order: the newest seal whose recomputed chain still matches marks the end of the known-good prefix, and the first seal after it names the interval that changed. That interval — <tt>[known_good+1, failing.lines]</tt>, 1-based and inclusive — is what the report prints, because "records 411–812 changed" is actionable and "the head differs" is not.</p>
+</li>
+<li><p id="_a3dccacf-6663-4407-675d-252bbb9d9b8d">A seal covering more lines than the file holds is not a prefix mismatch but a REMOVAL: the report says records are gone, and names the same interval.</p>
+</li>
+<li><p id="_304536ac-00c1-e9da-c238-18b48cf3bf51">Three outcomes: <tt>sealed</tt> (the last seal matches), <tt>tampered</tt> (it does not, or a signed seal's signature does not validate → exit 80), <tt>unsealed</tt> (no seal file: named, exit 74, with the remedy — "run <tt>tebako audit --seal</tt>").</p>
+</li>
+<li><p id="_12b2861e-239c-16a4-48c3-7bcbb2b0518e">A signed seal's signature is checked against the trusted keyring and the pinned trust store. An unknown signer is reported as  <tt>unknown-key</tt> and the outcome stays  <tt>sealed</tt> (the chain matched) with the authenticity gap NAMED, never quietly upgraded. An invalid signature is  <tt>tampered</tt>, whatever the chain says — a valid chain under a forged seal is exactly what a re-seal looks like.</p>
+</li>
+<li><p id="_036d207d-be48-1302-f68e-1b34bb26e42c">A seal file with an unparseable line is a finding (exit 80), never a skipped line: corrupting the anchor is an attacker's first move, so damage there is never noise.</p>
+</li>
+</ul>
+</clause>
+</clause>
+
+<clause id="_6984d0fa-4e39-f83e-a636-1d19e6ad15cc" unnumbered="true" obligation="normative">
+<title id="_c97317d4-3c7b-8b07-6dd0-686ef1d3b2b1">5. The JSON contract (<tt>audit_schema: 1</tt>)</title>
+<sourcecode id="_4fe3f18e-c993-af1e-4b84-2c4068126ce3" lang="json"><body>{
+  "audit_schema": 1,
+  "journal": "/home/u/.tebako/journal.log",
+  "matched": 3,
+  "total": 812,
+  "records": [
+    {"line": 12, "ts": 1761000000, "event": "fetch",
+     "fields": {"origin": "…", "sha256": "…"}, "raw": "…"}
+  ],
+  "malformed": [{"line": 411, "raw": "…"}],
+  "verify": {
+    "outcome": "sealed",
+    "seal_ts": 1761000123,
+    "sealed_lines": 812,
+    "head": "…",
+    "tail": 0,
+    "divergence": null,
+    "signer": "abcdef0123456789",
+    "signature": "valid",
+    "detail": "the chain matches the signed seal of …"
+  }
+}</body></sourcecode>
+
+
+<table id="_10151ce3-fba1-965c-b140-697461830cb2"><thead><tr id="_9369a945-0ef4-6e0d-304c-f1c652997c93"><th id="_328362f7-6e5e-0359-373b-998a7af0cdf4" valign="top" align="left">field</th>
+<th id="_68a2fff6-b412-b9e2-c17f-961dd4596bc2" valign="top" align="left">meaning</th>
+</tr></thead>
+<tbody><tr id="_c888e9ae-0e95-50cb-502f-63b91ad9915b"><td id="_8503738c-ca83-6547-1357-ce5f17f5c48f" valign="top" align="left"><tt>matched</tt> / <tt>total</tt></td>
+<td id="_caa51fad-c2db-cf8b-bb1f-7c5a2de0d07f" valign="top" align="left">records selected by the filters, and lines the file holds</td>
+</tr><tr id="_5e1707b1-8bb9-3446-b86a-b4cfbde7b27c"><td id="_b537369e-b8e2-20d3-3eef-a2aa87e3d068" valign="top" align="left"><tt>records[].fields</tt></td>
+<td id="_55829082-b3d8-1934-668e-79fb34b0fbb9" valign="top" align="left">the record's <tt>k=v</tt> tokens as a map, first-wins on duplicate keys</td>
+</tr><tr id="_7d2fcd34-8562-d503-0b77-df0b2a074789"><td id="_5e4845bd-6c01-76ad-ef38-911f7a5ee5db" valign="top" align="left"><tt>records[].raw</tt></td>
+<td id="_34351e6b-e82e-addc-8ae0-66584808c50f" valign="top" align="left">the record's exact bytes without the newline</td>
+</tr><tr id="_4aa60230-ee40-f8c4-c934-0d389dfa9fae"><td id="_cc135821-610b-7271-3c91-6f8ab04ea60f" valign="top" align="left"><tt>malformed[]</tt></td>
+<td id="_ff3b1ed5-9caf-265f-105a-f735c80fac31" valign="top" align="left">unparseable lines, always present (empty array when clean)</td>
+</tr><tr id="_4f56474c-d8a3-903c-c957-6418c13c891b"><td id="_186b3b95-7897-7cf6-4fd8-47aabfbfee5f" valign="top" align="left"><tt>verify</tt></td>
+<td id="_48676c84-b957-a3e5-06b8-e1451efe37eb" valign="top" align="left"><tt>null</tt> for a query; the object above for <tt>--verify</tt>; absent for <tt>--seal</tt>, whose document carries <tt>seal</tt> instead</td>
+</tr><tr id="_aee717b5-e5e9-c2a4-6aaa-5e35d680a655"><td id="_af6d340c-e212-b8bb-f778-331d8312f335" valign="top" align="left"><tt>verify.divergence</tt></td>
+<td id="_7b72e541-113f-c453-325d-6d33ae7923b4" valign="top" align="left"><tt>{"from_line": N, "to_line": M}</tt> when the outcome is <tt>tampered</tt>, else <tt>null</tt></td>
+</tr><tr id="_bbbda4f6-ef39-95a0-9e88-c3efd7098a20"><td id="_03972ceb-8c0e-01fd-1149-c3bc2dc324a9" valign="top" align="left"><tt>seal</tt> (on <tt>--seal</tt>)</td>
+<td id="_7ebc2674-1c93-f88a-21ce-4ff374ec1cc1" valign="top" align="left"><tt>{path, ts, head, lines, signer}</tt> — <tt>signer</tt> is <tt>null</tt> when unsigned</td>
+</tr></tbody>
+</table>
+
+<p id="_ac646d62-ca74-e3ae-5d64-e4b289ebd95e"><tt>records</tt> is capped by <tt>--tail</tt> and by the filters; <tt>total</tt> always reports the file, so a filtered document can never be mistaken for the whole ledger.  <tt>audit_schema</tt> is 1 forever: extensions add keys, never retype or rename one.</p>
+</clause>
+
+<clause id="_62d681f6-02b5-618d-a330-83132abd0f3f" unnumbered="true" obligation="normative">
+<title id="_2c6681ab-832e-72a1-0199-a15a9915b8af">6. Named errors and exit codes</title>
+<table id="_ed923e34-e84a-2bf4-1633-8ffacb98195c"><thead><tr id="_2f6ab5b9-2d4a-85a2-7d0e-2ae86dd4ac31"><th id="_069323f1-9fec-5cda-693a-0799740374e7" valign="top" align="right">code</th>
+<th id="_f5ac899d-f916-dcb7-74b4-1258f38836e9" valign="top" align="left">name</th>
+<th id="_5189f75d-841f-efba-a167-628043717e85" valign="top" align="left">meaning</th>
+</tr></thead>
+<tbody><tr id="_ea540300-11a0-81f6-4546-0800fdaca9a1"><td id="_ded76a5c-f6bd-3ee4-62c0-9810fc7bf37d" valign="top" align="right">80</td>
+<td id="_3b8d72cf-af05-4796-577b-b25830d870eb" valign="top" align="left"><tt>EX_TEBAKO_LEDGER</tt></td>
+<td id="_c1f31a3d-548f-2800-3e31-d5b9d3d43c04" valign="top" align="left"><tt>--verify</tt> found a mismatch or an invalid seal signature; an unparseable seal record; or <tt>--strict</tt> with malformed journal lines</td>
+</tr><tr id="_11e1ded6-4997-d091-6dde-c00d4aac67c1"><td id="_ede7c4e0-1a4f-ca59-c55d-11d3d6f33b6c" valign="top" align="right">74</td>
+<td id="_46e24f43-20b5-2016-9049-5b3873522b97" valign="top" align="left"><tt>EX_TEBAKO_IO</tt></td>
+<td id="_03c3cc48-f15c-d5d9-65c0-f7e7320067f4" valign="top" align="left">the journal or seal cannot be read or written; a query on a host with no journal yet; <tt>--verify</tt> with no seal yet</td>
+</tr><tr id="_6080b344-dc04-458c-4c0f-6965c9110f7b"><td id="_3539f541-1e87-2394-8f42-4b6faeaa9544" valign="top" align="right">64</td>
+<td id="_8721a39b-5208-0a19-86ec-b2b99a5ad015" valign="top" align="left"><tt>EX_USAGE</tt></td>
+<td id="_732b01a6-b149-5ce9-49cf-f82e32529125" valign="top" align="left">unparseable filter or time, unknown flag, <tt>--seal</tt> with filters, <tt>--seal</tt> together with <tt>--verify</tt></td>
+</tr></tbody>
+</table>
+
+<p id="_e0816a4e-7a77-add9-7279-69323087db53">Every message names the file and the remedy — never "invalid input".</p>
+</clause>
+
+<clause id="_de339a67-ddba-5f37-524d-9165343db03e" unnumbered="true" obligation="normative">
+<title id="_3fcf151f-16c8-a079-31f2-aac77dc51b11">7. The auditor's walk</title>
+<p id="_47a74498-b1db-def9-f219-901968954cb9">The arc's acceptance, spelled out as the steps an auditor with no tebako knowledge performs. Each step is offline and needs only public artifacts plus this document:</p>
+
+<ol id="_35535257-5597-34db-6739-83a073254d5e" type="arabic"><li><p id="_2bc96c00-10f5-7b0c-6d85-bae8387b24eb"><tt>tebako audit --json &gt; ledger.json</tt> — the host's decisions.</p>
+</li>
+<li><p id="_886292dc-672f-8d44-217d-c04515649cc0"><tt>tebako audit --event fetch,runtime-fetch-verified --json</tt> — every byte source and its verification verdict.</p>
+</li>
+<li><p id="_62b71c03-eeb9-b099-4e74-6900af0f7914">Take any <tt>sha256</tt> from step 2 and check the artifact against the registry row and its attestation (<tt>gh attestation verify</tt>), then reproduce the payload image per spec 14's reproducible-press rule.</p>
+</li>
+<li><p id="_92cd8640-2e13-c80d-c1fc-7126884b79b9"><tt>tebako audit --verify</tt> — the ledger's own integrity, against the seal the host wrote; or  <tt>tebako audit --seal</tt> first on a host that never anchored.</p>
+</li>
+<li><p id="_b91b1e4f-f1b1-74b5-32fb-3a97401da864">Confirm the mount set (<tt>--event composition,overlay,decrypt</tt>) matches the package's declared dependency tree (<tt>tebako closure</tt>).</p>
+</li>
+<li><p id="_41f75e7f-e721-ff9a-0f18-147b983858c0">Archive <tt>ledger.json</tt> + the seal file; a later <tt>--verify</tt> on the archived pair proves the archive is what the host wrote.</p>
+</li>
+</ol>
+</clause>
+
+<clause id="_6121b84e-3887-f5cd-015a-e5aba39c622f" unnumbered="true" obligation="normative">
+<title id="_247a8dcb-8a70-9925-5a92-64c7fed898e2">8. What this spec does not own</title>
+<ul id="_f12eff98-c664-cfb3-3bc8-823da3f36d20"><li><p id="_003de0a5-2dfd-85ba-f52f-78cc31fdee17">The event names and their field vocabularies — the writers own those (§2.3 is a census, not a registry).</p>
+</li>
+<li><p id="_7943d556-eaf3-812c-5cb7-3cc5e93a23a1">Rotation, retention, remote shipping: operator policy. The seal is the seam that makes rotation auditable, and that is all this spec says about it.</p>
+</li>
+<li><p id="_a39604b0-2e65-afb6-d069-77761c4b0211">The signature mechanism itself: spec 09 owns OpenPGP, the keyring and the pinned trust store; this spec only names where a seal's signature is checked.</p>
+</li>
+</ul>
+</clause>
+</sections>
+</metanorma>

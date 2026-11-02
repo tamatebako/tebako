@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">tpkg wire format (L0)</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 02</docidentifier><docnumber>TBK SPEC 02</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_74315c8d-b586-0b27-985e-ad2c84ecec8d" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_de070c38-66c2-606e-c7bf-7e866698d492">Normative byte-level specification of the tebako package container. Source of truth:  <tt>crates/tpkg</tt> (byte-exact with the reference C99 <tt>include/tebako/tpkg.h</tt>; golden vectors pin the layout). All v1 integers little-endian; the trailer header sits at the logical EOF (§1) at fixed size. The container knows  <strong>nothing</strong> about runtimes, entrypoints, or languages — it carries bytes, slots, mounts, and a resolution hint.  <strong>Authenticated, signed, and encrypted packages:</strong> authentication/signing is the v2 extension (§4); encryption is a TFS-layer transform of the slot images (spec 10) — the container itself stays byte-identical either way.</p>
+</foreword></preface><sections>
+<clause id="_c5a6acfe-1502-7f5d-c89b-146d71aa2704" unnumbered="true" obligation="normative">
+<title id="_3cf9f272-f8c6-1d24-6ed9-50a216c04eb0">1. File anatomy</title>
+<sourcecode id="_9b4fbfca-2e48-3d32-bcbf-9f6efd8e89cc"><body>[payload bytes][slot table: n × 280][v2 extension?][trailer header: 166 @ EOF]</body></sourcecode>
+
+
+<p id="_af29b3e7-97e2-f2b1-03dc-ad5401e84400">"EOF" is the LOGICAL end of the package: the physical EOF, except on a package signed post-press. On a Mach-O package codesigned post-press (spec 31 §1.2), codesign appends the code-signature superblob after the trailer, 16-byte aligned with a zero pad. Readers locate the trailer end via the tail slice's LC_CODE_SIGNATURE: when the superblob reaches the physical EOF exactly, the trailer header is the self-validating (magic + crc + bounds) window ending at the superblob's dataoff or at most 15 zero pad bytes earlier; every other shape reads at the physical EOF. On a PE package Authenticode-signed post-press (spec 34 §1.2/§6), the signer appends the WIN_CERTIFICATE table after the trailer and points the security data directory (<tt>IMAGE_DIRECTORY_ENTRY_SECURITY</tt>, a file offset, not an RVA) at it: when the certificate table reaches the physical EOF exactly, the trailer header is the same self-validating window ending at the table's start or at most 15 zero pad bytes earlier (the table is 8-byte aligned); an absent or zero-length directory entry means unsigned. Writers never produce the suffixed shape — only the platform signer does, and the container bytes it hashes are unchanged by it.</p>
+</clause>
+
+<clause id="_68cd698e-0a81-d90f-eb7f-ed0af6c3a99b" unnumbered="true" obligation="normative">
+<title id="_9fc631a2-4bf9-1af7-7343-c117fd18bcb8">2. Trailer header — 166 bytes, always at the package end</title>
+<p id="_cacf8f87-8ace-8b86-4913-cde4607933cc">(The package end is the physical EOF, or — on a post-press-signed Mach-O/PE — just before the trailing superblob's or certificate table's alignment pad; §1.)</p>
+
+<table id="_5c8a0b22-fdcf-a51f-076f-7833f7afc3b1"><thead><tr id="_fac4e094-c7c9-059f-49bb-da0b86b5f0a1"><th id="_88b3e150-a437-123f-3a66-a7f549abbb67" valign="top" align="right">offset</th>
+<th id="_8d99a3dc-1243-fd22-bada-060883e83f08" valign="top" align="right">size</th>
+<th id="_58137dfd-d1f2-94d8-2248-a06bb7c41045" valign="top" align="left">field</th>
+</tr></thead>
+<tbody><tr id="_2da6d5c9-c157-e7f9-ff49-39acdd909bff"><td id="_1cfe5f3e-971d-e7a8-5449-71b530722e51" valign="top" align="right">0</td>
+<td id="_21f13ad8-12bb-67a4-f897-e0018ed4f846" valign="top" align="right">10</td>
+<td id="_61873be0-1cec-ad5f-49b9-e77d4baf324c" valign="top" align="left">magic <tt>"TEBAKOTFS\0"</tt></td>
+</tr><tr id="_3cba7693-3e26-ac4d-7bf0-f6c244180dad"><td id="_62ab42bb-9153-4fa3-e50a-9033040849b3" valign="top" align="right">10</td>
+<td id="_010136dd-7692-6675-2133-35f624a6874b" valign="top" align="right">4</td>
+<td id="_15902d4c-7b5c-b28b-ddef-0612cca14401" valign="top" align="left">u32 version = <strong>1</strong> (extensions ride flags, not version bumps)</td>
+</tr><tr id="_f2f0601e-ddf0-8b1f-bac8-35b567ca43e1"><td id="_39e71dbe-2069-8333-8b55-b3305b1c019d" valign="top" align="right">14</td>
+<td id="_c5b920d7-e45b-e8e3-a789-f7b365242592" valign="top" align="right">4</td>
+<td id="_e5a7edb2-f6b3-3bd9-5a89-e9c6686504e4" valign="top" align="left">u32 package_flags (bit0 LEAN, bit1 SIGNED_V2, bit2 NO_INSTALL, bit3 QUIET_NOTICES)</td>
+</tr><tr id="_a2f7699d-3ab0-23d0-a4b7-3080d101f420"><td id="_bf58711e-e3c8-b07e-8f4c-fca8f25c3134" valign="top" align="right">18</td>
+<td id="_11a94889-c5b6-d1d9-62bc-4e354b5342d3" valign="top" align="right">4</td>
+<td id="_7b5d51bc-1479-953f-a3c0-d1183d39db63" valign="top" align="left">u32 slot_count (1..=8)</td>
+</tr><tr id="_034a3197-c886-2bdc-e8ed-8d0168968b62"><td id="_2f38ab58-0e88-b84a-8e25-139a0812ca86" valign="top" align="right">22</td>
+<td id="_214f8fb1-1385-50cc-99d6-d5d204afef27" valign="top" align="right">8</td>
+<td id="_c98cb5ab-7d0b-bd61-0e12-5bd6548e899b" valign="top" align="left">u64 slot_table_offset (absolute file offset of slot 0)</td>
+</tr><tr id="_708d4c09-9fa4-39d0-c612-049f0814f94c"><td id="_858a7796-a0fc-df37-1c60-562305ba1511" valign="top" align="right">30</td>
+<td id="_5e551599-0a86-6f11-665e-3f14c8169de6" valign="top" align="right">128</td>
+<td id="_9b6c9c9c-fe0c-fe8f-e571-e7c5c96cdc84" valign="top" align="left">char runtime_ref[128] — resolution hint (spec 05 §1); empty = classic</td>
+</tr><tr id="_850060a4-1f75-46ff-c9be-2ed338d95cf3"><td id="_8c5a323b-da7d-0d9b-a886-980f5586eb26" valign="top" align="right">158</td>
+<td id="_4d934abb-82da-1f2a-c94e-c631838e7e4e" valign="top" align="right">4</td>
+<td id="_8eb509ec-77bf-d904-ca12-c3106f9f378a" valign="top" align="left">u32 launcher_abi</td>
+</tr><tr id="_0565b8d2-c2e5-facf-b676-2298eefa25ad"><td id="_970e081c-bbfc-0bc0-64b1-d24c8e328582" valign="top" align="right">162</td>
+<td id="_d2b726b8-9bf5-0acc-1c96-d625e1745463" valign="top" align="right">4</td>
+<td id="_97f25f20-4f99-d0d2-ac9d-eb8c6b641576" valign="top" align="left">u32 crc32 over [0,162) — accident integrity, NOT authenticity</td>
+</tr></tbody>
+</table>
+
+<p id="_1b4215d6-4104-ff6c-80bf-92e26d70e6be"><tt>TPKG_MAGIC_PREFIX_LEN</tt> = 4 (<tt>"TEBA"</tt>) discriminates absent vs corrupt.</p>
+
+<p id="_93b6fe3d-080b-77e0-5442-be66e2e8976a">Bit0's <em>name</em> is the only deprecated thing about it (locked 2026-08-25, tebako#460): read  <strong>LEAN = 1</strong> as "the package does not carry its runtime pair" and LEAN = 0 as "the runtime pair is carried as ordinary slots" — the  <em>shared-runtime</em> and <em>self-contained</em> presets of spec 23 §13.2 (whose  <tt>lean</tt>/<tt>fat</tt> aliases exist only so older documents stay readable). The BIT itself stays load-bearing exactly as spec 18 S4 requires: flags are never skipped, and an unknown set bit is a named refusal.</p>
+</clause>
+
+<clause id="_defc6774-da3c-ecb4-80d5-b933445adf20" unnumbered="true" obligation="normative">
+<title id="_a16de4d3-2ee9-3d69-4549-06d4d23ee4b7">3. Slot record — 280 bytes</title>
+<table id="_caf61753-b75d-5289-dcf2-82176540a819"><thead><tr id="_15a278cf-5ace-2eb4-9ab7-33ca3e7f8275"><th id="_963e1c32-1096-0a16-60c7-784a0fa5f02b" valign="top" align="right">offset</th>
+<th id="_50ade925-5243-e576-69a6-6d8d1b9902c7" valign="top" align="right">size</th>
+<th id="_257d96ec-806e-e7e2-33bf-4bb89c3083ce" valign="top" align="left">field</th>
+</tr></thead>
+<tbody><tr id="_34ccaef5-faee-6fab-eb0a-2933c4b8c0ad"><td id="_0407dfa4-3241-a988-a025-a003180b740b" valign="top" align="right">0</td>
+<td id="_a7432c62-c78d-2d3f-2107-975fc1968d43" valign="top" align="right">8</td>
+<td id="_0822272b-5fbc-5c7e-aeda-5de2b79b4050" valign="top" align="left">u64 offset (absolute file offset of the image)</td>
+</tr><tr id="_1de4b9b3-209d-176c-b186-0c06f11dbf7a"><td id="_86aeb21f-0b18-b1fd-b2cf-9fa86df257d4" valign="top" align="right">8</td>
+<td id="_78ad6c01-919a-7638-798d-bbdd8ab0a212" valign="top" align="right">8</td>
+<td id="_e88deeb6-ac21-3e1f-8dd2-882f78ceda0d" valign="top" align="left">u64 size</td>
+</tr><tr id="_321f2b6e-d940-dccd-9ae4-19d8f2e62a8f"><td id="_3228ef02-7b88-1c9a-8897-62f173b94197" valign="top" align="right">16</td>
+<td id="_12eb28d9-1021-23ca-ba1c-6d3fd20858f3" valign="top" align="right">4</td>
+<td id="_30d655a1-8c13-d78f-d7a7-71a013e8021e" valign="top" align="left">u32 format_id — IMAGE FORMAT ONLY: 0=auto, 1=dwarfs, 2=squashfs, 3=zip, 5=limnifs (spec 20, PLANNED) (4=runtime: legacy role wart, §5)</td>
+</tr><tr id="_4b8d7c68-c82f-3581-b8c2-c48e9e439a90"><td id="_8a397f55-5b77-1e60-180b-53987a91b660" valign="top" align="right">20</td>
+<td id="_6d7b1860-b365-0ce1-a32f-f1b4e56aafc6" valign="top" align="right">4</td>
+<td id="_9780198b-09ea-1adb-b326-ca0718138932" valign="top" align="left">u32 flags (0 today; future home of role bits)</td>
+</tr><tr id="_5561b793-7ee4-aee8-993f-88f9fc2c4a1a"><td id="_c5d58633-e571-bb46-693e-4b4f1c965ca0" valign="top" align="right">24</td>
+<td id="_7a907d2f-4719-5058-029d-345c0bf9390e" valign="top" align="right">256</td>
+<td id="_77a98603-aa5f-2dfc-bc93-d05d106ac443" valign="top" align="left">char mount_point[256] (UTF-8, NUL-padded)</td>
+</tr></tbody>
+</table>
+</clause>
+
+<clause id="_49b51304-d4ae-1ba5-4754-5029bc6d913f" unnumbered="true" obligation="normative">
+<title id="_6d54bdf5-df4d-c1b0-e51b-33c6091ef1b6">4. v2 chain-of-trust extension (opt-in; flag bit1 <tt>SIGNED_V2</tt>)</title>
+<p id="_76c90552-736b-4a18-5faf-870d318f055d">Between slot table and header; <strong>all its numerics big-endian</strong> (the header stays v1-little-endian). v1 readers ignore the flag and run the package — trust enforcement is a reader capability, not a format barrier.</p>
+
+<table id="_9d455821-ee09-0464-28f9-1071eaebd158"><thead><tr id="_7f1789f7-eecf-c0e7-6b21-9d35fc91397b"><th id="_227c9d18-3cbc-1440-eda2-197e25324b37" valign="top" align="right">offset</th>
+<th id="_f840944d-834c-99d6-4774-d0098b02a63b" valign="top" align="right">size</th>
+<th id="_8cde55fa-a759-6a19-f7fb-1b444cea3908" valign="top" align="left">field</th>
+</tr></thead>
+<tbody><tr id="_1258d153-0012-2546-1357-3500f9e76be9"><td id="_ad96ebad-67d3-8613-320b-be2ba5560783" valign="top" align="right">0</td>
+<td id="_b4d85566-2fb9-bab0-0c91-704f5f0afb6c" valign="top" align="right">256</td>
+<td id="_a34c7df8-cbd5-a6fc-eb7b-be035396b0e5" valign="top" align="left">per-slot SHA-256, 8 × 32 B (digest of slot i at i×32; tail zeroed)</td>
+</tr><tr id="_4a0bb53a-a5f6-fa4a-2c69-dd851c9a5162"><td id="_9cf0cf73-f22d-80c5-c0ae-a7107064858a" valign="top" align="right">256</td>
+<td id="_fdac05ec-b97f-f7ae-6e14-380e45f55655" valign="top" align="right">8</td>
+<td id="_c953631f-316d-9702-f70a-42bf4f0fa57c" valign="top" align="left">signer keyid (low 64 bits of OpenPGP fingerprint, BE)</td>
+</tr><tr id="_07f6ed72-a112-c5a7-7432-d3de9c4d9200"><td id="_11849c5d-8405-68dc-764b-2e1787e9f213" valign="top" align="right">264</td>
+<td id="_68384498-75db-1d97-f4fc-5d260e58a38b" valign="top" align="right">sig_len</td>
+<td id="_d8f401b2-5114-ae6d-1f5d-e4b8996e8193" valign="top" align="left">OpenPGP detached signature (binary packets)</td>
+</tr><tr id="_6c4ce1b8-14dc-324d-49f1-7ca6081e676c"><td id="_57da3628-212d-a276-b794-d693be1ec203" valign="top" align="right">264+sig_len</td>
+<td id="_99c5ede8-e4e2-722d-009d-02a92aa875d8" valign="top" align="right">4</td>
+<td id="_7b2d63d9-c557-0e4a-d560-03c0b1f51828" valign="top" align="left">u32be sig_len (1..=65536)</td>
+</tr></tbody>
+</table>
+
+<p id="_bc62e822-e8ea-5e23-590c-49edc2e0626f">Canonical signed bytes: <tt>slot table ‖ ext blocks ‖ digests ‖ keyid ‖ header</tt> — everything except the signature and its length field. The extension blocks (§5b) sit inside the signed region: the signature covers them.</p>
+</clause>
+
+<clause id="_968be5c8-6003-f278-c28a-7d24be8e7a35" unnumbered="true" obligation="normative">
+<title id="_23e06b7e-31de-1163-d2dc-c7a93ee9f83d">5. The installability flag (bit2 <tt>NO_INSTALL</tt>)</title>
+<p id="_dd911038-d994-65e2-619a-d7849f376d27">A run is a run — a plain execution never writes payload slices into the local store, with exactly one scoped exception: the lazy seed of spec 05 §4 (a self-contained package MAY seed the cache with the artifacts it carries — best-effort, never blocking the run).  <tt>NO_INSTALL</tt> packages never seed. Installation is otherwise the EXPLICIT verb (<tt>tebako install &lt;path&gt;</tt>; the bootstrap's <tt>--tebako-install</tt> refuses or guides, spec 06 §4 exit 76).  <tt>NO_INSTALL</tt> marks a publisher-frozen package: it RUNS standalone but every install attempt is refused with a named error. Absence means installable-on-request, including packages pressed before the verb existed — pass-through like every flag.</p>
+</clause>
+
+<clause id="_a5d3c40c-0242-8b3e-093f-98837e749c62" unnumbered="true" obligation="normative">
+<title id="_b7e4173d-ab1d-ee11-2d83-dfbd837df167">5a. The quiet-notices flag (bit3 <tt>QUIET_NOTICES</tt>; tebako#400, spec 23 §14)</title>
+<p id="_80eacc86-ceb9-3455-571a-f1785a152628">The developer's declaration that the package's runs suppress the unsigned-legacy-trailer warning (spec 09 §v1-legacy) and the progress lines (spec 06 §5) — declared through any registry channel (CLI <tt>--quiet-notices</tt>, env <tt>TEBAKO_QUIET_NOTICES</tt>, compose key <tt>quiet_notices:</tt>), resolved once at press, baked here. Run-time reads only the bit: the package behaves identically on every machine. The bit rides inside the signed region, so it cannot be forged onto a signed package;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> is checked FIRST and outranks it, and the audit-journal entry is written regardless. Absence means the default notice behavior — pass-through like every flag.</p>
+</clause>
+
+<clause id="_6cc7cd7c-5692-dfa2-36eb-11dbf153f260" unnumbered="true" obligation="normative">
+<title id="_3f37ca8b-c03e-c4b5-e9cf-f60dff61fe53">6. Orthogonality note (normative)</title>
+<p id="_c98d33bd-2748-86e4-db01-10063851838e"><tt>format_id</tt> answers exactly one question: how to read the slot's bytes. Whether a slot is a runtime, and which payload carries the entrypoint, are <strong>roles</strong> — L2 semantics declared by manifests (spec 03), never encoded in the format axis. The v1  <tt>format_id = 4 (TPKG_FORMAT_RUNTIME)</tt> marks the fat runtime slot so v1 loaders skip handing it over as a mount; it is a role riding in the format field, kept only for backward compatibility. The two-slot era makes the wart obsolete in practice: a self-contained package carries its runtime as ordinary exe + env-image slots (spec 19 §6.1), and presses never emit format 4 anymore. The cleanup path: slot role moves to slot flags / package manifest, and <tt>format_id</tt> returns to pure image-format semantics. New semantics must never again be smuggled into the format axis.</p>
+</clause>
+
+<clause id="_9f315f8a-4c6b-c2aa-3350-88ffae2d2f84" unnumbered="true" obligation="normative">
+<title id="_f26fd796-98af-d231-6429-bbbfe3d0752b">5b. Typed extension blocks (the L2 home; locked 2026-07-26)</title>
+<p id="_3686a592-a166-89f6-c6a7-087734b13fb1">Following OCI's model — the manifest is a separate blob BESIDE the layers, readable without pulling any image — the package-level (L2) manifest lives in the container but OUTSIDE every payload image. The v2 signing extension already proved the mechanism: blocks between the slot table and the trailer header are invisible to v1 readers (they only read the header at EOF and the slot table at its recorded offset; the bounds check never requires the table to abut the header).</p>
+
+<p id="_aef61875-9c78-7856-c369-b4819c6649bb">Generalized layout:</p>
+
+<sourcecode id="_3122510a-25f3-a623-9b01-dd8674cadd9d"><body>[bootstrap][payload slots][slot table][ext blocks…][v2 signing ext?][header @EOF]
+
+ext block: [u32be type][u32be length][payload bytes]
+  type 1 = v2 signing extension (historical: immediately before the
+           header, self-delimiting from the tail via its sig_len field)
+  type 2 = package manifest (YAML — spec 03 §6; identity, entrypoint/
+           suite composition, package-level jail + env, per-entry
+           runtime refs, per-slot mount modes — exclusive/union,
+           spec 17 §1)</body></sourcecode>
+
+
+<p id="_dd6326b5-5c7d-83cb-b144-e84eb77dba6d">Rules: blocks walk forward from the end of the slot table (type+length self-delimit); the v2 signing ext, when present, is LAST before the header (unchanged bytes/position); unknown block types are skipped by v1-era-aware readers (forward-compat) but rejected by  <tt>validate</tt> with a named error; a package manifest never duplicates payload manifests — it references slots, and payload manifests (spec 03) stay inside images (self-describing payloads). The 128-byte single  <tt>runtime_ref</tt> remains for v1-era loaders; per-entry runtime references for suites and multi-runtime packages live in the type-2 manifest (no size cap).</p>
+</clause>
+
+<clause id="_f83e99ef-7653-0844-7e40-dc94f99759cb" unnumbered="true" obligation="normative">
+<title id="_106ca70f-01ed-5f02-fd89-79d9128c73e0">6. Absent vs corrupt; validation</title>
+<ul id="_95880cbe-7e57-c2ed-c898-d2eafde3db12"><li><p id="_8852684d-0462-13e2-41c8-2dd7833166e9">Last-166-byte window without the <tt>"TEBA"</tt> prefix → <tt>NoTrailer</tt> (classic bundle; callers may fall back to offset auto-detection).</p>
+</li>
+<li><p id="_bb078091-caae-b97d-4a10-e0aa7f3fbda5">Prefix ok, magic bad → <tt>Magic</tt>. Magic ok, crc bad → <tt>Crc</tt>.</p>
+</li>
+<li><p id="_87c4dae0-91b1-029a-a9b7-7b062566d333">Version ≠ 1 → <tt>Version</tt>. Slot count outside 1..=8 → <tt>Slots</tt>.</p>
+</li>
+<li><p id="_12b8d725-92e1-4e19-6dd4-abb0d5211a9e">Structural validation mirrors the reference C <tt>tpkg_validate()</tt>: <tt>offset+size</tt> non-overflowing, <tt>format_id</tt> ≤ 5 (spec 20 raised the bound from the C reference's ≤ 4 — the documented parity end: the C99 reader keeps rejecting format 5 with its named invalid error; ids ≥ 6 stay unallocated),  <tt>runtime_ref</tt> and mount points NUL-terminated within their fixed fields; table fits entirely before the header.</p>
+</li>
+<li><p id="_396c239d-3f6b-b4d7-f16a-bfc32bcb4fd3">v2: flag/extension co-presence; zeroed digest tail; signature non-empty and ≤ 65536; signer keyid non-zero.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_1499c919-b8be-aeb3-13a4-25b163214987" unnumbered="true" obligation="normative">
+<title id="_b763f66c-78e3-4852-ee36-6351d8f99c3d">7. Errors (Rust <tt>TpkgError</tt> ↔ C <tt>TPKG_ERR_*</tt>, 1:1)</title>
+<p id="_c17a042c-5137-b5d6-b6df-47912b7eb648"><tt>NoTrailer</tt>, <tt>Magic</tt>, <tt>Crc</tt>, <tt>Io</tt>, <tt>Bounds</tt>, <tt>Slots</tt>, <tt>Invalid</tt>, <tt>Arg</tt>, <tt>Version</tt> — <tt>strerror</tt> strings byte-identical with the C implementation.</p>
+</clause>
+</sections>
+</metanorma>

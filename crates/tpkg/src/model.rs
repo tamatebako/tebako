@@ -336,8 +336,10 @@ mod carries_package_manifest_tests {
         // spec 18 S4: flags are load-bearing, never skipped — a bit this
         // reader does not understand is refused, not silently accepted.
         let mut m = manifest();
-        let mut slot = crate::Slot::default();
-        slot.size = 1;
+        let slot = crate::Slot {
+            size: 1,
+            ..Default::default()
+        };
         m.slots.push(slot);
         assert!(m.validate().is_ok(), "a clean manifest validates");
         m.package_flags = crate::TPKG_FLAG_LEAN;

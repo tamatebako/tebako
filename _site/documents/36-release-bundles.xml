@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Release bundles (the runtime publish unit)</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 36</docidentifier><docnumber>TBK SPEC 36</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_43dcad3d-fd1c-557f-48d2-6131fa593065" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_4ced2f98-c41e-4065-771f-7378807fd7ba">Status: <strong>PLANNED</strong> (locked direction 2026-09-24; ships with tebako-release v0.2.0 + the tebako-resolve bundle fetch path — the v0.16.28 line-shard recovery runs the per-file shape to completion, and pre-bundle releases stay installable forever, spec 13 §8).</p>
+
+<p id="_b74c109a-0f43-a5c8-659a-bd7d32e5377d">Normative specification of the <strong>bundle</strong>: the single distribution artifact that carries one runtime leg's bytes (interpreter exe + env image + platform support files) as one gzipped tar. The bundle replaces the per-file asset enumeration of spec 13 §2a on bundle-era release lines; it changes what a factory PUBLISHES and what a resolver FETCHES, never what the store holds (spec 05 §3's layout is unchanged — the bundle unpacks into it).</p>
+</foreword></preface><sections>
+<clause id="_e926a2cb-ce8a-f502-3c2c-36d76026c6c1" unnumbered="true" obligation="normative">
+<title id="_4cdeb8c3-13d9-06f5-145a-3e42c2bfcfc9">1. Why (the two budgets, measured 2026-09-23/24)</title>
+<ul id="_d8af0ce4-d180-66b8-5835-be6b6a4cce31"><li><p id="_294dc082-9166-02a7-95b3-016e9c1a299b"><strong>The 1,000-asset ceiling.</strong> GitHub caps a release object at 1,000 assets (<tt>422 … file_count limited to 1000 assets per release</tt>). The ruby factory's catalog is 23 versions × 7 platforms; at the per-file shape's ~10–14 assets per leg (exe, image, both  <tt>.sha256</tt>, the shard, windows DLLs, and an  <tt>.asc</tt> of each on signing-enabled lines) a catalog publish is ~1,800 assets — it cannot converge on one release object. The v0.16.28 recovery line-sharded the catalog onto per-line tags (<tt>v0.16.28-ruby4.0</tt>, …) via <tt>TEBAKO_RELEASE_TAG</tt>; that plumbing stays as the migration-time escape hatch (§6).</p>
+</li>
+<li><p id="_bb88fba3-edf2-3604-e07c-0699c1d13dde"><strong>The API budget.</strong> Every asset is REST calls (upload, list, sign, re-list). The same recovery exhausted the tebako-ci identity's 5,000 req/h sliding window mid-fleet (tebako-release#3). The per-leg asset count is the multiplier of BOTH budgets; consumption is always paired (the loader fetches exe and env image together), so the per-leg bundle is the natural unit.</p>
+</li>
+</ul>
+
+<p id="_dad68201-e306-1d03-4f18-73c1cdb47f2d">Budget table (per leg / catalog of 23 × 7):</p>
+
+<table id="_2d800bc3-1734-9214-a696-e2d5ffce4791"><thead><tr id="_736fc0b6-c8a9-1752-6078-83828ffde1dd"><th id="_15737e7f-8628-badf-f1f2-8ee36e6efe3a" valign="top" align="left">shape</th>
+<th id="_14006472-b6a2-fa25-6756-e3621a7e44c9" valign="top" align="left">unsigned</th>
+<th id="_ce4770dd-f6e3-07d5-17e3-559aa99bca9f" valign="top" align="left">signing-enabled</th>
+</tr></thead>
+<tbody><tr id="_055a4310-5698-5f2c-e45b-90bfe66f2b03"><td id="_d21193a7-6ed1-3c79-4601-7eeb48621937" valign="top" align="left">per-file (today)</td>
+<td id="_92b3fda3-4252-e793-62e2-f2d8458722f4" valign="top" align="left">~5 / ~800–1,100</td>
+<td id="_e0b07bb9-016d-6948-ed8d-d190df198e4c" valign="top" align="left">~10–14 / ~1,800</td>
+</tr><tr id="_e190c31f-76f9-0bd2-eec7-04c5ab6b963a"><td id="_44856475-8841-81df-e099-bbd640bc1e42" valign="top" align="left">bundle (this spec)</td>
+<td id="_417983f0-88ee-3c61-d0c5-ee820e3c00f1" valign="top" align="left">3 / 483</td>
+<td id="_b68e607f-a86b-b127-8170-ea3314f24715" valign="top" align="left">5 / 805</td>
+</tr></tbody>
+</table>
+
+<p id="_9fae2b33-2cdf-8dad-0d94-73fcd0174757">The bundle brings the whole catalog back under the ceiling even on signing-enabled lines; line shards (§6) remain the headroom, not the routine.</p>
+</clause>
+
+<clause id="_7bd7ff0d-bf10-da5c-17ef-d1d890c0a769" unnumbered="true" obligation="normative">
+<title id="_408243ab-92d0-0901-cb70-3c9ff72f30a1">2. The bundle (wire format)</title>
+<p id="_c4ccd28c-c093-1c4c-3e95-80c950cc7b85"><tt>&lt;stem&gt;.tar.gz</tt> where <tt>&lt;stem&gt;</tt> is the package stem (<tt>tebako-runtime-&lt;ver&gt;-&lt;lang&gt;-&lt;lv&gt;-&lt;triplet&gt;</tt> — suffix-less, spec 05 §2's spelling rule and era law, on windows too). A gzipped tar whose members are named by their served spellings, in this fixed order (deterministic bytes — a re-run of identical inputs yields a digest-identical bundle, so the write-once digest-match skip stays cheap):</p>
+
+<sourcecode id="_0a7b51e0-b471-fae2-ae04-771550d15745"><body>&lt;stem&gt;[.exe]        # the interpreter exe (mode 0755)
+&lt;stem&gt;.tfs          # the env image (mode 0444 at install)
+&lt;stem&gt;.dll …        # windows support DLLs under their staged basenames,
+                    # zero or more, sorted (today: the one runtime DLL)
+SHA256SUMS          # coreutils "&lt;sha&gt;  &lt;file&gt;\n", one line per member</body></sourcecode>
+
+
+<ul id="_6f493d63-cbbf-0d4d-2f25-008e4d2d8fcc"><li><p id="_c6ac127e-dd04-98ed-9adc-db3ffe716530"><tt>SHA256SUMS</tt> is the LAST member and pins every other member; the per-member digests mirror the shard's sha fields (§3) exactly.</p>
+</li>
+<li><p id="_3e8c75bc-47ee-5311-9d1a-cd5529ccc122">gzip headers carry <tt>mtime=0</tt> and no original-name field. Tar headers carry no uid/gid/uname/gname; modes as above.</p>
+</li>
+<li><p id="_7b98de15-b1fb-3d72-8a46-6c5f03ad9519">Members are regular files only. No directories, symlinks, device nodes, absolute paths, or  <tt>..</tt> segments — a bundle violating the member grammar is  <tt>InvalidBundle</tt> (§7), never a best-effort unpack.</p>
+</li>
+<li><p id="_f03d49fa-e5af-53b7-b316-a26aa7f5223f">The bundle is built ONCE per leg by the publish invocation from the leg's staged bytes (tebako-release owns the builder — in-process <tt>Gem::Package::TarWriter</tt> + <tt>Zlib::GzipWriter</tt>; no shell-outs), after the leg's gates pass, from the same bytes the per-file shape would have uploaded.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_7cb1f51d-0e11-981c-ad9d-40559128f683" unnumbered="true" obligation="normative">
+<title id="_c0851f8f-b831-1484-dff8-7dd30e00439d">3. The publish shape (bundle-era lines)</title>
+<p id="_491070fa-55eb-a694-8f68-b599bcb5b7bb">Per leg, the publish invocation writes — write-once, spec 13 §2a's immutability rule unchanged:</p>
+
+<sourcecode id="_e0b38490-22eb-432d-5d15-ca1cd2f6a3b2"><body>&lt;stem&gt;.tar.gz          # the bundle
+&lt;stem&gt;.tar.gz.sha256   # the per-asset sidecar (coreutils shape)
+&lt;stem&gt;.manifest.json   # the per-package shard (the authority, §2's role)</body></sourcecode>
+
+
+<p id="_6bd93142-dd1f-4379-c446-ecaf178f1194">plus, on signing-enabled lines, an <tt>.asc</tt> of EACH of the three (spec 09 §5's every-served-name rule — three signatures where the per-file shape needed eight or more).</p>
+
+<p id="_21c92874-84a3-558d-9c37-2f547237497c">The shard keeps today's identity anchors and gains ONE additive key:</p>
+
+<sourcecode id="_9df5fde9-9160-ed12-b68d-5017b51411be" lang="json"><body>{
+  "tebako_version": "0.17.0", "contract_version": 2,
+  "ruby_version": "4.0.7", "platform": "macos-arm64",
+  "filename": "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64",
+  "sha256": "…", "size_bytes": 38683544,
+  "abi": "arm64-darwin-23",
+  "image": {"filename": "….tfs", "sha256": "…", "size_bytes": 7658081},
+  "bundle": {"filename": "tebako-runtime-0.17.0-ruby-4.0.7-macos-arm64.tar.gz",
+             "sha256": "…", "size_bytes": 46012377,
+             "signature": {"keyid": "efc3c250f7862a48", "asc": "….tar.gz.asc"}}
+}</body></sourcecode>
+
+
+<ul id="_5940fb13-95f8-a511-791c-3552f8f8b321"><li><p id="_d6ce6b4a-bb8d-8f9a-3d07-52d33f7ab695"><tt>filename</tt> stays the EXE's spelling and the per-member sha fields (<tt>sha256</tt>, <tt>image.sha256</tt>, <tt>dll.*</tt>) keep pinning the UNPACKED members — the store verifies members against them post-unpack (§4), and old readers keep matching the identity triple exactly as today.</p>
+</li>
+<li><p id="_6b25dc71-96ec-efb8-d1b3-ed7c64bfdf08"><tt>bundle</tt> is additive: pre-bundle readers ignore it (the additive rule); bundle-era readers prefer it. A shard declaring  <tt>bundle</tt> without the bundle's assets on the release is an invalid publish — the leg fails before it ships, exactly like a  <tt>signature</tt> declaration without its  <tt>.asc</tt> (spec 09 §4's invalid-signing-state rule extended to the bundle block).</p>
+</li>
+<li><p id="_36ef8633-c896-06f3-0211-35f163375246">The windows <tt>dll</tt> metadata block (<tt>install_as</tt> et al.) is unchanged: DLLs ride the bundle as members and install by the shard's declared spellings.</p>
+</li>
+</ul>
+
+<p id="_8641d507-043d-bae6-52ac-c80904ce4eec"><strong>Co-publish (the lazy arm's serving requirement, spec 39 §7).</strong> A bundle-era line whose consumers include a lazy-mount loader ALSO serves the per-file assets of spec 13 §2a's enumeration — the bare exe under its historical spelling,  <tt>&lt;stem&gt;.tfs</tt>, <tt>&lt;stem&gt;.dll</tt> (windows) — each with its own  <tt>.sha256</tt> sidecar, plus an <tt>.asc</tt> of each on signing-enabled lines. The shard's grammar is otherwise unchanged: the per-file blocks already pin exactly these bytes (the member pins ARE the standalone pins — one staged file, one digest, two serving forms); the shard gains ONE additive witness, top-level  <tt>"per_file_assets": true</tt> (runtime-manifest MINOR 2), and declares the entry/facet <tt>signature</tt> blocks exactly as the per-file era does (the every-served- name rule covers the standalone set again). A shard carrying the witness without the assets on the release is the same invalid publish as a  <tt>bundle</tt> block without its bundle — the leg fails before it ships and the audit names the gap. The bundle stays the ONE fetch of the default eager path (§4) — co-publish changes what the release SERVES, never what the bundle carries or how it verifies. The §4 compat window closes on co-published lines: a pre-bundle reader ignores  <tt>bundle</tt> (the additive rule) and takes the per-file path against the same pinned bytes. Asset budget: the union is 9–11 assets per leg unsigned (18–22 on signing-enabled lines); line tips (5 rubies × 7 platforms) stay far under the 1,000-asset ceiling, and catalog republications ride §6's line shards as always. The mode is the factory's declared policy (the release tooling's adapter seam), never an env knob — a factory opts in when its consumers include the lazy arm.</p>
+</clause>
+
+<clause id="_a25fbc35-5e30-0b13-9d58-665dde068448" unnumbered="true" obligation="normative">
+<title id="_daf91c7c-62c7-6610-1655-e7daf529719c">4. The resolver path (spec 05 §2 amendment)</title>
+<p id="_f67eb304-ca8a-e206-048d-8e4cd21046f6">Preference order is unchanged (shard → derived monolith → line index); the era branch happens INSIDE the shard case:</p>
+
+<ul id="_119e180b-a38d-1bcd-9a79-1058289caa5c"><li><p id="_567efc87-a92c-46d9-723d-e190fc05d8e4"><tt>bundle</tt> present ⇒ <strong>bundle fetch</strong>: download <tt>bundle.filename</tt> + its  <tt>.sha256</tt> sidecar (+ <tt>.asc</tt> when <tt>bundle.signature</tt> declares it) → verify the detached signature FIRST when declared (spec 09 §4's runtime-fetch point, always strict: 71 invalid / 72 untrusted) → verify the bundle sha256 (exit 70 on mismatch) → unpack in-process (Rust  <tt>tar</tt> + <tt>flate2</tt>; no shell-outs, invariant 1) with the §2 member-grammar validation → verify EVERY member against the shard's per-member pins (<tt>InvalidBundle</tt> on mismatch — a bundle whose members disagree with the signed shard is an attack surface, never a tolerance) → write the spec 05 §3 store layout exactly as today (exe 0755, image 0444, the  <tt>sha256</tt>/<tt>origin</tt> markers from the member pins) via tmp + rename — a partial install stays invisible.</p>
+</li>
+<li><p id="_28630ca6-96fb-6259-fd7f-4c7bb4cf6848"><tt>bundle</tt> absent ⇒ the per-file path, forever (keep-forever, spec 13 §8). The era branch is per-release, never global.</p>
+</li>
+<li><p id="_5e4be8f0-1f19-15fa-bb79-2b254b0cd684"><strong>Old resolver, bundle-era release</strong> (the compat window): the shard matches,  <tt>filename</tt> flows verbatim, and — on a bundle-only line — the exe asset does not exist on the release, so the fetch fails with the named not-found error (exit-69 class) naming the identity triple and hinting that the line requires a bundle-era tebako. Never an exec of wrong bytes, never a silent fallback: old readers break LOUD, which the additive-key design makes the ONLY failure mode. On a CO-PUBLISHED line (§3) the window closes: the per-file assets exist again and the old reader's per-file path installs the same pinned bytes.</p>
+</li>
+<li><p id="_ab62fb41-5bf7-e17d-6cba-c65357fc1b2f">One fetch replaces three or more: the journal records the bundle base and channel exactly as today (spec 05 §2's per-engine chain applies unchanged — the bundle is just the asset the chain supplies).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_8a2b3697-cfcc-2d3e-8cd5-03b9f962f868" unnumbered="true" obligation="normative">
+<title id="_fd335695-5791-e975-7f7d-108b6b98f069">5. The registry mirror (spec 04 §2 amendment)</title>
+<p id="_f2c6a5a7-f3b0-a735-7a94-852ec9cd5287">A bundle-era runtime entry's platform rows name the BUNDLE: <tt>artifact: &lt;stem&gt;.tar.gz</tt>, <tt>sha256</tt> pins the bundle. The rows stay the resolution mirror and audit pin; the runtime download itself flows the shard (§4). Per-file-era rows keep naming the exe — the registry is a faithful mirror of what the pinned release serves, era by era, and a <tt>status: withdrawn</tt> mark means the same thing on both. A CO-PUBLISHED line's row is unchanged — it still names the bundle (the preferred eager fetch): the row's  <tt>blksum</tt> pin (spec 39 §3) is the lazy wire's only registry mirror, and the standalone per-file asset names derive from the stem (spec 05 §2's spelling rule), so the row grammar carries nothing new.</p>
+</clause>
+
+<clause id="_d37165e7-5b35-35f2-93db-216c10508f66" unnumbered="true" obligation="normative">
+<title id="_739792cb-a0fb-b76a-596a-52a4db3f6459">6. The release-topology policy (spec 13 amendment, locked 2026-09-24)</title>
+<ul id="_5f35dbba-047d-76ad-47cf-bd2fbb1c7020"><li><p id="_e27f5c5a-a854-6e77-7a73-4a9474ce99d9"><strong>Tips by default.</strong> A routine factory release publishes the <tt>full</tt> set (line tips: 5 rubies × 7 platforms ≈ 385 per-file assets, ≈ 175 bundle assets) — comfortably under the ceiling on either shape.</p>
+</li>
+<li><p id="_f0238cf9-375b-ec46-4ae6-440959b23613"><strong>Catalog republication is for migrations only</strong> (a format switch like dwarfs→limnifs), and a catalog run DERIVES its shard tags itself: <tt>v&lt;ver&gt;-&lt;engine&gt;&lt;line&gt;-&lt;platform&gt;</tt> per (ruby line × platform group) — the platform group's vocabulary is  <tt>linux-gnu</tt> / <tt>linux-musl</tt> / <tt>macos</tt> / <tt>windows</tt> (one shard serves both arch legs of its group) — no operator input (the v0.16.28 manual  <tt>TEBAKO_RELEASE_TAG</tt> input remains as the override). A per-platform shard tag is the publish unit because concurrent platform legs never share one release object (the ghost-release race); a version's line-level tag MAY also exist (the 0.17.0 shape) but is never required.  <strong>Consumers derive:</strong> a registry's version-level  <tt>release.ref</tt> names any one published shard of the version; a reader substitutes its own platform group's segment (<tt>v0.17.1-ruby3.3-windows</tt> read on macOS → <tt>v0.17.1-ruby3.3-macos</tt>), and a line-level pin probes its per-platform shard first, the line tag second, the monolith last. A row carrying the additive per-row <tt>release.ref</tt> (registry schema MINOR 6, tebako#711) names its serving shard tag EXPLICITLY — it wins over the version-level derivation (spec 04 §2). The grammar's ONE code owner is tpkg (<tt>Platform::shard_tag_segment</tt>, <tt>shard_tag_substitute</tt>, <tt>shard_tag_append</tt>); a tag outside the vocabulary is opaque and never rewritten. The AUDIT rides the tail of each (platform × shard) run — the duty is per-platform by construction, and the platform run owns the matrix truth (its own compute outputs; never a recomputation, never a cross-run stale read); the coordinator's release job keeps only the registry renders, one bot PR per shard tag.</p>
+</li>
+<li><p id="_948717d4-3fba-9e98-678b-d0c238df7ccd"><strong>Withdrawal bounds growth</strong> (spec 04 §2): a superseded patch version takes  <tt>status: withdrawn</tt> at the line's next publish rather than being re-hosted on every migration. The catalog is the historical record; the registry is what resolvers walk.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_a53e3327-874c-26b7-fb4b-d82e13ffd612" unnumbered="true" obligation="normative">
+<title id="_629dee8f-1564-a8cf-4d48-ae3dc78c8db5">7. Named errors (new class; existing classes unchanged)</title>
+<ul id="_d92aaa68-dcd2-3e66-8bae-66abb8e8e51b"><li><p id="_be9f51bf-0d1b-5bba-1a47-e786abd82547"><tt>InvalidBundle</tt> — member-grammar violation, member-set mismatch vs the shard, member checksum mismatch, or an undecodable tar/gzip stream. Exit 70's integrity class at fetch; the message names the member and the shard it disagrees with. Never a partial store write (tmp + rename), never a skipped member.</p>
+</li>
+<li><p id="_32a5a4fa-e89a-74ad-6e45-7b6727819c9a">Bundle fetch/signature failures reuse the spec 09 §4 classes unchanged: 69-class not-found, 70 sha256, 71 invalid/absent signature, 72 untrusted keyid.</p>
+</li>
+</ul>
+</clause>
+</sections>
+</metanorma>

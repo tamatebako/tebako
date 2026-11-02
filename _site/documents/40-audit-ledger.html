@@ -1,0 +1,2090 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>The audit ledger: queries, the anchor, and the auditor's walk</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 40</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">The audit ledger: queries, the anchor, and the auditor's walk</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_e7f05070-be5d-a666-3790-d15e91e33eea">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_ad4be5bd-b422-a5e2-0bcc-d1f5ee907a0d">      
+  
+  1. The ledger and its one job
+</a></li>
+<li class="h1"><a href="#_53511b43-0362-7191-d3d3-fafaa23e8e79">      
+  
+  2. Reading rules (normative)
+</a></li>
+<li class="h2"><a href="#_ae067e20-9943-854b-0ead-57ccdf19c0dd">      
+  
+  2.1 Line grammar
+</a></li>
+<li class="h2"><a href="#_0e5c0576-520b-d77f-a307-23245fb4d6e3">      
+  
+  2.2 Damage is surfaced, never swallowed
+</a></li>
+<li class="h2"><a href="#_17580a77-f993-d40d-54f7-7a98aa3d0442">      
+  
+  2.3 The vocabulary (by the question it answers)
+</a></li>
+<li class="h1"><a href="#_0358575e-da0d-9c05-da19-ae9c8d5ea096">      
+  
+  3. The query surface
+</a></li>
+<li class="h2"><a href="#_05ba9274-30b0-b7c1-f091-7ab9556d8439">      
+  
+  3.1 Filters
+</a></li>
+<li class="h2"><a href="#_8559971a-b5de-846a-ee95-62a566c10afe">      
+  
+  3.2 Output
+</a></li>
+<li class="h1"><a href="#_aaacf492-161d-7271-2330-3adea9742576">      
+  
+  4. The anchor: tamper evidence
+</a></li>
+<li class="h2"><a href="#_3cd1e0cf-fdf2-27ee-1b02-2466a656c95e">      
+  
+  4.1 The chain
+</a></li>
+<li class="h2"><a href="#_53b28f7a-e5f7-5ed4-c6cb-8e91576df9e1">      
+  
+  4.2 Seal records
+</a></li>
+<li class="h2"><a href="#_821dc135-b108-da5a-3965-2591598e930f">      
+  
+  4.3 Verification
+</a></li>
+<li class="h1"><a href="#_6984d0fa-4e39-f83e-a636-1d19e6ad15cc">      
+  
+  5. The JSON contract (<tt>audit_schema: 1</tt>)
+</a></li>
+<li class="h1"><a href="#_62d681f6-02b5-618d-a330-83132abd0f3f">      
+  
+  6. Named errors and exit codes
+</a></li>
+<li class="h1"><a href="#_de339a67-ddba-5f37-524d-9165343db03e">      
+  
+  7. The auditor's walk
+</a></li>
+<li class="h1"><a href="#_6121b84e-3887-f5cd-015a-e5aba39c622f">      
+  
+  8. What this spec does not own
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_e7f05070-be5d-a666-3790-d15e91e33eea"><h1 class="ForewordTitle" id="_f7534a6c-f32e-40a6-97f9-81a4d88bd739"><a class="anchor" href="#_e7f05070-be5d-a666-3790-d15e91e33eea"></a><a class="header" href="#_e7f05070-be5d-a666-3790-d15e91e33eea">Foreword</a></h1><p id="_1fc89e25-4bc9-1775-102e-1d0f91b5ed84"><b>Status: SHIPPED.</b> The event vocabulary predates this spec (the writers own their events, §2.3); this spec owns the READ contract and the anchor: the filter grammar, the output documents, the chain, the named errors — and the walk an auditor with no tebako knowledge follows to prove, offline, what ran on a host.</p></div><div id="_ad4be5bd-b422-a5e2-0bcc-d1f5ee907a0d"><h1 id="_f1c1b203-4392-4370-9b8a-b7fb84eae0f3"><a class="anchor" href="#_ad4be5bd-b422-a5e2-0bcc-d1f5ee907a0d"></a><a class="header" href="#_ad4be5bd-b422-a5e2-0bcc-d1f5ee907a0d">1. The ledger and its one job</a></h1><p id="_9e6e1537-2f04-d0a0-5a6c-efbbd909cc26">Every tebako process writes one append-only line per decision worth auditing into a single host-local file:</p><figure id="_be7e66de-43dc-b98a-c59f-24d6a93d86cc" class="sourcecode" spellcheck="false" translation="no"><pre>$TEBAKO_HOME/journal.log          (TEBAKO_JAIL_JOURNAL overrides the path)</pre><figcaption class="SourceTitle">Figure 1</figcaption></figure><p id="_7f9707ce-a993-dd47-3f08-40682bf45d16">The line shape is shared by both writers — the bootstrap (the loader's fetch / verify / mount / exec decisions) and  <tt>tfs::journal</tt> (the driver's and preload's policy, VFS, overlay and decrypt decisions):</p><figure id="_56bc357c-c707-2995-239b-fda60084d84a" class="sourcecode" spellcheck="false" translation="no"><pre>&#x3c;unix seconds&#x3e; event=&#x3c;name&#x3e; &#x3c;key&#x3e;=&#x3c;value&#x3e; …</pre><figcaption class="SourceTitle">Figure 2</figcaption></figure><p id="_a511fbe5-1725-efe1-ff0c-214425d0ba38">The ledger answers exactly one question — <b>"what ran here, and why did it run?"</b> — for one host, from one file, with no network and no other tebako artifact. It is not aggregated, not sharded, not rotated by the tools (an operator may rotate it;  <tt>--seal</tt> before rotation is the discipline that keeps the seam auditable).</p><p id="_0b54eb44-0195-c2b5-636a-c6507e42f785"><b>The read-only law.</b> A query (<tt>tebako audit …</tt> without <tt>--seal</tt>) creates nothing, appends nothing, stamps nothing, migrates nothing. It runs on a host whose  <tt>~/.tebako</tt> was written by an older tebako, and it must not move that store's layout forward on the way in. The single writing verb is  <tt>--seal</tt>, and the only file it writes is the anchor (§4).</p></div><div id="_53511b43-0362-7191-d3d3-fafaa23e8e79"><h1 id="_1edd1bf0-7e82-4319-a100-4e2f64503e8c"><a class="anchor" href="#_53511b43-0362-7191-d3d3-fafaa23e8e79"></a><a class="header" href="#_53511b43-0362-7191-d3d3-fafaa23e8e79">2. Reading rules (normative)</a></h1><div id="_ae067e20-9943-854b-0ead-57ccdf19c0dd"><h2 id="_a5bc3372-8597-4662-8cae-bf6ffa4de242"><a class="anchor" href="#_ae067e20-9943-854b-0ead-57ccdf19c0dd"></a><a class="header" href="#_ae067e20-9943-854b-0ead-57ccdf19c0dd">2.1 Line grammar</a></h2>
+
+<div class="ul_wrap"><ul id="_dd2406b6-704e-f840-7d29-8390a73ead67"><li id="_6cb51860-7133-9be3-7c36-87eeb2b132a6"><p id="_b57385ee-3e0a-c72b-8758-b465a285cae2">The first space-delimited token is the timestamp: unix seconds, decimal.  <tt>0</tt> is legitimate (a clock failure never fails the audited operation).</p>
+</li>
+<li id="_f6c9624d-5048-bce1-40b4-ea40a7008457"><p id="_2dbd75c2-2a25-8398-0e5d-33cd385d0d45">Every following token is <tt>key=value</tt>, split at the FIRST <tt>=</tt>, so a value may itself contain  <tt>=</tt> (URLs with query strings, base64).</p>
+</li>
+<li id="_950b5587-7ccf-eec4-3ed9-ffdf0f15a414"><p id="_fb156db5-a94f-5de5-88bd-a42b046152a3">A token that carries no <tt>=</tt> CONTINUES the previous value, joined by one space. Writers record paths, and paths contain spaces: a legitimate  <tt>path=/a b/c</tt> must not turn into damage. A leading token without  <tt>=</tt> before any key exists is damage.</p>
+</li>
+<li id="_ccdb8898-e16b-4569-b8c0-0b96659601dc"><p id="_71f24633-eb6b-12f9-ca86-513c67b0136f"><tt>event=</tt> is the required key: a line without it, or with an unreadable timestamp, is  <tt>malformed</tt> (§2.2).</p>
+</li>
+<li id="_4d14fa1f-2b49-3333-ebb4-1f2e0cb4e08c"><p id="_b63c0f15-f744-a858-ea58-12c3cac892fb">A trailing newline terminates the record; a final record without one is still a record (the bytes are the record).</p>
+</li>
+<li id="_4a577dd9-a3fe-598e-729b-c89da9b7f842"><p id="_9bb43843-7dd0-42cd-0a2b-0ad93b26e3c2">Duplicate keys: the FIRST statement stands (§5's <tt>fields_map_rule</tt>) — a writer's second mention of a key never retroactively rewrites what it already said.</p>
+</li>
+</ul></div>
+</div><div id="_0e5c0576-520b-d77f-a307-23245fb4d6e3"><h2 id="_3099b9fc-7b8f-4453-81a5-f6de9cfdd6e9"><a class="anchor" href="#_0e5c0576-520b-d77f-a307-23245fb4d6e3"></a><a class="header" href="#_0e5c0576-520b-d77f-a307-23245fb4d6e3">2.2 Damage is surfaced, never swallowed</a></h2>
+
+<p id="_8ca026ff-8225-5189-d755-231b8024d6f9">A line that does not parse is a <tt>malformed</tt> record: it is counted, carries its 1-based line number, and appears in the JSON document's <tt>malformed</tt> array with its raw bytes. A ledger that quietly drops what it cannot read is worse than one that admits damage. A query's exit code stays 0 for malformed lines unless  <tt>--strict</tt> is given (§6) — the default posture is "show me everything, including the damage", because an operator diagnosing a host should not have to guess what was hidden.</p>
+
+<p id="_81dbeec2-03ee-d59f-c8ed-b6a3be10957e">A malformed line is still a LINE: it occupies its position in the file and it is covered by the anchor's chain exactly like a readable one (a deleted line moves every later record, readable or not). "Record" and "line" are therefore interchangeable in the anchor's vocabulary (§4).</p>
+</div><div id="_17580a77-f993-d40d-54f7-7a98aa3d0442"><h2 id="_ceb205f1-a88c-4562-bc26-bbc063b8c84c"><a class="anchor" href="#_17580a77-f993-d40d-54f7-7a98aa3d0442"></a><a class="header" href="#_17580a77-f993-d40d-54f7-7a98aa3d0442">2.3 The vocabulary (by the question it answers)</a></h2>
+
+<p id="_b668a4b9-b58b-a531-ac01-64af732bdd31">The writers own their event names — this table is the census, and it exists so an auditor can phrase a filter. It is not exhaustive: an unknown  <tt>event=</tt> value is a first-class record, filterable like any other (forward compatibility is the point of a ledger).</p>
+
+<table id="_fad11d69-a9b3-3bc7-124e-2f3ee466c27a" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 1</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">question</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">events</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">What did we fetch, and from where?</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>fetch</tt>, <tt>delta-fetch</tt>, <tt>mirror-materialized</tt>, <tt>payload-mirror-served</tt>, <tt>bundle-staged</tt>, <tt>bundle-runtime-warm</tt>, <tt>key-retrieval</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">Did it verify, and against what?</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>runtime-fetch-verified</tt>, <tt>runtime-index-verified</tt>, <tt>bundle-fetch-verified</tt>, <tt>bundle-fetch-unverified</tt>, <tt>payload-signature-trusted</tt>, <tt>bundle-trusted-root</tt>, <tt>bundle-trusted-forwarded</tt>, <tt>legacy-unsigned-accepted</tt>, <tt>unsigned-runtime-fetch</tt>, <tt>trust-bridge-java-gap</tt>, <tt>key-retrieval-failed</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">What got installed, bound or retired?</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>payload-installed</tt>, <tt>payload-uninstalled</tt>, <tt>runtime-own-install</tt>, <tt>runtime-own-shim</tt>, <tt>origin-rebind</tt>, <tt>trusted-key-removed</tt>, <tt>trust-ca-added</tt>, <tt>trust-ca-removed</tt>, <tt>registry-row-retired</tt>, <tt>registry-key-pinned</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">What was mounted and composed?</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>composition</tt>, <tt>overlay</tt>, <tt>decrypt</tt>, <tt>lazy-seed</tt>, <tt>lazy-fallback</tt>, <tt>slice-augment</tt>, <tt>slice-overlap</tt>, <tt>slice-skip</tt>, <tt>visibility</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">What was resolved and executed?</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>runtime-edge-resolved</tt>, <tt>provider-runtime-resolved</tt>, <tt>executable-edge-resolved</tt>, <tt>unlocked-pick</tt>, <tt>spawn-shim-note</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">What did the policy decide?</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>jail-deny</tt>, <tt>jail-allow</tt>, <tt>vfs-deny</tt>, <tt>vfs-write</tt>, <tt>lib-load</tt>, <tt>network-config</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">What did a press decide?</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>press-sign-opt-out</tt>, <tt>stale-registry-serve</tt>, <tt>edge-platform-skip</tt></td></tr></tbody></table>
+</div></div><div id="_0358575e-da0d-9c05-da19-ae9c8d5ea096"><h1 id="_035f80b3-f45f-42ee-bfc8-29659d32afe4"><a class="anchor" href="#_0358575e-da0d-9c05-da19-ae9c8d5ea096"></a><a class="header" href="#_0358575e-da0d-9c05-da19-ae9c8d5ea096">3. The query surface</a></h1><figure id="_5a819033-3f59-ea4e-3a5a-fec1c354c201" class="sourcecode" spellcheck="false" translation="no"><pre>tebako audit [filters] [--count] [--json] [--strict]</pre><figcaption class="SourceTitle">Figure 3</figcaption></figure><div id="_05ba9274-30b0-b7c1-f091-7ab9556d8439"><h2 id="_193eeb7f-28f5-400a-aee4-002b00f67d38"><a class="anchor" href="#_05ba9274-30b0-b7c1-f091-7ab9556d8439"></a><a class="header" href="#_05ba9274-30b0-b7c1-f091-7ab9556d8439">3.1 Filters</a></h2>
+
+<table id="_fcc0cee4-01b8-16b1-cede-81115184962e" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 2</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">flag</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">meaning</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>--since &#x3c;t&#x3e;</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">keep records with <tt>ts &#x3e;= t</tt>. <tt>t</tt> is unix seconds or RFC 3339 UTC (<tt>YYYY-MM-DDTHH:MM:SSZ</tt>).</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>--until &#x3c;t&#x3e;</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">keep records with <tt>ts &#x3c;= t</tt>. Same grammar.</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>--event &#x3c;e&#x3e;[,&#x3c;e&#x3e;…]</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">keep records whose <tt>event=</tt> is one of the listed names. Repeatable; the union of all occurrences. Exact match, never a prefix.</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>--artifact &#x3c;needle&#x3e;</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">keep records whose body (everything after the timestamp) CONTAINS <tt>needle</tt> — the artifact reference as the writer recorded it: a payload name, a version, a sha256, a URL fragment. Case-sensitive, documented as a substring so nobody mistakes it for a structured field.</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>--tail &#x3c;n&#x3e;</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">after filtering, keep only the last <tt>n</tt> records.</td></tr></tbody></table>
+
+<p id="_34563c1c-0ee1-e7b3-3736-63d900f44a5b">Filters compose with AND across flags, OR within <tt>--event</tt>. No filter means the whole ledger. A time filter's grammar is exact: local time is never inferred, because a silently shifted window is a silently wrong answer.</p>
+
+<p id="_43f330e2-15c1-8455-690a-93e95c9a44c0"><tt>--seal</tt> takes NO filters (an anchor covers the whole file or it is not an anchor) and  <tt>--seal</tt> with <tt>--verify</tt> is refused by name: one writes, the other checks.</p>
+</div><div id="_8559971a-b5de-846a-ee95-62a566c10afe"><h2 id="_8a56190b-9c25-4b75-90b0-7559197707b7"><a class="anchor" href="#_8559971a-b5de-846a-ee95-62a566c10afe"></a><a class="header" href="#_8559971a-b5de-846a-ee95-62a566c10afe">3.2 Output</a></h2>
+
+<p id="_e584b2da-3f4f-a8ac-2c6d-2c6b740c9513"><b>Default (line mode).</b> The matching records, verbatim — the ledger's own bytes, in file order — so a reader can pipe them to  <tt>sha256sum</tt> and compare against a seal. A one-line summary (<tt>N of M record(s)</tt>) goes to STDERR, never into the stream: the stdout of a query is a ledger excerpt, not a report about one.</p>
+
+<p id="_fa654613-e517-ae37-0d94-1cd8d8737d50"><b><tt>--count</tt>.</b> Exactly the match count on stdout, nothing else.</p>
+
+<p id="_00451edf-dc57-ea2f-3966-b33b412aa599"><b><tt>--json</tt>.</b> The <tt>audit_schema: 1</tt> document (§5) on stdout alone; the version banner moves to stderr, like every other machine contract in this toolchain.</p>
+
+<p id="_32a8a773-482c-a292-e9fe-9932373600c4">File order is preserved in every mode. A ledger's order IS evidence; re-sorting it would destroy the only thing the file cannot be rebuilt without.</p>
+</div></div><div id="_aaacf492-161d-7271-2330-3adea9742576"><h1 id="_40292657-fd89-4e1b-8bc2-fe1354d1a815"><a class="anchor" href="#_aaacf492-161d-7271-2330-3adea9742576"></a><a class="header" href="#_aaacf492-161d-7271-2330-3adea9742576">4. The anchor: tamper evidence</a></h1><p id="_4b413da8-c989-a3c8-3c4e-72a3f74855f1">An append-only file with no anchor proves nothing — anyone can edit a line, or delete a run's records entirely, and the file still looks like a ledger. The anchor is a chained digest, sealed on demand and verified on demand, stored BESIDE the journal it covers and named by it:</p><figure id="_040ac458-b349-1c79-8589-37f9b0fd332f" class="sourcecode" spellcheck="false" translation="no"><pre>&#x3c;journal&#x3e;.seal          e.g. $TEBAKO_HOME/journal.log.seal</pre><figcaption class="SourceTitle">Figure 4</figcaption></figure><p id="_f7aff795-f24c-be80-967a-c76f33992aba">Beside, not inside: the journal stays a pure record stream, every reader of it keeps working, and an explicit  <tt>TEBAKO_JAIL_JOURNAL</tt> override carries its seal along instead of splitting the pair across two homes.</p><div id="_3cd1e0cf-fdf2-27ee-1b02-2466a656c95e"><h2 id="_98a6758e-106c-43fd-b5ad-0563bdd38770"><a class="anchor" href="#_3cd1e0cf-fdf2-27ee-1b02-2466a656c95e"></a><a class="header" href="#_3cd1e0cf-fdf2-27ee-1b02-2466a656c95e">4.1 The chain</a></h2>
+
+<figure id="_1eb2ed2f-23c7-ccbf-cffd-cd31df8407fb" class="sourcecode" spellcheck="false" translation="no"><pre>h_0   = SHA-256("tebako-ledger-v1\n")                      (32 bytes)<br />h_i   = SHA-256(h_{i-1} ‖ line_i)                          (32 bytes)</pre><figcaption class="SourceTitle">Figure 5</figcaption></figure>
+
+
+<p id="_019e38a8-a0c6-580c-0d14-ec9e70408e66">where <tt>‖</tt> is byte concatenation of the raw 32-byte digest with the line's exact bytes INCLUDING its terminating newline. Any edit, any deletion, any insertion shifts every subsequent digest — the anchor's whole value is that it cannot be recomputed without re-sealing, and a re-seal is itself a new record (§4.3).</p>
+
+<p id="_2c07f6bf-a2cf-f54f-3274-62c7857eed14">The terminator is normalized: a final record whose newline an editor added or stripped is the same ledger. That one cosmetic difference is the only edit the anchor does not report, and it is reported as nothing because it changes nothing an auditor reads.</p>
+</div><div id="_53b28f7a-e5f7-5ed4-c6cb-8e91576df9e1"><h2 id="_54491eb8-7b58-4ad3-9359-41266a9184fc"><a class="anchor" href="#_53b28f7a-e5f7-5ed4-c6cb-8e91576df9e1"></a><a class="header" href="#_53b28f7a-e5f7-5ed4-c6cb-8e91576df9e1">4.2 Seal records</a></h2>
+
+<p id="_0a1ebd35-98ae-6d12-67dd-bcf2fdc8ca05">One line per seal, appended to the seal file:</p>
+
+<figure id="_a759aad2-4d9e-4489-f4a8-7435d465102f" class="sourcecode" spellcheck="false" translation="no"><pre>&#x3c;unix seconds&#x3e; head=&#x3c;sha256 hex&#x3e; lines=&#x3c;n&#x3e; key=&#x3c;keyid hex|-&#x3e; sig=&#x3c;hex|-&#x3e;</pre><figcaption class="SourceTitle">Figure 6</figcaption></figure>
+
+
+<div class="ul_wrap"><ul id="_20229649-194a-c557-765d-2e335939bcd2"><li id="_e24370b9-d87e-bfcd-44cd-4537b774bb8e"><p id="_0030423f-888a-c08a-0994-98d7e97518bb"><tt>head</tt> — the chain digest over the journal's first <tt>lines</tt> lines.</p>
+</li>
+<li id="_4acb6f6e-d718-1d1d-4c6e-c0348a1dae19"><p id="_7d8dacce-24b1-39f6-d5d0-e2c725352924"><tt>lines</tt> — how many lines the seal covers (the file's state at seal time; later lines are the unsealed tail).</p>
+</li>
+<li id="_23d8c1af-fb9c-9b10-1313-204268d95462"><p id="_e6f74cc5-d113-09c7-4572-9376d63eae64"><tt>key</tt> / <tt>sig</tt> — the seal's authenticity. When a signing key is available (the machine's press-local key, spec 09), the canonical payload</p>
+<figure id="_36212db9-364f-1c7a-c840-8556841a4347" class="sourcecode" spellcheck="false" translation="no"><pre>tebako-ledger-seal-v1\n&#x3c;head&#x3e;\n&#x3c;lines&#x3e;\n&#x3c;ts&#x3e;\n</pre><figcaption class="SourceTitle">Figure 7</figcaption></figure>
+
+
+<p id="_9b952b28-8a77-d8ed-1bf6-4c437909fde0">is signed detached (OpenPGP — the one mechanism this project uses) and <tt>sig</tt> carries the armored signature hex-encoded. With no key, both fields are  <tt>-</tt>.</p>
+</li>
+</ul></div>
+
+<p id="_921cfad6-6ab0-98e0-28ee-8e24e7606e8c"><b>The unsigned seal is honest about what it is.</b> It detects edits (a changed line no longer hashes to the sealed head) but not forgery (somebody with write access can rewrite the log and re-seal). The verb says so on stderr every time it writes one:</p>
+
+<figure id="_baa8e2eb-c768-7fd1-8766-b4be90941fee" class="sourcecode" spellcheck="false" translation="no"><pre>tebako: WARNING: ledger sealed WITHOUT a signature — this detects<br />edits, not forgery (configure a key with 'tebako keys')</pre><figcaption class="SourceTitle">Figure 8</figcaption></figure>
+
+
+<p id="_65239aa6-f4d2-9d70-eac8-d04ef1281e27">A signed seal, verified against the trusted keyring or a pinned key, is the enterprise answer.</p>
+
+<p id="_a8911613-34aa-b7f4-b0c1-ca1f8fc47a31">A seal that cannot be produced because the key store refuses is a LOUD unsigned seal, never a failed seal: an unanchorable ledger is worse than an unsigned anchor. A  <tt>TEBAKO_SIGN</tt> that is not a boolean is a named usage error, never a silent choice.</p>
+</div><div id="_821dc135-b108-da5a-3965-2591598e930f"><h2 id="_9ea73de5-8c5f-4d0e-afaa-c3fd85e57a09"><a class="anchor" href="#_821dc135-b108-da5a-3965-2591598e930f"></a><a class="header" href="#_821dc135-b108-da5a-3965-2591598e930f">4.3 Verification</a></h2>
+
+<figure id="_2f73e93d-7fa5-642e-6a9a-8d3353b0b9cb" class="sourcecode" spellcheck="false" translation="no"><pre>tebako audit --verify [--json] [--strict]</pre><figcaption class="SourceTitle">Figure 9</figcaption></figure>
+
+
+<div class="ul_wrap"><ul id="_ce6c211b-4403-d3e6-d383-0f877237967e"><li id="_dcab3944-bfbc-f7ae-f838-41046c4bed7b"><p id="_b36ba08a-3417-be37-9009-b74727056824">Recompute the chain over the WHOLE journal and compare it against the seals. The LAST seal speaks for the file; the earlier ones LOCATE the damage.</p>
+</li>
+<li id="_f725e166-4860-9418-f820-50f23051ee72"><p id="_1740e20b-ad85-9ae4-878f-13fbbf0ad7ae">Walking the seals in order: the newest seal whose recomputed chain still matches marks the end of the known-good prefix, and the first seal after it names the interval that changed. That interval — <tt>[known_good+1, failing.lines]</tt>, 1-based and inclusive — is what the report prints, because "records 411–812 changed" is actionable and "the head differs" is not.</p>
+</li>
+<li id="_ae25ebd2-249d-e07c-3d2f-6e097794935e"><p id="_a3dccacf-6663-4407-675d-252bbb9d9b8d">A seal covering more lines than the file holds is not a prefix mismatch but a REMOVAL: the report says records are gone, and names the same interval.</p>
+</li>
+<li id="_caa1f0ac-0646-2ba1-336e-aca496d01a8a"><p id="_304536ac-00c1-e9da-c238-18b48cf3bf51">Three outcomes: <tt>sealed</tt> (the last seal matches), <tt>tampered</tt> (it does not, or a signed seal's signature does not validate → exit 80), <tt>unsealed</tt> (no seal file: named, exit 74, with the remedy — "run <tt>tebako audit --seal</tt>").</p>
+</li>
+<li id="_0331cb91-a863-e52f-41d0-9f10dd3a2800"><p id="_12b2861e-239c-16a4-48c3-7bcbb2b0518e">A signed seal's signature is checked against the trusted keyring and the pinned trust store. An unknown signer is reported as  <tt>unknown-key</tt> and the outcome stays  <tt>sealed</tt> (the chain matched) with the authenticity gap NAMED, never quietly upgraded. An invalid signature is  <tt>tampered</tt>, whatever the chain says — a valid chain under a forged seal is exactly what a re-seal looks like.</p>
+</li>
+<li id="_0848a842-3d81-5825-f347-6739fd5c3836"><p id="_036d207d-be48-1302-f68e-1b34bb26e42c">A seal file with an unparseable line is a finding (exit 80), never a skipped line: corrupting the anchor is an attacker's first move, so damage there is never noise.</p>
+</li>
+</ul></div>
+</div></div><div id="_6984d0fa-4e39-f83e-a636-1d19e6ad15cc"><h1 id="_b2b60324-e5f6-45fa-95e1-bf368c570471"><a class="anchor" href="#_6984d0fa-4e39-f83e-a636-1d19e6ad15cc"></a><a class="header" href="#_6984d0fa-4e39-f83e-a636-1d19e6ad15cc">5. The JSON contract (<tt>audit_schema: 1</tt>)</a></h1><figure id="_4fe3f18e-c993-af1e-4b84-2c4068126ce3" class="sourcecode" spellcheck="false" translation="no"><pre><span class="p">{</span><span class="w"><br />  </span><span class="nl">"audit_schema"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"><br />  </span><span class="nl">"journal"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/home/u/.tebako/journal.log"</span><span class="p">,</span><span class="w"><br />  </span><span class="nl">"matched"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"><br />  </span><span class="nl">"total"</span><span class="p">:</span><span class="w"> </span><span class="mi">812</span><span class="p">,</span><span class="w"><br />  </span><span class="nl">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"><br />    </span><span class="p">{</span><span class="nl">"line"</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="p">,</span><span class="w"> </span><span class="nl">"ts"</span><span class="p">:</span><span class="w"> </span><span class="mi">1761000000</span><span class="p">,</span><span class="w"> </span><span class="nl">"event"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fetch"</span><span class="p">,</span><span class="w"><br />     </span><span class="nl">"fields"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nl">"origin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"…"</span><span class="p">,</span><span class="w"> </span><span class="nl">"sha256"</span><span class="p">:</span><span class="w"> </span><span class="s2">"…"</span><span class="p">},</span><span class="w"> </span><span class="nl">"raw"</span><span class="p">:</span><span class="w"> </span><span class="s2">"…"</span><span class="p">}</span><span class="w"><br />  </span><span class="p">],</span><span class="w"><br />  </span><span class="nl">"malformed"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nl">"line"</span><span class="p">:</span><span class="w"> </span><span class="mi">411</span><span class="p">,</span><span class="w"> </span><span class="nl">"raw"</span><span class="p">:</span><span class="w"> </span><span class="s2">"…"</span><span class="p">}],</span><span class="w"><br />  </span><span class="nl">"verify"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"><br />    </span><span class="nl">"outcome"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sealed"</span><span class="p">,</span><span class="w"><br />    </span><span class="nl">"seal_ts"</span><span class="p">:</span><span class="w"> </span><span class="mi">1761000123</span><span class="p">,</span><span class="w"><br />    </span><span class="nl">"sealed_lines"</span><span class="p">:</span><span class="w"> </span><span class="mi">812</span><span class="p">,</span><span class="w"><br />    </span><span class="nl">"head"</span><span class="p">:</span><span class="w"> </span><span class="s2">"…"</span><span class="p">,</span><span class="w"><br />    </span><span class="nl">"tail"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"><br />    </span><span class="nl">"divergence"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"><br />    </span><span class="nl">"signer"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abcdef0123456789"</span><span class="p">,</span><span class="w"><br />    </span><span class="nl">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"valid"</span><span class="p">,</span><span class="w"><br />    </span><span class="nl">"detail"</span><span class="p">:</span><span class="w"> </span><span class="s2">"the chain matches the signed seal of …"</span><span class="w"><br />  </span><span class="p">}</span><span class="w"><br /></span><span class="p">}</span></pre><figcaption class="SourceTitle">Figure 10</figcaption></figure><table id="_10151ce3-fba1-965c-b140-697461830cb2" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 3</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">field</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">meaning</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>matched</tt> / <tt>total</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">records selected by the filters, and lines the file holds</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>records[].fields</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the record's <tt>k=v</tt> tokens as a map, first-wins on duplicate keys</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>records[].raw</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the record's exact bytes without the newline</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>malformed[]</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">unparseable lines, always present (empty array when clean)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>verify</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>null</tt> for a query; the object above for <tt>--verify</tt>; absent for <tt>--seal</tt>, whose document carries <tt>seal</tt> instead</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>verify.divergence</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>{"from_line": N, "to_line": M}</tt> when the outcome is <tt>tampered</tt>, else <tt>null</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>seal</tt> (on <tt>--seal</tt>)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>{path, ts, head, lines, signer}</tt> — <tt>signer</tt> is <tt>null</tt> when unsigned</td></tr></tbody></table><p id="_ac646d62-ca74-e3ae-5d64-e4b289ebd95e"><tt>records</tt> is capped by <tt>--tail</tt> and by the filters; <tt>total</tt> always reports the file, so a filtered document can never be mistaken for the whole ledger.  <tt>audit_schema</tt> is 1 forever: extensions add keys, never retype or rename one.</p></div><div id="_62d681f6-02b5-618d-a330-83132abd0f3f"><h1 id="_8df76ad5-0366-459d-889b-91074bcc8784"><a class="anchor" href="#_62d681f6-02b5-618d-a330-83132abd0f3f"></a><a class="header" href="#_62d681f6-02b5-618d-a330-83132abd0f3f">6. Named errors and exit codes</a></h1><table id="_ed923e34-e84a-2bf4-1633-8ffacb98195c" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 4</caption><thead><tr><th style="font-weight:bold;text-align:right;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">code</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">name</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">meaning</th></tr></thead><tbody><tr><td style="text-align:right;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">80</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_LEDGER</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>--verify</tt> found a mismatch or an invalid seal signature; an unparseable seal record; or <tt>--strict</tt> with malformed journal lines</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">74</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>EX_TEBAKO_IO</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the journal or seal cannot be read or written; a query on a host with no journal yet; <tt>--verify</tt> with no seal yet</td></tr><tr><td style="text-align:right;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">64</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>EX_USAGE</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">unparseable filter or time, unknown flag, <tt>--seal</tt> with filters, <tt>--seal</tt> together with <tt>--verify</tt></td></tr></tbody></table><p id="_e0816a4e-7a77-add9-7279-69323087db53">Every message names the file and the remedy — never "invalid input".</p></div><div id="_de339a67-ddba-5f37-524d-9165343db03e"><h1 id="_3f24597b-6b89-4b89-a74c-026d0e8166ae"><a class="anchor" href="#_de339a67-ddba-5f37-524d-9165343db03e"></a><a class="header" href="#_de339a67-ddba-5f37-524d-9165343db03e">7. The auditor's walk</a></h1><p id="_47a74498-b1db-def9-f219-901968954cb9">The arc's acceptance, spelled out as the steps an auditor with no tebako knowledge performs. Each step is offline and needs only public artifacts plus this document:</p><div class="ol_wrap"><ol type="1" id="_35535257-5597-34db-6739-83a073254d5e"><li id="_c7f47b3d-89ae-5198-db5c-7a7d884c1126"><p id="_2bc96c00-10f5-7b0c-6d85-bae8387b24eb"><tt>tebako audit --json &#x3e; ledger.json</tt> — the host's decisions.</p>
+</li>
+<li id="_1f6d851e-8194-b516-b7c6-576c68742e26"><p id="_886292dc-672f-8d44-217d-c04515649cc0"><tt>tebako audit --event fetch,runtime-fetch-verified --json</tt> — every byte source and its verification verdict.</p>
+</li>
+<li id="_239cc9c2-f6be-0b40-c53f-6cbc9f1e64c8"><p id="_62b71c03-eeb9-b099-4e74-6900af0f7914">Take any <tt>sha256</tt> from step 2 and check the artifact against the registry row and its attestation (<tt>gh attestation verify</tt>), then reproduce the payload image per spec 14's reproducible-press rule.</p>
+</li>
+<li id="_d372b4ef-dbb3-a91a-1781-253a8731ada0"><p id="_92cd8640-2e13-c80d-c1fc-7126884b79b9"><tt>tebako audit --verify</tt> — the ledger's own integrity, against the seal the host wrote; or  <tt>tebako audit --seal</tt> first on a host that never anchored.</p>
+</li>
+<li id="_8e6ec294-cd71-b908-51cb-fabf0d2543ce"><p id="_b91b1e4f-f1b1-74b5-32fb-3a97401da864">Confirm the mount set (<tt>--event composition,overlay,decrypt</tt>) matches the package's declared dependency tree (<tt>tebako closure</tt>).</p>
+</li>
+<li id="_daf397bb-85aa-0f5e-b6b2-b69dea4d5df2"><p id="_41f75e7f-e721-ff9a-0f18-147b983858c0">Archive <tt>ledger.json</tt> + the seal file; a later <tt>--verify</tt> on the archived pair proves the archive is what the host wrote.</p>
+</li>
+</ol></div></div><div id="_6121b84e-3887-f5cd-015a-e5aba39c622f"><h1 id="_86dc033d-0195-41ab-b164-9dc9d137201a"><a class="anchor" href="#_6121b84e-3887-f5cd-015a-e5aba39c622f"></a><a class="header" href="#_6121b84e-3887-f5cd-015a-e5aba39c622f">8. What this spec does not own</a></h1><div class="ul_wrap"><ul id="_f12eff98-c664-cfb3-3bc8-823da3f36d20"><li id="_6df2210d-ec9b-fc94-f5fa-ff274e2e5e27"><p id="_003de0a5-2dfd-85ba-f52f-78cc31fdee17">The event names and their field vocabularies — the writers own those (§2.3 is a census, not a registry).</p>
+</li>
+<li id="_ac81a94e-0fac-6557-8224-35de908229ab"><p id="_7943d556-eaf3-812c-5cb7-3cc5e93a23a1">Rotation, retention, remote shipping: operator policy. The seal is the seam that makes rotation auditable, and that is all this spec says about it.</p>
+</li>
+<li id="_8031a80c-ffc5-aa26-4c00-6cdfa2f4e4a3"><p id="_a39604b0-2e65-afb6-d069-77761c4b0211">The signature mechanism itself: spec 09 owns OpenPGP, the keyring and the pinned trust store; this spec only names where a seal's signature is checked.</p>
+</li>
+</ul></div></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

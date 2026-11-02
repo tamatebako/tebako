@@ -1,0 +1,2021 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>Jails: host-access policy</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 08</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">Jails: host-access policy</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_49376182-b2fc-984e-da94-3887d80c369c">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_ec41cdba-f2e2-bf11-0142-6302f00ec7ab">      
+  
+  1. Policy model (docker <tt>-v</tt> semantics)
+</a></li>
+<li class="h1"><a href="#_1c4531cd-6ba6-b0fd-386b-7235153535f5">      
+  
+  2. Semantics
+</a></li>
+<li class="h1"><a href="#_fe13e820-baae-0140-5545-74cedcd4354d">      
+  
+  2.1 The platform floor (locked 2026-08-14)
+</a></li>
+<li class="h1"><a href="#_1781dd6b-30ed-c55a-e5d0-44ca786e78eb">      
+  
+  3. Enforcement point (the single choke)
+</a></li>
+<li class="h2"><a href="#_5ed948fe-c0b2-88e8-76c9-43f8803b0158">      
+  
+  Shipped semantics (crates/tfs, roadmap 09)
+</a></li>
+<li class="h1"><a href="#_8b23de55-f4d0-ecba-27a2-73904dedb28f">      
+  
+  4. Manifest integration
+</a></li>
+<li class="h2"><a href="#_e47ec730-3972-1491-8ee2-d5adcae58407">      
+  
+  Shipped surfaces (roadmap 35)
+</a></li>
+<li class="h1"><a href="#_4f310c68-9a7e-24e3-e001-f9a702cb6efb">      
+  
+  5. Scope (honest, locked 2026-07-26)
+</a></li>
+<li class="h1"><a href="#_ea12b301-aae4-ea97-6c56-be5bfd53431a">      
+  
+  6. Executor-layer trust (locked 2026-07-27)
+</a></li>
+<li class="h1"><a href="#_95a30b25-a26c-0d3a-86ce-840fc2f04adb">      
+  
+  7. Conformance: the attack matrix (locked 2026-10-23)
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_49376182-b2fc-984e-da94-3887d80c369c"><h1 class="ForewordTitle" id="_aa807351-f61b-4774-9530-301709aea4ae"><a class="anchor" href="#_49376182-b2fc-984e-da94-3887d80c369c"></a><a class="header" href="#_49376182-b2fc-984e-da94-3887d80c369c">Foreword</a></h1><p id="_16ed7306-4019-e20c-8ec8-316a95a3606d">Normative specification of host-filesystem access control for running payloads. Status: SHIPPED (roadmaps 09 + 30 + 35) — the TFS enforcement point (§1–§3) is SHIPPED in  <tt>crates/tfs</tt> (policy model, <tt>tebako_fs_host_policy</tt>, per-route EPERM/EROFS gating, symlink re-validation, jail acceptance suite); the  <tt>TEBAKO_JAIL</tt> env form of the policy (§1) is SHIPPED with roadmap 30's preload shim (<tt>tfs exec --jail</tt> carries it to native binaries); manifest integration (§4 — <tt>capabilities.host</tt> in <tt>crates/tpkg</tt>), the press/dispatch surfaces (<tt>tebako press --jail</tt> writing the package manifest's <tt>jail:</tt> block, <tt>tebako run</tt>/<tt>tebako-shim</tt> <tt>--jail|--mount|--no-host</tt>), the bootstrap's manifest∩user composition at handoff, and the audit-journal logging of violations (<tt>event=jail-deny</tt>) are SHIPPED with roadmap 35. Enforcement exists because every file access already flows through the TFS layer — one choke point covers every consumer.</p></div><div id="_ec41cdba-f2e2-bf11-0142-6302f00ec7ab"><h1 id="_fcda5c41-54e6-44b9-a8e1-bf4ac38da057"><a class="anchor" href="#_ec41cdba-f2e2-bf11-0142-6302f00ec7ab"></a><a class="header" href="#_ec41cdba-f2e2-bf11-0142-6302f00ec7ab">1. Policy model (docker <tt>-v</tt> semantics)</a></h1><figure id="_d32d4f67-1f77-17c4-dc47-a4fc37034acc" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">jail</span><span class="pi">:</span><br />  <span class="na">default</span><span class="pi">:</span> <span class="s">open | deny</span>          <span class="c1"># open = today's behavior (cwd + writes pass through)</span><br />  <span class="na">mounts</span><span class="pi">:</span><br />    <span class="pi">-</span> <span class="na">host</span><span class="pi">:</span> <span class="s">$HOME/sources</span><br />      <span class="na">mount</span><span class="pi">:</span> <span class="s">/work</span><br />      <span class="na">access</span><span class="pi">:</span> <span class="s">ro | rw</span><br />  <span class="na">argument_files</span><span class="pi">:</span> <span class="s">auto-allowed</span>  <span class="c1"># the input file you hand the command is allowed even under deny</span></pre><figcaption class="SourceTitle">Figure 1</figcaption></figure><p id="_efb88575-56c5-c4e9-9807-5f04a0131511"><b>Three profiles:</b> .  <b>full access</b> (<tt>open</tt>) — host cwd + writes pass through (today). .  <b>directory-scoped</b> — cwd mapped to <tt>/work</tt>, rw; nothing else. .  <b>file-scoped tight jail</b> (<tt>deny</tt> + argument files only) — run an untrusted payload against one input, nothing else.</p><p id="_4922717b-6f42-9e70-8c71-ba8102d7a4b6"><b>The <tt>TEBAKO_JAIL</tt> env form (the form the runtime driver and the preload shim consume — the loader's wire spelling of a policy).</b> ABNF:</p><figure id="_a2e37ab6-1df9-84a4-b5c1-2ab06115b777" class="sourcecode" spellcheck="false" translation="no"><pre>policy      = default *(";" grant)<br />default     = "open" / "deny"<br />grant       = host-grant / argfile-grant<br />host-grant  = host-path ":" mount-path ":" access<br />host-path   = 1*(%x21-3A / %x3C-7E)        ; any visible char except ';'<br />mount-path  = 1*(%x21-3A / %x3C-7E)        ; the in-VFS point, same alphabet<br />access      = "ro" / "rw"<br />argfile-grant = "@" 1*(%x21-7E)            ; an argv file path, read-allowed</pre><figcaption class="SourceTitle">Figure 2</figcaption></figure><p id="_ddf29e78-a11f-52ec-d3db-b8e98d5c5c23"><tt>open</tt> grants host cwd + writes (today's behavior); <tt>deny</tt> is the default-deny floor. Each  <tt>;host:mount:access</tt> grants the host path at the mount point with the named access;  <tt>;@path</tt> auto-allows an argument file even under deny. The grammar's alphabet excludes  <tt>;</tt> (the grant separator); a windows drive-qualified floor spelling is NOT carried (the right-split cannot — every consumer re-derives the floor at its own bind, §2's inheritance rule). Examples:  <tt>deny;/home/u/src:/work:rw</tt>, <tt>deny;/home/u/src:/work:rw;@/home/u/in.csv</tt>, <tt>open</tt>.</p></div><div id="_1c4531cd-6ba6-b0fd-386b-7235153535f5"><h1 id="_33a96e3b-3c86-4a3c-be6b-6b7e2062644f"><a class="anchor" href="#_1c4531cd-6ba6-b0fd-386b-7235153535f5"></a><a class="header" href="#_1c4531cd-6ba6-b0fd-386b-7235153535f5">2. Semantics</a></h1><div class="ul_wrap"><ul id="_2760afd7-60f6-65cf-1fa6-b4bc59754a7a"><li id="_5244ab6f-50e5-0196-ecc4-ee40b96324bb"><p id="_28b58057-786b-b479-ef27-7ea3ccb0be0d">Writes to an <tt>ro</tt> mount fail <tt>EROFS</tt>; paths outside every mount fail <tt>EPERM</tt>. Payload images themselves are always ro (spec 11).</p>
+</li>
+<li id="_fc9373ff-822e-ff15-b925-8a7a4bc93d57"><p id="_bd17544f-10ec-e8d3-841e-3ef6d77fcf2e">Symlinks resolve inside the granted view: realpath checked at bind time, re-validated on each open.</p>
+</li>
+<li id="_fa8828ba-ec52-54e8-ac77-9824a260d1ac"><p id="_05f51e47-9e31-cdac-5c6d-6a21cf306590"><b>Precedence (locked):</b> the package's manifest REQUESTS access (<tt>capabilities.host</tt>); the user can always TIGHTEN it (<tt>tebako run --jail pkg</tt>, <tt>--mount src:/work:rw</tt>, <tt>--no-host</tt>) — user policy always wins. Signed/trusted payloads may get wider latitude by policy choice, never by bypass.</p>
+</li>
+<li id="_246a1059-c723-878a-ddeb-9cdb1678e8d0"><p id="_7508ced8-5274-b6d7-333a-97931b40425c">Violations are logged to the tebako audit journal with path + syscall class.</p>
+</li>
+</ul></div></div><div id="_fe13e820-baae-0140-5545-74cedcd4354d"><h1 id="_a25c119a-ed09-465e-8f83-09c5ed215623"><a class="anchor" href="#_fe13e820-baae-0140-5545-74cedcd4354d"></a><a class="header" href="#_fe13e820-baae-0140-5545-74cedcd4354d">2.1 The platform floor (locked 2026-08-14)</a></h1><p id="_152ff235-33cb-6fa3-ca5f-a1697e8961c6">Every policy bound under the <tt>deny</tt> default gains the <b>platform floor</b>: a fixed per-platform set of read-only grants covering the surface a spawned interpreter or runtime physically cannot boot without. The floor exists because the failure mode for a missing platform grant was never a policy verdict — under a scratch-only jail (<tt>deny;&#x3c;scratch&#x3e;:&#x3c;scratch&#x3e;:rw</tt>) the JVM crashed with a SIGSEGV at <tt>getMacOSXLocale</tt> (its locale/framework init NULL-derefs when reads under  <tt>/usr</tt> are denied; spec 22 phase-E dogfood, 2026-08-13). A jail whose denial crashes the child in someone else's library is wrongly constructed: denying the platform surface never produced a working process, so the floor grants it always.</p><div class="ul_wrap"><ul id="_eab334ef-2894-4161-3f99-4dd2fb73f77d"><li id="_b7234c82-19e6-62a5-e673-5f3db744e8fe"><p id="_fef85720-4891-81ca-56b9-09ce73136bb2"><b>Entries (evidence-driven):</b></p>
+<div class="ul_wrap"><ul id="_1b7e336b-dcdc-799d-c03e-0d391d03ae16"><li id="_87f829f7-0c8f-d360-dfe5-12352951c798"><p id="_38f662a1-cdce-857c-2e17-ff3d151e8719">macOS — <tt>/usr</tt>, <tt>/System</tt>, <tt>/Library</tt> (the proven set above).</p>
+</li>
+<li id="_44b75956-d317-98b6-ccfc-b0bf7e770e9f"><p id="_6bee3f9b-3ce1-7c75-6bc0-e415aa0765bf">windows — <tt>%SystemRoot%\System32</tt> (the loader's DLL root; no process resolves its imports without it),  <tt>%SystemRoot%\SysWOW64</tt> (the 32-bit view for 32-bit children),  <tt>%SystemRoot%\Fonts</tt> (the GDI font tree GUI runtimes enumerate — the JVM's AWT init reads it).  <tt>%SystemRoot%</tt> resolves at bind (<tt>C:\Windows</tt> when unset).</p>
+</li>
+<li id="_cb67ab13-5970-9afb-0aaf-f76e27d1c0f4"><p id="_6eb485ae-2fa8-41a7-a2da-f74c6cfb6242">Other unix — none today; an entry joins a list only with a proven platform-process consumer, cited by run. The lists are amended by evidence, never by anticipation.</p>
+</li>
+</ul></div>
+</li>
+<li id="_1977f0db-4212-a917-ed32-028fb32ea82b"><p id="_48c04441-be12-382c-a92c-8abcb8b0cf86"><b>Supersede rule:</b> an authored mount covering a floor path (same or an ancestor prefix) supersedes the floor entry — the floor never narrows what the author allowed. Widening a floor path to  <tt>rw</tt> is therefore one authored grant away; there is no way to drop a floor path short of not denying (see below) — that is the point of a floor.</p>
+</li>
+<li id="_7ddad97c-d53d-7a5c-6d6a-caf8bff86d5e"><p id="_3d5c7b71-6e46-aa3e-48df-a40dcda841f3"><b>Bind semantics:</b> the floor applies at <tt>HostPolicy::bind</tt> (§3's single choke), only under the  <tt>deny</tt> default — under <tt>open</tt> it grants nothing the default does not already allow, so the no-policy path stays byte-identical (<tt>never_denies</tt> keeps its exact meaning). A floor path absent on the host is skipped silently (it is a courtesy surface, not an authored request whose absence must fail the bind).</p>
+</li>
+<li id="_e0830fed-9cd2-7b3a-8c7f-99ffa9d319e5"><p id="_d9174897-97c7-b855-f1e1-d475e777fd0b"><b>Ancestor traverse (locked 2026-08-14; extended 2026-10-08):</b> every bound grant — authored mount, floor entry, or  <tt>@file</tt> argument-file grant — implies its strict ancestors are traversable: each ancestor answers an exact-path READ — never a prefix (no sideways exposure), never a write. Canonicalization walks are universal: the JVM reads its cwd and every ancestor at VM init, and the factory's jailed_exec leg died with "Could not determine current working directory" when the chain was denied (PR #95 macOS legs). The  <tt>deny:arg</tt> profile's file grants join the same rule (2026-10-08, tebako#539): a granted input file you cannot stat your way to is unusable — the JVM died at VM init under  <tt>deny:arg</tt> with a granted file in a denied cwd chain. The set is derived at bind — never authored, never serialized. It is what makes an authored  <tt>$CWD</tt>-style grant sufficient in practice: the payload names the directory it works in; the platform walk to reach it passes by construction.</p>
+</li>
+<li id="_e251d946-db27-5e43-652d-c439ae245523"><p id="_dcd81c84-f45d-53fc-e707-d6f958bfc9d7"><b>Inheritance:</b> floor mounts are NOT serialized into <tt>TEBAKO_JAIL</tt> — the env grammar's  <tt>host:mount:ro|rw</tt> right-split cannot carry a windows drive-qualified floor spelling, and it never needs to: every consumer re-derives the floor at its own bind (supersede makes that idempotent), so a spawned child's inherited spec plus its bind yields a policy identical to the parent's. Enforcement treats authored and floor mounts as one longest-prefix set.</p>
+</li>
+<li id="_7f0e6128-1860-cf0a-9bdc-3b4aed184550"><p id="_3dac4689-a3c2-cf6c-b8d8-f4b3b4416adf"><b>The boundary (what never joins):</b> the floor is SYSTEM surface only. The workload's own tool tree (a JRE, a third-party install) and the user's home stay authored grants — an operator's  <tt>deny</tt> must not silently read-expose private data, and the prefix grammar cannot express the "stat-only" grant the macOS CFPreferences home probe needs (spec 22 §3.4's journal-pinned chain, 2026-08-14: floor → named  <tt>jvm.cfg</tt> error → named <tt>InternalError</tt> → boot with <tt>&#x3c;jre&#x3e;:ro</tt></p>
+<div class="ul_wrap"><ul id="_26df903b-f57e-4d12-8959-25e149848695"><li id="_593b9436-e3c4-72d5-2989-1a7b4fd2cec0"><p id="_cab88933-6cae-9c76-2859-c5bf812c3dd0"><tt>&#x3c;home&#x3e;:ro</tt>). The floor's promise is the end of the segfault</p>
+<p id="_c73e1afe-fcf9-2569-5223-616373cd80ef">class: every missing grant surfaces as the workload's own named error, pinned in the audit journal — never a crash in someone else's library.</p>
+</li>
+</ul></div>
+</li>
+</ul></div></div><div id="_1781dd6b-30ed-c55a-e5d0-44ca786e78eb"><h1 id="_0dcd612c-c439-4037-91e7-386c686f7fe7"><a class="anchor" href="#_1781dd6b-30ed-c55a-e5d0-44ca786e78eb"></a><a class="header" href="#_1781dd6b-30ed-c55a-e5d0-44ca786e78eb">3. Enforcement point (the single choke)</a></h1><p id="_06930d49-ceed-6916-3050-a8b573520d89">New TFS C ABI entry:</p><figure id="_bd9cf9bd-2267-ec92-1961-3243bb53650d" class="sourcecode" spellcheck="false" translation="no"><pre><span class="kt">int</span> <span class="nf">tebako_fs_host_policy</span><span class="p">(</span><span class="kt">int</span> <span class="n">default_open</span> <span class="cm">/* 0 = deny */</span><span class="p">,</span><br />                          <span class="k">const</span> <span class="n">tebako_host_mount_t</span><span class="o">*</span> <span class="n">mounts</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">n_mounts</span><span class="p">,</span><br />                          <span class="k">const</span> <span class="kt">char</span><span class="o">*</span> <span class="k">const</span><span class="o">*</span> <span class="n">arg_files</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">n_arg_files</span><span class="p">);</span></pre><figcaption class="SourceTitle">Figure 3</figcaption></figure><div class="ul_wrap"><ul id="_21c6e2bb-1434-dcd3-be5a-fc0f717a38a0"><li id="_a153e7e8-a79a-87cd-d411-efd41f542de1"><p id="_00a29f15-f3c3-e9e9-ba7e-a0ccefcf5fe4">The host-passthrough path of every IO route consults the policy: prefix match + access bit per mount.  <tt>tebako_fs_stat/open/opendir/…</tt> return  <tt>EPERM</tt> (denied) / <tt>EROFS</tt> (ro write).</p>
+</li>
+<li id="_4e39fc67-6697-1135-90c9-3a4da662741c"><p id="_b024d6ba-9836-19a6-e7d4-088e96616457">The policy is about HOST paths; memfs mounts are unaffected.</p>
+</li>
+<li id="_a2ad3d49-0ed5-9c07-2d76-1b167e233e87"><p id="_cf2bd4c7-5224-f5fc-a3e9-1c1bf45f440d">Implemented in the Rust TFS (<tt>crates/tfs</tt>) — the same layer that owns routing, so bootstrap, runtime driver,  <tt>tebako run</tt>, and <tt>tfs</tt> all enforce identically with no per-app work.</p>
+</li>
+</ul></div><div id="_5ed948fe-c0b2-88e8-76c9-43f8803b0158"><h2 id="_4de51ee8-7de3-41cc-84cf-5fe0168b3a75"><a class="anchor" href="#_5ed948fe-c0b2-88e8-76c9-43f8803b0158"></a><a class="header" href="#_5ed948fe-c0b2-88e8-76c9-43f8803b0158">Shipped semantics (crates/tfs, roadmap 09)</a></h2>
+
+<div class="ul_wrap"><ul id="_65a0255a-3d74-3b51-b480-6dec7c959891"><li id="_9af44c08-13f0-29bf-49d4-89181d57a536"><p id="_21d35359-8ea9-c252-822b-d717fdd26439">The policy is <b>process state, not namespace state</b>: <tt>tebako_fs_unmount</tt> does not reset it (fail-closed); a later <tt>tebako_fs_host_policy</tt> call replaces it. Install it after the payload mounts are established — the mount family's image read is itself policy-gated once a policy is active.</p>
+</li>
+<li id="_449b8bf6-5956-3de0-fa2e-e1933f86d9f0"><p id="_7b1efdc5-5f0b-83b3-d3c9-3b96f1452758">Gated host-passthrough decisions: <tt>open</tt> (read and write modes), <tt>stat</tt>, <tt>opendir</tt>, <tt>dlmap2file</tt>, <tt>extract_all</tt>'s destination (a host write), and the mount family's image read. An allowed host path keeps the historic answer ENOENT ("not ours, pass through") for reads AND writes — under  <tt>open</tt> a host write attempt therefore answers ENOENT, not EROFS, so the consumer's pass-through can perform the write (profile 1: "cwd + writes pass through"). Held memfs content is byte-for-byte unchanged (write opens on it stay EROFS).</p>
+</li>
+<li id="_174bf5b3-ea35-f5da-c111-a61332b6e51f"><p id="_cb6ac1e4-9abc-4bd0-f6c2-de970ef5d687">The per-process materialization tree is NOT a host path for policy purposes (tebako#502, 2026-08-30): a dlmap-marker path (<tt>…/tebako-dl-&#x3c;hex&#x3e;/…</tt> — closure copies and the home-layout whole-tree roots  <tt>tebako-home-&#x3c;handle&#x3e;/…</tt>) the image does not answer is the runtime's own extraction served by its host copy. Every route (<tt>open</tt>/<tt>stat</tt>/<tt>opendir</tt>/<tt>dlmap2file</tt>) answers it ENOENT without consulting the policy: the hex leaf is per-process (unauthorable at bind — the path does not exist to canonicalize), the content rode in through the ungated extraction writes, and the tree is removed at process exit. This is what lets a wrapper-pattern runtime (spec 22 §3's exec cache) compose with a  <tt>deny</tt> jail.</p>
+</li>
+<li id="_05e88421-1af1-913f-5644-c34999cfe302"><p id="_e2e59f32-57f3-c206-4494-f5792529b022">"Host path" means <b>any path the mounts do not hold</b> — outside every mount, or covered by a mount but absent from its image (spec 11 §2): the app payload mounts at  <tt>/</tt> and the host filesystem stays reachable exactly through this rule.</p>
+</li>
+<li id="_61b52a4d-6b83-818d-7e37-df4378e031e0"><p id="_d3ba896f-37ac-9f3c-947e-c40d3d0ebf8d"><b>The consumer must route, not just the engine</b> (tebako#917): a runtime whose IO shims call this family only for the paths the mounts COVER hands every uncovered path to the kernel, where this policy cannot see it. Such a shim asks  <tt>int tebako_fs_host_guard(void)</tt> — 1 when the installed policy judges an uncovered path (a deny or record default) — and routes every absolute path through the family while it answers 1. An allowed path still answers ENOENT, the pass-through signal these shims already honour, so an unguarded run is unchanged and a guarded one denies where it said it would. Coverage is a namespace test; a namespace test is not an enforcement point.</p>
+</li>
+<li id="_7c54432e-95bd-7c89-89c3-42b99b90d80b"><p id="_88083c07-65c2-2a38-d9f2-13701faea4b8">A mount's access bit applies even under an <tt>open</tt> default (an ro bind is ro in an otherwise open namespace, docker-style); longest host prefix wins on path-component boundaries; argument files are an exact read-only grant, even under deny.</p>
+</li>
+<li id="_de8f7d7b-8784-6e16-f34b-efade29d248a"><p id="_673dfc4a-49cb-585b-905a-a8246298e1ca">Bind-time realpath covers mount sources and argument files (a missing one fails the install with its errno); every gated decision re-canonicalizes the target, so symlinks swapped in after install resolve to their target and escapes fail EPERM.</p>
+</li>
+</ul></div>
+</div></div><div id="_8b23de55-f4d0-ecba-27a2-73904dedb28f"><h1 id="_8d06b3f6-b29b-4139-a5d9-6fea45adba9b"><a class="anchor" href="#_8b23de55-f4d0-ecba-27a2-73904dedb28f"></a><a class="header" href="#_8b23de55-f4d0-ecba-27a2-73904dedb28f">4. Manifest integration</a></h1><p id="_cc25fce2-c8d9-ce1a-540d-df08ad072728">The payload manifest (spec 03) gains <tt>capabilities.host</tt> — the access the payload was built to need (e.g. metanorma: read the input file's directory, write the output directory). Dispatch surfaces (spec 07) compose: manifest request ∩ user policy = effective jail.</p><div id="_e47ec730-3972-1491-8ee2-d5adcae58407"><h2 id="_baaa9f10-76b2-40fe-b4a0-0efc45f5ab1a"><a class="anchor" href="#_e47ec730-3972-1491-8ee2-d5adcae58407"></a><a class="header" href="#_e47ec730-3972-1491-8ee2-d5adcae58407">Shipped surfaces (roadmap 35)</a></h2>
+
+<div class="ul_wrap"><ul id="_28229078-4507-7bc2-89a1-6df5ae2a5111"><li id="_c932f669-396c-774e-0961-ce4f4c1b8400"><p id="_05df3ea2-67f8-73ae-61cd-d1fa015580f4"><b>Model:</b> <tt>crates/tpkg/src/jail.rs</tt> owns the authored shape (YAML block ↔  <tt>TEBAKO_JAIL</tt> env form ↔ <tt>--jail</tt> cli spec: <tt>open</tt> | <tt>deny</tt> | <tt>deny:arg</tt> | a YAML file | the env grammar) and the locked precedence algebra (<tt>intersect</tt> / <tt>effective</tt>): deny defaults win; each side's grants are capped by the other side's allowance at the same prefix (ro is sticky, a user  <tt>--no-host</tt> drops request grants); argument files union and  <tt>auto-allowed</tt> resolves argv files into read-only grants at dispatch. The payload manifest's  <tt>capabilities.host</tt> and the package manifest's  <tt>jail:</tt> block are both this type.</p>
+</li>
+<li id="_70ce1462-2c03-caf3-ced7-4679af792f7d"><p id="_8bae3225-ef92-7347-4818-efa905d38de3"><b>Press:</b> <tt>tebako press --jail &#x3c;spec&#x3e;</tt> writes the policy into the type-2 package manifest's  <tt>jail:</tt> block (spec 02 §5b / spec 03 §6); block-less packages are byte-identical to before.</p>
+</li>
+<li id="_a69bebc7-4960-7fa9-4927-ac41ffa1f652"><p id="_cae98243-3c5e-ca01-0dea-e65f06c74253"><b>Bootstrap:</b> composes package <tt>jail:</tt> ∩ <tt>TEBAKO_JAIL</tt> at handoff and exports the effective policy as  <tt>TEBAKO_JAIL</tt> (+ <tt>TEBAKO_JAIL_SOURCE</tt> =  <tt>manifest</tt> | <tt>user</tt> | <tt>manifest+user</tt>, + <tt>TEBAKO_JAIL_JOURNAL</tt> → <tt>$TEBAKO_HOME/journal.log</tt>). Malformed policy fails closed, exit 73 (<tt>EX_TEBAKO_JAIL</tt>). No policy: nothing exported (legacy byte-identical).</p>
+</li>
+<li id="_f17ac502-4884-72e5-b2ed-b17dd8a2c697"><p id="_0cb33d87-a504-e1dd-5005-7137784ec9c0"><b>Dispatch:</b> <tt>tebako run &#x3c;pkg&#x3e; [--jail &#x3c;spec&#x3e;] [--mount &#x3c;host:mount:ro|rw&#x3e;]... [--no-host] [--] [args...]</tt> and the same flags on <tt>tebako-shim</tt> (consumed before <tt>--</tt>; the payload mirror carries <tt>capabilities.host</tt> from install time).</p>
+</li>
+<li id="_d5f815a9-f853-9949-c1db-90899efaa970"><p id="_dc672f59-3082-4574-6845-99b8bd3e530f"><b>Audit journal (§2):</b> every denial in the TFS layer appends <tt>&#x3c;ts&#x3e; event=jail-deny path=&#x3c;p&#x3e; op=read|write source=&#x3c;s&#x3e;</tt> to the tebako journal (<tt>TEBAKO_JAIL_JOURNAL</tt> &#x3e; <tt>$TEBAKO_HOME/journal.log</tt> &#x3e; <tt>~/.tebako/journal.log</tt>), best-effort — journaling never fails the operation it audits.</p>
+</li>
+</ul></div>
+</div></div><div id="_4f310c68-9a7e-24e3-e001-f9a702cb6efb"><h1 id="_f311047b-b2a0-4cab-b906-e3f343d38590"><a class="anchor" href="#_4f310c68-9a7e-24e3-e001-f9a702cb6efb"></a><a class="header" href="#_4f310c68-9a7e-24e3-e001-f9a702cb6efb">5. Scope (honest, locked 2026-07-26)</a></h1><p id="_525e925a-fb4d-06b4-b611-50e8a2d2fb59">Jails are FILESYSTEM-ONLY. <tt>capabilities.network</tt> is advisory metadata (displayed by the info surface, spec 15), not an enforcement promise. Coverage: every IO route through TFS — all interpreted payloads AND native binaries running under the preload interposition shim (spec 07 §8 tier 1, whose IO flows through the same  <tt>host_policy</tt>). NOT covered: statically-linked binaries (direct syscalls, no interposition point) and any process that escapes the shim — stated honestly in the manifest and docs. OS-level network confinement (seatbelt/seccomp/WFP) is a possible later layer, never claimed today.</p><p id="_f70bcf21-21bd-fc62-7dd6-c266ffbb05df">The shim's coverage is SYMBOL-level (tebako#439): a jail holds only for the libc entry points the shim interposes — the named list in <tt>crates/libtfs-preload</tt> (lib.rs "Interposed surface"), which includes the LFS64/fortify/versioned twins (<tt>open64</tt>/<tt>openat64</tt>/<tt>fopen64</tt>, <tt>__read_chk</tt>/<tt>__openat_2</tt>, the <tt>__xstat</tt> family through <tt>__fxstatat64</tt>) because glibc hands  <tt>_FILE_OFFSET_BITS=64</tt>/<tt>_FORTIFY_SOURCE</tt>/pre-2.33 callers DISTINCT symbols that never touch the plain names (the #439 hole: OpenSSL's  <tt>o_fopen.c</tt> defines <tt>_FILE_OFFSET_BITS=64</tt> itself, so every  <tt>BIO_new_file</tt>/<tt>X509_LOOKUP_load_file</tt> bound <tt>fopen64</tt> straight to libc). The WRITE class rides the same gate (tebako#444, closing the pre-existing hole the #439 read-class audit left):  <tt>open</tt>/<tt>openat</tt> with <tt>O_WRONLY</tt>/<tt>O_CREAT</tt>/<tt>O_RDWR</tt> were policy-gated by the engine's open from the start, and  <tt>fopen</tt>'s write/append/update modes (<tt>w</tt>/<tt>a</tt> bases, every  <tt>+</tt> update form including <tt>r+</tt>, the <tt>x</tt>-forms) plus <tt>creat</tt> now route through  <tt>host_policy</tt> BEFORE the real libc call touches the host — a jailed write outside an rw grant is EPERM by name, a write against an ro grant EROFS, and a write naming a memfs-held path is EROFS under any policy (payload images are always read-only). Known-uncovered at this layer: the remaining fortify open family (<tt>__open_2</tt>/<tt>__open64_2</tt>/<tt>__openat64_2</tt> — no importer observed in the 0.16.6 linux-gnu runtime) and raw  <tt>syscall(2)</tt> IO. Separately, the runtime EXE's own statically-linked native libraries are gated only for symbols the exe itself defines (spec 22 §2:  <tt>dlopen</tt>/<tt>dlerror</tt> today — defining the file-IO family in the exe is follow-up wiring in the runtime factory, tebako-runtime-ruby); an interpreter's patched IO and preload-delivered children are covered.</p></div><div id="_ea12b301-aae4-ea97-6c56-be5bfd53431a"><h1 id="_b3537c65-c700-4acb-be4d-4ee30a9caccf"><a class="anchor" href="#_ea12b301-aae4-ea97-6c56-be5bfd53431a"></a><a class="header" href="#_ea12b301-aae4-ea97-6c56-be5bfd53431a">6. Executor-layer trust (locked 2026-07-27)</a></h1><p id="_37971fff-c86e-7d2e-c87d-d384b662d379">Tebako is the EXECUTOR of everything it runs — the parent that spawns and owns the child. Mediating a child's syscalls (preload interposition for dynamic children, seccomp user-notification for static children on Linux) is the execution contract, not hijacking: a hostile party would have to become the executor or the kernel to hold the same position, and both are outside the jail's threat model by definition. Jails bind the CHILD downward; they claim nothing about the executor or kernel upward.</p></div><div id="_95a30b25-a26c-0d3a-86ce-840fc2f04adb"><h1 id="_573d7c7f-7d05-49cc-8f13-f6c243b9a956"><a class="anchor" href="#_95a30b25-a26c-0d3a-86ce-840fc2f04adb"></a><a class="header" href="#_95a30b25-a26c-0d3a-86ce-840fc2f04adb">7. Conformance: the attack matrix (locked 2026-10-23)</a></h1><p id="_8db32ea6-f461-b81a-e02a-193c17aad238">A jail is only as good as the attacks it has been shown to stop. Every vector below is either  <b>blocked and proven by a named test</b>, or <b>named out of scope with the reason</b> — there is no third state. The host-filesystem vectors live in  <tt>crates/tfs/tests/jails.rs</tt>; the environment vector lives beside its implementation (<tt>crates/tebako-driver/src/env_scrub.rs</tt>). Both run on every platform leg of every CI run and therefore on every release: a regression reddens the release matrix, not a dashboard nobody reads.</p><table id="_1eba207d-d4da-59b5-13ab-d848abd6c97b" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 1</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">#</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">vector</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">verdict</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">the proof</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">1</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">lexical escape: <tt>..</tt>, doubled separators, <tt>.</tt> components inside a grant</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">blocked</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>dot_dot_paths_normalize_lexically</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">2</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">symlink escape: a link inside a granted tree pointing at a denied sibling (directory and file level)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (EPERM)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>symlink_escape_attempt_fails</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">3</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">TOCTOU: the tree is swapped for a symlink AFTER the policy was bound</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (EPERM)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>symlink_swap_after_bind_fails_on_revalidation</tt> — every open re-validates through realpath</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">4</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">case folding: a denied path asked for with different case on a case-insensitive host</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (EPERM)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>case_variants_of_a_denied_path_are_denied</tt> — the decision is taken on the canonical path (macOS <tt>realpath</tt> returns the on-disk case), so it never depends on what the filesystem thinks about case</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">5</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">write into a held (image) tree</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (EROFS)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>ro_mount_refuses_writes_with_erofs</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">6</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">write outside every grant under an rw mount</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (EPERM)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>directory_scoped_mount_rw_works_and_sibling_denies</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">7</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">enumeration of a denied host directory</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (EPERM, nothing listed)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">8</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">reads/stats of a denied host file</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (EPERM, never ENOENT — the denial is a decision, not a miss)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">9</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">extract-all as an ungated host write</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (gated)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>extract_all_is_a_gated_host_write</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">10</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">covered-but-not-held path under a <tt>/</tt> mount (the mount must not become a hole)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">gated (the host decision runs)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>covered_but_not_held_paths_fall_through_to_the_host_decision</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">11</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">image reads through the policy</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">gated</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>mount_family_reads_the_image_through_the_policy</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">12</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">unmount under a live policy</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">fail-closed</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>policy_survives_unmount_fail_closed</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">13</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">malformed policy spec</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">fail-closed (named)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>policy_install_validates_its_arguments</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">14</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">argument-file grant: only the declared file, nothing beside it</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>tight_jail_allows_only_the_argument_file</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">15</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">packager/CI credentials reaching the payload: <tt>TEBAKO_GITHUB_TOKEN</tt> and every other packager-side <tt>TEBAKO_*</tt> variable past the handoff</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">blocked (blanked, never logged; <tt>env_pass</tt> is the explicit opt-in)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>the_packager_token_is_scrubbed_and_the_contract_kept</tt>, <tt>the_env_pass_opt_in_carries_its_declared_names</tt>, <tt>the_factory_smoke_contract_survives_the_scrub</tt> (spec 03 §2.10, tebako#737)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">16</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">Windows alternate data stream (<tt>file.txt:stream</tt>) on a denied base</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">PLANNED — the decision rides the base path (a stream suffix is not a path component), and the proof lands with the windows leg that can exercise it</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">— (named, not claimed)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">17</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">statically-linked binary, or raw <tt>syscall(2)</tt> IO</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">OUT OF SCOPE — no interposition point; §5 states it in the manifest and the docs</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">§5</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">18</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">fortify open family still uncovered (<tt>__open_2</tt>/<tt>__open64_2</tt>/<tt>__openat64_2</tt>)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">OUT OF SCOPE — no importer observed in the shipped runtimes; the symbol list is the interposed surface's SSOT</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">§5</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">19</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the runtime EXE's own statically-linked stat/open definitions</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">OUT OF SCOPE today — gated only for the symbols the exe defines (spec 22 §2); follow-up wiring lives in the runtime factory</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">§5</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">20</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">a payload's own sockets (network confinement)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">OUT OF SCOPE today — <tt>capabilities.network</tt> is advisory metadata; the network axis is SOTA arc 05's second item, not a claim of this spec</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">§5</td></tr></tbody></table><p id="_9ffb0520-d560-9eae-1f95-c2acf596bf90">Row 16 is the one open vector that is IN scope and not yet proven: it is named here so nobody reads the matrix as "done", and it does not close until a windows test stands behind it.</p></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

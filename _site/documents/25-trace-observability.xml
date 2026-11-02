@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Trace observability: the interception bus, diagnosis, and coverage</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 25</docidentifier><docnumber>TBK SPEC 25</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_318196e2-7150-46ea-6b54-3bc3a375c290" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_db1b657d-7e01-3fe2-a6fe-f7952a476b98"><strong>Status: PARTIAL (phase T1 shipped 2026-08-19: the <tt>tfs::trace</tt> interception bus +  <tt>docs/spec/schemas/trace-event.yaml</tt> + <tt>tebako trace run</tt>; phase T2 shipped 2026-08-20: the <tt>spawn</tt>/<tt>resolve</tt> emission — the preload's posix_spawn surface and the driver's image-triple resolution; phase T3 shipped:  <tt>tebako trace cover</tt> (§6.3) 2026-08-20 — the escapes report, golden-parity with retrace's shared correlate fixtures — and 2026-08-21 the procmon converter (<tt>tebako trace import procmon</tt>, §6.2), byte-parity with upstream procmon2retrace on the golden 06 fixture; phase T4 shipped 2026-08-21:  <tt>tebako trace explain</tt> (§5) — the capture replay with the signature table in data. All four phases' CODE is on main; the PARTIAL remainder is dogfood, not code: the §8 legs (retrace libc-layer on both platforms; the kernel-layer leg as §6.4 lands) and the real incident-13 captures' archival into the explain fixtures. Owner-signed 2026-08-19 — architecture A: the in-tfs event bus +  <tt>tebako trace</tt> front-ends; outside capture rides the three-layer producer model of §6.1, with retrace as the libc-boundary layer on BOTH platforms).</strong></p>
+
+<p id="_09b9ad6d-cd84-904f-af1f-1e114b26e136">A payload author virtualizing an application on tebako must answer three questions, and today each is answered by hand-rolled one-off diagnostics (the incident-13 msys dogfood chain: four CI rounds of  <tt>eprintln</tt> gates and in-probe bisection to name one Windows loader failure):</p>
+
+<ol id="_b3bbc82b-d278-3265-a9e8-17e35b3f994a" type="arabic"><li><p id="_a33ce29f-016b-6757-b2c2-8e288e2ee6c6"><strong>Discovery</strong> — what does my application touch, so what must I declare? (mounts,  <tt>needs:</tt>, <tt>materialize:</tt>, entrypoints)</p>
+</li>
+<li><p id="_1e83d898-4957-0d97-fb79-a02ffb451604"><strong>Diagnosis</strong> — my packaged application fails; which hop failed? (mount → manifest → resolve → materialize → OS bind)</p>
+</li>
+<li><p id="_01f821cc-618c-9394-2bf5-1641be962bde"><strong>Coverage</strong> — is anything my application does NOT virtualized? (raw syscalls, unpatched IATs, loader-internal probes — the escapes)</p>
+</li>
+</ol>
+
+<p id="_b72d51c1-7cb4-4e12-6158-3bf91d5551e6">This spec defines one substrate and three front-ends:</p>
+
+<ul id="_492c6f72-a33f-f2d8-ab93-1a28835bb473"><li><p id="_e8cde715-1328-bd02-cb2f-19540668dbfd"><strong>The interception bus</strong> (§2): every tebako interception point emits one structured event. The bus lives in the Rust  <tt>tfs</tt> crate — the shipping VFS implementation on every platform — so it is cross-platform and runtime-independent by construction: events name syscall/loader-level facts (paths, verdicts, errnos), never language facts. Ruby, Julia, and Python payloads are equally covered because every runtime bottoms out at the same libc/loader boundary the bus instruments.</p>
+</li>
+<li><p id="_65a08635-8d37-78be-ac7c-25a5c5c41a8d"><strong><tt>tebako trace run</tt></strong> (§4): discovery — collect a run's events and emit a suggested manifest.</p>
+</li>
+<li><p id="_e2f928f4-8d86-3959-fd32-a6f5b3e6b537"><strong><tt>tebako trace explain</tt></strong> (§5): diagnosis — replay a capture into the hop chain and name the first red hop.</p>
+</li>
+<li><p id="_0fd3cf60-7bf6-ccda-78ef-d20ca482fc18"><strong><tt>tebako trace cover</tt></strong> (§6): coverage — correlate the inside stream with an outside capture and report what escaped.</p>
+</li>
+</ul>
+</foreword></preface><sections>
+<clause id="_29c45a1d-c0a3-c708-7e2b-186005b9411e" unnumbered="true" obligation="normative">
+<title id="_714c9726-b15d-a27a-9d78-32407cce9e39">1. Laws</title>
+<ol id="_4157905d-a875-bfdf-175b-6d69c477432a" type="arabic"><li><p id="_875e7fac-df2e-b257-f15d-182423af0d46"><strong>Observability never gates.</strong> A trace-channel failure degrades to a loud stderr note; the payload run proceeds and its exit code is unaffected. A tracer must never become a failure mode.</p>
+</li>
+<li><p id="_9053db02-b7f2-8445-70b9-fe01c86cc4ad"><strong>Runtime-independent.</strong> Events name OS-level facts only. No event may carry a language-runtime concept (a gem, a module, a Julia package) — runtimes are payloads; the bus sits below them.</p>
+</li>
+<li><p id="_70becea6-831c-ff0c-e68a-36d32292906d"><strong>Cross-platform inside; layered outside.</strong> The inside stream is identical on linux, macOS, and windows. The outside view is the three-layer producer model (§6.1): the libc boundary is retrace's on BOTH platforms (preload on POSIX; the preload-msvc / preload-mingw inline-hook backends on windows, retrace ADR-0009); kernel-level producers (ptrace, eBPF, ETW/procmon) join ONLY as retrace-shaped JSON, via bridges or offline converters (§6.2). Every outside source is an import format, never a runtime dependency.</p>
+</li>
+<li><p id="_516178b2-4785-0993-7d77-a5a2ea179dfb"><strong>No shell-outs.</strong> Captures are files parsed in-process. Arming or reading a trace never spawns a tool (spec 00 invariant 1).</p>
+</li>
+<li><p id="_be7a02c4-6ec4-e315-cff5-d78828e2c48f"><strong>The correlation law.</strong> The inside stream can never prove its own completeness: an escape is invisible from inside by definition (macOS 15's dyld rpath probes never reach the interposed  <tt>open</tt> — the exec-closure walk exists because of this). "What isn't tebako intercepting" is answerable ONLY by subtracting the inside stream from an outside capture — and only up to the outside capture's own layer (§6.1).</p>
+</li>
+<li><p id="_dc90963c-ec6f-7a7b-e366-12dc14796f5f"><strong>MECE with spec 23 §8.</strong> The <tt>record</tt> policy mode already owns host-path needs discovery (the audit journal →  <tt>tfs needs --from-journal</tt>). This spec does not re-invent it: the jail channel of the bus IS that journal, formalized; §4's discovery extends the draft to the axes §8 does not cover (<tt>materialize:</tt>, entrypoints, runtime deps).</p>
+</li>
+<li><p id="_24f0d4e4-d69f-d1ca-74d4-83a3e766d0c8"><strong>Human gate.</strong> A generated suggestion never edits a manifest by itself (spec 23 §8's law, unchanged).</p>
+</li>
+</ol>
+</clause>
+
+<clause id="_4bf5e240-5c99-5342-3c01-01ea4de30ea2" unnumbered="true" obligation="normative">
+<title id="_38ff6972-eb6e-2af9-a6fe-61f5e7ea0a04">2. The interception bus (<tt>tfs::trace</tt>)</title>
+<p id="_433f4445-e2f7-4281-8f1f-93f9df7974b0"><strong>Emission points</strong> — exactly the interception points the driver/TFS already implements, one event per decision:</p>
+
+<table id="_6a7d30a2-4055-8045-7e9a-9e28b1a4e798"><thead><tr id="_3839e523-d1d2-8971-2718-340131f83501"><th id="_ba7b72af-c59a-fc2f-eabd-1a36c2b3d217" valign="top" align="left">op</th>
+<th id="_ef5e4620-210b-d8f0-e957-5bcd1f59c1fc" valign="top" align="left">emitted where</th>
+<th id="_e49c56d3-6960-f681-8330-d809d93075da" valign="top" align="left">verdict values</th>
+</tr></thead>
+<tbody><tr id="_de62c279-2cc8-023c-040f-f39bc6c9e14f"><td id="_f95dc852-5f5e-e10b-ca81-393325eae291" valign="top" align="left"><tt>mount</tt></td>
+<td id="_cea80cf7-a855-856a-13d8-1c39dd726742" valign="top" align="left">mount table insert/remove</td>
+<td id="_f82d3f22-2cf7-c251-f38a-404c023db517" valign="top" align="left"><tt>ok</tt> / <tt>error:&lt;errno&gt;</tt></td>
+</tr><tr id="_2b6e3e79-f594-1815-fe25-84c19dca63b1"><td id="_23b4d933-ee67-292c-7ab9-1684e4179110" valign="top" align="left"><tt>open</tt> / <tt>stat</tt></td>
+<td id="_000d6ae9-fe57-9789-318f-04360c7d649d" valign="top" align="left">path dispatch (spec 11)</td>
+<td id="_34067dca-a1d8-537c-73a0-5a8711277213" valign="top" align="left"><tt>image:&lt;mount&gt;</tt> / <tt>host</tt> / <tt>denied:&lt;rule&gt;</tt> / <tt>error:&lt;errno&gt;</tt></td>
+</tr><tr id="_27eb9943-e0dd-c1df-37d8-33de26da66de"><td id="_f31b476e-7254-fb4d-439e-5c22359260ad" valign="top" align="left"><tt>dlopen</tt></td>
+<td id="_1c412237-0214-df29-7a98-b194fe0a42ce" valign="top" align="left"><tt>dlmap2file</tt> / <tt>dlalias2file</tt></td>
+<td id="_7628feda-d586-f75b-6ee7-60c11afc4f3e" valign="top" align="left"><tt>materialized:&lt;host-path&gt;</tt> / <tt>host</tt> / <tt>error:&lt;errno&gt;</tt></td>
+</tr><tr id="_fa776f68-05e9-dfa8-3271-fe5128ca1c45"><td id="_46ce3f94-2256-982f-458f-6ead7e035a98" valign="top" align="left"><tt>exec</tt> / <tt>spawn</tt></td>
+<td id="_e14ff02b-3d47-91e9-77a6-ea0d66eca532" valign="top" align="left">exec routing (spec 17/22) — one routing decision, two syscall surfaces: <tt>exec</tt> is the execve surface (process replacement), <tt>spawn</tt> the posix_spawn surface (a child is created — the correlator's process-tree signal)</td>
+<td id="_2e725c07-b563-8961-4cf1-55c8461c9d60" valign="top" align="left"><tt>routed:&lt;entry&gt;</tt> / <tt>host</tt> / <tt>error:&lt;errno&gt;</tt></td>
+</tr><tr id="_27a01fbd-8034-113d-2b7b-996b963b9c0b"><td id="_54c74d40-d5e7-42d6-7a01-c89a471f8f14" valign="top" align="left"><tt>materialize</tt></td>
+<td id="_35ad248e-8ef6-6db6-8258-d9585dba8977" valign="top" align="left">exec-cache extraction</td>
+<td id="_c261e280-397d-aeff-16fc-b844965ad8ec" valign="top" align="left"><tt>ok:&lt;host-path&gt;</tt> / <tt>cache-hit</tt> / <tt>error:&lt;errno&gt;</tt></td>
+</tr><tr id="_fe662871-6d53-2acc-453e-196f04a42231"><td id="_e16a1b16-7d93-3cf8-eefd-950a0d4ac06b" valign="top" align="left"><tt>jail</tt></td>
+<td id="_e4634ba4-e8c2-6848-4e2a-07ace7a8a03b" valign="top" align="left">policy bind / check (spec 08, 23 §8)</td>
+<td id="_74d26a68-dcb7-41ef-1748-a93a8bff18da" valign="top" align="left"><tt>allow:&lt;rule&gt;</tt> / <tt>deny:&lt;rule&gt;</tt> / <tt>record</tt></td>
+</tr><tr id="_7486ca34-09af-148a-4722-402b3ebd079e"><td id="_e8a49996-31fa-9de2-e01f-7378c2b25762" valign="top" align="left"><tt>resolve</tt></td>
+<td id="_7ead8583-2bdc-798f-1151-34c85d084788" valign="top" align="left">the driver's <tt>--tebako-image &lt;path&gt;:&lt;slot&gt;:&lt;mount&gt;</tt> resolution (trailer probe → whole file or slot region — the payload/slot identity the correlator matches outside reads against). <strong>PLANNED:</strong> the L3 runtime/payload cache resolution (tebako-resolve — loader-side, outside the runtime process; its channel story lands with the phase that needs it)</td>
+<td id="_e8941a52-fdb4-620f-1531-62225cace8c7" valign="top" align="left"><tt>whole</tt> / <tt>slot:&lt;n&gt;</tt> / <tt>error:&lt;errno&gt;</tt> — PLANNED L3 half: <tt>cache</tt> / <tt>fetched</tt> / <tt>error</tt></td>
+</tr></tbody>
+</table>
+
+<p id="_a4552830-d93e-8e2e-c4e1-7801e5d73acb">The <tt>dlopen</tt> event's <tt>detail</tt> carries the closure walk as structure — the parsed format, the dep list, each dep's resolve verdict (<tt>materialized</tt> / <tt>host-system</tt>) — what incident 13's round 4 added as <tt>eprintln</tt> lines. Those gates convert to events; <tt>TEBAKO_DEBUG_TFS</tt> remains as the human-readable degraded view over the same emission points.</p>
+
+<p id="_f70bb97b-a906-b849-445d-8de4b2712df1"><strong>Arming.</strong> <tt>TEBAKO_TRACE=&lt;host-path&gt;</tt> (env) or <tt>--tebako-trace &lt;host-path&gt;</tt> on the driver argument grammar (spec 17 — the env-scrubbed handoff rides the argument, the lesson of incident 13 round 5). The flag is an additive optional driver argument: spec 17's grammar extends by option, never by version bump (the trailer-flags rule, spec 02). Both set: the argument wins. The channel is opened and pre-registered at driver boot, before any mount — writes are append-only, process-internal, and NEVER policy-gated (the journal channel's discipline, <tt>crates/tfs/src/journal.rs</tt>, already proven under <tt>deny</tt>).</p>
+
+<p id="_961a8272-10f4-0d14-f8ca-4a0bf7a65ec8"><strong>Cost when off.</strong> Disarmed, an emission point is one <tt>Option::is_none()</tt> branch. The bus compiles into the runtime/driver side only; the bootstrap's &lt; 3 MB size gate is untouched (spec 00 invariant 2).</p>
+
+<p id="_b7eb073d-ca95-b9a6-cd7e-fbee5c6eb3da"><strong>Children.</strong> Spawned children re-derive the channel at their own driver boot on BOTH platforms:  <tt>TEBAKO_TRACE</tt> is in the inherited environment, the child's driver arms, and its events append to the same file. (The fd-inheritance spelling this section used to carry is not the mechanism — env re-derivation covers both platforms uniformly. On fork, the already-open fd IS inherited until the child's own arm, so pre-arm child events still land in the same channel.) All writers append atomically; events may interleave — every event carries  <tt>pid</tt>/<tt>tid</tt> so the front-ends regroup.</p>
+</clause>
+
+<clause id="_3aabae08-d37c-f2a3-9be5-43b3963c5fcb" unnumbered="true" obligation="normative">
+<title id="_010754b8-eacb-040f-1b65-e5d2f6d80e79">3. The event envelope (schema v1)</title>
+<p id="_a5154e35-0744-8489-3d1b-971bd61982a6">One JSON object per line (JSONL; streamable, diffable, robust to a crashed tail). Authored configs stay YAML (invariant 6); the event STREAM is telemetry and is JSON. The versioned schema lives at <tt>docs/spec/schemas/trace-event.yaml</tt> (lands with phase T1); the normative shape:</p>
+
+<sourcecode id="_6529399d-71f8-ff5f-52d9-8ef61f025e2c" lang="yaml"><body>v: 1                    # envelope version — additive only, never bumped
+ts: &lt;rfc3339μs&gt;         # driver clock
+pid: &lt;int&gt; ; tid: &lt;int&gt;
+op: &lt;table §2&gt;
+path: &lt;vfs-or-host path, exactly as dispatched&gt;
+verdict: &lt;table §2&gt;
+detail: { ... }         # per-op: dlopen deps, jail rule, exec argv0, …
+dur_us: &lt;int&gt;           # the interception's own cost
+errno: &lt;int, optional&gt;  # when verdict names an error</body></sourcecode>
+
+
+<p id="_60d4fa19-f027-bd4a-2525-0d5585271c7a">CI validates every emitted event against the schema (a property test drives the whole op matrix and validates the stream).</p>
+</clause>
+
+<clause id="_60a07c4e-8f36-18b3-4d93-95fab26bb2b0" unnumbered="true" obligation="normative">
+<title id="_28b2506b-b014-f918-de81-126e82e10eca">4. <tt>tebako trace run</tt> — discovery</title>
+<p id="_f1c031f2-4260-592d-dc4d-4e62cc03d815">Runs an application composition under <tt>policy: record</tt> with the bus armed, then synthesizes a  <strong>suggested manifest</strong> — a commented YAML fragment, never applied (law 7):</p>
+
+<ul id="_9f1a807e-a66f-aca9-272e-0c8fa2708f9d"><li><p id="_83fbda68-7c13-116c-d529-09ec9a145c88">host reads → <tt>needs:</tt>/<tt>jail:</tt> ro grants (this half is spec 23 §8's generator, unchanged — the bus's jail channel feeds it);</p>
+</li>
+<li><p id="_4472d19b-0a34-ecd4-8f19-98f6782c6118">host writes → rw grants (strongest-observed-op wins, §8's rule);</p>
+</li>
+<li><p id="_814113a7-065f-71be-0afa-0f1b99c53053">a VFS-resident file read through a RAW host fd (a native library's own  <tt>fopen</tt> — the exec-cache answer consumed it) → a <tt>materialize:</tt> candidate — the sassc class-R case, caught automatically instead of discovered by a failing import;</p>
+</li>
+<li><p id="_21bea208-eccf-8ff8-3a7d-0edc3e6d8a98">an in-image <tt>dlopen</tt> whose deps all resolve in-image → a NOTE "closure-covered — nothing to declare";</p>
+</li>
+<li><p id="_101e140d-853e-7d6d-1a97-74b713d4dd15">a spawned host-absolute executable → an entrypoint/runtime-dep note;</p>
+</li>
+<li><p id="_d509b558-34b8-ef34-421f-5dc762b25786">floor, store, and exec-cache paths are excluded (§8's exclusion law).</p>
+</li>
+</ul>
+
+<p id="_4717649d-c3d3-eb57-5e43-41398dbbb851">Output: the draft fragment on stdout (or <tt>--out</tt>), each entry carrying its  <tt>why:</tt> evidence line (<tt>observed: &lt;n&gt; events, first at &lt;ts&gt;</tt>). The author reviews, flips ro↔rw, deletes noise, fills  <tt>why</tt>.</p>
+</clause>
+
+<clause id="_25f599b4-b5bb-91c2-c6dd-c7c2bd147bb6" unnumbered="true" obligation="normative">
+<title id="_bd7314da-fd09-1d28-c9f5-d3a4b5d13bd6">5. <tt>tebako trace explain</tt> — diagnosis</title>
+<p id="_50d58908-6102-9ef6-f19f-1cfbf0c5c3d7">Replays a capture (or a live run's stream) into the hop chain — mount → manifest read → resolve → materialize → OS bind — and prints the first hop whose verdict is red, with the signature table seeded from the incident corpus:</p>
+
+<table id="_f6ea1c1a-f5c9-89dd-c42d-35494784e016"><thead><tr id="_01632187-ab40-674d-21e2-3619a2cd9aaf"><th id="_2975125a-4695-53b3-936e-727fddae8461" valign="top" align="left">signature in the stream</th>
+<th id="_2a667182-c2f2-21e0-ad65-5c0218aef16f" valign="top" align="left">named hop</th>
+</tr></thead>
+<tbody><tr id="_f48b8ad3-7488-ce70-4672-fb0c1d6613c6"><td id="_7830b8cc-535e-b630-f718-4699718d07f6" valign="top" align="left">no <tt>mount</tt> event for the env image + prelude-class child stderr</td>
+<td id="_188809c9-deca-7c7f-0fa5-027b7c8e020a" valign="top" align="left">env image never mounted (handoff env lost)</td>
+</tr><tr id="_a197283b-2f6c-74e8-5c4c-9cb2baf346a2"><td id="_c4ab07ec-27d2-83c6-1494-6c34d13e1067" valign="top" align="left"><tt>dlopen</tt> verdict naming the OS loader's module-not-found (windows error 126; the POSIX <tt>dlopen</tt> ENOENT analogue) with every dep <tt>materialized</tt>|<tt>host-system</tt></td>
+<td id="_aa932b01-ac1d-6745-cd1e-b9e964c9c10d" valign="top" align="left">the OS bind itself — bisect candidates printed</td>
+</tr><tr id="_0718a012-562d-f99e-8490-85f5f0ace428"><td id="_4c62ed51-1bba-e4b0-165c-854eaca006a2" valign="top" align="left"><tt>jail</tt> <tt>deny</tt> immediately preceding a dependent <tt>open</tt> error</td>
+<td id="_d4d195eb-d72b-d200-75ad-35efcdbdbdaf" valign="top" align="left">policy denial (the EACCES class)</td>
+</tr><tr id="_033531ec-ab6e-0092-4a7c-a58de3395b87"><td id="_b3d5cfad-3388-4654-9bfe-065b5c52ae04" valign="top" align="left"><tt>materialize</tt> <tt>error</tt></td>
+<td id="_c0e274e9-761b-013d-bb3c-0f3e14f5af52" valign="top" align="left">exec-cache write failure</td>
+</tr></tbody>
+</table>
+
+<p id="_c6a2368a-2fa4-37d8-6d04-37f54a3e80fe">The table lives in data (a YAML map in the CLI crate), extended as incidents teach new signatures — never hard-coded into the bus.</p>
+</clause>
+
+<clause id="_f418ed6f-3e1c-c9f3-cd62-ce78ca18db73" unnumbered="true" obligation="normative">
+<title id="_911fcfe2-e89f-d121-31cc-5e7b13a627c2">6. <tt>tebako trace cover</tt> — coverage</title>
+<p id="_c19e9dd9-d160-075a-86a5-8ea6ab49d160">The escapes report (law 5). Inputs: an inside capture (the bus) and an outside capture of the same run.</p>
+
+<clause id="_aa06c8f6-dad8-f8c0-e926-3bdf330addb8" unnumbered="true" obligation="normative">
+<title id="_8aae1cb6-f4d9-6f2e-b559-9dbc9bcfdb5f">6.1 The three-layer model (normative)</title>
+<table id="_06503397-b57f-bd0b-b63d-14eed5ca9776"><thead><tr id="_5053b437-a1ca-2657-fde3-bce1d5b36e33"><th id="_c28e0cfd-b4ca-7d67-c719-1d49bc290ff7" valign="top" align="left">layer</th>
+<th id="_0fb63701-3e4f-7729-8814-0fde7c86b666" valign="top" align="left">POSIX</th>
+<th id="_f1be46dd-1261-ca5e-c125-1f799bc68908" valign="top" align="left">windows</th>
+<th id="_4f1f7ab0-2ed5-3e2d-0c13-a3437482772f" valign="top" align="left">who sees it</th>
+</tr></thead>
+<tbody><tr id="_bb459654-1d69-8817-c9a8-cd39d089c8ed"><td id="_2d9aea8a-c777-f658-6aaf-3d7031658c91" valign="top" align="left">inside the VFS</td>
+<td id="_1244449c-27fb-150e-7e3d-8e7c8db8c913" valign="top" align="left">the tfs bus (§2)</td>
+<td id="_d1fe31e6-9bcf-0ee4-7e65-0549a6ad6bc6" valign="top" align="left">the tfs bus (§2)</td>
+<td id="_dad6add8-2ad6-3ab3-ab48-ff2b2c7ab8b5" valign="top" align="left">tebako</td>
+</tr><tr id="_fb687370-cd08-6346-5a74-017d1a825120"><td id="_2bbdb09b-8a50-64a3-0522-73d1e65f145c" valign="top" align="left">libc boundary</td>
+<td id="_9a9f5ea4-402e-c416-64a8-59b9641bd91b" valign="top" align="left">retrace preload</td>
+<td id="_6c5f6a59-70c4-3c09-308b-133d50a56bb8" valign="top" align="left">retrace inline hooks (preload-msvc / preload-mingw, retrace ADR-0009)</td>
+<td id="_ee8e2963-37ab-fe79-4766-75d66be40651" valign="top" align="left">retrace — both platforms</td>
+</tr><tr id="_47b09087-399f-f821-44ff-510468f1ae6f"><td id="_33b8c7fe-0721-0941-b022-1eb1c5d9f8c7" valign="top" align="left">kernel syscall</td>
+<td id="_bc4a3ee0-82d2-5b03-99a2-24a6c5c91d97" valign="top" align="left">retrace ptrace backend; strace → strace2retrace (converter, §6.2); eBPF bridge</td>
+<td id="_f8d4da60-176a-d5e3-8668-ac107644b751" valign="top" align="left">ETW / procmon (via converter, §6.2)</td>
+<td id="_5ec7135e-c6c1-2495-3eeb-1c8be528ddbd" valign="top" align="left">kernel tracers</td>
+</tr></tbody>
+</table>
+
+<p id="_0db69c41-dd45-7f13-a6af-8ffd591c3fb5">Escapes split into two classes at the libc boundary:</p>
+
+<ul id="_77a1549f-b574-9a1f-1181-683c8adece09"><li><p id="_7d48c038-fad9-fed5-5ece-8e8576cfa974"><strong>libc-routed escapes</strong> — the application called <tt>open(2)</tt> / <tt>CreateFileW</tt> directly, below tebako's interposition but through libc. Visible to retrace on BOTH platforms today.</p>
+</li>
+<li><p id="_659d6bba-6bbc-2330-b7f3-f190b98aefed"><strong>sub-libc escapes</strong> — raw <tt>syscall(2)</tt> / <tt>NtCreateFile</tt>, loader-internal probes (the macOS dyld rpath class). Invisible to libc hooks by construction; only a kernel-layer producer sees them.</p>
+</li>
+</ul>
+
+<p id="_080fee93-2117-99e7-5403-0f2b7f4997d1">A coverage report is only as strong as its outside capture's layer: a libc-boundary capture certifies libc-routed escapes only; sub-libc certification requires a kernel-layer capture. The report MUST name the producing layer of its outside input.</p>
+</clause>
+
+<clause id="_662a320a-6d65-51a1-33ef-557805b84ced" unnumbered="true" obligation="normative">
+<title id="_d51a69b2-9c2b-01cb-c7ea-0aa632e49992">6.2 The outside format — retrace-shaped JSON (SSOT: retrace)</title>
+<p id="_31e771d2-6ec4-2e4a-58cc-e82266f18716">The outside capture format is the retrace trace document, owned and versioned by the retrace project (riboseinc/retrace). Tebako never authors a competing outside format. Every producer normalizes INTO that shape; the correlator stays format-uniform:</p>
+
+<ul id="_4cb9abb2-7de2-2aad-ec87-0bcc7e713447"><li><p id="_fbb4c339-7eec-5964-51f3-eab0032e85b1"><strong>retrace preload / inline hooks</strong> — native JSON output today (one JSON array document per capture).</p>
+</li>
+<li><p id="_f4eb6457-6cd8-0e73-c316-745179ed1f60"><strong>retrace ptrace backend</strong> — native, POSIX kernel layer.</p>
+</li>
+<li><p id="_040abb99-26e7-f809-2b91-d205ecd0443e"><strong>eBPF bridge</strong> (<tt>ebpf-bridge/</tt>) — emits retrace-shaped JSON.</p>
+</li>
+<li><p id="_c924c1ea-dd17-ac1b-3f23-be3194d917cc"><strong>procmon / ETW</strong> (windows kernel layer) — an OFFLINE converter (procmon CSV/XML export → retrace JSON), the same decision as the Frida/eBPF bridges: producers normalize into the format, never the reverse. The converter ships in the tebako CLI as an import verb (<tt>tebako trace import procmon &lt;csv&gt;</tt>), pure Rust, in-process (law 4).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_d248f632-252b-119b-0c4e-d2a798655633" unnumbered="true" obligation="normative">
+<title id="_153a74b7-8b0d-5430-154a-99284269d689">6.3 The correlator — self-contained Rust</title>
+<p id="_6c3fd675-613e-aef2-93f0-29dd1a7ecf41"><tt>tebako trace cover</tt> implements the correlation IN the tebako CLI, in safe Rust: canonicalize host paths on both sides (same atoms as spec 23 §8's generator); subtract every outside-observed op that an inside event already accounts for; the remainder is the escapes list, grouped by surface class (fs / exec / dlopen / spawn), with a per-class coverage percentage and the producing layer named (§6.1). Exit code 0 = no escapes, 1 = escapes found — CI-gateable. Intentionally-unserved surfaces (documented passthroughs, e.g. the platform floor) are declared in the composition so the report separates KNOWN-UNSERVED from ESCAPE.</p>
+
+<p id="_8e7cb949-24d6-b68a-ea9c-e1ba674aa0df"><strong>The shipped surface (phase T3, the correlator half).</strong></p>
+
+<sourcecode id="_55c34ca8-8386-eedf-b578-1550e6837801"><body>tebako trace cover --inside &lt;tfs.json|jsonl&gt; --outside &lt;retrace.json&gt;
+                   --prefix &lt;path&gt; [--pid N] [--window SECS]
+                   [--exclude-probes] [--json] [--layer libc|kernel]</body></sourcecode>
+
+
+<ul id="_d62f7963-7532-de3e-55dd-9b71ac91b375"><li><p id="_3b8e3021-6878-42a4-0ef6-13e0457454b7"><strong>stdout is the golden contract</strong>: one <tt>escape &lt;path&gt; func=&lt;f&gt; tid=&lt;t&gt; pid=&lt;p&gt; class=&lt;probe|read|write|none&gt;</tt> line per escape (retrace's report grammar since its v2.9.0), or retrace's escape array under  <tt>--json</tt>. Byte-compared in CI against retrace's shared golden tree (<tt>tools/correlate/golden/</tt>, copied byte-verbatim to  <tt>crates/tebako-cli/tests/fixtures/correlate/</tt>) — every case, stdout bytes and exit code. Nothing else ever writes stdout for this subcommand (the version banner rides stderr).</p>
+</li>
+<li><p id="_48deda2f-8562-d4c9-3914-771edab9eb2e"><strong>stderr</strong> (outside the golden contract) carries the summary (<tt>inside=N entries, M paths; prefix=P; escapes=E</tt>), the escapes grouped by surface class with per-class coverage percentages, and the producing layer named by  <tt>--layer</tt> (default <tt>libc</tt> — §6.1's honesty rule: the report certifies its named layer only; sub-libc escapes are UNCERTIFIABLE under a libc-boundary capture).</p>
+</li>
+<li><p id="_80ea08f8-83c2-13ec-3958-e4dccfb7be2a"><strong>Exit codes</strong> are retrace-correlate's: 0 no escapes, 1 escapes found, 2 usage or I/O error.</p>
+</li>
+<li><p id="_5e9e850f-3c32-2800-eae7-09c2c06b9aba"><strong>The kernel is retrace's</strong> (the <tt>retrace-correlate</tt> port): the tolerant stream scan (array document / JSONL / truncated tail), any-depth path extraction, NT-form normalization (<tt>\??\</tt>, <tt>//?/</tt>, <tt>\\?\</tt>, the <tt>\Device\HarddiskVolumeN</tt> drive guess), drive-letter- insensitive path comparison with a case-SENSITIVE component-boundary prefix test, pid/time-window coverage (a pid-less entry is a wildcard; the bus's string  <tt>ts</tt> never feeds <tt>--window</tt> — window mode takes retrace-shaped inside captures with numeric  <tt>time</tt>), the name-keyed probe/write classification (a NAME-NOT-FOUND probe on an unserved under-prefix path IS an escape — existence is information), one escape per outside entry (the first under-prefix uncovered path in field order),  <tt>--exclude-probes</tt> for the jail-grant policy. Documented deviations, error paths only: a non-numeric <tt>--pid</tt>/<tt>--window</tt> and an unknown <tt>--layer</tt> are named usage errors (exit 2) where upstream's atol/atof silently read 0 (spec 00 law 9).</p>
+</li>
+</ul>
+
+<p id="_825deba2-c7ea-8081-67c6-8d30260beada">The correlator is tebako-owned because the invariants leave no other home: invariant 1 (no shell-outs in shipped artifacts) forbids invoking a retrace binary; invariant 3 (C/C++ only in dwarfs-t) forbids linking one. The correlation kernel (normalize + set difference + threshold) is small and pure. If the retrace project ships its own <tt>retrace-correlate</tt> for the generic market, the two implementations assert parity on shared golden fixtures in CI — invariant 10's parity escape hatch: the FORMAT is retrace's single source; the ALGORITHM has two implementations that must agree. (retrace's  <tt>retrace-correlate</tt> landed ahead of this phase — the golden tree above is that parity hatch, exercised.)</p>
+</clause>
+
+<clause id="_7941209d-59f9-2cf5-e994-6285baa322b0" unnumbered="true" obligation="normative">
+<title id="_61d5873b-74b4-d64b-9150-ed72600705d5">6.4 The contract with the retrace project</title>
+<p id="_1515a65e-ae3a-a242-1f5d-0401fe7243dc">Verified against riboseinc/retrace @ v2.6.1 (d06c6af); later shipments tracked below the table (the full correspondence lives in the work queue). Tebako phases coverage features as these land upstream; none block T1/T2:</p>
+
+<table id="_6d4fd120-bdfd-f511-b0a1-d53fd13db585"><thead><tr id="_9ecf3069-3521-9650-5a44-4f812be771c4"><th id="_399c8bd7-5d69-4d05-0f3d-90b6679b63ac" valign="top" align="left">prerequisite</th>
+<th id="_4f8cc983-39ca-2620-eea5-d467b76a4b2d" valign="top" align="left">state today</th>
+<th id="_71facd70-fae4-07e6-0ee9-d056e03a5afe" valign="top" align="left">tebako impact until it lands</th>
+</tr></thead>
+<tbody><tr id="_a610a3f8-302a-3df5-d3d3-b5d6606c9760"><td id="_82d692e3-671a-f75a-f5d1-966320e53747" valign="top" align="left"><tt>retrace-audit</tt> + <tt>path_contains</tt> policy op</td>
+<td id="_5ed74edd-063a-e4d3-9874-9a360f139fa2" valign="top" align="left">SHIPPED (tools/audit-converter; property-tested — P-POLICY-CONTAINS-SOUNDNESS)</td>
+<td id="_5b30ce5e-da0a-4b39-ed94-aa7d49511606" valign="top" align="left">the policy-matching half of coverage exists; usable on outside captures immediately</td>
+</tr><tr id="_894e48d7-c897-b2b2-9afb-58e1d1107d6d"><td id="_3825b24e-c38b-8318-7e7b-795d3a7b6037" valign="top" align="left">pid + tid per log entry</td>
+<td id="_c49ce7c1-9127-e20e-e147-379b10182198" valign="top" align="left">SHIPPED (v2.7.0) — the correlator joins on pid/tid when present</td>
+<td id="_5f4933d1-7bbf-a469-8e03-3a3ee35b9e47" valign="top" align="left">multi-process compositions regroup the outside stream</td>
+</tr><tr id="_61fcfc7e-693b-9398-9b2d-afacdde75149"><td id="_f4aefb56-bea5-2122-86bb-0f885b13124e" valign="top" align="left">ntdll-depth hooks (<tt>NtCreateFile</tt> / <tt>NtOpenFile</tt> / <tt>LdrLoadDll</tt>) + NT-path normalization (<tt>\??\C:\…</tt>)</td>
+<td id="_4b095520-57e5-f1b2-e1bc-019bf99c1c46" valign="top" align="left">ABSENT at v2.6.1 — the windows backends interpose at the ucrt layer; a native payload calling Win32 directly already escapes that layer TODAY (libsass's importer reads via raw <tt>CreateFileW</tt> with <tt>\\?\</tt> prefixes — invisible at ucrt)</td>
+<td id="_e35f9128-3061-cfd9-c39f-597c1b8aadf6" valign="top" align="left">windows sub-libc escapes stay invisible until both the hooks and a converter exist</td>
+</tr><tr id="_806c18f3-3af0-3f1a-9514-096b1a501f29"><td id="_271b27ef-dd29-2be2-fcad-55eea93bc796" valign="top" align="left">streaming / JSONL output</td>
+<td id="_266c3782-4c8a-8b20-a39d-cfb81d3bded1" valign="top" align="left">today one JSON array document per capture (leading-comma emission; a crashed tail invalidates the document)</td>
+<td id="_6bd34323-cebd-0f17-061a-914d148b9ab1" valign="top" align="left">the correlator tolerates a trailing partial record</td>
+</tr><tr id="_b507abc9-0a31-b845-dd3a-a21243181e91"><td id="_7b8908f9-31ea-fbd8-8b8d-486774d7d10d" valign="top" align="left"><tt>retrace-correlate</tt> (the set-difference tool)</td>
+<td id="_3ce4ccb3-45f5-ef5a-1235-a593ef43474f" valign="top" align="left">SHIPPED (v2.7.0, with the shared golden tree incl. 06-libsass-importer; the report grammar stabilized in v2.9.0)</td>
+<td id="_4d212b46-b5a6-c9ee-1e9b-20150ec236d0" valign="top" align="left">tebako ships its own (§6.3) and asserts byte-parity on the shared tree in CI — the parity hatch is exercised</td>
+</tr><tr id="_e1ec69c1-846e-928f-072d-a8966b2a0500"><td id="_1701c7b9-6164-b181-4c6b-9842b29ce96c" valign="top" align="left">ptrace-backend param deref (arch_spec)</td>
+<td id="_973b452a-e291-4f07-bbff-3fe628fc1080" valign="top" align="left">ABSENT at v2.14.0 — the ptrace backend ships no arch_spec of its own: aarch64 entries carry the syscall NAME with NIL params (<tt>openat(AT_FDCWD, "/tmp/x", O_RDONLY)</tt> arrives as <tt>"path":"(nil)"</tt>), and on x86_64 the wild frame deref SIGSEGVs on attach (tebako CI run 32451535675, job 96680888031)</td>
+<td id="_46e74820-697d-50e2-59cc-bc67ea502715" valign="top" align="left">the linux kernel-layer dogfood rides strace + upstream's OWN <tt>strace2retrace</tt> converter (the §6.2 normalizer pattern — same kernel truth, real paths) until this lands or the eBPF bridge ships</td>
+</tr><tr id="_0bbfb558-e253-1845-77b7-d12bcafeb9b0"><td id="_5d38af2e-5b13-e218-9bce-b7298342e9d4" valign="top" align="left">windows live capture (win-run injection + ucrt inline hooks)</td>
+<td id="_764cc886-5b73-f264-5b2b-4aa2307f5282" valign="top" align="left">NEVER smoke-tested upstream at v2.14.0 (msys.yml exercises only the library scaffold + headers); BROKEN on windows-latest in tebako CI (run 32453723170, job 96686997021): the hook installation completes in the child (<tt>hooked 'fopen' …</tt> diagnostics print), then <tt>LoadLibraryA(retrace.dll)</tt> fails inside <tt>retrace_core_boot()</tt> — the loader converts a DllMain crash into <tt>ERROR_DLL_INIT_FAILED</tt>, the inject thread's exit code reads 0, and win-run reports "failed to launch" (<tt>win_common/inject.c:73</tt>)</td>
+<td id="_a15654c9-e981-a0af-660c-153b285c36cc" valign="top" align="left">the windows libc-layer dogfood is a prerequisite probe: a standalone control isolates our half, a <tt>RETRACE_LOGGER_RING=0</tt> candidate pin gets the full chain gates when it captures (the MinGW build compiles the lock-free ring the MSVC build stubs out), and otherwise the leg pins the documented broken signature — drift in either direction fails it. The procmon converter (§6.2) carries the windows chain certification meanwhile</td>
+</tr></tbody>
+</table>
+</clause>
+</clause>
+
+<clause id="_dc50f9f0-7f22-8833-42a0-0083f14370db" unnumbered="true" obligation="normative">
+<title id="_1baeae4f-699b-e31e-4342-475016efc525">7. Testing and gates</title>
+<ul id="_1b05b4b9-1a65-91e8-3aa1-34ac2d07421a"><li><p id="_54251a00-23fc-8eff-19f5-512b17cacd8a">Golden fixtures: the incident-13 dogfood captures (real <tt>[tfs]</tt> streams) converted to the schema must round-trip through the validator and through  <tt>explain</tt> (whose red hop must match the incident's hand-derived answer).</p>
+</li>
+<li><p id="_8f5240f6-f4a7-be18-a41c-7e4490096048">Property: driving the public tfs op matrix emits exactly one schema-valid event per op.</p>
+</li>
+<li><p id="_f8672bef-04f0-a3d2-928e-47193026c4b6">Correlator: synthetic inside/outside pairs with deliberate escapes — a libc-routed fixture (a direct  <tt>fopen</tt> below the interposition) under a retrace preload capture, and a raw-<tt>syscall(2)</tt> fixture binary (built by CI, not shipped) under a KERNEL-layer capture — must be caught at 100%. The raw-syscall fixture paired with only a libc-boundary capture must report the escape as UNCERTIFIABLE, not as covered (§6.1's honesty rule).</p>
+</li>
+<li><p id="_6171a476-fb72-4900-4289-5f8f2662caaf">Converter: a procmon CSV fixture converts to retrace-shaped JSON the correlator consumes identically to a native retrace capture.</p>
+</li>
+<li><p id="_972537cd-e2d5-f15b-fead-7c1fdb55b438">Parity (when <tt>retrace-correlate</tt> lands upstream): the shared golden fixtures produce identical escapes reports from both correlators.</p>
+</li>
+<li><p id="_95a54272-e7c7-487a-40a7-82b6cd62573d">The factory's msys dogfood converts from <tt>TEBAKO_DEBUG_TFS</tt> gates to the bus as phase T1's dogfood — the harness stops hand-rolling diagnostics.</p>
+</li>
+<li><p id="_52f36017-9190-f41d-18eb-4a2c3cb465ff">Size/hygiene: bootstrap gate untouched; no new dependencies outside the workspace (<tt>tebako-json</tt> for emission); <tt>unsafe</tt> nowhere (the bus is safe Rust over the journal's fd).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_c7aff195-4a47-78c7-b492-d57b31b053d6" unnumbered="true" obligation="normative">
+<title id="_f3f2b6ee-e084-58fb-24c1-97c89a70e563">8. Phasing</title>
+<table id="_d5bdba16-266d-bf96-f46b-7884fdbd268a"><thead><tr id="_83af1507-842d-ceb6-e878-7761e43ab568"><th id="_03af078e-1d07-0f35-9d04-f235f30545c7" valign="top" align="left">phase</th>
+<th id="_c6994873-af1c-3095-2f64-cfbb53ae4fb7" valign="top" align="left">contents</th>
+<th id="_2e7b131f-ca60-3f37-8850-9e8ac7c68a33" valign="top" align="left">dogfood</th>
+</tr></thead>
+<tbody><tr id="_2c40b3b9-89d0-5bdf-ac9c-ad03a0982cc0"><td id="_7b0a853a-958d-92fc-2c19-05ef9b3a5cb2" valign="top" align="left">T1</td>
+<td id="_5cfc0475-72de-c6cd-75fc-02d494498c7a" valign="top" align="left">the bus + schema + <tt>run</tt> (discovery)</td>
+<td id="_35eff600-d0db-574c-716b-18c73e034f17" valign="top" align="left">the msys dogfood rides the bus; a payload author onboards a fresh gem without hand diagnostics</td>
+</tr><tr id="_bb22b87c-c9de-cade-fdd6-3356e93f8a74"><td id="_7555f0e2-f8b3-31a3-e8b0-3c0f77f194c4" valign="top" align="left">T2</td>
+<td id="_02bdb9e2-3708-7d65-d752-f6bad1cd337b" valign="top" align="left">the <tt>spawn</tt>/<tt>resolve</tt> emission: the preload's posix_spawn surface reports <tt>spawn</tt> (a child-process decision — the correlator's process-tree signal), and the driver emits one <tt>resolve</tt> event per <tt>--tebako-image</tt> triple (the payload/slot identity: whole / <tt>slot:&lt;n&gt;</tt> + offset/size/mount, or the named failure class)</td>
+<td id="_d36b8072-76a4-f4d5-3b4f-f488f0a2870f" valign="top" align="left">a traced boot of a broken composition names the failing triple in the capture itself — no stderr spelunking; a traced run's spawns regroup by pid</td>
+</tr><tr id="_1bdeb952-bf52-13b9-fc0d-e48a6376c90a"><td id="_12ae7f88-2ce6-cdca-8204-a7b1a3712b49" valign="top" align="left">T3</td>
+<td id="_b86588c5-7261-d14f-4592-d949a369cb8a" valign="top" align="left"><tt>cover</tt> (certification) + the procmon converter</td>
+<td id="_dc8210f6-c604-78a6-9a84-ad11ee21c33d" valign="top" align="left"><tt>cover</tt> SHIPPED 2026-08-20 (the §6.3 correlator + the shared golden tree green in CI); the converter (<tt>import</tt>, §6.2) SHIPPED 2026-08-21 (byte-parity with procmon2retrace on the golden 06 case, the converted stream driving cover to expected.txt/exit.txt). Remaining dogfood: a leg under retrace on both platforms (libc layer); a kernel-layer leg (ptrace/eBPF on linux, procmon-converter on windows) as the §6.4 prerequisites land; escapes report in CI</td>
+</tr><tr id="_daf3ff55-3c5d-33b4-39ea-ae062684024b"><td id="_40a0cb48-2d23-5c0d-6b2e-9473967b34bc" valign="top" align="left">T4</td>
+<td id="_3e6e9fb1-cdf9-ed26-b9b6-be64bfafa8fe" valign="top" align="left"><tt>explain</tt> (diagnosis)</td>
+<td id="_db5d6f90-e12d-9dea-9cf8-58738408a2df" valign="top" align="left">SHIPPED 2026-08-21: the replay + the signature table in data (<tt>explain-signatures.yaml</tt>), fixtures replaying the incident classes to their hand-derived answers (§7's gate shape). Remaining dogfood: replay the real incident-13 captures; the named hop matches history</td>
+</tr></tbody>
+</table>
+
+<p id="_354aca02-7fee-2c22-e98d-234a7fec892b">(Re-phased 2026-08-20: emission completeness precedes the front-ends — the original T2 (<tt>explain</tt>) is T4, the original T3 (<tt>cover</tt> + the converter) stays T3, and T2 is the spawn/resolve emission the correlator's inputs depend on.)</p>
+
+<p id="_75eea55b-4f33-a0f9-20d3-fb59e0ce52bb">Each phase ships behind its own PR chain against this spec; the spec moves PLANNED → PARTIAL → SHIPPED per phase (spec 00's status law).</p>
+</clause>
+</sections>
+</metanorma>

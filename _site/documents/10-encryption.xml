@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metanorma xmlns="https://www.metanorma.org/ns/standoc" type="semantic" version="2.8.10" schema-version="v2.1.6" flavor="ribose">
+<bibdata type="standard">
+<title language="en" type="main">Encryption (confidentiality)</title>
+<docidentifier primary="true" type="The Tebako Project">TBK SPEC 10</docidentifier><docnumber>TBK SPEC 10</docnumber><date type="published"><on>2026-11-01</on></date><contributor><role type="author"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><contributor><role type="author"/><person>
+<name><completename>The Tebako Project</completename></name>
+</person></contributor><contributor><role type="author"><description>committee</description></role><organization>
+<name>The Tebako Project</name>
+<subdivision type="Committee" subtype="technical">
+<name>Tebako</name>
+</subdivision></organization></contributor><contributor><role type="publisher"/><organization>
+<name>The Tebako Project</name>
+</organization></contributor><edition>1.0</edition><language>en</language><script>Latn</script><status><stage>published</stage></status><copyright><from>2026</from><owner><organization>
+<name>The Tebako Project</name>
+</organization></owner></copyright><ext><doctype>standard</doctype><flavor>ribose</flavor><security>unrestricted</security></ext></bibdata><metanorma-extension><semantic-metadata><stage-published>true</stage-published></semantic-metadata>
+<presentation-metadata><toc-heading-levels>2</toc-heading-levels><html-toc-heading-levels>2</html-toc-heading-levels><doc-toc-heading-levels>2</doc-toc-heading-levels><pdf-toc-heading-levels>2</pdf-toc-heading-levels></presentation-metadata></metanorma-extension>
+<boilerplate><copyright-statement>
+
+<clause id="_d780aadc-2f68-be21-5ec9-63baefbda689" obligation="normative"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</clause>
+</copyright-statement>
+
+<legal-statement>
+
+<clause id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d" obligation="normative"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</clause>
+</legal-statement>
+
+<feedback-statement>
+
+<clause id="_d4b6b243-ae1f-f438-654d-62afb61a5133" obligation="normative"><p id="_077ac38b-3176-f906-af47-8c49b5249609" anchor="boilerplate-name" align="left">The Tebako Project</p>
+
+<p id="_80954cc8-1f49-9d20-5987-829595995a92" anchor="boilerplate-address" align="left">Suite 1, 8/F, New Henry House<br/> 10 Ice House Street<br/> Central<br/> Hong Kong<br/> <br/> <link target="mailto:copyright@ribose.com"/><br/> <link target="https://www.ribose.com">www.ribose.com</link></p>
+</clause>
+</feedback-statement>
+</boilerplate><preface><foreword id="_49b1f2f1-1d0c-5d52-488a-aa5f0b2e7e84" obligation="informative">
+<title id="_41c9fad3-d4c1-eecc-4fad-f91704acc026">Foreword</title>
+<p id="_6ecd5325-2241-9556-e705-7928f9ec85c3">Normative specification of encrypted volumes: selective, in-memory-only decryption. Status: v1 SHIPPED (roadmap 37:  <tt>EncBackend</tt> + <tt>tfs encrypt</tt>/<tt>decrypt</tt>/<tt>mount</tt>, SUITE-1; PQC suites, metadata hiding and merkle verify-on-read remain PLANNED). Encryption is per-image <strong>opt-in</strong>, never default.</p>
+</foreword></preface><sections>
+<clause id="_5f78ca03-9551-6f33-1b9c-7eae5d504384" unnumbered="true" obligation="normative">
+<title id="_3313e30b-40ff-36f0-ca82-e34e55026e53">1. Model</title>
+<p id="_99b7584b-8f1b-6aea-09e2-c52bdb7d4cb9">Encryption is a <strong>stacking transform</strong> like COW, not a format: <tt>EncBackend { base: dyn Backend, key_source }</tt> — reads decrypt on demand, in memory only; plaintext blocks never touch disk. Compose freely: <tt>Enc(COW(base))</tt>, <tt>COW(Enc(base))</tt>, nested encapsulated encrypted images. Per the transforms law (spec 00):  <tt>EncBackend</tt> lives ONLY in the Rust TFS — backends and dwarfs-t stay ignorant of it.</p>
+
+<p id="_bdb5fb9e-6e6b-71b3-7d7b-63902dba761b"><strong>Primitive:</strong> OpenPGP via rnp-rs (AES-256/SHA-2; botan backend). Encrypt AFTER compress (ciphertext doesn't compress; dwarfs blocks are individually compressed → individually encryptable). Optional padding to blur per-block sizes.</p>
+</clause>
+
+<clause id="_ef05542c-5792-6bc5-90af-d70fabea6802" unnumbered="true" obligation="normative">
+<title id="_793cce0e-dbdc-1355-e732-9205a9c51987">2. Key model (locked)</title>
+<ul id="_32bf6d2e-a67c-77f7-0d8d-af45f4e5c6f2"><li><p id="_92758151-0274-6e5b-f146-9e6ffad0c870"><strong>DEKs (data keys)</strong> encrypt content blocks. A DEK IS a persisted OpenPGP session key — rnp's native wrap/unwrap (PKESK packets to N recipients) is the envelope; no custom crypto anywhere.</p>
+</li>
+<li><p id="_cdd75c7c-4c9c-1596-77fe-f5bb29ab28eb"><strong>Identity lives at the PLAINTEXT layer.</strong> Manifests carry TWO digests (spec 03 §2.1): the plaintext TREE hash (semantic identity — CAS addressing, dedup, sign/verify, audit-without-access) and the ciphertext blob hash (transport identity). Encryption is a per-audience transform; CAS never keys content-identity to any one wrapping.</p>
+</li>
+<li><p id="_b4a741b7-5add-1c15-dace-af8ff98e919c"><strong>Session keys are grant envelopes.</strong> Sharing = wrapping the DEK to a recipient (ephemeral ECDH per OpenPGP) — offline, accountless, auditable. A wrapped DEK + manifest digest IS a capability: possessing it grants exactly that subtree, nothing else.</p>
+</li>
+<li><p id="_2c0431e9-9e39-4c54-e7c5-5287076446eb"><strong>Revocation is prospective:</strong> re-issue the manifest without the recipient (no new envelopes), or rotate the DEK for FUTURE versions (full re-encrypt, only on suspected DEK compromise). You cannot un-read what was read — documented honestly.</p>
+</li>
+<li><p id="_14a0e427-562f-6ffe-146a-41461845e38c"><strong>Hierarchical derivation:</strong> subtree keys derive from a root DEK via HKDF with the path as info — K(/a/b) grants /a/b/** but not /a/c or /a (one-way). Sharing a directory subtree = handing over its derived key. Layered composites: per-layer DEKs for coarse audiences, HKDF subtrees for fine-grained ones.</p>
+</li>
+<li><p id="_b438ff4a-1b76-d5ec-ed96-7cc8ed286bab"><strong>Composition rules:</strong> JOIN/squash of layers with different DEKs = authorized re-encryption under a new joined key, OR preserved per-layer key domains in the joined manifest (lazy join). Encapsulated images keep INDEPENDENT key domains — outer may be readable while inner stays sealed (transport vs payload audiences).</p>
+</li>
+<li><p id="_2ce37ce1-7a6c-1bac-f805-2afdf16b56eb"><strong>Selective disclosure:</strong> per-directory/per-layer recipient mapping in the manifest → ONE artifact, N audiences; each key opens only its slice.</p>
+</li>
+<li><p id="_fc90ba4f-5260-f946-001d-be77b2dce816"><strong>Metadata hiding option:</strong> encrypt the metadata block as a unit — structure/filenames invisible until keyed.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_7141f6eb-5e62-1f81-256c-4af490f8fe6b" unnumbered="true" obligation="normative">
+<title id="_6d9b7190-8247-1977-4f57-2297faf1ce43">3. Memory discipline</title>
+<p id="_0b8f9b1d-2e03-916a-9838-13127b3ccbea">Decrypted blocks live in heap buffers that are <tt>mlock</tt>'d + zeroized on free. Keys via agent / passphrase / PKCS#11 hardware — never written to disk, never in swap. Confidential-computing memory (SGX/SEV/TDX) is a documented future tier, not v1.</p>
+</clause>
+
+<clause id="_c97b7b24-fe71-45fd-1fe7-f77785398c9a" unnumbered="true" obligation="normative">
+<title id="_4bbb8947-3d85-55c7-70a2-6bcee9427d86">4. Serving</title>
+<p id="_7f659f0c-2559-0d80-9697-74e7e0e8fc52">Prefer ciphertext end-to-end (clients decrypt locally; the server/CDN never sees plaintext). Session wrapping per online client only when the server is trusted with keys. Block-access patterns leak regardless (PIR out of scope) — documented.</p>
+</clause>
+
+<clause id="_66510b9c-1224-b93e-0b3e-94fe20d43607" unnumbered="true" obligation="normative">
+<title id="_0ed6c0b8-2fd1-245d-eec5-6580f259daf2">5. PQC readiness (locked)</title>
+<ul id="_b853d8a6-58be-eb0b-3ed5-b0b9ef54fc43"><li><p id="_786b9227-4c71-23ca-dd23-63a5f713d13c"><strong>Algorithm agility from day one:</strong> every manifest/envelope/signature carries a CIPHER-SUITE id from a versioned registry — nothing hardcoded. Unknown ids fail with a named error, never a guess.</p>
+<ul id="_30555073-0d0e-4b21-1ca4-c49fa00e38ec"><li><p id="_fff658a9-0427-0a66-af54-b488426c2b8a">SUITE-1 = X25519 + Ed25519 + AES-256-GCM + SHA-256 (classical).</p>
+</li>
+<li><p id="_b3a7fb47-b6d2-e746-a3fa-993bf3252124">SUITE-2 = HYBRID: ML-KEM-1024+X25519 composite KEM, ML-DSA-87+Ed25519 composite signatures, AES-256-GCM, SHA-384 — secure if EITHER family holds (the transition form).</p>
+</li>
+<li><p id="_7fce47a8-26db-7daf-9a31-6d460489121b">SUITE-3 = SLH-DSA (hash-based signatures) maximal-conservatism tier.</p>
+</li>
+</ul>
+</li>
+<li><p id="_fde38841-6dd0-c5cd-aec6-e735220964b8"><strong>HNDL:</strong> long-lived encrypted images SHOULD use hybrid envelopes NOW. AES-256 keeps ~128-bit post-Grover strength; the merkle/hash layer is PQC-safe by construction. Signatures are the migration surface, envelopes the confidentiality surface — both suite-versioned, so migration is additive.</p>
+</li>
+<li><p id="_17292508-24d4-b5ab-be1c-1de6c41247f8">Implementation path: botan 3 (rnp's backend) via rnp-rs PQC tracking + OpenPGP PQC drafts; recipients may hold classical AND PQC keys (multi-recipient envelopes are native).</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_759e25ab-c809-71a3-6097-7bf8496ab5f4" unnumbered="true" obligation="normative">
+<title id="_4da0be9b-f0ef-9e0f-4802-7a2c3d4cfc0f">6. Cyber/admin algebra (why this changes the game)</title>
+<ul id="_11c1c3ed-683f-b96f-6000-fdb25680af90"><li><p id="_23280e3a-4dc8-5df5-1a41-d8bd13f945b0">Object security &gt; channel security: artifacts self-protect over ANY transport/mirror (untrusted CDN, USB, email).</p>
+</li>
+<li><p id="_39d5af5e-e98e-7e8d-b850-dfe63fb65fde">Leak containment: disk snapshots/caches hold ciphertext only.</p>
+</li>
+<li><p id="_07447022-d6cf-1b1a-cb1b-4d3785ae0ebf"><strong>Crypto-shredding / kill-switch:</strong> destroy a data key (or re-issue the manifest without a recipient) → content unrecoverable everywhere, provably — no mirror-purge problem.</p>
+</li>
+<li><p id="_609047fc-67d9-e926-242e-cccf9826c5f5">Immutable golden bases + auditable COW deltas (the overlay IS the change record) + signed provenance = compliance-grade fleet management.</p>
+</li>
+<li><p id="_d3fac9d7-319f-06a8-c6bc-e6dcf19e08fa">Honest risks: access-pattern side channels on serve; key-agent UX is the hard part; mlock/zeroize is the baseline, not a panacea.</p>
+</li>
+</ul>
+</clause>
+
+<clause id="_1ecdaae8-9eec-6e5a-9a11-649786b1301e" unnumbered="true" obligation="normative">
+<title id="_218c0f6f-99c4-595b-ef46-80ecb14c3605">7. CLI surface (SHIPPED v1)</title>
+<p id="_d54ea0c8-1ca1-ecd7-ccce-1de9d7cbbf76"><tt>tfs encrypt / decrypt / mount --recipient / --key</tt> — encryption at image-creation time through the same Writer path; mount requires the recipient key; wrong key → named  <tt>EKEY</tt>-class error, never garbage. SHIPPED (roadmap 37):  <tt>tfs encrypt</tt> (root grant <tt>--recipient</tt>, subtree grants  <tt>--subtree &lt;path&gt;=&lt;pubkey&gt;</tt>; <tt>--rewrap --key</tt> rotates grants to a new recipient set with the bulk ciphertext byte-identical), <tt>tfs decrypt</tt> (plaintext to a tar stream — never a staging tree), <tt>tfs mount --key</tt> (the unlock/grant report; FUSE/serve mounts remain spec-11 §6 PLANNED).  <tt>tfs sign</tt> is spec 09's surface. The v1 crypto construction (per-block AES-256-GCM, HKDF-SHA256 subtree keys, PKESK DEK envelopes, the  <tt>/__tpkg__/envelopes.yaml</tt> grant manifest) is documented normatively in  <tt>crates/tfs/src/backends_enc.rs</tt> and <tt>crates/tpkg/src/envelope.rs</tt>.</p>
+</clause>
+
+<clause id="_64e03407-14a4-d7da-af51-ae91f1988c60" unnumbered="true" obligation="normative">
+<title id="_ad1551b3-1a1a-af3c-ee07-b14286f96402">4a. The wire format (normative — the byte layout an independent implementation must match)</title>
+<p id="_96a3208a-7a6b-30ae-c5a1-18228f2c0b59">Directory structure, names, symlink targets and the <tt>/__tpkg__/</tt> metadata directory stay plaintext (metadata hiding is this spec's deferred option); every other regular file's CONTENT is replaced by its encrypted form:</p>
+
+<sourcecode id="_bfa62329-185d-4e8c-15e4-31aaff3659f1"><body>offset  size  field
+     0     8  magic "tfsenc01"
+     8     8  u64le plaintext_size
+    16     —  per block i (block = 4096 bytes; full-block slot 4112):
+                ciphertext_i (block_len bytes) || GCM tag_i (16 bytes)</body></sourcecode>
+
+
+<p id="_cf0ee66a-bd6a-2897-777b-319cd4df6545">Per block, AES-256-GCM with:</p>
+
+<ul id="_858cd67d-2a70-327f-747b-bf2035dfba0c"><li><p id="_68649541-674e-10f0-40ae-2522d041750a">key = the file key <tt>FK(path)</tt> (below),</p>
+</li>
+<li><p id="_b78c5897-edb5-d2d5-2ce2-70b2687a6485">nonce = <tt>u32le(0) || u64le(block_index)</tt> (12 bytes) — unique per (key, block): file keys are unique per file, block indexes never repeat within a file, and images are immutable, so no (key, nonce) pair ever seals two different plaintexts. A CHANGED tree's re-encryption MUST rotate the DEK (§2's prospective rotation), which re-keys every nonce domain.</p>
+</li>
+<li><p id="_28044984-e8f2-5388-6507-0a417010a5db">AAD = <tt>"tfsenc01" || u64le(plaintext_size) || u64le(block_index)</tt> — binds each block to its file size and position (blocks cannot be relocated, truncated away silently, or transplanted between files of different sizes).</p>
+</li>
+</ul>
+
+<p id="_91de9693-08f3-8442-80cf-930860b6c333">Keys: one root DEK per image (32 random bytes), with HKDF-SHA256 path keys for selective disclosure (§2):</p>
+
+<sourcecode id="_9ae27d72-41ed-d87c-a897-aee0d5973078"><body>K("")            = DEK                        (the image root key)
+K(dir/name)      = HKDF-SHA256(ikm = K(dir),  salt = none,
+                               info = "tfs-enc-1/dir\0"  || name)
+FK(dir/file)     = HKDF-SHA256(ikm = K(dir),  salt = none,
+                               info = "tfs-enc-1/file\0" || name)</body></sourcecode>
+
+
+<p id="_561fbb2d-84d6-ed34-68b9-6348e76adb35">One-way per level: K(/a/b) opens /a/b/** but not /a/c or /a. Sharing a subtree = wrapping THAT subtree's key to the recipient. The DEK (or a subtree key) is wrapped to recipients as OpenPGP PKESK packets and recorded in  <tt>/__tpkg__/envelopes.yaml</tt> (tpkg's EnvelopeManifest); the payload manifest's  <tt>encryption.parts</tt> reference grants by id and NEVER carry keys (spec 03 §2.1).</p>
+</clause>
+</sections>
+</metanorma>

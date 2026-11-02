@@ -1,0 +1,1280 @@
+<relaton-collection xmlns="https://open.ribose.com/relaton-xml"><title></title><contributor><role type='author'/><organization><name></name></organization></contributor><relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">System overview</title>
+  <uri type="xml">./documents/01-overview.xml</uri>
+  <uri type="pdf">./documents/01-overview.pdf</uri>
+  <uri type="html">./documents/01-overview.html</uri>
+  <uri type="rxl">./documents/01-overview.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 01</docidentifier>
+  <docnumber>TBK SPEC 01</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">tpkg wire format (L0)</title>
+  <uri type="xml">./documents/02-tpkg-wire-format.xml</uri>
+  <uri type="pdf">./documents/02-tpkg-wire-format.pdf</uri>
+  <uri type="html">./documents/02-tpkg-wire-format.html</uri>
+  <uri type="rxl">./documents/02-tpkg-wire-format.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 02</docidentifier>
+  <docnumber>TBK SPEC 02</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Payload manifest (L1)</title>
+  <uri type="xml">./documents/03-payload-manifest.xml</uri>
+  <uri type="pdf">./documents/03-payload-manifest.pdf</uri>
+  <uri type="html">./documents/03-payload-manifest.html</uri>
+  <uri type="rxl">./documents/03-payload-manifest.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 03</docidentifier>
+  <docnumber>TBK SPEC 03</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">References and registries (L3)</title>
+  <uri type="xml">./documents/04-references-and-registry.xml</uri>
+  <uri type="pdf">./documents/04-references-and-registry.pdf</uri>
+  <uri type="html">./documents/04-references-and-registry.html</uri>
+  <uri type="rxl">./documents/04-references-and-registry.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 04</docidentifier>
+  <docnumber>TBK SPEC 04</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Resolution and machine cache (L3)</title>
+  <uri type="xml">./documents/05-resolution-and-cache.xml</uri>
+  <uri type="pdf">./documents/05-resolution-and-cache.pdf</uri>
+  <uri type="html">./documents/05-resolution-and-cache.html</uri>
+  <uri type="rxl">./documents/05-resolution-and-cache.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 05</docidentifier>
+  <docnumber>TBK SPEC 05</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Launcher ABI (bootstrap → runtime)</title>
+  <uri type="xml">./documents/06-launcher-abi.xml</uri>
+  <uri type="pdf">./documents/06-launcher-abi.pdf</uri>
+  <uri type="html">./documents/06-launcher-abi.html</uri>
+  <uri type="rxl">./documents/06-launcher-abi.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 06</docidentifier>
+  <docnumber>TBK SPEC 06</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Shims and dispatch</title>
+  <uri type="xml">./documents/07-shims-and-dispatch.xml</uri>
+  <uri type="pdf">./documents/07-shims-and-dispatch.pdf</uri>
+  <uri type="html">./documents/07-shims-and-dispatch.html</uri>
+  <uri type="rxl">./documents/07-shims-and-dispatch.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 07</docidentifier>
+  <docnumber>TBK SPEC 07</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Jails: host-access policy</title>
+  <uri type="xml">./documents/08-jails.xml</uri>
+  <uri type="pdf">./documents/08-jails.pdf</uri>
+  <uri type="html">./documents/08-jails.html</uri>
+  <uri type="rxl">./documents/08-jails.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 08</docidentifier>
+  <docnumber>TBK SPEC 08</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Trust and signing (authentication)</title>
+  <uri type="xml">./documents/09-trust-and-signing.xml</uri>
+  <uri type="pdf">./documents/09-trust-and-signing.pdf</uri>
+  <uri type="html">./documents/09-trust-and-signing.html</uri>
+  <uri type="rxl">./documents/09-trust-and-signing.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 09</docidentifier>
+  <docnumber>TBK SPEC 09</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Encryption (confidentiality)</title>
+  <uri type="xml">./documents/10-encryption.xml</uri>
+  <uri type="pdf">./documents/10-encryption.pdf</uri>
+  <uri type="html">./documents/10-encryption.html</uri>
+  <uri type="rxl">./documents/10-encryption.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 10</docidentifier>
+  <docnumber>TBK SPEC 10</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">TFS: the virtual filesystem layer</title>
+  <uri type="xml">./documents/11-tfs-vfs-model.xml</uri>
+  <uri type="pdf">./documents/11-tfs-vfs-model.pdf</uri>
+  <uri type="html">./documents/11-tfs-vfs-model.html</uri>
+  <uri type="rxl">./documents/11-tfs-vfs-model.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 11</docidentifier>
+  <docnumber>TBK SPEC 11</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">The runtime driver contract (any language)</title>
+  <uri type="xml">./documents/17-runtime-driver-contract.xml</uri>
+  <uri type="pdf">./documents/17-runtime-driver-contract.pdf</uri>
+  <uri type="html">./documents/17-runtime-driver-contract.html</uri>
+  <uri type="rxl">./documents/17-runtime-driver-contract.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 17</docidentifier>
+  <docnumber>TBK SPEC 17</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Trace observability: the interception bus, diagnosis, and coverage</title>
+  <uri type="xml">./documents/25-trace-observability.xml</uri>
+  <uri type="pdf">./documents/25-trace-observability.pdf</uri>
+  <uri type="html">./documents/25-trace-observability.html</uri>
+  <uri type="rxl">./documents/25-trace-observability.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 25</docidentifier>
+  <docnumber>TBK SPEC 25</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Release bundles (the runtime publish unit)</title>
+  <uri type="xml">./documents/36-release-bundles.xml</uri>
+  <uri type="pdf">./documents/36-release-bundles.pdf</uri>
+  <uri type="html">./documents/36-release-bundles.html</uri>
+  <uri type="rxl">./documents/36-release-bundles.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 36</docidentifier>
+  <docnumber>TBK SPEC 36</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">The registry book: federation, aliases, credentials, the official seed</title>
+  <uri type="xml">./documents/37-registry-book.xml</uri>
+  <uri type="pdf">./documents/37-registry-book.pdf</uri>
+  <uri type="html">./documents/37-registry-book.html</uri>
+  <uri type="rxl">./documents/37-registry-book.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 37</docidentifier>
+  <docnumber>TBK SPEC 37</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">OCI distribution (<tt>tfs+oci:</tt>)</title>
+  <uri type="xml">./documents/38-oci-distribution.xml</uri>
+  <uri type="pdf">./documents/38-oci-distribution.pdf</uri>
+  <uri type="html">./documents/38-oci-distribution.html</uri>
+  <uri type="rxl">./documents/38-oci-distribution.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 38</docidentifier>
+  <docnumber>TBK SPEC 38</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Lazy range-fetch mounting of runtime images</title>
+  <uri type="xml">./documents/39-lazy-range-mount.xml</uri>
+  <uri type="pdf">./documents/39-lazy-range-mount.pdf</uri>
+  <uri type="html">./documents/39-lazy-range-mount.html</uri>
+  <uri type="rxl">./documents/39-lazy-range-mount.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 39</docidentifier>
+  <docnumber>TBK SPEC 39</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">The audit ledger: queries, the anchor, and the auditor's walk</title>
+  <uri type="xml">./documents/40-audit-ledger.xml</uri>
+  <uri type="pdf">./documents/40-audit-ledger.pdf</uri>
+  <uri type="html">./documents/40-audit-ledger.html</uri>
+  <uri type="rxl">./documents/40-audit-ledger.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 40</docidentifier>
+  <docnumber>TBK SPEC 40</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Registry transparency: completeness proofs for the public fabric</title>
+  <uri type="xml">./documents/41-registry-transparency.xml</uri>
+  <uri type="pdf">./documents/41-registry-transparency.pdf</uri>
+  <uri type="html">./documents/41-registry-transparency.html</uri>
+  <uri type="rxl">./documents/41-registry-transparency.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 41</docidentifier>
+  <docnumber>TBK SPEC 41</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Tree solving and lockfiles: one answer for a whole composition</title>
+  <uri type="xml">./documents/42-tree-solving.xml</uri>
+  <uri type="pdf">./documents/42-tree-solving.pdf</uri>
+  <uri type="html">./documents/42-tree-solving.html</uri>
+  <uri type="rxl">./documents/42-tree-solving.rxl</uri>
+  <docidentifier primary="true" type="The Tebako Project">TBK SPEC 42</docidentifier>
+  <docnumber>TBK SPEC 42</docnumber>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+<relation type='partOf'><bibdata type="standard" schema-version="v1.5.6">
+  <title language="en" type="main">Tebako Specifications — Series landing</title>
+  <uri type="xml">./documents/index.xml</uri>
+  <uri type="pdf">./documents/index.pdf</uri>
+  <uri type="html">./documents/index.html</uri>
+  <uri type="rxl">./documents/index.rxl</uri>
+  <date type="published">
+    <on>2026-11-01</on>
+  </date>
+  <contributor>
+    <role type="author"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="author"/>
+    <person>
+      <name>
+        <completename>The Tebako Project</completename>
+      </name>
+    </person>
+  </contributor>
+  <contributor>
+    <role type="author">
+      <description>committee</description>
+    </role>
+    <organization>
+      <name>The Tebako Project</name>
+      <subdivision type="Committee" subtype="technical">
+        <name>Tebako</name>
+      </subdivision>
+    </organization>
+  </contributor>
+  <contributor>
+    <role type="publisher"/>
+    <organization>
+      <name>The Tebako Project</name>
+    </organization>
+  </contributor>
+  <edition>1.0</edition>
+  <language>en</language>
+  <script>Latn</script>
+  <status>
+    <stage>published</stage>
+  </status>
+  <copyright>
+    <from>2026</from>
+    <owner>
+      <organization>
+        <name>The Tebako Project</name>
+      </organization>
+    </owner>
+  </copyright>
+  <ext>
+    <doctype>standard</doctype>
+    <flavor>ribose</flavor>
+  </ext>
+</bibdata></relation>
+</relaton-collection>

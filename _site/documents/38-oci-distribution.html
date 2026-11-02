@@ -1,0 +1,2101 @@
+
+<!DOCTYPE html SYSTEM "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html lang="en" xml:lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /><style>@charset "UTF-8";
+/*
+    0 CSS RESET
+*/
+/* http://meyerweb.com/eric/tools/css/reset/
+   v2.0 | 20110126
+   License: none (public domain)
+*/
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, output, ruby, section, summary,
+time, mark, audio, video {
+  margin: 0;
+  padding: 0;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  border: 0;
+  font-size: 100%;
+}
+
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, tt, var,
+b, u, i, center,
+dl, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  vertical-align: baseline;
+}
+
+html, body, div, span, applet, object, iframe,
+p, blockquote,
+a, abbr, acronym, address, big, cite,
+del, dfn, em, img, ins, q, s,
+small, strike, strong, sub, sup, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed,
+figure, figcaption, footer, header, hgroup,
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+code, pre, tt, kbd, samp {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+code *, pre *, tt *, kbd *, samp * {
+  font-family: "Source Code Pro",monospace !important;
+  font-variant-ligatures: none;
+}
+
+p code, dt code, li code, label code, legend code, caption code, th code, td code,
+p tt, dt tt, li tt, label tt, legend tt, caption tt, th tt, td tt,
+p kbd, dt kbd, li kbd, label kbd, legend kbd, caption kbd, th kbd, td kbd,
+p samp, dt samp, li samp, label samp, legend samp, caption samp, th samp, td samp {
+  font-size: 0.8em;
+}
+
+sub, sup {
+  font-size: 0.75em;
+}
+
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+blockquote, q {
+  quotes: none;
+}
+blockquote::before, blockquote::after, q::before, q::after {
+  content: "";
+  content: none;
+}
+
+.h2Annex {
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+}
+dl dt p, dl dd p {
+  margin-top: 0;
+}
+dl dt {
+  grid-column-start: 1;
+}
+dl dd {
+  grid-column-start: 2;
+}
+
+b, strong {
+  font-weight: bold;
+}
+
+div.document-stage-band, div.document-type-band {
+  background-color: #333333;
+}
+
+a.TableFootnoteRef, span.TableFootnoteRef,
+a.FootnoteRef, span.FootnoteRef {
+  vertical-align: super;
+}
+
+a.TableFootnoteRef, a.FootnoteRef, a.footnote-number,
+sup a, a:has(> sup) {
+  vertical-align: baseline;
+}
+
+.addition {
+  color: blue;
+}
+
+.deletion {
+  color: red;
+  text-decoration: line-through;
+}
+
+ruby {
+  ruby-position: over;
+  -webkit-ruby-position: before;
+}
+
+ruby ruby {
+  ruby-position: under;
+  -webkit-ruby-position: after;
+}
+
+/* code highlighting with line numbers */
+table.rouge-line-table td.rouge-gutter {
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+  user-select: none;
+  padding-right: 1em;
+}
+
+table.rouge-line-table td.rouge-code {
+  -moz-user-select: all;
+  -ms-user-select: all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+table.rouge-line-table,
+table.rouge-line-table th,
+table.rouge-line-table td {
+  width: auto;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 100%;
+}
+
+table.rouge-line-table pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: visible;
+  font-size: 100%;
+}
+
+/* header § links */
+a.header {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.header:hover {
+  color: #a53221 !important;
+  background: inherit;
+  box-shadow: none;
+}
+
+a.header:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.anchor {
+  position: absolute;
+  z-index: 1001;
+  width: 1.5ex;
+  margin-left: -1.5ex;
+  display: block;
+  text-decoration: none !important;
+  visibility: hidden;
+  text-align: center;
+  font-weight: 400;
+}
+
+a.anchor::before {
+  content: "§";
+  font-size: 0.85em;
+  display: block;
+  padding-top: 0.1em;
+}
+
+a.anchor:hover {
+  color: #a53221;
+  background: inherit;
+  box-shadow: none;
+}
+
+h1 > a.anchor:hover,
+h2 > a.anchor:hover,
+h3 > a.anchor:hover,
+h4 > a.anchor:hover,
+h5 > a.anchor:hover,
+h6 > a.anchor:hover,
+.inline-header > a.anchor:hover,
+h1:hover > a.anchor,
+h2:hover > a.anchor,
+h3:hover > a.anchor,
+h4:hover > a.anchor,
+h5:hover > a.anchor,
+h6:hover > a.anchor,
+.inline-header:hover > a.anchor {
+  visibility: visible;
+}
+
+/* collapsible snippets: collapsible before hidable */
+.hidable {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}
+
+.collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 3px 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  text-align: left;
+  outline: none;
+  font-size: 15px;
+}
+
+.active, .collapsible:hover {
+  background-color: #555;
+}
+
+.collapsible:after {
+  content: "▼";
+  color: white;
+  font-weight: bold;
+  float: right;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
+.active:after {
+  content: "▲";
+}
+
+/* collapsible: */
+.collapsible + .hidable {
+  margin-top: 0;
+}
+
+.collapsible:not(.active) + .hidable {
+  overflow: hidden;
+  padding: 0;
+}
+
+.svg-container {
+  width: 100%; /* or any desired width */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+svg {
+  width: 100%;
+  height: auto; /* ← key to maintaining aspect ratio */
+  display: block; /* ← removes unwanted inline spacing */
+}
+
+/* style dfn by override in flavor */
+dfn {
+  font-style: inherit;
+}
+
+#standard-band {
+  background-color: #0AC442;
+}
+
+#standard {
+  border-bottom: solid 3px #0AC442;
+}
+
+#directive-band {
+  background-color: #540D6E;
+}
+
+#directive {
+  border-bottom: solid 3px #540D6E;
+}
+
+#guide-band {
+  background-color: #D183C9;
+}
+
+#guide {
+  border-bottom: solid 3px #D183C9;
+}
+
+#specification-band {
+  background-color: #65AFFF;
+}
+
+#specification {
+  border-bottom: solid 3px #65AFFF;
+}
+
+#report-band {
+  background-color: #3A405A;
+}
+
+#report {
+  border-bottom: solid 3px #3A405A;
+}
+
+#amendment-band {
+  background-color: #F26430;
+}
+
+#amendment {
+  border-bottom: solid 3px #F26430;
+}
+
+#corrigendum-band {
+  background-color: #C84630;
+}
+
+#corrigendum {
+  border-bottom: solid 3px #C84630;
+}
+
+#administrative-band {
+  background-color: #BFAE48;
+}
+
+#administrative {
+  border-bottom: solid 3px #BFAE48;
+}
+
+#advisory-band {
+  background-color: #BD9391;
+}
+
+#advisory {
+  border-bottom: solid 3px #BD9391;
+}
+
+#proposal-band {
+  background-color: #39A0ED;
+}
+
+#proposal {
+  border-bottom: solid 3px #39A0ED;
+}
+
+#working-draft-band {
+  background-color: #2D7393;
+}
+
+#working-draft {
+  border-bottom: solid 3px #2D7393;
+}
+
+#committee-draft-band {
+  background-color: #2A6B7C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #2A6B7C;
+}
+
+#draft-standard-band {
+  background-color: #1C7F7A;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #1C7F7A;
+}
+
+#final-draft-band {
+  background-color: #53C170;
+}
+
+#final-draft {
+  border-bottom: solid 3px #53C170;
+}
+
+#published-band {
+  background-color: #069E2D;
+}
+
+#published {
+  border-bottom: solid 3px #069E2D;
+}
+
+#withdrawn-band {
+  background-color: #004E64;
+}
+
+#withdrawn {
+  border-bottom: solid 3px #004E64;
+}
+
+#cancelled-band {
+  background-color: #2E382E;
+}
+
+#cancelled {
+  border-bottom: solid 3px #2E382E;
+}
+
+:root {
+  --ribose-primary-color: #1661AD;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.4em;
+  color: #1d1d1d;
+  background-color: #ffffff;
+}
+body main {
+  margin: 0 3em 0 6em;
+}
+
+main {
+  margin: 0 3em 0 6em;
+}
+
+#toc ul, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#toc ul li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul li a {
+  padding: 5px 10px;
+}
+#toc ul a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a {
+  color: #485094;
+  text-decoration: none;
+  display: block;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: #485094;
+}
+#toc .h2, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h2 {
+  padding-left: 30px;
+}
+#toc .h3, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h3 {
+  padding-left: 50px;
+}
+#toc .h4, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h4 {
+  padding-left: 70px;
+}
+#toc .h5, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h5 {
+  padding-left: 90px;
+}
+#toc .h6, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .h6 {
+  padding-left: 110px;
+}
+#toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+  background: var(--ribose-primary-color);
+  box-shadow: inset -5px 0px 10px -5px var(--ribose-primary-color) !important;
+}
+#toc .toc-active a, #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+  color: #485094;
+}
+@media print {
+  #toc .toc-active, #toc li:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover {
+    background: white;
+    box-shadow: none !important;
+  }
+  #toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+    color: #485094;
+  }
+  #toc li:hover a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li:hover a {
+    color: black;
+  }
+}
+#toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+}
+@media screen and (max-width: 768px) {
+  #toc, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0 1.5em;
+    overflow: visible;
+  }
+}
+#toc .toc-active a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) .toc-active a {
+  color: white;
+}
+#toc li a, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) li a {
+  text-transform: uppercase;
+}
+#toc ul a:hover, #toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) ul a:hover {
+  box-shadow: none;
+  color: white;
+}
+
+#toc > ul :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 100%;
+}
+
+@media screen and (min-width: 768px) {
+  nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 323px;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0 0 0 30px;
+    background-color: #f7f7f7;
+  }
+}
+@media print {
+  nav {
+    position: relative;
+    width: auto;
+    font-size: 0.9em;
+    overflow: auto;
+    padding: 0;
+    margin-right: 0;
+    background-color: white;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  #toggle {
+    position: fixed;
+    height: 100%;
+    width: 30px;
+    background-color: var(--ribose-primary-color);
+    color: white !important;
+    cursor: pointer;
+    left: 0;
+    top: 0;
+    z-index: 103;
+  }
+  #toggle span {
+    text-align: center;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translate(0, -50%);
+  }
+}
+@media screen and (max-width: 768px) {
+  #toggle {
+    display: none;
+  }
+}
+@media print {
+  #toggle {
+    display: none;
+  }
+}
+
+#myBtn {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  display: none;
+  position: fixed;
+  bottom: 20px;
+  right: 30px;
+  z-index: 99;
+  font-size: 12px;
+  border: none;
+  outline: none;
+  background-color: #1f8ca0;
+  opacity: 0.15;
+  color: white;
+  cursor: pointer;
+  padding: 10px 15px 10px 15px;
+  border-radius: 4px;
+}
+#myBtn:hover {
+  opacity: 1;
+}
+@media print {
+  #myBtn {
+    display: none;
+  }
+}
+#myBtn {
+  text-transform: uppercase;
+}
+#myBtn a.anchorjs-link:hover {
+  background: none;
+  color: #485094;
+  box-shadow: none;
+}
+
+/*
+    2. Responsive navigation layout
+*/
+@media screen and (min-width: 768px) {
+  .container {
+    padding-left: 360px;
+  }
+  .rule.toc {
+    display: none;
+  }
+  h1.toc-contents {
+    margin-top: 1em;
+  }
+  ul#toc-list, ul#toc-list > :is(.h1, .h2, .h3, .h4, .h5, .h6) {
+    padding: 0;
+    margin: 0;
+  }
+}
+figure figcaption {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure > img, figure > svg {
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+figure {
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+table figure {
+  padding: 0;
+  margin: 0;
+}
+
+/*
+    Document types + stages
+*/
+.document-type-band {
+  left: 0;
+  top: 180px;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 102;
+}
+.document-type-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 400;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-type-band {
+    display: none;
+  }
+}
+.document-type-band .document-type {
+  top: 20px;
+}
+
+.document-stage-band {
+  left: 0;
+  top: 0;
+  height: 100%;
+  position: fixed;
+  display: block;
+  z-index: 101;
+  box-shadow: -5px 0px 10px #1d1d1d;
+}
+.document-stage-band > :first-child {
+  position: relative;
+  width: 25px;
+  font-weight: 300;
+  height: 160px;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  margin: 0;
+  margin-left: 6px;
+  writing-mode: tb-rl;
+  -webkit-transform: rotate(180deg);
+  -moz-transform: rotate(180deg);
+  -o-transform: rotate(180deg);
+  white-space: nowrap;
+  display: block;
+  bottom: 0;
+}
+@media print {
+  .document-stage-band {
+    display: none;
+  }
+}
+
+#governance-band p.document-type {
+  height: 230px !important;
+}
+
+p.document-stage {
+  font-weight: 300;
+  height: 160px;
+}
+
+#standard-band p {
+  height: 270px;
+}
+
+#proposal-band p {
+  height: 150px;
+}
+
+#standard-band,
+#published-band {
+  background-color: #9ABD48;
+}
+
+#standard,
+#published {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#governance,
+#policy-and-procedures {
+  border-bottom: solid 3px #750697;
+}
+
+#governance-band,
+#policy-and-procedures-band {
+  background-color: #750697;
+}
+
+#guide {
+  border-bottom: solid 3px #48a0e7;
+}
+
+#guide-band {
+  background-color: #48a0e7;
+}
+
+.coverpage-maturity {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0 0 2em 0;
+  text-transform: uppercase;
+}
+
+#working-draft,
+#proposal {
+  border-bottom: solid 3px #F7803C;
+}
+
+#working-draft-band,
+#proposal-band {
+  background-color: #F7803C;
+}
+
+#committee-draft {
+  border-bottom: solid 3px #fd06fd;
+}
+
+#committee-draft-band {
+  background-color: #fd06fd;
+}
+
+#draft-standard {
+  border-bottom: solid 3px #fdf906;
+}
+
+#draft-standard-band {
+  background-color: #fdf906;
+}
+
+#standard {
+  border-bottom: solid 3px #9ABD48;
+}
+
+#standard-band {
+  background-color: #9ABD48;
+}
+
+#obsolete {
+  border-bottom: solid 3px #7e0d13;
+}
+
+#obsolete-band {
+  background-color: #7e0d13;
+}
+
+/*
+    3. TYPOGRAPHY
+*/
+/*
+    3.1 Titles
+*/
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: "Source Sans Pro",sans-serif;
+  color: var(--ribose-primary-color);
+  font-weight: 300;
+  margin-top: 1.6em;
+  margin-bottom: 0.3em;
+}
+
+h1, .h1 {
+  font-size: 1.6em;
+  text-transform: uppercase;
+  margin-top: 2em;
+}
+
+h1#content, .h1#content {
+  margin-top: 2em;
+}
+
+h2, .h2 {
+  margin-top: 1.3em;
+  font-size: 1.3em;
+  font-weight: 400;
+}
+
+h3, .h3 {
+  margin-top: 1.1em;
+  font-size: 1.1em;
+  font-weight: 100;
+}
+
+.TermNum {
+  font-weight: 100;
+}
+
+span.TermNum {
+  font-weight: bold;
+}
+
+.TermNum, .Terms, .AltTerms {
+  color: var(--ribose-primary-color);
+}
+
+h2.TermNum {
+  margin-bottom: 0;
+}
+
+p.Terms {
+  font-size: 1.1em;
+  line-height: 1.5em;
+  margin: 0;
+}
+
+p.AltTerms {
+  /*
+  font-style: italic;
+    */
+  font-size: 1.1em;
+  margin: 0;
+}
+
+.contact-info a:hover {
+  color: #485094;
+  text-decoration: underline;
+  background: none;
+  box-shadow: 0 0 0 0;
+}
+
+/*
+  3.2 Links
+*/
+a, a:visited {
+  text-decoration: none;
+  color: #485094;
+}
+
+a:hover {
+  color: white;
+  background: var(--ribose-primary-color);
+  box-shadow: 3px 0 0 var(--ribose-primary-color), -3px 0 0 var(--ribose-primary-color);
+}
+
+*::selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+*::-moz-selection {
+  background: var(--ribose-primary-color);
+  color: white;
+}
+
+/*
+    3.3 Lists
+*/
+ul,
+ol {
+  margin-left: 1.2em;
+}
+
+ul li {
+  list-style: none;
+}
+
+ul > li::before {
+  content: "—";
+  display: inline-block;
+  width: 1em;
+  margin-left: -1.2em;
+}
+
+ul > li p:first-child {
+  display: inline;
+}
+
+ul > li:first-child {
+  margin-top: 1em;
+}
+
+ul ul > li:first-child {
+  margin-top: 0;
+}
+
+ol ul > li:first-child {
+  margin-top: 0;
+}
+
+#toc-list ul {
+  margin-bottom: 0.25em;
+}
+
+#toc-list li {
+  list-style-type: none;
+}
+
+#toc li::before {
+  content: " ";
+  display: none;
+}
+
+/*
+    3.4 Rules
+*/
+.rule {
+  width: 100%;
+  height: 1px;
+  background-color: #0e1a85;
+  margin: 2em 0;
+}
+
+/*
+    3.5 Bibliograhy
+*/
+p.Biblio,
+p.NormRef, div.Biblio, div.NormRef {
+  margin-top: 1em;
+  margin-left: 2em;
+}
+
+.Biblio.note, .Biblio.Note, .NormRef.note, .NormRef.Note {
+  margin-left: 3em;
+}
+
+/*
+    3.6 Source Code + figures
+*/
+figure .SourceTitle,
+pre .SourceTitle,
+.pseudocode .SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+figure,
+pre,
+.pseudocode {
+  background-color: #f7f7f7;
+  font-size: 0.8em;
+  line-height: 1.6em;
+  padding: 1.5em;
+  margin: 2em 0 1em 0;
+  overflow: auto;
+}
+
+pre {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+}
+
+.AdmonitionTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.RecommendationTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+.ListTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+  text-align: left;
+}
+
+figcaption,
+.SourceTitle {
+  font-weight: 700;
+  font-size: 1em;
+  text-align: center;
+}
+
+/*
+    3.7 Notes
+*/
+.Note {
+  background-color: #fff495;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Note p {
+  margin: 0;
+}
+
+.Admonition {
+  background-color: #ffcccc;
+  color: #47430c;
+  padding: 1.2em;
+  margin: 1em 0 1em 0;
+}
+.Admonition p {
+  margin: 0;
+}
+
+/*
+    3.8 Examples
+*/
+.example {
+  background-color: #e1eef1;
+  padding: 1.2em;
+  margin: 2em 0 1em 0;
+  text-align: left;
+}
+.example p {
+  margin: 0;
+}
+.example {
+  color: #424242;
+  padding-left: 2.7em;
+}
+.example .example-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-left: -1.5em;
+}
+.example .example-title {
+  margin-top: 0;
+}
+.example pre,
+.example .pseudocode {
+  background: none;
+}
+
+/*
+    3.9 Tables
+*/
+table {
+  width: 100%;
+  font-weight: 300;
+  margin: 1em 0 2em 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 2em;
+}
+table, table th, table td {
+  border: 1px solid black;
+  font-size: 0.95em;
+}
+table th, table td {
+  padding: 1em;
+}
+table td.header {
+  font-weight: 400;
+}
+table table.plain, table table.plain th, table table.plain td {
+  border: none !important;
+  font-size: 0.95em;
+}
+
+table > caption {
+  text-align: center;
+  margin-top: 2.5em;
+  font-weight: 400;
+}
+
+/*
+  3.10 Footnotes
+*/
+a.footnote-number {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+.footnote {
+  font-size: 0.9em;
+}
+
+/*
+    3.11 Blockquotes
+*/
+.Quote {
+  background-color: #f7f7f7;
+  font-style: italic;
+  width: 80%;
+  padding: 1.5em;
+  margin-top: 2em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/*
+    3.12 Formulas
+*/
+.formula {
+  background-color: #f7f7f7;
+  padding: 1.5em;
+  margin-top: 2em;
+  text-align: center;
+}
+
+/*
+    3.13 Contact Info
+*/
+.contact-info {
+  padding: 2em;
+  margin-top: 5em;
+  width: 250px;
+  text-align: left;
+  border: var(--ribose-primary-color) solid 2px;
+  color: var(--ribose-primary-color) !important;
+  border-radius: 25px;
+}
+
+.contact-info a,
+.contact-info a:hover {
+  color: var(--ribose-primary-color);
+}
+
+.contact-info p,
+.contact-info a {
+  font-family: "Source Code Pro",monospace;
+  font-variant-ligatures: none;
+  font-weight: 400;
+}
+
+.contact-info .name {
+  font-weight: 700;
+  font-size: 1.2em;
+  margin-bottom: 0;
+}
+
+.contact-info .address {
+  font-size: 1em;
+  line-height: 1.3em;
+  margin-top: 0;
+}
+
+/*
+    Keywords
+*/
+span.keyword {
+  font-weight: 600;
+}
+
+/*
+    Paragraphs
+*/
+p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+h2 p, .h2 p {
+  display: inline;
+}
+
+/*
+    4.0 Page header
+*/
+/*
+    4.1 Top Logo
+*/
+.icon-svg {
+  width: 100%;
+  color: #5ecf86;
+}
+
+.wrapper-top {
+  background: linear-gradient(200deg, #0f365e, var(--ribose-primary-color));
+  color: #ffffff;
+  padding: 2em 0;
+  width: 100%;
+}
+
+.wrapper-top-bottom {
+  width: 0;
+  height: 0;
+  border-top: 100px solid var(--ribose-primary-color);
+  border-right: 100px solid transparent;
+  position: absolute;
+}
+
+.doc-number {
+  font-size: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+}
+
+.coverpage-title {
+  padding-bottom: 0.5em;
+  font-family: "Source Sans Pro",sans-serif;
+  font-size: 1.2em;
+  line-height: 1.5em;
+  font-weight: 100;
+  padding-left: 1em;
+  padding-right: 1em;
+  text-transform: uppercase;
+}
+
+.WordSection11 {
+  padding: 0 2em 0 3em;
+}
+
+.info-section {
+  padding: 0 2em 0 5em;
+}
+
+.prefatory-section {
+  padding: 0 3em 0 6em;
+}
+
+.zzSTDTitle1,
+.MsoCommentText {
+  display: none;
+}
+
+.coverpage {
+  text-align: center;
+  padding-left: 1.5em;
+}
+
+.coverpage-logo span,
+.coverpage-tc-name span {
+  font-family: "Source Sans Pro",sans-serif;
+  text-transform: none;
+  font-weight: 300;
+}
+
+.coverpage-tc-name {
+  font-size: 1.2em;
+  line-height: 1.2em;
+  margin: 0.25em 0;
+}
+
+/*
+    4.2 Document Identity
+*/
+.coverpage-doc-identity {
+  font-size: 2em;
+  line-height: 2em;
+}
+
+.coverpage-title .title-second {
+  display: none;
+}
+
+.coverpage-stage-block {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 600;
+  font-size: 1.25em;
+  margin: 2em 0em 2em 0em;
+  text-transform: uppercase;
+}
+
+/*
+    4.3 Draft Warning
+*/
+.coverpage-warning {
+  border: #f36f36 solid 2px;
+  color: #f36f36 !important;
+  margin: 1em 2em;
+  color: #485094;
+  padding: 2em 1em 1em 1em;
+  border-radius: 25px;
+}
+
+.coverpage-warning .title {
+  font-family: "Source Sans Pro",sans-serif;
+  font-weight: 300;
+  text-transform: uppercase;
+  font-size: 1.2em;
+}
+
+/*
+    4.4 Copyright
+*/
+.boilerplate-copyright {
+  padding: 1em;
+  font-size: 0.9em;
+  text-align: left;
+}
+
+/*  .copyright .name, .copyright .address {color: #485094;} */
+/*
+    5.0 Other styles
+*/
+/*
+To top button
+*/
+@page {
+  margin: 2cm 1cm;
+}
+@media print {
+  .document-info,
+  nav,
+  .copyright {
+    page-break-before: always;
+  }
+  nav {
+    page-break-after: always;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  .h1, .h2, .h3, .h4 {
+    page-break-after: avoid;
+    margin-top: 1.2em;
+  }
+  .note,
+  figure,
+  pre,
+  .pseudocode,
+  table {
+    page-break-inside: avoid;
+  }
+  .info-section {
+    display: none;
+  }
+  .coverpage {
+    height: 23cm;
+  }
+  .wrapper-top {
+    top: 0;
+    padding-top: 4cm;
+    padding-bottom: 4cm;
+  }
+  .wrapper-top-bottom {
+    margin-top: -5px;
+  }
+  button#myBtn {
+    background-color: white;
+  }
+  .container {
+    padding-left: 0;
+  }
+  h1.content {
+    margin-top: 2em;
+    line-height: 2.5em;
+  }
+  h1, .h1 {
+    font-size: 1.5em;
+    line-height: 1.5;
+  }
+  h2, .h2 {
+    font-size: 1.2em;
+  }
+  h3, .h3 {
+    font-size: 1em;
+  }
+  .Note {
+    background-color: #fff495;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Note p {
+    padding: 0 5px 0 5px;
+  }
+  .Admonition {
+    background-color: #ffcccc;
+    color: #47430c;
+    padding: 5px;
+    margin: 2em 0 1em 0;
+  }
+  .Admonition p {
+    padding: 0 5px 0 5px;
+  }
+  .wrapper-top-bottom {
+    display: none;
+  }
+}
+</style><style>pre.sourcecode table td { padding: 5px; }
+pre.sourcecode table pre { margin: 0; }
+pre.sourcecode, pre.sourcecode .w {
+  color: #444444;
+}
+pre.sourcecode .cp {
+  color: #CC00A3;
+}
+pre.sourcecode .cs {
+  color: #CC00A3;
+}
+pre.sourcecode .c, pre.sourcecode .ch, pre.sourcecode .cd, pre.sourcecode .cm, pre.sourcecode .cpf, pre.sourcecode .c1 {
+  color: #FF0000;
+}
+pre.sourcecode .kc {
+  color: #C34E00;
+}
+pre.sourcecode .kd {
+  color: #0000FF;
+}
+pre.sourcecode .kr {
+  color: #007575;
+}
+pre.sourcecode .k, pre.sourcecode .kn, pre.sourcecode .kp, pre.sourcecode .kt, pre.sourcecode .kv {
+  color: #0000FF;
+}
+pre.sourcecode .s, pre.sourcecode .sb, pre.sourcecode .sc, pre.sourcecode .ld, pre.sourcecode .sd, pre.sourcecode .s2, pre.sourcecode .se, pre.sourcecode .sh, pre.sourcecode .si, pre.sourcecode .sx, pre.sourcecode .sr, pre.sourcecode .s1, pre.sourcecode .ss {
+  color: #009C00;
+}
+pre.sourcecode .sa {
+  color: #0000FF;
+}
+pre.sourcecode .nb, pre.sourcecode .bp {
+  color: #C34E00;
+}
+pre.sourcecode .nt {
+  color: #0000FF;
+}
+
+</style><title>OCI distribution (<tt>tfs+oci:</tt>)</title>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+<!--TOC script import-->
+<script type="text/javascript" src="https://cdn.rawgit.com/jgallen23/toc/0.3.2/dist/toc.min.js"></script>
+<script type="text/javascript">function toclevel() { return "h1:not(:empty):not(.TermNum):not(.noTOC),h2:not(:empty):not(.TermNum):not(.noTOC)";}
+</script>
+
+<!--Google fonts-->
+<link rel="preconnect" href="https://fonts.gstatic.com" />
+<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,300i,600,600i&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,600;1,300;1,600&display=swap" rel="stylesheet" />
+<!--Font awesome import for the link icon-->
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/solid.css" integrity="sha384-v2Tw72dyUXeU3y4aM2Y0tBJQkGfplr39mxZqlTBDUZAb9BGoC40+rdFCG0m10lXk" crossorigin="anonymous" />
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.8/css/fontawesome.css" integrity="sha384-q3jl8XQu1OpdLgGFvNRnPdj5VIlCvgsDQTQB6owSOHWlAurxul7f+JpUOVdAiJ5P" crossorigin="anonymous" />
+<style class="anchorjs"></style>
+</head><body lang="EN-US" link="blue" vlink="#954F72" xml:lang="EN-US" class="container"><div class="title-section"><div class="document-stage-band" id="published-band">
+  <p class="document-stage">Published</p>
+</div>
+
+<div class="document-type-band" id="standard-band">
+  <p class="document-type">The Tebako Project Standard</p>
+</div>
+
+
+
+<div id="toggle"> <span>•</span> </div>
+
+<header>
+
+  <div class="coverpage">
+    <div class="wrapper-top">
+
+      <div class="coverpage-doc-identity">
+        <div class="doc-number">
+          <span class="docnumber">TBK SPEC 38</span>
+          <span class="docyear"></span>
+        </div>
+
+        <div class="coverpage-title">
+          <span class="title-first">OCI distribution (<tt>tfs+oci:</tt>)</span>
+          <!--<span class="title-second"></span>-->
+        </div>
+      </div>
+
+      <div class="coverpage-logo">
+        <span>The Tebako Project 2026</span>
+      </div>
+
+      <div class="coverpage-tc-name">
+        <span>Tebako</span>
+      </div>
+    </div>
+
+    <div class="wrapper-top-bottom"></div>
+
+    <div class="WordSection11">
+      <div class="coverpage-stage-block">
+        <span class="coverpage-stage" id="standard">The Tebako Project Standard</span>
+      </div>
+
+      <div class="coverpage-stage-block">
+        <p><span class="coverpage-maturity" id="published">Published 2026-11-01</span></p>
+        
+        <p><span class="coverpage-maturity">Classification: unrestricted</span></p>
+        
+        
+      </div>
+
+      
+
+      
+              
+
+
+      <div class="info-section">
+        <div class="copyright">
+          <div class="year">
+            <div class="boilerplate-copyright">
+
+<div id="_d780aadc-2f68-be21-5ec9-63baefbda689"><p id="_d42d9c97-f6b1-1c95-7597-d1b47b373f2c">© The Tebako Project 2026</p>
+</div>
+</div>
+          </div>
+
+          <div class="contact-info">
+            <div class="boilerplate-feedback">
+
+<div id="_d4b6b243-ae1f-f438-654d-62afb61a5133"><p id="boilerplate-name" style="text-align:left;">The Tebako Project</p>
+
+<p id="boilerplate-address" style="text-align:left;">Suite 1, 8/F, New Henry House<br /> 10 Ice House Street<br /> Central<br /> Hong Kong<br /> <br /> <a href="mailto:copyright@ribose.com">copyright@ribose.com</a><br /> <a href="https://www.ribose.com">www.ribose.com</a></p>
+</div>
+</div>
+          </div>
+
+          <div class="message">
+            <div class="boilerplate-legal">
+
+<div id="_7e0f3c63-3fc9-65cf-37f7-b94afa0dbc5d"><p id="_50bbfa02-61c3-8332-bad8-61e7389d1808">All rights reserved. Unless otherwise specified, no part of this publication may be reproduced or utilized otherwise in any form or by any means, electronic or mechanical, including photocopying, or posting on the internet or an intranet, without prior written permission. Permission can be requested from the address below.</p>
+</div>
+</div>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        </div>
+      </div>
+
+
+</div>
+</header></div><br /><div class="prefatory-section"><nav>
+  <div id="toc"><h1 class="IntroTitle"><a class="anchor" href="#_13d7055e-30fc-845a-c60e-8972faf092d9"></a><a class="header" href="#_13d7055e-30fc-845a-c60e-8972faf092d9">Contents</a></h1><ul><li class="h1"><a href="#_a7ed652c-cc7b-acdc-ade0-59505b234483">      
+  
+  Foreword
+</a></li>
+<li class="h1"><a href="#_d63cff09-b49e-f347-8ec3-7d3355fef98e">      
+  
+  1. Why (the ceiling, again — and the self-hosted tier)
+</a></li>
+<li class="h1"><a href="#_c29f5361-236d-558c-e4c2-e3bc7f626921">      
+  
+  2. The reference grammar (spec 04 §1 amendment)
+</a></li>
+<li class="h1"><a href="#_584caa80-e0c8-49d7-000f-e66c96a73008">      
+  
+  3. The artifact model (locked)
+</a></li>
+<li class="h1"><a href="#_cc20dd6e-3ab1-45d9-f766-7f1c528bcab0">      
+  
+  4. The registry index over OCI (spec 04 §2 / spec 37 §4 amendment)
+</a></li>
+<li class="h1"><a href="#_21d6bc32-5954-a86c-ff35-8f71751387f5">      
+  
+  5. The resolve/fetch path (spec 05 §2/§4/§6 amendment)
+</a></li>
+<li class="h1"><a href="#_7b6d61cf-ddf4-7563-d44a-aad78d3fd66e">      
+  
+  6. The credential chain (spec 37 §5 amendment)
+</a></li>
+<li class="h1"><a href="#_87d6ce58-70f0-045a-f484-50212ace3e1f">      
+  
+  7. The publish path (spec 04 §2 / spec 16 §5 amendment)
+</a></li>
+<li class="h1"><a href="#_3cab6b82-8e92-4b3b-8a6e-11bb6168e0be">      
+  
+  8. Security and trust invariants
+</a></li>
+<li class="h1"><a href="#_290cdc8c-fca6-3057-507f-ba264712d33d">      
+  
+  9. Failure semantics, offline, and the named errors
+</a></li>
+<li class="h1"><a href="#_4892001b-e436-2620-6fca-ed809fcf7fc9">      
+  
+  10. Capability gating (spec 04 §3's general rule, applied)
+</a></li>
+<li class="h1"><a href="#_c4490bb9-3814-08ed-9794-626cb7cd7cde">      
+  
+  11. Migration and coexistence (locked)
+</a></li>
+<li class="h1"><a href="#_d2901682-4752-6a58-ec0b-30da900ceba5">      
+  
+  12. Test plan (the tiers of spec 14; each failure above maps to one tier)
+</a></li>
+<li class="h1"><a href="#_e8beb2f5-ac39-e09b-4ac6-94cb615bd589">      
+  
+  13. Open questions (each with this spec's recommendation)
+</a></li>
+<li class="h1"><a href="#_2f2e0ff9-eac9-585c-a4a8-53fc6dd7724c">      
+  
+  Implementation plan (spec PR first; each PR independently mergeable)
+</a></li></ul></div>
+
+</nav>
+
+
+<div class="rule toc"></div>
+</div><br /><main class="main-section"><button onclick="topFunction()" id="myBtn" title="Go to top">Top</button><div class="authority">
+
+
+
+
+</div><br /><br /><div id="_a7ed652c-cc7b-acdc-ade0-59505b234483"><h1 class="ForewordTitle" id="_a886cada-d8c4-4d6a-9524-686d82959d70"><a class="anchor" href="#_a7ed652c-cc7b-acdc-ade0-59505b234483"></a><a class="header" href="#_a7ed652c-cc7b-acdc-ade0-59505b234483">Foreword</a></h1><p id="_91dcaad0-19d3-85ad-6ae5-4dcbc4298b7d">Status: <b>SHIPPED</b> — the grammar, the artifact model, and the credential amendments are implemented (<tt>crates/tebako-oci/</tt> + <tt>crates/tebako-resolve/src/oci.rs</tt>); the resolver speaks <tt>tfs+oci://</tt> (<tt>crates/tebako-resolve/src/reference.rs</tt>).</p><p id="_b368c63a-d47b-c515-3850-9efd07b8de5a">Normative specification of the <b>OCI distribution channel</b>: payload images, runtime bundles, and registry indexes published to any OCI Distribution Spec v1.1 registry (GHCR, Harbor, zot, ECR, ACR, GitLab CR) as generic artifacts, resolved through one new reference class beside spec 04 §1's family. The channel is an ADAPTER — the store layout (spec 05 §3), the trust pipeline (spec 09), and the declarative platform-selection law (spec 04 §2) are untouched.</p></div><div id="_d63cff09-b49e-f347-8ec3-7d3355fef98e"><h1 id="_de17fe92-0343-48f5-923d-9769116ba744"><a class="anchor" href="#_d63cff09-b49e-f347-8ec3-7d3355fef98e"></a><a class="header" href="#_d63cff09-b49e-f347-8ec3-7d3355fef98e">1. Why (the ceiling, again — and the self-hosted tier)</a></h1><div class="ul_wrap"><ul id="_50bea64f-438b-9f8d-420a-d73505686b04"><li id="_56ae72a2-d8ad-0ba3-8255-0f66c05b07a2"><p id="_f658c82e-575b-f04f-b57c-e058c7707f45"><b>The per-tag asset ceiling.</b> Spec 36 §1 measured the GitHub release ceiling (1,000 assets per release object; the ruby catalog is ~1,800 per-file assets and forces the line-shard choreography). An OCI registry has no per-release asset concept at all: every artifact is blobs + a manifest, addressed by tag or digest. The catalog publishes flat.</p>
+</li>
+<li id="_29138130-0c1b-4700-d287-f12af7a7bd9e"><p id="_435832c2-dd6b-904b-a13e-bab2ffd5b68e"><b>The fourth operator tier.</b> Spec 37 §9's three tiers (static HTTPS, the git host they run, airgap) miss the shop that already runs Harbor/ECR/ACR and wants "our own internal payload instance" off the shelf — with the registry's own RBAC, retention, and replication. OCI is that tier, and it needs no tebako-side service (spec 00 invariant 9 stands: no default service, no server to run).</p>
+</li>
+<li id="_395bb9e9-caff-f20e-e5dc-df7814e011a0"><p id="_74b5953a-dacb-60c0-f093-ad7421f58e9f"><b>What this never adds:</b> a resolution priority, a default registry host compiled into any binary (docker.io is NOT privileged — a reference names it explicitly or not at all), a silent fallback between channels, a second signature mechanism.</p>
+</li>
+</ul></div></div><div id="_c29f5361-236d-558c-e4c2-e3bc7f626921"><h1 id="_19fdafc2-7b9c-4cfd-b593-5439ae62c595"><a class="anchor" href="#_c29f5361-236d-558c-e4c2-e3bc7f626921"></a><a class="header" href="#_c29f5361-236d-558c-e4c2-e3bc7f626921">2. The reference grammar (spec 04 §1 amendment)</a></h1><p id="_63343a9f-c156-bda1-dcf1-77476b484339">One new PROTOCOL-class form. The host is ALWAYS explicit — there is no canonical OCI SaaS — so the form is the  <tt>tfs+&#x3c;svc&#x3e;://host</tt> shape of spec 37 §4, never the bare  <tt>tfs:&#x3c;svc&#x3e;:</tt> SaaS shape:</p><figure id="_fb26cb32-41ee-c833-74bf-6f9f68e208a5" class="sourcecode" spellcheck="false" translation="no"><pre>OCI adapter:<br />  tfs+oci://&#x3c;registry&#x3e;[:port]/&#x3c;repo&#x3e;[:&#x3c;tag&#x3e;|@&#x3c;digest&#x3e;][?sha256=&#x3c;64 hex&#x3e;]<br /><br />  tfs+oci://ghcr.io/tebako-packages/metanorma:1.2.3-linux-gnu-x86_64<br />  tfs+oci://harbor.corp.internal/team/metanorma:1.2.3<br />  tfs+oci://ghcr.io/tamatebako/tebako-runtime-ruby@sha256:&#x3c;64 hex&#x3e;<br />  tfs+oci://127.0.0.1:5000/fixtures/tool:1.0          (loopback — §8)<br /><br />DIGEST PINS (two distinct pins, never conflated):<br />  @sha256:&#x3c;64 hex&#x3e;   pins the MANIFEST digest (the OCI-native immutable form)<br />  ?sha256=&#x3c;64 hex&#x3e;   pins the ARTIFACT bytes (the layer blob — the same<br />                     anchor vocabulary every other reference class uses)</pre><figcaption class="SourceTitle">Figure 1</figcaption></figure><p id="_74b1a3c0-85b1-12c6-c009-62c5721e14fc">ABNF (normative; the OCI distribution-spec name/tag grammars are incorporated, not re-invented):</p><figure id="_2e46620f-43cc-d8ac-6b37-c3222b6f8238" class="sourcecode" spellcheck="false" translation="no"><pre>oci-ref   = "tfs+oci://" host [ ":" port ] "/" repo<br />            [ "@" digest | ":" tag ] [ "?" "sha256=" 64HEXDIG ]<br />host      = &#x3c;lowercase DNS name | IPv4 | "[" IPv6 "]" | "localhost"&#x3e;<br />repo      = component *( "/" component )<br />component = [a-z0-9] *( [a-z0-9] | ( "." | "_" | "__" | "-" ) [a-z0-9] )<br />tag       = [A-Za-z0-9] *( [A-Za-z0-9] | "." | "_" | "-" )   ; ≤ 128 chars<br />digest    = "sha256:" 64HEXDIG</pre><figcaption class="SourceTitle">Figure 2</figcaption></figure><div class="ul_wrap"><ul id="_a7cb13a4-ebeb-77ff-fe5d-1ca01064aa0d"><li id="_de44ed2c-e181-bf4b-6626-ad58bd6f7109"><p id="_262caf0d-f66e-fccc-4601-5bbd7b53147d"><b>MECE (locked):</b> the tag splits at the LAST <tt>:</tt> (a <tt>host:port</tt> never collides — the host came off at the first  <tt>/</tt>, exactly the <tt>tfs+github://</tt> rule); <tt>@</tt> selects the digest form; a reference carrying both  <tt>:tag</tt> and <tt>@digest</tt> is <tt>Invalid</tt>. Repo names are lowercase-only per the distribution grammar — an uppercase byte in <tt>repo</tt> is a parse-time <tt>Invalid</tt> (65), never a downcasing guess.</p>
+</li>
+<li id="_b344b367-550c-55b1-c5a1-e1343cb6b9b4"><p id="_d8f358b1-cc25-f2f0-751d-aba8822f3662"><b>The bare form <tt>tfs:oci:…</tt></b> is the named <tt>Invalid</tt> steering to the hosted spelling: "the OCI form is  <tt>tfs+oci://&#x3c;registry&#x3e;/&#x3c;repo&#x3e;</tt> — there is no canonical OCI host; name the registry explicitly" (the  <tt>UnsupportedService</tt> pattern of spec 37 §4: a refusal that teaches, never a guess). docker.io is reachable only as an explicit host (<tt>tfs+oci://registry-1.docker.io/library/…</tt>).</p>
+</li>
+<li id="_5502cf4a-5dcb-a419-c943-9f5d3fb45209"><p id="_478604a3-5ecc-c361-be46-821d6d4fc2c4"><b>No <tt>#artifact</tt> concept.</b> The tag/digest IS the selector; there is no multi-asset listing to disambiguate (the  <tt>AmbiguousAssets</tt> class never fires on this adapter). Repo layout (one repo per payload, one repo per factory line) is publisher policy; the grammar fixes only the tag derivation (§3).</p>
+</li>
+<li id="_9fca1411-0c45-126b-1926-4b8cecb35dce"><p id="_ee8d37bd-72c5-9192-1540-1a115fa7e2bd">Both pins may ride one reference. Each is verified fail-closed at its moment: the manifest digest at manifest read (69/70 class below), the byte pin against the layer descriptor BEFORE the stream starts and again inline at end-of-stream (<tt>Sha256Mismatch</tt>, exit 70 — spec 04 §3's discipline, unchanged).</p>
+</li>
+</ul></div><p id="_470d0470-da1c-ef67-2288-17264db9f9ab">Spec 04 §1's dispatch table gains one row:</p><table id="_bb7de50f-19f7-d7b7-1eb0-6213d17105b9" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 1</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">scheme</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">adapter</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>tfs+oci:</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">the OCI distribution adapter (this spec)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">anything else</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><b>named error listing the classes</b> (the list gains the OCI form)</td></tr></tbody></table><p id="_3b362018-acaa-dd5f-c7a1-1f52f6c4e377">A pre-OCI tebako reading a registry whose <tt>release.ref</tt> is <tt>tfs+oci:</tt> fails at parse with the named classes-listing error (65) — loud, never a guess (the additive rule does not cover a PRIMARY ref in an unknown class; that is exactly the spec 36 §4 compat-window behavior).</p></div><div id="_584caa80-e0c8-49d7-000f-e66c96a73008"><h1 id="_00e7c939-d0cc-4e39-b6ea-d3dde16256c8"><a class="anchor" href="#_584caa80-e0c8-49d7-000f-e66c96a73008"></a><a class="header" href="#_584caa80-e0c8-49d7-000f-e66c96a73008">3. The artifact model (locked)</a></h1><p id="_c8821ca3-ec2b-2f8a-4f52-2ab589668c44"><b>One OCI artifact per served file.</b> Every artifact is an OCI image manifest (distribution-spec v1.1 form) with  <tt>artifactType</tt> set, the empty config (<tt>application/vnd.oci.empty.v1+json</tt>, the canonical <tt>{}</tt> bytes), and EXACTLY ONE layer — the file's raw bytes. No tar wrapping, no compression: the layer blob IS the file, so the layer digest IS the artifact's sha256 — the  <tt>.sha256</tt> sidecar's exact equivalence (spec 05 §2/§4's anchor transfers without a second pin file). A manifest violating the shape (≠1 layer, a foreign <tt>artifactType</tt>, a missing required annotation) is the named <tt>OciArtifactMalformed</tt> (69), never a best-effort read.</p><table id="_c1ec0fe9-a5bd-f41d-d184-a866ca187ed5" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 2</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">artifact class</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col"><tt>artifactType</tt></th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">layer media type</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">payload image (<tt>.tfs</tt>)</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>application/vnd.tebako.tfs.v1</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>application/vnd.tebako.tfs.v1+layer</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">runtime bundle (spec 36)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>application/vnd.tebako.runtime-bundle.v1</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>application/vnd.tebako.runtime-bundle.v1+tar.gz</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">registry index (<tt>tpkg-registry.yaml</tt>)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>application/vnd.tebako.registry.v1</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>application/vnd.tebako.registry.v1+yaml</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">detached OpenPGP signature</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>application/vnd.tebako.signature.v1</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>application/vnd.tebako.signature.v1+asc</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">blksum sidecar (spec 39 §3)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>application/vnd.tebako.blksum.v1</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>application/vnd.tebako.blksum.v1+json</tt></td></tr></tbody></table><p id="_2898b08d-57f8-94ce-e200-fcd8e87a9105"><b>Annotations mirror resolution fields only</b> (the spec 03 §4 tier-3 rule — the registry mirrors, never duplicates authority). The full L1 manifest stays in-image (tier 1, authoritative); annotations carry the L3 subset, so a dispatcher never pulls a blob to resolve:</p><table id="_1493305b-07ad-c97a-4832-fed0b4f9abfd" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 3</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">annotation</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">content</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>org.opencontainers.image.title</tt></td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">the served file name (the shard's <tt>filename</tt> spelling for bundles — flowed, spec 05 §2's SSOT rule)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>org.tebako.name</tt> / <tt>org.tebako.version</tt> / <tt>org.tebako.kind</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the L1 IDENTITY mirror</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>org.tebako.triplet</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the host triplet, or <tt>universal</tt></td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>org.tebako.entrypoints</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">comma-separated names (payloads)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>org.tebako.runtime-requirement</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the requirement object, JSON-encoded (payloads)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>org.tebako.runtime.shard</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the per-package shard JSON VERBATIM (runtime-bundle artifacts only — one manifest read replaces the shard fetch of spec 36 §4)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>org.tebako.signature.keyid</tt> / <tt>org.tebako.signature.subject</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the signer's PRIMARY keyid (spec 09 §9's primary rule) / the digest of the signed blob (signature artifacts only)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;"><tt>org.tebako.blksum.subject</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">the digest of the image blob the sidecar serves (blksum artifacts only — the sibling the tag is keyed by)</td></tr></tbody></table><p id="_cec2f5b7-5246-3529-e600-c00011658b8c"><b>Tag derivation (locked — the single owner of both rules is this section):</b></p><div class="ul_wrap"><ul id="_d9a2245c-f620-44cc-6414-f50fad696fd0"><li id="_8be8416d-3dba-b790-3898-eefdfa52f01d"><p id="_66eec736-d425-2edb-424a-4d6cfea5443c">payload: <tt>&#x3c;version&#x3e;</tt> for <tt>universal</tt>, <tt>&#x3c;version&#x3e;-&#x3c;triplet&#x3e;</tt> per triplet (tebako version/triplet characters are a subset of the OCI tag grammar by construction).</p>
+</li>
+<li id="_ef470dc0-ce85-7500-24be-5fda7b247e50"><p id="_5b4ee52e-44e2-5150-f329-343aab2c9be5">runtime bundle: the bundle STEM verbatim (<tt>tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;</tt> — spec 36 §2's spelling; the factory declares it, consumers flow it). The OCI lane opened with the post-tebako#716 grammar: pre-#716 (per-file-era) lines never publish to OCI, so a selector-less locator composes the new-era spelling only.</p>
+</li>
+<li id="_fb3f65a8-8189-c8f2-8d0a-2b0800cbbdb4"><p id="_ecb0aa0b-b292-691a-f17f-8535a1ae8fa5">registry index: <tt>latest</tt> by convention; publishers MAY add version tags; operators pin with the  <tt>@sha256:</tt> form.</p>
+</li>
+<li id="_3071a96e-bebe-5db7-4761-369c4b020b70"><p id="_941fc257-64d9-4fb3-d26a-af3de1f8f6c0">signature: <tt>sha256-&#x3c;64 hex of the SIGNED BLOB's digest&#x3e;.asc</tt> — keyed by the signed bytes, derived deterministically from the layer descriptor the fetcher already holds. No listing, no guessing.</p>
+</li>
+<li id="_6a798736-7dca-332f-230b-99e825307623"><p id="_7e498522-4170-ffbc-d4d5-429e94705912">blksum sidecar (added with spec 39 §8's OCI arm): <tt>sha256-&#x3c;64 hex of the IMAGE blob's digest&#x3e;.blksum.json</tt> — the same sibling digest-tag rule as the signature's, keyed by the image bytes. The artifact's layer digest IS the sidecar document's own sha256 — the seed descriptor's  <tt>blksum_sha256</tt> pin (spec 39 §3) binds it with no second file.</p>
+</li>
+</ul></div><p id="_744fb091-8e02-1ab4-2b1a-fb18337b1db0"><b>Per-triplet tags, never an OCI image index (locked — the tebako#695 DECIDE).</b> Platform selection in tebako is the REGISTRY's declarative job (spec 04 §2, locked: "the adapter NEVER auto-picks by host triplet"). An OCI index manifest would import a second, adapter-side platform matcher — and its  <tt>os</tt>/<tt>arch</tt> vocabulary cannot express tebako triplets (<tt>linux-gnu</tt> vs <tt>linux-musl</tt> is a libc axis OCI has no word for; spec 05 §5's wheel-tag table rides the triplet axis alone for the same reason). One artifact per image under a per-triplet tag keeps the declarative law absolute, keeps byte-identity with the GitHub-releases artifact trivially auditable (same blob, same digest), and keeps the payload case and the runtime-pair case on ONE shape. A future multi-file need ships as a new artifact CLASS, never a second layer meaning and never an index.</p><p id="_79a71406-9b7b-7b17-610a-e998002cf84b"><b>Signatures ride sibling digest-tags, not the referrers API (locked).</b> The v1.1 referrers API is the semantically rich form, but the issue's target set (ECR, ACR, Harbor, zot) is exactly where referrers coverage is uneven in 2026, and a referrers-required design would re-introduce per-registry capability negotiation — a silent capability matrix, the opposite of named errors. The sibling-tag form is distribution-spec v1.0-clean, deterministic, and preserves spec 09 §5's every-served-name rule literally: the served name (the tag) has its own  <tt>.asc</tt> artifact, one signature covers exactly one artifact, nothing is ever "covered by" a container's signature. Referrers MAY be added later as an additive MIRROR (publish both); resolvers never require it. For  <tt>tfs+oci</tt> release refs the registry row's <tt>signature.asc</tt> locator is DERIVED by the tag rule — an authored <tt>asc</tt> field on such a row is a named registry validation error (a locator that would be ignored is an authoring bug), while  <tt>signature.keyid</tt> pins identity exactly as today.</p></div><div id="_cc20dd6e-3ab1-45d9-f766-7f1c528bcab0"><h1 id="_c2182612-8ea2-40a2-b3f4-ecaae7630bad"><a class="anchor" href="#_cc20dd6e-3ab1-45d9-f766-7f1c528bcab0"></a><a class="header" href="#_cc20dd6e-3ab1-45d9-f766-7f1c528bcab0">4. The registry index over OCI (spec 04 §2 / spec 37 §4 amendment)</a></h1><p id="_fc11d28a-dfd1-1f76-a9dd-bff2365ecd7a">A <tt>tpkg-registry.yaml</tt> published as a §3 registry-class artifact is a REGISTRY LOCATION — the third location form, beside the git-host forms and spec 37 §4's  <tt>tfs+https://</tt> registry file:</p><figure id="_511991c4-e08a-ef9f-18fd-3b0d2a7a949d" class="sourcecode" spellcheck="false" translation="no"><pre>tebako add-registry tfs+oci://harbor.corp.internal/team/tpkg-registry[:tag]<br />tebako add-registry tfs+oci://harbor.corp.internal/team/tpkg-registry@sha256:…</pre><figcaption class="SourceTitle">Figure 3</figcaption></figure><div class="ul_wrap"><ul id="_e4d7dece-c13a-264c-9297-5fac8916feb7"><li id="_f7cb7cbc-e51a-a30d-953c-a4f48bf480cf"><p id="_c1844dfe-bf28-61e2-b401-68c8c5f01163">The alias derivation, the book model, <tt>require_signed</tt>, the official seed — all of spec 37 §2 applies unchanged (the alias derives from the ref's repo component).</p>
+</li>
+<li id="_d3aedc4d-09fa-82c2-65c2-8cf34a94e242"><p id="_44bd18fa-0dca-9b0d-01c0-f11fb8f01abd"><b>TTL mapping (locked):</b> a TAG-pulled OCI registry rides the dispatch-time cache exactly like the git-host default-branch form — <tt>registries/&#x3c;sha&#x3e;.yaml</tt> + <tt>.fetched-at</tt>, 24 h TTL, spec 05 §4's stale-serve on refresh failure (the manifest digest is recorded in the cache sidecar; a refresh that resolves the same digest re-serves the cached bytes, saving the blob pull). A DIGEST-pulled OCI registry is the pinned-immutable form — the analog of <tt>tfs:&#x3c;svc&#x3e;:owner/repo:version#tpkg-registry.yaml</tt>: cached forever, never re-fetched, TTL inapplicable.</p>
+</li>
+<li id="_fde96eab-2486-aec6-7dd9-2477a2a8d39b"><p id="_6716ee5f-9af7-7cc9-4350-dc71ecb268bc"><tt>TEBAKO_OFFLINE=1</tt>: cached-within-TTL serves; anything else is the named offline error. Unchanged semantics, new adapter.</p>
+</li>
+</ul></div></div><div id="_21d6bc32-5954-a86c-ff35-8f71751387f5"><h1 id="_13c08a31-4d3c-457d-8aa6-c2b59a2b5a21"><a class="anchor" href="#_21d6bc32-5954-a86c-ff35-8f71751387f5"></a><a class="header" href="#_21d6bc32-5954-a86c-ff35-8f71751387f5">5. The resolve/fetch path (spec 05 §2/§4/§6 amendment)</a></h1><p id="_594bae00-6db2-080e-f67c-46c805ccaf6d">Manifest reads (and the shard/registry-YAML blobs they name) join the "small buffered GETs" class; the artifact blob is a spec 05 §6 FetchPlan ITEM — the pipeline owns transport, integrity, scheduling:</p><div class="ol_wrap"><ol type="1" id="_afc65de2-08f7-2656-53c6-fa0cb1081714"><li id="_6a3eba65-8b49-005e-b822-40d3e73b801f"><p id="_02eb5619-1207-ea1e-f18b-d51daacad11d"><b>Manifest read.</b> GET <tt>/v2/&#x3c;repo&#x3e;/manifests/&#x3c;tag|digest&#x3e;</tt> with the §6 credential decision; a  <tt>?sha256=</tt> byte pin is checked against the layer descriptor digest BEFORE the blob stream starts (a fail-fast 70, never a wasted pull); an  <tt>@sha256:</tt> reference verifies the returned manifest against the pin (the registry's <tt>Docker-Content-Digest</tt> and the body digest must agree — 70 class).</p>
+</li>
+<li id="_1d0eafe2-a4c6-b304-a129-90ff738ab3eb"><p id="_74cb63e5-b697-5553-2cfb-22cf0333e7f1"><b>Blob pull.</b> GET <tt>/v2/&#x3c;repo&#x3e;/blobs/&#x3c;digest&#x3e;</tt> streams through the pipeline's HashWriter — one pass, constant memory, the inline sha256 compared against the layer digest AND any byte pin. The layer digest is the registry-supplied trust anchor; the store's  <tt>.sha256</tt> marker is written from it, byte-identical in shape to today's sidecars.</p>
+</li>
+<li id="_e6bedcfc-b450-cdcf-28e1-a5127bb57a68"><p id="_1f3d71b2-5202-3298-c45e-4e6e2b2b354f"><b>Commit.</b> The commit closure owns install semantics exactly as today: the store's per-entry flock (120 s, stale-lock hint), tmp + rename, the spec 05 §4 commit order (the manifest mirror is the commit point — a version whose mirror is absent was never installed), signature verification per spec 09 BEFORE the bytes enter the cache. A partial pull is invisible by the same proof.</p>
+</li>
+<li id="_83b31b30-90e9-fcc6-6721-d4bd8e0666fc"><p id="_7663785d-52cf-acf5-03b1-ed73243380ca"><b>Runtime bundles.</b> A <tt>kind: runtime</tt> row whose <tt>release.ref</tt> is <tt>tfs+oci:</tt> resolves through spec 37 §8's chain: the locator derivation (<tt>release_download_locator</tt>) gains the OCI arm, and the fetch runs the bundle flow below. OCI runtime distribution is bundle-era only: per-file-era lines stay on their git-host releases forever (keep-forever, spec 13 §8) and never publish to OCI.</p>
+<div class="ul_wrap"><ul id="_cc1d105c-f5d2-11a6-c5f2-36f8582ede84"><li id="_1fc61479-505a-a155-6140-782d119d354c"><p id="_b7eedae6-414c-dac2-e09a-a32ac703bce7"><b>The fetch tag.</b> A selector-less locator tags the bundle STEM (<tt>tebako-runtime-&#x3c;ver&#x3e;-&#x3c;lang&#x3e;-&#x3c;lv&#x3e;-&#x3c;triplet&#x3e;</tt> — §3's tag rule, the factory's spelling flowed verbatim; the OCI lane is post-tebako#716, so only the language-carrying spelling exists here); an authored <tt>:tag</tt> or <tt>@sha256:</tt> selector rides exactly as written (spec 37 §8's authored-selector law).</p>
+</li>
+<li id="_6bfa69e0-620f-0078-fc45-8ee78702bb11"><p id="_b88ed9b7-6c70-516b-0a3a-d10e3e2972ee"><b>One manifest read replaces the shard fetch.</b> The per-package shard comes from the bundle manifest's  <tt>org.tebako.runtime.shard</tt> annotation (§3) and is gated THREE ways before any blob streams: the shard's identity triple (<tt>&#x3c;engine&#x3e;_version</tt> / <tt>tebako_version</tt> / <tt>platform</tt>) must match the runtime being resolved — a mismatch means the tag resolved another runtime's publish (69); the shard MUST declare a  <tt>bundle</tt> block — a per-file-era shard over OCI is the named bundle-era-only refusal (69), never a per-file fallback; and the layer descriptor digest — which IS the bundle's  <tt>.sha256</tt> sidecar (§3) — must agree with the shard's bundle pin (a disagreement is 70, nothing installed).</p>
+</li>
+<li id="_d5949575-aec9-6fac-ca59-e0af9371901d"><p id="_593887f6-7730-362c-6f9b-f05cda749ea8"><b>The plan re-resolves by digest.</b> The FetchPlan item re-reads the ALREADY-RESOLVED manifest by its digest — the tag's mutability never reaches the stream — and streams the one bundle layer under the RuntimeBundle shape law; spec 36 §4 then runs VERBATIM (the signature verified FIRST — the  <tt>.asc</tt> sibling digest-tag derived from the signed blob's digest, a declared-but-unfetchable signature refused 71 exactly like the git-host lane — then bundle digest → in-process unpack → per-member pins → the spec 05 §3 layout). The staged store entry is indistinguishable from a git-host bundle install, the origin markers excepted (point 5's digest-pinned form).</p>
+</li>
+<li id="_6cc0bfdb-c1b4-3193-a68b-4547bf593cf1"><p id="_f3c47d23-107f-5548-140f-31c877f719f5"><b>The lazy mode degrades loud.</b> OCI serves the bundle whole — there is no per-file arm and no blksum probe on this channel — so the lazy mount mode against an OCI source is the loud eager fallback (<tt>event=lazy-fallback reason=oci-bundle-era-only</tt>) and the install completes eager.</p>
+</li>
+<li id="_0f6a54b4-7131-2b19-78f7-5a2deca82594"><p id="_037c4430-b8e3-e3e2-5110-0cd2e4b5f551"><b><tt>channel: oci</tt> covers runtime rows.</b> A book entry declaring <tt>channel: oci</tt> (§11) routes the picked runtime row through its per-triplet  <tt>oci:</tt> mirror field — fail-closed exactly like the payload lane: a universal row, a host-covered row lacking the mirror, or an unparsable one is a named 65 error naming the registry and the row; never a fallback to the primary <tt>release.ref</tt>.</p>
+</li>
+</ul></div>
+</li>
+<li id="_62bb0136-25be-3fb6-3137-5d45c845aecc"><p id="_f3390810-39a4-f142-de33-cedf2a035b39"><b>The origin marker</b> records the concrete digest-pinned form (<tt>tfs+oci://&#x3c;host&#x3e;/&#x3c;repo&#x3e;@sha256:&#x3c;manifest digest&#x3e;</tt>) even for tag pulls — spec 37 §7's origin binding and  <tt>tebako cache list</tt> work unchanged, channel included.</p>
+</li>
+</ol></div><p id="_5582eda7-7c15-da83-ab8b-3c6343cce6e5">The retry/throttle law is tebako-http's, per worker per connection, unchanged; the plan-cancel failure law is spec 05 §6's, unchanged (first named error surfaces, every tmp dropped, nothing partial in the store).</p></div><div id="_7b6d61cf-ddf4-7563-d44a-aad78d3fd66e"><h1 id="_ba14802f-c56d-4bc5-9abf-9c62639d9f1e"><a class="anchor" href="#_7b6d61cf-ddf4-7563-d44a-aad78d3fd66e"></a><a class="header" href="#_7b6d61cf-ddf4-7563-d44a-aad78d3fd66e">6. The credential chain (spec 37 §5 amendment)</a></h1><p id="_fdcb1c53-0029-61fc-b14e-b512d3c13a3f">The two-tier book is untouched in shape; the OCI adapter adds one fallback tier and the distribution-spec token flow:</p><div class="ol_wrap"><ol type="1" id="_066a150b-ce1e-a9b4-8088-5fc4265cb89c"><li id="_79a19a02-d9cf-693e-6afe-5df4863a829a"><p id="_4e59dc77-99b9-8644-2a3a-d4ffbafd93f9"><b>Tier 1</b> — the directing registry's alias, confinement included (the tier-1  <tt>allowed_hosts</tt> set for an OCI registry is its registry host; derivation rides the same base-URL construction SSOT).</p>
+</li>
+<li id="_33b3d1b6-28b7-d524-e8f0-398879396cd3"><p id="_37650ed2-32a7-75a5-a027-030b4863ee08"><b>Tier 2</b> — the URL's exact host.</p>
+</li>
+<li id="_2e977642-1c35-6c26-dd6f-308555db0a3a"><p id="_14cd42e5-9ab9-1e69-88f4-9b02041262f4"><b>The docker/config.json fallback (NEW, OCI-class URLs only):</b> static  <tt>auths[&#x3c;host&#x3e;]</tt> entries (the base64 <tt>user:pass</tt> pair) from <tt>~/.docker/config.json</tt> (plus <tt>$DOCKER_CONFIG</tt>), journaled as <tt>token:docker-config:&#x3c;host&#x3e;</tt>. <tt>credHelpers</tt>/<tt>credsStore</tt> entries covering a referenced host are the named <tt>DockerCredentialHelperUnsupported</tt> (65) — helpers are shell-outs, forbidden by the no-shell-outs law, and the steer says so (move the token into a  <tt>credentials:</tt> entry's env var). An unparsesable docker config is  <tt>DockerConfigMalformed</tt> (65), never a silent skip.</p>
+</li>
+<li id="_8e09806e-125a-2f2b-7ff3-7d80a3f7f103"><p id="_bacc9572-097a-3eaf-06c3-ae558583f3a9"><b>Anonymous.</b></p>
+<div class="ul_wrap"><ul id="_16e4fa53-09d1-e167-0605-c605e520c60e"><li id="_949295aa-e42d-24e9-5060-d02f9fe96aa3"><p id="_7820f9f6-c07f-d6e0-4a3f-7ed31e2aff68"><b>The Bearer token flow (normative):</b> every registry call runs the distribution-spec challenge dance — on 401 with <tt>WWW-Authenticate: Bearer realm=…,service=…,scope=…</tt>, GET the realm with the basic credential (<tt>user:password</tt>; the <tt>token_env</tt> value MUST carry the pair — a value without  <tt>:</tt> is <tt>CredentialRequired</tt> naming the expectation, never a username guess), then ride the returned bearer. Anonymous pulls challenge identically without credentials (GHCR's anonymous-token shape). Tokens cache per process keyed by (realm, service, scope, credential class); a 401 against a cached token re-challenges ONCE, then fails named. A malformed or Basic-only challenge is  <tt>OciTokenChallengeInvalid</tt> (69).</p>
+</li>
+<li id="_660a54d7-61cc-1cbb-159a-4b7d294da4c9"><p id="_21dea1f1-9df3-f9ba-a3d2-212be83f824f"><b>Confinement (locked, spec 37 §5's rule extended):</b> the basic credential is presented to the challenge REALM via the ordinary book lookup on the realm URL's host — a realm whose host is not the registry host matches its own tier-2 entry or is the named <tt>OciCrossHostAuthRefused</tt> (69) steering the operator to add one (this covers docker.io's  <tt>auth.docker.io</tt> with zero special cases and zero hardcoded hosts). The returned bearer rides ONLY to the registry host — never cross-host, never to a redirect target (ureq's <tt>RedirectAuthHeaders::Never</tt> stands).</p>
+</li>
+<li id="_efe39b08-218a-81d6-eab6-257d2ec4a481"><p id="_4616cf41-7a41-d708-8c14-0865705d0c27">The header shape by service class gains the OCI row: <tt>Authorization: Basic &#x3c;base64(user:pass)&#x3e;</tt> to the realm, <tt>Authorization: Bearer &#x3c;token&#x3e;</tt> to the registry — the adapter owns the shape; authored config never spells header mechanics.</p>
+</li>
+<li id="_ba5a040e-81f6-3f6f-04df-79d323467e3f"><p id="_9a8c5b25-de3c-2d63-f0b2-012ea7e2d4eb">Every fetch journals host + credential class, values redacted — spec 37 §5's audit trail, new classes (<tt>token:docker-config:&#x3c;host&#x3e;</tt>) included.</p>
+</li>
+</ul></div>
+</li>
+</ol></div></div><div id="_87d6ce58-70f0-045a-f484-50212ace3e1f"><h1 id="_7a10603d-0db2-4cba-99e8-112cdce1db28"><a class="anchor" href="#_87d6ce58-70f0-045a-f484-50212ace3e1f"></a><a class="header" href="#_87d6ce58-70f0-045a-f484-50212ace3e1f">7. The publish path (spec 04 §2 / spec 16 §5 amendment)</a></h1><p id="_d7a8cd34-a267-16d0-ba6d-a733db6cd8a8">The normative publisher is <tt>tebako publish</tt> — the OCI leg is in-process (blob mount attempts first, monolithic POST+PUT upload, manifest PUT), never the ORAS CLI (the no-shell-outs law binds shipped artifacts and tests; ORAS in a CI workflow is permitted sugar, never the contract).</p><div class="ul_wrap"><ul id="_b272f6cf-636c-e40a-3343-6199ea2edd6e"><li id="_749fc717-5c25-cc0c-4430-df6bd082818d"><p id="_8eb3cdc2-7f8c-79d8-a22e-cd88a1bb3ac9"><tt>tebako publish … --oci tfs+oci://&#x3c;host&#x3e;/&#x3c;repo&#x3e;</tt> uploads each payload's §3 artifact (plus signature artifacts when signing, plus the blksum sidecar sibling for every payload the staged sidecar exists for — spec 39 §8) from the SAME staged bytes the git-host release leg uploads, and writes the additive  <tt>oci:</tt> mirror field into the registry row it maintains:</p>
+<figure id="_b71447a4-4375-1e7a-9ae7-292059b39707" class="sourcecode" spellcheck="false" translation="no"><pre><span class="na">platforms</span><span class="pi">:</span><br />  <span class="na">x86_64-linux-gnu</span><span class="pi">:</span><br />    <span class="na">artifact</span><span class="pi">:</span> <span class="s">metanorma-1.2.3-linux-gnu-x86_64.tfs</span><br />    <span class="na">sha256</span><span class="pi">:</span> <span class="s2">"</span><span class="s">…"</span><br />    <span class="na">oci</span><span class="pi">:</span> <span class="s">tfs+oci://ghcr.io/tebako-packages/metanorma:1.2.3-linux-gnu-x86_64</span></pre><figcaption class="SourceTitle">Figure 4</figcaption></figure>
+
+</li>
+<li id="_a77ad240-afc0-5fb0-764a-3ce7bb0eb6fa"><p id="_4501900f-1092-db3d-51b8-10399e55730a"><b>Write-once (the release-immutability rule transferred, spec 13 §2a):</b> publish refuses to point an existing tag at a DIFFERENT digest —  <tt>OciTagConflict</tt> (69) naming the tag and both digests. Re-publish of identical bytes is the idempotent skip, as today. Tags are mutable in the OCI model; tebako treats them as immutable by policy, and withdrawal stays  <tt>status: withdrawn</tt> (spec 04 §2), never a tag delete.</p>
+</li>
+<li id="_86aac4d9-a19a-acfc-5416-8541772f8169"><p id="_a5d42f04-42de-f84a-6e29-be2f6d104d02"><b>Feedstock adoption is additive and non-disruptive:</b> the publish invocation gains the flag; without it, bytes, rows, and workflows are exactly today's. Pre-OCI readers ignore the  <tt>oci:</tt> field (spec 37 §2's forward-compat leniency for unknown registry keys).</p>
+</li>
+<li id="_c061a2b6-e14d-7d78-480f-d54949584602"><p id="_7188dda1-e00f-5895-b00e-b41ecac987e4">Runtime factories: the tebako-release publish leg pushes the §3 bundle artifact + shard annotation + signature artifact per leg on bundle-era lines (spec 36 §6's topology unchanged — the OCI push is the same invocation's second sink, and the line-shard escape hatch is RETIRED on OCI-published lines: there is no ceiling to shard against). The factory-side wiring lives in the factory repos; the wire shape is §3's and lands with the product PRs.</p>
+</li>
+</ul></div></div><div id="_3cab6b82-8e92-4b3b-8a6e-11bb6168e0be"><h1 id="_801902a3-76c2-42fb-bd74-f323f3e2ef13"><a class="anchor" href="#_3cab6b82-8e92-4b3b-8a6e-11bb6168e0be"></a><a class="header" href="#_3cab6b82-8e92-4b3b-8a6e-11bb6168e0be">8. Security and trust invariants</a></h1><div class="ul_wrap"><ul id="_a4e7d94d-efcb-25eb-f8cc-e4333c3e7f3a"><li id="_011e3516-c6b2-1631-e5b7-be2275aa9d79"><p id="_f689f268-767b-0670-caf3-225ff0baa226"><b>HTTPS-only (locked).</b> A non-<tt>https</tt> OCI URL fails at parse/fetch with  <tt>OciInsecureTransport</tt> (65) — there is no insecure-registry spelling and there never will be (spec 04 §4's no-verify-off law). The single carve-out is LOOPBACK (<tt>localhost</tt>, <tt>127.0.0.0/8</tt>, <tt>::1</tt>) over plain HTTP, existing for the §9 test fixture and local development; it can never name a remote host.</p>
+</li>
+<li id="_2ff4a40d-f20e-19c2-ff34-307e5e1a8429"><p id="_c460b7c6-bf51-5c1d-aafc-b4a83510beea"><b>TLS roots ride tebako-http's one agent</b> (spec 04 §4): webpki-roots default,  <tt>TEBAKO_TLS_PLATFORM_ROOTS</tt>, additive <tt>extra_ca</tt> — internal registries under an enterprise CA are the  <tt>extra_ca</tt> case, and the proxy policy (CONNECT, 407 naming) applies to token and blob calls alike. No second client anywhere in the adapter.</p>
+</li>
+<li id="_05d4f3b9-8c30-0cd3-99df-25960e15179b"><p id="_e873d8fd-87c9-ff3e-fad2-2510c5909e4d"><b>Signature strictness is spec 09's, unchanged:</b> a declared signature verifies strict (71 invalid / 72 untrusted keyid, the primary-keyid resolution of spec 09 §9 included); a declaration whose  <tt>.asc</tt> artifact does not fetch is the invalid-signing-state 71; unsigned fetches warn loud + journal and fail closed under <tt>TEBAKO_REQUIRE_SIGNED=1</tt>; <tt>require_signed</tt> on the book entry binds OCI rows exactly as git-host rows (spec 37 §2.2). The store markers keep their semantics — verification at fetch/install, never per run.</p>
+</li>
+<li id="_04186b72-008c-b0c1-3480-c1b835aa1fa0"><p id="_0b2df703-2c49-ccf1-cfe2-d40d5fcf8a2f"><b>Trust-anchor equivalence (locked):</b> the layer digest IS the artifact sha256. A registry row's  <tt>sha256</tt> pin, a <tt>?sha256=</tt> reference pin, and the layer descriptor must agree or the fetch fails (70) — three spellings of one anchor, never three anchors.</p>
+</li>
+</ul></div></div><div id="_290cdc8c-fca6-3057-507f-ba264712d33d"><h1 id="_a48e8a53-8a1c-4238-92d1-1e95854ea47f"><a class="anchor" href="#_290cdc8c-fca6-3057-507f-ba264712d33d"></a><a class="header" href="#_290cdc8c-fca6-3057-507f-ba264712d33d">9. Failure semantics, offline, and the named errors</a></h1><p id="_cd98ca4e-599a-a1b7-2e23-1a17727baa81"><tt>TEBAKO_OFFLINE=1</tt> is cache-or-named-error per adapter: cached store entries serve; any manifest/tag resolution is the named offline refusal. The plan-cancel law (spec 05 §6) makes every partial pull — manifest half-read, blob half-streamed, signature missing — invisible: tmp files dropped, nothing renamed, the first named error surfaced.</p><table id="_5eb67f3a-53e7-cdb5-5983-90bd2eb3194e" class="MsoISOTable" style="border-width:1px;border-spacing:0;"><caption>Table 4</caption><thead><tr><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">Name</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">Exit class</th><th style="font-weight:bold;text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.5pt;" scope="col">Moment</th></tr></thead><tbody><tr><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;"><tt>Invalid</tt> (re-scoped; OCI reasons)</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">65 usage</td><td style="text-align:left;vertical-align:top;border-top:solid windowtext 1.5pt;border-bottom:solid windowtext 1.0pt;">parse: uppercase repo, bad tag/digest, <tt>:tag</tt>+<tt>@digest</tt>, bare <tt>tfs:oci:</tt> (steers to the hosted form)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>OciInsecureTransport</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">non-HTTPS registry URL off loopback</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>DockerConfigMalformed</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">the docker-config fallback consulted and unparsesable</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>DockerCredentialHelperUnsupported</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">65</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">a <tt>credHelpers</tt>/<tt>credsStore</tt> entry would answer — the no-shell-outs steer</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>OciManifestNotFound</tt> / <tt>OciBlobUnknown</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69 unavailable</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>NAME_UNKNOWN</tt> / <tt>MANIFEST_UNKNOWN</tt> / <tt>BLOB_UNKNOWN</tt> / <tt>TAG_INVALID</tt> mapped by name</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>OciArtifactMalformed</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">§3 shape violation — ≠1 layer, foreign <tt>artifactType</tt>, missing required annotation</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>OciTokenChallengeInvalid</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">malformed or Basic-only <tt>WWW-Authenticate</tt>; unusable token endpoint</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>OciCrossHostAuthRefused</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">challenge realm host ≠ registry host and no book entry covers the realm — steer: add a tier-2 <tt>host:</tt> entry</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>CredentialRequired</tt> (reused)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">401/403 with no usable credential — names registry + env var looked for</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>OciAdapterDisabled</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>tfs+oci:</tt> reached a build with the <tt>oci</tt> feature off (§10)</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>OciTagConflict</tt></td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">69</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">publish: tag exists at a different digest — write-once</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;"><tt>Sha256Mismatch</tt> (reused)</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">70 integrity</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.0pt;">pin/layer/bytes disagreement — nothing cached</td></tr><tr><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">spec 09 classes</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">71 / 72</td><td style="text-align:left;vertical-align:top;border-top:none;border-bottom:solid windowtext 1.5pt;">signature invalid / signer untrusted / declared <tt>.asc</tt> unfetchable</td></tr></tbody></table><p id="_aaf35dcb-311b-0e6e-1023-d31ccf33c206">Each maps to exactly one CI tier's assertion; none is a fallback.</p></div><div id="_4892001b-e436-2620-6fca-ed809fcf7fc9"><h1 id="_e36ad17a-b355-4315-bd16-5ce4ba8e5819"><a class="anchor" href="#_4892001b-e436-2620-6fca-ed809fcf7fc9"></a><a class="header" href="#_4892001b-e436-2620-6fca-ed809fcf7fc9">10. Capability gating (spec 04 §3's general rule, applied)</a></h1><p id="_86227d25-5352-8ee1-20f5-356785ecb68b">The adapter is a cargo feature <tt>oci</tt> on tebako-resolve (backing the new <tt>tebako-oci</tt> client crate) — default ON for the toolchain (tebako CLI, tebako-shim, tfs CLI), OFF for the size-gated tebako-bootstrap, where a <tt>tfs+oci:</tt> reference fails closed with the named <tt>OciAdapterDisabled</tt> (the  <tt>GitAdapterDisabled</tt> precedent: steer to managed mode). The bootstrap's own runtime base stays the spec 05 §2 default + <tt>TEBAKO_RUNTIME_MIRROR</tt> (https/file) — OCI runtime distribution enters through the toolchain's registry-derived channel, and the 3 MiB gate never pays for it.</p></div><div id="_c4490bb9-3814-08ed-9794-626cb7cd7cde"><h1 id="_d06028c0-4af6-487f-a1d4-aaefc2eb55cf"><a class="anchor" href="#_c4490bb9-3814-08ed-9794-626cb7cd7cde"></a><a class="header" href="#_c4490bb9-3814-08ed-9794-626cb7cd7cde">11. Migration and coexistence (locked)</a></h1><div class="ul_wrap"><ul id="_ae687647-d276-d9c9-5137-8af47b5e7ab2"><li id="_ecf0bbca-1cec-e4e9-e4e9-216f19ced6dc"><p id="_2482cee4-5838-9117-1296-197c36cb192c"><b>Dual publish is the norm during migration:</b> the same bytes ride the git-host release AND the OCI repo from one publish invocation; the row carries both locators. The  <tt>sha256</tt> pin binds both — a mirror serving different bytes is a 70, so the channels can never silently diverge.</p>
+</li>
+<li id="_1eebc031-395b-d0d5-9d22-d30a92b70970"><p id="_f8e38893-d5e6-a383-91ec-c41bfcafa546"><b>Channel selection is DECLARED, never probed.</b> The primary <tt>release.ref</tt> resolves by default (today's behavior, unchanged bit for bit). A registry-book entry MAY declare  <tt>channel: oci</tt> (spec 37 §2's config model): rows then resolve through their  <tt>oci:</tt> field, and a row lacking one is a named error naming the row — fail-closed, never a fallback to the primary. There is no both-fetch, no race-the-channels, no failover.</p>
+</li>
+<li id="_982de20f-3cac-9151-fcea-4f9bfd66e94f"><p id="_9387f7ef-0326-ccfc-72de-132950e32d7a"><b>The ambiguity law is untouched.</b> A payload name in an OCI-hosted registry AND a git-host registry is  <tt>AmbiguousRegistries</tt> exactly as spec 37 §3 (the  <tt>oci:</tt> row field is not a registry and adds no ambiguity axis); origin binding (spec 37 §7) confines version chains to the resolving registry and records the channel in the origin marker; a rebind across channels follows the same explicit reinstall</p>
+<div class="ul_wrap"><ul id="_ff4d1d5d-3a8c-3c14-96ca-4ee0003f174b"><li id="_0220b3b3-a3c5-d17c-2ec1-8483bc33186a"><p id="_b2e55be6-1f80-5ba1-2587-7a0988efccbb">journaled <tt>origin-rebind</tt> discipline.</p>
+</li>
+</ul></div>
+</li>
+</ul></div></div><div id="_d2901682-4752-6a58-ec0b-30da900ceba5"><h1 id="_c44d4987-8d7e-43c9-8b27-7798602611a9"><a class="anchor" href="#_d2901682-4752-6a58-ec0b-30da900ceba5"></a><a class="header" href="#_d2901682-4752-6a58-ec0b-30da900ceba5">12. Test plan (the tiers of spec 14; each failure above maps to one tier)</a></h1><div class="ul_wrap"><ul id="_d713cb5f-93b7-dea5-23c1-28a220d90f28"><li id="_212bff4d-425b-99c4-ce6a-90c6fc1ba4f6"><p id="_2f21cbf9-45fc-adff-d30a-c258395d25d6"><b>Unit</b> (tebako-resolve): the §2 grammar — round-trip parse/display for every form (tag, digest, both pins, port, loopback, IPv6), every malformed class by name; tag and signature-tag derivation; the §3 annotation map; challenge parsing; docker-config parsing and the helper refusal; the credential chain order (tier-1 confinement into OCI hosts, realm-host lookup).</p>
+</li>
+<li id="_5a927302-1a9f-ecf0-680b-b5786e368b8d"><p id="_762d1768-61e2-e520-2997-a93555ec0d59"><b>Property</b> (proptest, the crate's existing harness): arbitrary valid references round-trip; arbitrary garbage never panics and never parses silently (a named error, always); tag derivation injective per (version, triplet).</p>
+</li>
+<li id="_b5eb513c-1ad2-22b5-63d8-23ad49d63ecc"><p id="_7d8c363c-34a0-7aee-8d3c-bb2d2fda8632"><b>Contract</b> (the Transport mock, canned distribution-API answers): challenge→token→manifest→blob happy path; the error-code map (<tt>NAME_UNKNOWN</tt>→<tt>OciManifestNotFound</tt>, …); media-type/shape refusals; cross-host realm refusal; token re-challenge-once; store-equivalence — an install from OCI and from  <tt>file://</tt> of the SAME bytes yields identical store records except the origin marker (the parity arm of spec 00 invariant 8).</p>
+</li>
+<li id="_11984247-74df-f249-b38a-85b2c9f6187b"><p id="_b5b135b4-dec7-bb4a-e4a9-3f24c3fd385f"><b>E2e</b> (<tt>ci/</tt>, tiered): a <b>zot fixture</b> — a pinned zot binary (CI tooling, fetched at workflow time, never a shipped dependency) configured in-tmp on  <tt>127.0.0.1:&#x3c;port&#x3e;</tt> over plain HTTP, exercising exactly the §8 loopback carve-out. Legs: publish payload + signature →  <tt>add-registry</tt> over OCI → install → run the entrypoint; digest-pinned pull; offline refusal;  <tt>TEBAKO_REQUIRE_SIGNED=1</tt> pass/fail; tag write-once conflict on re-publish; (with spec 36) the runtime-bundle leg — factory-shaped bundle push → dispatch-time runtime fetch → run. A nightly live-GHCR smoke leg mirrors the existing live-GitHub legs.</p>
+</li>
+</ul></div></div><div id="_e8beb2f5-ac39-e09b-4ac6-94cb615bd589"><h1 id="_bfafbd68-eb70-43d6-a7b4-e0625b13d0fe"><a class="anchor" href="#_e8beb2f5-ac39-e09b-4ac6-94cb615bd589"></a><a class="header" href="#_e8beb2f5-ac39-e09b-4ac6-94cb615bd589">13. Open questions (each with this spec's recommendation)</a></h1><div class="ol_wrap"><ol type="1" id="_5b199a47-161c-b79d-b97d-fb738be62bea"><li id="_398d5ce9-05bb-fbae-09d7-8c95d8f3c2a2"><p id="_25553a3a-11c7-4ab8-202d-9689c7c15947"><b>The issue's <tt>tfs:oci:</tt> sketch vs <tt>tfs+oci://</tt>.</b> Recommended and locked:  <tt>tfs+oci://</tt> — spec 37 §4 puts every explicit host in the <tt>tfs+&#x3c;svc&#x3e;://</tt> shape, and <tt>tfs:&#x3c;svc&#x3e;:</tt> names a canonical SaaS host, which OCI deliberately lacks. The bare form is the teaching refusal.</p>
+</li>
+<li id="_18bd1107-5be2-31c4-e531-9661c07edba1"><p id="_6f9a859c-5440-84ea-7f9d-c4eefd7ccc2c"><b>Referrers API for signatures.</b> Recommended: sibling digest-tags (locked, §3); referrers as a later additive mirror once ECR/ACR/ Harbor coverage is uniform. Revisit no earlier than the first registry-conformance survey.</p>
+</li>
+<li id="_f9faac5d-a077-8293-edae-bb0b731548a8"><p id="_e495f028-1562-a19c-2f26-6387596a7b3b"><b>docker <tt>credHelpers</tt>/<tt>credsStore</tt>.</b> Recommended and locked: refuse by name (65). Helpers are process shell-outs; invariant 1 admits no exception, and the env-indirection book already expresses every static case.</p>
+</li>
+<li id="_9f75cbb0-d1e7-7ed4-f9e1-6c552c39ebb6"><p id="_64f62fdd-3c6c-a06f-d5ec-69683c26fa11"><b>Plain-HTTP internal registries.</b> Recommended and locked: refuse; loopback only. Internal CAs are the  <tt>extra_ca</tt> feature's case (spec 04 §4) — an insecure-registry knob would be the verify-off spelling that spec bans.</p>
+</li>
+<li id="_2f214493-63c3-6ddb-6599-b2cb7e45ae58"><p id="_8d4d0415-4931-c964-f0ce-2b47f0140bcc"><b><tt>?sha256=</tt> on <tt>tfs+oci:</tt> references.</b> Recommended and locked: pins the ARTIFACT bytes (the layer blob), keeping the cross-class anchor vocabulary;  <tt>@sha256:</tt> pins the manifest. Both fail-closed.</p>
+</li>
+<li id="_a05ef48a-05ae-6b4b-c295-5ec796477252"><p id="_5755f219-4369-68c0-0278-fb0332bb1495"><b>Chunked/resumable blob upload.</b> Recommended: monolithic POST+PUT in v1 (bundles are ≲150 MB; tebako-http already carries <tt>UPLOAD_TIMEOUT</tt>); chunked upload lands only when a measured publish needs it.</p>
+</li>
+<li id="_a9a7ac61-5755-7a99-61d0-d2b5075d7989"><p id="_fc69f188-3939-3d17-7cc0-789dfb90c32c"><b>OCI as <tt>TEBAKO_RUNTIME_MIRROR</tt>.</b> Recommended: out of scope. The bootstrap keeps https/file bases (§10); OCI runtime distribution enters through the registry-derived toolchain channel.</p>
+</li>
+<li id="_4612edb0-9bf5-55e8-8f75-454dda135dbe"><p id="_9e464b2c-50d4-f96a-869f-46e3c64856bd"><b>Tag mutability.</b> Recommended and locked: write-once by publish policy (<tt>OciTagConflict</tt>); the digest form is the pin; withdrawal stays  <tt>status: withdrawn</tt>, never a tag delete.</p>
+</li>
+<li id="_d5ca33b1-a04c-3b43-7e37-689f42740f01"><p id="_2dba29e0-272e-0be0-a5f1-06a79f8c27a9"><b>Image indexes for multi-triplet artifacts.</b> Recommended and locked: rejected (§3) — platform selection is the registry's declarative law; OCI's os/arch vocabulary cannot speak tebako triplets.</p>
+</li>
+<li id="_11c232f1-c88c-3d59-3d1d-2cd159af6ab5"><p id="_b45da718-338c-34bf-2781-50a5cc5c29a5"><b>One repo per payload vs shared repos.</b> Recommended: publisher policy (one repo per payload name is the convention); the grammar fixes only tag derivation, so no resolver behavior depends on the choice.</p>
+</li>
+</ol></div></div><div id="_2f2e0ff9-eac9-585c-a4a8-53fc6dd7724c"><h1 id="_23ce54b0-f28d-465f-839a-a868365b1b0f"><a class="anchor" href="#_2f2e0ff9-eac9-585c-a4a8-53fc6dd7724c"></a><a class="header" href="#_2f2e0ff9-eac9-585c-a4a8-53fc6dd7724c">Implementation plan (spec PR first; each PR independently mergeable)</a></h1><div class="ol_wrap"><ol type="1" id="_1fe7097b-e584-d2b9-dee7-b5180ec9a023"><li id="_051308a2-2ca2-d302-ccd7-1c3cee06aa57"><p id="_45c4350b-6a9c-5431-e2ae-cb8a673d015b"><b>PR 1 — the spec.</b> This document + <tt>00-INDEX.md</tt> entry + the registry JSON Schema's additive  <tt>oci:</tt> field. No code.</p>
+</li>
+<li id="_123a0c03-cabc-889c-32e2-39e1f00a1106"><p id="_02a790ca-7a90-579e-384a-0f41ebc54c57"><b>PR 2 — the pull path, end-to-end.</b> <tt>tebako-oci</tt> crate (model + auth + client),  <tt>Reference::Oci</tt> grammar, fetch/pipeline integration, credential chain (docker fallback, realm confinement), registry-YAML-over-OCI (<tt>add-registry</tt>), the <tt>oci</tt> cargo feature + <tt>OciAdapterDisabled</tt>, and the full unit/property/contract tier + zot e2e pull legs. Readers accept and resolve  <tt>oci:</tt> row fields (primary-ref resolution only;  <tt>channel:</tt> declaration not yet).</p>
+</li>
+<li id="_a68a0424-4fb5-d3e1-5d85-f744fd593e82"><p id="_7f99d1e6-1623-ed86-000c-501b0d5090b6"><b>PR 3 — the publish path + mirror coexistence.</b> <tt>tebako publish --oci</tt> (artifacts, signature artifacts, write-once <tt>OciTagConflict</tt>, <tt>oci:</tt> row mirror write), the book's <tt>channel: oci</tt> declaration with fail-closed row errors, zot e2e publish→install→run legs, tebako.org tier-4 how-to (separate repo).</p>
+</li>
+<li id="_04e72ac4-0c6d-8601-e234-d10f26cf85ba"><p id="_8d05931b-9237-7ef0-8dbd-34f78fe57fbf"><b>PR 4 — runtime bundles over OCI.</b> Shard annotations, the <tt>release_download_locator</tt> OCI arm, dispatch-time runtime fetch through spec 37 §8's chain, e2e bundle legs. Sequenced with spec 36's landing; if 36 slips, PRs 1–3 still deliver the full payload/registry value of the issue.</p>
+</li>
+</ol></div></div></main><script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": {
+      preferredFont: "STIX",
+      linebreaks: {
+        automatic: true,
+        width: "container"  // or specify something like "90%"/"30em"
+      }
+    },
+    MathML: {
+      linebreaks: {
+        automatic: true
+      }
+    },
+    asciimath2jax: { delimiters: [['(#(', ')#)']] }
+  });
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=MML_HTMLorMML-full" async="async"></script>
+  <script>
+    $("#toc").on('click', 'li', function(e) {
+    $(this).parent().find('li.toc-active').removeClass('toc-active');
+    $(this).addClass('toc-active');
+});
+  </script>
+
+  <script>
+    //TOC toggle animation
+    (function() {
+      const jqNav = $('nav');
+      const jqBody = $('body');
+      const jqToggle = $('#toggle');
+      const animationSpeed = 'slow';
+
+      if(!jqNav.length || !jqToggle.length) {
+        return;
+      }
+
+      const navWidthExpanded = jqNav.outerWidth();
+      const bodyPaddingLeftExpanded =
+        parseFloat(jqBody.css('paddingLeft')) > 0 ?
+          jqBody.css('paddingLeft') : navWidthExpanded + 'px';
+      const expandedToggleLeft = navWidthExpanded + 'px';
+      let bandWidth = 0;
+
+      $('.document-stage-band:visible, .document-type-band:visible')
+        .each(function() {
+          const bounds = this.getBoundingClientRect();
+          bandWidth = Math.max(bandWidth, bounds.right);
+        });
+
+      const toggleWidth = jqToggle.outerWidth();
+      const collapsedToggleLeft = bandWidth + 'px';
+      const collapsedBodyPaddingLeft = bandWidth + toggleWidth + 'px';
+      jqToggle.css({
+        'left': jqNav.is(':visible') ? expandedToggleLeft : collapsedToggleLeft,
+        'top': '0px'
+      });
+
+      jqToggle.on('click', function() {
+        const isNavVisible = jqNav.is(':visible');
+        const navLeft = isNavVisible ? '-' + navWidthExpanded + 'px' : '0px';
+        const bodyPaddingLeft =
+          isNavVisible ? collapsedBodyPaddingLeft : bodyPaddingLeftExpanded;
+        const toggleLeft =
+          isNavVisible ? collapsedToggleLeft : expandedToggleLeft;
+
+        jqNav.stop(true, true);
+        jqBody.stop(true, true);
+        jqToggle.stop(true, true);
+
+        if(!isNavVisible) {
+          jqNav.show();
+        }
+        jqNav.animate({'left': navLeft}, animationSpeed, function() {
+          if(isNavVisible) {jqNav.hide()}
+        });
+        jqBody.animate({'paddingLeft': bodyPaddingLeft}, animationSpeed);
+        jqToggle.animate({'left': toggleLeft}, animationSpeed);
+      });
+    })();
+  </script>
+
+<script>
+    // Scroll to top button
+    window.onscroll = function() {scrollFunction()};
+
+    function scrollFunction() {
+        if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+            document.getElementById("myBtn").style.display = "block";
+        } else {
+            document.getElementById("myBtn").style.display = "none";
+        }
+    }
+
+    // When the user clicks on the button, scroll to the top of the document
+    function topFunction() {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+    }
+    </script>
+
+<script>
+/*
+  $(document).ready(function() {
+	  $('[id^=toc]').each(function ()
+	  {
+	     var currentToc = $(this);
+       var url = window.location.href;
+            currentToc.wrap("<a href='" + url + "#" + currentToc.attr("id") + "'></a>");
+	  });
+});
+*/
+</script>
+
+  <script>
+    document.querySelectorAll('*|svg a').forEach(function(item) {
+      var loc = item.getAttribute('href');
+      if (loc !== null && loc.startsWith('#')) {
+  item.setAttribute('href', location.pathname + loc);
+      }
+});
+  </script>
+
+
+<script>
+
+// jQuery Inline Footnotes v1.0.3
+// Copyright (c) 2011 Vesa Vänskä, released under the MIT License.
+
+// Generated by CoffeeScript 1.6.1
+(function() {
+
+  (function($) {
+    $.inlineFootnote = function(el, options) {
+      var _this = this;
+      this.el = $(el);
+      this.el.data("inlineFootnote", this);
+      this.initialize = function() {
+        this.options = $.extend({}, $.inlineFootnote.defaultOptions, options);
+        this.footnoteId = this.el.attr("href").match(/#(.*)/)[1];
+        if (this.footnoteId) {
+          this.el.mouseenter(this.openBox);
+          return $("body").mousemove(this.closeBox);
+        }
+      };
+      this.openBox = function(event) {
+        var footnoteContent, linkOffset;
+        if (!_this.box) {
+          footnoteContent = $("[id='" + _this.footnoteId + "']").children().filter(":not('" + _this.options.hideFromContent + "')");
+          linkOffset = _this.el.offset();
+          _this.box = $("<div ></div>", {
+            id: _this.options.boxId,
+            html: footnoteContent.clone().find(_this.options.hideFromContent).remove().end(),
+            css: {
+              position: "absolute",
+              top: linkOffset.top,
+              left: linkOffset.left + _this.el.outerWidth()
+            }
+          }).appendTo("body");
+          return _this.positionBox();
+        }
+      };
+      this.closeBox = function(event) {
+        if (_this.box) {
+          if (_this.isHoveringFootnote(event)) {
+            clearTimeout(_this.closeTimeout);
+            return _this.closeTimeout = null;
+          } else {
+            if (!_this.closeTimeout) {
+              return _this.closeTimeout = setTimeout((function() {
+                _this.box.remove();
+                return _this.box = null;
+              }), _this.options.hideDelay);
+            }
+          }
+        }
+      };
+      this.isHoveringFootnote = function(event) {
+        return this.box.is(event.target) || $(event.target).closest(this.box).length > 0 || event.target === this.el[0];
+      };
+      this.positionBox = function() {
+        var boxHorizontalPadding, boxLeft, boxWidth, linkLeftOffset, windowWidth;
+        boxHorizontalPadding = parseInt(this.box.css("padding-left")) + parseInt(this.box.css("padding-right"));
+        linkLeftOffset = this.el.offset().left;
+        windowWidth = $(window).width();
+        if ((windowWidth / 2) > linkLeftOffset) {
+          boxLeft = linkLeftOffset + 20;
+          boxWidth = windowWidth - boxLeft - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+        } else {
+          boxWidth = linkLeftOffset - boxHorizontalPadding - this.options.boxMargin * 2;
+          if (boxWidth > this.options.maximumBoxWidth) {
+            boxWidth = this.options.maximumBoxWidth;
+          }
+          boxLeft = linkLeftOffset - boxWidth - this.options.boxMargin * 2;
+        }
+        return this.box.css({
+          width: boxWidth,
+          left: boxLeft
+        });
+      };
+      return this.initialize();
+    };
+    $.inlineFootnote.defaultOptions = {
+      boxMargin: 20,
+      hideDelay: 200,
+      hideFromContent: "[rel=footnote]",
+      maximumBoxWidth: 500,
+      boxId: "footnote_box"
+    };
+    return $.fn.inlineFootnote = function(options) {
+      return this.each(function() {
+        return new $.inlineFootnote(this, options);
+      });
+    };
+  })(jQuery);
+
+}).call(this);
+</script>
+
+<script>
+      $(function() {
+        $("[rel=footnote]").inlineFootnote();
+        });
+</script>
+  <script>
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+//
+// AnchorJS - v4.2.2 - 2020-04-20
+// https://www.bryanbraun.com/anchorjs/
+// Copyright (c) 2020 Bryan Braun; Licensed MIT
+//
+// @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&dn=expat.txt Expat
+!function(A,e){"use strict";"function"==typeof define&&define.amd?define([],e):"object"==typeof module&&module.exports?module.exports=e():(A.AnchorJS=e(),A.anchors=new A.AnchorJS)}(this,function(){"use strict";return function(A){function f(A){A.icon=A.hasOwnProperty("icon")?A.icon:"",A.visible=A.hasOwnProperty("visible")?A.visible:"hover",A.placement=A.hasOwnProperty("placement")?A.placement:"right",A.ariaLabel=A.hasOwnProperty("ariaLabel")?A.ariaLabel:"Anchor",A.class=A.hasOwnProperty("class")?A.class:"",A.base=A.hasOwnProperty("base")?A.base:"",A.truncate=A.hasOwnProperty("truncate")?Math.floor(A.truncate):64,A.titleText=A.hasOwnProperty("titleText")?A.titleText:""}function p(A){var e;if("string"==typeof A||A instanceof String)e=[].slice.call(document.querySelectorAll(A));else{if(!(Array.isArray(A)||A instanceof NodeList))throw new Error("The selector provided to AnchorJS was invalid.");e=[].slice.call(A)}return e}this.options=A||{},this.elements=[],f(this.options),this.isTouchDevice=function(){return!!("ontouchstart"in window||window.DocumentTouch&&document instanceof DocumentTouch)},this.add=function(A){var e,t,i,n,o,s,a,r,c,h,l,u,d=[];if(f(this.options),"touch"===(l=this.options.visible)&&(l=this.isTouchDevice()?"always":"hover"),0===(e=p(A=A||"h2, h3, h4, h5, h6")).length)return this;for(!function(){if(null!==document.head.querySelector("style.anchorjs"))return;var A,e=document.createElement("style");e.className="anchorjs",e.appendChild(document.createTextNode("")),void 0===(A=document.head.querySelector('[rel="stylesheet"],style'))?document.head.appendChild(e):document.head.insertBefore(e,A);e.sheet.insertRule(".anchorjs-link{opacity:0;text-decoration:none;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}",e.sheet.cssRules.length),e.sheet.insertRule(":hover>.anchorjs-link,.anchorjs-link:focus{opacity:1}",e.sheet.cssRules.length),e.sheet.insertRule("[data-anchorjs-icon]::after{content:attr(data-anchorjs-icon)}",e.sheet.cssRules.length),e.sheet.insertRule('@font-face{font-family:anchorjs-icons;src:url(data:n/a;base64,AAEAAAALAIAAAwAwT1MvMg8yG2cAAAE4AAAAYGNtYXDp3gC3AAABpAAAAExnYXNwAAAAEAAAA9wAAAAIZ2x5ZlQCcfwAAAH4AAABCGhlYWQHFvHyAAAAvAAAADZoaGVhBnACFwAAAPQAAAAkaG10eASAADEAAAGYAAAADGxvY2EACACEAAAB8AAAAAhtYXhwAAYAVwAAARgAAAAgbmFtZQGOH9cAAAMAAAAAunBvc3QAAwAAAAADvAAAACAAAQAAAAEAAHzE2p9fDzz1AAkEAAAAAADRecUWAAAAANQA6R8AAAAAAoACwAAAAAgAAgAAAAAAAAABAAADwP/AAAACgAAA/9MCrQABAAAAAAAAAAAAAAAAAAAAAwABAAAAAwBVAAIAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAMCQAGQAAUAAAKZAswAAACPApkCzAAAAesAMwEJAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAQAAg//0DwP/AAEADwABAAAAAAQAAAAAAAAAAAAAAIAAAAAAAAAIAAAACgAAxAAAAAwAAAAMAAAAcAAEAAwAAABwAAwABAAAAHAAEADAAAAAIAAgAAgAAACDpy//9//8AAAAg6cv//f///+EWNwADAAEAAAAAAAAAAAAAAAAACACEAAEAAAAAAAAAAAAAAAAxAAACAAQARAKAAsAAKwBUAAABIiYnJjQ3NzY2MzIWFxYUBwcGIicmNDc3NjQnJiYjIgYHBwYUFxYUBwYGIwciJicmNDc3NjIXFhQHBwYUFxYWMzI2Nzc2NCcmNDc2MhcWFAcHBgYjARQGDAUtLXoWOR8fORYtLTgKGwoKCjgaGg0gEhIgDXoaGgkJBQwHdR85Fi0tOAobCgoKOBoaDSASEiANehoaCQkKGwotLXoWOR8BMwUFLYEuehYXFxYugC44CQkKGwo4GkoaDQ0NDXoaShoKGwoFBe8XFi6ALjgJCQobCjgaShoNDQ0NehpKGgobCgoKLYEuehYXAAAADACWAAEAAAAAAAEACAAAAAEAAAAAAAIAAwAIAAEAAAAAAAMACAAAAAEAAAAAAAQACAAAAAEAAAAAAAUAAQALAAEAAAAAAAYACAAAAAMAAQQJAAEAEAAMAAMAAQQJAAIABgAcAAMAAQQJAAMAEAAMAAMAAQQJAAQAEAAMAAMAAQQJAAUAAgAiAAMAAQQJAAYAEAAMYW5jaG9yanM0MDBAAGEAbgBjAGgAbwByAGoAcwA0ADAAMABAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAH//wAP) format("truetype")}',e.sheet.cssRules.length)}(),t=document.querySelectorAll("[id]"),i=[].map.call(t,function(A){return A.id}),o=0;o<e.length;o++)if(this.hasAnchorJSLink(e[o]))d.push(o);else{if(e[o].hasAttribute("id"))n=e[o].getAttribute("id");else if(e[o].hasAttribute("data-anchor-id"))n=e[o].getAttribute("data-anchor-id");else{for(c=r=this.urlify(e[o].textContent),a=0;void 0!==s&&(c=r+"-"+a),a+=1,-1!==(s=i.indexOf(c)););s=void 0,i.push(c),e[o].setAttribute("id",c),n=c}(h=document.createElement("a")).className="anchorjs-link "+this.options.class,h.setAttribute("aria-label",this.options.ariaLabel),h.setAttribute("data-anchorjs-icon",this.options.icon),this.options.titleText&&(h.title=this.options.titleText),u=document.querySelector("base")?window.location.pathname+window.location.search:"",u=this.options.base||u,h.href=u+"#"+n,"always"===l&&(h.style.opacity="1"),""===this.options.icon&&(h.style.font="1em/1 anchorjs-icons","left"===this.options.placement&&(h.style.lineHeight="inherit")),"left"===this.options.placement?(h.style.position="absolute",h.style.marginLeft="-1em",h.style.paddingRight="0.5em",e[o].insertBefore(h,e[o].firstChild)):(h.style.paddingLeft="0.375em",e[o].appendChild(h))}for(o=0;o<d.length;o++)e.splice(d[o]-o,1);return this.elements=this.elements.concat(e),this},this.remove=function(A){for(var e,t,i=p(A),n=0;n<i.length;n++)(t=i[n].querySelector(".anchorjs-link"))&&(-1!==(e=this.elements.indexOf(i[n]))&&this.elements.splice(e,1),i[n].removeChild(t));return this},this.removeAll=function(){this.remove(this.elements)},this.urlify=function(A){return this.options.truncate||f(this.options),A.trim().replace(/\'/gi,"").replace(/[& +$,:;=?@"#{}|^~[`%!'<>\]\.\/\(\)\*\\\n\t\b\v]/g,"-").replace(/-{2,}/g,"-").substring(0,this.options.truncate).replace(/^-+|-+$/gm,"").toLowerCase()},this.hasAnchorJSLink=function(A){var e=A.firstChild&&-1<(" "+A.firstChild.className+" ").indexOf(" anchorjs-link "),t=A.lastChild&&-1<(" "+A.lastChild.className+" ").indexOf(" anchorjs-link ");return e||t||!1}}});
+// @license-end
+  </script>
+    <script>
+  anchors.options = {
+  placement: 'left'
+};
+anchors.add('h1, h2, h3, h4');
+</script>
+
+<script>
+// use .collapsible element to toggle visibility of element following it
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.maxHeight){
+      content.style.maxHeight = null;
+    } else {
+      content.style.maxHeight = content.scrollHeight + "px";
+    }
+  });
+}
+</script>
+</body></html>

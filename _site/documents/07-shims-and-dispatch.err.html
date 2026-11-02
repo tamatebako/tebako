@@ -1,0 +1,37 @@
+<html><head><title>/private/tmp/wt-schemafix/_site/documents/07-shims-and-dispatch.err.html errors</title>
+<meta charset="UTF-8"/>
+<style> pre { white-space: pre-wrap; }
+thead th { font-weight: bold; background-color: aqua; }
+.severity0 { font-weight: bold; background-color: lightpink }
+.severity1 { font-weight: bold; }
+.severity2 { }
+.severity3 { font-style: italic; color: grey; }
+</style>
+</head><body><h1>/private/tmp/wt-schemafix/_site/documents/07-shims-and-dispatch.err.html errors</h1>
+<ul><li><p><b><a href="#Style">Style</a></b>: Severity 2: <b>1</b> error</p></li>
+
+<li><p><b><a href="#Metanorma_XML_Syntax">Metanorma XML Syntax</a></b>: Severity 2: <b>1</b> error</p></li>
+</ul>
+<h2 id="Style">Style</h2>
+<table border="1">
+<thead><th width="5%">Line</th><th width="20%">ID</th><th width="10%">Error</th>
+<th width="20%">Message</th><th width="40%">Context</th><th width="5%">Severity</th></thead>
+<tbody>
+<tr class="severity2">
+<td>000239</td><th><code><a href='/private/tmp/wt-schemafix/_site/documents/07-shims-and-dispatch.html#_2bf7d340-df40-e31c-fea0-eb896ce90f4a'>_2bf7d340-df40-e31c-fea0-eb896ce90f4a</a></code></th><td>STANDOC_48</td>
+<td>(generic warning) Hanging paragraph in clause</td><td><pre>&lt;clause id=&quot;_2bf7d340-df40-e31c-fea0-eb896ce90f4a&quot; unnumbered=&quot;true&quot; obligation=&quot;normative&quot;&gt;
+&lt;title id=&quot;_55ceab2b-b269-eff4-517c-331301f36712&quot;&gt;9. Environment composition (locked 2026-07-27)&lt;/title&gt;
+&lt;p id=&quot;_72ede84c-d415-aa83-5990-e4f5d298c02c&quot;&gt;Env across the mount stack (runtime + toolkit layers + data layers + app) composes by RULE, never by accident:&lt;/p&gt;
+
+&lt;ul id=&quot;_b33d6bff-3c76-3318-5cd0-f8dbd7ddcdc8&quot;&gt; &lt;li&gt; &lt;p id=&quot;_383f2a1d-28f3-2dc6-8a08-fc527d3853d4&quot;&gt; &lt;strong&gt;Path-class vars&lt;/strong&gt; (&lt;tt&gt;GEM_PATH&lt;/tt&gt;, &lt;tt&gt;PATH&lt;/tt&gt;-in-image, &lt;tt&gt;TEBAKO_LD_PATH&lt;/tt&gt;): app payload first, then toolkit layers in  &lt;tt&gt;requires&lt;/tt&gt; order, then the runtime — earlier wins. The runtime&apos;s own defaults come LAST (it is the fallback, not the override).&lt;/p&gt;</pre></td><td>2</td></tr>
+</tbody></table>
+<h2 id="Metanorma_XML_Syntax">Metanorma XML Syntax</h2>
+<table border="1">
+<thead><th width="5%">Line</th><th width="20%">ID</th><th width="10%">Error</th>
+<th width="20%">Message</th><th width="40%">Context</th><th width="5%">Severity</th></thead>
+<tbody>
+<tr class="severity2">
+<td></td><th><code>XML Line 000253:93</code></th><td>STANDOC_7</td>
+<td>element "clause" not allowed here; expected the element end-tag or element "admonition", "amend", "annotation", "bookmark", "columnbreak", "dl", "example", "figure",​ "form", "formula", "hr", "imagemap", "note", "ol", "p", "pagebreak", "passthrough", "permission", "pre", "quote", "recommendation", "requirement", "sourcecode", "svgmap",​ "table", "toc" or "ul"</td><td><pre></pre></td><td>2</td></tr>
+</tbody></table>
+</body></html>
