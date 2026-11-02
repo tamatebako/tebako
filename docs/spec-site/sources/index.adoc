@@ -79,6 +79,8 @@ bless the new state.
 | link:10-encryption.html[TBK SPEC 10] | Encryption (confidentiality) | `docs/spec/10-encryption.md`
 | link:11-tfs-vfs-model.html[TBK SPEC 11] | TFS: the virtual filesystem layer | `docs/spec/11-tfs-vfs-model.md`
 | link:17-runtime-driver-contract.html[TBK SPEC 17] | The runtime driver contract (any language) | `docs/spec/17-runtime-driver-contract.md`
+| link:18-contract-set.html[TBK SPEC 18] | The Contract Graph | `docs/spec/18-contract-set.md`
+| link:19-bootstrap-distribution.html[TBK SPEC 19] | The Bootstrap, Distributed: How Tebako Reaches Your Machine Without a Compiler | `docs/spec/19-bootstrap-distribution.md`
 | link:25-trace-observability.html[TBK SPEC 25] | Trace observability: the interception bus, diagnosis, and coverage | `docs/spec/25-trace-observability.md`
 | link:36-release-bundles.html[TBK SPEC 36] | Release bundles (the runtime publish unit) | `docs/spec/36-release-bundles.md`
 | link:37-registry-book.html[TBK SPEC 37] | The registry book: federation, aliases, credentials, the official seed | `docs/spec/37-registry-book.md`
