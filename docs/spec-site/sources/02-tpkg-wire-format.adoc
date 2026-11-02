@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/02-tpkg-wire-format.md @ a2775622fdc1e99b530573c14444ee9c6cecf8b9
+// source: docs/spec/02-tpkg-wire-format.md @ 4172076d933569d31be421613ad28753ff95c14d
 
 Normative byte-level specification of the tebako package container.
 Source of truth: `crates/tpkg` (byte-exact with the reference C99
@@ -126,8 +126,9 @@ trust enforcement is a reader capability, not a format barrier.
 |===
 
 
-Canonical signed bytes: `slot table ‖ digests ‖ keyid ‖ header` —
-everything except the signature and its length field.
+Canonical signed bytes: `slot table ‖ ext blocks ‖ digests ‖ keyid ‖ header` —
+everything except the signature and its length field. The extension
+blocks (§5b) sit inside the signed region: the signature covers them.
 
 
 [%unnumbered]
@@ -237,5 +238,5 @@ and ≤ 65536; signer keyid non-zero.
 [%unnumbered]
 == 7. Errors (Rust `TpkgError` ↔ C `+++TPKG_ERR_*+++`, 1:1)
 
-`NoTrailer`, `Magic`, `Crc`, `Version`, `Slots`, `Bounds`, `Invalid` —
-`strerror` strings byte-identical with the C implementation.
+`NoTrailer`, `Magic`, `Crc`, `Io`, `Bounds`, `Slots`, `Invalid`, `Arg`,
+`Version` — `strerror` strings byte-identical with the C implementation.
