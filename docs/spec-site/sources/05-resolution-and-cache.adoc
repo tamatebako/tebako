@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/05-resolution-and-cache.md @ b7b577b36d7e9658a43df7cf956925b1d98e2737
+// source: docs/spec/05-resolution-and-cache.md @ fa37a6be215778e3b048606fbe1a8e4565268bd5
 
 Normative specification of runtime/payload resolution and the shared
 machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL
@@ -156,8 +156,13 @@ runtime becomes resolvable from `+++tebako add-registry &lt;its feedstock&gt;+++
 consumer already speaks).
 +
 An edge no channel answers is a NAMED error enumerating the channels
-tried (never a silent query of a base that hosts no such engine — a
-wrong-line 404 is diagnosed as what it is).
+tried, *each with its own failure reason* (tebako#281): a throttled
+read names the throttle and its retry budget plus the ambient-token
+remedy (`+++TEBAKO_GITHUB_TOKEN+++` / `+++GITHUB_TOKEN+++` raise the
+api.github.com budget), a not-found says so, a clean-but-empty read
+says so — never a silent query of a base that hosts no such engine
+(a wrong-line 404 is diagnosed as what it is), and never a bare
+"neither source read".
 * Signing of the index and the artifacts it names: spec 09 §5 (every
 consumable index form signed — the same-channel-MITM gap closes) and
 spec 09 §4's runtime-fetch verification point (the per-artifact

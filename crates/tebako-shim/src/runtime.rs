@@ -336,7 +336,8 @@ fn resolve_runtime_scoped<T: Transport + Sync>(
     // The pick may REDIRECT the source: the registry-first enumeration
     // (spec 05 §2,) names each version's own release (base +
     // tag + signature pin ride the picked row).
-    let (target, source) = match index_selected_target(reqs, pref, &source, ctx)? {
+    let mut notes = SourceNotes::default();
+    let (target, source) = match index_selected_target(reqs, pref, &source, ctx, &mut notes)? {
         Some(pick) => pick,
         None if !prefless => (pref.clone(), source),
         None => {
@@ -346,7 +347,7 @@ fn resolve_runtime_scoped<T: Transport + Sync>(
             let why = if offline_mode(ctx) {
                 "and TEBAKO_OFFLINE is set — no source is consulted offline".to_string()
             } else {
-                "and no runtime preference is configured, and neither the factory registry nor the default-line release index read".to_string()
+                no_source_why(&notes)
             };
             return fail(
                 EX_TEBAKO_UNAVAILABLE,
@@ -667,6 +668,19 @@ fn released_versions(text: &str, engine: &str, platform: &str) -> Option<Vec<Rel
     keyed.then_some(released)
 }
 
+/// The per-source read outcomes behind a "no readable source" refusal
+/// (tebako#281): the factory-registry walk and the release-index probe
+/// fail independently, and the refusal enumerates each one's own reason
+/// (throttled-with-retry-after, not-found, unreachable) — never a bare
+/// "did not read".
+#[derive(Default)]
+struct SourceNotes {
+    /// The factory-registry walk's failure, when it failed to read.
+    registry: Option<String>,
+    /// The default-line release-index probe's failure.
+    index: Option<String>,
+}
+
 /// The download-target selection on a cache miss (spec 05 §2's order,
 ///): the factory's in-repo L3 registry first (range
 /// enumeration flows through it, never through a release monolith —
@@ -700,11 +714,12 @@ fn index_selected_target(
     pref: &RuntimePref,
     source: &RuntimeSource,
     ctx: &Ctx,
+    notes: &mut SourceNotes,
 ) -> Result<Option<(RuntimePref, RuntimeSource)>, ShimError> {
     if offline_mode(ctx) {
         return Ok(None);
     }
-    if let Some(pick) = registry_selected_target(reqs, source, ctx)? {
+    if let Some(pick) = registry_selected_target_noted(reqs, source, ctx, notes)? {
         return Ok(Some(pick));
     }
     if source.oci.is_some() {
@@ -733,6 +748,13 @@ fn index_selected_target(
     }
     let text = fetch_manifest_text(&dir_url, local, &probe);
     let _ = std::fs::remove_dir_all(&probe);
+    let text = match text {
+        Ok(text) => Some(text),
+        Err(reason) => {
+            notes.index = Some(reason);
+            None
+        }
+    };
     let Some(text) = text else {
         // A registry-pinned tag (channel 3) has no fallback line: the
         // registry named THIS release — an unreadable index there is the
@@ -809,6 +831,31 @@ fn index_selected_target(
             reqs.engine()
         ),
     )
+}
+
+/// The none-read refusal's per-source enumeration (tebako#281): each
+/// channel names its own failure — a throttled read carries the ambient
+/// token hint (TEBAKO_GITHUB_TOKEN / GITHUB_TOKEN raise the
+/// api.github.com budget), a read that answered carries its reason, a
+/// read that answered cleanly but held nothing says so.
+fn no_source_why(notes: &SourceNotes) -> String {
+    let mut why = "and no runtime preference is configured;".to_string();
+    match &notes.registry {
+        Some(reason) => {
+            why.push_str(&format!("\n  - factory registry: {reason}"));
+            if reason.contains("throttled") {
+                why.push_str(
+                    " (an ambient TEBAKO_GITHUB_TOKEN or GITHUB_TOKEN raises the api.github.com budget)",
+                );
+            }
+        }
+        None => why.push_str("\n  - factory registry: read, but no runtime rows match this engine"),
+    }
+    match &notes.index {
+        Some(reason) => why.push_str(&format!("\n  - default-line release index: {reason}")),
+        None => why.push_str("\n  - default-line release index: read, but no satisfiable row"),
+    }
+    why
 }
 
 /// `https://github.com/<owner>/<repo>/releases/download` →
@@ -1158,10 +1205,23 @@ fn split_line_id(
 /// row is the named WithdrawnPayload refusal; nothing satisfying is the
 /// named platform-availability error listing the host-covered rows with
 /// their `(withdrawn)` marks.
+/// The test-facing shape: production rides the noted variant (the refusal
+/// enumerates each source's own reason, tebako#281); the pick tests assert
+/// the pick itself.
+#[cfg(test)]
 fn registry_selected_target(
     reqs: &RuntimeRequirements,
     source: &RuntimeSource,
     ctx: &Ctx,
+) -> Result<Option<(RuntimePref, RuntimeSource)>, ShimError> {
+    registry_selected_target_noted(reqs, source, ctx, &mut SourceNotes::default())
+}
+
+fn registry_selected_target_noted(
+    reqs: &RuntimeRequirements,
+    source: &RuntimeSource,
+    ctx: &Ctx,
+    notes: &mut SourceNotes,
 ) -> Result<Option<(RuntimePref, RuntimeSource)>, ShimError> {
     // The registry the row refinement walks: the in-repo L3 of the
     // project the download base names (spec 05 §2) when the base names
@@ -1185,6 +1245,9 @@ fn registry_selected_target(
                     "event=runtime-index-registry-error engine={engine} registry={reg_ref} error={e:?}"
                 ),
             );
+            // tebako#281: the refusal downstream enumerates this reason —
+            // the journal alone never reached the user.
+            notes.registry = Some(format!("registry {reg_ref}: {}", e.message));
             return Ok(None);
         }
     };
@@ -2021,29 +2084,46 @@ fn lock_release(lock: EntryLock) {
 /// curl --retry 3 parity: transient failures get three attempts.
 #[allow(clippy::result_unit_err)]
 fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
+    fetch_url_detailed(url, local, out).map_err(|_| ())
+}
+
+/// The reason-carrying half of [`fetch_url`]: the same retry rounds, but
+/// the terminal failure surfaces its FetchError (throttled-with-retry-after,
+/// not-found, transport) instead of collapsing to `()` — the resolution
+/// refusals enumerate it per source (tebako#281).
+fn fetch_url_detailed(url: &str, local: bool, out: &Path) -> Result<(), tebako_http::FetchError> {
     if local {
-        return std::fs::copy(Path::new(url), out)
-            .map(|_| ())
-            .map_err(|_| ());
+        return std::fs::copy(Path::new(url), out).map(|_| ()).map_err(|e| {
+            tebako_http::FetchError::DownloadFailed(format!("local copy of {url} failed: {e}"))
+        });
     }
     let mut attempts = 0;
     let mut throttles = 0;
     loop {
         match tebako_http::get(url) {
-            Ok(bytes) => return std::fs::write(out, bytes).map_err(|_| ()),
-            Err(tebako_http::FetchError::IndexUnavailable(_)) => return Err(()),
-            Err(tebako_http::FetchError::Throttled { retry_after, .. }) => {
+            Ok(bytes) => {
+                return std::fs::write(out, bytes).map_err(|e| {
+                    tebako_http::FetchError::DownloadFailed(format!("write to {out:?} failed: {e}"))
+                })
+            }
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => {
+                return Err(tebako_http::FetchError::IndexUnavailable(url.to_string()))
+            }
+            Err(e @ tebako_http::FetchError::Throttled { .. }) => {
                 throttles += 1;
                 if throttles >= tebako_http::THROTTLE_ROUNDS {
-                    return Err(());
+                    return Err(e);
                 }
+                let tebako_http::FetchError::Throttled { retry_after, .. } = e else {
+                    unreachable!()
+                };
                 std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
             }
             Err(e) => {
                 attempts += 1;
                 if attempts >= 3 {
                     eprintln!("tebako-shim: download failed: {e}");
-                    return Err(());
+                    return Err(e);
                 }
             }
         }
@@ -2114,10 +2194,14 @@ fn sha_from_sums(text: &str, asset: &str) -> Result<String, ()> {
 /// directory into the tmp staging dir and return its text. `None` when
 /// it does not exist or does not read — the caller decides what that
 /// means (spec 18: the pre-era signal).
-fn fetch_manifest_text(dir_url: &str, local: bool, tmp_dir: &Path) -> Option<String> {
+/// The release-index probe's read. The Err arm is the user-facing reason
+/// the refusal enumerates (tebako#281) — never a bare "did not read".
+fn fetch_manifest_text(dir_url: &str, local: bool, tmp_dir: &Path) -> Result<String, String> {
     let manifest_tmp = tmp_dir.join("manifest.json");
-    fetch_url(&format!("{dir_url}/manifest.json"), local, &manifest_tmp).ok()?;
-    std::fs::read_to_string(&manifest_tmp).ok()
+    let url = format!("{dir_url}/manifest.json");
+    fetch_url_detailed(&url, local, &manifest_tmp).map_err(|e| format!("{url}: {e}"))?;
+    std::fs::read_to_string(&manifest_tmp)
+        .map_err(|e| format!("{url}: downloaded but unreadable ({e})"))
 }
 
 /// spec 18 C2 pre-download gate (S11/S12): the release manifest's entry
@@ -5136,6 +5220,67 @@ payloads:
             Some(format!("tebako-runtime-2.5.0-21.0.12-{asset}").as_str())
         );
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_unreadable_factory_registry_names_its_reason_in_the_notes() {
+        // tebako#281: a failed registry read must reach the refusal's
+        // enumeration — the journal alone never told the user WHY. A
+        // primed-but-malformed cache fails the read without network.
+        let home = temp_home("regnote");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-openjdk",
+            b"not: [valid",
+        )
+        .unwrap();
+        let mut notes = SourceNotes::default();
+        let pick = registry_selected_target_noted(
+            &reqs("java", ">= 21"),
+            &github_source(),
+            &ctx,
+            &mut notes,
+        )
+        .unwrap();
+        assert!(pick.is_none());
+        let note = notes.registry.expect("the failed read is noted");
+        assert!(
+            note.contains("registry tfs:github:acme/tebako-runtime-openjdk"),
+            "{note}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_no_source_refusal_enumerates_each_channels_reason() {
+        let why = no_source_why(&SourceNotes {
+            registry: Some(
+                "registry tfs:github:acme/r: throttled (403, retry after 42s)".to_string(),
+            ),
+            index: Some("https://example.test/x/manifest.json: not found".to_string()),
+        });
+        assert!(why.contains("throttled (403, retry after 42s)"), "{why}");
+        // The throttled arm carries the ambient-token hint (the budget fix).
+        assert!(why.contains("TEBAKO_GITHUB_TOKEN"), "{why}");
+        assert!(
+            why.contains("https://example.test/x/manifest.json"),
+            "{why}"
+        );
+    }
+
+    #[test]
+    fn the_no_source_refusal_names_the_clean_but_empty_reads() {
+        let why = no_source_why(&SourceNotes::default());
+        assert!(
+            why.contains("factory registry: read, but no runtime rows"),
+            "{why}"
+        );
+        assert!(
+            why.contains("release index: read, but no satisfiable row"),
+            "{why}"
+        );
+        assert!(!why.contains("TEBAKO_GITHUB_TOKEN"), "{why}");
     }
 
     #[test]
