@@ -1837,9 +1837,7 @@ fn cross_registry_dispatch_composes_a_file_channel_payload_and_an_oci_channel_ru
         "{journal}"
     );
     assert!(
-        journal.contains(&format!(
-            "event=payload-installed name=iso-codes version=2025.2"
-        )),
+        journal.contains("event=payload-installed name=iso-codes version=2025.2"),
         "{journal}"
     );
     assert!(
