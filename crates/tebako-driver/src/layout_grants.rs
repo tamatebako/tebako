@@ -344,9 +344,12 @@ mod tests {
         let mounted = vec![env_member(true)];
         resolve(&mut h, &mounted, &env, "/__tfs__").unwrap();
         assert_eq!(h.images[0].mount, "/tebako/slices.d/numpy-extras");
+        // The list separator is the platform's (`;` on windows).
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let expected = format!("/runtime/lib{sep}/tebako/slices.d/numpy-extras");
         assert_eq!(
             env.var("PYTHONPATH").as_deref(),
-            Some("/runtime/lib:/tebako/slices.d/numpy-extras"),
+            Some(expected.as_str()),
             "the runtime's own entries stay first; the slice appends"
         );
         let _ = std::fs::remove_dir_all(&dir);
