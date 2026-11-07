@@ -186,13 +186,14 @@ pub use jail::{ArgumentFiles, HostJail, JailAccess, JailError, JailMount};
 pub use macho::trailer_end;
 pub use manifest::{
     check_check_name, checks_map, qualify_mount, valid_interp_env_key, valid_registry_alias,
-    vfs_drive, AppProvides, AugmentsEdge, BuiltAgainst, BuiltFrom, Capabilities, Check, CheckEntry,
-    CheckExpect, CheckNeed, CheckPlatform, CheckRequires, Constraint, DataProvides, Digest,
-    Encryption, EncryptionPart, EncryptionState, EngineProvides, Entrypoint, ExtensionLayout,
-    ExtensionPoint, GemVersion, Identity, LibraryAlias, ManifestError, MountSemantics, OnRuntime,
-    PayloadKind, PayloadManifest, Platform, Platforms, Producer, Provides, Requirement,
-    RuntimeProvides, RuntimeRequirement, RuntimeRequirements, Sbom, Signing, SigningMechanism,
-    SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides, WindowsBoot,
+    vfs_drive, AppProvides, AugmentsEdge, AugmentsPayloadEdge, AugmentsRuntimeEdge, BuiltAgainst,
+    BuiltFrom, Capabilities, Check, CheckEntry, CheckExpect, CheckNeed, CheckPlatform,
+    CheckRequires, Constraint, DataProvides, Digest, Encryption, EncryptionPart, EncryptionState,
+    EngineProvides, Entrypoint, ExtensionLayout, ExtensionPoint, GemVersion, Identity, LayoutGrant,
+    LayoutKind, LibraryAlias, ManifestError, MountSemantics, OnRuntime, PayloadKind,
+    PayloadManifest, Platform, Platforms, Producer, Provides, Requirement, RuntimeProvides,
+    RuntimeRequirement, RuntimeRequirements, Sbom, Signing, SigningMechanism, SigningState, Source,
+    ToolkitExecutable, ToolkitLibrary, ToolkitProvides, WindowsBoot, AUGMENT_ROLE_PREFIX,
     LAYOUT_IMAGE_PATH, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_MINOR, PAYLOAD_SCHEMA_VERSION,
 };
 pub use manifest::{

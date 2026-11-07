@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/17-runtime-driver-contract.md @ 0a47811af1a53ac61dac5dd571c8d9fa7d8c9274
+// source: docs/spec/17-runtime-driver-contract.md @ 12ee5eaf664e91dd52197cdfe2704cff0ef5ecb7
 
 Normative contract between a tebako runtime (the interpreter binary a
 runtime payload provides) and the tebako loader/dispatcher. Language-

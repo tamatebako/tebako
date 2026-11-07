@@ -9,7 +9,11 @@
 //! Both `--flag value` and `--flag=value` forms are accepted (the v1
 //! driver's `match_launcher_arg` took both). Values split on the LAST TWO
 //! colons so the file component may itself contain colons (Windows drive
-//! prefixes). Anything before the first `--tebako-*` belongs to the
+//! prefixes). The mount position may carry the ROLE form `role+<name>`
+//! (spec 03 §2.8's layout grants — the loader emits it for a slice
+//! augmenting the runtime; the driver resolves it against the env image's
+//! declared grants before any mount, never a real path through).
+//! Anything before the first `--tebako-*` belongs to the
 //! interpreter; everything after `--tebako-entry` belongs to the user,
 //! verbatim. `--tebako-trace` names the spec 25 trace channel (JSONL);
 //! it overrides `TEBAKO_TRACE` when both are set, and the driver opens it

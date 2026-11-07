@@ -45,7 +45,7 @@ pub const PAYLOAD_SCHEMA_VERSION: u32 = 1;
 /// is the parse-FAILURE path, where a declared minor above this one is
 /// the difference between "the payload speaks a newer schema" and "the
 /// payload is corrupt" (tebako#536).
-pub const PAYLOAD_SCHEMA_MINOR: u32 = 17;
+pub const PAYLOAD_SCHEMA_MINOR: u32 = 18;
 
 /// Error returned by payload-manifest operations.
 ///
@@ -1195,6 +1195,12 @@ pub struct RuntimeProvides {
     /// ignore the key — and find no owner edge to act on either.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_runtime: Option<OnRuntime>,
+    /// The runtime-side layout grants (spec 03 §2.8's amendment —
+    /// additive, schema_minor 18): the library-layout roles slices may
+    /// augment. Old readers ignore the key (a slice riding it fails
+    /// dispatch with UnknownLayoutGrant there — loud, never silent).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layout_grants: Vec<LayoutGrant>,
     /// The windows boot tier (spec 17 §7 — additive, schema_minor 11):
     /// present iff this runtime's interpreter cannot consume the
     /// driver's mounted images on windows and boots from the
@@ -1520,6 +1526,16 @@ impl RuntimeProvides {
         }
         if let Some(on) = &self.on_runtime {
             on.validate()?;
+        }
+        let mut roles = std::collections::BTreeSet::new();
+        for grant in &self.layout_grants {
+            grant.validate()?;
+            if !roles.insert(grant.role.as_str()) {
+                return Err(ManifestError::InvalidOwned(format!(
+                    "layout_grants declares the role {:?} twice — one grant per role",
+                    grant.role
+                )));
+            }
         }
         let caps = &self.capabilities;
         if !caps.exec || !caps.read || caps.runtime != Some(true) {
@@ -1950,6 +1966,15 @@ impl Requirement {
 // AUGMENTS (spec 03 §2.8 — `augments:`, additive: schema_minor 10)
 // ---------------------------------------------------------------------
 
+/// The mount-position marker a runtime-form augments edge rides on the
+/// handoff wire (`<image>:<slot>:role+<grant>` — spec 03 §2.8's layout
+/// grant amendment): the loader emits it, the driver resolves role →
+/// path against the env image's declared grants. One owner, both sides
+/// of the wire. The separator is `+`, never `:` — the triple grammar
+/// right-splits on the last two colons, so the mount position carries
+/// no colon.
+pub const AUGMENT_ROLE_PREFIX: &str = "role+";
+
 /// Press-tooling provenance of a deduped slice (`built_against:`): the
 /// exact base release whose gem-closure inventory the press subtracted.
 /// Its PRESENCE is what makes the slice a gem-closure slice — the
@@ -1962,13 +1987,84 @@ pub struct BuiltAgainst {
     pub closure_sha256: String,
 }
 
-/// One `augments:` entry (`{payload, constraint, extension_point,
-/// built_against?}`) — the REVERSE dependency edge (spec 03 §2.8): this
-/// slice extends the named base payload and attaches below the base's
-/// declared extension point. The constraint binds against the base's
-/// RESOLVED version; dispatch semantics live in spec 07 §2 step 3a.
+/// The runtime-side grant's content convention (spec 03 §2.8's
+/// layout-grants amendment): which multi-home/search semantics the
+/// mounted slices ride. `Files` is opaque content the runtime's own code
+/// enumerates; the other three are the engines' import-root conventions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutKind {
+    /// A mini GEM_HOME per slice (gems/, specifications/).
+    GemHome,
+    /// A flat import-root tree (python's site-packages shape).
+    PythonSite,
+    /// A flat package-root tree (node's node_modules shape).
+    NodeModules,
+    /// Opaque content.
+    Files,
+}
+
+/// One runtime-side layout grant (spec 03 §2.8, additive — schema_minor
+/// 17): a symbolic `role` the runtime opens for slice augmentation, the
+/// VFS-absolute directory slices mount BELOW (`<slices_at>/<slice>`),
+/// the content convention, and the environment variable the driver
+/// extends (AFTER the runtime's own entries — the runtime's stdlib wins
+/// every name collision).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AugmentsEdge {
+pub struct LayoutGrant {
+    /// The symbolic name slices augment by (`site-packages`, `gems`, …).
+    pub role: String,
+    /// VFS-absolute directory the slices mount below. The runtime's env
+    /// image leaves it EMPTY (the factory proves it at build), so a slice
+    /// never shadows the runtime's own library tree.
+    pub slices_at: String,
+    pub layout: LayoutKind,
+    /// The environment variable the driver extends with each attached
+    /// slice's mount (GEM_PATH / PYTHONPATH / NODE_PATH / …).
+    pub search_env: String,
+}
+
+impl LayoutGrant {
+    fn validate(&self) -> Result<(), ManifestError> {
+        check_non_empty(&self.role, "layout_grants[].role must not be empty")?;
+        check_non_empty(
+            &self.search_env,
+            "layout_grants[].search_env must not be empty",
+        )?;
+        if !self.slices_at.starts_with('/') {
+            return Err(ManifestError::InvalidOwned(format!(
+                "layout_grants[].slices_at {:?} is not absolute",
+                self.slices_at
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// One `augments:` entry — the REVERSE dependency edge (spec 03 §2.8).
+/// MECE per entry: exactly the payload form (attach below an app
+/// payload's declared extension point) or the runtime form (augment the
+/// runtime's layout grant, schema_minor 18). An entry mixing the two
+/// forms matches NEITHER variant (both deny unknown keys) and fails the
+/// manifest parse with the untagged-enum error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AugmentsEdge {
+    /// The payload form (`{payload, constraint, extension_point,
+    /// built_against?}`).
+    Payload(AugmentsPayloadEdge),
+    /// The runtime form (`{runtime, role, constraint}`) — augment the
+    /// engine runtime's declared `layout_grants` role.
+    Runtime(AugmentsRuntimeEdge),
+}
+
+/// The payload form of an `augments:` entry: this slice extends the
+/// named base payload and attaches below the base's declared extension
+/// point. The constraint binds against the base's RESOLVED version;
+/// dispatch semantics live in spec 07 §2 step 3a.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AugmentsPayloadEdge {
     /// The base payload's name.
     pub payload: String,
     /// The constraint against the base's RESOLVED version. A gem-closure
@@ -1986,7 +2082,31 @@ pub struct AugmentsEdge {
     pub built_against: Option<BuiltAgainst>,
 }
 
+/// The runtime form of an `augments:` entry (spec 03 §2.8's layout-grant
+/// amendment): this slice augments the resolved runtime's declared
+/// `layout_grants` role. The constraint binds against the runtime's
+/// `language_version` line (spec 05 §5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AugmentsRuntimeEdge {
+    /// The engine name (spec 05 §5's engine spelling).
+    pub runtime: String,
+    /// The runtime's declared `layout_grants[].role`.
+    pub role: String,
+    /// The constraint against the runtime's language line.
+    pub constraint: Constraint,
+}
+
 impl AugmentsEdge {
+    fn validate(&self) -> Result<(), ManifestError> {
+        match self {
+            AugmentsEdge::Payload(edge) => edge.validate(),
+            AugmentsEdge::Runtime(edge) => edge.validate(),
+        }
+    }
+}
+
+impl AugmentsPayloadEdge {
     fn validate(&self) -> Result<(), ManifestError> {
         check_non_empty(&self.payload, "augments[].payload must not be empty")?;
         check_non_empty(
@@ -2011,6 +2131,14 @@ impl AugmentsEdge {
                 ));
             }
         }
+        Ok(())
+    }
+}
+
+impl AugmentsRuntimeEdge {
+    fn validate(&self) -> Result<(), ManifestError> {
+        check_non_empty(&self.runtime, "augments[].runtime must not be empty")?;
+        check_non_empty(&self.role, "augments[].role must not be empty")?;
         Ok(())
     }
 }

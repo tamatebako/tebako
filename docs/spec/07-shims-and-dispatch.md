@@ -162,6 +162,19 @@ per declared entrypoint name — never as re-exec wrappers.
    same-name gem pair journals `event=slice-overlap slice=… gem=…` —
    informational only (gem homes compose by requirement-based
    activation; the fix is a slice rebuild against the newer base).
+
+   **The runtime form (spec 03 §2.8's layout-grant amendment,
+   schema_minor 18):** the same scan additionally matches slices whose
+   `augments[]` carries a runtime edge naming the composition's engine —
+   the edge's constraint binds the runtime's language line (spec 05 §5's
+   rule), the slice's own language edges check against the runtime as
+   above, and the attach emits the ROLE form of the mount position
+   (`<slice-path>:-:role+<role>`): the driver resolves role → path
+   against the env image's declared grants (spec 17's mount order).
+   A zero-runtime dispatch attaches nothing of either form (the loud
+   zero-runtime note, once); a pinned runtime-form slice whose engine or
+   line misses the resolved runtime is the same fail-hard
+   SliceIncompatible as the payload form.
 4. **Hand-off:** mount payload + ZERO OR MORE runtime payloads (native
    entrypoints need none — spec 03) + declared dependency mounts
    (spec 03 §2.3), apply the jail view (spec 08), exec the entrypoint.

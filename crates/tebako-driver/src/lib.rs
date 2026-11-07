@@ -47,6 +47,7 @@ pub mod ffi;
 pub mod handoff;
 pub mod injection;
 pub mod layout;
+pub mod layout_grants;
 pub mod lazy;
 pub mod materialize;
 pub mod on_runtime;

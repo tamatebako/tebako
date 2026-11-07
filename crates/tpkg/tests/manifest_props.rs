@@ -322,6 +322,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
                 },
                 env,
                 entrypoints: Vec::new(),
+                layout_grants: Vec::new(),
                 on_runtime: None,
                 windows_boot: None,
                 capabilities: Capabilities {

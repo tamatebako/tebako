@@ -30,6 +30,16 @@ learns which pattern a runtime uses.
   (spec 33) the OWNER's env image, immediately followed by the DEPENDING
   runtime's env image as the first triple — then payload triples in argv
   order; the table is longest-prefix and nested mounts are legal; any
+  failure unmounts everything — never a partial mount. A triple's mount
+  position may be the ROLE form `role+<name>` (spec 03 §2.8's runtime
+  layout grants): the driver resolves it against the env image's declared
+  `layout_grants` BEFORE the payload loop — the slice mounts at
+  `<slices_at>/<slice-name>` (the slice names itself from its own image),
+  the grant's `search_env` gains the mount (appended after inherited
+  entries), an unknown role is the named `UnknownLayoutGrant` (exit 78),
+  and a role form under an env image that grants nothing is the same
+  error with an empty grant set. The role form never reaches the mount
+  table unresolved. Any
   failure unmounts everything — never a partial mount. A mount whose
   ancestors exist in no mounted image MATERIALIZES them as synthesized
   read-only directories: `stat`/`readdir`/`realpath` walk the boundary

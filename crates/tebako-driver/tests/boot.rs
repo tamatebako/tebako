@@ -3108,3 +3108,127 @@ fn five_image_triples_mount_in_order_and_dispatch_by_longest_prefix() {
     assert_eq!(read_file("/a/b/c/d/e/content/same.txt"), b"level-5");
     assert_eq!(read_file("/a/b/c/content/same.txt"), b"level-3");
 }
+
+// ---------------------------------------------------------------------
+// The runtime layout grants (spec 03 §2.8's amendment): a role-form
+// mount resolves against the env image's declared grants and extends
+// the grant's search env.
+// ---------------------------------------------------------------------
+
+/// The env-image fixture WITH a runtime manifest declaring a grant.
+fn write_env_image_with_grants(dir: &Path) -> PathBuf {
+    let p = dir.join("runtime-grants.tfs");
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-python\n  version: \"3.13.5\"\n\
+         \x20 producer: {{tool: test, tool_version: \"1\"}}\n  created: \"2026-11-07T00:00:00Z\"\n\
+         \x20 digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n\
+         \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  provides: {{engine: python, version: \"3.13.5\", language_version: \"3.13\", abi_line: \"3.13\", platform: aarch64-macos}}\n\
+         \x20 built_from: {{src_sha256: {}, patch_set: v1}}\n\
+         \x20 layout_grants:\n    - {{role: site-packages, slices_at: /tebako/slices.d, layout: python-site, search_env: PYTHONPATH}}\n\
+         \x20 capabilities: {{exec: true, read: true, runtime: true}}\n",
+        "a".repeat(64),
+        "b".repeat(64),
+        "c".repeat(64)
+    );
+    build_zip(
+        &p,
+        &["lib/", "lib/ruby/", "lib/tebako/", "__tpkg__/"],
+        &[
+            ("lib/ruby/rubygems.rb", b"# rubygems core\n".as_slice()),
+            ("lib/tebako/layout.yaml", GOOD_LAYOUT.as_bytes()),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    p
+}
+
+/// The slice image fixture: a manifest + one importable file.
+fn write_slice_image(dir: &Path, name: &str) -> PathBuf {
+    let p = dir.join(format!("{name}.tfs"));
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: \"1.0.0\"\n\
+         \x20 producer: {{tool: test, tool_version: \"1\"}}\n  created: \"2026-11-07T00:00:00Z\"\n\
+         \x20 digest: {{tree_hash: \"sha256:{}\", blob_sha256: {}}}\n\
+         \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  mount_semantics: {{suggested: /x}}\n  capabilities: {{exec: false, read: true}}\n",
+        "a".repeat(64),
+        "b".repeat(64)
+    );
+    build_zip(
+        &p,
+        &["__tpkg__/", "extras/"],
+        &[
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+            ("extras/EXTRA.py", b"# the slice's content\n".as_slice()),
+        ],
+    );
+    p
+}
+
+#[test]
+fn a_role_mount_resolves_against_the_env_image_grants_at_boot() {
+    let g = guard("layout-grants");
+    let env_image = write_env_image_with_grants(g.path());
+    let app = write_payload_image(g.path());
+    let slice = write_slice_image(g.path(), "numpy-extras");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(
+        &argv(&[
+            "python",
+            "--tebako-image",
+            &format!("{}:0:/", app.display()),
+            "--tebako-image",
+            &format!("{}:0:role+site-packages", slice.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    // The slice mounted below the grant's slices_at, named by its own
+    // manifest, and its content reads through the resolved point.
+    let bytes = read_file("/tebako/slices.d/numpy-extras/extras/EXTRA.py");
+    assert_eq!(bytes, b"# the slice's content\n");
+    // The grant's search env gained the mount, appended after the
+    // inherited value (unset here).
+    assert_eq!(
+        env.var("PYTHONPATH").as_deref(),
+        Some("/tebako/slices.d/numpy-extras")
+    );
+}
+
+#[test]
+fn a_role_mount_under_a_grantless_runtime_is_a_named_boot_error() {
+    let g = guard("layout-grants-none");
+    let env_image = write_env_image(g.path()); // no manifest — no grants
+    let app = write_payload_image(g.path());
+    let slice = write_slice_image(g.path(), "numpy-extras");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = boot(
+        &argv(&[
+            "python",
+            "--tebako-image",
+            &format!("{}:0:/", app.display()),
+            "--tebako-image",
+            &format!("{}:0:role+site-packages", slice.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, 78, "{err}");
+    assert!(err.message.contains("site-packages"), "{err}");
+    // The fixture's env image carries no manifest — the runtime-absent
+    // arm of the named error.
+    assert!(err.message.contains("LayoutGrantRuntimeAbsent"), "{err}");
+}

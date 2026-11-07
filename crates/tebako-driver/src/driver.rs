@@ -208,15 +208,15 @@ impl MountModes for OwnTrailer {
 /// Where an image's bytes come from after trailer probing, plus the
 /// parsed trailer when the file is a package (the mount-mode source's
 /// input — spec 17 §1).
-struct ResolvedImage {
+pub(crate) struct ResolvedImage {
     /// The region to mount.
-    region: ResolvedRegion,
+    pub(crate) region: ResolvedRegion,
     /// The package's trailer, when the image file carries one.
     trailer: Option<tpkg::Manifest>,
 }
 
 /// The mount region of a probed image.
-enum ResolvedRegion {
+pub(crate) enum ResolvedRegion {
     /// A bare file, mounted whole (slot `0` ≡ `-`).
     Whole,
     /// A package file's slot region (offset, size).
@@ -334,7 +334,7 @@ fn trace_resolve_self_not_packaged(slot: &SlotRef, mount: &str, display: &str) {
 /// Probe a file's tpkg trailer and resolve the slot reference, tracing
 /// the decision (one `resolve` event per triple, BEFORE the mount it
 /// feeds — spec 25 §2). The disarmed cost is one relaxed atomic load.
-fn resolve_image(
+pub(crate) fn resolve_image(
     path: &Path,
     slot: SlotRef,
     display: &str,
@@ -1466,6 +1466,13 @@ pub fn boot_with_mount_modes(
         // The env image's pair-check runs post-mount, before any payload
         // or interpreter touch (spec 18 C3 — exit 78).
         let declaration = check_env_layout(env, baked_root, runtime_root)?;
+        // spec 03 §2.8's runtime-side layout grants: `role:` mounts
+        // resolve against the env image's declared grants (the env
+        // manifest is captured in `mounted` by now), the slice names
+        // itself from its own image, and the grant's search_env extends.
+        // Before any payload mounts: a role triple never reaches the
+        // table unrewritten.
+        crate::layout_grants::resolve(&mut h, &mounted, env, runtime_root)?;
         for spec in &h.images {
             mount_image(spec, &mut mounted, modes)?;
         }

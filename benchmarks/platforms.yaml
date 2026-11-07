@@ -37,7 +37,7 @@ triplets:
     v1_asset: null # packed-mn never shipped musl-arm64 — the v1 arm is the gap
     v2_payload: true
   macos-arm64:
-    runner: macos-14
+    runner: macos-15
     v1_asset: metanorma-darwin-arm64.tgz # NOTE: AMFI-killed on a local macOS
       # 14.1.1 machine (spec 27 §9 spike c); the leg records the outcome.
     v2_payload: true
