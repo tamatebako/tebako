@@ -12,6 +12,29 @@ use std::path::{Path, PathBuf};
 
 use crate::error::ResolveError;
 
+/// gix's reqwest backend builds its HTTPS client on rustls's
+/// process-default crypto provider and panics when none is installed
+/// (reqwest's rustls-no-provider shape — first seen on tebako#980's e2e
+/// legs). The workspace never installs a process default of its own
+/// (tebako-http sets the provider per TlsConfig), so the git transport
+/// installs it once here, on the workspace's platform split — ring
+/// everywhere except windows-gnu, whose ring does not compile under
+/// mingw and which therefore rides aws_lc_rs (tebako-http's split, and
+/// this crate's rustls dependency is feature-target split to match).
+/// A host-installed provider wins: install_default's Err carries ours,
+/// unused.
+fn install_crypto_provider() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        #[cfg(not(all(windows, target_env = "gnu")))]
+        let provider = rustls::crypto::ring::default_provider();
+        #[cfg(all(windows, target_env = "gnu"))]
+        let provider = rustls::crypto::aws_lc_rs::default_provider();
+        let _ = provider.install_default();
+    });
+}
+
 /// Resolve the clone URL for a `tfs+git:` reference's `url` field.
 fn transport_url(url: &str) -> Result<String, ResolveError> {
     if url.starts_with("http://") {
@@ -64,6 +87,7 @@ impl Drop for ScratchDir {
 /// Clone `url` (bare, in-process smart protocol) and read the blob at
 /// `path` in `git_ref`'s tree (`None` = the remote's default branch).
 pub fn fetch_blob(url: &str, git_ref: Option<&str>, path: &str) -> Result<Vec<u8>, ResolveError> {
+    install_crypto_provider();
     let transport = transport_url(url)?;
     let err = |reason: String| ResolveError::Git {
         url: transport.clone(),
@@ -207,5 +231,25 @@ mod tests {
             "file:///mirror/r.git"
         );
         assert!(transport_url("http://h/r.git").is_err());
+    }
+
+    /// tebako#981's acceptance: a real HTTPS fetch through the git
+    /// transport — the process-default crypto provider install is the
+    /// difference between this and a panic in reqwest's client builder.
+    /// Network-gated: run with `cargo test -p tebako-resolve -- --ignored`.
+    #[test]
+    #[ignore = "network: fetches a live github repo"]
+    fn https_fetch_works_off_the_process_default_provider() {
+        let bytes = fetch_blob(
+            "github.com/tebako-packages/hello-runtimes",
+            None,
+            "tpkg-registry.yaml",
+        )
+        .expect("the https fetch reads the registry over the git protocol");
+        assert!(
+            bytes.starts_with(b"schema_version"),
+            "got {} bytes",
+            bytes.len()
+        );
     }
 }

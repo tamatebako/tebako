@@ -278,7 +278,10 @@ fn add_registry_primes_the_dispatch_cache_for_remote_refs() {
             "https://raw.example/o/r/HEAD/tpkg-registry.yaml",
             registry_yaml.as_bytes(),
         );
-    let fetcher = Fetcher::with_transport(t);
+    // tebako#980: an anonymous default-branch read rides the git
+    // transport now — the seam serves the same bytes without a clone.
+    let fetcher = Fetcher::with_transport(t)
+        .with_git_reader(move |_, _, _| Ok(registry_yaml.as_bytes().to_vec()));
 
     let (outcome, _) = install::add_registry_with(&fx.home, "tfs:github:o/r", &fetcher).unwrap();
     assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
@@ -508,7 +511,10 @@ fn official_seed_fetcher(registry_yaml: &str) -> Fetcher<MockTransport> {
             "https://raw.example/tebako-packages/registry/HEAD/tpkg-registry.yaml",
             registry_yaml.as_bytes(),
         );
-    Fetcher::with_transport(t)
+    // tebako#980: an anonymous default-branch read rides the git
+    // transport now — the seam serves the same bytes without a clone.
+    let yaml = registry_yaml.to_string();
+    Fetcher::with_transport(t).with_git_reader(move |_, _, _| Ok(yaml.clone().into_bytes()))
 }
 
 #[test]

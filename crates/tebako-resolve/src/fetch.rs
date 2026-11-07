@@ -298,7 +298,18 @@ pub struct Fetcher<T: Transport> {
     /// run after the fetcher is constructed); `Some` = the explicit
     /// injection (tests — the global never moves mid-test).
     pub(crate) book: Option<CredentialBook>,
+    /// The git-transport registry reader (tebako#980's anonymous path):
+    /// `None` = the crate's own git fetch; `Some` = the test seam, which
+    /// lets a fixture serve the registry bytes without a live clone
+    /// (exactly the discipline the injected HTTP transport keeps).
+    pub(crate) git_reader: Option<GitReader>,
 }
+
+/// The test seam behind [`Fetcher::with_git_reader`]: a shared closure
+/// reading one file's bytes from a git ref. Production's value is the
+/// crate's own git fetch (the git feature's adapter).
+pub type GitReader =
+    std::sync::Arc<dyn Fn(&str, Option<&str>, &str) -> Result<Vec<u8>, ResolveError> + Send + Sync>;
 
 impl Fetcher<HttpTransport> {
     /// The production fetcher (tebako-http transport).
@@ -306,6 +317,7 @@ impl Fetcher<HttpTransport> {
         Fetcher {
             transport: HttpTransport,
             book: None,
+            git_reader: None,
         }
     }
 }
@@ -321,6 +333,7 @@ impl<T: Transport> Fetcher<T> {
         Fetcher {
             transport,
             book: None,
+            git_reader: None,
         }
     }
 
@@ -329,6 +342,17 @@ impl<T: Transport> Fetcher<T> {
     /// is tebako-shim's config load).
     pub fn with_credential_book(mut self, book: CredentialBook) -> Self {
         self.book = Some(book);
+        self
+    }
+
+    /// The git-transport registry-read seam (tebako#980): tests serve a
+    /// fixture's bytes instead of cloning (the same discipline as the
+    /// injected HTTP transport).
+    pub fn with_git_reader<F>(mut self, reader: F) -> Self
+    where
+        F: Fn(&str, Option<&str>, &str) -> Result<Vec<u8>, ResolveError> + Send + Sync + 'static,
+    {
+        self.git_reader = Some(std::sync::Arc::new(reader));
         self
     }
 
