@@ -612,7 +612,9 @@ augments:
             };
             assert_eq!(data.gems.as_deref().expect("gems inventory").len(), 1);
             assert_eq!(m.augments.len(), 1);
-            let edge = &m.augments[0];
+            let tpkg::AugmentsEdge::Payload(edge) = &m.augments[0] else {
+                panic!("the payload form, got {:?}", m.augments[0]);
+            };
             assert_eq!(edge.payload, "metanorma");
             assert_eq!(edge.constraint.as_str(), "= 1.16.2");
             assert_eq!(edge.extension_point, "flavors");
