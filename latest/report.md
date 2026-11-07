@@ -2,38 +2,38 @@
 
 ## linux-gnu-arm64
 
-Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.6 GiB
-Versions: tebako 2.8.69 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.5 GiB
+Versions: tebako 2.8.70 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 102.342 | 101.633 | 103.817 | 0.809 | 102.476 | 119.793 | 1168.0 | 1.00× |
-| v2-fat | 5 | 202.068 | 200.718 | 203.702 | 1.122 | 202.171 | 214.335 | 1349.3 | 0.51× |
+| v1-packed-mn | 5 | 99.999 | 99.122 | 102.123 | 1.160 | 100.365 | 117.560 | 1165.6 | 1.00× |
+| v2-fat | 5 | 199.276 | 194.991 | 200.601 | 2.159 | 198.722 | 211.730 | 1359.2 | 0.50× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 109.581 | 108.858 | 110.303 | 1.022 | 109.581 | 127.583 | 1292.6 | 1.00× |
-| v2-fat | 2 | 218.742 | 218.322 | 219.162 | 0.594 | 218.742 | 232.001 | 1431.8 | 0.50× |
+| v1-packed-mn | 2 | 106.798 | 106.671 | 106.924 | 0.179 | 106.798 | 124.407 | 1252.4 | 1.00× |
+| v2-fat | 2 | 214.471 | 214.097 | 214.846 | 0.530 | 214.471 | 228.270 | 1469.7 | 0.50× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 50.489 | 49.840 | 50.855 | 0.397 | 50.439 | 61.890 | 854.0 | 1.00× |
-| v2-fat | 5 | 112.966 | 112.300 | 113.157 | 0.363 | 112.786 | 186.733 | 862.5 | 0.45× |
-| v2-shim | 5 | 113.043 | 112.655 | 113.349 | 0.307 | 112.985 | 186.504 | 878.2 | 0.45× |
+| v1-packed-mn | 5 | 47.962 | 47.326 | 48.877 | 0.594 | 48.104 | 58.604 | 852.9 | 1.00× |
+| v2-fat | 5 | 110.298 | 108.719 | 111.453 | 1.251 | 110.100 | 182.833 | 861.5 | 0.43× |
+| v2-shim | 5 | 109.327 | 108.875 | 110.325 | 0.590 | 109.440 | 180.474 | 870.5 | 0.44× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 54.191 | 53.473 | 54.909 | 1.015 | 54.191 | 65.809 | 851.4 | 1.00× |
-| v2-fat | 2 | 120.953 | 120.626 | 121.279 | 0.462 | 120.953 | 194.889 | 826.2 | 0.45× |
-| v2-shim | 2 | 123.408 | 123.352 | 123.464 | 0.079 | 123.408 | 196.379 | 829.9 | 0.44× |
+| v1-packed-mn | 2 | 52.644 | 52.331 | 52.956 | 0.442 | 52.644 | 64.468 | 848.7 | 1.00× |
+| v2-fat | 2 | 119.524 | 119.429 | 119.619 | 0.135 | 119.524 | 192.194 | 826.8 | 0.44× |
+| v2-shim | 2 | 120.039 | 119.694 | 120.385 | 0.488 | 120.039 | 192.498 | 823.2 | 0.44× |
 
 Failed runs:
 
@@ -42,37 +42,37 @@ Failed runs:
 ## linux-gnu-x86_64
 
 Runner: ubuntu-24.04 · x86_64 · 4 cpus · 15983.9 GiB
-Versions: tebako 2.8.69 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Versions: tebako 2.8.70 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 127.896 | 126.300 | 131.159 | 2.006 | 128.207 | 155.297 | 1192.5 | 1.00× |
-| v2-fat | 5 | 198.538 | 197.933 | 199.989 | 0.842 | 198.643 | 223.806 | 1319.8 | 0.64× |
+| v1-packed-mn | 5 | 123.419 | 122.370 | 124.950 | 0.961 | 123.559 | 153.179 | 1206.9 | 1.00× |
+| v2-fat | 5 | 193.048 | 190.096 | 195.482 | 2.194 | 193.242 | 222.157 | 1307.2 | 0.64× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 135.767 | 135.222 | 136.312 | 0.771 | 135.767 | 165.367 | 1307.8 | 1.00× |
-| v2-fat | 2 | 222.069 | 221.381 | 222.756 | 0.972 | 222.069 | 246.518 | 1436.9 | 0.61× |
+| v1-packed-mn | 2 | 130.946 | 130.939 | 130.953 | 0.010 | 130.946 | 160.394 | 1329.9 | 1.00× |
+| v2-fat | 2 | 216.290 | 215.346 | 217.234 | 1.335 | 216.290 | 241.900 | 1474.1 | 0.61× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 63.860 | 62.578 | 65.552 | 1.130 | 63.834 | 82.781 | 907.7 | 1.00× |
-| v2-fat | 5 | 113.932 | 105.368 | 115.049 | 5.028 | 110.909 | 197.075 | 854.9 | 0.56× |
-| v2-shim | 5 | 105.720 | 105.071 | 115.885 | 5.349 | 109.296 | 202.028 | 863.2 | 0.60× |
+| v1-packed-mn | 5 | 61.760 | 61.525 | 62.869 | 0.549 | 61.998 | 80.287 | 908.1 | 1.00× |
+| v2-fat | 5 | 110.294 | 102.758 | 115.255 | 4.990 | 109.379 | 196.954 | 857.7 | 0.56× |
+| v2-shim | 5 | 105.403 | 104.239 | 112.148 | 3.212 | 106.491 | 199.964 | 869.7 | 0.59× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 69.647 | 69.484 | 69.811 | 0.231 | 69.647 | 90.072 | 901.1 | 1.00× |
-| v2-fat | 2 | 129.255 | 126.269 | 132.240 | 4.222 | 129.255 | 213.381 | 819.7 | 0.54× |
-| v2-shim | 2 | 128.724 | 126.268 | 131.179 | 3.473 | 128.724 | 222.179 | 819.7 | 0.54× |
+| v1-packed-mn | 2 | 67.868 | 67.805 | 67.932 | 0.090 | 67.868 | 89.106 | 904.3 | 1.00× |
+| v2-fat | 2 | 121.678 | 118.719 | 124.638 | 4.186 | 121.678 | 211.159 | 820.6 | 0.56× |
+| v2-shim | 2 | 122.921 | 121.617 | 124.226 | 1.845 | 122.921 | 217.879 | 821.4 | 0.55× |
 
 Failed runs:
 
@@ -80,8 +80,8 @@ Failed runs:
 
 ## linux-musl-arm64
 
-Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.5 GiB
-Versions: tebako 2.8.69 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · image limnifs
+Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.6 GiB
+Versions: tebako 2.8.70 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · image limnifs
 
 Unavailable arms:
 
@@ -97,8 +97,8 @@ Failed runs:
 
 ## linux-musl-x86_64
 
-Runner: ubuntu-24.04 · x86_64 · 4 cpus · 15983.9 GiB
-Versions: tebako 2.8.69 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Runner: ubuntu-24.04 · x86_64 · 4 cpus · 15982.9 GiB
+Versions: tebako 2.8.70 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
 
 Failed runs:
 
@@ -112,33 +112,33 @@ Failed runs:
 ## macos-x86_64
 
 Runner: macos-15-intel · x86_64 · 4 cpus · 14336.0 GiB
-Versions: tebako 2.8.69 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · image limnifs
+Versions: tebako 2.8.70 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · image limnifs
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v2-fat | 5 | 302.987 | 287.994 | 312.058 | 11.607 | 300.629 | 339.211 | 1300.7 | — |
+| v2-fat | 5 | 336.654 | 297.294 | 438.958 | 69.785 | 361.429 | 375.964 | 1328.5 | — |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v2-fat | 2 | 344.472 | 338.807 | 350.137 | 8.012 | 344.472 | 373.580 | 1419.5 | — |
+| v2-fat | 2 | 488.792 | 445.798 | 531.785 | 60.802 | 488.792 | 524.502 | 1380.0 | — |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v2-fat | 5 | 167.897 | 152.568 | 174.505 | 8.881 | 165.963 | 316.317 | 772.8 | — |
-| v2-shim | 5 | 157.427 | 135.279 | 170.607 | 13.245 | 153.940 | 289.161 | 772.1 | — |
+| v2-fat | 5 | 148.235 | 141.667 | 222.589 | 37.143 | 170.305 | 279.732 | 778.5 | — |
+| v2-shim | 5 | 189.848 | 141.464 | 215.892 | 37.158 | 181.038 | 354.003 | 781.1 | — |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v2-fat | 2 | 170.304 | 163.353 | 177.254 | 9.830 | 170.304 | 303.880 | 744.8 | — |
-| v2-shim | 2 | 176.862 | 169.188 | 184.537 | 10.854 | 176.862 | 317.871 | 772.7 | — |
+| v2-fat | 2 | 225.445 | 213.872 | 237.018 | 16.367 | 225.445 | 404.045 | 748.8 | — |
+| v2-shim | 2 | 228.352 | 219.463 | 237.240 | 12.570 | 228.352 | 407.714 | 754.9 | — |
 
 Unavailable arms:
 
@@ -152,34 +152,34 @@ Failed runs:
 ## windows-ucrt64
 
 Runner: windows-latest · x86_64 · 4 cpus · 16378.7 GiB
-Versions: tebako 2.8.69 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
+Versions: tebako 2.8.70 · runtime 0.17.4-4.0.9 · payload 1.17.0-6 · packed-mn v1.14.4 (metanorma-cli 1.14.4) · image limnifs
 
 ### compile-medium-rice — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 138.110 | 138.001 | 138.733 | 0.361 | 138.326 | 170.250 | 1574.2 | 1.00× |
+| v1-packed-mn | 5 | 102.175 | 98.088 | 104.981 | 2.583 | 102.086 | 124.797 | 1602.7 | 1.00× |
 
 ### compile-medium-rice — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 148.108 | 147.420 | 148.797 | 0.974 | 148.108 | 181.469 | 1658.0 | 1.00× |
+| v1-packed-mn | 2 | 113.239 | 109.930 | 116.549 | 4.680 | 113.239 | 134.062 | 1679.8 | 1.00× |
 
 ### compile-small-iso — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 5 | 68.904 | 68.062 | 69.864 | 0.792 | 69.028 | 93.188 | 1562.7 | 1.00× |
-| v2-fat | 5 | 64.640 | 63.831 | 64.978 | 0.468 | 64.607 | 92.328 | 2480.0 | 1.07× |
-| v2-shim | 5 | 66.531 | 66.040 | 66.623 | 0.232 | 66.428 | 92.906 | 2494.3 | 1.04× |
+| v1-packed-mn | 5 | 51.965 | 50.771 | 52.487 | 0.701 | 51.721 | 68.766 | 1569.3 | 1.00× |
+| v2-fat | 5 | 48.136 | 47.109 | 48.692 | 0.653 | 48.109 | 66.875 | 2506.4 | 1.08× |
+| v2-shim | 5 | 49.236 | 48.158 | 51.035 | 1.181 | 49.407 | 68.672 | 2488.4 | 1.06× |
 
 ### compile-small-iso — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs v1 |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| v1-packed-mn | 2 | 76.156 | 75.315 | 76.998 | 1.190 | 76.156 | 105.102 | 1601.7 | 1.00× |
-| v2-shim | 2 | 73.762 | 73.278 | 74.246 | 0.684 | 73.762 | 102.023 | 2512.9 | 1.03× |
+| v1-packed-mn | 2 | 58.215 | 57.231 | 59.199 | 1.392 | 58.215 | 74.906 | 1584.1 | 1.00× |
+| v2-shim | 2 | 57.191 | 56.411 | 57.971 | 1.103 | 57.191 | 74.875 | 2492.1 | 1.02× |
 
 Failed runs:
 
@@ -190,7 +190,7 @@ Failed runs:
 
 ---
 
-Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.6 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
+Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.6 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15982.9 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
 
 GitHub-hosted runners are shared, multi-tenant machines; treat differences under ~10% as noise and read min alongside median — min is the cross-noise-comparable figure (noise inflates, never deflates).
 
