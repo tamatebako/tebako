@@ -1807,7 +1807,9 @@ fn extension_slice_fixture_shape() {
     assert_eq!(gems.len(), 1);
     assert_eq!(gems[0].name, "metanorma-bsi");
     assert_eq!(m.augments.len(), 1);
-    let edge = &m.augments[0];
+    let tpkg::AugmentsEdge::Payload(edge) = &m.augments[0] else {
+        panic!("the payload form, got {:?}", m.augments[0]);
+    };
     assert_eq!(edge.payload, "metanorma");
     assert_eq!(edge.constraint.as_str(), "= 1.16.2");
     assert_eq!(edge.extension_point, "flavors");
@@ -2023,6 +2025,110 @@ fn augments_edge_grammar() {
     ))
     .unwrap_err();
     assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
+}
+
+fn runtime_doc(extra_provides: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-python\n  version: \"3.13.5\"\n\
+         \x20 producer: {{tool: test, tool_version: \"1\"}}\n  created: \"2026-11-07T00:00:00Z\"\n\
+         \x20 digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n\
+         \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  provides: {{engine: python, version: \"3.13.5\", language_version: \"3.13\", abi_line: \"3.13\", platform: aarch64-macos}}\n\
+         \x20 built_from: {{src_sha256: {}, patch_set: v1}}\n{}\
+         \x20 capabilities: {{exec: true, read: true, runtime: true}}\n",
+        "a".repeat(64),
+        "b".repeat(64),
+        "c".repeat(64),
+        extra_provides
+    )
+}
+
+#[test]
+fn layout_grants_parse_validate_and_round_trip() {
+    let text = runtime_doc(
+        "  layout_grants:\n    - {role: site-packages, slices_at: /tebako/slices.d, layout: python-site, search_env: PYTHONPATH}\n",
+    );
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    let Provides::Runtime(rt) = &m.provides else {
+        panic!("runtime provides, got {:?}", m.provides);
+    };
+    assert_eq!(rt.layout_grants.len(), 1);
+    let g = &rt.layout_grants[0];
+    assert_eq!(g.role, "site-packages");
+    assert_eq!(g.slices_at, "/tebako/slices.d");
+    assert_eq!(g.layout, tpkg::LayoutKind::PythonSite);
+    assert_eq!(g.search_env, "PYTHONPATH");
+    // Round-trips through the YAML form byte-faithfully in meaning.
+    let back = PayloadManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, m);
+    // Absent key never serializes (old readers see the document they
+    // always saw).
+    let plain = PayloadManifest::from_yaml(&runtime_doc("")).unwrap();
+    assert!(!plain.to_yaml().unwrap().contains("layout_grants"));
+}
+
+#[test]
+fn layout_grants_rejections_are_named() {
+    for (extra, frag) in [
+        // duplicate role
+        ("  layout_grants:\n    - {role: gems, slices_at: /a.d, layout: gem-home, search_env: GEM_PATH}\n    - {role: gems, slices_at: /b.d, layout: gem-home, search_env: GEM_PATH}\n", "twice"),
+        // non-absolute slices_at
+        ("  layout_grants:\n    - {role: gems, slices_at: rel, layout: gem-home, search_env: GEM_PATH}\n", "not absolute"),
+        // empty role
+        ("  layout_grants:\n    - {role: \"\", slices_at: /a.d, layout: gem-home, search_env: GEM_PATH}\n", "role"),
+        // empty search_env
+        ("  layout_grants:\n    - {role: gems, slices_at: /a.d, layout: gem-home, search_env: \"\"}\n", "search_env"),
+    ] {
+        let err = PayloadManifest::from_yaml(&runtime_doc(extra)).unwrap_err();
+        assert!(err.to_string().contains(frag), "{extra}: {err}");
+    }
+}
+
+#[test]
+fn augments_runtime_form_parses_and_the_forms_are_mece() {
+    // The runtime form.
+    let m = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - {runtime: python, role: site-packages, constraint: \">= 3.11, < 3.14\"}\n",
+    ))
+    .unwrap();
+    let tpkg::AugmentsEdge::Runtime(edge) = &m.augments[0] else {
+        panic!("the runtime form, got {:?}", m.augments[0]);
+    };
+    assert_eq!(edge.runtime, "python");
+    assert_eq!(edge.role, "site-packages");
+    assert_eq!(edge.constraint.as_str(), ">= 3.11, < 3.14");
+
+    // A mixed entry (payload + runtime keys) matches NEITHER variant —
+    // both deny unknown keys — and the parse names the block.
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - {payload: metanorma, runtime: python, role: x, constraint: \"= 1.0.0\", extension_point: flavors}\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("augments"), "{err}");
+
+    // Empty runtime/role are named.
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - {runtime: \"\", role: site-packages, constraint: \">= 3.11\"}\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("runtime"), "{err}");
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - {runtime: python, role: \"\", constraint: \">= 3.11\"}\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("role"), "{err}");
+
+    // The runtime form never carries built_against (deny_unknown_fields).
+    let err = PayloadManifest::from_yaml(&ext_data_doc(
+        "",
+        "augments:\n  - runtime: python\n    role: site-packages\n    constraint: \">= 3.11\"\n    built_against:\n      version: \"1.0.0\"\n      closure_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("augments"), "{err}");
 }
 
 #[test]

@@ -488,7 +488,7 @@ the BASE's gem home at run time). Dispatch semantics live in spec 07
   journal), and the slice press adds the edge after verifying the
   new row's closure identity — never a silent range stretch.
 
-**Runtime-side grants (locked 2026-11-07; additive — schema_minor 17).**
+**Runtime-side grants (locked 2026-11-07; additive — schema_minor 18).**
 The extension-point pattern above attaches a slice to an APP payload's
 declared point. A slice may instead augment the RUNTIME's own library
 layout — the shape the other ecosystems' content plugins take (python's
@@ -529,11 +529,14 @@ Rules (each a named error, never a guess):
   construction — `slices_at` is a directory the runtime's env image
   leaves EMPTY (the factory proves it at build), so a slice never
   shadows the runtime's own library tree.
-- **Search order is the runtime's integrity rule.** The driver extends
-  the grant's `search_env` with each attached slice's mount AFTER the
-  runtime's own entries (append, in attachment order): the runtime's
-  stdlib wins every name collision; a slice adds names, never
-  replaces them. The journal records each extension
+- **Search order is the runtime's integrity rule.* — the driver
+  extends the grant's `search_env` with each attached slice's mount AFTER
+  any entries the runtime's own environment already set (append, in
+  attachment order). Collision semantics are the engine's own and stay
+  honest: ruby's gem activation is requirement-driven (no order shadow);
+  python's `sys.path` and node's resolution are first-wins, so a slice
+  CAN shadow there — the factory's grant is the statement that it accepts
+  the role's content shape. The journal records each extension
   (`event=layout-grant slice=<name> role=<role> path=<mount>`).
 - **`layout:` semantics ride the extension-point enum** (§2.8):
   `gem-home` content is a mini GEM_HOME; `python-site` /

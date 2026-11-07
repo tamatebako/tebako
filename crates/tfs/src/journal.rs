@@ -68,6 +68,11 @@ pub const DECRYPT_EVENT: &str = "decrypt";
 /// §8's record-mode idiom).
 pub const LIB_LOAD_EVENT: &str = "lib-load";
 
+/// The event name of the layout-grant resolution record (spec 03 §2.8's
+/// runtime-side grants): which slice mounted below which role's
+/// `slices_at`, at which VFS path.
+pub const LAYOUT_GRANT_EVENT: &str = "layout-grant";
+
 /// The event name of the press-side signing opt-out record (spec 09 §9):
 /// an explicit `--no-sign` / `TEBAKO_SIGN=0` overrode a lower channel's
 /// `sign` declaration — a trust downgrade must never be silent, so the
@@ -114,6 +119,17 @@ pub fn journal_allow(file: &std::fs::File, path: &Path, need: HostAccess, source
 /// bare name a loader presented and which way it went); the `tfs needs`
 /// generator skips the event (its parser knows only the jail events).
 /// Same fd discipline as [`journal_deny`].
+/// Append one layout-grant line — `<ts> event=layout-grant slice=<n>
+/// role=<r> path=<mount>`. The driver emits one per runtime-side grant
+/// resolved at boot (spec 03 §2.8's search-order bullet). Same fd
+/// discipline as [`journal_deny`].
+pub fn journal_layout_grant(file: &std::fs::File, slice: &str, role: &str, path: &str) {
+    journal_fields(
+        file,
+        &format!("event={LAYOUT_GRANT_EVENT} slice={slice} role={role} path={path}"),
+    );
+}
+
 pub fn journal_lib_load(file: &std::fs::File, name: &str, verdict: &str) {
     use std::io::Write as _;
     let line = format!(

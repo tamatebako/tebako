@@ -894,3 +894,157 @@ fn pin_miss_fetches_through_the_registry_then_demands_the_mirror() {
         err.message
     );
 }
+
+// ---------------------------------------------------------------------
+// The runtime form (spec 03 §2.8's layout grants): slices augmenting the
+// RUNTIME's declared roles mount the role form; the driver resolves
+// role → path.
+// ---------------------------------------------------------------------
+
+/// A runtime-form slice manifest: `augments:` carries the runtime edge,
+/// never a payload one.
+fn slice_manifest_runtime(
+    name: &str,
+    version: &str,
+    engine: &str,
+    role: &str,
+    constraint: &str,
+    lang_constraint: &str,
+) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako-shim-tests, tool_version: \"1\"}}\n  created: \"2026-11-07T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{tree}\"\n    blob_sha256: {blob}\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  mount_semantics: {{suggested: /slices.d/{name}}}\n  capabilities: {{exec: false, read: true}}\nrequires:\n  - kind: language\n    engine: {engine}\n    constraint: \"{lang_constraint}\"\naugments:\n  - runtime: {engine}\n    role: {role}\n    constraint: \"{constraint}\"\n",
+        tree = "a".repeat(64),
+        blob = "b".repeat(64),
+    )
+}
+
+#[test]
+fn runtime_form_attaches_the_role_mount() {
+    let (tmp, home) = base_setup("slice-rt", "metanorma", "1.16.2");
+    write_payload(
+        &home,
+        "ruby-extras",
+        "1.0.0",
+        &slice_manifest_runtime(
+            "ruby-extras",
+            "1.0.0",
+            "ruby",
+            "gems",
+            ">= 4.0",
+            ">= 3.3, < 5.0",
+        ),
+    );
+
+    let plan = dispatch_pinned(&home, tmp.path(), "metanorma", "1.16.2").unwrap();
+
+    assert!(matches!(plan.runtime, RuntimeResolution::Ready(_)));
+    assert!(
+        plan.mounts.iter().any(|m| m.mount == "role+gems"),
+        "the role form rides the handoff: {:?}",
+        plan.mounts
+            .iter()
+            .map(|m| m.mount.clone())
+            .collect::<Vec<_>>()
+    );
+    let journal = read_journal(&home);
+    assert!(
+        journal
+            .contains("event=slice-augment slice=ruby-extras@1.0.0 base=metanorma mount=role+gems"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn runtime_form_skips_a_version_mismatch_loudly() {
+    let (tmp, home) = base_setup("slice-rt-skip", "metanorma", "1.16.2");
+    // The constraint names the 3.3 line; the cached runtime is 4.0.6.
+    write_payload(
+        &home,
+        "ruby-extras",
+        "1.0.0",
+        &slice_manifest_runtime(
+            "ruby-extras",
+            "1.0.0",
+            "ruby",
+            "gems",
+            "~> 3.3.0",
+            ">= 3.3, < 5.0",
+        ),
+    );
+
+    let plan = dispatch_pinned(&home, tmp.path(), "metanorma", "1.16.2").unwrap();
+
+    assert!(
+        !plan.mounts.iter().any(|m| m.mount.starts_with("role+")),
+        "no role mount for a mismatched line: {:?}",
+        plan.mounts
+            .iter()
+            .map(|m| m.mount.clone())
+            .collect::<Vec<_>>()
+    );
+    let journal = read_journal(&home);
+    assert!(
+        journal.contains("event=slice-skip slice=ruby-extras@1.0.0 reason=runtime-version"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn runtime_form_engine_mismatch_never_attaches() {
+    let (tmp, home) = base_setup("slice-rt-engine", "metanorma", "1.16.2");
+    // A python slice under a ruby composition.
+    write_payload(
+        &home,
+        "python-extras",
+        "1.0.0",
+        &slice_manifest_runtime(
+            "python-extras",
+            "1.0.0",
+            "python",
+            "site-packages",
+            ">= 3.11",
+            ">= 3.11",
+        ),
+    );
+
+    let plan = dispatch_pinned(&home, tmp.path(), "metanorma", "1.16.2").unwrap();
+
+    assert!(
+        !plan.mounts.iter().any(|m| m.mount.starts_with("role+")),
+        "no role mount for another engine: {:?}",
+        plan.mounts
+            .iter()
+            .map(|m| m.mount.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn pinned_runtime_form_attaches_and_a_line_miss_fails_hard() {
+    let (tmp, home) = base_setup("slice-rt-pin", "metanorma", "1.16.2");
+    write_payload(
+        &home,
+        "ruby-extras",
+        "1.0.0",
+        &slice_manifest_runtime(
+            "ruby-extras",
+            "1.0.0",
+            "ruby",
+            "gems",
+            "~> 3.3.0",
+            ">= 3.3, < 5.0",
+        ),
+    );
+    write_config(
+        &home,
+        "defaults:\n  metanorma:\n    version: \"1.16.2\"\n    slices: [ruby-extras@1.0.0]\n",
+    );
+
+    let ctx = ctx(&home, tmp.path());
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST, "{err:?}");
+    assert!(err.message.contains("SliceIncompatible"), "{}", err.message);
+    assert!(err.message.contains("ruby-extras@1.0.0"), "{}", err.message);
+    assert!(err.message.contains("role"), "{}", err.message);
+}

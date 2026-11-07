@@ -116,43 +116,54 @@ pub fn attach(
     let pins = resolve::slice_pins(&res.tool, ctx, &cfg)?;
     let auto = resolve::auto_slices_enabled(ctx, &cfg)?;
 
-    // The §2 step-3a gate: the base declares extension points. Without
-    // them the auto scan never runs; pins then fail their known-point
-    // check one by one (SliceIncompatible), which only happens below.
-    if points.is_empty() && pins.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Zero-runtime dispatch: no driver, no VFS — slices cannot attach.
-    // Loud once (journal + stderr), never an error: the base runs exactly
-    // as unextended.
+    // Zero-runtime dispatch: no driver, no VFS — slices cannot attach
+    // (either form). Loud once (journal + stderr), never an error: the
+    // base runs exactly as unextended.
     let RuntimeResolution::Ready(rt) = runtime else {
-        crate::runtime::journal(
-            &ctx.home,
-            &format!(
-                "event=slice-skip base={} reason=zero-runtime",
-                res.payload_name
-            ),
-        );
-        eprintln!(
-            "tebako-shim: note: \"{}\" {} has extension surface (declared points or pins), but this dispatch has no runtime (no VFS) — extension slices do not attach",
-            res.payload_name, res.version
-        );
+        if !points.is_empty() || !pins.is_empty() {
+            crate::runtime::journal(
+                &ctx.home,
+                &format!(
+                    "event=slice-skip base={} reason=zero-runtime",
+                    res.payload_name
+                ),
+            );
+            eprintln!(
+                "tebako-shim: note: \"{}\" {} has extension surface (declared points or pins), but this dispatch has no runtime (no VFS) — extension slices do not attach",
+                res.payload_name, res.version
+            );
+        }
         return Ok(Vec::new());
     };
 
     let mut attached: Vec<Attach> = Vec::new();
 
-    // Pins first — the pin contract is fail-hard (spec 07 §7).
-    for pin in &pins {
-        attached.push(attach_pin(res, points, rt, pin, allow_download, &cfg, ctx)?);
+    // The payload form (spec 07 §2 step 3a), gated as always: without
+    // declared points the auto scan never runs; pins then fail their
+    // known-point check one by one (SliceIncompatible).
+    if !points.is_empty() || !pins.is_empty() {
+        // Pins first — the pin contract is fail-hard (spec 07 §7).
+        for pin in &pins {
+            attached.push(attach_pin(res, points, rt, pin, allow_download, &cfg, ctx)?);
+        }
+
+        // Then auto discovery (the store scan), skipping names a pin owns.
+        if auto && !points.is_empty() {
+            let pinned: std::collections::BTreeSet<&str> =
+                pins.iter().map(|p| p.name.as_str()).collect();
+            auto_scan(res, points, rt, &pinned, &mut attached, ctx);
+        }
     }
 
-    // Then auto discovery (the store scan), skipping names a pin owns.
-    if auto && !points.is_empty() {
-        let pinned: std::collections::BTreeSet<&str> =
-            pins.iter().map(|p| p.name.as_str()).collect();
-        auto_scan(res, points, rt, &pinned, &mut attached, ctx);
+    // The runtime form (spec 03 §2.8's layout grants): the store scan
+    // for slices augmenting the resolved runtime's declared roles. The
+    // pin path covers pins (attach_pin's MECE branch); the scan skips
+    // names a pin or the payload form already owns.
+    {
+        let mut owned: std::collections::BTreeSet<String> =
+            pins.iter().map(|p| p.name.clone()).collect();
+        owned.extend(attached.iter().map(|a| a.name.clone()));
+        attached.extend(attach_runtime_form(res, rt, &owned, ctx)?);
     }
 
     // The overlap journal (spec 07 §2 step 3a): base and slice both
@@ -173,9 +184,19 @@ pub fn attach(
 
     // NestedAugment (spec 07 §7): no attached slice's mount nests under
     // another's. (Nesting under the APP's mounts — the app's `/` — is
-    // the multi-mount design, not this error.)
-    for (i, a) in attached.iter().enumerate() {
-        for b in attached.iter().skip(i + 1) {
+    // the multi-mount design, not this error.) Role-form mounts carry no
+    // path yet (the driver resolves them below the grant's slices_at,
+    // named per slice — siblings by construction); they are exempt here.
+    for (i, a) in attached
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| !a.mount.starts_with(tpkg::AUGMENT_ROLE_PREFIX))
+    {
+        for b in attached
+            .iter()
+            .skip(i + 1)
+            .filter(|b| !b.mount.starts_with(tpkg::AUGMENT_ROLE_PREFIX))
+        {
             let nested = format!("{}/", a.mount);
             let nestee = format!("{}/", b.mount);
             if b.mount.starts_with(&nested) || a.mount.starts_with(&nestee) {
@@ -229,7 +250,10 @@ fn check_candidate(
 ) -> Result<tpkg::ExtensionPoint, Reject> {
     let mut first_reject: Option<Reject> = None;
     let mut named = false;
-    for edge in slice.augments.iter().filter(|e| e.payload == base_name) {
+    for edge in slice.augments.iter().filter_map(|e| match e {
+        tpkg::AugmentsEdge::Payload(p) if p.payload == base_name => Some(p),
+        _ => None,
+    }) {
         named = true;
         let Some(point) = points.iter().find(|p| p.name == edge.extension_point) else {
             first_reject.get_or_insert_with(|| {
@@ -302,6 +326,170 @@ fn check_candidate(
     Err(first_reject.expect("an edge that named the base but never matched left a reject"))
 }
 
+/// The slice's language `requires` edges against the RESOLVED runtime
+/// (spec 07 §2 step 3a's slice-level rule, shared by both augments
+/// forms): engine match + the version-line rule (entry_matches owns the
+/// abi line when both sides carry one).
+fn language_edges_ok(
+    rt: &tpkg::runtime_store::CachedRuntime,
+    slice: &tpkg::PayloadManifest,
+) -> Result<(), Reject> {
+    for req in &slice.requires {
+        if let tpkg::Requirement::Language {
+            engine, constraint, ..
+        } = req
+        {
+            if engine != &rt.engine {
+                return Err(Reject::new(
+                    "runtime",
+                    format!(
+                        "language edge engine \"{engine}\" ≠ the resolved runtime's \"{}\"",
+                        rt.engine
+                    ),
+                ));
+            }
+            let check = tpkg::RuntimeRequirement {
+                engine: engine.clone(),
+                constraint: constraint.clone(),
+                implementation: None,
+                abi: None,
+            };
+            if !tpkg::runtime_store::entry_matches(rt, &check) {
+                return Err(Reject::new(
+                    "runtime",
+                    format!(
+                        "language edge \"{engine} {}\" is not satisfied by the resolved runtime {} {}",
+                        constraint.as_str(),
+                        rt.engine,
+                        rt.lang_version
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The first runtime-form augments edge naming this composition's engine
+/// (a slice may carry several, e.g. one per runtime line family).
+fn runtime_edge_for<'a>(
+    slice: &'a tpkg::PayloadManifest,
+    engine: &str,
+) -> Option<&'a tpkg::AugmentsRuntimeEdge> {
+    slice.augments.iter().find_map(|e| match e {
+        tpkg::AugmentsEdge::Runtime(r) if r.runtime == engine => Some(r),
+        _ => None,
+    })
+}
+
+/// The runtime-form scan (spec 03 §2.8's layout grants): the store's
+/// slices whose `augments:` carries a runtime edge naming THIS
+/// composition's engine, each mounting the role form (the driver
+/// resolves role → path against the env image's declared grants and
+/// extends the grant's `search_env`). Skips loud (journal), never an
+/// error — auto discovery is observational; the PIN path is fail-hard
+/// and lives in attach_pin.
+fn attach_runtime_form(
+    res: &Resolution,
+    rt: &tpkg::runtime_store::CachedRuntime,
+    owned: &std::collections::BTreeSet<String>,
+    ctx: &Ctx,
+) -> Result<Vec<Attach>, ShimError> {
+    let _ = res;
+    let mut out: Vec<Attach> = Vec::new();
+    let cfg = config::load_config(&ctx.home)?;
+    if !resolve::auto_slices_enabled(ctx, &cfg)? {
+        return Ok(out);
+    }
+    let mut winners: std::collections::BTreeMap<String, (String, tpkg::PayloadManifest, String)> =
+        std::collections::BTreeMap::new();
+    let payloads_dir = ctx.home.join("payloads");
+    let Ok(rd) = std::fs::read_dir(&payloads_dir) else {
+        return Ok(out); // no store: no candidates
+    };
+    for entry in rd.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if owned.contains(&name) {
+            continue; // a pin or the payload form owns this name
+        }
+        let versions = match tpkg::payload_store::installed_versions(&ctx.home, &name) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        for version in versions {
+            // A partial record (image without trust anchor) is invisible
+            // (spec 05 §3).
+            if !tpkg::payload_store::sha_marker_path(&ctx.home, &name, &version).is_file() {
+                continue;
+            }
+            let mirror = tpkg::payload_store::manifest_mirror_path(&ctx.home, &name, &version);
+            let Ok(text) = std::fs::read_to_string(&mirror) else {
+                continue;
+            };
+            let Ok(slice) = tpkg::PayloadManifest::from_yaml(&text) else {
+                continue;
+            };
+            let Some(edge) = runtime_edge_for(&slice, &rt.engine) else {
+                continue;
+            };
+            // Detach from the manifest borrow before the move into `winners`.
+            let (edge_runtime, edge_constraint, edge_role) = (
+                edge.runtime.clone(),
+                edge.constraint.clone(),
+                edge.role.clone(),
+            );
+            let check = tpkg::RuntimeRequirement {
+                engine: edge_runtime,
+                constraint: edge_constraint.clone(),
+                implementation: None,
+                abi: None,
+            };
+            if !tpkg::runtime_store::entry_matches(rt, &check) {
+                crate::runtime::journal(
+                    &ctx.home,
+                    &format!(
+                        "event=slice-skip slice={name}@{version} reason=runtime-version detail=\"{}\" does not match the resolved {} {}",
+                        edge_constraint.as_str(), rt.engine, rt.lang_version
+                    ),
+                );
+                continue;
+            }
+            if let Err(reject) = language_edges_ok(rt, &slice) {
+                crate::runtime::journal(
+                    &ctx.home,
+                    &format!(
+                        "event=slice-skip slice={name}@{version} reason={} detail={}",
+                        reject.token, reject.detail
+                    ),
+                );
+                continue;
+            }
+            let replace = match winners.get(&name) {
+                None => true,
+                Some((have, _, _)) => {
+                    tpkg::versions::compare(&version, have) == std::cmp::Ordering::Greater
+                }
+            };
+            if replace {
+                winners.insert(name.clone(), (version, slice, edge_role));
+            }
+        }
+    }
+    for (name, (version, slice, role)) in winners {
+        out.push(Attach {
+            mount: format!("{}{}", tpkg::AUGMENT_ROLE_PREFIX, role),
+            image: tpkg::payload_store::image_path(&ctx.home, &name, &version),
+            gems: slice_gems(&slice),
+            name,
+            version,
+        });
+    }
+    Ok(out)
+}
+
 /// A slice manifest's gem inventory, whichever provides kind carries it.
 fn slice_gems(m: &tpkg::PayloadManifest) -> Vec<tpkg::GemVersion> {
     match &m.provides {
@@ -372,6 +560,46 @@ fn attach_pin(
         }
         Err(e) => return Err(mirror_error(&ctx.home, pin, &e)),
     };
+
+    // The MECE pin branch (spec 03 §2.8's layout grants): a pin whose
+    // slice carries NO payload edge for this base but a runtime edge for
+    // this composition's engine attaches by role — the driver resolves
+    // the grant. (A pin carrying neither errors as before, through the
+    // payload form's no-edge check.)
+    let has_payload_edge = cached
+        .manifest
+        .augments
+        .iter()
+        .any(|e| matches!(e, tpkg::AugmentsEdge::Payload(p) if p.payload == res.payload_name));
+    if !has_payload_edge {
+        if let Some(edge) = runtime_edge_for(&cached.manifest, &rt.engine) {
+            let check = tpkg::RuntimeRequirement {
+                engine: edge.runtime.clone(),
+                constraint: edge.constraint.clone(),
+                implementation: None,
+                abi: None,
+            };
+            if !tpkg::runtime_store::entry_matches(rt, &check) {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "extension slice {}@{} (pinned in {}) augments {} by role {:?}, whose constraint \"{}\" the resolved runtime {} {} does not satisfy (SliceIncompatible)",
+                        pin.name, pin.version, pin.source, edge.runtime, edge.role, edge.constraint.as_str(), rt.engine, rt.lang_version
+                    ),
+                );
+            }
+            if let Err(reject) = language_edges_ok(rt, &cached.manifest) {
+                return Err(incompatible(&reject));
+            }
+            return Ok(Attach {
+                name: pin.name.clone(),
+                version: pin.version.clone(),
+                image: cached.image,
+                mount: format!("{}{}", tpkg::AUGMENT_ROLE_PREFIX, edge.role),
+                gems: slice_gems(&cached.manifest),
+            });
+        }
+    }
 
     match check_candidate(
         &res.payload_name,
@@ -479,7 +707,9 @@ fn auto_scan(
                     continue;
                 }
             };
-            if !slice.augments.iter().any(|e| e.payload == res.payload_name) {
+            if !slice.augments.iter().any(
+                |e| matches!(e, tpkg::AugmentsEdge::Payload(p) if p.payload == res.payload_name),
+            ) {
                 continue; // not a slice of this base — the common case
             }
             match check_candidate(&res.payload_name, &res.version, points, rt, &slice) {
