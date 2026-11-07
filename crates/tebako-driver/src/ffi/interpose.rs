@@ -190,10 +190,14 @@ fn exe_carries_cms_blob(exe: &Path) -> bool {
                 return false;
             };
             let soff = dataoff as usize;
-            // An adhoc signature is a BARE code directory (magic
-            // 0xFADE0CC0) — no superblob, no CMS slot. A real signature's
-            // superblob (magic 0xFADE0CC2) indexes it at slot type 5.
-            if read_u32(soff, true) != Some(0xFADE0CC2) {
+            // The signature region opens with the SUPERBLOB
+            // (CSMAGIC_EMBEDDED_SIGNATURE, 0xFADE0CC0) whose index carries
+            // CSSLOT_CMS_SIGNATURE (5) exactly when a real identity
+            // signed — adhoc or Developer ID both take the superblob
+            // shape, the adhoc one indexing only the code directory
+            // (slot 0). A pre-superblob shape is a BARE code directory
+            // (CSMAGIC_CODEDIRECTORY, 0xFADE0C02) — no index, no CMS.
+            if read_u32(soff, true) != Some(0xFADE0CC0) {
                 return false;
             }
             let Some(count) = read_u32(soff + 8, true) else {
@@ -476,6 +480,69 @@ mod tests {
                 "a real signature carries the CMS slot"
             );
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A minimal thin 64-bit little-endian mach-o: one LC_CODE_SIGNATURE
+    /// (0x1d) whose dataoff points at a superblob indexing `slots` (the
+    /// CMS slot is type 5). The parse under test reads exactly these
+    /// fields; offsets beyond the superblob index are never followed.
+    fn mach_o_with_signature_slots(slots: &[u32]) -> Vec<u8> {
+        let blob_len = (12 + slots.len() * 8) as u32;
+        let mut b = Vec::new();
+        b.extend_from_slice(&[0xcf, 0xfa, 0xed, 0xfe]); // MH_MAGIC_64 (stored LE)
+        b.extend_from_slice(&[0u8; 12]); // cputype / cpusubtype / filetype
+        b.extend_from_slice(&1u32.to_le_bytes()); // ncmds
+        b.extend_from_slice(&16u32.to_le_bytes()); // sizeofcmds
+        b.extend_from_slice(&[0u8; 8]); // flags + reserved
+        b.extend_from_slice(&0x1du32.to_le_bytes()); // LC_CODE_SIGNATURE
+        b.extend_from_slice(&16u32.to_le_bytes()); // cmdsize
+        b.extend_from_slice(&48u32.to_le_bytes()); // dataoff (right after)
+        b.extend_from_slice(&blob_len.to_le_bytes()); // datasize
+        assert_eq!(b.len(), 48);
+        // CS_SuperBlob: magic CSMAGIC_EMBEDDED_SIGNATURE, length, count.
+        b.extend_from_slice(&0xFADE0CC0u32.to_be_bytes());
+        b.extend_from_slice(&blob_len.to_be_bytes());
+        b.extend_from_slice(&(slots.len() as u32).to_be_bytes());
+        for (i, slot) in slots.iter().enumerate() {
+            b.extend_from_slice(&slot.to_be_bytes()); // the index type
+            b.extend_from_slice(&(44u32 + 8 * i as u32).to_be_bytes()); // offset (never read)
+        }
+        b
+    }
+
+    #[test]
+    fn the_cms_parse_reads_the_superblob_magic_and_the_cms_slot() {
+        // The deterministic half — no signing identity needed (CI has
+        // none): a superblob (0xFADE0CC0) indexing slot 5 IS a CMS
+        // signature; the same superblob without it (the adhoc shape —
+        // index carries the code directory alone) is NOT; a bare code
+        // directory (0xFADE0C02, the pre-superblob adhoc shape) is NOT.
+        // Pins the v2.8.69–72 misread that demanded 0xFADE0CC2 and so
+        // answered "no CMS" for every real signature, killing the
+        // self-insertion on every signed runtime under macOS 15+.
+        let dir = std::env::temp_dir().join(format!("cms-synth-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let signed = dir.join("signed");
+        std::fs::write(&signed, mach_o_with_signature_slots(&[0, 5])).unwrap();
+        assert!(
+            exe_carries_cms_blob(&signed),
+            "a superblob indexing the CMS slot is a real signature"
+        );
+        let adhoc = dir.join("adhoc");
+        std::fs::write(&adhoc, mach_o_with_signature_slots(&[0])).unwrap();
+        assert!(
+            !exe_carries_cms_blob(&adhoc),
+            "the adhoc superblob (no CMS slot) is not"
+        );
+        let mut bare = mach_o_with_signature_slots(&[0, 5]);
+        bare[48..52].copy_from_slice(&0xFADE0C02u32.to_be_bytes());
+        let bare_path = dir.join("bare");
+        std::fs::write(&bare_path, bare).unwrap();
+        assert!(
+            !exe_carries_cms_blob(&bare_path),
+            "a bare code directory has no superblob index at all"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
