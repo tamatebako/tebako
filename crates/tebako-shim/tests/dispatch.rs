@@ -1688,10 +1688,7 @@ fn on_runtime_malformed_shard_is_a_manifest_error() {
 /// Registry A (the `file:` channel): one data-payload row whose universal
 /// release ref carries the digest pin (the dep-lock grammar, tebako#460).
 /// Returns the registry's `file:` ref.
-fn seed_alpha_registry(
-    tmp: &std::path::Path,
-    bytes: &[u8],
-) -> (String, std::path::PathBuf) {
+fn seed_alpha_registry(tmp: &std::path::Path, bytes: &[u8]) -> (String, std::path::PathBuf) {
     let image = tmp.join("iso-codes-2025.2.tfs");
     std::fs::write(&image, bytes).expect("registry payload bytes");
     let pin = sha256_hex(bytes);
