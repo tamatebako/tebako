@@ -488,6 +488,63 @@ the BASE's gem home at run time). Dispatch semantics live in spec 07
   journal), and the slice press adds the edge after verifying the
   new row's closure identity — never a silent range stretch.
 
+**Runtime-side grants (locked 2026-11-07; additive — schema_minor 17).**
+The extension-point pattern above attaches a slice to an APP payload's
+declared point. A slice may instead augment the RUNTIME's own library
+layout — the shape the other ecosystems' content plugins take (python's
+site-packages, node's node_modules, ruby's gem home beyond the app's
+closure). The runtime declares the grant; the slice names the role;
+neither spells the other's paths:
+
+```yaml
+# the runtime (kind: runtime), PROVIDES gains:
+provides:
+  engine: python
+  # …
+  layout_grants:
+    - role: site-packages            # the symbolic name slices augment by
+      slices_at: /tebako/slices.d    # VFS-absolute; slices mount BELOW it
+      layout: python-site            # gem-home | python-site | node-modules | files
+      search_env: PYTHONPATH         # the variable the driver extends per slice
+
+# the slice, `augments:` gains the runtime form (MECE with the payload form):
+augments:
+  - runtime: python                  # the engine name (spec 05 §5)
+    role: site-packages              # the runtime's declared grant
+    constraint: ">= 3.11, < 3.14"    # vs the runtime's language_version
+```
+
+Rules (each a named error, never a guess):
+
+- **The grant names the role.** A `runtime:` edge whose role no
+  `layout_grants` entry of the composition's runtime declares fails
+  dispatch with `UnknownLayoutGrant` (naming the runtime, the role, and
+  the granted set); an edge naming a runtime the composition does not
+  resolve fails with `LayoutGrantRuntimeAbsent`. A slice carrying BOTH
+  edge forms is a manifest error (`augments[]` is exactly one of the
+  payload form or the runtime form per entry).
+- **Below, never at.** The slice mounts at `<slices_at>/<slice.name>`
+  (spec 07 §2 step 3a's multi-mount, appended after the runtime's own
+  mounts). Mounting AT the role's live path is impossible by
+  construction — `slices_at` is a directory the runtime's env image
+  leaves EMPTY (the factory proves it at build), so a slice never
+  shadows the runtime's own library tree.
+- **Search order is the runtime's integrity rule.** The driver extends
+  the grant's `search_env` with each attached slice's mount AFTER the
+  runtime's own entries (append, in attachment order): the runtime's
+  stdlib wins every name collision; a slice adds names, never
+  replaces them. The journal records each extension
+  (`event=layout-grant slice=<name> role=<role> path=<mount>`).
+- **`layout:` semantics ride the extension-point enum** (§2.8):
+  `gem-home` content is a mini GEM_HOME; `python-site` /
+  `node-modules` are flat import-root trees; `files` is opaque
+  content the runtime's own code enumerates. The runtime's factory
+  picks the spelling that matches the engine's search semantics.
+- **No runtime of its own, unchanged:** the slice's language
+  `requires` edge is satisfied by the SAME runtime it augments (the
+  abi line included) — a slice for a python grant carries
+  `requires: [{engine: python, …}]` exactly as today.
+
 ### 2.9 MIN RUNTIME TEBAKO (`min_runtime_tebako:`, additive — schema_minor 15, tebako#666)
 
 An OPTIONAL top-level key naming the minimum tebako tooling version of
