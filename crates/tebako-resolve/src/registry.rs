@@ -1645,6 +1645,57 @@ fn reference_in_directory(reference: &Reference) -> Reference {
 }
 
 impl<T: Transport> Fetcher<T> {
+    /// tebako#980: the git-transport URL for a DefaultBranch registry
+    /// read, when the read may ride it. Some only for an ANONYMOUS read of
+    /// the SaaS github shape with the `git` feature built in: the git
+    /// protocol's fetch of the default-branch HEAD is push-fresh (refs
+    /// move atomically at push — the raw-CDN staleness that rules out
+    /// raw.githubusercontent.com does not exist on it) and spends no
+    /// api.github.com budget (60 req/h unauthenticated, routinely
+    /// exhausted on shared-egress machines — the pkg's detached seed runs
+    /// exactly such a read as root). Credentialed reads keep the contents
+    /// API: the authed budget is high, private registries answer nowhere
+    /// else, and custom hosts speak the adapter's api/v3 base. Not a
+    /// fallback chain — a transport selection made once per read (spec 04
+    /// §2's one-location rule is about the document's location, which is
+    /// unchanged: the repo's default branch HEAD).
+    fn git_registry_url(
+        &self,
+        service: Service,
+        host: &Option<String>,
+        owner: &str,
+        repo: &str,
+        alias: Option<&str>,
+    ) -> Option<String> {
+        #[cfg(not(feature = "git"))]
+        {
+            let _ = (service, host, owner, repo, alias);
+            None
+        }
+        #[cfg(feature = "git")]
+        {
+            if service != Service::Github || host.is_some() {
+                return None;
+            }
+            // Ask about the URL the API read would hit: the ambient
+            // github token attaches to api.github.com only, so a present
+            // token keeps the API path (its budget is high and private
+            // registries need it). And a registry whose DECLARED
+            // credential's env var is unset (`looked_for: Some(_)`) keeps
+            // the API path too — that read is supposed to fail closed
+            // with the named CredentialRequired, not to retry anonymous
+            // over git (tebako#981's credentials e2e). Only the genuinely
+            // anonymous read moves.
+            let api_url = format!("https://api.github.com/repos/{owner}/{repo}");
+            let anonymous = matches!(
+                self.effective_book()
+                    .decide(alias, &api_url, Some(Service::Github)),
+                crate::credentials::Decision::Anonymous { looked_for: None }
+            );
+            anonymous.then(|| format!("github.com/{owner}/{repo}"))
+        }
+    }
+
     /// Fetch the registry file a [`RegistryRef`] names (spec 04 §2).
     /// `TEBAKO_OFFLINE=1`: only `file://` mirrors resolve — anything
     /// remote is the named hard error (spec 05 §4).
@@ -1665,9 +1716,30 @@ impl<T: Transport> Fetcher<T> {
                 repo,
                 sha256,
             } => {
-                let scoped = self.scoped_transport(alias.as_deref(), Some(*service), host.clone());
-                let bytes = crate::adapters::adapter_for_host(*service, host.as_deref())?
-                    .registry_file(&scoped, owner, repo)?;
+                let bytes =
+                    match self.git_registry_url(*service, host, owner, repo, alias.as_deref()) {
+                        // The same default-branch HEAD, read over the git
+                        // protocol — the document's location is unchanged;
+                        // only the transport moves (tebako#980). Without the
+                        // git feature (the bootstrap's build shape) this arm
+                        // compiles out and every read keeps the adapter path.
+                        #[cfg(feature = "git")]
+                        Some(url) => match &self.git_reader {
+                            Some(reader) => reader(&url, None, crate::adapters::REGISTRY_FILE)?,
+                            None => {
+                                crate::git::fetch_blob(&url, None, crate::adapters::REGISTRY_FILE)?
+                            }
+                        },
+                        _ => {
+                            let scoped = self.scoped_transport(
+                                alias.as_deref(),
+                                Some(*service),
+                                host.clone(),
+                            );
+                            crate::adapters::adapter_for_host(*service, host.as_deref())?
+                                .registry_file(&scoped, owner, repo)?
+                        }
+                    };
                 if let Some(expected) = sha256 {
                     let actual = crate::fetch::sha256_hex(&bytes);
                     if &actual != expected {
@@ -1823,6 +1895,59 @@ mod tests {
         let err = Fetcher::new().fetch_registry(&r).unwrap_err();
         assert!(err.to_string().contains(REGISTRY_DOCUMENT_NAME), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// tebako#980: the anonymous SaaS-github registry read selects the git
+    /// transport (push-fresh, no api.github.com budget); credentialed
+    /// reads, custom hosts and other services keep the contents-API path.
+    #[test]
+    fn the_anonymous_github_registry_read_selects_the_git_transport() {
+        let _guard = crate::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // The ambient github token must not leak into the decision (CI
+        // runners export GITHUB_TOKEN) — pin it absent, then present.
+        let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN"]
+            .iter()
+            .map(|k| (*k, std::env::var(k).ok()))
+            .collect();
+        std::env::remove_var("TEBAKO_GITHUB_TOKEN");
+        std::env::remove_var("GITHUB_TOKEN");
+
+        let f = Fetcher::new();
+        assert_eq!(
+            f.git_registry_url(Service::Github, &None, "acme", "widgets", None)
+                .as_deref(),
+            Some("github.com/acme/widgets")
+        );
+        // A custom host keeps the API path (the adapter's api/v3 base).
+        assert!(f
+            .git_registry_url(
+                Service::Github,
+                &Some("ghe.example.com".to_string()),
+                "acme",
+                "widgets",
+                None
+            )
+            .is_none());
+        // A non-github service keeps its own adapter.
+        assert!(f
+            .git_registry_url(Service::Gitlab, &None, "acme", "widgets", None)
+            .is_none());
+
+        // A credentialed read keeps the API path: the ambient github token
+        // attaches to api.github.com and moves the decision off anonymous.
+        std::env::set_var("GITHUB_TOKEN", "ci-token");
+        assert!(f
+            .git_registry_url(Service::Github, &None, "acme", "widgets", None)
+            .is_none());
+
+        for (k, v) in saved {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
     }
 
     const EXAMPLE: &str = r#"

@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/04-references-and-registry.md @ d0251d82799b38055260e361f78935cf9a95cc30
+// source: docs/spec/04-references-and-registry.md @ c99b316ebfc3f8cae19f666828493518a4d4be3e
 
 Normative specification of how payloads are named, located, and listed.
 Status: syntax LOCKED (multi-artifact + repo/release-class rules locked
@@ -99,12 +99,21 @@ A *registry* is ANY git host repo carrying `tpkg-registry.yaml`. The
 git host's releases ARE the storage — no server to run.
 
 *Registry resolution (locked):* `+++tfs:&lt;service&gt;:owner/repo+++` (no version)
-resolves the registry file from the repo's DEFAULT-BRANCH ROOT via the
-service contents API (`/tpkg-registry.yaml`); the pinned-immutable form
+resolves the registry file from the repo's DEFAULT-BRANCH ROOT; the
+pinned-immutable form
 `+++tfs:&lt;service&gt;:owner/repo:version#tpkg-registry.yaml+++` reads it as a
 release artifact (versioned with its payloads); `+++tfs+git://…#path+++` reads
 it from any git ref/path. No other locations, no search, no fallback
-chain — exactly one location per form.
+chain — exactly one location per form. The default-branch form's
+TRANSPORT is a build-shape-and-credential selection, never a runtime
+fallback chain (tebako#980): with the `+++git+++` feature on and the read
+anonymous, the fetch rides the git protocol (push-fresh — refs move
+atomically at push, the raw-CDN staleness that rules out
+raw.githubusercontent.com does not exist — and spends no
+api.github.com budget, the 60 req/h wall that shared-egress machines
+hit); credentialed reads and the git-less bootstrap keep the service
+contents API (the authed budget is high and private registries answer
+nowhere else).
 
 
 [source,yaml]

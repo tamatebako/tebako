@@ -169,8 +169,51 @@ fn file_mirror_registry_resolves_and_parses() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// Env-mutating tests in this binary serialize on this lock (the crate's
+/// own TEST_ENV_LOCK is pub(crate) — invisible across the library boundary).
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// tebako#980: the default-branch registry read has two shapes — anonymous
+/// rides the git transport, credentialed rides the contents API. This is
+/// the anonymous arm: the mock answers nothing, so any contents-API read
+/// fails; the git reader seam serves the document and records its call.
 #[test]
-fn default_branch_form_resolves_through_the_contents_api() {
+fn default_branch_form_resolves_through_git_when_anonymous() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN"]
+        .iter()
+        .map(|k| (*k, std::env::var(k).ok()))
+        .collect();
+    std::env::remove_var("TEBAKO_GITHUB_TOKEN");
+    std::env::remove_var("GITHUB_TOKEN");
+
+    let t = MockTransport::with(&[]);
+    let fetcher = Fetcher::with_transport(t).with_git_reader(|url, git_ref, path| {
+        assert_eq!(url, "github.com/o/r");
+        assert_eq!(git_ref, None);
+        assert_eq!(path, "tpkg-registry.yaml");
+        Ok(REGISTRY_YAML.as_bytes().to_vec())
+    });
+    let r = RegistryRef::parse("tfs:github:o/r").unwrap();
+    let registry = fetcher.resolve_registry(&r).unwrap();
+    assert_eq!(registry.payloads[0].name, "tool");
+
+    for (k, v) in saved {
+        match v {
+            Some(v) => std::env::set_var(k, v),
+            None => std::env::remove_var(k),
+        }
+    }
+}
+
+/// The credentialed arm (the pre-split test's assertions, unchanged): an
+/// ambient GITHUB_TOKEN keeps the read on the contents API.
+#[test]
+fn default_branch_form_resolves_through_the_contents_api_when_credentialed() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let saved = std::env::var("GITHUB_TOKEN").ok();
+    std::env::set_var("GITHUB_TOKEN", "ci-token");
+
     let api = "https://api.github.com/repos/o/r/contents/tpkg-registry.yaml";
     let doc =
         r#"{"name":"tpkg-registry.yaml","download_url":"https://raw/o/r/HEAD/tpkg-registry.yaml"}"#;
@@ -204,6 +247,11 @@ fn default_branch_form_resolves_through_the_contents_api() {
     let fetcher = Fetcher::with_transport(t);
     let err = fetcher.resolve_registry(&r).unwrap_err();
     assert!(matches!(err, ResolveError::NotFound { .. }));
+
+    match saved {
+        Some(v) => std::env::set_var("GITHUB_TOKEN", v),
+        None => std::env::remove_var("GITHUB_TOKEN"),
+    }
 }
 
 #[test]

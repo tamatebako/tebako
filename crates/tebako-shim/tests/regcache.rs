@@ -5,8 +5,9 @@
 
 mod common;
 
-use std::cell::Cell;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use common::*;
 use tebako_resolve::{Fetcher, Transport};
@@ -18,10 +19,13 @@ const REGISTRY_YAML: &str = "schema_version: 1\npayloads:\n  - name: metanorma\n
 /// map (unknown URL → 404-class error, like the production mapping).
 struct MockTransport {
     answers: HashMap<String, Vec<u8>>,
-    hits: std::rc::Rc<Cell<u64>>,
+    hits: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 impl MockTransport {
-    fn with(answers: &[(&str, &str)], hits: std::rc::Rc<Cell<u64>>) -> MockTransport {
+    fn with(
+        answers: &[(&str, &str)],
+        hits: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    ) -> MockTransport {
         MockTransport {
             answers: answers
                 .iter()
@@ -33,7 +37,7 @@ impl MockTransport {
 }
 impl Transport for MockTransport {
     fn get(&self, url: &str) -> Result<Vec<u8>, tebako_http::FetchError> {
-        self.hits.set(self.hits.get() + 1);
+        self.hits.fetch_add(1, Ordering::Relaxed);
         self.answers
             .get(url)
             .cloned()
@@ -43,9 +47,14 @@ impl Transport for MockTransport {
 
 /// The GitHub default-branch form (service contents API): the contents
 /// JSON points at a raw download URL.
-fn github_fetcher(registry_bytes: &str) -> (Fetcher<MockTransport>, std::rc::Rc<Cell<u64>>) {
+fn github_fetcher(
+    registry_bytes: &str,
+) -> (
+    Fetcher<MockTransport>,
+    std::sync::Arc<std::sync::atomic::AtomicU64>,
+) {
     let contents = r#"{"name":"tpkg-registry.yaml","download_url":"https://raw.example/o/r/HEAD/tpkg-registry.yaml"}"#;
-    let hits = std::rc::Rc::new(Cell::new(0));
+    let hits = Arc::new(AtomicU64::new(0));
     let t = MockTransport::with(
         &[
             (
@@ -59,7 +68,17 @@ fn github_fetcher(registry_bytes: &str) -> (Fetcher<MockTransport>, std::rc::Rc<
         ],
         hits.clone(),
     );
-    (Fetcher::with_transport(t), hits)
+    // tebako#980: an anonymous default-branch read rides the git
+    // transport now — the seam serves the same bytes and counts the
+    // attempt on the shared counter (the fetch-attempt assertions are
+    // transport-agnostic).
+    let bytes = registry_bytes.to_string();
+    let seam_hits = hits.clone();
+    let f = Fetcher::with_transport(t).with_git_reader(move |_, _, _| {
+        seam_hits.fetch_add(1, Ordering::Relaxed);
+        Ok(bytes.clone().into_bytes())
+    });
+    (f, hits)
 }
 
 const GITHUB_REF: &str = "tfs:github:o/r";
@@ -123,12 +142,12 @@ fn remote_ref_fetches_once_then_serves_the_fresh_cache() {
         "the fetch populated the cache"
     );
     assert!(fetched_at_file(&home).is_file());
-    let hits_after_first = hits.get();
+    let hits_after_first = hits.load(Ordering::Relaxed);
 
     // fresh → the cache answers; no second fetch
     let registry = regcache::registry_for_with(&home, GITHUB_REF, &fetcher, false, now()).unwrap();
     assert_eq!(registry.payloads.len(), 1);
-    assert_eq!(hits.get(), hits_after_first);
+    assert_eq!(hits.load(Ordering::Relaxed), hits_after_first);
 }
 
 #[test]
@@ -138,7 +157,7 @@ fn stale_cache_refetches_and_renews() {
     let (fetcher, hits) = github_fetcher(REGISTRY_YAML);
 
     regcache::registry_for_with(&home, GITHUB_REF, &fetcher, false, now()).unwrap();
-    let hits_after_first = hits.get();
+    let hits_after_first = hits.load(Ordering::Relaxed);
     // backdate the cache beyond the TTL
     std::fs::write(
         fetched_at_file(&home),
@@ -147,7 +166,10 @@ fn stale_cache_refetches_and_renews() {
     .unwrap();
 
     regcache::registry_for_with(&home, GITHUB_REF, &fetcher, false, now()).unwrap();
-    assert!(hits.get() > hits_after_first, "a stale cache refetches");
+    assert!(
+        hits.load(Ordering::Relaxed) > hits_after_first,
+        "a stale cache refetches"
+    );
     // the fetched-at marker was renewed
     let at: u64 = std::fs::read_to_string(fetched_at_file(&home))
         .unwrap()
@@ -168,15 +190,19 @@ fn offline_is_cache_or_named_error() {
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("TEBAKO_OFFLINE"), "{}", err.message);
     assert!(err.message.contains("update-registries"), "{}", err.message);
-    assert_eq!(hits.get(), 0);
+    assert_eq!(hits.load(Ordering::Relaxed), 0);
 
     // prime a STALE cache (older than the TTL): offline reads it anyway
     regcache::registry_for_with(&home, GITHUB_REF, &fetcher, false, now()).unwrap();
     std::fs::write(fetched_at_file(&home), "1000\n").unwrap();
-    let before = hits.get();
+    let before = hits.load(Ordering::Relaxed);
     let registry = regcache::registry_for_with(&home, GITHUB_REF, &fetcher, true, now()).unwrap();
     assert_eq!(registry.payloads.len(), 1);
-    assert_eq!(hits.get(), before, "offline never fetches");
+    assert_eq!(
+        hits.load(Ordering::Relaxed),
+        before,
+        "offline never fetches"
+    );
 }
 
 #[test]
@@ -188,11 +214,14 @@ fn refresh_force_renews_and_reports_outcomes() {
     let outcome = regcache::refresh_with(&home, GITHUB_REF, &fetcher).unwrap();
     assert_eq!(outcome, RefreshOutcome::Refreshed);
     assert!(cached_file(&home).is_file());
-    let before = hits.get();
+    let before = hits.load(Ordering::Relaxed);
 
     let outcome = regcache::refresh_with(&home, GITHUB_REF, &fetcher).unwrap();
     assert_eq!(outcome, RefreshOutcome::Refreshed);
-    assert!(hits.get() > before, "refresh always fetches");
+    assert!(
+        hits.load(Ordering::Relaxed) > before,
+        "refresh always fetches"
+    );
 
     // file:// refs skip with a distinct outcome
     let reg = tmp.path().join("tpkg-registry.yaml");
@@ -274,10 +303,24 @@ fn registry_default_resolves_through_a_remote_registry() {
 const REGISTRY_YAML_V2: &str = "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: 1.2.4\n    versions:\n      - version: 1.2.4\n        platforms: universal\n        release: {ref: file:///metanorma-1.2.4.tfs}\n        entrypoints: [metanorma]\n";
 
 /// A transport whose every GET fails (the airgapped day-2 shape).
-fn failing_fetcher() -> (Fetcher<MockTransport>, std::rc::Rc<Cell<u64>>) {
-    let hits = std::rc::Rc::new(Cell::new(0));
+fn failing_fetcher() -> (
+    Fetcher<MockTransport>,
+    std::sync::Arc<std::sync::atomic::AtomicU64>,
+) {
+    let hits = Arc::new(AtomicU64::new(0));
+    let seam_hits = hits.clone();
     (
-        Fetcher::with_transport(MockTransport::with(&[], hits.clone())),
+        // tebako#980: the anonymous default-branch read rides the git
+        // transport; the seam fails and counts the attempt on the shared
+        // counter, exactly the shape the mock's empty answers gave before.
+        Fetcher::with_transport(MockTransport::with(&[], hits.clone())).with_git_reader(
+            move |_, _, _| {
+                seam_hits.fetch_add(1, Ordering::Relaxed);
+                Err(tebako_resolve::ResolveError::NotFound {
+                    origin: "github.com/o/r".to_string(),
+                })
+            },
+        ),
         hits,
     )
 }
@@ -310,7 +353,10 @@ fn stale_cache_and_a_failed_fetch_serves_the_stale_bytes_loud() {
         registry.payload("metanorma").unwrap().default.as_deref(),
         Some("1.2.3")
     );
-    assert!(hits.get() > 0, "the refresh was attempted first");
+    assert!(
+        hits.load(Ordering::Relaxed) > 0,
+        "the refresh was attempted first"
+    );
     // …LOUD: the journal line names the event, the ref, the failure…
     let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
     assert!(journal.contains("event=stale-registry-serve"), "{journal}");
@@ -346,7 +392,7 @@ fn missing_cache_and_a_failed_fetch_is_the_named_error() {
         "{}",
         err.message
     );
-    assert!(hits.get() > 0, "the fetch was attempted");
+    assert!(hits.load(Ordering::Relaxed) > 0, "the fetch was attempted");
     assert!(
         !home.join("journal.log").exists(),
         "no stale-serve journal line without a cache"
