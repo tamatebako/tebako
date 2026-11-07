@@ -937,9 +937,16 @@ fn patch_configure_cache_evals(src_dir: &Path) -> Result<(), TebakoError> {
     let text = fs::read_to_string(&path)
         .map_err(|e| plain_error(format!("cannot read {}: {e}", path.display())))?;
     const PROBE_OLD: &str = "eval 'test -n \"${ac_cv_sizeof_'$rb_defint_type'+set}\"'";
-    const PROBE_NEW: &str = "rb_defint_c=\"ac_cv_sizeof_$(printf %s \"$rb_defint_type\" | tr ' ' '_')\" && eval 'test -n \"${!rb_defint_c+set}\"'";
+    // tebako#753's rewrite targeted bash's ${!var} indirection — valid in
+    // every bash, but the POSIX replay shells (dash, busybox ash on the
+    // musl legs) answer it `bad substitution` and the SDK provision dies
+    // (the metanorma musl legs, red since 2026-10-30). The eval-spliced
+    // form below is POSIX-clean AND keeps the #753 correction (the cache
+    // name is built with autoconf's spaces→underscores mapping, then
+    // expanded by the eval — no indirection anywhere).
+    const PROBE_NEW: &str = "rb_defint_c=\"ac_cv_sizeof_$(printf %s \"$rb_defint_type\" | tr ' ' '_')\" && eval \"test -n \\\"\\${$rb_defint_c+set}\\\"\"";
     const COND_OLD: &str = "eval rb_defint_cond='\"${ac_cv_sizeof_'$rb_defint_type'}\"'";
-    const COND_NEW: &str = "eval rb_defint_cond='\"${!rb_defint_c}\"'";
+    const COND_NEW: &str = "eval \"rb_defint_cond=\\\"\\${$rb_defint_c}\\\"\"";
     let probes = text.matches(PROBE_OLD).count();
     let conds = text.matches(COND_OLD).count();
     if probes < 10 || probes != conds {
@@ -1151,8 +1158,11 @@ mod tests {
         // concatenates the C type into a shell variable NAME — `long
         // long` makes it invalid, and msys bash aborts the script on the
         // expansion error (POSIX shells tolerate it). The patch rewrites
-        // both eval forms to the correct autoconf cache name, expanded
-        // indirectly. The real tfs-ruby-3.4.10 tarball carries 13 of
+        // both eval forms to the correct autoconf cache name, built by
+        // tr and expanded by an eval-splice — POSIX-clean, so the musl
+        // legs' busybox ash survives it (the first cut's bash ${!var}
+        // indirection did not: bad substitution, red since 2026-10-30).
+        // The real tfs-ruby-3.4.10 tarball carries 13 of
         // each; the guard requires >= 10 and equality.
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("tfs-ruby-3.4.10-src");
@@ -1166,8 +1176,21 @@ mod tests {
             "the fatal probe form survives"
         );
         assert_eq!(patched.matches("tr ' ' '_'").count(), 11);
-        assert_eq!(patched.matches("${!rb_defint_c+set}").count(), 11);
-        assert_eq!(patched.matches("${!rb_defint_c}").count(), 11);
+        // POSIX-clean forms, and no bash indirection anywhere (the musl
+        // legs run the replay under busybox ash).
+        assert!(!patched.contains("${!"), "bash indirection survived");
+        assert_eq!(
+            patched
+                .matches("eval \"test -n \\\"\\${$rb_defint_c+set}\\\"\"")
+                .count(),
+            11
+        );
+        assert_eq!(
+            patched
+                .matches("eval \"rb_defint_cond=\\\"\\${$rb_defint_c}\\\"\"")
+                .count(),
+            11
+        );
 
         // Drift (a regenerated configure): fewer sites -> the named 135,
         // never a silently partial patch.
