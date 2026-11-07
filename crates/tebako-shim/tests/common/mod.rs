@@ -749,11 +749,7 @@ pub fn serve_oci_runtime(
         &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
         &manifest,
     );
-    mock.ok(
-        &format!("{base}/blobs/sha256:{bundle_hex}"),
-        &[],
-        &bundle,
-    );
+    mock.ok(&format!("{base}/blobs/sha256:{bundle_hex}"), &[], &bundle);
     OciRuntimePublish {
         stem,
         manifest_hex,
