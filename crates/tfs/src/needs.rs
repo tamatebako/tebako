@@ -29,6 +29,12 @@
 //! bypass the host pipeline entirely (no exclusions, substitutions, or
 //! existence probes — they are in-image surface, never host surface).
 //!
+//! The spec 08 §2 network axis folds the socket family's journal into a
+//! draft **`needs.network:`** block: `op=connect` lines aggregate by
+//! (peer, port), the resolver-observed name preferred over the numeric
+//! spelling (a grant names hosts, not addresses); an IPv6 literal is a
+//! header note, never an entry (the grant grammar cannot spell it).
+//!
 //! The draft is a STARTING POINT, never an authoritative grant: the human
 //! decides ro/rw, flips persistence, assigns write/decrypt entries to the
 //! slice mounted at the named mount, and drops paths the payload only
@@ -80,6 +86,11 @@ pub fn needs_from_journal(
     let mut observed: std::collections::BTreeMap<String, Observation> = Default::default();
     let mut writes: std::collections::BTreeMap<String, VfsObservation> = Default::default();
     let mut sealed: std::collections::BTreeMap<String, VfsObservation> = Default::default();
+    // The network axis (spec 08 §2): (peer spelling, port) → connect count.
+    // The drafted spelling is the resolver-observed NAME when the journal
+    // line carries one (a grant names hosts, not addresses), else the
+    // numeric peer.
+    let mut net: std::collections::BTreeMap<(String, u16), u64> = Default::default();
     let mut omitted = 0u64;
     for line in journal.lines() {
         if let Some(vfs) = parse_vfs_event_line(line) {
@@ -94,6 +105,10 @@ pub fn needs_from_journal(
                 o.count += 1;
                 o.mounts.insert(mount);
             }
+            continue;
+        }
+        if let Some((peer, port)) = parse_net_event_line(line) {
+            *net.entry((peer, port)).or_default() += 1;
             continue;
         }
         let Some((path, write)) = parse_event_line(line) else {
@@ -133,7 +148,7 @@ pub fn needs_from_journal(
             observed.remove(p);
         }
     }
-    emit_yaml(&observed, &writes, &sealed, omitted)
+    emit_yaml(&observed, &writes, &sealed, &net, omitted)
 }
 
 /// One parsed spec-24 journal line.
@@ -212,6 +227,33 @@ fn parse_event_line(line: &str) -> Option<(&str, bool)> {
     Some((path, write))
 }
 
+/// Parse one network-axis journal line (spec 08 §2:
+/// `event=jail-deny|jail-allow peer=<ip>:<port>[ name=<n>] op=connect …`)
+/// into (spelling, port) — the `name` when the line carries one (a grant
+/// names hosts, not addresses), else the numeric peer. The port split is a
+/// RIGHT split: an IPv6 peer's own colons stay with the address.
+/// `None` for anything else (including every fs-axis line — they carry
+/// `path=`, never `peer=`).
+fn parse_net_event_line(line: &str) -> Option<(String, u16)> {
+    let event = line.split(' ').find_map(|f| f.strip_prefix("event="))?;
+    if event != "jail-allow" && event != "jail-deny" {
+        return None;
+    }
+    let op = line.split_once(" op=")?.1.split(' ').next()?;
+    if op != "connect" {
+        return None;
+    }
+    let peer = line.split_once(" peer=")?.1.split(' ').next()?;
+    let (_, port) = peer.rsplit_once(':')?;
+    let port: u16 = port.parse().ok()?;
+    let name = line
+        .split_once(" name=")
+        .map(|(_, rest)| rest.split(' ').next().unwrap_or(""))
+        .filter(|n| !n.is_empty());
+    let spelling = name.unwrap_or_else(|| peer.rsplit_once(':').unwrap().0);
+    Some((spelling.to_string(), port))
+}
+
 /// A recorded journal path counts as absolute when it is `/`-rooted,
 /// drive-rooted (`C:/…`, `C:\…`), or UNC-rooted (`\\…`). Never the host's
 /// `Path::is_absolute`: on Windows that demands a drive prefix and
@@ -263,8 +305,15 @@ fn emit_yaml(
     observed: &std::collections::BTreeMap<String, Observation>,
     writes: &std::collections::BTreeMap<String, VfsObservation>,
     sealed: &std::collections::BTreeMap<String, VfsObservation>,
+    net: &std::collections::BTreeMap<(String, u16), u64>,
     omitted: u64,
 ) -> String {
+    // IPv6 literals are unspellable in the grant grammar (spec 08 §1):
+    // they are header notes, never `network:` entries.
+    let net_spellable: Vec<_> = net
+        .iter()
+        .filter(|((peer, _), _)| !peer.contains(':'))
+        .collect();
     let mut out = String::from(
         "# Drafted by `tfs needs --from-journal`: every host path the\n\
          # recorded run touched, strongest observed access. Review each `access`\n\
@@ -273,7 +322,9 @@ fn emit_yaml(
          # and collapsed out of this draft.\n\
          # `write:`/`decrypt:` entries are in-image paths relative to\n\
          # the mount named in their `why`; assign each to the slice mounted there\n\
-         # and review `persistence` (the observed minimum is ephemeral).\n",
+         # and review `persistence` (the observed minimum is ephemeral).\n\
+         # `network:` entries are the outbound peers the run connected to\n\
+         # (the resolver-observed name where one exists, else the address).\n",
     );
     if omitted > 0 {
         out.push_str(&format!(
@@ -281,8 +332,16 @@ fn emit_yaml(
              # declare $CWD explicitly if the payload wants it)\n"
         ));
     }
+    // IPv6 literals are not spellable in the grant grammar (spec 08 §1) —
+    // note them in the header; the reviewer grants the peer's DNS name.
+    for ((peer, port), count) in net.iter().filter(|((p, _), _)| p.contains(':')) {
+        out.push_str(&format!(
+            "# note: observed {count} connect(s) to IPv6 literal {peer} port {port} —\n\
+             # grant the peer's DNS name (the grammar carries no v6 literal)\n"
+        ));
+    }
     out.push_str("needs:\n");
-    if observed.is_empty() && writes.is_empty() && sealed.is_empty() {
+    if observed.is_empty() && writes.is_empty() && sealed.is_empty() && net_spellable.is_empty() {
         out.push_str("  host: []\n");
         return out;
     }
@@ -324,6 +383,19 @@ fn emit_yaml(
                 o.count,
                 o.mounts.iter().cloned().collect::<Vec<_>>().join(", ")
             ));
+        }
+    }
+    if !net_spellable.is_empty() {
+        {
+            out.push_str("  network:\n");
+            for ((peer, port), count) in net_spellable {
+                out.push_str(&format!(
+                    "    - peer: \"{}:{}\"\n      why: \"fill in — observed: {} connect\"\n",
+                    yaml_escape(peer),
+                    port,
+                    count
+                ));
+            }
         }
     }
     out
@@ -709,5 +781,50 @@ mod tests {
         assert!(yaml.contains("path: \"/a/b/c\""), "{yaml}");
         assert!(yaml.contains("path: \"/x\""), "{yaml}");
         assert!(yaml.contains("path: \"/x/y\""), "{yaml}");
+    }
+
+    #[test]
+    fn network_lines_draft_peer_entries_preferring_the_name() {
+        // The network axis (spec 08 §2): op=connect lines aggregate by
+        // (spelling, port); the resolver-observed NAME is the drafted
+        // spelling (a grant names hosts, not addresses); a bare numeric
+        // peer drafts as itself. fs lines and net lines coexist in one
+        // journal.
+        let yaml = needs_from_journal(
+            "1 event=jail-allow peer=93.184.216.34:443 name=example.com op=connect source=record\n\
+             2 event=jail-allow peer=93.184.216.34:443 name=example.com op=connect source=record\n\
+             3 event=jail-deny peer=198.51.100.7:25 op=connect source=manifest\n\
+             4 event=jail-allow path=/data op=read source=record\n",
+            &[],
+            &[],
+            &|_| true,
+        );
+        assert!(
+            yaml.contains(
+                "- peer: \"example.com:443\"\n      why: \"fill in — observed: 2 connect\"\n"
+            ),
+            "{yaml}"
+        );
+        assert!(yaml.contains("  network:\n"), "{yaml}");
+        assert!(yaml.contains("- peer: \"198.51.100.7:25\""), "{yaml}");
+        assert!(yaml.contains("path: \"/data\""), "{yaml}");
+    }
+
+    #[test]
+    fn network_ipv6_literals_are_noted_not_drafted() {
+        // The grant grammar carries no v6 literal (spec 08 §1): the draft
+        // must not emit an entry the compose grammar would reject.
+        let yaml = needs_from_journal(
+            "1 event=jail-allow peer=::1:443 op=connect source=record\n",
+            &[],
+            &[],
+            &|_| true,
+        );
+        assert!(
+            yaml.contains("# note: observed 1 connect(s) to IPv6 literal ::1 port 443"),
+            "{yaml}"
+        );
+        assert!(!yaml.contains("  network:\n"), "{yaml}");
+        assert!(yaml.contains("host: []"), "{yaml}");
     }
 }

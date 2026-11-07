@@ -431,7 +431,9 @@ mod tests {
 
     #[test]
     fn ambiguous_entries_are_refused_by_name() {
-        let dir = temp("ambiguous");
+        // The temp tag must be unique per test — a shared tag races the
+        // sibling test's remove_dir_all in the same process.
+        let dir = temp("ambiguous-named");
         std::fs::write(dir.join("Gemfile"), "").unwrap();
         script(&dir.join("bin").join("one"));
         script(&dir.join("bin").join("two"));

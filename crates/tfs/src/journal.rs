@@ -9,6 +9,8 @@
 //! ```text
 //! <ts> event=jail-deny  path=<path> op=read|write source=<policy source>
 //! <ts> event=jail-allow path=<path> op=read|write source=<policy source>
+//! <ts> event=jail-deny  peer=<ip>:<port> op=connect source=<policy source>   (network axis)
+//! <ts> event=jail-allow peer=<ip>:<port> op=connect source=<policy source>   (network, record mode)
 //! ```
 //!
 //! The location resolves as `$TEBAKO_JAIL_JOURNAL` (an explicit override —
@@ -143,6 +145,37 @@ fn journal_event(file: &std::fs::File, event: &str, path: &Path, need: HostAcces
             "event={event} path={} op={} source={}",
             path.display(),
             op,
+            if source.is_empty() {
+                "unattributed"
+            } else {
+                source
+            }
+        ),
+    );
+}
+
+/// Append one network-axis line (spec 08 §2's second axis):
+/// `<ts> event=jail-deny|jail-allow peer=<ip>:<port>[ name=<n>] op=connect
+/// source=<s>`. The peer is the connection's NUMERIC address (the
+/// decision's primary spelling); `name` is the first resolver-observed
+/// DNS name for the address when one exists — the needs generator's
+/// `network:` draft prefers it (a grant names hosts, not addresses).
+/// A line carries no `path=` field, so the fs-side journal parsers skip
+/// it (the `network:` draft reads it via [`crate::needs`]'s own net
+/// parse). Same fd discipline and best-effort rule as [`journal_deny`].
+pub fn journal_net_event(
+    file: &std::fs::File,
+    event: &str,
+    peer: &str,
+    port: u16,
+    name: Option<&str>,
+    source: &str,
+) {
+    let name = name.map(|n| format!(" name={n}")).unwrap_or_default();
+    journal_fields(
+        file,
+        &format!(
+            "event={event} peer={peer}:{port}{name} op=connect source={}",
             if source.is_empty() {
                 "unattributed"
             } else {

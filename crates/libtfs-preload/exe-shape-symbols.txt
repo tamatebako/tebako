@@ -6,9 +6,12 @@
 # Owner: sys/mod.rs is the definition; this file is the link-unit's copy
 # of it, and `tests/exe_shape_surface.rs` proves the two agree. The exec
 # class (dlopen/execve/posix_spawn/posix_spawnp) is deliberately ABSENT:
-# the exe shape is the file-IO family only — children are armed by the
-# driver's injection export, and an exported dlopen would collide with
-# the runtime's own class-L definition at link.
+# children are armed by the driver's injection export, and an exported
+# dlopen would collide with the runtime's own class-L definition at link.
+# The socket family (connect/sendto/sendmsg/getaddrinfo — spec 08 §2's
+# network axis) IS present: the runtime exe's exported `connect` preempts
+# libc's for every dynamic call in the process, which is exactly how a
+# jailed interpreted payload's outbound peers get judged.
 #
 # The tebako_engine_io_* pair is the engine-IO guard (tebako#964): armed
 # by ANY tfs copy's C ABI materialization bodies, resolved across the
@@ -34,6 +37,7 @@ canonicalize_file_name
 chdir
 close
 closedir
+connect
 creat
 dirfd
 dup
@@ -49,6 +53,7 @@ fstat
 fstat64
 fstatat
 fstatat64
+getaddrinfo
 getcwd
 getdents64
 lseek
@@ -78,6 +83,8 @@ rewinddir
 scandir
 scandir64  # gnu-only (musl has no scandir64; its scandir is 64-bit always)
 seekdir
+sendmsg
+sendto
 stat
 stat64
 statx

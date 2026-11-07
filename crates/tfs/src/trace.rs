@@ -703,6 +703,7 @@ mod tests {
                     crate::policy::PolicyDefault::Record,
                     vec![],
                     vec![],
+                    vec![],
                 )
                 .unwrap(),
                 Some(journal_file),
@@ -753,8 +754,13 @@ mod tests {
 
             // The deny half of the jail channel.
             ctx.set_host_policy(
-                crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Deny, vec![], vec![])
-                    .unwrap(),
+                crate::policy::HostPolicy::bind(
+                    crate::policy::PolicyDefault::Deny,
+                    vec![],
+                    vec![],
+                    vec![],
+                )
+                .unwrap(),
                 None,
             );
             assert_eq!(ctx.open(&host_path, libc::O_RDONLY), Err(libc::EPERM));

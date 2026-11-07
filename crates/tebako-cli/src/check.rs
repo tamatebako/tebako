@@ -1098,6 +1098,7 @@ fn load_composition(path: &Path, ctx: &Ctx) -> Result<CheckTarget, TebakoError> 
             default_open: policy_open.unwrap_or(false),
             record: false,
             mounts: grants,
+            network: Vec::new(),
             argument_files: tpkg::ArgumentFiles::default(),
         })
     } else {
@@ -1793,6 +1794,7 @@ fn check_jail_env(
             default_open: true,
             record: false,
             mounts: grants,
+            network: Vec::new(),
             argument_files: tpkg::ArgumentFiles::default(),
         },
         Some(mut base) => {
@@ -1830,8 +1832,13 @@ fn check_jail_env(
 fn bind_check(spec: &str) -> Result<(), String> {
     let parsed =
         tfs::policy::JailSpec::parse(spec).map_err(|e| format!("invalid jail spec: {e}"))?;
-    tfs::policy::HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files)
-        .map_err(|e| format!("cannot bind the check policy: {}", errno_text(e)))?;
+    tfs::policy::HostPolicy::bind(
+        parsed.default,
+        parsed.mounts,
+        parsed.arg_files,
+        parsed.net_grants,
+    )
+    .map_err(|e| format!("cannot bind the check policy: {}", errno_text(e)))?;
     Ok(())
 }
 
@@ -2524,6 +2531,7 @@ mod tests {
                     default_open: false,
                     record: false,
                     mounts: Vec::new(),
+                    network: Vec::new(),
                     argument_files: tpkg::ArgumentFiles::default(),
                 }),
             },

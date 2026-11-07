@@ -2612,6 +2612,148 @@ pub unsafe extern "C" fn posix_spawnp(
 }
 
 // ---------------------------------------------------------------------
+// The socket family (spec 08 §2's network axis)
+//
+// `connect`/`sendto`/`sendmsg` judge the destination against the bound
+// policy's `net:` grants (the engine's `net_check`, journaled there);
+// `getaddrinfo` is never gated (the DNS carve-out) — it OBSERVES: the
+// name → address answer feeds the table the judgments bridge through.
+// Non-INET families (AF_UNIX & kin) are the fs axis's territory and pass
+// through untouched, as do pre-constructor/re-entrant/fork-child calls
+// (the `engine_call` gate).
+// ---------------------------------------------------------------------
+
+/// Parse the peer of a `sockaddr`: `(address, port)` for AF_INET /
+/// AF_INET6, `None` for every other family.
+///
+/// # Safety
+/// `sa` must be NULL or point at a readable sockaddr of the family it
+/// declares (the intercepted-call contract).
+unsafe fn peer_of(sa: *const libc::sockaddr) -> Option<(std::net::IpAddr, u16)> {
+    if sa.is_null() {
+        return None;
+    }
+    let family = unsafe { (*sa).sa_family } as c_int;
+    match family {
+        libc::AF_INET => {
+            let sin = unsafe { &*(sa as *const libc::sockaddr_in) };
+            Some((
+                std::net::IpAddr::from(u32::from_be(sin.sin_addr.s_addr).to_be_bytes()),
+                u16::from_be(sin.sin_port),
+            ))
+        }
+        libc::AF_INET6 => {
+            let sin6 = unsafe { &*(sa as *const libc::sockaddr_in6) };
+            Some((
+                std::net::IpAddr::from(sin6.sin6_addr.s6_addr),
+                u16::from_be(sin6.sin6_port),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Judge one destination against the network policy. `None` = not judged
+/// (non-INET family, NULL, or no live engine) — the caller passes through;
+/// `Some(Ok(()))` = allowed; `Some(Err(EPERM))` = the jail's refusal.
+fn net_gate(sa: *const libc::sockaddr) -> Option<Result<(), i32>> {
+    let (ip, port) = unsafe { peer_of(sa) }?;
+    engine_call(|| crate::net::judge(ip, port))
+}
+
+/// Interposed `connect`: an INET/INET6 destination is judged against the
+/// policy's net grants; a refusal fails EPERM (the fs axis's named
+/// refusal, journaled) before the kernel is ever asked.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn connect(
+    fd: c_int,
+    addr: *const libc::sockaddr,
+    len: libc::socklen_t,
+) -> c_int {
+    match net_gate(addr) {
+        Some(Err(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(Ok(())) | None => unsafe { plat::real_connect()(fd, addr, len) },
+    }
+}
+
+/// Interposed `sendto`: a datagram with an explicit INET/INET6 destination
+/// is judged exactly like a connect (a connection-mode `sendto` — NULL
+/// destination — was judged at its connect).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn sendto(
+    fd: c_int,
+    buf: *const c_void,
+    len: usize,
+    flags: c_int,
+    dest: *const libc::sockaddr,
+    destlen: libc::socklen_t,
+) -> isize {
+    match net_gate(dest) {
+        Some(Err(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(Ok(())) | None => unsafe { plat::real_sendto()(fd, buf, len, flags, dest, destlen) },
+    }
+}
+
+/// Interposed `sendmsg`: the destination rides `msg_name`; judged exactly
+/// like `sendto`.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn sendmsg(fd: c_int, msg: *const libc::msghdr, flags: c_int) -> isize {
+    let dest = if msg.is_null() {
+        std::ptr::null()
+    } else {
+        // SAFETY: the caller's msghdr outlives the call.
+        unsafe { (*msg).msg_name as *const libc::sockaddr }
+    };
+    match net_gate(dest) {
+        Some(Err(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(Ok(())) | None => unsafe { plat::real_sendmsg()(fd, msg, flags) },
+    }
+}
+
+/// Interposed `getaddrinfo`: NEVER gated (spec 08 §2's DNS carve-out — a
+/// query leaks a name, never payload bytes, and a grant names hosts whose
+/// addresses must resolve). The answer is OBSERVED into the net module's
+/// table so a later connect of any returned address judges against the
+/// name's grants. Observation failures (non-UTF-8 node) skip silently —
+/// the resolve itself already happened.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn getaddrinfo(
+    node: *const c_char,
+    service: *const c_char,
+    hints: *const libc::addrinfo,
+    res: *mut *mut libc::addrinfo,
+) -> c_int {
+    let rc = unsafe { plat::real_getaddrinfo()(node, service, hints, res) };
+    if rc != 0 || node.is_null() || res.is_null() {
+        return rc;
+    }
+    let Some(name) = (unsafe { c_path(node) }) else {
+        return rc;
+    };
+    let mut addrs: Vec<std::net::IpAddr> = Vec::new();
+    // SAFETY: rc == 0 — *res heads the freshly allocated addrinfo list.
+    let mut cur = unsafe { *res };
+    while !cur.is_null() {
+        let ai = unsafe { &*cur };
+        if let Some((ip, _)) = unsafe { peer_of(ai.ai_addr) } {
+            addrs.push(ip);
+        }
+        cur = ai.ai_next;
+    }
+    crate::net::observe(name, addrs.into_iter());
+    rc
+}
+
+// ---------------------------------------------------------------------
 // Initialization (the library constructor's payload)
 // ---------------------------------------------------------------------
 

@@ -436,6 +436,48 @@ interpose!(
     libc::dlopen,
     unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
 );
+// The socket family (spec 08 §2's network axis). All fixed-arity — no
+// arm64 trampoline needed.
+interpose!(
+    INTERPOSE_CONNECT,
+    real_connect,
+    super::connect,
+    libc::connect,
+    unsafe extern "C" fn(c_int, *const libc::sockaddr, libc::socklen_t) -> c_int
+);
+interpose!(
+    INTERPOSE_SENDTO,
+    real_sendto,
+    super::sendto,
+    libc::sendto,
+    unsafe extern "C" fn(
+        c_int,
+        *const c_void,
+        usize,
+        c_int,
+        *const libc::sockaddr,
+        libc::socklen_t,
+    ) -> isize
+);
+interpose!(
+    INTERPOSE_SENDMSG,
+    real_sendmsg,
+    super::sendmsg,
+    libc::sendmsg,
+    unsafe extern "C" fn(c_int, *const libc::msghdr, c_int) -> isize
+);
+interpose!(
+    INTERPOSE_GETADDRINFO,
+    real_getaddrinfo,
+    super::getaddrinfo,
+    libc::getaddrinfo,
+    unsafe extern "C" fn(
+        *const c_char,
+        *const c_char,
+        *const libc::addrinfo,
+        *mut *mut libc::addrinfo,
+    ) -> c_int
+);
 // `fopen$DARWIN_EXTSN`: the 64-bit SDK's stdio export — no libc crate
 // binding, declared here so its address (the REAL function) can seed the
 // tuple the way libc::* addresses do (the JVM imports it directly).

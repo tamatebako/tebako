@@ -174,6 +174,7 @@ fn build_fixtures() -> Option<Fixtures> {
         "realpath-probe",
         "getcwd-probe",
         "vfork-probe",
+        "connect-probe",
     ] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
@@ -1854,5 +1855,164 @@ fn exec_strips_insertion_when_the_target_cannot_load_the_dylib() {
                  (preview ABI) — the arm64e leg proves out on macos-14 CI"
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------------
+// The network axis (spec 08 §2 — the socket family's e2e proof)
+// ---------------------------------------------------------------------
+
+/// One loopback listener per test (the connect target the kernel will
+/// accept on); the port is ephemeral, the address always 127.0.0.1.
+fn loopback_listener() -> (std::net::TcpListener, u16) {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    (l, port)
+}
+
+/// [`run`] with extra env (the journal override).
+fn run_with_env(
+    f: &Fixtures,
+    tool: &str,
+    args: &[&str],
+    jail: Option<&str>,
+    extra: &[(&str, String)],
+) -> Run {
+    let mounts = format!("{}:{MOUNT}", f.zip.display());
+    let mut cmd = Command::new(f.dir.join("bin").join(tool));
+    cmd.args(args)
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", mounts)
+        .env_remove("DYLD_PRINT_LIBRARIES")
+        .env_remove("TEBAKO_OFFLINE")
+        .env_remove("TEBAKO_LAZY_SEAL");
+    match jail {
+        Some(j) => {
+            cmd.env("TEBAKO_JAIL", j);
+        }
+        None => {
+            cmd.env_remove("TEBAKO_JAIL");
+        }
+    }
+    for (k, v) in extra {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().unwrap();
+    #[cfg(unix)]
+    let signal = std::os::unix::process::ExitStatusExt::signal(&out.status);
+    #[cfg(not(unix))]
+    let signal = None;
+    Run {
+        rc: out.status.code().unwrap_or(-1),
+        signal,
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+/// The floor: under `deny` with no `net:` grant, a loopback connect is the
+/// jail's EPERM — journaled with the peer and `op=connect`.
+#[test]
+fn net_deny_floor_refuses_and_journals() {
+    let Some(f) = fixtures() else { return };
+    let (_l, port) = loopback_listener();
+    let journal = f.dir.join("net-deny.journal");
+    let r = run_with_env(
+        f,
+        "connect-probe",
+        &["127.0.0.1", &port.to_string()],
+        Some("deny"),
+        &[(
+            "TEBAKO_JAIL_JOURNAL",
+            journal.to_string_lossy().into_owned(),
+        )],
+    );
+    assert_eq!(r.rc, 3, "stderr: {} stdout: {}", r.stderr, r.stdout);
+    assert!(r.stdout.contains("REFUSED 1"), "stdout: {}", r.stdout);
+    let log = std::fs::read_to_string(&journal).unwrap();
+    assert!(
+        log.contains(&format!("event=jail-deny peer=127.0.0.1:{port}"))
+            && log.contains("op=connect"),
+        "journal: {log}"
+    );
+}
+
+/// A literal-IP grant passes the connect; a port pin bites on any other
+/// port.
+#[test]
+fn net_grants_allow_and_the_port_pin_bites() {
+    let Some(f) = fixtures() else { return };
+    let (_l, port) = loopback_listener();
+    let (_l2, port2) = loopback_listener();
+    let jail = format!("deny;net:127.0.0.1:{port}");
+    let ok = run(
+        f,
+        "connect-probe",
+        &["127.0.0.1", &port.to_string()],
+        Some(&jail),
+    );
+    assert_eq!(ok.rc, 0, "stderr: {} stdout: {}", ok.stderr, ok.stdout);
+    assert_eq!(ok.stdout, "CONNECTED\n");
+    let refused = run(
+        f,
+        "connect-probe",
+        &["127.0.0.1", &port2.to_string()],
+        Some(&jail),
+    );
+    assert_eq!(
+        refused.rc, 3,
+        "the unpinned port must refuse, stderr: {} stdout: {}",
+        refused.stderr, refused.stdout
+    );
+}
+
+/// The name bridge: a `net:localhost` grant judges the numeric peer
+/// through the probe's own getaddrinfo observation — and a literal-IP
+/// probe (whose observation maps the address to itself, never to the
+/// granted name) is refused. That asymmetry is the contract: grants name
+/// INTENT, not an address the name once had.
+#[test]
+fn net_name_grants_judge_through_the_resolver_observation() {
+    let Some(f) = fixtures() else { return };
+    let (_l, port) = loopback_listener();
+    let jail = "deny;net:localhost";
+    // The `4` pin keeps "localhost" on the listener's family everywhere
+    // (some resolvers answer ::1 first).
+    let by_name = run(
+        f,
+        "connect-probe",
+        &["localhost", &port.to_string(), "4"],
+        Some(jail),
+    );
+    assert_eq!(
+        by_name.rc, 0,
+        "the granted name must pass (stderr: {} stdout: {})",
+        by_name.stderr, by_name.stdout
+    );
+    let by_ip = run(
+        f,
+        "connect-probe",
+        &["127.0.0.1", &port.to_string()],
+        Some(jail),
+    );
+    assert_eq!(
+        by_ip.rc, 3,
+        "the literal probe names no granted host (stderr: {} stdout: {})",
+        by_ip.stderr, by_ip.stdout
+    );
+}
+
+/// Under `open` (and with no jail at all) the axis changes nothing.
+#[test]
+fn net_open_policy_and_no_policy_pass() {
+    let Some(f) = fixtures() else { return };
+    let (_l, port) = loopback_listener();
+    for jail in [None, Some("open")] {
+        let r = run(f, "connect-probe", &["127.0.0.1", &port.to_string()], jail);
+        assert_eq!(
+            r.rc, 0,
+            "jail {jail:?}: stderr: {} stdout: {}",
+            r.stderr, r.stdout
+        );
     }
 }
