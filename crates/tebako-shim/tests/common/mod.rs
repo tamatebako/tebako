@@ -478,3 +478,310 @@ pub fn write_shard_release(
     }
     dir
 }
+
+// ---------------------------------------------------------------------
+// The OCI distribution mock (spec 38 §5) — URL-keyed answers over the
+// manifest/blob verbs, every request logged. Serves both the registry
+// index (the RegistryIndex class) and the runtime bundle (RuntimeBundle),
+// so one endpoint can play a whole OCI-hosted registry. Arc-shared: the
+// priming fetcher and the runtime fetch ride clones of the one mock.
+// ---------------------------------------------------------------------
+
+/// One canned distribution answer.
+#[derive(Clone)]
+pub struct OciAnswer {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+struct OciDistInner {
+    answers: std::sync::Mutex<std::collections::HashMap<String, OciAnswer>>,
+    seen: std::sync::Mutex<Vec<String>>,
+}
+
+/// The mock distribution endpoint: URL-keyed answers, every request
+/// logged (the never-fetch assertions read the log). Unknown URLs answer
+/// 404 with a distribution error body — the same classification input a
+/// real registry serves.
+#[derive(Clone)]
+pub struct OciDist {
+    inner: std::sync::Arc<OciDistInner>,
+}
+
+impl OciDist {
+    pub fn new() -> Self {
+        OciDist {
+            inner: std::sync::Arc::new(OciDistInner {
+                answers: std::sync::Mutex::new(std::collections::HashMap::new()),
+                seen: std::sync::Mutex::new(Vec::new()),
+            }),
+        }
+    }
+
+    /// Add one 200 answer (answers are immutable content once served —
+    /// re-keying an existing URL overwrites, never appends).
+    pub fn ok(&self, url: &str, headers: &[(&str, String)], body: &[u8]) {
+        self.inner.answers.lock().unwrap().insert(
+            url.to_string(),
+            OciAnswer {
+                status: 200,
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+                body: body.to_vec(),
+            },
+        );
+    }
+
+    pub fn requested(&self, needle: &str) -> bool {
+        self.inner
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|u| u.contains(needle))
+    }
+
+    /// Pull one answer — the broken-arm fixture (the URL falls through to
+    /// the 404 default).
+    pub fn drop_answer(&self, url: &str) {
+        self.inner.answers.lock().unwrap().remove(url);
+    }
+}
+
+impl tebako_resolve::Transport for OciDist {
+    fn get(&self, url: &str) -> Result<Vec<u8>, tebako_http::FetchError> {
+        // The plan pipeline's OCI stream buffers through `get`.
+        self.inner.seen.lock().unwrap().push(url.to_string());
+        match self.inner.answers.lock().unwrap().get(url) {
+            Some(a) if a.status == 200 => Ok(a.body.clone()),
+            _ => Err(tebako_http::FetchError::IndexUnavailable(format!(
+                "{url} (the OCI mock serves mapped 200 answers only)"
+            ))),
+        }
+    }
+
+    fn get_raw(
+        &self,
+        url: &str,
+        _accept: Option<&str>,
+        _header: Option<(&str, &str)>,
+    ) -> Result<tebako_http::RawResponse, tebako_http::FetchError> {
+        self.inner.seen.lock().unwrap().push(url.to_string());
+        match self.inner.answers.lock().unwrap().get(url) {
+            Some(a) => Ok(tebako_http::RawResponse::new(
+                a.status,
+                a.headers.clone(),
+                a.body.clone(),
+            )),
+            None => Ok(tebako_http::RawResponse::new(
+                404,
+                Vec::new(),
+                br#"{"errors":[{"code":"MANIFEST_UNKNOWN","message":"mock: unknown url"}]}"#
+                    .to_vec(),
+            )),
+        }
+    }
+}
+
+/// The OCI credential chain's tier 3 reads `$DOCKER_CONFIG/config.json` —
+/// the developer machine's own config must not leak in (a shared empty
+/// dir; the absent file is the anonymous ride).
+pub fn isolate_docker_config() {
+    let dir = std::env::temp_dir().join(format!(
+        "tebako-shim-common-oci-docker-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::env::set_var("DOCKER_CONFIG", &dir);
+}
+
+/// The spec 38 §3 wire constants — the fixtures pin the exact shape the
+/// adapter parses.
+pub const OCI_MANIFEST_MT: &str = "application/vnd.oci.image.manifest.v1+json";
+pub const OCI_EMPTY_CONFIG_MT: &str = "application/vnd.oci.empty.v1+json";
+pub const OCI_EMPTY_CONFIG_DIGEST: &str =
+    "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
+pub const OCI_ANNOTATION_TITLE: &str = "org.opencontainers.image.title";
+pub const OCI_ANNOTATION_SHARD: &str = "org.tebako.runtime.shard";
+
+fn oci_json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// One OCI manifest body (spec 38 §3's shape): the canonical empty
+/// config, exactly one layer, the title + extra annotations. Returns
+/// (body, manifest hex digest).
+pub fn oci_manifest(
+    class: tebako_resolve::ArtifactClass,
+    title: &str,
+    blob: &[u8],
+    extra: &[(&str, &str)],
+) -> (Vec<u8>, String) {
+    let layer_hex = sha256_hex(blob);
+    let extras = extra
+        .iter()
+        .map(|(k, v)| format!(r#", "{k}": "{}""#, oci_json_escape(v)))
+        .collect::<String>();
+    let body = format!(
+        r#"{{"schemaVersion": 2, "mediaType": "{OCI_MANIFEST_MT}",
+  "artifactType": "{}",
+  "config": {{"mediaType": "{OCI_EMPTY_CONFIG_MT}", "digest": "{OCI_EMPTY_CONFIG_DIGEST}", "size": 2}},
+  "layers": [{{"mediaType": "{}", "digest": "sha256:{layer_hex}", "size": {}}}],
+  "annotations": {{"{OCI_ANNOTATION_TITLE}": "{title}"{extras}}}}}"#,
+        class.artifact_type(),
+        class.layer_media_type(),
+        blob.len(),
+    );
+    let hex = sha256_hex(body.as_bytes());
+    (body.into_bytes(), hex)
+}
+
+/// Serve a registry index over the OCI verbs (spec 38 §4): the `latest`
+/// tag's manifest, the digest re-resolve, and the YAML blob. Returns the
+/// index's `tfs+oci:` ref for the book entry.
+pub fn serve_oci_registry_index(mock: &OciDist, host: &str, ns: &str, yaml: &str) -> String {
+    let (manifest, manifest_hex) = oci_manifest(
+        tebako_resolve::ArtifactClass::RegistryIndex,
+        "tpkg-registry.yaml",
+        yaml.as_bytes(),
+        &[],
+    );
+    let blob_hex = sha256_hex(yaml.as_bytes());
+    let base = format!("https://{host}/v2/{ns}");
+    mock.ok(
+        &format!("{base}/manifests/latest"),
+        &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+        &manifest,
+    );
+    mock.ok(
+        &format!("{base}/manifests/sha256:{manifest_hex}"),
+        &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+        &manifest,
+    );
+    mock.ok(
+        &format!("{base}/blobs/sha256:{blob_hex}"),
+        &[],
+        yaml.as_bytes(),
+    );
+    format!("tfs+oci://{host}/{ns}:latest")
+}
+
+/// What [`serve_oci_runtime`] published — the card the test asserts on.
+pub struct OciRuntimePublish {
+    /// The bundle stem (`tebako-runtime-<ver>-<impl>-<lv>-<platform>`),
+    /// also the manifest tag.
+    pub stem: String,
+    pub manifest_hex: String,
+    pub bundle_hex: String,
+    pub exe: Vec<u8>,
+    pub image: Vec<u8>,
+}
+
+/// A spec 38 §5.4 runtime-bundle publish over the mock: the bundle bytes
+/// (exe + image members + the closing SHA256SUMS, the spec 36 §2 order),
+/// the stem-tag manifest whose shard annotation carries the spec 36 §3
+/// card, the digest re-resolve, the blob. The stem spells the
+/// post-tebako#716 grammar — pre-#716 lines never publish to OCI
+/// (spec 38 §7).
+pub fn serve_oci_runtime(
+    mock: &OciDist,
+    host: &str,
+    repo: &str,
+    engine: &str,
+    implementation: &str,
+    lv: &str,
+    tebako: &str,
+) -> OciRuntimePublish {
+    let platform = platform();
+    let stem = format!("tebako-runtime-{tebako}-{implementation}-{lv}-{platform}");
+    let bundle_name = format!("{stem}.tar.gz");
+    let image_name = format!("{stem}.tfs");
+    let exe = format!("the OCI {engine} interpreter {lv}\n").into_bytes();
+    let image = format!("the OCI {engine} env image {lv}\n").into_bytes();
+    let mut sums = String::new();
+    let mut members: Vec<(String, Vec<u8>, u32)> = Vec::new();
+    for (name, bytes, mode) in [
+        (stem.clone(), exe.clone(), 0o755u32),
+        (image_name.clone(), image.clone(), 0o444u32),
+    ] {
+        sums.push_str(&format!("{}  {}\n", sha256_hex(&bytes), name));
+        members.push((name, bytes, mode));
+    }
+    members.push(("SHA256SUMS".to_string(), sums.into_bytes(), 0o444));
+    let mut bundle: Vec<u8> = Vec::new();
+    {
+        let gz = flate2::write::GzEncoder::new(&mut bundle, flate2::Compression::none());
+        let mut builder = tar::Builder::new(gz);
+        for (name, bytes, mode) in &members {
+            let mut h = tar::Header::new_gnu();
+            h.set_entry_type(tar::EntryType::Regular);
+            h.set_size(bytes.len() as u64);
+            h.set_mode(*mode);
+            builder.append_data(&mut h, name, bytes.as_slice()).unwrap();
+        }
+        builder.finish().unwrap();
+    }
+    let bundle_hex = sha256_hex(&bundle);
+    // The shard the manifest's annotation carries (spec 36 §3): the
+    // identity triple, the per-member pins, the bundle block.
+    let shard = format!(
+        r#"{{"tebako_version": "{tebako}", "contract_era": 2, "contract_version": 2, "mount_root": "/__tfs__", "implementation": "{implementation}", "{engine}_version": "{lv}", "platform": "{platform}", "filename": "{stem}", "sha256": "{}", "image": {{"filename": "{image_name}", "sha256": "{}"}}, "bundle": {{"filename": "{bundle_name}", "sha256": "{bundle_hex}"}}}}"#,
+        sha256_hex(&exe),
+        sha256_hex(&image),
+    );
+    let (manifest, manifest_hex) = oci_manifest(
+        tebako_resolve::ArtifactClass::RuntimeBundle,
+        &bundle_name,
+        &bundle,
+        &[(OCI_ANNOTATION_SHARD, &shard)],
+    );
+    let base = format!("https://{host}/v2/{repo}");
+    mock.ok(
+        &format!("{base}/manifests/{stem}"),
+        &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+        &manifest,
+    );
+    mock.ok(
+        &format!("{base}/manifests/sha256:{manifest_hex}"),
+        &[("Docker-Content-Digest", format!("sha256:{manifest_hex}"))],
+        &manifest,
+    );
+    mock.ok(
+        &format!("{base}/blobs/sha256:{bundle_hex}"),
+        &[],
+        &bundle,
+    );
+    OciRuntimePublish {
+        stem,
+        manifest_hex,
+        bundle_hex,
+        exe,
+        image,
+    }
+}
+
+/// The `channel: oci` runtime registry YAML (spec 38 §11): one runtime
+/// row whose per-triplet `oci:` mirror is THE locator (the git-host
+/// release.ref rides along — dual publish, the migration-era shape). The
+/// row's sha256 pin and the mirror's `?sha256=` bind the same bundle
+/// bytes (§11's "the pin binds both").
+pub fn channel_oci_registry_yaml(
+    host: &str,
+    repo: &str,
+    engine: &str,
+    implementation: &str,
+    lv: &str,
+    tebako: &str,
+    publish: &OciRuntimePublish,
+) -> String {
+    let host_platform = tpkg::Platform::host();
+    let triplet = host_platform.as_triplet();
+    let asset = host_platform.release_asset_name();
+    format!(
+        "schema_version: 1\npayloads:\n  - name: tebako-runtime-{implementation}\n    kind: runtime\n    engine: {engine}\n    implementation: {implementation}\n    versions:\n      - version: '{lv}'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-{tebako}-{implementation}-{lv}-{asset}.tar.gz, sha256: '{}', oci: 'tfs+oci://{host}/{repo}:{}?sha256={}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-{implementation}:v{tebako}'}}\n",
+        publish.bundle_hex, publish.stem, publish.bundle_hex,
+    )
+}
