@@ -1456,6 +1456,7 @@ pub unsafe extern "C" fn tebako_fs_host_policy(
         },
         specs,
         files,
+        vec![],
     ) {
         Ok(p) => p,
         Err(e) => return fail(e),

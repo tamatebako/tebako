@@ -12,12 +12,16 @@
 //!     - host: $HOME/sources
 //!       mount: /work
 //!       access: ro | rw
+//!   network:                      # the outbound-peer grants (the network axis)
+//!     - example.com               # any port
+//!     - example.com:443           # one port
 //!   argument_files: auto-allowed  # the input file you hand the command is allowed even under deny
 //!   ```
 //!
 //! - **env** (`TEBAKO_JAIL`, spec 08 §1 — the form the runtime driver and
 //!   the preload shim consume): `open|deny` + `;host:mount:ro|rw` grants +
-//!   `;@file` argument files, e.g. `deny;/home/u/src:/work:rw;@/home/u/in.csv`.
+//!   `;net:host[:port]` outbound-peer grants +
+//!   `;@file` argument files, e.g. `deny;/home/u/src:/work:rw;@/home/u/in.csv;net:example.com:443`.
 //!
 //! This module is the AUTHORED model: it parses, validates, serializes and
 //! composes policies; it never touches the filesystem for enforcement.
@@ -105,6 +109,81 @@ pub struct JailMount {
     pub access: JailAccess,
 }
 
+/// One outbound-peer grant (spec 08 §1's `net:` directive — the network
+/// axis): a DNS name or IPv4 literal, optionally pinned to one port. The
+/// YAML spelling is the bare string (`"example.com"`, `"example.com:443"`);
+/// the env spelling is the `net:` directive. The host is lowercased at
+/// parse (DNS names are case-insensitive); an IPv6 literal is not
+/// spellable in v1 (`:` is the port separator) — a v6 peer is grantable
+/// by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetGrant {
+    /// DNS name or IPv4 literal, lowercased.
+    pub host: String,
+    /// The one granted port; `None` = any port.
+    pub port: Option<u16>,
+}
+
+impl NetGrant {
+    /// Parse one YAML/env payload: `host` or `host:port`.
+    pub fn parse(text: &str) -> Result<NetGrant, JailError> {
+        let (host, port) = match text.rsplit_once(':') {
+            Some((h, p)) if !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) => {
+                let port: u16 = p.parse().ok().filter(|p| *p > 0).ok_or_else(|| {
+                    JailError::Spec(format!("net grant port {p:?} is out of range"))
+                })?;
+                (h, Some(port))
+            }
+            Some((h, p)) if !h.contains(':') => {
+                return Err(if p.is_empty() {
+                    JailError::Spec(format!("empty port in net grant {text:?}"))
+                } else {
+                    JailError::Spec(format!("net grant port {p:?} is not a number"))
+                });
+            }
+            Some(_) => {
+                return Err(JailError::Spec(format!(
+                    "net grant {text:?} carries too many separators (an IPv6 literal is not spellable — grant the name)"
+                )));
+            }
+            None => (text, None),
+        };
+        if host.is_empty() {
+            return Err(JailError::Spec(format!("empty host in net grant {text:?}")));
+        }
+        if host.bytes().any(|b| b == b';' || b == b':') {
+            return Err(JailError::Spec(format!(
+                "net grant host {host:?} carries a separator"
+            )));
+        }
+        Ok(NetGrant {
+            host: host.to_lowercase(),
+            port,
+        })
+    }
+
+    /// The env-grammar payload spelling (no `net:` prefix).
+    pub fn to_spec(&self) -> String {
+        match self.port {
+            Some(p) => format!("{}:{p}", self.host),
+            None => self.host.clone(),
+        }
+    }
+}
+
+impl Serialize for NetGrant {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_spec())
+    }
+}
+
+impl<'de> Deserialize<'de> for NetGrant {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<NetGrant, D::Error> {
+        let s = String::deserialize(d)?;
+        NetGrant::parse(&s).map_err(serde::de::Error::custom)
+    }
+}
+
 /// The `argument_files:` block: EITHER the scalar `auto-allowed` (dispatch
 /// surfaces resolve the argv entries that name existing files into
 /// read-only grants) OR an explicit list of granted paths. The model keeps
@@ -182,6 +261,11 @@ pub struct HostJail {
     pub record: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mounts: Vec<JailMount>,
+    /// The network axis (spec 08 §2): outbound peers the payload was built
+    /// to need. Bites only under the deny default (open allows every peer,
+    /// exactly the fs axis); deny-by-default with explicit grants.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub network: Vec<NetGrant>,
     #[serde(default, skip_serializing_if = "ArgumentFiles::is_empty")]
     pub argument_files: ArgumentFiles,
 }
@@ -264,6 +348,7 @@ impl HostJail {
             default_open: true,
             record: false,
             mounts: Vec::new(),
+            network: Vec::new(),
             argument_files: ArgumentFiles {
                 auto: false,
                 files: Vec::new(),
@@ -277,6 +362,7 @@ impl HostJail {
             default_open: false,
             record: false,
             mounts: Vec::new(),
+            network: Vec::new(),
             argument_files: ArgumentFiles {
                 auto: false,
                 files: Vec::new(),
@@ -292,6 +378,7 @@ impl HostJail {
             default_open: false,
             record: false,
             mounts: Vec::new(),
+            network: Vec::new(),
             argument_files: ArgumentFiles {
                 auto: true,
                 files: Vec::new(),
@@ -308,6 +395,7 @@ impl HostJail {
             default_open: true,
             record: true,
             mounts: Vec::new(),
+            network: Vec::new(),
             argument_files: ArgumentFiles {
                 auto: false,
                 files: Vec::new(),
@@ -325,6 +413,7 @@ impl HostJail {
         !self.record
             && self.default_open
             && self.mounts.is_empty()
+            && self.network.is_empty()
             && self.argument_files.files.is_empty()
     }
 
@@ -362,6 +451,13 @@ impl HostJail {
             return Err(JailError::Invalid(
                 "argument_files entries must not be empty".to_string(),
             ));
+        }
+        for g in &self.network {
+            if g.host.is_empty() {
+                return Err(JailError::Invalid(
+                    "network[].host must not be empty".to_string(),
+                ));
+            }
         }
         Ok(())
     }
@@ -454,6 +550,7 @@ impl HostJail {
         let mut default_open: Option<bool> = None;
         let mut record = false;
         let mut mounts = Vec::new();
+        let mut net_grants = Vec::new();
         let mut files = Vec::new();
         for token in spec.split(';') {
             if token.is_empty() {
@@ -479,14 +576,21 @@ impl HostJail {
                     }
                     files.push(path.to_string());
                 }
+                // The network axis: host[:port]. Checked before the mount
+                // fallthrough — a `net:` token is never host:mount:ro|rw
+                // (a relative host path literally starting "net:" is
+                // pathological and loses the token).
+                _ if token.starts_with("net:") => {
+                    net_grants.push(NetGrant::parse(&token[4..]).map_err(|m| err(m.to_string()))?);
+                }
                 _ => {
                     mounts.push(parse_mount_directive(token).map_err(|m| err(m.to_string()))?);
                 }
             }
         }
-        if record && (!mounts.is_empty() || !files.is_empty()) {
+        if record && (!mounts.is_empty() || !net_grants.is_empty() || !files.is_empty()) {
             return Err(err(
-                "record carries no grants: mounts and argument files are inert under it — drop them"
+                "record carries no grants: mounts, net grants, and argument files are inert under it — drop them"
                     .to_string(),
             ));
         }
@@ -494,6 +598,7 @@ impl HostJail {
             default_open: default_open.unwrap_or(true),
             record,
             mounts,
+            network: net_grants,
             argument_files: ArgumentFiles { auto: false, files },
         }
         .normalized())
@@ -518,6 +623,10 @@ impl HostJail {
             out.push_str(&m.mount);
             out.push(':');
             out.push_str(m.access.as_str());
+        }
+        for g in &self.network {
+            out.push_str(";net:");
+            out.push_str(&g.to_spec());
         }
         let mut emitted = std::collections::BTreeSet::new();
         for f in &self.argument_files.files {
@@ -605,6 +714,50 @@ fn tighten_mount(m: &JailMount, q: &HostJail) -> Option<JailMount> {
     })
 }
 
+/// Tighten one net grant against the other policy (the network axis's
+/// mirror of [`tighten_mount`]): the surviving grants are what Q allows of
+/// G — empty when Q denies the host outright, G unchanged when Q grants
+/// the host at any port or exactly G's port, and G narrowed to each of Q's
+/// ports when G is port-open and Q is port-specific.
+fn tighten_net(g: &NetGrant, q: &HostJail) -> Vec<NetGrant> {
+    if q.default_open {
+        return vec![g.clone()];
+    }
+    let matching: Vec<&NetGrant> = q.network.iter().filter(|qg| qg.host == g.host).collect();
+    if matching.iter().any(|qg| qg.port.is_none()) {
+        return vec![g.clone()];
+    }
+    match g.port {
+        Some(p) if matching.iter().any(|qg| qg.port == Some(p)) => vec![g.clone()],
+        Some(_) => Vec::new(),
+        None => matching
+            .iter()
+            .map(|qg| NetGrant {
+                host: g.host.clone(),
+                port: qg.port,
+            })
+            .collect(),
+    }
+}
+
+/// Absorb narrower grants under a same-host port-open grant and drop exact
+/// duplicates (both compositions' tidy step).
+fn coalesce_net(grants: Vec<NetGrant>) -> Vec<NetGrant> {
+    let mut out: Vec<NetGrant> = Vec::new();
+    for g in grants {
+        if g.port.is_some() && out.iter().any(|o| o.host == g.host && o.port.is_none()) {
+            continue; // the port-open grant already covers it
+        }
+        if g.port.is_none() {
+            out.retain(|o| o.host != g.host || o.port.is_none());
+        }
+        if !out.contains(&g) {
+            out.push(g);
+        }
+    }
+    out
+}
+
 /// Request ∩ tightening (spec 08 §2/§4 — the user TIGHTENS the package's
 /// request, never loosens). The composition is exact for the mount model:
 /// the default is deny when either side denies; each side's grants survive
@@ -644,10 +797,21 @@ pub fn intersect(request: &HostJail, tightening: &HostJail) -> HostJail {
             files.push(f.clone());
         }
     }
+    // The network axis intersects the same way: each side's grants survive
+    // only as narrowed by the other side's allowance (a `--no-host` drops
+    // every requested peer; a port pin caps a port-open grant).
+    let mut net: Vec<NetGrant> = Vec::new();
+    for g in &tightening.network {
+        net.extend(tighten_net(g, request));
+    }
+    for g in &request.network {
+        net.extend(tighten_net(g, tightening));
+    }
     HostJail {
         default_open: request.default_open && tightening.default_open,
         record: false,
         mounts: coalesced,
+        network: coalesce_net(net),
         argument_files: ArgumentFiles {
             auto: request.argument_files.auto || tightening.argument_files.auto,
             files,
@@ -687,10 +851,21 @@ pub fn union(runtime_needs: &HostJail, payload_needs: &HostJail) -> HostJail {
             files.push(f.clone());
         }
     }
+    // The network axis unions: every peer EITHER side needs survives,
+    // coalescing to the looser (port-open) grant at the same host.
+    let net = coalesce_net(
+        runtime_needs
+            .network
+            .iter()
+            .chain(&payload_needs.network)
+            .cloned()
+            .collect(),
+    );
     HostJail {
         default_open: runtime_needs.default_open || payload_needs.default_open,
         record: false,
         mounts,
+        network: net,
         argument_files: ArgumentFiles {
             auto: runtime_needs.argument_files.auto || payload_needs.argument_files.auto,
             files,
@@ -1245,5 +1420,158 @@ mod tests {
         assert_eq!(j.mounts[0].host, "/a");
         let j = HostJail::parse_env_spec("deny;/:/w:rw").unwrap();
         assert_eq!(j.mounts[0].host, "/");
+    }
+
+    // ---------------------------------------------------------------
+    // The network axis (spec 08 §1/§2 — `net:` grants)
+    // ---------------------------------------------------------------
+
+    fn net(host: &str, port: Option<u16>) -> NetGrant {
+        NetGrant {
+            host: host.to_string(),
+            port,
+        }
+    }
+
+    #[test]
+    fn net_grant_parses_and_renders() {
+        assert_eq!(
+            NetGrant::parse("Example.COM").unwrap(),
+            net("example.com", None),
+            "hosts lowercase at parse (DNS is case-insensitive)"
+        );
+        assert_eq!(
+            NetGrant::parse("example.com:443").unwrap(),
+            net("example.com", Some(443))
+        );
+        assert_eq!(net("example.com", None).to_spec(), "example.com");
+        assert_eq!(net("example.com", Some(443)).to_spec(), "example.com:443");
+        // Literal IPv4 is spellable.
+        assert_eq!(
+            NetGrant::parse("203.0.113.9:8443").unwrap(),
+            net("203.0.113.9", Some(8443))
+        );
+    }
+
+    #[test]
+    fn net_grant_rejections_are_named() {
+        for (text, frag) in [
+            ("", "empty host"),
+            (":443", "empty host"),
+            ("example.com:", "empty port"),
+            ("example.com:abc", "not a number"),
+            ("example.com:0", "out of range"),
+            ("example.com:65536", "out of range"),
+            ("::1", "separator"),
+        ] {
+            let e = NetGrant::parse(text).unwrap_err();
+            assert!(
+                e.to_string().contains(frag),
+                "{text:?}: error {e} should mention {frag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn yaml_network_block_round_trips() {
+        let text = "default: deny\n\
+                    network:\n\
+                    \x20 - example.com\n\
+                    \x20 - example.com:443\n";
+        let j = HostJail::from_yaml(text).unwrap();
+        assert_eq!(
+            j.network,
+            vec![net("example.com", None), net("example.com", Some(443))]
+        );
+        let back = HostJail::from_yaml(&j.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, j);
+        // A bad entry is a named validation error.
+        let e = HostJail::from_yaml("network: [\"example.com:abc\"]\n").unwrap_err();
+        assert!(e.to_string().contains("not a number"), "{e}");
+    }
+
+    #[test]
+    fn env_spec_net_tokens_parse_and_round_trip() {
+        let j = HostJail::parse_env_spec("deny;/a:/w:rw;net:example.com:443;net:cdn.example.net")
+            .unwrap();
+        assert_eq!(
+            j.network,
+            vec![net("example.com", Some(443)), net("cdn.example.net", None)]
+        );
+        let env = j.to_env_spec(&[]);
+        assert_eq!(env, "deny;/a:/w:rw;net:example.com:443;net:cdn.example.net");
+        assert_eq!(HostJail::parse_env_spec(&env).unwrap(), j);
+        // Malformed net tokens are named errors.
+        for (spec, frag) in [
+            ("deny;net:", "empty host"),
+            ("deny;net:example.com:", "empty port"),
+            ("deny;net:example.com:99999", "out of range"),
+            ("record;net:example.com", "record carries no grants"),
+        ] {
+            let e = HostJail::parse_env_spec(spec).unwrap_err();
+            assert!(
+                e.to_string().contains(frag),
+                "spec {spec:?}: error {e} should mention {frag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn network_grants_make_a_policy_non_trivial() {
+        let mut j = HostJail::open();
+        j.network = vec![net("example.com", None)];
+        assert!(!j.is_trivially_open(), "a declared peer must export");
+    }
+
+    #[test]
+    fn intersect_network_tightens_both_axes() {
+        // Request: example.com any port + cdn:443; user: example.com:443 only.
+        let mut request = HostJail::deny();
+        request.network = vec![net("example.com", None), net("cdn.example.net", Some(443))];
+        let mut user = HostJail::deny();
+        user.network = vec![net("example.com", Some(443))];
+        let eff = intersect(&request, &user);
+        assert_eq!(
+            eff.network,
+            vec![net("example.com", Some(443))],
+            "cdn.example.net survives nothing: the user never allowed it"
+        );
+    }
+
+    #[test]
+    fn intersect_network_port_open_narrows_to_the_other_sides_ports() {
+        let mut request = HostJail::deny();
+        request.network = vec![net("example.com", None)];
+        let mut user = HostJail::deny();
+        user.network = vec![net("example.com", Some(443)), net("example.com", Some(80))];
+        let eff = intersect(&request, &user);
+        assert_eq!(
+            eff.network,
+            vec![net("example.com", Some(443)), net("example.com", Some(80))]
+        );
+    }
+
+    #[test]
+    fn intersect_network_under_an_open_side_keeps_the_grants() {
+        let mut request = HostJail::open();
+        request.network = vec![net("example.com", None)];
+        let mut user = HostJail::deny();
+        user.network = vec![net("example.com", Some(443))];
+        let eff = intersect(&request, &user);
+        assert_eq!(eff.network, vec![net("example.com", Some(443))]);
+    }
+
+    #[test]
+    fn union_network_keeps_both_sides_looser_wins() {
+        let mut runtime = HostJail::deny();
+        runtime.network = vec![net("example.com", Some(443))];
+        let mut payload = HostJail::deny();
+        payload.network = vec![net("example.com", None), net("other.net", Some(53))];
+        let u = union(&runtime, &payload);
+        assert_eq!(
+            u.network,
+            vec![net("example.com", None), net("other.net", Some(53))],
+            "the port-open grant absorbs the pinned one"
+        );
     }
 }

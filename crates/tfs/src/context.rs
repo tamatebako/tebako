@@ -378,6 +378,84 @@ impl FsContext {
         }
     }
 
+    /// Gate one outbound-peer decision (spec 08 §2's network axis).
+    /// `peers` are the candidate spellings of ONE peer — the numeric
+    /// address first, then every DNS name the preload's resolver
+    /// observation maps to it; `port` is the connection's destination
+    /// port. Ok(()) = allowed; Err(EPERM) = the jail's refusal. Denials
+    /// journal as `event=jail-deny peer=<ip>:<port> op=connect`; under
+    /// the record policy allows journal as `jail-allow` — the needs
+    /// generator's `network:` draft reads those lines. The journaled peer
+    /// is the numeric address (peers[0]): the observed names are
+    /// enforcement input, not journal material.
+    pub fn net_check(&self, peers: &[&str], port: u16) -> Result<(), i32> {
+        let trace_start = trace::Start::now();
+        let peer = peers.first().copied().unwrap_or("?");
+        // The first resolver-observed name (peers[1..]) rides the journal
+        // line: the needs generator's network draft prefers a name.
+        let name = peers.get(1).copied();
+        match self.host_policy.net_check(peers, port) {
+            Ok(()) => {
+                if self.host_policy.is_record() {
+                    if let Some(journal) = &self.journal {
+                        crate::journal::journal_net_event(
+                            journal,
+                            crate::journal::JAIL_ALLOW_EVENT,
+                            peer,
+                            port,
+                            name,
+                            self.host_policy.source(),
+                        );
+                    }
+                }
+                if let Some(start) = trace_start {
+                    let verdict = if self.host_policy.is_record() {
+                        Some("record".to_string())
+                    } else if !self.host_policy.never_denies() {
+                        Some(format!("allow:{}", self.host_policy.source()))
+                    } else {
+                        None
+                    };
+                    if let Some(verdict) = verdict {
+                        trace::emit(
+                            trace::Event::new(trace::Op::Jail, peer, verdict)
+                                .detail("op", Value::String("connect".to_string()))
+                                .detail("port", Value::String(port.to_string()))
+                                .dur(start),
+                        );
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => {
+                if let Some(journal) = &self.journal {
+                    crate::journal::journal_net_event(
+                        journal,
+                        crate::journal::JAIL_DENY_EVENT,
+                        peer,
+                        port,
+                        name,
+                        self.host_policy.source(),
+                    );
+                }
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(
+                            trace::Op::Jail,
+                            peer,
+                            format!("deny:{}", self.host_policy.source()),
+                        )
+                        .detail("op", Value::String("connect".to_string()))
+                        .detail("port", Value::String(port.to_string()))
+                        .with_errno(e)
+                        .dur(start),
+                    );
+                }
+                Err(e)
+            }
+        }
+    }
+
     // ---------------------------------------------------------------
     // Mount management
     // ---------------------------------------------------------------
@@ -3885,8 +3963,13 @@ mod tests {
 
         let mut ctx = FsContext::new();
         ctx.set_host_policy(
-            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Record, vec![], vec![])
-                .unwrap(),
+            crate::policy::HostPolicy::bind(
+                crate::policy::PolicyDefault::Record,
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
             Some(journal),
         );
         assert_eq!(ctx.host_check("/etc/hosts", HostAccess::Ro), Ok(()));
@@ -4027,8 +4110,13 @@ mod tests {
 
         let (mut ctx, host) = ctx_with_one_alias(&dir);
         ctx.set_host_policy(
-            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Record, vec![], vec![])
-                .unwrap(),
+            crate::policy::HostPolicy::bind(
+                crate::policy::PolicyDefault::Record,
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
             Some(journal),
         );
         let covered = ctx.dlalias2file("libfoo-3.dll").unwrap();
@@ -4374,8 +4462,13 @@ mod tests {
         let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
         ctx.mount_checked(mount).unwrap();
         ctx.set_host_policy(
-            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Deny, vec![], vec![])
-                .unwrap(),
+            crate::policy::HostPolicy::bind(
+                crate::policy::PolicyDefault::Deny,
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
             None,
         );
 
@@ -4423,8 +4516,13 @@ mod tests {
         let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
         ctx.mount_checked(mount).unwrap();
         ctx.set_host_policy(
-            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Record, vec![], vec![])
-                .unwrap(),
+            crate::policy::HostPolicy::bind(
+                crate::policy::PolicyDefault::Record,
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
             Some(journal),
         );
 

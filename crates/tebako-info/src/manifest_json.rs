@@ -72,6 +72,50 @@ fn capabilities_json(c: &Capabilities) -> Json {
     if let Some(runtime) = c.runtime {
         out.push(("runtime".to_string(), Json::Bool(runtime)));
     }
+    if let Some(host) = &c.host {
+        out.push(("host".to_string(), host_jail_json(host)));
+    }
+    Json::Object(out)
+}
+
+/// The spec 08 §4 jail block, rendered: the default, the mount grants,
+/// the network axis's outbound peers, and the argument files.
+fn host_jail_json(j: &tpkg::HostJail) -> Json {
+    let mut out = vec![(
+        "default".to_string(),
+        s(if j.default_open { "open" } else { "deny" }),
+    )];
+    if !j.mounts.is_empty() {
+        out.push((
+            "mounts".to_string(),
+            Json::Array(
+                j.mounts
+                    .iter()
+                    .map(|m| {
+                        Json::Object(vec![
+                            ("host".to_string(), s(&m.host)),
+                            ("mount".to_string(), s(&m.mount)),
+                            ("access".to_string(), s(m.access.as_str())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ));
+    }
+    if !j.network.is_empty() {
+        out.push((
+            "network".to_string(),
+            Json::Array(j.network.iter().map(|g| s(&g.to_spec())).collect()),
+        ));
+    }
+    if j.argument_files.auto {
+        out.push(("argument_files".to_string(), s("auto-allowed")));
+    } else if !j.argument_files.files.is_empty() {
+        out.push((
+            "argument_files".to_string(),
+            Json::Array(j.argument_files.files.iter().map(|f| s(f)).collect()),
+        ));
+    }
     Json::Object(out)
 }
 

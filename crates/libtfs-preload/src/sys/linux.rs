@@ -371,6 +371,42 @@ real_fn!(
     c"dlopen",
     unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
 );
+// The socket family (spec 08 §2's network axis): the judged trio plus the
+// resolver-observation entry. Lazy dlsym like every non-thin family — a
+// pre-constructor resolver call is pathological, and the boot gate bars
+// the engine then anyway.
+real_fn!(
+    real_connect,
+    c"connect",
+    unsafe extern "C" fn(c_int, *const libc::sockaddr, libc::socklen_t) -> c_int
+);
+real_fn!(
+    real_sendto,
+    c"sendto",
+    unsafe extern "C" fn(
+        c_int,
+        *const c_void,
+        usize,
+        c_int,
+        *const libc::sockaddr,
+        libc::socklen_t,
+    ) -> isize
+);
+real_fn!(
+    real_sendmsg,
+    c"sendmsg",
+    unsafe extern "C" fn(c_int, *const libc::msghdr, c_int) -> isize
+);
+real_fn!(
+    real_getaddrinfo,
+    c"getaddrinfo",
+    unsafe extern "C" fn(
+        *const c_char,
+        *const c_char,
+        *const libc::addrinfo,
+        *mut *mut libc::addrinfo,
+    ) -> c_int
+);
 real_fn!(
     real_fopen,
     c"fopen",

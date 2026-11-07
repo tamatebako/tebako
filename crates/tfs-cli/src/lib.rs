@@ -1341,13 +1341,18 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
                 Some(jail) => {
                     // Validate NOW (grant paths must exist at compose time)
                     // and carry the canonical form into the child.
-                    let policy = HostPolicy::bind(jail.default, jail.mounts, jail.arg_files)
-                        .map_err(|e| {
-                            (
-                                format!("Error: --compose: cannot bind policy: {}", errno_text(e)),
-                                1,
-                            )
-                        })?;
+                    let policy = HostPolicy::bind(
+                        jail.default,
+                        jail.mounts,
+                        jail.arg_files,
+                        jail.net_grants,
+                    )
+                    .map_err(|e| {
+                        (
+                            format!("Error: --compose: cannot bind policy: {}", errno_text(e)),
+                            1,
+                        )
+                    })?;
                     Some(policy.to_env_spec())
                 }
                 None => None,
@@ -1385,13 +1390,18 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
         None => match &opts.jail {
             Some(spec) => {
                 let parsed = JailSpec::parse(spec).map_err(|e| (format!("Error: {e}"), 1))?;
-                let policy = HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files)
-                    .map_err(|e| {
-                        (
-                            format!("Error: --jail: cannot bind policy: {}", errno_text(e)),
-                            1,
-                        )
-                    })?;
+                let policy = HostPolicy::bind(
+                    parsed.default,
+                    parsed.mounts,
+                    parsed.arg_files,
+                    parsed.net_grants,
+                )
+                .map_err(|e| {
+                    (
+                        format!("Error: --jail: cannot bind policy: {}", errno_text(e)),
+                        1,
+                    )
+                })?;
                 Some(policy.to_env_spec())
             }
             None => None,

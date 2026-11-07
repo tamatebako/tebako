@@ -249,15 +249,19 @@ pub(crate) fn plan_run_with(
 fn validate_binds(spec: &str) -> Result<(), TebakoError> {
     let parsed = tfs::policy::JailSpec::parse(spec)
         .map_err(|e| packaging_error(130, Some(&e.to_string())))?;
-    tfs::policy::HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files).map_err(
-        |e| {
-            let text = tfs::errno::strerror_text(e);
-            packaging_error(
-                130,
-                Some(&format!("--jail/--mount: cannot bind policy: {text}")),
-            )
-        },
-    )?;
+    tfs::policy::HostPolicy::bind(
+        parsed.default,
+        parsed.mounts,
+        parsed.arg_files,
+        parsed.net_grants,
+    )
+    .map_err(|e| {
+        let text = tfs::errno::strerror_text(e);
+        packaging_error(
+            130,
+            Some(&format!("--jail/--mount: cannot bind policy: {text}")),
+        )
+    })?;
     Ok(())
 }
 

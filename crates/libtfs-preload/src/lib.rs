@@ -71,6 +71,14 @@
 //! AT_FDCWD (-100) carries the TEBAKO_FD_FLAG bit, so a bare bit test
 //! would misroute it (pinned by `route::tests::at_fdcwd_is_not_a_memfs_fd`).
 //!
+//! The SOCKET family (spec 08 §2's network axis): `connect`, `sendto`,
+//! `sendmsg` judge the destination against the policy's `net:` grants (a
+//! refusal fails `EPERM` before the kernel is ever asked; only INET/INET6
+//! destinations are judged — AF_UNIX & kin are the fs axis's territory);
+//! `getaddrinfo` is never gated (the DNS carve-out) and instead OBSERVES
+//! the name → address answer into [`net`]'s table, the bridge that lets a
+//! name grant judge a numeric peer.
+//!
 //! ## Honest scope (v1)
 //!
 //! - Dynamic binaries only (a static binary has no interposition point —
@@ -137,6 +145,15 @@
 //!   musl/rust-std-on-gnu ride the libc wrappers, which ARE covered).
 //!   Memfs exec materialization leaks one dl-cache copy per exec (gc is
 //!   a later milestone, stated honestly in the spec).
+//! - The network axis's v1 coverage (spec 08 §5): the judged family is
+//!   `connect`/`sendto`/`sendmsg` plus the `getaddrinfo` observation.
+//!   NOT covered: the legacy resolver (`gethostbyname` & kin — a payload
+//!   resolving through it is judged by numeric spelling only), macOS's
+//!   exotic connect forms (`connectx`), `sendfile` over a socket (a
+//!   connection-mode write — the connect was judged), and INBOUND service
+//!   (`bind`/`listen`/`accept` are not governed in v1 — the axis is
+//!   outbound peers). A peer that never rode the resolver judges by its
+//!   numeric spelling alone.
 //!
 //! ## Layout
 //!
@@ -149,6 +166,9 @@
 //!   safe modules `#![forbid(unsafe_code)]`).
 
 pub mod spec;
+
+#[cfg(unix)]
+pub mod net;
 
 #[cfg(unix)]
 pub mod route;

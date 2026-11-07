@@ -202,12 +202,17 @@ files. Everything else is EPERM/EROFS, journaled.
 
 ## 5. Honest scope
 
-Jails are FILESYSTEM-ONLY (spec 08 §5). No network confinement is
-claimed (`capabilities.network` is advisory). Coverage is every IO
+Jails cover the FILESYSTEM and, from the spec 08 network amendment, the
+NETWORK (spec 08 §5): outbound `connect`/`sendto`/`sendmsg` peers are
+judged against the policy's `net:` grants (deny is the floor; DNS
+resolution itself is never gated). Coverage is every IO
 route through the TFS layer — interpreted payloads and native binaries
 under the preload shim alike; NOT covered: statically-linked binaries
-(direct syscalls, no interposition point) and any process that escapes
-the shim — stated honestly, never implied otherwise. The platform
+(direct syscalls, no interposition point), any process that escapes
+the shim, AF_UNIX peers (the fs axis's territory), the legacy resolver
+(`gethostbyname` — numeric-spelling judgment only), macOS `connectx`,
+and inbound service (`bind`/`listen`/`accept` — the axis is outbound
+peers in v1) — stated honestly, never implied otherwise. The platform
 loader's own reads never pass a tebako route on ANY platform:
 process-boot import resolution and a raw `LoadLibrary`/`dlopen` from an
 unpatched caller (spec 22 §2.1's documented edge) are the OS's own

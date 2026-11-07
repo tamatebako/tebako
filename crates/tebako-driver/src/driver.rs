@@ -996,7 +996,8 @@ fn apply_jail(env: &dyn Env) -> Result<(), DriverError> {
     let spec =
         tfs::policy::JailSpec::parse(&spec_str).map_err(|e| jail(format!("TEBAKO_JAIL: {e}")))?;
     let policy =
-        tfs::policy::HostPolicy::bind(spec.default, spec.mounts, spec.arg_files).map_err(|e| {
+        tfs::policy::HostPolicy::bind(spec.default, spec.mounts, spec.arg_files, spec.net_grants)
+            .map_err(|e| {
             jail(format!(
                 "TEBAKO_JAIL: cannot bind policy: {}",
                 errno_text(e)

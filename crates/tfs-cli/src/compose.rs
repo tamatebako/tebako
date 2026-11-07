@@ -34,7 +34,7 @@
 //! The compose file is the whole composition: combining `--compose` with
 //! `--image`/`--jail` is a named error (one source of truth per run).
 
-use tfs::policy::{HostAccess, HostMountSpec, JailSpec, PolicyDefault};
+use tfs::policy::{HostAccess, HostMountSpec, JailSpec, NetGrant, PolicyDefault};
 
 /// What a compose file declares, lowered to the `tfs exec` operands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +83,7 @@ struct MountEntry {
 #[serde(deny_unknown_fields)]
 struct Needs {
     host: Option<Vec<NeedEntry>>,
+    network: Option<Vec<NetNeedEntry>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -94,6 +95,18 @@ struct NeedEntry {
     /// time (probe artifacts — the generator marks them; the floor's
     /// courtesy-surface rule). Absent without it: a named error.
     optional: Option<bool>,
+    /// Documentation for the reviewer (spec 23 §3) — the engine ignores it.
+    #[allow(dead_code)]
+    why: Option<String>,
+}
+
+/// One `needs.network` entry (spec 08 §2's network axis): the peer the
+/// payload was observed connecting to.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NetNeedEntry {
+    /// `host` or `host:port` (the §1 `net:` grant's payload spelling).
+    peer: String,
     /// Documentation for the reviewer (spec 23 §3) — the engine ignores it.
     #[allow(dead_code)]
     why: Option<String>,
@@ -161,7 +174,22 @@ pub fn parse_compose(
             access: parse_access(&m.access)?,
         });
     }
-    for n in file.needs.and_then(|n| n.host).unwrap_or_default() {
+    let mut net_grants: Vec<NetGrant> = Vec::new();
+    let needs = file.needs;
+    let (need_host, need_net) = match &needs {
+        Some(n) => (
+            n.host.as_deref().unwrap_or(&[]),
+            n.network.as_deref().unwrap_or(&[]),
+        ),
+        None => (&[][..], &[][..]),
+    };
+    for n in need_net {
+        net_grants.push(
+            NetGrant::parse(&n.peer)
+                .map_err(|e| format!("needs.network entry {:?}: {e}", n.peer))?,
+        );
+    }
+    for n in need_host {
         let host = expand_atoms(&n.path, expand)?;
         if !exists(&host) {
             if n.optional == Some(true) {
@@ -178,12 +206,12 @@ pub fn parse_compose(
         });
     }
 
-    if policy == Some(PolicyDefault::Record) && !grants.is_empty() {
+    if policy == Some(PolicyDefault::Record) && (!grants.is_empty() || !net_grants.is_empty()) {
         return Err(
             "record carries no grants: mounts and needs are inert under it — drop them".to_string(),
         );
     }
-    let jail = if policy.is_some() || !grants.is_empty() {
+    let jail = if policy.is_some() || !grants.is_empty() || !net_grants.is_empty() {
         Some(JailSpec {
             // Jailed-safe by default (spec 23 §2): needs/mounts without an
             // explicit policy mean the declared grants are the ONLY
@@ -191,6 +219,7 @@ pub fn parse_compose(
             default: policy.unwrap_or(PolicyDefault::Deny),
             mounts: grants,
             arg_files: Vec::new(),
+            net_grants,
         })
     } else {
         None

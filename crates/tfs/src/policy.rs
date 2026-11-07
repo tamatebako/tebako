@@ -87,6 +87,80 @@ pub struct HostMountSpec {
     pub access: HostAccess,
 }
 
+/// One outbound-peer grant (spec 08 §1's `net:` directive — the network
+/// axis): a DNS name or IPv4 literal, optionally pinned to one port.
+///
+/// The host is lowercased at parse (DNS names are case-insensitive) and
+/// carries no `:` — the port separator — so an IPv6 LITERAL is not
+/// spellable in the v1 grammar. A v6 peer is still grantable BY NAME:
+/// the preload's resolver observation maps the numeric peer back to the
+/// granted name. Ports are 1..=65535; `None` means any port.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetGrant {
+    /// DNS name or IPv4 literal, lowercased.
+    pub host: String,
+    /// The one granted port; `None` = any port.
+    pub port: Option<u16>,
+}
+
+impl NetGrant {
+    /// Parse a `net:` directive's payload: `host` or `host:port`. The
+    /// message text is the caller's to dress (tpkg mirrors this grammar
+    /// token-for-token — one grammar, one message set).
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let (host, port) = match text.rsplit_once(':') {
+            // host:port — the port must be ALL digits (a trailing
+            // non-digit means the token was never host:port).
+            Some((h, p)) if !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) => {
+                let port: u16 = p
+                    .parse()
+                    .ok()
+                    .filter(|p| *p > 0)
+                    .ok_or_else(|| format!("net grant port {p:?} is out of range"))?;
+                (h, Some(port))
+            }
+            Some((h, p)) if !h.contains(':') => {
+                return if p.is_empty() {
+                    Err(format!("empty port in net grant {text:?}"))
+                } else {
+                    Err(format!("net grant port {p:?} is not a number"))
+                };
+            }
+            Some(_) => {
+                return Err(format!(
+                    "net grant {text:?} carries too many separators (an IPv6 literal is not spellable — grant the name)"
+                ));
+            }
+            None => (text, None),
+        };
+        if host.is_empty() {
+            return Err(format!("empty host in net grant {text:?}"));
+        }
+        if host.bytes().any(|b| b == b';' || b == b':') {
+            return Err(format!("net grant host {host:?} carries a separator"));
+        }
+        Ok(NetGrant {
+            host: host.to_lowercase(),
+            port,
+        })
+    }
+
+    /// True when this grant covers (host, port) — the host matches (the
+    /// candidate is lowercased by the caller) and the grant's port is
+    /// open-ended or equal.
+    pub fn covers(&self, host: &str, port: u16) -> bool {
+        self.host == host && self.port.is_none_or(|p| p == port)
+    }
+
+    /// The env-grammar spelling (`net:` prefix NOT included).
+    pub fn to_spec(&self) -> String {
+        match self.port {
+            Some(p) => format!("{}:{p}", self.host),
+            None => self.host.clone(),
+        }
+    }
+}
+
 /// The platform floor (spec 08 §2.1): the read-only grants every bound
 /// deny policy gains — the platform surface a spawned interpreter or
 /// runtime physically cannot boot without. On macOS the JVM's
@@ -173,6 +247,10 @@ pub struct HostPolicy {
     /// file grants missed the derivation, 2026-10-08).
     /// Derived at bind, never authored, never serialized.
     traverse: Vec<PathBuf>,
+    /// The network axis's outbound-peer grants (spec 08 §1's `net:`
+    /// directives). Nothing to canonicalize — grants name DNS hosts or
+    /// IPv4 literals, matched case-insensitively at check time.
+    net_grants: Vec<NetGrant>,
     /// Who installed the policy (`manifest`, `user`, `manifest+user`,
     /// `TEBAKO_JAIL`, …), recorded in the audit journal on every denial
     /// (spec 08 §2: violations are logged with path + syscall class).
@@ -195,6 +273,7 @@ impl HostPolicy {
             floor_mounts: Vec::new(),
             arg_files: Vec::new(),
             traverse: Vec::new(),
+            net_grants: Vec::new(),
             source: String::new(),
         }
     }
@@ -271,8 +350,11 @@ impl HostPolicy {
         default: PolicyDefault,
         mounts: Vec<HostMountSpec>,
         arg_files: Vec<PathBuf>,
+        net_grants: Vec<NetGrant>,
     ) -> Result<Self, i32> {
-        if default == PolicyDefault::Record && (!mounts.is_empty() || !arg_files.is_empty()) {
+        if default == PolicyDefault::Record
+            && (!mounts.is_empty() || !arg_files.is_empty() || !net_grants.is_empty())
+        {
             return Err(libc::EINVAL);
         }
         let mut bound_mounts = Vec::with_capacity(mounts.len());
@@ -339,6 +421,7 @@ impl HostPolicy {
             floor_mounts,
             arg_files: bound_files,
             traverse,
+            net_grants,
             source: String::new(),
         })
     }
@@ -405,6 +488,40 @@ impl HostPolicy {
         Err(libc::EPERM)
     }
 
+    /// Gate one outbound-peer decision (spec 08 §2's network axis).
+    /// `peers` are the candidate spellings of ONE peer — the numeric
+    /// address first, then every DNS name the caller's resolver
+    /// observation maps to it — and a grant naming ANY of them allows the
+    /// connection.
+    ///
+    /// The open default allows every peer (net grants are inert under it,
+    /// exactly the fs axis's open default); record allows (the caller
+    /// journals the allow); deny refuses with EPERM when no grant covers
+    /// any candidate spelling at the connection's port.
+    pub fn net_check(&self, peers: &[&str], port: u16) -> Result<(), i32> {
+        match self.default {
+            PolicyDefault::Open | PolicyDefault::Record => return Ok(()),
+            PolicyDefault::Deny => {}
+        }
+        for peer in peers {
+            if self
+                .net_grants
+                .iter()
+                .any(|g| g.covers(&peer.to_lowercase(), port))
+            {
+                return Ok(());
+            }
+        }
+        Err(libc::EPERM)
+    }
+
+    /// The network grants this policy binds (spec 08 §4's introspection —
+    /// the info surface and tests read it; enforcement goes through
+    /// [`net_check`](Self::net_check)).
+    pub fn net_grants(&self) -> &[NetGrant] {
+        &self.net_grants
+    }
+
     /// Serialize the policy to the canonical `TEBAKO_JAIL` env form (the
     /// inverse of [`JailSpec::parse`]). Because the policy is bound, every
     /// host path is already canonical — a consumer that re-parses and
@@ -426,6 +543,10 @@ impl HostPolicy {
                 HostAccess::Rw => "rw",
             });
         }
+        for g in &self.net_grants {
+            out.push_str(";net:");
+            out.push_str(&g.to_spec());
+        }
         for f in &self.arg_files {
             out.push(';');
             out.push('@');
@@ -445,15 +566,17 @@ impl HostPolicy {
 /// directive = "open" | "deny" | "record" # namespace default (default: open)
 ///           | host ":" mount ":" mode    # docker -v grant; mount absolute
 ///           | "@" path                   # argument file (read-only grant)
+///           | "net:" net-host [ ":" port ] # outbound peer grant (spec 08 §1's
+///                                        #   network axis)
 /// mode      = "ro" | "rw"
 /// ```
 ///
-/// Example: `deny;/home/u/src:/work:rw;@/home/u/input.csv`.
+/// Example: `deny;/home/u/src:/work:rw;@/home/u/input.csv;net:example.com:443`.
 ///
 /// `record` (spec 23 §8) is allow-all + audit: it journals every host
 /// access (`event=jail-allow`) for the `tfs needs` generator. It carries
-/// no grants — a spec mixing `record` with mounts or argument files is a
-/// named error, never silently-inert configuration.
+/// no grants — a spec mixing `record` with mounts, argument files, or net
+/// grants is a named error, never silently-inert configuration.
 ///
 /// Bind with [`HostPolicy::bind`]; serialize a bound policy back with
 /// [`HostPolicy::to_env_spec`].
@@ -465,6 +588,8 @@ pub struct JailSpec {
     pub mounts: Vec<HostMountSpec>,
     /// Argument files: read-only grants, honored even under deny.
     pub arg_files: Vec<PathBuf>,
+    /// Outbound-peer grants (the network axis).
+    pub net_grants: Vec<NetGrant>,
 }
 
 /// A named, human-readable jail-spec parse error (the offending token is
@@ -484,8 +609,8 @@ impl JailSpec {
     /// Parse a `TEBAKO_JAIL` / `--jail` spec. Errors on: empty spec,
     /// conflicting or duplicated `open`/`deny`/`record`, unknown access
     /// modes, non-absolute mount points, empty hosts/mounts/argument
-    /// files, a `record` default carrying grants, and unrecognised
-    /// directive shapes.
+    /// files, malformed `net:` grants, a `record` default carrying
+    /// grants, and unrecognised directive shapes.
     pub fn parse(spec: &str) -> Result<Self, JailSpecError> {
         let err = |msg: String| JailSpecError(format!("{msg} in {spec:?}"));
         if spec.trim().is_empty() {
@@ -494,6 +619,7 @@ impl JailSpec {
         let mut default: Option<PolicyDefault> = None;
         let mut mounts = Vec::new();
         let mut arg_files = Vec::new();
+        let mut net_grants = Vec::new();
         for token in spec.split(';') {
             if token.is_empty() {
                 return Err(err("empty directive (stray ';')".to_string()));
@@ -518,6 +644,14 @@ impl JailSpec {
                         return Err(err("empty argument file".to_string()));
                     }
                     arg_files.push(PathBuf::from(path));
+                }
+                // The network axis. Checked before the mount fallthrough:
+                // a `net:` token's payload is host[:port], never the
+                // host:mount:ro|rw shape (a RELATIVE host path literally
+                // starting "net:" is pathological and loses the token).
+                _ if token.starts_with("net:") => {
+                    let grant = NetGrant::parse(&token[4..]).map_err(&err)?;
+                    net_grants.push(grant);
                 }
                 _ => {
                     // host:mount:access — split from the RIGHT so host paths
@@ -554,9 +688,11 @@ impl JailSpec {
             }
         }
         let default = default.unwrap_or(PolicyDefault::Open);
-        if default == PolicyDefault::Record && (!mounts.is_empty() || !arg_files.is_empty()) {
+        if default == PolicyDefault::Record
+            && (!mounts.is_empty() || !arg_files.is_empty() || !net_grants.is_empty())
+        {
             return Err(err(
-                "record carries no grants: mounts and argument files are inert under it — drop them"
+                "record carries no grants: mounts, net grants, and argument files are inert under it — drop them"
                     .to_string(),
             ));
         }
@@ -564,6 +700,7 @@ impl JailSpec {
             default,
             mounts,
             arg_files,
+            net_grants,
         })
     }
 }
@@ -732,7 +869,7 @@ mod tests {
     #[test]
     fn deny_without_grants_denies_everything() {
         let tree = Tree::new("deny");
-        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![]).unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![], vec![]).unwrap();
         assert_eq!(
             p.check(&tree.work.join("hello.txt"), HostAccess::Ro),
             Err(libc::EPERM)
@@ -759,7 +896,7 @@ mod tests {
         std::fs::create_dir_all(&nested).unwrap();
         let file = nested.join("in.csv");
         std::fs::write(&file, b"x").unwrap();
-        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![file.clone()]).unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![file.clone()], vec![]).unwrap();
         // The granted file reads (exact canonical match); every strict
         // ancestor traverses — exact-path read, never write (the JVM's
         // cwd walk under the `deny:arg` profile, tebako#539).
@@ -784,7 +921,7 @@ mod tests {
 
     #[test]
     fn deny_gains_the_platform_floor_read_only() {
-        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![]).unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![], vec![]).unwrap();
         for dir in platform_floor() {
             if std::fs::canonicalize(&dir).is_err() {
                 continue; // absent on this host: skipped at bind
@@ -836,6 +973,7 @@ mod tests {
                 access: HostAccess::Rw,
             }],
             vec![],
+            vec![],
         )
         .unwrap();
         assert_eq!(p.check(Path::new("/usr"), HostAccess::Rw), Ok(()));
@@ -845,7 +983,7 @@ mod tests {
     fn open_default_adds_no_floor_mounts() {
         // Under `open` the floor grants nothing the default does not
         // already allow — `never_denies` keeps its exact meaning.
-        let p = HostPolicy::bind(PolicyDefault::Open, vec![], vec![]).unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Open, vec![], vec![], vec![]).unwrap();
         assert!(p.never_denies());
         assert!(p.mounts.is_empty());
         assert!(p.floor_mounts.is_empty());
@@ -857,10 +995,16 @@ mod tests {
         // the AUTHORED mounts only, and re-binding re-derives the floor
         // — p1 and p2 enforce identically, with no duplicated entries
         // (the TEBAKO_JAIL inheritance path relies on it).
-        let p1 = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![]).unwrap();
+        let p1 = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![], vec![]).unwrap();
         let spec = p1.to_env_spec();
         let parsed = JailSpec::parse(&spec).unwrap();
-        let p2 = HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files).unwrap();
+        let p2 = HostPolicy::bind(
+            parsed.default,
+            parsed.mounts,
+            parsed.arg_files,
+            parsed.net_grants,
+        )
+        .unwrap();
         assert_eq!(p1, p2);
     }
 
@@ -870,6 +1014,7 @@ mod tests {
         let p = HostPolicy::bind(
             PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
+            vec![],
             vec![],
         )
         .unwrap();
@@ -892,6 +1037,7 @@ mod tests {
             PolicyDefault::Deny,
             vec![tree.spec(&tree.rodir, "/ro", HostAccess::Ro)],
             vec![],
+            vec![],
         )
         .unwrap();
         assert_eq!(p.check(&tree.rodir.join("ro.txt"), HostAccess::Ro), Ok(()));
@@ -909,7 +1055,13 @@ mod tests {
     #[test]
     fn arg_file_allowed_even_under_deny() {
         let tree = Tree::new("arg");
-        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![tree.input.clone()]).unwrap();
+        let p = HostPolicy::bind(
+            PolicyDefault::Deny,
+            vec![],
+            vec![tree.input.clone()],
+            vec![],
+        )
+        .unwrap();
         assert_eq!(p.check(&tree.input, HostAccess::Ro), Ok(()));
         // …but only for reading, and only the file itself (not its dir).
         assert_eq!(p.check(&tree.input, HostAccess::Rw), Err(libc::EPERM));
@@ -928,6 +1080,7 @@ mod tests {
         let p = HostPolicy::bind(
             PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
+            vec![],
             vec![],
         )
         .unwrap();
@@ -948,6 +1101,7 @@ mod tests {
                 tree.spec(&inner, "/work/sub", HostAccess::Rw),
             ],
             vec![],
+            vec![],
         )
         .unwrap();
         // Under the inner rw mount: writes allowed.
@@ -965,6 +1119,7 @@ mod tests {
         let p = HostPolicy::bind(
             PolicyDefault::Open,
             vec![tree.spec(&tree.rodir, "/ro", HostAccess::Ro)],
+            vec![],
             vec![],
         )
         .unwrap();
@@ -987,6 +1142,7 @@ mod tests {
         let p = HostPolicy::bind(
             PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
+            vec![],
             vec![],
         )
         .unwrap();
@@ -1016,6 +1172,7 @@ mod tests {
             PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
             vec![],
+            vec![],
         )
         .unwrap();
         assert_eq!(p.check(&target.join("f.txt"), HostAccess::Ro), Ok(()));
@@ -1035,6 +1192,7 @@ mod tests {
         let p = HostPolicy::bind(
             PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
+            vec![],
             vec![],
         )
         .unwrap();
@@ -1064,6 +1222,7 @@ mod tests {
             PolicyDefault::Deny,
             vec![tree.spec(&dotted, "/work", HostAccess::Rw)],
             vec![],
+            vec![],
         )
         .unwrap();
         assert_eq!(p.mounts[0].host, tree.work);
@@ -1090,6 +1249,7 @@ mod tests {
             PolicyDefault::Deny,
             vec![tree.spec(&deep, "/work", HostAccess::Rw)],
             vec![],
+            vec![],
         )
         .unwrap();
         // The grant itself keeps its full access.
@@ -1115,7 +1275,8 @@ mod tests {
             HostPolicy::bind(
                 PolicyDefault::Deny,
                 vec![tree.spec(&tree.work, "work", HostAccess::Rw)],
-                vec![]
+                vec![],
+                vec![],
             ),
             Err(libc::EINVAL)
         );
@@ -1124,10 +1285,12 @@ mod tests {
             PolicyDefault::Deny,
             vec![tree.spec(&missing, "/work", HostAccess::Rw)],
             vec![],
+            vec![],
         )
         .unwrap_err();
         assert_eq!(err, libc::ENOENT);
-        let err = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![missing.clone()]).unwrap_err();
+        let err = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![missing.clone()], vec![])
+            .unwrap_err();
         assert_eq!(err, libc::ENOENT);
     }
 
@@ -1209,10 +1372,12 @@ mod tests {
             tree.input.display()
         ))
         .unwrap();
-        let policy = HostPolicy::bind(spec.default, spec.mounts, spec.arg_files).unwrap();
+        let policy =
+            HostPolicy::bind(spec.default, spec.mounts, spec.arg_files, spec.net_grants).unwrap();
         let env = policy.to_env_spec();
         let spec2 = JailSpec::parse(&env).unwrap();
-        let policy2 = HostPolicy::bind(spec2.default, spec2.mounts, spec2.arg_files).unwrap();
+        let policy2 =
+            HostPolicy::bind(spec2.default, spec2.mounts, spec2.arg_files, vec![]).unwrap();
         assert_eq!(policy, policy2, "env round trip: {env}");
         assert!(env.starts_with("deny;"), "{env}");
         assert!(env.contains(":/work:rw"), "{env}");
@@ -1258,7 +1423,7 @@ mod tests {
     #[test]
     fn record_policy_allows_everything_but_is_not_never_denies() {
         let tree = Tree::new("record");
-        let p = HostPolicy::bind(PolicyDefault::Record, vec![], vec![]).unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Record, vec![], vec![], vec![]).unwrap();
         assert!(p.is_record());
         // It never denies — but it journals every allow, so installers MUST
         // open the journal for it: never_denies stays false.
@@ -1279,20 +1444,139 @@ mod tests {
             PolicyDefault::Record,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
             vec![],
+            vec![],
         )
         .unwrap_err();
         assert_eq!(err, libc::EINVAL);
-        let err =
-            HostPolicy::bind(PolicyDefault::Record, vec![], vec![tree.input.clone()]).unwrap_err();
+        let err = HostPolicy::bind(
+            PolicyDefault::Record,
+            vec![],
+            vec![tree.input.clone()],
+            vec![],
+        )
+        .unwrap_err();
         assert_eq!(err, libc::EINVAL);
     }
 
     #[test]
     fn record_env_round_trip() {
-        let p = HostPolicy::bind(PolicyDefault::Record, vec![], vec![]).unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Record, vec![], vec![], vec![]).unwrap();
         assert_eq!(p.to_env_spec(), "record");
         let parsed = JailSpec::parse(&p.to_env_spec()).unwrap();
-        let p2 = HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files).unwrap();
+        let p2 = HostPolicy::bind(
+            parsed.default,
+            parsed.mounts,
+            parsed.arg_files,
+            parsed.net_grants,
+        )
+        .unwrap();
         assert_eq!(p, p2);
+    }
+
+    // ---------------------------------------------------------------
+    // The network axis (spec 08 §1/§2 — `net:` grants)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn jail_spec_parses_net_grants() {
+        let s = JailSpec::parse("deny;net:example.com:443;net:cdn.example.net;/a:/w:ro").unwrap();
+        assert_eq!(s.default, PolicyDefault::Deny);
+        assert_eq!(
+            s.net_grants,
+            vec![
+                NetGrant::parse("example.com:443").unwrap(),
+                NetGrant::parse("cdn.example.net").unwrap(),
+            ]
+        );
+        assert_eq!(s.mounts.len(), 1);
+        // Named rejections.
+        for (spec, frag) in [
+            ("deny;net:", "empty host"),
+            ("deny;net:example.com:", "empty port"),
+            ("deny;net:example.com:abc", "not a number"),
+            ("deny;net:example.com:0", "out of range"),
+            ("deny;net:::1", "separator"),
+            ("record;net:example.com", "record carries no grants"),
+        ] {
+            let e = JailSpec::parse(spec).unwrap_err();
+            assert!(
+                e.to_string().contains(frag),
+                "spec {spec:?}: error {e} should mention {frag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn net_grants_env_round_trip() {
+        let p = HostPolicy::bind(
+            PolicyDefault::Deny,
+            vec![],
+            vec![],
+            vec![
+                NetGrant::parse("example.com:443").unwrap(),
+                NetGrant::parse("203.0.113.9").unwrap(),
+            ],
+        )
+        .unwrap();
+        let env = p.to_env_spec();
+        assert_eq!(env, "deny;net:example.com:443;net:203.0.113.9");
+        let parsed = JailSpec::parse(&env).unwrap();
+        let p2 = HostPolicy::bind(
+            parsed.default,
+            parsed.mounts,
+            parsed.arg_files,
+            parsed.net_grants,
+        )
+        .unwrap();
+        assert_eq!(p, p2);
+    }
+
+    #[test]
+    fn net_check_denies_only_under_deny_and_matches_port() {
+        let p = HostPolicy::bind(
+            PolicyDefault::Deny,
+            vec![],
+            vec![],
+            vec![
+                NetGrant::parse("example.com:443").unwrap(),
+                NetGrant::parse("203.0.113.9").unwrap(),
+            ],
+        )
+        .unwrap();
+        // A granted name at its port (case-insensitive), a granted literal
+        // at any port.
+        assert_eq!(p.net_check(&["93.184.216.34", "example.com"], 443), Ok(()));
+        assert_eq!(p.net_check(&["EXAMPLE.com"], 443), Ok(()));
+        assert_eq!(p.net_check(&["203.0.113.9"], 8443), Ok(()));
+        // The port pin bites; an ungranted peer refuses; the empty
+        // candidate set refuses.
+        assert_eq!(p.net_check(&["example.com"], 80), Err(libc::EPERM));
+        assert_eq!(p.net_check(&["198.51.100.7"], 443), Err(libc::EPERM));
+        assert_eq!(p.net_check(&[], 443), Err(libc::EPERM));
+
+        // Under open the grants are inert (the fs axis's shape exactly).
+        let open = HostPolicy::bind(
+            PolicyDefault::Open,
+            vec![],
+            vec![],
+            vec![NetGrant::parse("example.com").unwrap()],
+        )
+        .unwrap();
+        assert_eq!(open.net_check(&["anything.example"], 1), Ok(()));
+        // Record allows (the caller journals).
+        let record = HostPolicy::bind(PolicyDefault::Record, vec![], vec![], vec![]).unwrap();
+        assert_eq!(record.net_check(&["anything.example"], 1), Ok(()));
+    }
+
+    #[test]
+    fn bind_rejects_record_with_net_grants() {
+        let err = HostPolicy::bind(
+            PolicyDefault::Record,
+            vec![],
+            vec![],
+            vec![NetGrant::parse("example.com").unwrap()],
+        )
+        .unwrap_err();
+        assert_eq!(err, libc::EINVAL);
     }
 }
