@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/08-jails.md @ b33732858f333357a75ea4381208e6af4c87b182
+// source: docs/spec/08-jails.md @ 58583b91852da35373ad0a779b1ac42d40cf8ffc
 
 Normative specification of host-filesystem access control for running
 payloads. Status: SHIPPED (roadmaps 09 + 30 + 35) — the TFS enforcement
@@ -62,12 +62,16 @@ shim consume — the loader's wire spelling of a policy).* ABNF:
 ----
 policy      = default *(";" grant)
 default     = "open" / "deny"
-grant       = host-grant / argfile-grant
+grant       = host-grant / argfile-grant / net-grant
 host-grant  = host-path ":" mount-path ":" access
 host-path   = 1*(%x21-3A / %x3C-7E)        ; any visible char except ';'
 mount-path  = 1*(%x21-3A / %x3C-7E)        ; the in-VFS point, same alphabet
 access      = "ro" / "rw"
 argfile-grant = "@" 1*(%x21-7E)            ; an argv file path, read-allowed
+net-grant   = "net:" net-host [":" port]   ; an outbound peer grant (the
+                                           ; network axis, §2)
+net-host    = 1*(%x21-29 / %x2B-39 / %x3C-7E) ; a dns name or IP — no ':' or ';'
+port        = 1*DIGIT
 ----
 
 
@@ -78,7 +82,10 @@ even under deny. The grammar's alphabet excludes `;` (the grant
 separator); a windows drive-qualified floor spelling is NOT carried (the
 right-split cannot — every consumer re-derives the floor at its own
 bind, §2's inheritance rule). Examples: `deny;/home/u/src:/work:rw`,
-`deny;/home/u/src:/work:rw;@/home/u/in.csv`, `open`.
+`deny;/home/u/src:/work:rw;@/home/u/in.csv`, `open`. A network grant is
+its own form: `deny;net:example.com` (the host, any port),
+`deny;net:example.com:443` (one port), and the two compose with host
+grants in any order.
 
 
 [%unnumbered]
@@ -95,6 +102,16 @@ policy always wins. Signed/trusted payloads may get wider latitude by
 policy choice, never by bypass.
 * Violations are logged to the tebako audit journal with path + syscall
 class.
+* *Network (the second axis — §1's grammar gains `+++net:+++` grants):*
+an outbound `connect` to an ungranted peer fails the policy's named
+refusal and journals the peer, exactly the fs axis's shape. Deny is the
+floor: with no `net:` grant, every outbound connection is refused. DNS
+resolution is allowed unconditionally — a query leaks a name, never
+payload bytes, and a grant names hosts whose addresses must resolve
+(the documented carve-out, in the manifest). User tightening intersects
+the manifest's network request exactly as on the fs axis: the tighter
+answer for every peer survives; the preload shim judges, never the
+payload.
 
 
 [%unnumbered]
@@ -248,8 +265,11 @@ resolve to their target and escapes fail EPERM.
 
 The payload manifest (spec 03) gains `capabilities.host` — the access the
 payload was built to need (e.g. metanorma: read the input file's
-directory, write the output directory). Dispatch surfaces (spec 07)
-compose: manifest request ∩ user policy = effective jail.
+directory, write the output directory) — whose block carries a `network:`
+list of outbound peers the payload was built to need (deny-by-default
+with explicit grants; a data-only payload needs no network). Dispatch
+surfaces (spec 07)
+compose: manifest request ∩ user policy = effective jail, on both axes.
 
 
 [%unnumbered]
@@ -282,17 +302,31 @@ operation it audits.
 
 
 [%unnumbered]
-== 5. Scope (honest, locked 2026-07-26)
+== 5. Scope (honest, locked 2026-07-26; the network axis joins, 2026-11-07)
 
-Jails are FILESYSTEM-ONLY. `capabilities.network` is advisory metadata
-(displayed by the info surface, spec 15), not an enforcement promise.
-Coverage: every IO route through TFS — all interpreted payloads AND
-native binaries running under the preload interposition shim
-(spec 07 §8 tier 1, whose IO flows through the same `host_policy`).
-NOT covered: statically-linked binaries (direct syscalls, no
-interposition point) and any process that escapes the shim — stated
-honestly in the manifest and docs. OS-level network confinement
-(seatbelt/seccomp/WFP) is a possible later layer, never claimed today.
+Jails cover the FILESYSTEM and the NETWORK. The `network:` list is the
+enforcement contract: deny-by-default with explicit grants, judged
+in-process at the preload's socket family — the §1 `net:` grant names an
+outbound peer, and a `connect` to an ungranted peer fails the policy's
+named refusal and journals it, exactly the fs axis's shape. Coverage:
+every IO route through TFS — all interpreted payloads AND native binaries
+running under the preload interposition shim (spec 07 §8 tier 1, whose IO
+flows through the same `host_policy`); the exe shape (spec 22 §3.6)
+exports the socket family, so an interpreted payload's own `connect`
+binds to the judgment. The judged family is `connect`/`sendto`/`sendmsg`
+plus the `getaddrinfo` observation (the name → address bridge a name
+grant judges a numeric peer through). NOT covered: statically-linked
+binaries (direct syscalls, no interposition point), any process that
+escapes the shim, DNS resolution (allowed unconditionally in v1 of
+the axis: a query leaks a name, never payload bytes, and a grant names
+hosts whose addresses must resolve), AF_UNIX peers (the fs axis's
+territory, never net-judged), the legacy resolver (`gethostbyname` —
+a payload resolving through it judges by numeric spelling only),
+macOS's `connectx` (no importer observed), and INBOUND service
+(`bind`/`listen`/`accept` — the axis is outbound peers; a jailed payload
+that listens is v2 territory) — all stated honestly in the manifest
+and docs. OS-level confinement (seatbelt/seccomp/WFP) stays a possible
+later layer, never claimed.
 
 The shim's coverage is SYMBOL-level (tebako#439): a jail holds only for
 the libc entry points the shim interposes — the named list in
@@ -370,7 +404,8 @@ reddens the release matrix, not a dashboard nobody reads.
 | 17 | statically-linked binary, or raw `syscall(2)` IO | OUT OF SCOPE — no interposition point; §5 states it in the manifest and the docs | §5
 | 18 | fortify open family still uncovered (`+++__open_2+++`/`+++__open64_2+++`/`+++__openat64_2+++`) | OUT OF SCOPE — no importer observed in the shipped runtimes; the symbol list is the interposed surface's SSOT | §5
 | 19 | the runtime EXE's own statically-linked stat/open definitions | OUT OF SCOPE today — gated only for the symbols the exe defines (spec 22 §2); follow-up wiring lives in the runtime factory | §5
-| 20 | a payload's own sockets (network confinement) | OUT OF SCOPE today — `capabilities.network` is advisory metadata; the network axis is SOTA arc 05's second item, not a claim of this spec | §5
+| 20 | a payload's own sockets (network confinement) | blocked (EPERM) from the 2026-11-07 amendment — the §1 `net:` grant + the preload's socket family (`connect`/`sendto`/`sendmsg` judged, `getaddrinfo` observed for the name bridge; DNS itself never gated); a `connect` to an ungranted peer is the policy's named refusal | `net::tests::deny_judges_by_numeric_and_observed_name`, `net::tests::ipv6_peers_judge_by_observed_name`, `policy::tests::net_check_denies_only_under_deny_and_matches_port`, `policy::tests::jail_spec_parses_net_grants` + `net_grants_env_round_trip`, `needs::tests::network_lines_draft_peer_entries_preferring_the_name`
+| 21 | a jailed payload opening a listener (inbound service: `bind`/`listen`/`accept`) | OUT OF SCOPE in v1 — the axis judges OUTBOUND peers; inbound confinement is a later layer, named here so nobody reads the axis as bidirectional | §5
 |===
 
 

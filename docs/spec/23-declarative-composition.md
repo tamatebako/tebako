@@ -104,6 +104,25 @@ Rules (MECE, fail-closed):
   composition's explicit consent (§6 step 4) — declared write access to
   user surface is visible by construction.
 
+The block's second axis is `network:` (spec 08 §2 — outbound peers,
+deny-by-default under a deny policy):
+
+```yaml
+  network:
+    - peer: example.com             # a DNS name — any port
+      why: "checks the update feed at boot"        # MANDATORY
+    - peer: example.com:443         # one port only
+      why: "fetches the font index at first run"
+```
+
+Rules: the peer is a DNS name or an IPv4 literal (an IPv6 literal is not
+spellable — the `:` is the port separator; grant the peer's NAME, the
+resolver observation bridges it); the §8 record loop drafts entries from
+`op=connect` journal lines, preferring the resolver-observed name. A
+`network:` need composes exactly like a `host:` need: the effective
+policy is request ∩ user tightening (spec 08 §2), and an undeclared peer
+the workload reaches for is the jail's named refusal, journaled.
+
 The D1 manifest also carries one sibling declaration that is NOT a host
 need: `library_aliases:` (grammar spec 03 §2.5), the windows Class-L
 bare-name rule's allowlist (semantics spec 22 §2.1). It routes a bare
