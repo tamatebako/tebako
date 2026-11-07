@@ -448,9 +448,11 @@ pub fn resolve_runtime_edge(
 
 /// [`resolve_runtime_edge`] with the fetch seam explicit (production
 /// rides [`HttpTransport`]; the OCI-lane tests answer with a mock
-/// distribution endpoint).
+/// distribution endpoint). Public for the integration-level composition
+/// e2e (tests/dispatch.rs's cross-registry arm) — the same seam law as
+/// [`crate::regcache::registry_for_with`].
 #[allow(clippy::too_many_arguments)]
-fn resolve_runtime_edge_with<T: Transport + Sync>(
+pub fn resolve_runtime_edge_with<T: Transport + Sync>(
     transport: &T,
     engine: &str,
     implementation: Option<&str>,
@@ -1925,6 +1927,17 @@ fn registry_derived_source(
                 },
                 Err(_) => None,
             };
+            // The success-path sibling of the `-skip`/`-error` lines:
+            // the pick's registry is provenance — the composition proof
+            // (spec 37 §7) reads which registry answered, never a merged
+            // blur across the book.
+            journal(
+                &ctx.home,
+                &format!(
+                    "event=runtime-source-registry engine={engine} registry={reg_ref} entry={} version={}",
+                    entry.name, version.version
+                ),
+            );
             return Ok(Some(picked_row_source(
                 locator,
                 "registry",
@@ -4484,6 +4497,18 @@ pub fn fetch_payload_by_lock(
                 format!("resolving {name} {version} by its locked digest: {e}"),
             )
         })?;
+    // The dep-fetch half of the store's provenance (spec 37 §7): the
+    // locked install names its source — the registry the alias resolved
+    // to AND the artifact's origin — the same vocabulary the install
+    // paths journal.
+    journal(
+        &ctx.home,
+        &format!(
+            "event=payload-installed name={name} version={version} sha256={} origin={} registry={registry_reference}",
+            entry.sha256,
+            entry.origin.as_deref().unwrap_or(""),
+        ),
+    );
     let image = ctx
         .home
         .join("payloads")

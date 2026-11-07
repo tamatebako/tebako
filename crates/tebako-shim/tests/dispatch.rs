@@ -1675,3 +1675,283 @@ fn on_runtime_malformed_shard_is_a_manifest_error() {
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST, "{err:?}");
     assert!(err.message.contains("on_runtime"), "{}", err.message);
 }
+
+// ---------------------------------------------------------------------
+// Arc-06 item 4 (spec 37 §3/§4 + spec 38 §11) — the cross-registry
+// composition e2e: one dispatch composes a payload fetched through
+// registry A (a `file:` channel) with a runtime fetched through registry
+// B (an OCI-hosted index under a `channel: oci` book entry, the runtime
+// bundle riding the row's per-triplet `oci:` mirror). The journal names
+// each registry's ref — provenance, never a merged blur.
+// ---------------------------------------------------------------------
+
+/// Registry A (the `file:` channel): one data-payload row whose universal
+/// release ref carries the digest pin (the dep-lock grammar, tebako#460).
+/// Returns the registry's `file:` ref.
+fn seed_alpha_registry(
+    tmp: &std::path::Path,
+    bytes: &[u8],
+) -> (String, std::path::PathBuf) {
+    let image = tmp.join("iso-codes-2025.2.tfs");
+    std::fs::write(&image, bytes).expect("registry payload bytes");
+    let pin = sha256_hex(bytes);
+    let registry = tmp.join("alpha-registry.yaml");
+    std::fs::write(
+        &registry,
+        format!(
+            "schema_version: 1\npayloads:\n  - name: iso-codes\n    kind: data\n    versions:\n      - version: 2025.2\n        platforms: universal\n        release: {{ref: '{}?sha256={pin}'}}\n",
+            tebako_http::file_url(&image)
+        ),
+    )
+    .expect("registry yaml");
+    (tebako_http::file_url(&registry), image)
+}
+
+/// The two-entry book: A (`alpha`, file-served) + B (`beta`, an OCI-hosted
+/// index under `channel: oci`).
+fn seed_two_channel_config(home: &std::path::Path, alpha_ref: &str, beta_ref: &str) {
+    write_config(
+        home,
+        &format!(
+            "registries:\n  - ref: {alpha_ref}\n    name: alpha\n  - ref: {beta_ref}\n    name: beta\n    channel: oci\n"
+        ),
+    );
+}
+
+/// The root payload: a `publisher` app whose entry rides a java/temurin
+/// runtime (registry B's rows) and whose data dep rides registry A.
+fn seed_publisher(home: &std::path::Path) {
+    write_payload(
+        home,
+        "publisher",
+        "1.2.3",
+        &app_manifest_requires(
+            "publisher",
+            "1.2.3",
+            "  entrypoints:\n    - name: publisher\n      path: /app/bin/publisher\n      runtime_requirement: {engine: java, implementation: temurin, constraint: \">= 21\"}\n",
+            "requires:\n  - kind: data\n    name: iso-codes\n    constraint: \">= 2024.1\"\n    mount: /__app__/share/iso-codes\n    registry: alpha\n",
+        ),
+    );
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+#[test]
+fn cross_registry_dispatch_composes_a_file_channel_payload_and_an_oci_channel_runtime() {
+    isolate_docker_config();
+    let tmp = TempDir::new("cross-registry-compose");
+    let home = tmp.path().join("home");
+
+    // Registry B: the OCI endpoint serves the runtime bundle AND the
+    // registry index (one mock distribution endpoint, both classes).
+    let mock = OciDist::new();
+    let publish = serve_oci_runtime(
+        &mock,
+        "reg.example",
+        "runtimes/openjdk",
+        "java",
+        "temurin",
+        "21.0.12",
+        "2.5.0",
+    );
+    let beta_yaml = channel_oci_registry_yaml(
+        "reg.example",
+        "runtimes/openjdk",
+        "java",
+        "temurin",
+        "21.0.12",
+        "2.5.0",
+        &publish,
+    );
+    let beta_ref = serve_oci_registry_index(&mock, "reg.example", "ns/tpkg-registry", &beta_yaml);
+
+    // Registry A: the file: channel carrying the dep payload's row.
+    let alpha_bytes = b"the alpha-channel iso-codes bytes\n";
+    let (alpha_ref, _) = seed_alpha_registry(tmp.path(), alpha_bytes);
+
+    seed_two_channel_config(&home, &alpha_ref, &beta_ref);
+    seed_publisher(&home);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "publisher", "1.2.3");
+
+    // Prime B's index through the mock: the registry YAML itself rides
+    // the OCI verbs (spec 38 §4), cached fresh so the resolution walk's
+    // own read never touches the network.
+    let fetcher = tebako_resolve::Fetcher::with_transport(mock.clone());
+    tebako_shim::regcache::registry_for_with(&home, &beta_ref, &fetcher, false, now_unix())
+        .expect("B's index primes through the mock");
+    assert!(mock.requested("/v2/ns/tpkg-registry/manifests/latest"));
+
+    // The runtime fetches from B over the OCI channel.
+    let rt = tebako_shim::runtime::resolve_runtime_edge_with(
+        &mock,
+        "java",
+        Some("temurin"),
+        &tpkg::Constraint::new(">= 21").unwrap(),
+        None,
+        None,
+        true,
+        &ctx,
+    )
+    .expect("the runtime resolves from B's OCI channel");
+    assert_eq!(rt.lang_version, "21.0.12");
+    assert_eq!(
+        std::fs::read(&rt.exe).unwrap(),
+        publish.exe,
+        "the cached exe is B channel's bytes"
+    );
+
+    // ONE dispatch: the payload's dep fetches from A (file:), the runtime
+    // serves from the B-channel cache entry.
+    let plan = dispatch::dispatch("publisher", &["report.xml".into()], &ctx).unwrap();
+
+    assert_eq!(plan.program, rt.exe);
+    let dep_image = home.join("payloads").join("iso-codes").join("2025.2.tfs");
+    assert_eq!(
+        std::fs::read(&dep_image).unwrap(),
+        alpha_bytes,
+        "the mounted dep is A channel's bytes"
+    );
+    assert_eq!(plan.mounts.len(), 2);
+    assert_eq!(plan.mounts[1].image, dep_image);
+    assert_eq!(plan.mounts[1].mount, "/__app__/share/iso-codes");
+
+    // The provenance: each source named, never a merged blur — B's
+    // registry ref + OCI artifact base on the runtime side, A's registry
+    // ref + artifact origin on the payload side.
+    let journal = std::fs::read_to_string(home.join("journal.log")).expect("the journal");
+    assert!(
+        journal.contains(&format!(
+            "event=runtime-source-registry engine=java registry={beta_ref} entry=tebako-runtime-temurin version=21.0.12"
+        )),
+        "{journal}"
+    );
+    assert!(
+        journal.contains("event=unsigned-runtime-fetch"),
+        "{journal}"
+    );
+    assert!(
+        journal.contains("base=tfs+oci://reg.example/runtimes/openjdk"),
+        "{journal}"
+    );
+    assert!(
+        journal.contains(&format!(
+            "event=payload-installed name=iso-codes version=2025.2"
+        )),
+        "{journal}"
+    );
+    assert!(
+        journal.contains(&format!("registry={alpha_ref}")),
+        "{journal}"
+    );
+    // The wire: the bundle's tag resolve + digest re-resolve + the blob.
+    assert!(mock.requested(&format!("/manifests/{}", publish.stem)));
+    assert!(mock.requested(&format!("/blobs/sha256:{}", publish.bundle_hex)));
+}
+
+#[test]
+fn cross_registry_a_broken_oci_runtime_channel_names_its_ref_and_tears_nothing() {
+    isolate_docker_config();
+    let tmp = TempDir::new("cross-registry-broken");
+    let home = tmp.path().join("home");
+
+    let mock = OciDist::new();
+    let publish = serve_oci_runtime(
+        &mock,
+        "reg.example",
+        "runtimes/openjdk",
+        "java",
+        "temurin",
+        "21.0.12",
+        "2.5.0",
+    );
+    // The broken arm: the pair's BLOB 404s mid-fetch.
+    mock.drop_answer(&format!(
+        "https://reg.example/v2/runtimes/openjdk/blobs/sha256:{}",
+        publish.bundle_hex
+    ));
+    let beta_yaml = channel_oci_registry_yaml(
+        "reg.example",
+        "runtimes/openjdk",
+        "java",
+        "temurin",
+        "21.0.12",
+        "2.5.0",
+        &publish,
+    );
+    let beta_ref = serve_oci_registry_index(&mock, "reg.example", "ns/tpkg-registry", &beta_yaml);
+
+    let alpha_bytes = b"the alpha-channel iso-codes bytes\n";
+    let (alpha_ref, _) = seed_alpha_registry(tmp.path(), alpha_bytes);
+    seed_two_channel_config(&home, &alpha_ref, &beta_ref);
+    let ctx = ctx(&home, tmp.path());
+
+    // A's side lands FIRST (the dispatch's dep fetch, by its locked
+    // digest): cached, provenance journaled.
+    let image = tebako_shim::runtime::fetch_payload_by_lock(
+        "iso-codes",
+        &tebako_shim::versions::from_validated(&tpkg::Constraint::new(">= 2024.1").unwrap()),
+        "alpha",
+        &ctx,
+    )
+    .expect("A's locked fetch resolves")
+    .expect("a satisfying row answers");
+    assert_eq!(std::fs::read(&image).unwrap(), alpha_bytes);
+
+    // B's index primes; the bundle card resolves (manifests serve)...
+    let fetcher = tebako_resolve::Fetcher::with_transport(mock.clone());
+    tebako_shim::regcache::registry_for_with(&home, &beta_ref, &fetcher, false, now_unix())
+        .expect("B's index primes through the mock");
+
+    // ...then the pair blob 404s: the named error names B's ref.
+    let err = tebako_shim::runtime::resolve_runtime_edge_with(
+        &mock,
+        "java",
+        Some("temurin"),
+        &tpkg::Constraint::new(">= 21").unwrap(),
+        None,
+        None,
+        true,
+        &ctx,
+    )
+    .expect_err("the 404ing pair blob refuses by name");
+    assert!(
+        err.message.contains("reg.example"),
+        "the error names B's host: {err:?}"
+    );
+    assert!(
+        err.message.contains("runtimes/openjdk"),
+        "the error names B's repo: {err:?}"
+    );
+
+    // Never a torn install: no runtime entry landed, A's payload stays
+    // cached byte-identical with its trust anchor.
+    let runtimes = home.join("runtimes");
+    let landed: Vec<_> = std::fs::read_dir(&runtimes)
+        .map(|rd| rd.filter_map(|e| e.ok()).collect())
+        .unwrap_or_default();
+    assert!(
+        landed.is_empty(),
+        "a partial runtime install is invisible: {landed:?}"
+    );
+    let entry = home.join("payloads").join("iso-codes");
+    assert_eq!(
+        std::fs::read(entry.join("2025.2.tfs")).unwrap(),
+        alpha_bytes
+    );
+    assert!(entry.join("2025.2.tfs.sha256").is_file());
+    let journal = std::fs::read_to_string(home.join("journal.log")).expect("the journal");
+    assert!(
+        journal.contains("event=payload-installed name=iso-codes version=2025.2"),
+        "{journal}"
+    );
+    assert!(
+        !journal.contains("event=runtime-fetch-verified"),
+        "{journal}"
+    );
+}

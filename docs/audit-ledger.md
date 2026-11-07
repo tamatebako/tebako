@@ -117,10 +117,10 @@ Someone with no tebako knowledge, offline, with only public artifacts:
 
 | question | events |
 |---|---|
-| fetch and verify | `fetch`, `delta-fetch`, `runtime-fetch-verified`, `runtime-index-verified`, `payload-signature-trusted` |
+| fetch and verify | `fetch`, `delta-fetch`, `runtime-fetch-verified`, `runtime-index-verified`, `unsigned-runtime-fetch`, `payload-signature-trusted` |
 | install and bind | `payload-installed`, `payload-uninstalled`, `origin-rebind`, `registry-key-pinned` |
 | mount and compose | `composition`, `overlay`, `decrypt`, `lazy-seed` |
-| resolve and exec | `runtime-edge-resolved`, `executable-edge-resolved`, `spawn-shim-note` |
+| resolve and exec | `runtime-source-registry`, `runtime-edge-resolved`, `executable-edge-resolved`, `spawn-shim-note` |
 | policy | `jail-deny`, `jail-allow`, `vfs-deny`, `vfs-write`, `lib-load` |
 
 The list is a census, not a whitelist: an event a future tebako writes is a
