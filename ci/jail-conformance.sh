@@ -56,6 +56,48 @@
 # either way.
 set -uo pipefail
 
+# --- the deadline + the orphan guard (the bounded-resources cell of
+# TODO.sota/05, the 2026-10-26 incident: a probe child spun at ~97 % CPU
+# for 45 h because nothing reaped it). Every arm runs in its OWN process
+# group (perl setpgid — the portable primitive, present on macOS and the
+# Linux runners) under a per-arm deadline; on ANY exit the group is torn
+# down, so a payload's orphaned child dies with its probe. A deadline
+# hit or a reaped group is a LOUD harness failure (the arm's rows go
+# missing and the matrix counts them), never a silent pass.
+DEADLINE="${DEADLINE:-600}"   # seconds per arm; DEADLINE=8 smoke-tests the guard itself
+ORPHANS=0
+
+run_bounded() {
+  local label="$1"; shift
+  perl -MPOSIX=setpgid -e 'setpgid(0, 0) or die "setpgid: $!\n"; exec @ARGV or die "exec: $!\n"' -- "$@" &
+  local pid=$!
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$DEADLINE" ]; then
+      echo "   DEADLINE: $label exceeded ${DEADLINE}s — tearing down the process group" >&2
+      kill -TERM -- -"$pid" 2>/dev/null
+      sleep 3
+      kill -KILL -- -"$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      return 124
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  wait "$pid"
+  local rc=$?
+  # The orphan guard: the arm's group must be EMPTY once its leader is
+  # gone. A live member is a reaped-and-failed arm, named in the matrix.
+  if kill -0 -- -"$pid" 2>/dev/null; then
+    echo "   ORPHAN: $label left a live process group — tearing it down" >&2
+    ps -eo pid,pgid,etime,command 2>/dev/null | awk -v g="$pid" '$2 == g' | sed 's/^/   /' >&2
+    kill -KILL -- -"$pid" 2>/dev/null
+    ORPHANS=$((ORPHANS + 1))
+    return 125
+  fi
+  return "$rc"
+}
+
 PAIR=""
 TFS_BIN=""
 while [ $# -gt 0 ]; do
@@ -211,8 +253,16 @@ arm() {
   if [ "$label" = "record" ]; then
     envs+=("TEBAKO_JAIL_JOURNAL=$WORK/journal.log")
   fi
-  env "${envs[@]}" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
-    "$linkdir" 2>"$WORK/$label.err" | tee "$WORK/$label.out" | sed 's/^/   /'
+  # The arm runs bounded (arc 05's cell): its own process group, the
+  # per-arm deadline, the group torn down on any exit. A deadline hit or
+  # a reaped orphan leaves the arm's rows ABSENT — the matrix counts
+  # them incomplete, never a silent pass.
+  if ! run_bounded "$label" env "${envs[@]}" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
+    "$linkdir" 2>"$WORK/$label.err" > "$WORK/$label.out.raw"; then
+    : > "$WORK/$label.out.raw"
+  fi
+  sed 's/^/   /' "$WORK/$label.out.raw"
+  mv "$WORK/$label.out.raw" "$WORK/$label.out"
 }
 
 arm open ""
@@ -302,6 +352,10 @@ if [ "$leaks" -ne 0 ]; then
 fi
 if [ "$journal_bad" -ne 0 ]; then
   echo "   INCOMPLETE: the record journal is empty — a record policy that allows silently is not an audit trail"
+  exit 2
+fi
+if [ "$ORPHANS" -ne 0 ]; then
+  echo "   ORPHANS: $ORPHANS arm(s) left a live process group — reaped by the guard; a runtime that orphans its children fails this suite on its own"
   exit 2
 fi
 if [ "$incomplete" -ne 0 ]; then
