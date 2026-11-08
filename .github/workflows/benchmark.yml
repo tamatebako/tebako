@@ -276,7 +276,7 @@ jobs:
           if [ -e "${rt_legs[0]}" ]; then
             tebako-rs/target/debug/tebako-bench report "${rt_legs[@]}" \
               --md report-runtime.md --json dashboard-runtime.json \
-              --metrics covenant-metrics.json
+              --metrics covenant-metrics.json --covenant tebako-rs/benchmarks/covenant.yaml
             rc_rt=$?
             # The covenant evaluation (spec 27 §11.1): the runtime
             # report's own dashboard drives the sourced cells; the verdict
@@ -287,7 +287,7 @@ jobs:
             if [ -f covenant-metrics.json ]; then
               TEBAKO_BENCH_INJECT="${{ inputs.inject }}" \
                 tebako-rs/target/debug/tebako-bench covenant \
-                --metrics covenant-metrics.json --json covenant-verdict.json || true
+                --metrics covenant-metrics.json --covenant tebako-rs/benchmarks/covenant.yaml --json covenant-verdict.json || true
             else
               echo "no covenant metrics produced — the gate reports every cell absent"
             fi
