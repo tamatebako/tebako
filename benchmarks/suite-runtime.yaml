@@ -17,7 +17,7 @@ workloads:
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: ruby-fib
-    argv: ["-e", "def fib(n) n < 2 ? n : fib(n-1) + fib(n-2) end; puts fib(32)"]
+    argv: ["-e", "def fib(n) n < 2 ? n : fib(n-1) + fib(n-2) end; puts fib(34)"]
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: ruby-stdlib
@@ -25,11 +25,11 @@ workloads:
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: ruby-ioread
-    argv: ["-e", "File.open(ARGV[0], 'rb') { |f| while f.read(1048576); end }", "{fixture}"]
+    argv: ["-e", "128.times { File.open(ARGV[0], 'rb') { |f| while f.read(1048576); end } }", "{fixture}"]
     expect: { exit: 0, files: [] }
-    timeout_s: 120
+    timeout_s: 180
   - id: ruby-statloop
-    argv: ["-e", "Dir.glob(File.join(Gem.default_dir, '**', '*')).each { |f| File.stat(f) }"]
+    argv: ["-e", "10.times { Dir.glob(File.join(Gem.default_dir, '**', '*')).each { |f| File.stat(f) } }"]
     expect: { exit: 0, files: [] }
     timeout_s: 300
 
@@ -39,7 +39,7 @@ workloads:
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: python-fib
-    argv: ["-c", "f=lambda n: n if n<2 else f(n-1)+f(n-2); print(f(32))"]
+    argv: ["-c", "f=lambda n: n if n<2 else f(n-1)+f(n-2); print(f(39))"]
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: python-stdlib
@@ -47,11 +47,11 @@ workloads:
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: python-ioread
-    argv: ["-c", "import sys; f=open(sys.argv[1],'rb'); [None for _ in iter(lambda: f.read(1048576), b'')]", "{fixture}"]
+    argv: ["-c", "import sys\nfor _ in range(128):\n    f = open(sys.argv[1], 'rb')\n    while f.read(1048576): pass\n    f.close()", "{fixture}"]
     expect: { exit: 0, files: [] }
-    timeout_s: 120
+    timeout_s: 180
   - id: python-statloop
-    argv: ["-c", "import os, sysconfig; [os.stat(os.path.join(d, f)) for d, _, fs in os.walk(sysconfig.get_paths()['stdlib']) for f in fs]"]
+    argv: ["-c", "import os, sysconfig\nfor _ in range(50):\n    [os.stat(os.path.join(d, f)) for d, _, fs in os.walk(sysconfig.get_paths()['stdlib']) for f in fs]"]
     expect: { exit: 0, files: [] }
     timeout_s: 300
 
@@ -70,11 +70,11 @@ workloads:
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: java-ioread
-    argv: ["-cp", "{classes}", "IoRead", "{fixture}"]
+    argv: ["-cp", "{classes}", "IoRead", "{fixture}", "128"]
     expect: { exit: 0, files: [] }
-    timeout_s: 120
+    timeout_s: 180
   - id: java-statloop
-    argv: ["-cp", "{classes}", "TreeWalk"]
+    argv: ["-cp", "{classes}", "TreeWalk", "30"]
     expect: { exit: 0, files: [] }
     timeout_s: 300
 
@@ -88,7 +88,7 @@ targets:
     kind: on-system
     program: ruby
     version_probe: ["-v"]
-    version_expect: "3.3.12"
+    version_expect: "3.3.13"
   - id: on-system-python
     kind: on-system
     program: python3
@@ -105,12 +105,12 @@ targets:
   # fetched sha256-verified from the factory releases and booted bare.
   - id: tebako-ruby
     kind: runtime-exe
-    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.16.32, lang_version: "3.3.12" }
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.17.4, lang_version: "3.3.13" }
   - id: tebako-python
     kind: runtime-exe
-    runtime: { repo: tamatebako/tebako-runtime-python, tag: v0.2.0, lang_version: "3.14.7" }
+    runtime: { repo: tamatebako/tebako-runtime-python, tag: v0.3.3, lang_version: "3.14.7" }
   - id: tebako-java
     kind: runtime-exe
-    runtime: { repo: tamatebako/tebako-runtime-openjdk, tag: v2.7.0, lang_version: "21.0.12" }
+    runtime: { repo: tamatebako/tebako-runtime-openjdk, tag: v2.8.50, lang_version: "21.0.12" }
 
 run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

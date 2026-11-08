@@ -146,6 +146,39 @@ fn peak_rss_tracks_the_allocation_in_bytes() {
     );
 }
 
+/// The Linux fork/exec floor regression (spec 27 §4): Linux inherits
+/// ru_maxrss across fork+exec, so a child whose own peak is below the
+/// harness's reports the harness's peak as a constant floor — the CI
+/// legs read exactly that (a constant 143.4 MiB for every on-system
+/// child on linux-gnu-x86_64, 137.9 MiB on linux-gnu-arm64; the tebako
+/// arms, above the floor, varied for real). The sampler reads the
+/// child's own VmHWM from /proc on Linux; this test holds ~192 MiB of
+/// ballast in the test process and requires the tiny helper child to
+/// report its OWN peak, far under the ballast. macOS does not inherit
+/// the mark across exec (verified) and Windows measures the job tree —
+/// both pass the same claim, so the test pins the contract everywhere.
+#[test]
+fn a_small_child_reports_its_own_peak_not_the_parents_floor() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ballast = vec![0u8; 192 * 1024 * 1024];
+    for page in ballast.chunks_mut(4096) {
+        page[0] = 1;
+    }
+    let mut sampler = Sampler::new();
+    let sample = sampler
+        .run(&spec(dir.path(), "floor", &["--sleep-ms", "250"], 30))
+        .unwrap();
+    assert_eq!(sample.exit, 0, "{sample:?}");
+    assert!(
+        sample.peak_rss_bytes < 64 * 1024 * 1024,
+        "the helper child peaks at a few MiB; with 192 MiB of parent ballast resident it \
+         reported {} bytes — that is the parent's floor inherited across fork+exec (the \
+         Linux ru_maxrss trap, spec 27 \u{a7}4)",
+        sample.peak_rss_bytes
+    );
+    std::hint::black_box(&ballast);
+}
+
 /// The measured unit is the child's TREE (tebako#927). Windows has no
 /// `exec`, so every v2 arm starts a launcher (`tebako`/`tebako-shim`)
 /// that spawns the runtime exe; sampling the launcher alone reported

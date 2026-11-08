@@ -275,20 +275,34 @@ rule (unsafe only inside FFI boundary modules).
     sample falls back to `GetProcessTimes` on the child's own handle and
     says so on stderr.
 - **Peak RSS** —
-  - POSIX: `ru_maxrss` from the same `wait4` reap (the measured
-    child's own high-water mark). **Unit
-    normalization at record time**: Linux/musl report KiB, macOS
-    reports bytes — the sampler multiplies the Linux value by 1024 and
-    every run record carries `peak_rss_bytes`, bytes, always. A result
-    file with un-normalized units is a bug, not a platform difference.
+  - Linux/musl: the child's own `VmHWM`, polled from
+    `/proc/<pid>/status` on the same ~2 ms tick and recorded as the
+    maximum read (VmHWM is monotone while the mm lives; a zombie
+    reads 0). **Amended 2026-11-08:** `wait4`'s `ru_maxrss` was the
+    original source here too, and it is wrong on Linux — the kernel
+    inherits the high-water mark across fork+exec, so any child whose
+    own peak is below the harness's reports the harness's peak as a
+    constant floor. Proven before the fix: a parent holding 150 MiB
+    sees `python3 -c pass` report ~162 MB (control: ~8 MB), and the
+    v2.8.73-era CI legs read the harness's own constant for every
+    on-system child (143.4 MiB on linux-gnu-x86_64, 137.9 MiB on
+    linux-gnu-arm64) while the tebako arms — above the floor — varied
+    for real (bench run 42456544287). A child unreadable in /proc for
+    its whole life falls back to `ru_maxrss` with a stderr note naming
+    the floor hazard. KiB → bytes at record time, as before.
+  - macOS: `ru_maxrss` from the `wait4` reap, bytes as reported. XNU
+    does not inherit the mark across exec (verified with the same
+    experiment: the child reads its own ~8 MB with and without the
+    parent's 150 MiB resident), so `wait4` stays the source there.
   - Windows: `PeakJobMemoryUsed` from
     `QueryInformationJobObject(JobObjectExtendedLimitInformation)` — the
     tree's peak committed memory in bytes, already normalized, and the
     same tree the CPU numbers describe. The direct-child fallback uses
     `K32GetProcessMemoryInfo` → `PeakWorkingSetSize` (bytes, already
     normalized).
-  - `ru_maxrss`/`PeakJobMemoryUsed`/`PeakWorkingSetSize` are high-water
-    marks of the measured process (the tree, where the platform needs a
+  - `VmHWM`/`ru_maxrss`/`PeakJobMemoryUsed`/`PeakWorkingSetSize` are
+    high-water marks of the measured process (the tree, where the
+    platform needs a
     launcher) — per-run peak, not a sample series. That is the metric
     (process comparison), and it is deliberately not a Ruby-heap
     profiler: the comparison target is the process, not the
@@ -593,14 +607,22 @@ suite's `compile-*` ids) runs on every target:
 
 - `<lang>-boot` — startup cost: the interpreter prints a constant and
   exits (`ruby -e`, `python3 -c`, `java -version`).
-- `<lang>-fib` — steady-state penalty: a recursive fib(32) compute
-  loop. Expect ≈1.00×; anything else is a bug signal.
+- `<lang>-fib` — steady-state penalty: a recursive fib compute loop
+  (fib(34) ruby / fib(39) python / fib(43) java — amended 2026-11-08
+  from fib(32) for all: at fib(32) the native arm finishes in
+  30–300 ms and the tebako arm's fixed wrapper+mount+boot cost is the
+  whole measurement, so the "steady-state" ratio measured the boot.
+  The sized workloads run seconds natively; the boot amortizes and
+  the ratio answers the compute path). Expect ≈1.00×; anything else
+  is a bug signal.
 - `<lang>-stdlib` — library-load path cost: a stdlib sweep
   (`require json/openssl/digest/socket`, `import
   json/ssl/sqlite3/hashlib`, the collections class) — the VFS-read
   question.
 - `<lang>-ioread` — sequential read bandwidth: read the ~64 MiB
-  fixture. The tebako arm reads it from INSIDE an image (the harness
+  fixture, 128 passes (amended 2026-11-08 from one pass — same
+  amortization reason as `-fib`). The tebako arm reads it from INSIDE
+  an image (the harness
   generates the fixture bytes in-process — a fixed-seed PRNG stream,
   so the dwarfs zstd blocks do real work — and builds the fixture
   image in-leg through the downloaded `tfs` tool, the dogfood rule;
@@ -608,7 +630,9 @@ suite's `compile-*` ids) runs on every target:
   `{fixture}` substitution resolves to the in-image path). The
   on-system arm reads the same bytes from the host path.
 - `<lang>-statloop` — metadata latency: walk + stat the runtime's own
-  tree (ruby: the gem tree; python: the stdlib dir; java: the
+  tree, repeated (10 walks ruby / 50 python / 30 java — amended
+  2026-11-08 from one walk, same amortization reason) (ruby: the gem
+  tree; python: the stdlib dir; java: the
   runtime's `java.home` tree). The script introspects its own tree
   root, so the SAME argv serves both arms — per-op VFS/FlatBuffers
   dispatch vs kernel path resolution, in-process, no FUSE round-trip
@@ -773,3 +797,19 @@ A cell the runtime suite produces carries a `source:` block:
   `absent` is reported and does not. The tripwire is
   `TEBAKO_BENCH_INJECT=<cell-or-axis>:<factor>` — a covenant that cannot
   be tripped on purpose is not a gate.
+- **The shape follows the cost structure (amended 2026-11-08, the
+  red-by-construction lesson of run 42456544287).** A ratio/speedup
+  cell is honest only when the workload runs long enough that the fixed
+  wrapper+mount+boot cost amortizes (the steady-state and filesystem
+  cells — the workloads are sized for it, §10.2). A fixed-cost budget
+  is stated `absolute`: first-response (a boot the user feels once —
+  a ratio against an 11 ms native `print(1)` measured the baseline's
+  smallness, 29x of nothing) and the resident-set peak (the mount
+  machinery is a fixed cost; a ratio against an 11 MB native
+  interpreter reads 11x by construction). Absolute bounds carry cited
+  headroom over the measured worst leg so runner noise never trips
+  them — they trip on regressions.
+- **Two cells never select the same dashboard cells in the same
+  shape** — a duplicated measurement is a taxonomy bug, not double
+  coverage (`filesystem.read.throughput` was `steady.io.throughput`'s
+  exact duplicate and was removed in the same amendment).
