@@ -504,7 +504,7 @@ jobs:
       # Gated with the uploads; disarmed on rehearsals.
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
+        uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -643,7 +643,7 @@ jobs:
       # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
+        uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -779,7 +779,7 @@ jobs:
       # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
+        uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -867,6 +867,9 @@ jobs:
       # inside it. Gated with the uploads; disarmed on rehearsals.
       - name: Attest build provenance (trust anchors)
         if: needs.prepare.outputs.upload_url != ''
+        # finalize checks the repo out at the workspace root (no path:) —
+        # the local-action reference resolves against the workspace, so
+        # this job alone keeps the root-relative spelling.
         uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: |
@@ -1080,7 +1083,7 @@ jobs:
       # rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
+        uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/link-unit-*.tar.gz
 
@@ -1403,7 +1406,7 @@ jobs:
       # carries. Gated with the uploads; disarmed on rehearsals.
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
+        uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -1623,7 +1626,7 @@ jobs:
       # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
+        uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -1834,7 +1837,7 @@ jobs:
       # disarmed on rehearsals).
       - name: Attest build provenance (MSI)
         if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
-        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
+        uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/tebako-setup-*.msi
 
@@ -1959,7 +1962,7 @@ jobs:
       # gh attestation verify --repo tamatebako/tebako.
       - name: Attest build provenance (pkg)
         if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
-        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
+        uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/tebako-setup-*.pkg
 
