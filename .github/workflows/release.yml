@@ -62,9 +62,13 @@
 # attestation (actions/attest-build-provenance, SLSA Build L3) over the
 # exact staged bytes its publish job uploads — sign-then-hash means the
 # attested digest is the SIGNED artifact's. finalize attests SHA256SUMS +
-# manifest.json, the trust-anchor pair. The arm rides the same upload_url
-# gate as the uploads, so PR rehearsals never attest. Consumers verify
-# with `gh attestation verify <asset> --repo tamatebako/tebako`.
+# manifest.json, the trust-anchor pair. Every site rides the in-repo
+# .github/actions/attest-with-retry wrapper (tebako#992): three armed
+# attempts with 20 s / 60 s backoff absorb a transient rekor 5xx, and the
+# leg still fails when all three fail — the gate is never weakened. The
+# arm rides the same upload_url gate as the uploads, so PR rehearsals
+# never attest. Consumers verify with
+# `gh attestation verify <asset> --repo tamatebako/tebako`.
 #
 # macOS signing (spec 31 §5): the macOS legs codesign (Developer ID
 # Application, hardened runtime) the staged binaries BEFORE their sha256
@@ -500,7 +504,7 @@ jobs:
       # Gated with the uploads; disarmed on rehearsals.
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -639,7 +643,7 @@ jobs:
       # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -775,7 +779,7 @@ jobs:
       # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -863,7 +867,7 @@ jobs:
       # inside it. Gated with the uploads; disarmed on rehearsals.
       - name: Attest build provenance (trust anchors)
         if: needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: |
             out/SHA256SUMS
@@ -1076,7 +1080,7 @@ jobs:
       # rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/link-unit-*.tar.gz
 
@@ -1399,7 +1403,7 @@ jobs:
       # carries. Gated with the uploads; disarmed on rehearsals.
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -1619,7 +1623,7 @@ jobs:
       # on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/*
 
@@ -1830,7 +1834,7 @@ jobs:
       # disarmed on rehearsals).
       - name: Attest build provenance (MSI)
         if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/tebako-setup-*.msi
 
@@ -1955,7 +1959,7 @@ jobs:
       # gh attestation verify --repo tamatebako/tebako.
       - name: Attest build provenance (pkg)
         if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: ./.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
           subject-path: tebako-rs/out/tebako-setup-*.pkg
 
