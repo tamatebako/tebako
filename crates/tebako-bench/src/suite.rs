@@ -113,11 +113,18 @@ pub struct Target {
 /// The factory release coordinates of a tebako runtime pair (runtime-exe
 /// targets): repo `owner/name`, the release `tag`, and the interpreter
 /// version the pair carries (the asset names embed both versions).
+/// `implementation` is spec 28 §8's flavor axis: factories whose engine
+/// has flavors (openjdk ships temurin + graalvm) spell the asset stem
+/// with the implementation, not the repo-derived engine —
+/// `tebako-runtime-2.8.50-temurin-21.0.12-<triplet>`. Absent, the engine
+/// segment derives from the repo basename as before.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeRef {
     pub repo: String,
     pub tag: String,
     pub lang_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

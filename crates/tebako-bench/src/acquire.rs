@@ -1447,31 +1447,7 @@ pub fn acquire_runtime_pair(
         )));
     }
     let tebako_version = tag_tebako_version(&rr.tag).to_string();
-    // tebako#716: the engine derives from the factory repo's basename
-    // (`tamatebako/tebako-runtime-<engine>`); a repo name that does not
-    // parse as a factory keeps the old-era-only stem list.
-    let engine = rr
-        .repo
-        .rsplit('/')
-        .next()
-        .and_then(|basename| basename.strip_prefix("tebako-runtime-"))
-        .filter(|e| !e.is_empty());
-    let stems: Vec<String> = match engine {
-        Some(engine) => vec![
-            format!(
-                "tebako-runtime-{tebako_version}-{engine}-{}-{triplet}",
-                rr.lang_version
-            ),
-            format!(
-                "tebako-runtime-{tebako_version}-{}-{triplet}",
-                rr.lang_version
-            ),
-        ],
-        None => vec![format!(
-            "tebako-runtime-{tebako_version}-{}-{triplet}",
-            rr.lang_version
-        )],
-    };
+    let stems = runtime_stems(rr, &tebako_version, triplet);
     let suffix = exe_suffix(triplet);
     // The 0.17.1-era per-platform shards (spec 36 §6): an authored pin
     // names a line (`v<tb>-<engine><line>`) or one published platform's
@@ -1732,6 +1708,48 @@ fn windows_manifest_peek(
 /// last) and every member verifies against BOTH the manifest's pin
 /// and the SHA256SUMS entry. A disagreement is a named error — never
 /// a best-effort unpack.
+/// The asset stems a runtime pin probes, new era first (tebako#716): the
+/// engine-carrying stem, then the immutable old-era stem. The engine
+/// segment derives from the factory repo's basename
+/// (`tamatebako/tebako-runtime-<engine>`); spec 28 §8's implementation
+/// axis overrides it for flavored factories (openjdk's assets spell
+/// `temurin`/`graalvm`, never `openjdk`). A repo name that does not parse
+/// as a factory keeps the old-era-only stem list.
+fn runtime_stems(
+    rr: &crate::suite::RuntimeRef,
+    tebako_version: &str,
+    triplet: &str,
+) -> Vec<String> {
+    let engine = rr
+        .implementation
+        .as_deref()
+        .map(str::to_string)
+        .or_else(|| {
+            rr.repo
+                .rsplit('/')
+                .next()
+                .and_then(|basename| basename.strip_prefix("tebako-runtime-"))
+                .filter(|e| !e.is_empty())
+                .map(str::to_string)
+        });
+    match engine {
+        Some(engine) => vec![
+            format!(
+                "tebako-runtime-{tebako_version}-{engine}-{}-{triplet}",
+                rr.lang_version
+            ),
+            format!(
+                "tebako-runtime-{tebako_version}-{}-{triplet}",
+                rr.lang_version
+            ),
+        ],
+        None => vec![format!(
+            "tebako-runtime-{tebako_version}-{}-{triplet}",
+            rr.lang_version
+        )],
+    }
+}
+
 fn stage_bundle_pair(
     layout: &BenchLayout,
     base: &str,
@@ -2484,7 +2502,69 @@ fn rfc3339_now() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{candidate_bases, fixture_vfs_path, tag_tebako_version, valid_install_as};
+    use super::{
+        candidate_bases, fixture_vfs_path, runtime_stems, tag_tebako_version, valid_install_as,
+    };
+    use crate::suite::RuntimeRef;
+
+    fn rr(repo: &str, tag: &str, lv: &str, implementation: Option<&str>) -> RuntimeRef {
+        RuntimeRef {
+            repo: repo.to_string(),
+            tag: tag.to_string(),
+            lang_version: lv.to_string(),
+            implementation: implementation.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn the_engine_segment_derives_from_the_repo_basename() {
+        let stems = runtime_stems(
+            &rr("tamatebako/tebako-runtime-ruby", "v0.17.4", "3.3.13", None),
+            "0.17.4",
+            "linux-gnu-x86_64",
+        );
+        assert_eq!(
+            stems[0],
+            "tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-x86_64"
+        );
+        assert_eq!(stems[1], "tebako-runtime-0.17.4-3.3.13-linux-gnu-x86_64");
+    }
+
+    #[test]
+    fn the_implementation_axis_wins_the_engine_segment() {
+        // openjdk's assets spell the implementation (temurin/graalvm),
+        // never the repo basename — spec 28 §8's axis, surfaced in the
+        // suite grammar after the v2.8.50 pin's java arms answered
+        // "no interpreter exe sidecar … under either era's spelling".
+        let stems = runtime_stems(
+            &rr(
+                "tamatebako/tebako-runtime-openjdk",
+                "v2.8.50",
+                "21.0.12",
+                Some("temurin"),
+            ),
+            "2.8.50",
+            "linux-musl-x86_64",
+        );
+        assert_eq!(
+            stems[0],
+            "tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64"
+        );
+        assert_eq!(stems[1], "tebako-runtime-2.8.50-21.0.12-linux-musl-x86_64");
+    }
+
+    #[test]
+    fn a_non_factory_repo_keeps_the_old_era_only_stem() {
+        let stems = runtime_stems(
+            &rr("example/tools", "v1.0.0", "3.3.13", None),
+            "1.0.0",
+            "macos-arm64",
+        );
+        assert_eq!(
+            stems,
+            vec!["tebako-runtime-1.0.0-3.3.13-macos-arm64".to_string()]
+        );
+    }
 
     #[test]
     fn monolithic_tags_keep_the_bare_version() {

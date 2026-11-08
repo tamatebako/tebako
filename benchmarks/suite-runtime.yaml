@@ -111,6 +111,6 @@ targets:
     runtime: { repo: tamatebako/tebako-runtime-python, tag: v0.3.3, lang_version: "3.14.7" }
   - id: tebako-java
     kind: runtime-exe
-    runtime: { repo: tamatebako/tebako-runtime-openjdk, tag: v2.8.50, lang_version: "21.0.12" }
+    runtime: { repo: tamatebako/tebako-runtime-openjdk, tag: v2.8.50, lang_version: "21.0.12", implementation: temurin }
 
 run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

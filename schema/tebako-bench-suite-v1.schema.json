@@ -151,7 +151,8 @@
               "description": "The runtime factory's GitHub owner/name."
             },
             "tag": { "type": "string", "minLength": 1, "description": "The pinned release tag." },
-            "lang_version": { "type": "string", "minLength": 1, "description": "The interpreter version the pair carries (the asset names embed it)." }
+            "lang_version": { "type": "string", "minLength": 1, "description": "The interpreter version the pair carries (the asset names embed it)." },
+            "implementation": { "type": "string", "minLength": 1, "description": "spec 28 §8's flavor axis: factories whose engine has flavors (openjdk: temurin/graalvm) spell the asset stem with the implementation, not the repo-derived engine." }
           },
           "description": "runtime-exe: the factory release the tebako runtime pair is fetched from, sha256-verified against the release's per-asset sidecars."
         },
