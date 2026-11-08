@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           tag=""
-          for t in $(gh release list --repo tamatebako/tebako --limit 10 --json tagName --jq -r '.[].tagName'); do
+          for t in $(gh release list --repo tamatebako/tebako --limit 10 --json tagName --jq '.[].tagName'); do
             code=$(curl -sIL -o /dev/null -w "%{http_code}" "https://github.com/tamatebako/tebako/releases/download/$t/SHA256SUMS")
             if [ "$code" = "200" ]; then tag="$t"; break; fi
           done
