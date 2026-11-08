@@ -49,6 +49,8 @@ triplets:
     runner: macos-15-intel
     v1_asset: null # packed-mn dropped darwin-x86_64 after ~v1.13 — the v1 arm is the gap
     v2_payload: true
+    runtime_gaps:
+      python: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
   windows-ucrt64:
     runner: windows-latest
     v1_asset: metanorma-windows-x86_64.exe
