@@ -11,6 +11,12 @@
 //! the exe's `tebako_fs_*` exports at run time (one VFS context, no
 //! third artifact — spec 22 §2 "Phase 1 delivery"), so the tebako_fs_*
 //! references stay undefined at link time by design.
+//!
+//! macOS only, second product: the `tebako-dlprobe` bin (tebako#989's
+//! class-L dlopen probe) is sealed with the tfs crate's canonical
+//! exports.txt via `-exported_symbols_list`, so the inserted interpose
+//! dylib's dynamic_lookup references resolve against the probe exe
+//! exactly the way they resolve against a signed runtime exe.
 
 use std::env;
 use std::path::Path;
@@ -61,4 +67,50 @@ fn main() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+
+    seal_dlprobe_exports(&out_dir);
+}
+
+/// The tebako#989 probe's link seal: `tebako-dlprobe` exports the
+/// `tebako_fs_*` surface (the interpose dylib binds the exe's own exports
+/// via `-undefined dynamic_lookup` — they must be dynamic globals in the
+/// Mach-O, and the list doubles as the force that pulls the defining
+/// objects out of the tfs rlib). The single source is the tfs crate's
+/// checked-in `exports.txt`; the linker wants Mach-O spellings
+/// (`_`-prefixed — ld as of Xcode 15 answers an unprefixed entry with an
+/// unsatisfiable "initial-undefines" error), so an underscored copy is
+/// generated per build under OUT_DIR and handed to exactly this bin.
+fn seal_dlprobe_exports(out_dir: &str) {
+    const BIN: &str = "tebako-dlprobe";
+    let source = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("../tfs/exports.txt");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let text = std::fs::read_to_string(&source).unwrap_or_else(|e| {
+        panic!(
+            "the {BIN} export seal cannot read the tfs crate's canonical export \
+             list at '{}' ({e}) — the probe's tebako_fs_* surface comes from \
+             crates/tfs/exports.txt or nowhere",
+            source.display()
+        )
+    });
+    let mut sealed = String::new();
+    for line in text.lines() {
+        let name = line.trim();
+        if name.is_empty() || name.starts_with('#') {
+            continue;
+        }
+        sealed.push('_');
+        sealed.push_str(name);
+        sealed.push('\n');
+    }
+    let out = Path::new(out_dir).join("tebako-dlprobe-exports.txt");
+    std::fs::write(&out, sealed).unwrap_or_else(|e| {
+        panic!(
+            "the {BIN} export seal cannot write '{}': {e}",
+            out.display()
+        )
+    });
+    println!(
+        "cargo::rustc-link-arg-bin={BIN}=-Wl,-exported_symbols_list,{}",
+        out.display()
+    );
 }
