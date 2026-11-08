@@ -1,0 +1,3107 @@
+{
+  "suite": "runtime-on-system-vs-tebako",
+  "generated_by": "tebako-bench report",
+  "baseline": {
+    "target": "on-system",
+    "label": "on-system"
+  },
+  "notes": [
+    "Cold method: each cold iteration wipes the arm's caches before the measured run. For the tebako runtime arms the wipe covers the bench store and the per-target tempdir, so the measured run pays the driver's first mount and cache rebuild — the one-time, user-visible first-boot cost. The runtime pair's own download and verification happen at acquisition, outside the measured span.",
+    "Teardown is not a separate workload: a no-op run's wall clock is boot+teardown by construction, and teardown is ≈free by design — the in-process VFS dies with the process; a measured exit that ever shows a tail is a regression signal.",
+    "On-system arms report no cold numbers: the toolchain's provisioning time is not tebako's comparison."
+  ],
+  "triplets": [
+    {
+      "triplet": "linux-gnu-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715964416
+      },
+      "versions": {
+        "tebako": "2.8.73",
+        "extra": {
+          "on-system-python": "Python 3.14.7",
+          "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.2.0)"
+        }
+      },
+      "cells": [
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.012713953,
+          "min_wall_s": 0.012707546,
+          "max_wall_s": 0.012731239,
+          "stdev_wall_s": 0.000010637442197257586,
+          "mean_wall_s": 0.012718999,
+          "median_cpu_s": 0.011081,
+          "median_peak_rss_bytes": 144261120,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.337770013,
+          "min_wall_s": 0.33156632,
+          "max_wall_s": 0.339708811,
+          "stdev_wall_s": 0.0033516202311662012,
+          "mean_wall_s": 0.3361081038,
+          "median_cpu_s": 0.336504,
+          "median_peak_rss_bytes": 190550016,
+          "speedup_vs_v1": 0.037640857715809134
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.3328382855,
+          "min_wall_s": 0.331812097,
+          "max_wall_s": 0.333864474,
+          "stdev_wall_s": 0.001451249694251338,
+          "mean_wall_s": 0.3328382855,
+          "median_cpu_s": 0.33162600000000003,
+          "median_peak_rss_bytes": 190431232,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.271866082,
+          "min_wall_s": 0.269863335,
+          "max_wall_s": 0.272034912,
+          "stdev_wall_s": 0.001130619242218042,
+          "mean_wall_s": 0.2711270548,
+          "median_cpu_s": 0.270285,
+          "median_peak_rss_bytes": 144261120,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.600983905,
+          "min_wall_s": 0.592898482,
+          "max_wall_s": 0.605353906,
+          "stdev_wall_s": 0.00536892321911973,
+          "mean_wall_s": 0.6003401939999999,
+          "median_cpu_s": 0.598955,
+          "median_peak_rss_bytes": 190431232,
+          "speedup_vs_v1": 0.4523683242398979
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.60011294,
+          "min_wall_s": 0.595014877,
+          "max_wall_s": 0.605211003,
+          "stdev_wall_s": 0.007209749836432448,
+          "mean_wall_s": 0.60011294,
+          "median_cpu_s": 0.598456,
+          "median_peak_rss_bytes": 190427136,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.018871083,
+          "min_wall_s": 0.018823869,
+          "max_wall_s": 0.018900297,
+          "stdev_wall_s": 0.000032765427950814504,
+          "mean_wall_s": 0.018865665599999998,
+          "median_cpu_s": 0.017328,
+          "median_peak_rss_bytes": 144261120,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.350042805,
+          "min_wall_s": 0.345929429,
+          "max_wall_s": 0.356185327,
+          "stdev_wall_s": 0.0038452664197749383,
+          "mean_wall_s": 0.3500289564,
+          "median_cpu_s": 0.348153,
+          "median_peak_rss_bytes": 193359872,
+          "speedup_vs_v1": 0.05391078671078527
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.349077778,
+          "min_wall_s": 0.346045407,
+          "max_wall_s": 0.352110149,
+          "stdev_wall_s": 0.004288420194346834,
+          "mean_wall_s": 0.349077778,
+          "median_cpu_s": 0.3487675,
+          "median_peak_rss_bytes": 193290240,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.051839439,
+          "min_wall_s": 0.051787474,
+          "max_wall_s": 0.051943121,
+          "stdev_wall_s": 0.00006092988290075825,
+          "mean_wall_s": 0.051842456599999996,
+          "median_cpu_s": 0.050282,
+          "median_peak_rss_bytes": 144261120,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.430307073,
+          "min_wall_s": 0.428140919,
+          "max_wall_s": 0.430335384,
+          "stdev_wall_s": 0.001128554503267205,
+          "mean_wall_s": 0.4295034802,
+          "median_cpu_s": 0.42858399999999996,
+          "median_peak_rss_bytes": 190545920,
+          "speedup_vs_v1": 0.1204708038810229
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.42943067199999996,
+          "min_wall_s": 0.428527752,
+          "max_wall_s": 0.430333592,
+          "stdev_wall_s": 0.0012769217097379172,
+          "mean_wall_s": 0.42943067199999996,
+          "median_cpu_s": 0.42780399999999996,
+          "median_peak_rss_bytes": 190496768,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.029065656,
+          "min_wall_s": 0.026950147,
+          "max_wall_s": 0.031255328,
+          "stdev_wall_s": 0.0015223916580570515,
+          "mean_wall_s": 0.029088772800000003,
+          "median_cpu_s": 0.027228000000000002,
+          "median_peak_rss_bytes": 144261120,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-gnu-arm64 under either era's spelling"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-gnu-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760348672
+      },
+      "versions": {
+        "tebako": "2.8.73",
+        "extra": {
+          "on-system-java": "openjdk version \"21.0.12.1\" 2026-08-18 LTS",
+          "on-system-python": "Python 3.14.7",
+          "tebako-java": "openjdk version \"21.0.12\" 2026-07-21 LTS (tamatebako/tebako-runtime-openjdk v2.7.0)",
+          "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.2.0)"
+        }
+      },
+      "cells": [
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.060196032,
+          "min_wall_s": 0.033235004,
+          "max_wall_s": 0.118391784,
+          "stdev_wall_s": 0.042178133902548584,
+          "mean_wall_s": 0.0734795884,
+          "median_cpu_s": 0.033608,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.584412452,
+          "min_wall_s": 0.512798815,
+          "max_wall_s": 0.680653332,
+          "stdev_wall_s": 0.07300295098402255,
+          "mean_wall_s": 0.5897845021999999,
+          "median_cpu_s": 0.47428800000000004,
+          "median_peak_rss_bytes": 198795264,
+          "speedup_vs_v1": 0.10300265128505509
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5027221525,
+          "min_wall_s": 0.483336578,
+          "max_wall_s": 0.522107727,
+          "stdev_wall_s": 0.027415342372293993,
+          "mean_wall_s": 0.5027221525,
+          "median_cpu_s": 0.481772,
+          "median_peak_rss_bytes": 198936576,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.04372069,
+          "min_wall_s": 0.037968468,
+          "max_wall_s": 0.133056818,
+          "stdev_wall_s": 0.04070430980111105,
+          "mean_wall_s": 0.0606177588,
+          "median_cpu_s": 0.047511,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.473509085,
+          "min_wall_s": 0.472207185,
+          "max_wall_s": 0.556919758,
+          "stdev_wall_s": 0.03675007712839842,
+          "mean_wall_s": 0.491532402,
+          "median_cpu_s": 0.478946,
+          "median_peak_rss_bytes": 198860800,
+          "speedup_vs_v1": 0.09233337096372712
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.501644347,
+          "min_wall_s": 0.491634575,
+          "max_wall_s": 0.511654119,
+          "stdev_wall_s": 0.01415595531866246,
+          "mean_wall_s": 0.501644347,
+          "median_cpu_s": 0.493463,
+          "median_peak_rss_bytes": 198758400,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.044788183,
+          "min_wall_s": 0.042665958,
+          "max_wall_s": 0.045766685,
+          "stdev_wall_s": 0.0011414534520880401,
+          "mean_wall_s": 0.044564244200000006,
+          "median_cpu_s": 0.05043,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.479616443,
+          "min_wall_s": 0.475105512,
+          "max_wall_s": 0.486694972,
+          "stdev_wall_s": 0.004899626556164024,
+          "mean_wall_s": 0.4814158268,
+          "median_cpu_s": 0.485167,
+          "median_peak_rss_bytes": 201064448,
+          "speedup_vs_v1": 0.09338333506635009
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.48775514600000003,
+          "min_wall_s": 0.487040075,
+          "max_wall_s": 0.488470217,
+          "stdev_wall_s": 0.0010112631062596685,
+          "mean_wall_s": 0.48775514600000003,
+          "median_cpu_s": 0.49283350000000004,
+          "median_peak_rss_bytes": 200482816,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.072755511,
+          "min_wall_s": 0.06845992,
+          "max_wall_s": 0.074123641,
+          "stdev_wall_s": 0.0026788370644604746,
+          "mean_wall_s": 0.0717578108,
+          "median_cpu_s": 0.096361,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.503103732,
+          "min_wall_s": 0.49918792,
+          "max_wall_s": 0.528133121,
+          "stdev_wall_s": 0.01171175815684161,
+          "mean_wall_s": 0.5080532884,
+          "median_cpu_s": 0.526338,
+          "median_peak_rss_bytes": 198799360,
+          "speedup_vs_v1": 0.1446133398986593
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.525354463,
+          "min_wall_s": 0.524853995,
+          "max_wall_s": 0.525854931,
+          "stdev_wall_s": 0.0007077686331337829,
+          "mean_wall_s": 0.525354463,
+          "median_cpu_s": 0.5513005,
+          "median_peak_rss_bytes": 198717440,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.178347266,
+          "min_wall_s": 0.173615184,
+          "max_wall_s": 0.193299392,
+          "stdev_wall_s": 0.008222581888138611,
+          "mean_wall_s": 0.1821481028,
+          "median_cpu_s": 0.408265,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.626485976,
+          "min_wall_s": 0.621825467,
+          "max_wall_s": 0.650194757,
+          "stdev_wall_s": 0.012638401764222124,
+          "mean_wall_s": 0.632335656,
+          "median_cpu_s": 0.850394,
+          "median_peak_rss_bytes": 198774784,
+          "speedup_vs_v1": 0.2846787842542225
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.632816398,
+          "min_wall_s": 0.630724996,
+          "max_wall_s": 0.6349078,
+          "stdev_wall_s": 0.002957689072774244,
+          "mean_wall_s": 0.632816398,
+          "median_cpu_s": 0.8637265,
+          "median_peak_rss_bytes": 198873088,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.012699697,
+          "min_wall_s": 0.012682681,
+          "max_wall_s": 0.012734878,
+          "stdev_wall_s": 0.000020141476368429592,
+          "mean_wall_s": 0.0127069074,
+          "median_cpu_s": 0.011316,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.391840838,
+          "min_wall_s": 0.385647977,
+          "max_wall_s": 0.400074828,
+          "stdev_wall_s": 0.005251577411445591,
+          "mean_wall_s": 0.391841754,
+          "median_cpu_s": 0.389654,
+          "median_peak_rss_bytes": 200212480,
+          "speedup_vs_v1": 0.032410345651618884
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.391377894,
+          "min_wall_s": 0.38566624,
+          "max_wall_s": 0.397089548,
+          "stdev_wall_s": 0.008077498550382553,
+          "mean_wall_s": 0.391377894,
+          "median_cpu_s": 0.3897605,
+          "median_peak_rss_bytes": 199553024,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.266240979,
+          "min_wall_s": 0.262045009,
+          "max_wall_s": 0.273883577,
+          "stdev_wall_s": 0.005580016797913879,
+          "mean_wall_s": 0.2673324282,
+          "median_cpu_s": 0.266026,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.612412217,
+          "min_wall_s": 0.602334178,
+          "max_wall_s": 0.612685931,
+          "stdev_wall_s": 0.005131159052825952,
+          "mean_wall_s": 0.6088510582000001,
+          "median_cpu_s": 0.6110329999999999,
+          "median_peak_rss_bytes": 200253440,
+          "speedup_vs_v1": 0.4347414561783636
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.6072988005,
+          "min_wall_s": 0.606236742,
+          "max_wall_s": 0.608360859,
+          "stdev_wall_s": 0.0015019775347336515,
+          "mean_wall_s": 0.6072988005,
+          "median_cpu_s": 0.6058600000000001,
+          "median_peak_rss_bytes": 199991296,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.018899006,
+          "min_wall_s": 0.018870703,
+          "max_wall_s": 0.018963341,
+          "stdev_wall_s": 0.00003564444130576436,
+          "mean_wall_s": 0.018903352000000002,
+          "median_cpu_s": 0.017041,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.402215738,
+          "min_wall_s": 0.395892581,
+          "max_wall_s": 0.447373874,
+          "stdev_wall_s": 0.020828890925884053,
+          "mean_wall_s": 0.410973305,
+          "median_cpu_s": 0.400928,
+          "median_peak_rss_bytes": 202219520,
+          "speedup_vs_v1": 0.046987236486504665
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.40419082500000003,
+          "min_wall_s": 0.401344134,
+          "max_wall_s": 0.407037516,
+          "stdev_wall_s": 0.004025829020085406,
+          "mean_wall_s": 0.40419082500000003,
+          "median_cpu_s": 0.4031965,
+          "median_peak_rss_bytes": 202260480,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.066351969,
+          "min_wall_s": 0.066289203,
+          "max_wall_s": 0.06834337,
+          "stdev_wall_s": 0.0011076291211596955,
+          "mean_wall_s": 0.06712139400000001,
+          "median_cpu_s": 0.0661,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.466144956,
+          "min_wall_s": 0.462076906,
+          "max_wall_s": 0.470181525,
+          "stdev_wall_s": 0.00300407206184646,
+          "mean_wall_s": 0.466523957,
+          "median_cpu_s": 0.465302,
+          "median_peak_rss_bytes": 199811072,
+          "speedup_vs_v1": 0.1423419220694088
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.46504336300000004,
+          "min_wall_s": 0.459921742,
+          "max_wall_s": 0.470164984,
+          "stdev_wall_s": 0.007243065879534843,
+          "mean_wall_s": 0.46504336300000004,
+          "median_cpu_s": 0.4637235,
+          "median_peak_rss_bytes": 199913472,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.029162131,
+          "min_wall_s": 0.029144555,
+          "max_wall_s": 0.031254847,
+          "stdev_wall_s": 0.0011434529150585958,
+          "mean_wall_s": 0.029988113,
+          "median_cpu_s": 0.028962,
+          "median_peak_rss_bytes": 150470656,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-gnu-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-musl-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715927552
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-arm64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-arm64 under either era's spelling"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-musl-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760336384
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the version probe failed: acquire: the version probe `/home/runner/work/tebako/tebako/tebako-rs/out-runtime/targets/tebako-python/tebako-runtime-0.2.0-3.14.7-linux-musl-x86_64 --version` failed (exit 127) — see /home/runner/work/tebako/tebako/tebako-rs/out-runtime/logs/acquire-probe-tebako-python.log"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-linux-musl-x86_64 under either era's spelling"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "macos-arm64",
+      "runner": {
+        "runs_on": "macos-15",
+        "arch": "aarch64",
+        "cpus": 3,
+        "ram_bytes": 7516192768
+      },
+      "versions": {
+        "tebako": "2.8.73",
+        "extra": {
+          "on-system-java": "openjdk version \"21.0.12.1\" 2026-08-18 LTS",
+          "on-system-python": "Python 3.14.7",
+          "tebako-java": "openjdk version \"21.0.12\" 2026-07-21 LTS (tamatebako/tebako-runtime-openjdk v2.7.0)",
+          "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.2.0)"
+        }
+      },
+      "cells": [
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.045621917,
+          "min_wall_s": 0.037311708,
+          "max_wall_s": 0.052681708,
+          "stdev_wall_s": 0.0056677261165364815,
+          "mean_wall_s": 0.0451868752,
+          "median_cpu_s": 0.03709,
+          "median_peak_rss_bytes": 35667968,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.673360334,
+          "min_wall_s": 0.662219125,
+          "max_wall_s": 0.749914459,
+          "stdev_wall_s": 0.036060822055427044,
+          "mean_wall_s": 0.6861962088,
+          "median_cpu_s": 0.34455899999999995,
+          "median_peak_rss_bytes": 42041344,
+          "speedup_vs_v1": 0.06775260539775127
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5243385625,
+          "min_wall_s": 0.501939875,
+          "max_wall_s": 0.54673725,
+          "stdev_wall_s": 0.031676527641856654,
+          "mean_wall_s": 0.5243385625,
+          "median_cpu_s": 0.2949235,
+          "median_peak_rss_bytes": 42065920,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.055251125,
+          "min_wall_s": 0.052101291,
+          "max_wall_s": 0.073739667,
+          "stdev_wall_s": 0.008730199208878584,
+          "mean_wall_s": 0.0583200166,
+          "median_cpu_s": 0.041142,
+          "median_peak_rss_bytes": 36618240,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.516619459,
+          "min_wall_s": 0.469941083,
+          "max_wall_s": 0.671655666,
+          "stdev_wall_s": 0.09066141113584537,
+          "mean_wall_s": 0.5581725331999999,
+          "median_cpu_s": 0.29648,
+          "median_peak_rss_bytes": 42958848,
+          "speedup_vs_v1": 0.10694743304278054
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.503476458,
+          "min_wall_s": 0.498948625,
+          "max_wall_s": 0.508004291,
+          "stdev_wall_s": 0.00640332283676047,
+          "mean_wall_s": 0.503476458,
+          "median_cpu_s": 0.28823299999999996,
+          "median_peak_rss_bytes": 42803200,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.053697917,
+          "min_wall_s": 0.046136292,
+          "max_wall_s": 0.154276166,
+          "stdev_wall_s": 0.04524859338222805,
+          "mean_wall_s": 0.07414553319999999,
+          "median_cpu_s": 0.047557,
+          "median_peak_rss_bytes": 40026112,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.505060208,
+          "min_wall_s": 0.482623334,
+          "max_wall_s": 0.624945125,
+          "stdev_wall_s": 0.05705764849910564,
+          "mean_wall_s": 0.5270302917999999,
+          "median_cpu_s": 0.28309799999999996,
+          "median_peak_rss_bytes": 113475584,
+          "speedup_vs_v1": 0.10631983306037843
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5455842705,
+          "min_wall_s": 0.511007583,
+          "max_wall_s": 0.580160958,
+          "stdev_wall_s": 0.04889882040443624,
+          "mean_wall_s": 0.5455842705,
+          "median_cpu_s": 0.3046675,
+          "median_peak_rss_bytes": 113516544,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.080289959,
+          "min_wall_s": 0.073282875,
+          "max_wall_s": 0.168987708,
+          "stdev_wall_s": 0.04025493603982948,
+          "mean_wall_s": 0.0979879752,
+          "median_cpu_s": 0.098941,
+          "median_peak_rss_bytes": 40239104,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.641481417,
+          "min_wall_s": 0.579025542,
+          "max_wall_s": 0.75403,
+          "stdev_wall_s": 0.06646173729870615,
+          "mean_wall_s": 0.6510162502,
+          "median_cpu_s": 0.378495,
+          "median_peak_rss_bytes": 46235648,
+          "speedup_vs_v1": 0.12516334358599196
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.6642348124999999,
+          "min_wall_s": 0.653058958,
+          "max_wall_s": 0.675410667,
+          "stdev_wall_s": 0.015805045005008345,
+          "mean_wall_s": 0.6642348124999999,
+          "median_cpu_s": 0.4259965,
+          "median_peak_rss_bytes": 47054848,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.167256708,
+          "min_wall_s": 0.12740475,
+          "max_wall_s": 0.176720708,
+          "stdev_wall_s": 0.020081849714232346,
+          "mean_wall_s": 0.1599001,
+          "median_cpu_s": 0.2383,
+          "median_peak_rss_bytes": 77463552,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.615117042,
+          "min_wall_s": 0.502580666,
+          "max_wall_s": 0.63153575,
+          "stdev_wall_s": 0.06199620795890982,
+          "mean_wall_s": 0.575911125,
+          "median_cpu_s": 0.459351,
+          "median_peak_rss_bytes": 83132416,
+          "speedup_vs_v1": 0.27191037896817044
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.6612605,
+          "min_wall_s": 0.5194145,
+          "max_wall_s": 0.8031065,
+          "stdev_wall_s": 0.200600536968374,
+          "mean_wall_s": 0.6612605,
+          "median_cpu_s": 0.4649335,
+          "median_peak_rss_bytes": 83992576,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.033444625,
+          "min_wall_s": 0.029786417,
+          "max_wall_s": 0.038166791,
+          "stdev_wall_s": 0.0034123822276136504,
+          "mean_wall_s": 0.034181425,
+          "median_cpu_s": 0.01809,
+          "median_peak_rss_bytes": 11943936,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.280701375,
+          "min_wall_s": 0.265305542,
+          "max_wall_s": 0.325985458,
+          "stdev_wall_s": 0.02446250001248411,
+          "mean_wall_s": 0.2892341666,
+          "median_cpu_s": 0.265482,
+          "median_peak_rss_bytes": 133742592,
+          "speedup_vs_v1": 0.11914663759662739
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.292073021,
+          "min_wall_s": 0.272406,
+          "max_wall_s": 0.311740042,
+          "stdev_wall_s": 0.02781336782967648,
+          "mean_wall_s": 0.292073021,
+          "median_cpu_s": 0.2748545,
+          "median_peak_rss_bytes": 133234688,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.252344792,
+          "min_wall_s": 0.235899542,
+          "max_wall_s": 0.27729125,
+          "stdev_wall_s": 0.01514948346014996,
+          "mean_wall_s": 0.2545964918,
+          "median_cpu_s": 0.227903,
+          "median_peak_rss_bytes": 11993088,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.586391375,
+          "min_wall_s": 0.563285584,
+          "max_wall_s": 0.664456416,
+          "stdev_wall_s": 0.03996421528805201,
+          "mean_wall_s": 0.5956795584,
+          "median_cpu_s": 0.557525,
+          "median_peak_rss_bytes": 134332416,
+          "speedup_vs_v1": 0.4303351017057506
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5657817089999999,
+          "min_wall_s": 0.562423834,
+          "max_wall_s": 0.569139584,
+          "stdev_wall_s": 0.004748752365753571,
+          "mean_wall_s": 0.5657817089999999,
+          "median_cpu_s": 0.545007,
+          "median_peak_rss_bytes": 134545408,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.033293125,
+          "min_wall_s": 0.029332958,
+          "max_wall_s": 0.040604875,
+          "stdev_wall_s": 0.004215538027902785,
+          "mean_wall_s": 0.0336766,
+          "median_cpu_s": 0.024704999999999998,
+          "median_peak_rss_bytes": 14204928,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.291220167,
+          "min_wall_s": 0.269368125,
+          "max_wall_s": 0.355698791,
+          "stdev_wall_s": 0.03817915948158099,
+          "mean_wall_s": 0.3103282166,
+          "median_cpu_s": 0.276365,
+          "median_peak_rss_bytes": 206651392,
+          "speedup_vs_v1": 0.11432286899279198
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.30612837449999997,
+          "min_wall_s": 0.294638541,
+          "max_wall_s": 0.317618208,
+          "stdev_wall_s": 0.016249078365108752,
+          "mean_wall_s": 0.30612837449999997,
+          "median_cpu_s": 0.287544,
+          "median_peak_rss_bytes": 204734464,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.088112375,
+          "min_wall_s": 0.075289375,
+          "max_wall_s": 0.093093167,
+          "stdev_wall_s": 0.007293387261398836,
+          "mean_wall_s": 0.08571924160000002,
+          "median_cpu_s": 0.073812,
+          "median_peak_rss_bytes": 20840448,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.453663834,
+          "min_wall_s": 0.448452583,
+          "max_wall_s": 0.678390791,
+          "stdev_wall_s": 0.09926630060325023,
+          "mean_wall_s": 0.5018513084,
+          "median_cpu_s": 0.445571,
+          "median_peak_rss_bytes": 146030592,
+          "speedup_vs_v1": 0.19422393498530457
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.8493682709999999,
+          "min_wall_s": 0.784392625,
+          "max_wall_s": 0.914343917,
+          "stdev_wall_s": 0.09188943979715314,
+          "mean_wall_s": 0.8493682709999999,
+          "median_cpu_s": 0.7534624999999999,
+          "median_peak_rss_bytes": 145416192,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.052754583,
+          "min_wall_s": 0.047281458,
+          "max_wall_s": 0.06947875,
+          "stdev_wall_s": 0.008355180160899199,
+          "mean_wall_s": 0.055388900000000005,
+          "median_cpu_s": 0.049068,
+          "median_peak_rss_bytes": 18972672,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-arm64 under either era's spelling"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "macos-x86_64",
+      "runner": {
+        "runs_on": "macos-15-intel",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 15032385536
+      },
+      "versions": {
+        "tebako": "2.8.73",
+        "extra": {
+          "on-system-python": "Python 3.14.7",
+          "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.2.0)"
+        }
+      },
+      "cells": [
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.042548167,
+          "min_wall_s": 0.03868684,
+          "max_wall_s": 0.059010337,
+          "stdev_wall_s": 0.007953723644681573,
+          "mean_wall_s": 0.0452943282,
+          "median_cpu_s": 0.037092,
+          "median_peak_rss_bytes": 9162752,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.558157841,
+          "min_wall_s": 0.54286647,
+          "max_wall_s": 0.802024696,
+          "stdev_wall_s": 0.10914022651573901,
+          "mean_wall_s": 0.6141443208,
+          "median_cpu_s": 0.543992,
+          "median_peak_rss_bytes": 133877760,
+          "speedup_vs_v1": 0.07622963232724701
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5606902435000001,
+          "min_wall_s": 0.559755887,
+          "max_wall_s": 0.5616246,
+          "stdev_wall_s": 0.0013213796343914722,
+          "mean_wall_s": 0.5606902435000001,
+          "median_cpu_s": 0.5339955000000001,
+          "median_peak_rss_bytes": 133883904,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.633419686,
+          "min_wall_s": 0.589522915,
+          "max_wall_s": 1.056049646,
+          "stdev_wall_s": 0.19673314109321852,
+          "mean_wall_s": 0.7084788148,
+          "median_cpu_s": 0.630687,
+          "median_peak_rss_bytes": 9261056,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 1.6988834229999998,
+          "min_wall_s": 1.5704712669999998,
+          "max_wall_s": 1.7602277370000001,
+          "stdev_wall_s": 0.07720148310219133,
+          "mean_wall_s": 1.6696879099999997,
+          "median_cpu_s": 1.674967,
+          "median_peak_rss_bytes": 133873664,
+          "speedup_vs_v1": 0.37284470342377346
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 1.581131853,
+          "min_wall_s": 1.571273915,
+          "max_wall_s": 1.5909897910000002,
+          "stdev_wall_s": 0.013941229616633275,
+          "mean_wall_s": 1.581131853,
+          "median_cpu_s": 1.5646485,
+          "median_peak_rss_bytes": 133922816,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.051218535,
+          "min_wall_s": 0.04279683,
+          "max_wall_s": 0.055955919,
+          "stdev_wall_s": 0.005265647742999316,
+          "mean_wall_s": 0.0493566996,
+          "median_cpu_s": 0.040886,
+          "median_peak_rss_bytes": 11423744,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.54950744,
+          "min_wall_s": 0.534386247,
+          "max_wall_s": 0.56365435,
+          "stdev_wall_s": 0.010532259909245697,
+          "mean_wall_s": 0.5492019692,
+          "median_cpu_s": 0.531588,
+          "median_peak_rss_bytes": 204369920,
+          "speedup_vs_v1": 0.09320808286053417
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.545196839,
+          "min_wall_s": 0.543603142,
+          "max_wall_s": 0.546790536,
+          "stdev_wall_s": 0.0022538279117133215,
+          "mean_wall_s": 0.545196839,
+          "median_cpu_s": 0.5251995,
+          "median_peak_rss_bytes": 204457984,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.137145397,
+          "min_wall_s": 0.135063804,
+          "max_wall_s": 0.146220987,
+          "stdev_wall_s": 0.004605412598334613,
+          "mean_wall_s": 0.1381819148,
+          "median_cpu_s": 0.134625,
+          "median_peak_rss_bytes": 18108416,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.789578359,
+          "min_wall_s": 0.78262583,
+          "max_wall_s": 0.800227769,
+          "stdev_wall_s": 0.006382327195883571,
+          "mean_wall_s": 0.7908064242,
+          "median_cpu_s": 0.758598,
+          "median_peak_rss_bytes": 141271040,
+          "speedup_vs_v1": 0.173694473052294
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.764032931,
+          "min_wall_s": 0.762868096,
+          "max_wall_s": 0.765197766,
+          "stdev_wall_s": 0.0016473254549268291,
+          "mean_wall_s": 0.764032931,
+          "median_cpu_s": 0.7442945,
+          "median_peak_rss_bytes": 141268992,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.071104748,
+          "min_wall_s": 0.066245392,
+          "max_wall_s": 0.072703721,
+          "stdev_wall_s": 0.002593758340334638,
+          "mean_wall_s": 0.07036336800000001,
+          "median_cpu_s": 0.066895,
+          "median_peak_rss_bytes": 14598144,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling)"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.7.0 serves no interpreter exe sidecar for 2.7.0-21.0.12-macos-x86_64 under either era's spelling"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "windows-ucrt64",
+      "runner": {
+        "runs_on": "windows-latest",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 17174360064
+      },
+      "versions": {
+        "tebako": "2.8.73",
+        "extra": {
+          "on-system-java": "openjdk version \"21.0.12.1\" 2026-08-18 LTS",
+          "tebako-java": "openjdk version \"21.0.12\" 2026-07-21 LTS (tamatebako/tebako-runtime-openjdk v2.7.0)"
+        }
+      },
+      "cells": [
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.0609501,
+          "min_wall_s": 0.0604872,
+          "max_wall_s": 0.062369,
+          "stdev_wall_s": 0.0008236079680284794,
+          "mean_wall_s": 0.0612413,
+          "median_cpu_s": 0.09375,
+          "median_peak_rss_bytes": 347246592,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.5983129,
+          "min_wall_s": 0.578684,
+          "max_wall_s": 0.6027212,
+          "stdev_wall_s": 0.00978408153338881,
+          "mean_wall_s": 0.5944311800000001,
+          "median_cpu_s": 0.59375,
+          "median_peak_rss_bytes": 492273664,
+          "speedup_vs_v1": 0.10186994129660248
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.5873224,
+          "min_wall_s": 0.5861457,
+          "max_wall_s": 0.5884991,
+          "stdev_wall_s": 0.0016641050988444642,
+          "mean_wall_s": 0.5873224,
+          "median_cpu_s": 0.59375,
+          "median_peak_rss_bytes": 492314624,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.073807,
+          "min_wall_s": 0.0722344,
+          "max_wall_s": 0.0797728,
+          "stdev_wall_s": 0.0029310362147199768,
+          "mean_wall_s": 0.07474048,
+          "median_cpu_s": 0.09375,
+          "median_peak_rss_bytes": 347209728,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.6118814,
+          "min_wall_s": 0.5993984,
+          "max_wall_s": 0.6486882,
+          "stdev_wall_s": 0.020096562294780688,
+          "mean_wall_s": 0.61633104,
+          "median_cpu_s": 0.625,
+          "median_peak_rss_bytes": 492695552,
+          "speedup_vs_v1": 0.12062304884574036
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.62024285,
+          "min_wall_s": 0.6147,
+          "max_wall_s": 0.6257857,
+          "stdev_wall_s": 0.007838773644199694,
+          "mean_wall_s": 0.62024285,
+          "median_cpu_s": 0.609375,
+          "median_peak_rss_bytes": 492675072,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.0879856,
+          "min_wall_s": 0.0855257,
+          "max_wall_s": 0.0940397,
+          "stdev_wall_s": 0.003150600540849319,
+          "mean_wall_s": 0.08882403999999999,
+          "median_cpu_s": 0.125,
+          "median_peak_rss_bytes": 348839936,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.156234,
+          "min_wall_s": 0.151365,
+          "max_wall_s": 0.1616509,
+          "stdev_wall_s": 0.0040027130465473,
+          "mean_wall_s": 0.15573684000000002,
+          "median_cpu_s": 0.265625,
+          "median_peak_rss_bytes": 349794304,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.6548944,
+          "min_wall_s": 0.6439362,
+          "max_wall_s": 0.6614805,
+          "stdev_wall_s": 0.0071448576918648424,
+          "mean_wall_s": 0.65245198,
+          "median_cpu_s": 0.6875,
+          "median_peak_rss_bytes": 494780416,
+          "speedup_vs_v1": 0.23856365239953192
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.67762735,
+          "min_wall_s": 0.671487,
+          "max_wall_s": 0.6837677,
+          "stdev_wall_s": 0.008683766247717658,
+          "mean_wall_s": 0.67762735,
+          "median_cpu_s": 0.7265625,
+          "median_peak_rss_bytes": 495017984,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.2611045,
+          "min_wall_s": 0.2561303,
+          "max_wall_s": 0.2653024,
+          "stdev_wall_s": 0.003546270985838511,
+          "mean_wall_s": 0.2609936,
+          "median_cpu_s": 0.59375,
+          "median_peak_rss_bytes": 354209792,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.7837232,
+          "min_wall_s": 0.7743195,
+          "max_wall_s": 0.7908369,
+          "stdev_wall_s": 0.006549922314424781,
+          "mean_wall_s": 0.7837969,
+          "median_cpu_s": 1.109375,
+          "median_peak_rss_bytes": 500043776,
+          "speedup_vs_v1": 0.33315907963423824
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.7932168500000001,
+          "min_wall_s": 0.7849104,
+          "max_wall_s": 0.8015233,
+          "stdev_wall_s": 0.011747094245174025,
+          "mean_wall_s": 0.7932168500000001,
+          "median_cpu_s": 1.0703125,
+          "median_peak_rss_bytes": 500115456,
+          "speedup_vs_v1": null
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.16.32 serves no interpreter exe sidecar for 0.16.32-3.3.12-windows-ucrt64 under either era's spelling"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the python runtime's windows tier has not shipped"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    }
+  ]
+}
