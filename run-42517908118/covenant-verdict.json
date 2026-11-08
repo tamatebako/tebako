@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "verdict": "pass",
+  "cells": [
+    {
+      "id": "first-response.cold.median",
+      "state": "absent",
+      "bound": 3.0,
+      "comparison": "<="
+    },
+    {
+      "id": "first-response.warm.median",
+      "state": "absent",
+      "bound": 2.0,
+      "comparison": "<="
+    },
+    {
+      "id": "steady.cpu.throughput",
+      "state": "absent",
+      "bound": 0.85,
+      "comparison": ">="
+    },
+    {
+      "id": "steady.io.throughput",
+      "state": "absent",
+      "bound": 0.85,
+      "comparison": ">="
+    },
+    {
+      "id": "filesystem.stat.max",
+      "state": "absent",
+      "bound": 2.0,
+      "comparison": "<="
+    },
+    {
+      "id": "filesystem.stat.median",
+      "state": "absent",
+      "bound": 1.2,
+      "comparison": "<="
+    },
+    {
+      "id": "memory.rss.peak",
+      "state": "absent",
+      "bound": 671088640.0,
+      "comparison": "<="
+    },
+    {
+      "id": "teardown.exit_seconds",
+      "state": "absent",
+      "bound": 0.5,
+      "comparison": "<="
+    },
+    {
+      "id": "teardown.materialize_vs_extract",
+      "state": "absent",
+      "bound": 1.0,
+      "comparison": "<="
+    },
+    {
+      "id": "author-loop.repress.median",
+      "state": "absent",
+      "bound": 6.0,
+      "comparison": "<="
+    },
+    {
+      "id": "author-loop.first_run.median",
+      "state": "absent",
+      "bound": 2.5,
+      "comparison": "<="
+    }
+  ]
+}
