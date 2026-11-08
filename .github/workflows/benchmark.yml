@@ -69,6 +69,25 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           workspaces: tebako-rs
+      # Dispatch runs take the latest COMPLETE release for the fixture
+      # tooling: `releases/latest` is the hollow tag during the publish
+      # window (Prepare creates the release object hours before Finalize
+      # uploads SHA256SUMS — run 42517908118 died on the 404). Resolve the
+      # newest tag whose sums actually serve, once for all three legs.
+      - name: Resolve the tooling release (dispatch runs)
+        if: github.event_name != 'release'
+        run: |
+          set -euo pipefail
+          tag=""
+          for t in $(gh release list --repo tamatebako/tebako --limit 10 --json tagName --jq -r '.[].tagName'); do
+            code=$(curl -sIL -o /dev/null -w "%{http_code}" "https://github.com/tamatebako/tebako/releases/download/$t/SHA256SUMS")
+            if [ "$code" = "200" ]; then tag="$t"; break; fi
+          done
+          [ -n "$tag" ] || { echo "::error::no tebako release with a served SHA256SUMS in the newest 10 — cannot pin the fixture tooling"; exit 2; }
+          echo "dispatch tooling release: $tag (newest with SHA256SUMS served)"
+          echo "TOOLS_TAG=$tag" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Run the matrix leg
         shell: bash
         working-directory: tebako-rs
@@ -81,9 +100,16 @@ jobs:
                 --out out
                 --repo-root .)
           # A release run benchmarks the release that fired it (never the
-          # floating "latest"); dispatch runs take the latest release.
+          # floating "latest"); dispatch runs take the latest COMPLETE
+          # release — `releases/latest` is the hollow tag during the
+          # publish window (Prepare creates the release object hours
+          # before Finalize uploads SHA256SUMS), and run 42517908118 died
+          # on the 404. Resolve the newest tag whose sums actually serve.
           if [ "${{ github.event_name }}" = "release" ]; then
             args+=(--tebako-release "${{ github.event.release.tag_name }}")
+          else
+            [ -n "$TOOLS_TAG" ] || { echo "::error::the resolve step exported no TOOLS_TAG — the workflow's wiring broke"; exit 2; }
+            args+=(--tebako-release "$TOOLS_TAG")
           fi
           set +e
           if [ -n "${{ matrix.container }}" ]; then
@@ -151,6 +177,9 @@ jobs:
                 --repo-root .)
           if [ "${{ github.event_name }}" = "release" ]; then
             args+=(--tebako-release "${{ github.event.release.tag_name }}")
+          else
+            [ -n "$TOOLS_TAG" ] || { echo "::error::the resolve step exported no TOOLS_TAG — the workflow's wiring broke"; exit 2; }
+            args+=(--tebako-release "$TOOLS_TAG")
           fi
           # Always on the host: the musl legs reuse the static musl harness
           # binary built above (it executes on the gnu host unchanged).
@@ -186,6 +215,9 @@ jobs:
                 --repo-root .)
           if [ "${{ github.event_name }}" = "release" ]; then
             args+=(--tebako-release "${{ github.event.release.tag_name }}")
+          else
+            [ -n "$TOOLS_TAG" ] || { echo "::error::the resolve step exported no TOOLS_TAG — the workflow's wiring broke"; exit 2; }
+            args+=(--tebako-release "$TOOLS_TAG")
           fi
           if [ -n "${{ matrix.container }}" ]; then
             target="$(rustc -vV | sed -n 's/^host: //p' | sed 's/-gnu/-musl/')"
