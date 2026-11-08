@@ -29,6 +29,7 @@ set -euo pipefail
 
 MN_VERSION="${1:-}"
 TEBAKO_CLI_VERSION="${TEBAKO_CLI_VERSION:-v2.8.73}"
+export MN_VERSION TEBAKO_CLI_VERSION
 WORK="$(cd "$(dirname "$0")/.." && pwd)/out/sealed-network"
 IMAGE=debian:12-slim
 
@@ -46,10 +47,15 @@ docker run --rm --platform linux/amd64 \
   -e TEBAKO_CLI_VERSION -e MN_VERSION \
   "$IMAGE" bash -euxo pipefail -c '
     apt-get update -qq && apt-get install -y -qq curl ca-certificates > /dev/null
-    curl -fsSL -o tebako "https://github.com/tamatebako/tebako/releases/download/${TEBAKO_CLI_VERSION}/tebako-${TEBAKO_CLI_VERSION#v}-linux-gnu-x86_64"
-    curl -fsSL -o tebako.sha256 "https://github.com/tamatebako/tebako/releases/download/${TEBAKO_CLI_VERSION}/tebako-${TEBAKO_CLI_VERSION#v}-linux-gnu-x86_64.sha256"
-    echo "$(cut -d" " -f1 tebako.sha256)  tebako" | sha256sum -c -
-    chmod +x tebako
+    # The bundle verb copies the CLI tool set from beside the running exe
+    # (spec 16 §6: a partial set is a named error) — fetch all four, each
+    # sha256-verified against the release sidecar.
+    for tool in tebako tebako-shim tfs tebako-pkg; do
+      curl -fsSL -o "$tool" "https://github.com/tamatebako/tebako/releases/download/${TEBAKO_CLI_VERSION}/${tool}-${TEBAKO_CLI_VERSION#v}-linux-gnu-x86_64"
+      curl -fsSL -o "$tool.sha256" "https://github.com/tamatebako/tebako/releases/download/${TEBAKO_CLI_VERSION}/${tool}-${TEBAKO_CLI_VERSION#v}-linux-gnu-x86_64.sha256"
+      echo "$(cut -d" " -f1 "$tool.sha256")  $tool" | sha256sum -c -
+      chmod +x "$tool"
+    done
     export TEBAKO_HOME=/work/home
     ./tebako add-registry tfs:github:tebako-packages/metanorma
     target="metanorma"
@@ -66,20 +72,30 @@ docker run --rm --platform linux/amd64 --network none \
     # The tree root is wherever BUNDLE.yaml sits in the archive (the
     # packers own descriptor is the anchor, never a guessed prefix).
     mkdir -p /work/tree
-    tar -xzf bundle/*.tar.gz -C /work/tree
+    tar -xzf bundle.tar.gz -C /work/tree
     bundle_yaml="$(find /work/tree -name BUNDLE.yaml -maxdepth 3 | head -1)"
     [ -n "$bundle_yaml" ] || { echo "no BUNDLE.yaml in the archive — the bundle is malformed"; exit 1; }
     tree="$(dirname "$bundle_yaml")"
     export TEBAKO_HOME="$tree/home"
-    export PATH="$tree/shims:$tree/bin:$PATH"
+    export PATH="$tree/home/shims:$tree/bin:$PATH"
     # The fixture: a minimal ISO-flavoured document (the feedstock
     # smoke shape — nodoc/novalid/no-isobib keep the compile offline and
     # fast, which the seal demands anyway).
-    printf '= Sealed\nAuthor\n:nodoc:\n:novalid:\n:no-isobib:\n\n== Scope\n\nA sealed network compiles.\n' > sealed.adoc
+    # NOTE: the fixture text rides DOUBLE quotes — the inner script is
+    # single-quoted in this file; an apostrophe anywhere inside would
+    # truncate the script at that byte (the attempt-4 false green).
+    printf "= Sealed\nAuthor\n:nodoc:\n:novalid:\n:no-isobib:\n\n== Scope\n\nA sealed network compiles.\n" > sealed.adoc
     metanorma compile -t iso sealed.adoc
     ls -la sealed.xml
     grep -q "<iso-standard" sealed.xml
     echo "SEALED-COMPILE-OK"
-  '
+  ' | tee "$WORK/phase2.log"
+# The verdict is the marker, never the exit code alone: an inner script
+# truncated by a quoting slip exits 0 without compiling (attempt 4).
+# pipefail keeps a docker failure fatal; the grep names a false green.
+grep -q "SEALED-COMPILE-OK" "$WORK/phase2.log" || {
+  echo "sealed-network: the sealed run never printed SEALED-COMPILE-OK — the compile did not prove itself (the transcript: $WORK/phase2.log)" >&2
+  exit 1
+}
 
 echo "sealed-network: PROOF GREEN — a networkless namespace compiled from the bundle"
