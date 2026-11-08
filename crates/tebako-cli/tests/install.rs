@@ -2116,6 +2116,72 @@ fn uninstall_removes_shims_and_cache_and_journals_the_anchors() {
     assert!(err.message.contains("is not installed"), "{err:?}");
 }
 
+/// tebako#997: the removal verb's runtime-own form — with no payload
+/// versions under the name, a standing runtime-own claim takes its own
+/// path: the claim record AND the shim link removed, journaled, and the
+/// not-installed error afterwards names both forms.
+#[test]
+fn uninstall_removes_a_runtime_own_claim_and_its_shim() {
+    let fx = Fixture::new("uninstall-runtime-own");
+    let shims = fx.home.join("shims");
+    fs::create_dir_all(&shims).unwrap();
+    fs::write(
+        shims.join(".runtime-own.yaml"),
+        "ruby:\n  engine: ruby\n  entry: self\n",
+    )
+    .unwrap();
+    let shim = shim_path(&fx.home, "ruby");
+    fs::write(&shim, b"link-stand-in").unwrap();
+
+    let out = install::uninstall(&fx.home, "ruby").unwrap();
+    assert_eq!(out.runtime_own.as_deref(), Some("ruby"));
+    assert!(out.versions.is_empty());
+    assert_eq!(out.shims_removed, vec![shim.clone()]);
+    assert!(!shim.exists());
+
+    // the claim record is gone, the file stays valid
+    let claims = fs::read_to_string(shims.join(".runtime-own.yaml")).unwrap();
+    assert!(!claims.contains("ruby:"), "{claims}");
+
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains("event=runtime-own-uninstall command=ruby engine=ruby"),
+        "{journal}"
+    );
+
+    // and the named error now names both forms consulted
+    let err = install::uninstall(&fx.home, "ruby").unwrap_err();
+    assert!(err.message.contains("no runtime-own claim"), "{err:?}");
+}
+
+/// The payload form still wins the name (the collision rule): installed
+/// payload versions take the payload path even when a runtime-own claim
+/// also stands on the name.
+#[test]
+fn uninstall_with_a_payload_and_a_runtime_own_claim_takes_the_payload_path() {
+    let fx = Fixture::new("uninstall-payload-wins");
+    let p10 = fx.payload("app-1.0.tfs", b"v1.0-bytes");
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {p10}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n"
+    );
+    install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
+    install::install(&fx.home, "app@1.0", None, Some(&fx.shim_binary)).unwrap();
+    let shims = fx.home.join("shims");
+    fs::write(
+        shims.join(".runtime-own.yaml"),
+        "app:\n  engine: ruby\n  entry: self\n",
+    )
+    .unwrap();
+
+    let out = install::uninstall(&fx.home, "app").unwrap();
+    assert_eq!(out.runtime_own, None);
+    assert_eq!(out.versions, vec!["1.0"]);
+    assert!(!fx.payloads_dir().join("app").exists());
+    // the runtime-own claim is untouched — it never owned the name
+    let claims = fs::read_to_string(shims.join(".runtime-own.yaml")).unwrap();
+    assert!(claims.contains("app:"), "{claims}");
+}
+
 // ---------------------------------------------------------------------
 // the dependency closure walk (spec 03 §2.3 `requires:`)
 // ---------------------------------------------------------------------
