@@ -836,3 +836,12 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
         working-directory: tebako-rs
+
+      # The local-action reference guard (the v2.8.74 attest-path miss,
+      # release run 42507966270): every `uses: ./…` in every workflow must
+      # resolve to an on-disk action under the enclosing job's checkout
+      # prefix — a skipped (disarmed) step's uses: is never resolved by
+      # the runner, so the class only ever fires on a real tag push. This
+      # check runs where the step is disarmed.
+      - name: Local-action references resolve
+        run: ruby tebako-rs/.github/workflows/lib/check-local-action-refs.rb
