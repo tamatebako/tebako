@@ -608,7 +608,7 @@ suite's `compile-*` ids) runs on every target:
 - `<lang>-boot` — startup cost: the interpreter prints a constant and
   exits (`ruby -e`, `python3 -c`, `java -version`).
 - `<lang>-fib` — steady-state penalty: a recursive fib compute loop
-  (fib(34) ruby / fib(39) python / fib(43) java — amended 2026-11-08
+  (fib(37) ruby / fib(40) python / fib(47) java — amended 2026-11-08
   from fib(32) for all: at fib(32) the native arm finishes in
   30–300 ms and the tebako arm's fixed wrapper+mount+boot cost is the
   whole measurement, so the "steady-state" ratio measured the boot.

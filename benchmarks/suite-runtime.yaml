@@ -17,7 +17,7 @@ workloads:
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: ruby-fib
-    argv: ["-e", "def fib(n) n < 2 ? n : fib(n-1) + fib(n-2) end; puts fib(34)"]
+    argv: ["-e", "def fib(n) n < 2 ? n : fib(n-1) + fib(n-2) end; puts fib(37)"]
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: ruby-stdlib
@@ -39,9 +39,9 @@ workloads:
     expect: { exit: 0, files: [] }
     timeout_s: 120
   - id: python-fib
-    argv: ["-c", "f=lambda n: n if n<2 else f(n-1)+f(n-2); print(f(39))"]
+    argv: ["-c", "f=lambda n: n if n<2 else f(n-1)+f(n-2); print(f(40))"]
     expect: { exit: 0, files: [] }
-    timeout_s: 120
+    timeout_s: 180
   - id: python-stdlib
     argv: ["-c", "import json, ssl, sqlite3, hashlib; print(1)"]
     expect: { exit: 0, files: [] }
