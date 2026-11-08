@@ -568,6 +568,18 @@ fn warm_primary_runtime(
             .map_err(map_shim)?
         {
             RuntimeResolution::Ready(rt) => {
+                // The seal (spec 39 §4): a bundle is offline by
+                // construction — a LAZY_SEEDING entry would pack the seed
+                // descriptor with no image bytes, and the sealed run
+                // mounts nothing (caught by the sealed-network proof: the
+                // dispatch died mounting the env image, I/O error).
+                // Bundle staging is an explicit pre-stage act, so the
+                // seal is synchronous here — `tebako install <engine>`'s
+                // own rule (install.rs's engine form).
+                if rt.lazy.is_some() {
+                    let mut prog = tebako_term::Progress::stderr();
+                    crate::seal_one(&rt, tebako_resolve::cache::offline(), &mut prog)?;
+                }
                 journal(
                     home,
                     &format!(

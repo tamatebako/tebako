@@ -176,7 +176,11 @@ Staging semantics:
   the payload's own `kind: language` edge to first dispatch, which an
   offline machine cannot do — the bundle resolves it at stage time
   through the dispatch resolver (cache → pins → mirror → registries →
-  default, spec 05 §2).
+  default, spec 05 §2). A LAZY_SEEDING resolution is **sealed
+  synchronously at stage time** (spec 39 §4's explicit-pre-stage rule —
+  the same seal `tebako install <engine>` runs): a bundle that packed
+  the seed descriptor with no image bytes would mount nothing on the
+  sealed machine (the sealed-network proof caught exactly this).
 - After staging, `runtimes:` in the shipped config is **re-pinned from
   the staged reality** (one pin per staged engine, newest line): the
   bundle's config never names a runtime it does not carry. An operator
