@@ -126,7 +126,7 @@ jobs:
       # versions inside the tebako runtimes under test (the harness asserts
       # the parity at run time; a mismatch gaps both arms of the pair).
       - name: Provision ruby (the on-system arm)
-        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: "3.3.13"
       - name: Provision python (the on-system arm)
