@@ -99,9 +99,9 @@ fn main() {
     }
 
     // Allocated and page-touched, then HELD until the end (the peak-RSS
-    // golden test reads ru_maxrss / PeakWorkingSetSize — a freed-before-
-    // exit allocation still counts against the high-water mark, but
-    // holding it keeps the intent obvious).
+    // golden test reads VmHWM / ru_maxrss / PeakWorkingSetSize — a freed-
+    // before-exit allocation still counts against the high-water mark,
+    // but holding it keeps the intent obvious).
     let mut held: Vec<Vec<u8>> = Vec::new();
     for _ in 0..alloc_mb {
         let mut block = vec![0u8; 1024 * 1024];

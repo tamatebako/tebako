@@ -17,6 +17,24 @@
 //!
 //! Unit note: `ru_maxrss` is BYTES on macOS and KIBIBYTES on Linux/musl —
 //! normalized to bytes at record time (`maxrss_to_bytes`).
+//!
+//! **Peak RSS is NOT read from `ru_maxrss` on Linux/musl.** Linux inherits
+//! the high-water mark across fork+exec: a parent holding 150 MiB sees
+//! `python3 -c pass` report ~162 MB (control without the allocation:
+//! ~8 MB — the floor is the parent's own peak, and it ratchets only up).
+//! The CI legs read exactly that: every on-system child answered the
+//! harness's own constant (143.4 MiB on linux-gnu-x86_64, 137.9 MiB on
+//! linux-gnu-arm64) while the tebako arms, above the floor, varied for
+//! real. macOS does not inherit the mark across exec (verified: the same
+//! experiment reads the child's own ~8 MB with and without the parent's
+//! 150 MiB resident), so `wait4` stays the source there. On Linux/musl
+//! the sampler polls the child's own `VmHWM` from `/proc/<pid>/status`
+//! on the same 2 ms tick and keeps the MAXIMUM read (VmHWM is monotone
+//! while the mm lives; a zombie reads 0). The last read can predate exit
+//! by up to one tick — an interpreter's peak is set at load, not in its
+//! final milliseconds, so the miss is noise, and it is the same on every
+//! arm. If /proc is unreadable for a child's whole life the sample falls
+//! back to `ru_maxrss` with a stderr note naming the floor hazard.
 
 use std::fs::OpenOptions;
 use std::os::unix::process::CommandExt;
@@ -80,6 +98,13 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
     // SAFETY: `usage` is plain-old-data filled by wait4 before any read.
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
 
+    // Linux/musl: the child's OWN peak RSS rides /proc (the module header
+    // documents why wait4's ru_maxrss cannot be trusted there). Read once
+    // immediately after spawn so a short-lived child's load-time peak is
+    // caught even when it exits inside the first poll tick.
+    #[cfg(target_os = "linux")]
+    let mut vmhwm_bytes: Option<u64> = poll_vmhwm(pid);
+
     let (exit, timed_out) = loop {
         // SAFETY: `status`/`usage` are valid out-params; `pid` is our own
         // spawned, not-yet-reaped child.
@@ -89,12 +114,20 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
         }
         if rc == 0 {
             // Still running.
+            #[cfg(target_os = "linux")]
+            if let Some(v) = poll_vmhwm(pid) {
+                vmhwm_bytes = Some(vmhwm_bytes.map_or(v, |seen: u64| seen.max(v)));
+            }
             if Instant::now() >= deadline {
                 // SAFETY: pid is the child's group leader id; the group is
                 // ours (created by this spawn). ESRCH (already exited) is
                 // harmless — the blocking wait4 below reaps either way.
                 unsafe {
                     libc::kill(-pid, libc::SIGKILL);
+                }
+                #[cfg(target_os = "linux")]
+                if let Some(v) = poll_vmhwm(pid) {
+                    vmhwm_bytes = Some(vmhwm_bytes.map_or(v, |seen: u64| seen.max(v)));
                 }
                 reap_blocking(pid, &mut status, &mut usage)?;
                 break (decode_exit(status), true);
@@ -118,14 +151,41 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
     // Drop does not reap — safe to drop).
     drop(child);
 
+    #[cfg(target_os = "linux")]
+    let peak_rss_bytes = match vmhwm_bytes {
+        Some(v) => v,
+        None => {
+            eprintln!(
+                "sampler: /proc/{pid}/status was unreadable for the child's whole life; \
+                 falling back to wait4's ru_maxrss, which Linux floors at the harness's \
+                 own peak across fork+exec — is /proc mounted?"
+            );
+            maxrss_to_bytes(usage.ru_maxrss)
+        }
+    };
+    #[cfg(not(target_os = "linux"))]
+    let peak_rss_bytes = maxrss_to_bytes(usage.ru_maxrss);
+
     Ok(Sample {
         wall_s,
         cpu_user_s: timeval_to_s(&usage.ru_utime),
         cpu_sys_s: timeval_to_s(&usage.ru_stime),
-        peak_rss_bytes: maxrss_to_bytes(usage.ru_maxrss),
+        peak_rss_bytes,
         exit,
         timed_out,
     })
+}
+
+/// The child's own peak RSS, from `/proc/<pid>/status`'s VmHWM line
+/// (KiB), normalized to bytes. `None` when the entry is unreadable —
+/// the child already reaped, or /proc absent (the caller keeps the
+/// maximum seen, so a transient miss costs nothing).
+#[cfg(target_os = "linux")]
+fn poll_vmhwm(pid: libc::pid_t) -> Option<u64> {
+    let text = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    let rest = text.lines().find_map(|line| line.strip_prefix("VmHWM:"))?;
+    let kib: u64 = rest.split_whitespace().next()?.parse().ok()?;
+    Some(kib.saturating_mul(1024))
 }
 
 /// Blocking reap after the timeout SIGKILL; loops on EINTR.

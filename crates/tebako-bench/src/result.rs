@@ -95,8 +95,10 @@ pub struct RunRecord {
     pub cpu_user_s: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_sys_s: Option<f64>,
-    /// Bytes, ALWAYS — ru_maxrss is KiB on Linux/musl and bytes on macOS;
-    /// the sampler normalizes at record time. Windows: PeakWorkingSetSize.
+    /// Bytes, ALWAYS — the Linux/musl source is the child's `VmHWM` (KiB
+    /// in /proc, `ru_maxrss` there is floored at the parent's peak across
+    /// fork+exec), the macOS source is `ru_maxrss` (bytes); the sampler
+    /// normalizes at record time. Windows: PeakWorkingSetSize.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub peak_rss_bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

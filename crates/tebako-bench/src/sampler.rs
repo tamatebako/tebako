@@ -49,8 +49,10 @@ pub struct Sample {
     pub cpu_user_s: f64,
     /// System CPU seconds attributed to the child tree.
     pub cpu_sys_s: f64,
-    /// Peak RSS in BYTES, always (unit-normalized at record time —
-    /// `ru_maxrss` is KiB on Linux/musl, bytes on macOS; Windows's
+    /// Peak RSS in BYTES, always (unit-normalized at record time — the
+    /// Linux/musl source is the child's own `VmHWM` from /proc (KiB;
+    /// `ru_maxrss` inherits the parent's high-water mark across fork+exec
+    /// there), macOS reports `ru_maxrss` bytes; Windows's
     /// `PeakWorkingSetSize` and the job's `PeakJobMemoryUsed` are bytes).
     pub peak_rss_bytes: u64,
     /// The process exit status; 128+signal when signal-killed (the shell

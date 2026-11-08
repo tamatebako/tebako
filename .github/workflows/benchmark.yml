@@ -128,7 +128,7 @@ jobs:
       - name: Provision ruby (the on-system arm)
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: "3.3.12"
+          ruby-version: "3.3.13"
       - name: Provision python (the on-system arm)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

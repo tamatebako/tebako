@@ -5,12 +5,22 @@
 # cell is a coverage gap — reported loudly, never silently satisfied and
 # never a false red.
 #
-# The bands are stated as ratios against the native interpreter on the same
-# host, measured by the same harness in the same run, because an absolute
-# latency is a property of the runner and a ratio is a property of tebako.
-# The two author-loop bounds are the exception: they are wall-clock seconds,
-# anchored on the published walkthrough (4.0-5.0 s and 1.2-1.6 s) with
-# headroom for a slow day.
+# Two cell shapes, each honest about what it measures:
+#
+# * **Ratio/speedup against the native interpreter on the same host** —
+#   the steady-state and filesystem cells, where the workload runs long
+#   enough (fib(34)/fib(39)/fib(43), 128 ioread passes, N statloop walks)
+#   that the fixed wrapper+mount+boot cost amortizes away and what remains
+#   is a property of tebako, not of the runner. A ratio cell on a MICRO
+#   workload is a ratio of fixed cost to nothing — the 2026-11-08 dispatch
+#   (run 42456544287) measured exactly that: a 29x "first-response ratio"
+#   that was 300 ms of boot against an 11 ms native `print(1)`.
+# * **Absolute** — the first-response and memory cells, where the budget
+#   is a fixed cost the user feels once (a boot) or a fixed resident set
+#   (the mount machinery), and a ratio against a tiny native baseline
+#   would measure the baseline's smallness, not tebako. Bounds carry
+#   headroom over the measured worst leg (cited in each note) so a slow
+#   shared runner never trips them — they trip on regressions.
 #
 # Every cell the runtime suite produces carries a `source:` (spec 27 §11's
 # covenant arm): the workload suffix selectors, the tebako arm's target
@@ -25,20 +35,26 @@
 schema_version: 1
 cells:
   # -- first response: the wrapper + mount + boot budget a user feels once.
+  # Absolute seconds: the tebako arm's own median, worst leg. Measured
+  # worst at the 2026-11-08 dispatch (run 42456544287): 0.98 s warm
+  # (macos-arm64, java), 1.10 s cold (same); bounds carry ~2x headroom.
   - id: first-response.cold.median
-    bound: 1.5
+    bound: 3.0
     comparison: le
-    unit: ratio-to-native
-    note: time to first output, cold, against the native interpreter in the same run
-    source: {workloads: ["-boot"], target: "tebako-", mode: cold, measure: wall, shape: ratio, aggregate: worst}
+    unit: s
+    note: time to first output, cold; worst measured leg 1.10 s (run 42456544287)
+    source: {workloads: ["-boot"], target: "tebako-", mode: cold, measure: wall, shape: absolute, aggregate: worst}
   - id: first-response.warm.median
-    bound: 1.5
+    bound: 2.0
     comparison: le
-    unit: ratio-to-native
-    note: time to first output, warm, against the native interpreter in the same run
-    source: {workloads: ["-boot"], target: "tebako-", mode: warm, measure: wall, shape: ratio, aggregate: worst}
+    unit: s
+    note: time to first output, warm; worst measured leg 0.98 s (run 42456544287)
+    source: {workloads: ["-boot"], target: "tebako-", mode: warm, measure: wall, shape: absolute, aggregate: worst}
 
-  # -- steady state: interposition is per open, not per byte.
+  # -- steady state: interposition is per open, not per byte. The fib
+  # workloads run seconds on the native arm, so the fixed boot cost is a
+  # single-digit share of the tebako arm's total and the speedup measures
+  # the compute path.
   - id: steady.cpu.throughput
     bound: 0.85
     comparison: ge
@@ -52,7 +68,9 @@ cells:
     note: an IO-bound workload, where the mount tax is visible first
     source: {workloads: ["-ioread"], target: "tebako-", mode: warm, measure: wall, shape: speedup, aggregate: worst}
 
-  # -- filesystem: the preload tax lives here and nowhere else.
+  # -- filesystem: the preload tax lives here and nowhere else. The
+  # statloop walks repeat (10/50/30 passes) so the per-stat mount tax is
+  # the measured term, not the boot.
   - id: filesystem.stat.max
     bound: 2.0
     comparison: le
@@ -65,20 +83,16 @@ cells:
     unit: ratio-to-native
     note: the median is where a regression hides
     source: {workloads: ["-statloop"], target: "tebako-", mode: warm, measure: wall, shape: ratio, aggregate: worst}
-  - id: filesystem.read.throughput
-    bound: 0.85
-    comparison: ge
-    unit: ratio-to-native
-    note: sequential read bandwidth through the image
-    source: {workloads: ["-ioread"], target: "tebako-", mode: warm, measure: wall, shape: speedup, aggregate: worst}
 
-  # -- memory: mounted indices and page cache are real costs, bounded.
-  - id: memory.rss.ratio
-    bound: 1.25
+  # -- memory: the mount machinery is a fixed resident cost; the budget is
+  # the absolute peak any leg shows. Measured worst 470 MB
+  # (windows-ucrt64, tebako-java, run 42456544287); the bound is 640 MiB.
+  - id: memory.rss.peak
+    bound: 671088640
     comparison: le
-    unit: ratio-to-native
-    note: resident set at steady state, per runtime, per backend
-    source: {workloads: ["-boot", "-fib"], target: "tebako-", mode: warm, measure: rss, shape: ratio, aggregate: worst}
+    unit: bytes
+    note: resident-set peak at steady state, worst leg; worst measured 470 MB (run 42456544287)
+    source: {workloads: ["-boot", "-fib", "-ioread", "-statloop"], target: "tebako-", mode: warm, measure: rss, shape: absolute, aggregate: worst}
 
   # -- teardown and lifecycle. No suite workload produces these yet — the
   # cells carry no source and answer `absent` (the coverage gap, named).
