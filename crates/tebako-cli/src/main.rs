@@ -98,6 +98,7 @@ const USAGE: &str = "Usage:
                                        runtime-own shim (spec 07 §10 — the bare form
                                        registers the default entry's name)
   tebako uninstall <name>              remove a payload's shims and cache entry
+                                       (or a runtime-own claim + shim, spec 07 §10)
   tebako bundle <name[@ver]> --output <dir> [--also <name[@ver]>]...
                [--config <org.yaml>] [--archive tar.gz]
                                        an offline bundle: the payload closure + its
@@ -1100,7 +1101,13 @@ fn run_uninstall(args: &[String]) -> Result<(), CliExit> {
         return Err(CliExit::Usage("usage: tebako uninstall <name>".to_string()));
     };
     let outcome = tebako_cli::install::uninstall(&tebako_home()?, name)?;
-    println!("removed {} ({})", outcome.name, outcome.versions.join(", "));
+    match &outcome.runtime_own {
+        Some(engine) => println!(
+            "removed {} (the runtime-own claim on the {} engine)",
+            outcome.name, engine
+        ),
+        None => println!("removed {} ({})", outcome.name, outcome.versions.join(", ")),
+    }
     for shim in &outcome.shims_removed {
         println!("  unlinked {}", shim.display());
     }

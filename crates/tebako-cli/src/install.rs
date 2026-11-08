@@ -30,7 +30,7 @@
 //! trusted per the `.sha256` anchor — never re-verified per run
 //! (spec 05 §4). `TEBAKO_OFFLINE=1`: cache hit or the named hard error.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -636,6 +636,87 @@ pub fn install_with<T: Transport + Sync>(
 
 // ---- the engine form (spec 07 §10 — the runtime-own command surface) ----
 
+/// tebako#996: the order PATH puts the shims dir and an existing
+/// resolution of the same command in — the note's wording key. The
+/// carried path is the existing provider.
+#[derive(Debug, PartialEq, Eq)]
+enum Shadow {
+    /// The shims dir leads the existing resolution — the new shim wins now.
+    Shadows(PathBuf),
+    /// The existing resolution leads the shims dir — it wins today.
+    Trails(PathBuf),
+    /// The shims dir is not on PATH at all (install-shell is the fix).
+    NotOnPath(PathBuf),
+}
+
+/// Where PATH already resolves `command` outside the shims dir, and the
+/// order relation. Detection only — the registration's note is the honest
+/// surfacing, never a block. The env under test is the caller's captured
+/// one (the install's own view), not a live read.
+fn existing_resolution(
+    env: &BTreeMap<String, String>,
+    home: &Path,
+    command: &str,
+) -> Option<Shadow> {
+    let path_var = env
+        .get("PATH")
+        .or_else(|| env.get("Path"))
+        .map(String::as_str)?;
+    let shims = home.join("shims");
+    let mut shims_rank = None;
+    let mut found = None;
+    for (rank, dir) in std::env::split_paths(path_var).enumerate() {
+        if dir == shims {
+            // PATH resolution is first-wins; a duplicated entry keeps its
+            // leading rank.
+            if shims_rank.is_none() {
+                shims_rank = Some(rank);
+            }
+        } else if found.is_none() {
+            found = executable_in(&dir, command).map(|exe| (rank, exe));
+        }
+        if shims_rank.is_some() && found.is_some() {
+            break;
+        }
+    }
+    let (rank, existing) = found?;
+    Some(match shims_rank {
+        Some(s) if s < rank => Shadow::Shadows(existing),
+        Some(_) => Shadow::Trails(existing),
+        None => Shadow::NotOnPath(existing),
+    })
+}
+
+/// `dir`'s executable spelling of `command`, when one stands: on POSIX a
+/// regular file with any execute bit; on Windows the exact name first,
+/// then each PATHEXT extension (the shell's own resolution order).
+#[cfg(unix)]
+fn executable_in(dir: &Path, command: &str) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let candidate = dir.join(command);
+    let meta = std::fs::metadata(&candidate).ok()?;
+    (meta.is_file() && meta.permissions().mode() & 0o111 != 0).then_some(candidate)
+}
+
+/// `dir`'s executable spelling of `command`, when one stands: on POSIX a
+/// regular file with any execute bit; on Windows the exact name first,
+/// then each PATHEXT extension (the shell's own resolution order).
+#[cfg(windows)]
+fn executable_in(dir: &Path, command: &str) -> Option<PathBuf> {
+    let exact = dir.join(command);
+    if exact.is_file() {
+        return Some(exact);
+    }
+    let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    for ext in exts.split(';').filter(|e| !e.is_empty()) {
+        let candidate = dir.join(format!("{command}{}", ext.to_ascii_lowercase()));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// The install target's engine-form test (spec 07 §10): a token carrying
 /// `:` is unconditionally the engine grammar (a nickname never carries
 /// one); a bare engine-shaped token is the engine form when the engine
@@ -732,6 +813,12 @@ fn refuse_payload_claim(home: &Path, engine: &str, command: &str) -> Result<(), 
 /// spawn surface, register the runtime-own shim, and record the claim
 /// (the engine class + the wire token — `self` for the bare form) so the
 /// dispatcher's list/disable answer the class.
+///
+/// tebako#996: when PATH already resolves the command OUTSIDE the shims
+/// dir, the registration notes the shadow loudly — who provides it today
+/// and which way PATH orders the two — never a silent takeover of the
+/// user's mise/rbenv/homebrew/system command. Detection only; the note is
+/// the honest surfacing, never a block.
 fn install_engine(
     home: &Path,
     erf: &crate::engine::EngineRef,
@@ -838,13 +925,43 @@ fn install_engine(
     // A stale runtime-own claim of ours is replaced silently — link_shims'
     // displacement note is for the payload-wins direction only.
     tebako_shim::runtime_own::remove(home, &command).map_err(map_shim)?;
-    let (links, notes) =
+    let (links, mut notes) =
         manage::link_shims(home, &binary, std::slice::from_ref(&command)).map_err(map_shim)?;
     tebako_shim::runtime_own::record(home, &command, engine, &token).map_err(map_shim)?;
     journal(
         home,
         &format!("event=runtime-own-shim command={command} engine={engine} entry={token}"),
     );
+    // tebako#996: name the shadow the registration casts, if one stands.
+    if let Some(shadow) = existing_resolution(&ctx.env, home, &command) {
+        let (relation, existing) = match &shadow {
+            Shadow::Shadows(existing) => ("shadows", existing),
+            Shadow::Trails(existing) => ("trails", existing),
+            Shadow::NotOnPath(existing) => ("not-on-path", existing),
+        };
+        journal(
+            home,
+            &format!(
+                "event=runtime-own-shadow command={command} relation={relation} existing={}",
+                existing.display()
+            ),
+        );
+        notes.push(match shadow {
+            Shadow::Shadows(existing) => format!(
+                "\"{command}\" is already provided by {} — the tebako shim shadows it (the shims dir leads your PATH). `tebako uninstall {command}` removes the claim",
+                existing.display()
+            ),
+            Shadow::Trails(existing) => format!(
+                "\"{command}\" is already provided by {}, which wins today (the shims dir trails your PATH); a shell setup that prepends the shims dir flips the shadow to the tebako shim",
+                existing.display()
+            ),
+            Shadow::NotOnPath(existing) => format!(
+                "\"{command}\" is already provided by {}; the shims dir is not on your PATH yet — `tebako install-shell` prepends it, and then the tebako shim shadows {}",
+                existing.display(),
+                existing.display()
+            ),
+        });
+    }
     Ok(InstallOutcome {
         name: engine.to_string(),
         version: rt.lang_version.clone(),
@@ -2269,6 +2386,39 @@ fn finish_install<T: Transport + Sync>(
         let binary = resolve_shim_binary(shim_binary)?;
         let (shims, shim_notes) = manage::link_shims(home, &binary, &commands).map_err(map_shim)?;
         notes.extend(shim_notes);
+        // tebako#996, payload form: one consolidated note per shadowed
+        // command — a toolchain payload's active set can be two dozen
+        // names, and the per-name notes would bury the point.
+        let env_map: BTreeMap<String, String> = std::env::vars().collect();
+        let shadowed: Vec<(String, PathBuf)> = commands
+            .iter()
+            .filter_map(|c| match existing_resolution(&env_map, home, c) {
+                Some(Shadow::Shadows(existing)) => Some((c.clone(), existing)),
+                _ => None,
+            })
+            .collect();
+        for (command, existing) in &shadowed {
+            journal(
+                home,
+                &format!(
+                    "event=payload-shim-shadow payload={} command={} existing={}",
+                    plan.name,
+                    command,
+                    existing.display()
+                ),
+            );
+        }
+        if !shadowed.is_empty() {
+            notes.push(format!(
+                "these commands already exist on your PATH and the tebako shims now shadow them (the shims dir leads PATH): {} — remove one with `rm {}/<name>` (the payload stays dispatchable through `tebako run`), or reorder PATH",
+                shadowed
+                    .iter()
+                    .map(|(c, e)| format!("{c} (was {})", e.display()))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                home.join("shims").display()
+            ));
+        }
         shims
     };
 
@@ -3533,19 +3683,46 @@ pub struct UninstallOutcome {
     pub name: String,
     pub versions: Vec<String>,
     pub shims_removed: Vec<PathBuf>,
+    /// The engine class when the removal was a runtime-own claim rather
+    /// than a payload (tebako#997) — `None` for the payload form.
+    pub runtime_own: Option<String>,
 }
 
 /// `tebako uninstall <name>`: remove the payload's shims and its cache
 /// entry (`payloads/<name>/`). The trust-anchor digests are journaled
 /// BEFORE removal — the audit line is where the markers survive.
+///
+/// The name's owner decides the form: installed payload versions take the
+/// payload path (the collision rule's winner); with no payload versions,
+/// a runtime-own claim (tebako#997) takes its own — the exact reverse of
+/// the engine install's registration: the claim record AND the shim link,
+/// journaled. Neither present is the named not-installed error.
 pub fn uninstall(home: &Path, name: &str) -> Result<UninstallOutcome, TebakoError> {
     manifest::check_path_component("payload name", name).map_err(map_shim)?;
     let versions = tebako_shim::resolve::installed_versions(home, name).map_err(map_shim)?;
     if versions.is_empty() {
+        if let Some(claim) = tebako_shim::runtime_own::claim_for(home, name).map_err(map_shim)? {
+            tebako_shim::runtime_own::remove(home, name).map_err(map_shim)?;
+            let shims_removed = manage::unlink_shims(home, std::slice::from_ref(&name.to_string()))
+                .map_err(map_shim)?;
+            journal(
+                home,
+                &format!(
+                    "event=runtime-own-uninstall command={name} engine={}",
+                    claim.engine
+                ),
+            );
+            return Ok(UninstallOutcome {
+                name: name.to_string(),
+                versions,
+                shims_removed,
+                runtime_own: Some(claim.engine),
+            });
+        }
         return Err(err(
             EX_TEBAKO_MANIFEST,
             format!(
-                "payload '{name}' is not installed ({} has no versions)",
+                "'{name}' is not installed ({} has no versions, and no runtime-own claim stands)",
                 home.join("payloads").join(name).display()
             ),
         ));
@@ -3590,6 +3767,7 @@ pub fn uninstall(home: &Path, name: &str) -> Result<UninstallOutcome, TebakoErro
         name: name.to_string(),
         versions,
         shims_removed,
+        runtime_own: None,
     })
 }
 
@@ -3602,6 +3780,58 @@ fn consent_answered_yes(answer: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// tebako#996: the PATH order relation the shadow note keys on —
+    /// shims leading, trailing, absent, and a non-executable file never
+    /// resolving. POSIX exec-bit form; Windows rides the PATHEXT arm of
+    /// the same helper (covered by the leg there).
+    #[cfg(unix)]
+    #[test]
+    fn existing_resolution_orders_the_shims_dir_and_the_provider() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!("tebako-shadow-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let shims = home.join("shims");
+        let mise = root.join("mise");
+        let system = root.join("system");
+        for dir in [&shims, &mise, &system] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let provider = mise.join("ruby");
+        std::fs::write(&provider, b"#!").unwrap();
+        std::fs::set_permissions(&provider, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // a non-executable namesake is not a resolution
+        std::fs::write(system.join("ruby"), b"not-exec").unwrap();
+
+        let env_with = |path: String| super::BTreeMap::from([("PATH".to_string(), path)]);
+
+        let env = env_with(format!("{}:{}", shims.display(), mise.display()));
+        assert_eq!(
+            super::existing_resolution(&env, &home, "ruby"),
+            Some(super::Shadow::Shadows(provider.clone()))
+        );
+        let env = env_with(format!("{}:{}", mise.display(), shims.display()));
+        assert_eq!(
+            super::existing_resolution(&env, &home, "ruby"),
+            Some(super::Shadow::Trails(provider.clone()))
+        );
+        let env = env_with(mise.display().to_string());
+        assert_eq!(
+            super::existing_resolution(&env, &home, "ruby"),
+            Some(super::Shadow::NotOnPath(provider.clone()))
+        );
+        let env = env_with(format!("{}:{}", shims.display(), system.display()));
+        assert_eq!(super::existing_resolution(&env, &home, "ruby"), None);
+        // no PATH in the env at all → no resolution
+        assert_eq!(
+            super::existing_resolution(&super::BTreeMap::new(), &home, "ruby"),
+            None
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn the_tofu_answer_grammar_accepts_only_an_explicit_yes() {
         for yes in ["y", "Y", "yes", "YES", "  Yes  \n"] {

@@ -690,4 +690,30 @@ rule above).
   cache-or-error shape, naming the engine.
 - A malformed engine reference (`node:`, `:npm`, an engine name outside
   the name grammar) → the §7 usage error, naming the token.
+- A runtime-mutating spelling against the runtime's own home — the ruby
+  family's `gem install|uninstall|push|cleanup|pristine` and
+  `bundle install|update|add|remove` — → `EX_TEBAKO_UNAVAILABLE` (69),
+  naming the spelling and the read-only env image it would write, with
+  the escape hatch in the message: a user-chosen writable home
+  (`GEM_HOME`; bundler also honours `BUNDLE_PATH` / `--path`) passes.
+  The refusal fires BEFORE the runtime resolves — never a download for
+  a command that cannot succeed, never a package-manager crash as the
+  failure mode.
+
+**Removal (the registration's exact reverse):** `tebako uninstall
+<command>` with no payload versions under the name but a runtime-own
+claim standing removes BOTH halves — the claim record and the shim
+link — journaled `event=runtime-own-uninstall`. Payload versions win
+the name when both stand (the collision rule): the payload's uninstall
+path runs and the claim is untouched. Neither standing is the named
+not-installed error, naming both forms consulted.
+
+**The shadow notice:** the registration detects PATH already resolving
+the command outside the shims dir and says so in the install's notes,
+in the PATH's own order — the shims dir leading (the shim shadows the
+provider NOW), trailing (the provider wins today), or absent
+(`install-shell` prepends it) — journaled `event=runtime-own-shadow`
+with the provider's path. Detection only: a user installing `ruby`
+over a mise/homebrew ruby learns whose name it took; the registration
+itself never blocks.
 

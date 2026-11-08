@@ -214,11 +214,67 @@ pub fn engine_resolve(
     runtime::resolve_runtime_edge(engine, None, &constraint, None, None, allow_download, ctx)
 }
 
+/// The runtime-mutating refusal (tebako#998): a runtime-own spelling
+/// whose semantics write INTO the runtime's own home cannot run against
+/// the read-only env image — refuse by name, never a crash deep in the
+/// package manager. The escape hatch is a user-chosen writable home:
+/// `GEM_HOME` (any ruby-family tool), `BUNDLE_PATH` / `--path` (bundler).
+/// With one set the command passes — the user took the wheel.
+///
+/// The table is per engine class and open: the ruby family's gem/bundler
+/// spellings are the reported class; a new engine class names its own
+/// mutating spellings here.
+fn runtime_mutating_refusal(
+    engine: &str,
+    entry: &str,
+    user_args: &[String],
+    env: &BTreeMap<String, String>,
+) -> Option<String> {
+    const RUBY_FAMILY: [&str; 3] = ["ruby", "jruby", "truffleruby"];
+    if !RUBY_FAMILY.contains(&engine) {
+        return None;
+    }
+    let sub = user_args.first().map(String::as_str);
+    let spelling = match entry {
+        "gem"
+            if matches!(
+                sub,
+                Some("install" | "uninstall" | "push" | "cleanup" | "pristine")
+            ) =>
+        {
+            format!("gem {}", sub.expect("the match arm binds Some"))
+        }
+        "bundle" | "bundler" if matches!(sub, Some("install" | "update" | "add" | "remove")) => {
+            format!("bundle {}", sub.expect("the match arm binds Some"))
+        }
+        _ => return None,
+    };
+    let bundler = entry.starts_with("bundle");
+    let hatch = env.contains_key("GEM_HOME")
+        || (bundler
+            && (env.contains_key("BUNDLE_PATH")
+                || user_args
+                    .iter()
+                    .any(|a| a == "--path" || a.starts_with("--path="))));
+    if hatch {
+        return None;
+    }
+    Some(format!(
+        "\"{spelling}\" mutates the {engine} runtime's own gem home, and the runtime's env image is read-only — the tebako runtime is a payload runtime, not a gem manager. Set GEM_HOME to a writable directory of yours to give it one{}; for gem management against a host ruby, use that ruby",
+        if bundler {
+            " (bundler also honours BUNDLE_PATH / --path)"
+        } else {
+            ""
+        },
+    ))
+}
+
 /// The spec-17 wire plan of a runtime-own dispatch: [`engine_resolve`]'s
 /// pick with `TEBAKO_RUNTIME_IMAGE` + `--tebako-entry <token>` + the user
 /// args verbatim. No payload resolution, no mount composition, no spawn
 /// lock, no jail computation — a runtime-own command is the user's own
-/// process.
+/// process. A runtime-mutating spelling (tebako#998) refuses BEFORE the
+/// resolution — never a download for a command that cannot succeed.
 pub fn engine_plan(
     engine: &str,
     entry: &str,
@@ -226,6 +282,9 @@ pub fn engine_plan(
     ctx: &Ctx,
     allow_download: bool,
 ) -> Result<ExecPlan, ShimError> {
+    if let Some(message) = runtime_mutating_refusal(engine, entry, user_args, &ctx.env) {
+        return fail(EX_TEBAKO_UNAVAILABLE, message);
+    }
     let rt = engine_resolve(engine, ctx, allow_download)?;
     let image = rt
         .image_handoff_path()
@@ -357,6 +416,87 @@ mod tests {
         ] {
             assert!(!valid_engine_name(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_runtime_mutating_refusal_table() {
+        let no_env = BTreeMap::new();
+        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        // The reported class: ruby-family gem/bundler mutating spellings refuse.
+        for engine in ["ruby", "jruby", "truffleruby"] {
+            let refusal =
+                runtime_mutating_refusal(engine, "gem", &args(&["install", "rack"]), &no_env)
+                    .unwrap_or_else(|| panic!("gem install on {engine} must refuse"));
+            assert!(refusal.contains("env image is read-only"), "{refusal}");
+            assert!(refusal.contains("GEM_HOME"), "{refusal}");
+            assert!(
+                runtime_mutating_refusal(engine, "bundle", &args(&["install"]), &no_env).is_some(),
+                "bundle install on {engine}"
+            );
+            assert!(
+                runtime_mutating_refusal(engine, "bundler", &args(&["update"]), &no_env).is_some(),
+                "bundler update on {engine}"
+            );
+        }
+
+        // Read-only spellings pass.
+        for (entry, sub) in [
+            ("gem", "list"),
+            ("gem", "which"),
+            ("bundle", "exec"),
+            ("bundle", "show"),
+        ] {
+            assert!(
+                runtime_mutating_refusal("ruby", entry, &args(&[sub]), &no_env).is_none(),
+                "{entry} {sub}"
+            );
+        }
+
+        // The interpreter itself and a non-ruby engine pass.
+        assert!(runtime_mutating_refusal("ruby", "self", &args(&["-e", "1"]), &no_env).is_none());
+        assert!(
+            runtime_mutating_refusal("python", "pip", &args(&["install", "x"]), &no_env).is_none()
+        );
+        assert!(
+            runtime_mutating_refusal("node", "npm", &args(&["install", "-g", "x"]), &no_env)
+                .is_none()
+        );
+
+        // The escape hatches: GEM_HOME for any ruby-family tool;
+        // BUNDLE_PATH / --path for bundler only.
+        let gem_home = BTreeMap::from([("GEM_HOME".to_string(), "/tmp/gems".to_string())]);
+        assert!(
+            runtime_mutating_refusal("ruby", "gem", &args(&["install", "rack"]), &gem_home)
+                .is_none()
+        );
+        assert!(
+            runtime_mutating_refusal("ruby", "bundle", &args(&["install"]), &gem_home).is_none()
+        );
+        let bundle_path =
+            BTreeMap::from([("BUNDLE_PATH".to_string(), "vendor/bundle".to_string())]);
+        assert!(
+            runtime_mutating_refusal("ruby", "bundle", &args(&["install"]), &bundle_path).is_none()
+        );
+        assert!(
+            runtime_mutating_refusal("ruby", "gem", &args(&["install", "rack"]), &bundle_path)
+                .is_some(),
+            "BUNDLE_PATH is bundler's hatch, not gem's"
+        );
+        assert!(runtime_mutating_refusal(
+            "ruby",
+            "bundle",
+            &args(&["install", "--path", "vendor/bundle"]),
+            &no_env
+        )
+        .is_none());
+        assert!(runtime_mutating_refusal(
+            "ruby",
+            "bundle",
+            &args(&["install", "--path=vendor/bundle"]),
+            &no_env
+        )
+        .is_none());
     }
 
     #[test]

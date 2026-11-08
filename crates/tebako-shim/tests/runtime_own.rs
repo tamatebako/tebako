@@ -138,6 +138,43 @@ fn a_sole_disabled_payload_claim_keeps_its_named_refusal() {
 }
 
 #[test]
+fn a_runtime_mutating_spelling_is_the_named_refusal_before_resolution() {
+    // tebako#998: `gem install` against the runtime-own ruby refuses by
+    // name (never a bundler crash against the read-only env image) — and
+    // the refusal precedes resolution, so NO runtime needs to stand for
+    // it to fire.
+    let tmp = TempDir::new("ro-mutating-refusal");
+    let home = tmp.path().join("home");
+    runtime_own::record(&home, "gem", "ruby", "gem").unwrap();
+    let ctx_deny = ctx(&home, tmp.path());
+
+    let err = dispatch::dispatch("gem", &["install".into(), "rack".into()], &ctx_deny).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE, "{err:?}");
+    assert!(err.message.contains("gem install"), "{err:?}");
+    assert!(err.message.contains("read-only"), "{err:?}");
+    assert!(err.message.contains("GEM_HOME"), "{err:?}");
+
+    // The escape hatch: a user-chosen writable gem home passes the
+    // command through to the normal plan. What fires instead depends on
+    // the machine — a resolvable engine plans (a cached or downloadable
+    // runtime answers), an unresolvable one answers the named resolution
+    // error — but NEVER the refusal. (An unwrap_err here was
+    // network-dependent: red wherever the fallback index answered,
+    // e.g. the windows leg.)
+    let mut ctx_hatch = ctx(&home, tmp.path());
+    ctx_hatch
+        .env
+        .insert("GEM_HOME".to_string(), "/tmp/gems".to_string());
+    match dispatch::dispatch("gem", &["install".into(), "rack".into()], &ctx_hatch) {
+        Ok(_plan) => {}
+        Err(e) => assert!(
+            !e.message.contains("read-only"),
+            "GEM_HOME must pass the refusal: {e:?}"
+        ),
+    }
+}
+
+#[test]
 fn a_disabled_runtime_own_claim_is_the_named_refusal() {
     // `all` and `<engine>@all` gate the claim (the engine rides the
     // selector's payload slot).
