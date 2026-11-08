@@ -804,6 +804,27 @@ char* tebako_fs_dlmap2file(const char* path);
 char* tebako_fs_exec_materialize(const char* path);
 
 /**
+ * @brief Materialize a mounted directory's subtree to a host directory
+ * (the spawn hook's `chdir:` surface, tamatebako/ruby#152).
+ *
+ * The exec-materialize rule for a directory: a home-layout mount answers
+ * the whole-tree twin; any other mount extracts the subtree into the
+ * per-process dl tmpdir once per process. A path no mount covers answers
+ * NULL with ENOENT (the spawn's chdir passes through, the child answers
+ * honestly); a covered-but-file path answers NULL with ENOTDIR (the
+ * caller's dirname fallback).
+ *
+ * @param path Absolute path within a mounted filesystem
+ * @return Newly allocated host directory path string on success, NULL on
+ *         error (check errno via tebako_get_errno())
+ *
+ * @note Ownership: the RETURNED STRING is caller-owned and must be
+ *       released with free(). The host directory it points to is owned
+ *       by libtfs — do not unlink or modify it.
+ */
+char* tebako_fs_exec_materialize_dir(const char* path);
+
+/**
  * @brief Serialize the mount table in the TEBAKO_TFS_MOUNTS grammar
  * ("image:mount,image:mount,…").
  *

@@ -1288,6 +1288,48 @@ pub unsafe extern "C" fn tebako_fs_exec_materialize(path: *const c_char) -> *mut
     out
 }
 
+/// `tebako_fs_exec_materialize_dir`: the spawn-chdir surface
+/// (tamatebako/ruby#152) — an in-image DIRECTORY's host twin. A
+/// home-layout mount answers the whole-tree twin; any other mount
+/// extracts the subtree into the per-process dl tmpdir once per process
+/// and answers it. A path no mount covers is NULL with ENOENT (the
+/// spawn's chdir passes through and the child answers honestly — the
+/// exec-materialize rule); a covered-but-file path is NULL with ENOTDIR
+/// (the caller falls back to the file's materialized dirname).
+///
+/// # Safety
+/// `path` must be a valid C string.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_exec_materialize_dir(path: *const c_char) -> *mut c_char {
+    let _io = engine_io_guard();
+    let path = match unsafe { path_arg(path) } {
+        Ok(p) => anchor_vfs_path(p),
+        Err(e) => {
+            fail(e);
+            return std::ptr::null_mut();
+        }
+    };
+    let path = path.as_ref();
+    let host = match context().write().unwrap().exec_materialize_dir(path) {
+        Ok(h) => h,
+        Err(e) => {
+            fail(e);
+            return std::ptr::null_mut();
+        }
+    };
+    // Allocate with libc malloc so the C caller can free() the string.
+    let bytes = host.as_bytes_with_nul();
+    // SAFETY: malloc'd buffer of bytes.len(); copy then hand over ownership.
+    let out = unsafe { libc::malloc(bytes.len()).cast::<c_char>() };
+    if out.is_null() {
+        fail(libc::ENOMEM);
+        return std::ptr::null_mut();
+    }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr().cast(), out, bytes.len()) };
+    set_errno(0);
+    out
+}
+
 /// `tebako_fs_mount_of`: the mount point of the longest-prefix mount
 /// covering `path` — spec 22 phase 1's mount-decision helper, so an
 /// interposed dlopen error line can name the mount (the later exec

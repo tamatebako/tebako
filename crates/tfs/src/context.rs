@@ -237,6 +237,9 @@ pub struct FsContext {
     /// The home mounts whose whole tree already materialized into the
     /// dl tmpdir this process run (extract once per mount).
     home_trees: BTreeSet<i32>,
+    /// The directories whose subtree already extracted into the dl
+    /// tmpdir this process run (exec_materialize_dir's extract-once set).
+    dl_dirs: BTreeSet<String>,
     /// Host-access policy (spec 08 jails): consulted on every
     /// host-passthrough path decision (a path no memfs mount claims, and
     /// the mount family's image read). Process state, not namespace state:
@@ -276,6 +279,7 @@ impl FsContext {
             dl_cache: BTreeMap::new(),
             home_memos: BTreeMap::new(),
             home_trees: BTreeSet::new(),
+            dl_dirs: BTreeSet::new(),
             host_policy: HostPolicy::open(),
             journal: None,
             dlaliases: Vec::new(),
@@ -2389,8 +2393,56 @@ impl FsContext {
         result
     }
 
-    /// The mount's home-layout verdict, memoized per handle: the
-    /// in-image manifest carries the home annotation —
+    /// The spawn-chdir surface (tamatebako/ruby#152): an in-image
+    /// DIRECTORY's host twin, for the spawn hook's `chdir:` option — a
+    /// child execing a materialized exe still dies ENOENT when its
+    /// chdir names the VFS. A home-layout mount answers the whole-tree
+    /// twin (the tree is extracted already, the exec target's own pull);
+    /// any other mount extracts the subtree under `path` into the
+    /// per-process dl tmpdir (`<tmp>/tebako-dl-<hex>/<full memfs path>/`,
+    /// the dlmap layout's own discipline) once per process and answers
+    /// that. A path no mount covers is ENOENT — the spawn keeps its
+    /// spelling and the child answers honestly, exec_materialize's own
+    /// rule. Not traced on its own surface: the extraction's reads ride
+    /// the read/exec trace as their own events.
+    pub fn exec_materialize_dir(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        let normalized = Self::normalize(path);
+        let probe = self.find_mount(&normalized).map(|mount| {
+            (
+                mount.handle,
+                Self::relative_path(mount, &normalized).to_string(),
+            )
+        });
+        let Some((handle, rel)) = probe else {
+            return Err(libc::ENOENT);
+        };
+        // The home-layout answer is exec_materialize's own: the tree
+        // root plus rel (the mount ROOT answers the tree root).
+        if self.mount_is_home(handle) {
+            return self.exec_materialize_op(&normalized, trace::Op::Exec);
+        }
+        // The path must be a directory the image holds — a file rides
+        // exec_materialize (the caller's dirname fallback), an absent
+        // path answers ENOENT. The stat's borrow scopes short: the
+        // tmpdir and the extract take the context mutably.
+        match self.mounts.get(&handle) {
+            None => return Err(libc::ENODEV),
+            Some(mount) => match mount.backend.stat(&rel) {
+                Ok(st) if st.entry_type == crate::EntryType::Directory => {}
+                Ok(_) => return Err(libc::ENOTDIR),
+                Err(e) => return Err(e),
+            },
+        }
+        let tmp = self.ensure_dl_tmpdir()?;
+        let host = tmp.join(normalized.trim_start_matches('/'));
+        if self.dl_dirs.insert(normalized.clone()) {
+            let mut skipped = 0usize;
+            let mount = self.mounts.get(&handle).ok_or(libc::ENODEV)?;
+            extract_dir_recursive(mount.backend.as_ref(), &rel, &host, &mut skipped)?;
+        }
+        std::ffi::CString::new(host.to_string_lossy().into_owned()).map_err(|_| libc::EIO)
+    }
+
     /// `identity.annotations.home` (the runtime-neutral key, spec 22 §6)
     /// or the already-shipped back-compat alias
     /// `identity.annotations.java_home` (#548) — with a string value
@@ -4261,6 +4313,87 @@ mod tests {
             std::fs::read(root.join("lib/modules")).unwrap(),
             b"jimage-bytes"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// tamatebako/ruby#152: the spawn-chdir surface. A directory under a
+    /// NON-home mount extracts its subtree into the per-process dl
+    /// tmpdir and answers the host dir; a file answers ENOTDIR (the
+    /// caller's dirname fallback); an uncovered path answers ENOENT (the
+    /// spawn keeps its spelling, the child answers honestly); a
+    /// home-layout mount answers the whole-tree twin (the exec pull's
+    /// own tree).
+    #[test]
+    fn exec_materialize_dir_extracts_the_subtree_for_a_non_home_mount() {
+        use std::io::Write as _;
+        let dir = std::env::temp_dir().join(format!("tfs-dir-exec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A plain zip (no home annotation) carrying a sass-shaped tree.
+        let path = dir.join("img.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        // The zip backend stats a directory only through its explicit
+        // `path/` entry (production images are limnifs, which records
+        // them) — declare the tree's dirs.
+        for d in [
+            "lib/",
+            "lib/sass/",
+            "lib/sass/compiler/",
+            "lib/sass/dart-sass/",
+            "lib/sass/dart-sass/src/",
+        ] {
+            writer.add_directory(d, options).unwrap();
+        }
+        writer
+            .start_file("lib/sass/compiler/connection.rb", options)
+            .unwrap();
+        writer.write_all(b"# conn\n").unwrap();
+        writer
+            .start_file("lib/sass/dart-sass/src/dart", options)
+            .unwrap();
+        writer.write_all(b"#!/bin/fake\n").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(path.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        // The directory's subtree lands under the dl tmpdir, once.
+        let answer = ctx.exec_materialize_dir("/tfs/lib/sass/compiler").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(host.is_dir(), "the dir twin is a host dir: {host:?}");
+        assert_eq!(
+            std::fs::read(host.join("connection.rb")).unwrap(),
+            b"# conn\n"
+        );
+        assert!(
+            host.to_string_lossy().contains("tebako-dl-"),
+            "a non-home mount answers from the per-process dl tmpdir: {host:?}"
+        );
+        // Idempotent within the process.
+        let again = ctx.exec_materialize_dir("/tfs/lib/sass/compiler").unwrap();
+        assert_eq!(again, answer);
+
+        // The extract-once set keys on the path — the parent dir is its
+        // own subtree.
+        let parent = ctx.exec_materialize_dir("/tfs/lib/sass").unwrap();
+        assert!(
+            std::path::PathBuf::from(parent.to_string_lossy().into_owned())
+                .join("compiler/connection.rb")
+                .is_file()
+        );
+
+        // A file is ENOTDIR (the spawn hook falls back to the file's
+        // materialized dirname); an uncovered path is ENOENT.
+        let e = ctx
+            .exec_materialize_dir("/tfs/lib/sass/dart-sass/src/dart")
+            .unwrap_err();
+        assert_eq!(e, libc::ENOTDIR, "{e}");
+        let e = ctx.exec_materialize_dir("/elsewhere").unwrap_err();
+        assert_eq!(e, libc::ENOENT, "{e}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
