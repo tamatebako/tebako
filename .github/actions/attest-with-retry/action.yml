@@ -1,0 +1,60 @@
+name: Attest build provenance (bounded retry)
+description: >-
+  Wrap actions/attest-build-provenance with a bounded retry + backoff
+  (tebako#992): a transient rekor 5xx must not fail a release leg. The
+  gate is never weakened — the step fails only when all three armed
+  attempts fail, and any success still lands the attestation. A retry
+  after a mid-upload failure can re-create the same statement; the
+  attestation store accepts the duplicate, so the retry is safe.
+
+inputs:
+  subject-path:
+    description: Passed verbatim to the wrapped action.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Attest build provenance (attempt 1 of 3)
+      id: attempt1
+      continue-on-error: true
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: ${{ inputs.subject-path }}
+
+    - name: Backoff before attempt 2 (20 s)
+      if: steps.attempt1.outcome == 'failure'
+      shell: bash
+      run: sleep 20
+
+    - name: Attest build provenance (attempt 2 of 3)
+      id: attempt2
+      if: steps.attempt1.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: ${{ inputs.subject-path }}
+
+    - name: Backoff before attempt 3 (60 s)
+      if: steps.attempt2.outcome == 'failure'
+      shell: bash
+      run: sleep 60
+
+    - name: Attest build provenance (attempt 3 of 3)
+      id: attempt3
+      if: steps.attempt2.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: ${{ inputs.subject-path }}
+
+    - name: Verdict — the gate still holds
+      shell: bash
+      run: |
+        if [ "${{ steps.attempt1.outcome }}" != "success" ] \
+        && [ "${{ steps.attempt2.outcome }}" != "success" ] \
+        && [ "${{ steps.attempt3.outcome }}" != "success" ]; then
+          echo "::error::attest-build-provenance failed all three armed attempts (20 s / 60 s backoff) — refusing to ship an unattested artifact (tebako#992)"
+          exit 1
+        fi
+        echo "attestation landed (attempt outcomes: ${{ steps.attempt1.outcome }} / ${{ steps.attempt2.outcome }} / ${{ steps.attempt3.outcome }})"
