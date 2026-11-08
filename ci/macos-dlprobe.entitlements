@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  tebako#989's signed class-L dlopen probe profile — the spec 31 §3 pair
+  the production runtime exe's factory profile carries for exactly this
+  shape (a signed exe self-inserting the interpose dylib and dlopen'ing
+  code materialized out of a mounted image):
+
+  - allow-dyld-environment-variables: under the hardened runtime dyld
+    strips DYLD_INSERT_LIBRARIES without it, and the driver's spec 22 §2
+    self-insertion rides that variable.
+  - disable-library-validation: the inserted micro dylib and the
+    materialized fixture dylib are adhoc-signed bytes (spec 31 §1.4 — a
+    runtime's dlopen surface is unsigned/materialized code by design).
+
+  Consumed by ci/macos-signed-dlopen.sh via macos-sign-one.sh's
+  CODESIGN_ENTITLEMENTS hook; a plist is codesign's wire format (the
+  authored-config YAML rule does not reach Apple signing inputs).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

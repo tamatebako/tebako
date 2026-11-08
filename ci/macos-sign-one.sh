@@ -1,20 +1,27 @@
 #!/bin/bash
 # macos-sign-one.sh — sign ONE staged binary with the Developer ID
 # identity the setup step armed (spec 31 §5). Hardened runtime, no
-# entitlements: the product tools JIT nothing and dlopen no materialized
-# code (the runtime exe's entitlement pair is the factory's profile,
-# spec 31 §3/§5). Gate disarmed → loud unsigned no-op (spec 00
+# entitlements by default: the product tools JIT nothing and dlopen no
+# materialized code (the runtime exe's entitlement pair is the factory's
+# profile, spec 31 §3/§5). A caller whose binary DOES dlopen
+# materialized/inserted code hands the profile in via
+# CODESIGN_ENTITLEMENTS (a plist path — tebako#989's dlopen probe carries
+# the spec 31 §3 pair). Gate disarmed → loud unsigned no-op (spec 00
 # invariant 7). The TeamIdentifier is asserted against APPLE_TEAM_ID
 # when present — a wrong-cert signature fails HERE, not on a user box.
 #
-# Usage: macos-sign-one.sh <binary>
+# Usage: CODESIGN_ENTITLEMENTS=<plist, optional> macos-sign-one.sh <binary>
 set -euo pipefail
 bin="$1"
 if [ -z "${CODESIGN_HASH:-}" ]; then
   echo "unsigned: $(basename "$bin") (spec 31 gate disarmed — invariant 7)"
   exit 0
 fi
-codesign --force --options runtime --timestamp \
+extra=()
+if [ -n "${CODESIGN_ENTITLEMENTS:-}" ]; then
+  extra=(--entitlements "$CODESIGN_ENTITLEMENTS")
+fi
+codesign --force --options runtime --timestamp ${extra[@]+"${extra[@]}"} \
   --keychain "${CODESIGN_KEYCHAIN:?setup step did not export CODESIGN_KEYCHAIN}" \
   --sign "$CODESIGN_HASH" "$bin"
 codesign --verify --strict --verbose=1 "$bin"
