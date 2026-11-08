@@ -4110,7 +4110,22 @@ fn download_runtime<T: Transport + Sync>(
                                     }
                                     LazyPlan::Lazy(
                                         Box::new(tpkg::lazy::LazySeed {
-                                            source: format!("{dir_url}/{image_asset}"),
+                                            // A local mirror composes a
+                                            // bare path here; the seal's
+                                            // fetcher speaks URLs (https,
+                                            // loopback http, file://) —
+                                            // spell the local source
+                                            // file://, or the seal dies
+                                            // on the grammar (never the
+                                            // network).
+                                            source: match std::path::Path::new(&format!(
+                                                "{dir_url}/{image_asset}"
+                                            ))
+                                            .canonicalize()
+                                            {
+                                                Ok(p) if local => tebako_http::file_url(&p),
+                                                _ => format!("{dir_url}/{image_asset}"),
+                                            },
                                             sha256: sum.sha256.clone(),
                                             blksum_sha256: pinned,
                                             size_bytes: sum.size_bytes,

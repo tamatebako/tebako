@@ -297,6 +297,75 @@ fn bundle_stages_a_self_consistent_offline_tree() {
     }
 }
 
+/// The bundle is offline by construction: a runtime that resolved into
+/// the staging store as LAZY_SEEDING (spec 39 — the image absent, the
+/// seed descriptor in its place) must be SEALED before the pack, or the
+/// sealed target mounts nothing (the sealed-network proof caught exactly
+/// this: the dispatch died mounting the env image, I/O error).
+#[test]
+fn bundle_seals_a_lazy_seeded_runtime_before_packing() {
+    let fx = Fixture::new("lazy-seal");
+    // The mirror gains the blksum sidecar AND the release index's
+    // additive `image.blksum` row field anchoring it (spec 39 §3/§7 —
+    // the row field is the anchor; a sidecar file alone is the loud
+    // eager fallback). The resolver's lazy path then engages.
+    let platform = tebako_shim::runtime::platform_string();
+    let exe_name = format!("tebako-runtime-0.0.1-3.3.5-{platform}{}", exe_suffix());
+    let image_name = format!("tebako-runtime-0.0.1-3.3.5-{platform}.tfs");
+    let image = fx.mirror.join("v0.0.1").join(&image_name);
+    let image_bytes = fs::read(&image).unwrap();
+    let blksum = tpkg::lazy::Blksum::from_image_bytes(&image_bytes);
+    let sidecar = blksum.render();
+    let sidecar_name = format!("{image_name}.blksum.json");
+    fs::write(fx.mirror.join("v0.0.1").join(&sidecar_name), &sidecar).unwrap();
+    // Rewrite the release index row with the blksum field aboard.
+    let exe_bytes = b"fake runtime exe\n".to_vec();
+    fs::write(
+        fx.mirror.join("v0.0.1").join("manifest.json"),
+        format!(
+            "[{{\"tebako_version\": \"0.0.1\", \"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"ruby_version\": \"3.3.5\", \"platform\": \"{platform}\", \"filename\": \"{exe_name}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{}\", \"blksum\": {{\"filename\": \"{sidecar_name}\", \"sha256\": \"{}\"}}}}}}]\n",
+            sha256_hex(&exe_bytes),
+            sha256_hex(&image_bytes),
+            sha256_hex(sidecar.as_bytes())
+        ),
+    )
+    .unwrap();
+
+    let out = fx.output();
+    fx.run(&out, None, None, &[]).unwrap();
+
+    // The bundle's runtime entry carries the SEALED image — the mirror's
+    // bytes, whole — and no lazy descriptor survives the pack.
+    let entry = out
+        .join("home/runtimes")
+        .join(format!("ruby-3.3.5-0.0.1-{platform}"));
+    let sealed = entry.join(format!("tebako-runtime-0.0.1-3.3.5-{platform}.tfs"));
+    assert!(
+        sealed.is_file(),
+        "the env image must be sealed into the bundle (entries: {:?})",
+        fs::read_dir(&entry)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        fs::read(&sealed).unwrap(),
+        image_bytes,
+        "byte-identical with the mirror's image"
+    );
+    let lingering: Vec<_> = fs::read_dir(&entry)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.contains(".lazy.json"))
+        .collect();
+    assert!(
+        lingering.is_empty(),
+        "no lazy descriptor may ship: {lingering:?}"
+    );
+}
+
 #[test]
 fn bundle_overlay_layers_the_org_config() {
     let fx = Fixture::new("overlay");
