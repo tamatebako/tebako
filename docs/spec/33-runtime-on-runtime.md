@@ -1,10 +1,25 @@
 # Spec 33 — Runtime-on-runtime composition
 
-**Status: PLANNED (drafted 2026-09-07;
-managed-mode dispatch ships with tebako v2.5.0; the press/lock row and
-the standalone (bootstrap) composition ride spec 23 §13.6's
-implementation — until then a press against an on_runtime runtime fails
-closed at boot, never silently).**
+**Status: SHIPPED with one named open row (drafted 2026-09-07; shipped
+record corrected 2026-11-08).** The managed-mode dispatch has shipped
+since tebako v2.5.0 (the shim composes the owner-first handoff); the
+press/lock row has shipped since spec 23 §13.6's implementation
+(2026-09-12 — the owner edge joins `lock.spawned[]` with `expose:`
+absent); the driver's composition and its named refusals are tested
+(`tebako-driver/tests/wrapper.rs`'s `on_runtime_*` set). The one open
+row is the standalone (bootstrap) composition — and its current state
+is the designed one: the bootstrap is on_runtime-blind by construction,
+so a standalone boot of a package pressed against an on_runtime runtime
+hands the depending runtime's exe + env image over with the app payload
+as the first triple, the owner resolves into the store off its
+`expose`-less spawned row (ready for a later managed dispatch), and the
+boot fails closed at the driver — the depending env image's
+`layout.interpreter` names the owner's exe, absent the owner's mount —
+the named 65, never a silent wrong boot. The theorem's proof arm is
+`an_on_runtime_owner_row_resolves_into_the_store_but_is_never_composed_bootstrap_side`
+(`tebako-bootstrap/tests/compose.rs`). A standalone that composes the
+owner-first handoff is a future spec change to the bootstrap's exec
+target, not a bug fix.
 Amends spec 03 §2.3 (the `kind: runtime` edge's discriminator), spec 17
 §1 (mount order and entry resolution gain the depending-runtime clause),
 spec 23 §6 (the needs union covers both runtimes), spec 28 §8 (the
@@ -244,13 +259,13 @@ they stay spawnable through spec 30 edges, unchanged.
   At run time the loader resolves the row into the store per §13.6
   (carried → slot install + digest-verify; shared → cache-hit on the
   locked identity else fetch+verify), then composes §1's handoff.
-  (Spec 23 §13.6's lock is itself unshipped — this row rides it. Until
-  it lands, pressing against an on_runtime runtime produces a package
-  whose boot fails closed: the standalone bootstrap hands the depending
-  runtime's own exe+image to the wrapper, the first triple is the APP
-  payload — no `on_runtime` discovery fires — and the depending image's
+  (The standalone boot remains fail-closed by construction, on purpose:
+  the bootstrap is on_runtime-blind — it hands the depending runtime's
+  own exe+image over with the first triple the APP payload, no
+  `on_runtime` discovery fires, and the depending image's
   `layout.interpreter` refusal is the named 65. Never a silent wrong
-  boot.)
+  boot. The bootstrap-side pin is
+  `an_on_runtime_owner_row_resolves_into_the_store_but_is_never_composed_bootstrap_side`.)
 - **Store:** UNCHANGED layout. The owner and the depending runtime are
   ordinary `runtimes/` entries; share-once holds in both directions (N
   depending runtimes share one owner; M payloads share the depending
