@@ -735,3 +735,41 @@ publish without waiting for a release):
   absent or under-scoped falls back to the run's GITHUB_TOKEN and the
   dispatch fails SOFT (a warning, never a red fan-in) — the site also
   rebuilds nightly, so a missed wake-up costs hours, not data.
+
+### 11.1 The covenant arm: the cell's source, the producer, and the gate (added 2026-11-08)
+
+The covenant (`benchmarks/covenant.yaml`) is the budget's home; this
+subsection is the grammar that ties a cell to the run that produces it.
+A cell the runtime suite produces carries a `source:` block:
+
+```yaml
+- id: first-response.cold.median
+  bound: 1.5
+  comparison: le
+  unit: ratio-to-native
+  source:
+    workloads: ["-boot"]   # a dashboard cell matches when its workload id ENDS WITH one of these
+    target: "tebako-"      # the arm's target prefix (the baseline arm is the dashboard's declared baseline, never re-declared here)
+    mode: cold             # cold | warm
+    measure: wall          # wall (median_wall_s) | rss (median_peak_rss_bytes)
+    shape: ratio           # ratio (cell ÷ baseline) | speedup (baseline ÷ cell) | absolute
+    aggregate: worst       # worst-of across the selected cells: the max for a `le` bound, the min for a `ge`
+```
+
+- **The producer is `tebako-bench report --metrics <out>`** (reading the
+  run's own dashboard, so the gate judges the published statistic, never
+  a private recomputation): each sourced cell derives from the dashboard
+  cells the source selects, per the shape, aggregated worst-of. A cell
+  whose source selects nothing, or whose ratio/speedup shape finds no
+  baseline arm for a selected cell, produces NOTHING for that cell — the
+  covenant reports it `absent` (the named coverage gap, never an
+  invented number and never a false red).
+- **The cells the suite does not produce carry no `source:`** — the
+  author-loop cells (the walkthrough's recorded timings) and the
+  teardown cells (no workload produces them yet) answer `absent` from a
+  bench run. The covenant names them; the gate reports the gap.
+- **The gate is `tebako-bench covenant`** (the evaluator, §11's
+  vocabulary) against the produced metrics: `over` fails the release,
+  `absent` is reported and does not. The tripwire is
+  `TEBAKO_BENCH_INJECT=<cell-or-axis>:<factor>` — a covenant that cannot
+  be tripped on purpose is not a gate.

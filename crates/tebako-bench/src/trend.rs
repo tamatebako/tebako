@@ -72,21 +72,7 @@ fn key(c: &TrendCell) -> Key {
 /// The baseline median of a (triplet × workload × mode) cell inside one
 /// dashboard: the declared baseline target/prefix, else the v1 law.
 fn baseline_median(dash: &Dashboard, triplet: &str, workload: &str, mode: RunMode) -> Option<f64> {
-    let name = dash
-        .baseline
-        .as_ref()
-        .map(|b| b.target.as_str())
-        .unwrap_or("v1");
-    let t = dash.triplets.iter().find(|t| t.triplet == triplet)?;
-    t.cells
-        .iter()
-        .find(|c| c.workload == workload && c.mode == mode && c.target == name)
-        .or_else(|| {
-            t.cells
-                .iter()
-                .find(|c| c.workload == workload && c.mode == mode && c.target.starts_with(name))
-        })
-        .map(|c| c.median_wall_s)
+    crate::report::baseline_cell(dash, triplet, workload, mode).map(|c| c.median_wall_s)
 }
 
 /// Merge the previous trend with this run's cells: the new rows win per
