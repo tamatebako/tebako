@@ -33,6 +33,15 @@ pub struct ReportRequest {
     pub results: Vec<PathBuf>,
     pub md: PathBuf,
     pub json: PathBuf,
+    /// The covenant metrics destination (spec 27 §11's covenant arm) —
+    /// when set, the run's dashboard drives the covenant's sourced cells
+    /// into the MetricsFile the `covenant` gate evaluates.
+    pub metrics: Option<PathBuf>,
+    /// The authored covenant (read only when `metrics` is set; default
+    /// `benchmarks/covenant.yaml`).
+    pub covenant: Option<PathBuf>,
+    /// The release the metrics belong to (the MetricsFile's `release`).
+    pub release: Option<String>,
 }
 
 /// One input file with its stats re-derived from its own run records.
@@ -44,7 +53,7 @@ struct TripletReport {
 /// The dashboard document (§7: "site-ingestible"; no schema gate — the
 /// shape is pinned by tests/report.rs snapshots instead). Deserializable:
 /// `tebako-bench trend` reads the dashboards back in.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Dashboard {
     pub suite: String,
     pub generated_by: String,
@@ -61,7 +70,7 @@ pub struct Dashboard {
     pub triplets: Vec<DashboardTriplet>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DashboardTriplet {
     pub triplet: String,
     pub runner: crate::result::RunnerMeta,
@@ -71,7 +80,7 @@ pub struct DashboardTriplet {
     pub failed: Vec<DashboardRow>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DashboardCell {
     pub workload: String,
     pub target: String,
@@ -91,7 +100,7 @@ pub struct DashboardCell {
     pub speedup_vs_v1: Option<f64>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DashboardRow {
     pub workload: String,
     pub target: String,
@@ -193,6 +202,27 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
         BenchError::operational(format!("cannot write {}: {e}", req.json.display()))
     })?;
 
+    // The covenant arm (spec 27 §11): the sourced cells ride the
+    // dashboard just written — one dashboard, one derivation, so the
+    // gate and the page never disagree.
+    if let Some(metrics_path) = &req.metrics {
+        let covenant_path = req
+            .covenant
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("benchmarks/covenant.yaml"));
+        let covenant = crate::covenant::CovenantFile::load(&covenant_path)?;
+        let metrics = crate::covenant::produce(
+            &covenant,
+            std::slice::from_ref(&dash),
+            req.release.as_deref(),
+        );
+        let text = serde_json::to_string_pretty(&metrics)
+            .map_err(|e| BenchError::operational(format!("metrics serialize: {e}")))?;
+        std::fs::write(metrics_path, text).map_err(|e| {
+            BenchError::operational(format!("cannot write {}: {e}", metrics_path.display()))
+        })?;
+    }
+
     let any_ok = triplets
         .iter()
         .any(|t| t.file.runs.iter().any(|r| r.status == RunStatus::Ok));
@@ -227,6 +257,32 @@ fn baseline<'a>(
 
 fn speedup(stats: &[StatRecord], s: &StatRecord, declared: Option<&str>) -> Option<f64> {
     baseline(stats, s, declared).map(|b| b.median_wall_s / s.median_wall_s)
+}
+
+/// The baseline arm's dashboard cell for a (triplet × workload × mode):
+/// the declared baseline target, exactly or by prefix (the v1 law when
+/// the suite declares none). The single owner of the dashboard-level
+/// baseline read — the trend feed and the covenant producer both ride it.
+pub(crate) fn baseline_cell<'d>(
+    dash: &'d Dashboard,
+    triplet: &str,
+    workload: &str,
+    mode: RunMode,
+) -> Option<&'d DashboardCell> {
+    let name = dash
+        .baseline
+        .as_ref()
+        .map(|b| b.target.as_str())
+        .unwrap_or("v1");
+    let t = dash.triplets.iter().find(|t| t.triplet == triplet)?;
+    t.cells
+        .iter()
+        .find(|c| c.workload == workload && c.mode == mode && c.target == name)
+        .or_else(|| {
+            t.cells
+                .iter()
+                .find(|c| c.workload == workload && c.mode == mode && c.target.starts_with(name))
+        })
 }
 
 fn mib(bytes: u64) -> f64 {

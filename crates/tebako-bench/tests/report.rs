@@ -85,6 +85,9 @@ fn run_report(dir: &Path, results: &[std::path::PathBuf]) -> (Result<u8, String>
         results: results.to_vec(),
         md: md.clone(),
         json: json.clone(),
+        metrics: None,
+        covenant: None,
+        release: None,
     })
     .map_err(|e| e.message);
     let md_text = std::fs::read_to_string(&md).unwrap_or_default();

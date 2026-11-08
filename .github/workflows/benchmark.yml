@@ -23,6 +23,11 @@ on:
   # human path — a release published or repaired through the UI carries
   # a user's token and does fire.
   workflow_dispatch:
+    inputs:
+      inject:
+        description: 'The trip proof (spec 27 §11.1): TEBAKO_BENCH_INJECT=<cell-or-axis>:<factor> — a deliberate breach the covenant gate must catch (the run goes red, proving the gate has teeth).'
+        required: false
+        default: ''
   release:
     types: [published]
 
@@ -270,8 +275,22 @@ jobs:
           rt_legs=(legs/bench-runtime-*/results.json)
           if [ -e "${rt_legs[0]}" ]; then
             tebako-rs/target/debug/tebako-bench report "${rt_legs[@]}" \
-              --md report-runtime.md --json dashboard-runtime.json
+              --md report-runtime.md --json dashboard-runtime.json \
+              --metrics covenant-metrics.json
             rc_rt=$?
+            # The covenant evaluation (spec 27 §11.1): the runtime
+            # report's own dashboard drives the sourced cells; the verdict
+            # lands in covenant-verdict.json for the gate step. An `absent`
+            # cell is the named coverage gap, reported, never a false red.
+            # TEBAKO_BENCH_INJECT rides the dispatch input — the trip
+            # proof's deliberate breach.
+            if [ -f covenant-metrics.json ]; then
+              TEBAKO_BENCH_INJECT="${{ inputs.inject }}" \
+                tebako-rs/target/debug/tebako-bench covenant \
+                --metrics covenant-metrics.json --json covenant-verdict.json || true
+            else
+              echo "no covenant metrics produced — the gate reports every cell absent"
+            fi
           else
             rc_rt=0
             echo "no runtime-suite legs uploaded — skipping the runtime report"
@@ -288,6 +307,17 @@ jobs:
           set -e
           if [ "$rc" -eq 2 ] || [ "$rc_rt" -eq 2 ] || [ "$rc_lz" -eq 2 ]; then exit 2; fi
           echo "tebako-bench report exit $rc, runtime report exit $rc_rt, lazy report exit $rc_lz"
+      # The covenant gate is its own step so the job's failure names it:
+      # a breach (the verdict `fail`, exit 1) fails the fan-in here.
+      - name: Gate on the covenant
+        if: always()
+        run: |
+          if [ -f covenant-verdict.json ]; then
+            cat covenant-verdict.json
+            jq -r '.verdict' covenant-verdict.json | grep -qx pass
+          else
+            echo "no covenant verdict (no runtime report) — nothing to gate"
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bench-report
@@ -298,6 +328,8 @@ jobs:
             report-runtime.md
             dashboard-runtime.json
             report-lazy.md
+            covenant-metrics.json
+            covenant-verdict.json
             dashboard-lazy.json
           if-no-files-found: error
       - name: Append to the bench-history branch
@@ -329,6 +361,13 @@ jobs:
             cp ../report-runtime.md ../dashboard-runtime.json "$dest/"
             cp ../report-runtime.md ../dashboard-runtime.json .bench-history/latest/
             dashboards+=(--dashboard ../dashboard-runtime.json)
+          fi
+          if [ -f ../covenant-verdict.json ]; then
+            # The covenant's verdict + the metrics it judged ride the
+            # publication — the website's covenant cell renders the gate's
+            # own record, per release, never a hand-written copy.
+            cp ../covenant-verdict.json ../covenant-metrics.json "$dest/"
+            cp ../covenant-verdict.json ../covenant-metrics.json .bench-history/latest/
           fi
           if [ -f ../dashboard-lazy.json ]; then
             cp ../report-lazy.md ../dashboard-lazy.json "$dest/"

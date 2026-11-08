@@ -12,22 +12,31 @@
 # anchored on the published walkthrough (4.0-5.0 s and 1.2-1.6 s) with
 # headroom for a slow day.
 #
-# The metrics producer lands with the report wiring; until it does, every
-# cell answers `absent`, which is the honest state: the covenant exists and
-# nothing is yet measured against it.
+# Every cell the runtime suite produces carries a `source:` (spec 27 §11's
+# covenant arm): the workload suffix selectors, the tebako arm's target
+# prefix, the mode, the measure (wall | rss), the shape (ratio | speedup |
+# absolute), and the aggregation (worst — the gate is as honest as its
+# worst leg). The producer (`tebako-bench report --metrics`) derives each
+# sourced cell from the run's dashboard — the gate judges the published
+# statistic, never a private recomputation. The cells the suite does not
+# produce (the author loop reads the walkthrough's recorded timings; the
+# teardown cells await their workloads) carry no source and answer
+# `absent` — the honest coverage gap.
 schema_version: 1
 cells:
   # -- first response: the wrapper + mount + boot budget a user feels once.
-  - id: first-response.cold.p95
+  - id: first-response.cold.median
     bound: 1.5
     comparison: le
     unit: ratio-to-native
     note: time to first output, cold, against the native interpreter in the same run
-  - id: first-response.warm.p95
+    source: {workloads: ["-boot"], target: "tebako-", mode: cold, measure: wall, shape: ratio, aggregate: worst}
+  - id: first-response.warm.median
     bound: 1.5
     comparison: le
     unit: ratio-to-native
     note: time to first output, warm, against the native interpreter in the same run
+    source: {workloads: ["-boot"], target: "tebako-", mode: warm, measure: wall, shape: ratio, aggregate: worst}
 
   # -- steady state: interposition is per open, not per byte.
   - id: steady.cpu.throughput
@@ -35,28 +44,33 @@ cells:
     comparison: ge
     unit: ratio-to-native
     note: a CPU-bound workload must keep at least this share of native throughput
+    source: {workloads: ["-fib"], target: "tebako-", mode: warm, measure: wall, shape: speedup, aggregate: worst}
   - id: steady.io.throughput
     bound: 0.85
     comparison: ge
     unit: ratio-to-native
     note: an IO-bound workload, where the mount tax is visible first
+    source: {workloads: ["-ioread"], target: "tebako-", mode: warm, measure: wall, shape: speedup, aggregate: worst}
 
   # -- filesystem: the preload tax lives here and nowhere else.
-  - id: filesystem.stat.p95
+  - id: filesystem.stat.max
     bound: 2.0
     comparison: le
     unit: ratio-to-native
-    note: stat through the mount router, warm cache, 95th percentile
-  - id: filesystem.stat.p50
+    note: stat through the mount router, warm cache, the tail — where a regression shows
+    source: {workloads: ["-statloop"], target: "tebako-", mode: warm, measure: wall, shape: ratio, aggregate: worst}
+  - id: filesystem.stat.median
     bound: 1.2
     comparison: le
     unit: ratio-to-native
-    note: the median is where a regression hides; the tail is where it shows
+    note: the median is where a regression hides
+    source: {workloads: ["-statloop"], target: "tebako-", mode: warm, measure: wall, shape: ratio, aggregate: worst}
   - id: filesystem.read.throughput
     bound: 0.85
     comparison: ge
     unit: ratio-to-native
     note: sequential read bandwidth through the image
+    source: {workloads: ["-ioread"], target: "tebako-", mode: warm, measure: wall, shape: speedup, aggregate: worst}
 
   # -- memory: mounted indices and page cache are real costs, bounded.
   - id: memory.rss.ratio
@@ -64,8 +78,10 @@ cells:
     comparison: le
     unit: ratio-to-native
     note: resident set at steady state, per runtime, per backend
+    source: {workloads: ["-boot", "-fib"], target: "tebako-", mode: warm, measure: rss, shape: ratio, aggregate: worst}
 
-  # -- teardown and lifecycle.
+  # -- teardown and lifecycle. No suite workload produces these yet — the
+  # cells carry no source and answer `absent` (the coverage gap, named).
   - id: teardown.exit_seconds
     bound: 0.5
     comparison: le
@@ -77,7 +93,9 @@ cells:
     unit: ratio
     note: exec-cache materialization must never be slower than whole-image extraction
 
-  # -- the author loop: the two numbers the walkthrough publishes.
+  # -- the author loop: the two numbers the walkthrough publishes. These
+  # read the walkthrough's recorded timings, never a bench run — no
+  # source, so a bench run reports them `absent`.
   - id: author-loop.repress.median
     bound: 6.0
     comparison: le

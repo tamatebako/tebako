@@ -72,6 +72,17 @@ enum Command {
         /// The site-ingestible dashboard JSON destination.
         #[arg(long)]
         json: PathBuf,
+        /// The covenant metrics destination (spec 27 §11's covenant arm):
+        /// the dashboard drives the covenant's sourced cells into the
+        /// MetricsFile the `covenant` gate evaluates.
+        #[arg(long)]
+        metrics: Option<PathBuf>,
+        /// The authored covenant (read only when --metrics is set).
+        #[arg(long, default_value = "benchmarks/covenant.yaml")]
+        covenant: PathBuf,
+        /// The release the metrics belong to.
+        #[arg(long)]
+        release: Option<String>,
     },
     /// Append a run's dashboards to the release-over-release trend feed
     /// (spec 27 §11: dedupe per full key, capped at the last 20 releases).
@@ -269,8 +280,23 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
                 repo_root,
             })
         }
-        Command::Report { results, md, json } => {
-            tebako_bench::report::report(&tebako_bench::report::ReportRequest { results, md, json })
+        Command::Report {
+            results,
+            md,
+            json,
+            metrics,
+            covenant,
+            release,
+        } => {
+            let has_metrics = metrics.is_some();
+            tebako_bench::report::report(&tebako_bench::report::ReportRequest {
+                results,
+                md,
+                json,
+                metrics,
+                covenant: if has_metrics { Some(covenant) } else { None },
+                release,
+            })
         }
         Command::Trend {
             release,
