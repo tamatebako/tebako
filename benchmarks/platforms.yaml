@@ -31,11 +31,15 @@ triplets:
     container: alpine:3.21
     v1_asset: metanorma-linux-musl-x86_64.tgz
     v2_payload: true
+    runtime_gaps:
+      python: the musl runtime exe dynamically links libintl.so.8 — no boot on a bare musl system (tebako-runtime-python#76)
   linux-musl-arm64:
     runner: ubuntu-24.04-arm
     container: alpine:3.21
     v1_asset: null # packed-mn never shipped musl-arm64 — the v1 arm is the gap
     v2_payload: true
+    runtime_gaps:
+      python: the musl runtime exe dynamically links libintl.so.8 — no boot on a bare musl system (tebako-runtime-python#76)
   macos-arm64:
     runner: macos-15
     v1_asset: metanorma-darwin-arm64.tgz # NOTE: AMFI-killed on a local macOS
