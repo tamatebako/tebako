@@ -799,3 +799,147 @@ fn a_carried_spawned_runtime_dispatches_and_exports_the_lock() {
         "the driver's pick carries the verified image"
     );
 }
+
+/// spec 33's standalone arm (the runtime-on-runtime theorem): a package
+/// pressed AGAINST an on_runtime runtime carries the owner as an
+/// expose-less spawned row (§5's press/lock bullet). The bootstrap is
+/// on_runtime-BLIND by construction — it resolves the owner pair into
+/// the store like any spawned row (the cache must hold it for a later
+/// managed dispatch) and hands off the DEPENDING runtime's exe with the
+/// app payload as the first triple, never composing the owner into the
+/// mount order. The composition then fails CLOSED at the driver — the
+/// depending env image's `layout.interpreter` names the owner's exe,
+/// absent the owner's mount — the named 65, pinned on the driver side by
+/// `an_unresolvable_interpreter_names_the_path_and_the_mount`
+/// (tebako-driver/tests/wrapper.rs). This test pins the bootstrap's
+/// half: the handoff shape that makes the refusal the designed outcome,
+/// never a silent wrong boot.
+#[test]
+fn an_on_runtime_owner_row_resolves_into_the_store_but_is_never_composed_bootstrap_side() {
+    let h = Harness::new(rust_bootstrap());
+    let app = h.fake_image();
+    let env_image = h.tmp.0.join("truffleruby-env.tfs");
+    std::fs::write(&env_image, b"FAKE DEPENDING RUNTIME ENV IMAGE").unwrap();
+    let owner_exe = h.tmp.0.join("graalvm-exe");
+    std::fs::write(&owner_exe, b"FAKE OWNER EXE").unwrap();
+    let owner_image = h.tmp.0.join("graalvm-image.tfs");
+    std::fs::write(&owner_image, b"FAKE OWNER ENV IMAGE").unwrap();
+    let runtime_ref = format!("{};image", h.runtime_ref);
+    let lock = tpkg::PackageLock {
+        runtime: Some(tpkg::LockedRuntime {
+            version: harness::RUBY_VER.to_string(),
+            carry: true,
+            exe: Some(tpkg::LockedArtifact {
+                slot: 1,
+                sha256: pin(&h.fake_runtime),
+                install_as: None,
+            }),
+            image: Some(tpkg::LockedArtifact {
+                slot: 2,
+                sha256: pin(&env_image),
+                install_as: None,
+            }),
+            dll: None,
+        }),
+        slices: vec![tpkg::LockedSlice {
+            name: "mnconvert".to_string(),
+            version: APP_VER.to_string(),
+            carry: true,
+            slot: Some(0),
+            mount: Some("/__tfs__".to_string()),
+            sha256: pin(&app),
+            source: None,
+        }],
+        // The owner edge: a spawned row with expose ABSENT (spec 33 §5's
+        // mark) — resolve into the store, never the composition.
+        spawned: vec![tpkg::LockedSpawned::Runtime(tpkg::LockedSpawnedRuntime {
+            engine: "java".to_string(),
+            implementation: Some("graalvm".to_string()),
+            constraint: tpkg::Constraint::new(">= 24").unwrap(),
+            expose: vec![],
+            version: "24.0.2".to_string(),
+            tebako: "2.8.0".to_string(),
+            carry: true,
+            exe: tpkg::LockedSpawnedArtifact {
+                slot: Some(3),
+                sha256: pin(&owner_exe),
+                install_as: None,
+            },
+            image: tpkg::LockedSpawnedArtifact {
+                slot: Some(4),
+                sha256: pin(&owner_image),
+                install_as: None,
+            },
+            dll: None,
+            source: None,
+        })],
+    };
+    let pm = composed_pm(&runtime_ref, lock);
+    let pkg = stitch_composed(
+        &h,
+        "mnconvert-on-runtime",
+        &[
+            (app.clone(), tpkg::TPKG_FORMAT_DWARFS, "/__tfs__"),
+            (h.fake_runtime.clone(), tpkg::TPKG_FORMAT_AUTO, ""),
+            (env_image.clone(), tpkg::TPKG_FORMAT_DWARFS, ""),
+            (owner_exe.clone(), tpkg::TPKG_FORMAT_AUTO, ""),
+            (owner_image.clone(), tpkg::TPKG_FORMAT_DWARFS, ""),
+        ],
+        &runtime_ref,
+        &pm,
+        0,
+    );
+    let home = h.home("home");
+
+    let (rc, out, err) = h.run(
+        &pkg,
+        &home,
+        &[("TEBAKO_OFFLINE", "1")],
+        &["mnconvert", "doc.xml"],
+    );
+    assert_eq!(rc, 0, "stdout:\n{out}\nstderr:\n{err}");
+    assert!(out.contains("FAKE-RUNTIME"), "stdout:\n{out}");
+
+    // The handoff is app-first with the DEPENDING exe: the app payload
+    // leads the triples, and the owner's slots (3, 4) never appear as a
+    // mount — the bootstrap composes nothing from the owner row.
+    let first_triple = out
+        .lines()
+        .find_map(|l| l.strip_prefix("argv[1]="))
+        .unwrap_or_default();
+    assert!(
+        first_triple.ends_with(":0:/__tfs__"),
+        "the app payload's slot leads the triples: stdout:\n{out}"
+    );
+    assert!(
+        !out.lines().any(|l| l.contains(":3:") || l.contains(":4:")),
+        "the owner's slots are never mounted: stdout:\n{out}"
+    );
+
+    // The owner pair resolved into the store (the spawned machinery —
+    // the cache a later managed dispatch reads), and the row rides the
+    // lock export's identity grammar.
+    assert!(
+        out.contains("SPAWN-LOCK=java=24.0.2:2.8.0\n"),
+        "stdout:\n{out}"
+    );
+    let plat = harness::platform();
+    let exe = tebako_bootstrap::platform::exe_suffix();
+    let entry = home
+        .join("runtimes")
+        .join(format!("java-24.0.2-2.8.0-{plat}"));
+    assert!(
+        entry
+            .join(format!("tebako-runtime-2.8.0-24.0.2-{plat}{exe}"))
+            .is_file(),
+        "the owner's staged exe: {}",
+        entry.display()
+    );
+    assert!(
+        entry
+            .join(format!("tebako-runtime-2.8.0-24.0.2-{plat}.tfs"))
+            .is_file(),
+        "the owner's staged env image: {}",
+        entry.display()
+    );
+}
