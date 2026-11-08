@@ -1970,6 +1970,22 @@ fn finish_install<T: Transport + Sync>(
                             Ok(None) => {}
                             Err(e) => return Err(sink.fail(e)),
                         }
+                        // The embedded manifest, read once — the store
+                        // identity's source (spec 03 §1: the in-image
+                        // manifest is authoritative).
+                        let embedded = match image_manifest::read_embedded_manifest(staged.tmp) {
+                            Ok(Some(text)) => Some(tpkg::PayloadManifest::from_yaml(&text).map_err(|e| {
+                                sink.fail(err(
+                                    EX_TEBAKO_MANIFEST,
+                                    format!(
+                                        "the embedded manifest of the incoming {} {} does not parse: {e}",
+                                        plan.name, plan.version
+                                    )),
+                                )
+                            })?),
+                            Ok(None) => None,
+                            Err(e) => return Err(sink.fail(e)),
+                        };
                         // The identity gate runs BEFORE the commit (tebako#872):
                         // a refusal after placement leaves the payload plus its
                         // trust anchor in the store, so the retry becomes a
@@ -1977,87 +1993,84 @@ fn finish_install<T: Transport + Sync>(
                         // the staged image's embedded manifest here keeps the
                         // store clean — a mismatch places nothing.
                         if plan.strict_identity {
-                            match image_manifest::read_embedded_manifest(staged.tmp) {
-                                Ok(Some(text)) => match tpkg::PayloadManifest::from_yaml(&text) {
-                                    Ok(embedded) => {
-                                        if embedded.identity.name != plan.name
-                                            || embedded.identity.version != plan.version
-                                        {
+                            if let Some(embedded) = &embedded {
+                                if embedded.identity.name != plan.name
+                                    || embedded.identity.version != plan.version
+                                {
+                                    return Err(sink.fail(err(
+                                        EX_TEBAKO_MANIFEST,
+                                        format!(
+                                            "the embedded manifest declares {} {} but the install named {} {} — the registry entry is inconsistent with the payload it names",
+                                            embedded.identity.name,
+                                            embedded.identity.version,
+                                            plan.name,
+                                            plan.version
+                                        ),
+                                    )));
+                                }
+                                // The payload's own merkle root (tebako#916
+                                // defect 3): a manifest that declares one —
+                                // and the all-zero placeholder is not a claim
+                                // — must match the image it arrived in. A
+                                // backend that cannot enumerate the tree
+                                // (special files) says so and the registry
+                                // pin stays the only anchor.
+                                let declared = embedded.identity.digest.tree_hash.trim();
+                                let placeholder =
+                                    declared.strip_prefix("sha256:").is_some_and(|hex| {
+                                        !hex.is_empty() && hex.chars().all(|c| c == '0')
+                                    });
+                                if !placeholder {
+                                    match tebako_info::verify::check_tree_hash(
+                                        staged.tmp,
+                                        declared,
+                                    ) {
+                                        tebako_info::verify::TreeHashCheck::Match => {}
+                                        tebako_info::verify::TreeHashCheck::Mismatch {
+                                            declared,
+                                            actual,
+                                        } => {
                                             return Err(sink.fail(err(
                                                 EX_TEBAKO_MANIFEST,
                                                 format!(
-                                                    "the embedded manifest declares {} {} but the install named {} {} — the registry entry is inconsistent with the payload it names",
-                                                    embedded.identity.name,
-                                                    embedded.identity.version,
-                                                    plan.name,
-                                                    plan.version
+                                                    "the embedded manifest of the incoming {} {} declares tree_hash {declared}, but the image's merkle root is {actual} — the payload does not describe itself, so nothing was placed",
+                                                    plan.name, plan.version
                                                 ),
-                                            )));
+                                            )))
                                         }
-                                        // The payload's own merkle root (tebako#916
-                                        // defect 3): a manifest that declares one —
-                                        // and the all-zero placeholder is not a claim
-                                        // — must match the image it arrived in. A
-                                        // backend that cannot enumerate the tree
-                                        // (special files) says so and the registry
-                                        // pin stays the only anchor.
-                                        let declared = embedded.identity.digest.tree_hash.trim();
-                                        let placeholder =
-                                            declared.strip_prefix("sha256:").is_some_and(|hex| {
-                                                !hex.is_empty() && hex.chars().all(|c| c == '0')
-                                            });
-                                        if !placeholder {
-                                            match tebako_info::verify::check_tree_hash(
-                                                staged.tmp,
-                                                declared,
-                                            ) {
-                                                tebako_info::verify::TreeHashCheck::Match => {}
-                                                tebako_info::verify::TreeHashCheck::Mismatch {
-                                                    declared,
-                                                    actual,
-                                                } => {
-                                                    return Err(sink.fail(err(
-                                                        EX_TEBAKO_MANIFEST,
-                                                        format!(
-                                                            "the embedded manifest of the incoming {} {} declares tree_hash {declared}, but the image's merkle root is {actual} — the payload does not describe itself, so nothing was placed",
-                                                            plan.name, plan.version
-                                                        ),
-                                                    )))
-                                                }
-                                                // A tree this backend cannot
-                                                // enumerate (an older image
-                                                // format, special files, or a
-                                                // fixture that is not an image
-                                                // at all) is not a verdict: the
-                                                // registry pin already bounds
-                                                // the bytes, and a payload that
-                                                // cannot mount fails by name at
-                                                // run time. Staying quiet here
-                                                // keeps install's output to the
-                                                // lines it earns.
-                                                tebako_info::verify::TreeHashCheck::Unavailable(
-                                                    _,
-                                                ) => {}
-                                            }
-                                        }
+                                        // A tree this backend cannot
+                                        // enumerate (an older image
+                                        // format, special files, or a
+                                        // fixture that is not an image
+                                        // at all) is not a verdict: the
+                                        // registry pin already bounds
+                                        // the bytes, and a payload that
+                                        // cannot mount fails by name at
+                                        // run time. Staying quiet here
+                                        // keeps install's output to the
+                                        // lines it earns.
+                                        tebako_info::verify::TreeHashCheck::Unavailable(
+                                            _,
+                                        ) => {}
                                     }
-                                    Err(e) => {
-                                        return Err(sink.fail(err(
-                                            EX_TEBAKO_MANIFEST,
-                                            format!(
-                                                "the embedded manifest of the incoming {} {} does not parse: {e}",
-                                                plan.name, plan.version
-                                            ),
-                                        )));
-                                    }
-                                },
-                                Ok(None) => {}
-                                Err(e) => return Err(sink.fail(e)),
+                                }
                             }
                         }
+                        // The store identity: the manifest's when the image
+                        // carries one (embedded wins — spec 03 §1); the
+                        // plan's pin-derived identity (the content address,
+                        // spec 16 §3.3) when it carries none. A bare-pin
+                        // install of an entrypoint-bearing payload adopts
+                        // the manifest's name+version — never the split of
+                        // tebako#999 (the bytes under the pin, the
+                        // tree+mirror under the manifest's name).
+                        let (store_name, store_version) = match &embedded {
+                            Some(m) => (m.identity.name.clone(), m.identity.version.clone()),
+                            None => (plan.name.clone(), plan.version.clone()),
+                        };
                         match cache.install_staged(
-                            &plan.name,
-                            &plan.version,
+                            &store_name,
+                            &store_version,
                             // The registry pin or — a verbatim `?sha256=`
                             // reference — the content address itself (spec 16
                             // §3.3); checked AFTER the signature (spec 09 §4).
@@ -2198,14 +2211,14 @@ fn finish_install<T: Transport + Sync>(
             }
         }
         if let Some(previous) = cache
-            .mark_registry(&plan.name, &plan.version, registry)
+            .mark_registry(&entry.name, &entry.version, registry)
             .map_err(map_resolve)?
         {
             journal(
                 home,
                 &format!(
                     "event=origin-rebind name={} version={} from={previous} to={registry}",
-                    plan.name, plan.version
+                    entry.name, entry.version
                 ),
             );
         }
@@ -2218,7 +2231,7 @@ fn finish_install<T: Transport + Sync>(
     // itself is saved only after the closure completes — the save is
     // the install's commit point.
     let mirror = build_mirror(&entry, &plan, &mut notes)?;
-    let record: PayloadRecord = manifest::payload_record(home, &plan.name, &plan.version);
+    let record: PayloadRecord = manifest::payload_record(home, &entry.name, &entry.version);
 
     // The dependency closure (spec 03 §2.3): the mirror's toolkit/data
     // edges resolve to cached-or-registry installs, recursively. The
@@ -2986,7 +2999,7 @@ fn build_mirror(
         })?;
         if embedded.identity.name != plan.name || embedded.identity.version != plan.version {
             let msg = format!(
-                "the embedded manifest declares {} {} but the install named {} {}",
+                "the embedded manifest declares {} {} — the install rides the manifest's identity (embedded wins, spec 03 §1), not the reference's {} {}",
                 embedded.identity.name, embedded.identity.version, plan.name, plan.version
             );
             if plan.strict_identity {
