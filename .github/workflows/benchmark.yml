@@ -76,6 +76,7 @@ jobs:
       # newest tag whose sums actually serve, once for all three legs.
       - name: Resolve the tooling release (dispatch runs)
         if: github.event_name != 'release'
+        shell: bash
         run: |
           set -euo pipefail
           tag=""
