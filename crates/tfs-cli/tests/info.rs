@@ -79,7 +79,7 @@ fn mk_image(w: &TempDir, name: &str, manifest: Option<&str>) -> PathBuf {
 }
 
 // The vendored fixtures are needed for the squashfs probe only (POSIX —
-// the windows tfs build ships no squashfs backend, TODO.v2-1/02).
+// the windows tfs build ships no squashfs backend).
 #[cfg(not(windows))]
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -320,7 +320,7 @@ fn format_detection_per_backend() {
 
     // squashfs (vendored fixture; no manifest → named note). POSIX only —
     // the windows tfs build ships no squashfs backend; the sqfs mount is
-    // the named ENOTSUP there (TODO.v2-1/02).
+    // the named ENOTSUP there.
     #[cfg(not(windows))]
     {
         let (rc, out, _) = run(

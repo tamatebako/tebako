@@ -3,7 +3,7 @@
 //! legacy acceptance + TEBAECO_REQUIRE_SIGNED hard fail, and the
 //! trusted-cache second-run hit.
 //!
-//! POSIX-only (TODO.v2-1/08): the tests mint keys through rnp, whose
+//! POSIX-only: the tests mint keys through rnp, whose
 //! 0.1.7 vendored prebuilt has no Windows target — the dev-deps are
 //! per-target gated in Cargo.toml, and this whole file compiles out on
 //! Windows until the gate lifts.

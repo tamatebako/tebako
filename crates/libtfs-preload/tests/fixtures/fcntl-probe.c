@@ -1,5 +1,5 @@
-/* CPython boot-path oracle (the python runtime factory dogfood,
- * TODO.python/02): io.FileIO.__init__ runs _Py_set_inheritable →
+/* CPython boot-path oracle (the python runtime factory's dogfood):
+ * io.FileIO.__init__ runs _Py_set_inheritable →
  * get_inheritable → fcntl(F_GETFD) on the freshly opened fd with
  * raise=1 (Modules/_io/fileio.c:451 → Python/fileutils.c). The shim's
  * memfs fds are flag-bit integers with no kernel state, so the real

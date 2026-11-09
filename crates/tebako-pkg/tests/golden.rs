@@ -91,7 +91,7 @@ fn strip_signature_line(out: &str) -> String {
 }
 
 /// The ONE sanctioned invariant-8 deviation: the v2 mount-root rename
-/// (`/__tebako_memfs__` → `/__tfs__`, TODO.prepublish/02). The C++
+/// (`/__tebako_memfs__` → `/__tfs__`). The C++
 /// oracle always emits its legacy default mount for bare images; rewrite
 /// it to the v2 default before the byte comparison so everything ELSE
 /// (structure, metadata, content) is asserted byte-exact. Any OTHER

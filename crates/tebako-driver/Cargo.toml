@@ -47,8 +47,9 @@ base64ct = { version = "1", features = ["alloc"] }
 
 # The mounts land in the same process-global context the C ABI serves —
 # the libtfs-preload pattern (a native Rust consumer of the engine).
-# Windows ships dwarfs-only (squashfs-tools-ng is POSIX/autotools-only,
-# TODO.v2-1/02; ENC needs rnp's mingw build, TODO.v2-1/08).
+# Windows ships dwarfs-only (squashfs-tools-ng is POSIX/autotools-only;
+# ENC needs rnp's mingw build, which is unproven — both degrade to named
+# ENOTSUP, never silent).
 [target.'cfg(not(windows))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs", features = ["backend-remote"] }
 

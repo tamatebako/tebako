@@ -980,7 +980,7 @@ jobs:
   # Windows (ucrt64) — the link-unit leg. The staticlibs build and scope
   # (the COFF arscope) and the mingw closure lands; the five binaries wait
   # for the windows exec/lock ports (bootstrap) and the POSIX-oriented
-  # spawn/scrub paths (cli), tracked in TODO.v2-1.
+  # spawn/scrub paths (cli) — see the windows-link-unit job's own notes.
   # ==========================================================================
   windows-link-unit:
     # Roadmap 89: no installer leg consumes this job — skip it in rehearsals.

@@ -1855,7 +1855,7 @@ fn toolkit_home_manifest_yaml(name: &str, exe: &str, version: &str) -> String {
 /// closure never sees it — only whole-tree extraction carries it).
 /// Directory entries are EXPLICIT (add_directory): the zip backend
 /// mirrors the C++ iterator's explicit-only semantics and never
-/// synthesizes implicit parents (TODO.v2-1/24).
+/// synthesizes implicit parents.
 fn zip_image_with_home(name: &str, exe: &str, version: &str) -> Vec<u8> {
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default();

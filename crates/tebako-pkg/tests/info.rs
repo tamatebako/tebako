@@ -120,7 +120,7 @@ fn patterned_bytes(n: usize, seed: u8) -> Vec<u8> {
 }
 
 /// A minimal ustar tar with one file. Only the squashfs-era detection
-/// test uses it (POSIX — TODO.v2-1/02).
+/// test uses it (POSIX only — squashfs-tools-ng is autotools-only).
 #[cfg(not(windows))]
 fn build_tar(path: &Path, name: &str, content: &[u8]) {
     let mut out = Vec::new();
@@ -239,7 +239,7 @@ fn full_report_unsigned_classic() {
 
 // squashfs slots mount on POSIX only — the windows tfs ships no squashfs
 // backend, so the probe renders the named mount-failure state there
-// (TODO.v2-1/02).
+// there.
 #[cfg(not(windows))]
 #[test]
 fn full_report_signed_lean_and_depths() {
@@ -429,7 +429,7 @@ fn slot_view_and_errors() {
 
     // A plain-image slot reports the named note. POSIX only — the
     // windows tfs ships no squashfs backend; the sqfs slot reports the
-    // named mount failure there (TODO.v2-1/02).
+    // named mount failure there.
     #[cfg(not(windows))]
     {
         let (rc, out, _) = run(&["info", "--slot", "1", pkg.to_str().unwrap()], &w.0, &home);
@@ -524,7 +524,7 @@ fn json_document_contract() {
         Some("squashfs")
     );
     // squashfs mounts on POSIX only — windows carries the named
-    // mount_error instead of the plain-image note (TODO.v2-1/02).
+    // mount_error instead of the plain-image note.
     #[cfg(not(windows))]
     assert!(
         slots[1]
@@ -545,7 +545,7 @@ fn json_document_contract() {
 // validate / --verify (spec 15 §5 exit codes)
 // ---------------------------------------------------------------------
 
-// squashfs slots mount on POSIX only (TODO.v2-1/02) — on windows the
+// squashfs slots mount on POSIX only — on windows the
 // slot's manifest check fails the mount (named ENOTSUP), never skips.
 #[cfg(not(windows))]
 #[test]
@@ -1073,7 +1073,7 @@ fn validate_entries_shared_slice_skips() {
 // Format detection per slot (never trusting format_id alone)
 // ---------------------------------------------------------------------
 
-// squashfs detection mounts the slot — POSIX only (TODO.v2-1/02); the
+// squashfs detection mounts the slot — POSIX only; the
 // windows row renders the named "squashfs (undetected)" state instead.
 #[cfg(not(windows))]
 #[test]

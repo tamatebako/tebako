@@ -23,7 +23,7 @@ git = ["dep:gix", "dep:reqwest", "dep:rustls", "dep:jiff"]
 # (spec 38 §10), where a `tfs+oci:` reference fails closed with the
 # named OciAdapterDisabled (the GitAdapterDisabled precedent).
 oci = ["dep:tebako-oci"]
-# Enterprise networking (TODO.v2-1/33): proxy honoring + additive trust
+# Enterprise networking (spec 04 §4): proxy honoring + additive trust
 # anchors, forwarded to tebako-http. Off in the bootstrap (same gate),
 # where a set proxy/CA env is the named NetworkingCompiledOut error.
 network = ["tebako-http/network"]

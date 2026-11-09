@@ -25,7 +25,7 @@ sha2 = "0.10"
 
 # tfs per-target: the SquashFS backend (squashfs-tools-ng) is
 # POSIX/autotools-only — Windows gets a dwarfs-only tfs, the backend
-# degrading to a named ENOTSUP (TODO.v2-1/02).
+# degrading to a named ENOTSUP.
 [target.'cfg(not(windows))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs" }
 

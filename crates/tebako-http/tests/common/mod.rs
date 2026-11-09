@@ -1,5 +1,5 @@
 //! Shared fixture machinery for the enterprise-networking acceptance
-//! tests (TODO.v2-1/33, spec 04 §4): a local rustls HTTPS server
+//! tests (spec 04 §4): a local rustls HTTPS server
 //! presenting a certificate signed by a self-signed test CA, and a local
 //! CONNECT proxy recording every CONNECT it carries (the proof a fetch
 //! really rode the proxy — never a silent direct fallback).

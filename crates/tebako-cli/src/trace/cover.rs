@@ -336,7 +336,7 @@ impl CorrSet {
     }
 }
 
-/// Event classification (retrace `CorrClass`, TODO.windows/03): PROBE =
+/// Event classification (retrace `CorrClass`): PROBE =
 /// existence leak (read-attributes semantics), WRITE = potential
 /// mutation, READ = data access, NONE = no func on the entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1163,7 +1163,7 @@ mod tests {
     #[test]
     fn escape_pid_coverage() {
         // pid 601 saw the path; pid 777 touching the same path is NOT
-        // covered (TODO.windows/01).
+        // covered.
         let inside = index_of(&[entry_full(Some("open"), "/mnt/tfs/a", 601, 1, 100.0)]);
         let mut c = criteria("/mnt/tfs");
 
@@ -1189,7 +1189,7 @@ mod tests {
     #[test]
     fn escape_time_window() {
         // Lazy materialization: the open at t=100 PRECEDES the
-        // materialize record at t=101 (TODO.windows/02).
+        // materialize record at t=101.
         let inside = index_of(&[entry_full(
             Some("materialize"),
             "/mnt/tfs/lazy.dat",

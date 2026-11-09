@@ -79,7 +79,7 @@ rustls-pemfile = "2"
 # (spec 03 §1) through the same ABI. The SquashFS backend
 # (squashfs-tools-ng) is POSIX/autotools-only, so Windows gets a
 # dwarfs-only tfs — the squashfs backend degrades to a named ENOTSUP
-# there (TODO.v2-1/02). The per-target split lives in the consumer (cargo
+# there (squashfs-tools-ng is POSIX/autotools-only). The per-target split lives in the consumer (cargo
 # features cannot be target-conditional from inside tfs).
 [target.'cfg(not(windows))'.dependencies]
 tfs = { version = "2.0.0", path = "../tfs", features = ["backend-remote"] }

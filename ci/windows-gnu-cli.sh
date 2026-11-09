@@ -77,7 +77,7 @@ export BINDGEN_EXTRA_CLANG_ARGS="--target=x86_64-w64-mingw32 -isystem $(cygpath 
 
 # E2E presses stay off on this leg: they download a runtime and press
 # side-by-side with the reference gem (a host ruby + thor) — the windows
-# dogfood e2e is TODO.prepublish/06's story. Every other test runs.
+# dogfood e2e rides the windows dogfood legs. Every other test runs.
 export TEBAKO_CLI_SKIP_E2E=1
 
 TARGET=x86_64-pc-windows-gnu
