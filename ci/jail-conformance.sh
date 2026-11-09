@@ -73,6 +73,15 @@ ORPHANS=0
 
 run_bounded() {
   local label="$1"; shift
+  if [ "$WIN" = "1" ]; then
+    # The deadline/orphan guard is POSIX machinery (perl setpgid + the
+    # process-group kill) — Git-bash's MSYS layer has neither reliably;
+    # the arms run bare on Windows until the guard has a Windows answer
+    # (named in the log, never a silent skip).
+    echo "   note: the deadline/orphan guard is POSIX-only — running bare" >&2
+    "$@"
+    return $?
+  fi
   perl -MPOSIX=setpgid -e 'setpgid(0, 0) or die "setpgid: $!\n"; exec @ARGV or die "exec: $!\n"' -- "$@" &
   local pid=$!
   local waited=0

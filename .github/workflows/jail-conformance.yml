@@ -101,3 +101,13 @@ jobs:
           set -euo pipefail
           bash ci/jail-conformance.sh --pair "$PAIR_EXE" --tfs "$TFS_EXE" "$TFS_EXE" \
             "$RUNNER_TEMP/jail-conformance"
+
+      # The arms' stderr lands in <work>/*.err — a zero-row run is
+      # diagnosable only with them in hand (the first Windows run's
+      # all-MISSING matrix).
+      - name: Upload the suite's work dir on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jail-conformance-workdir-${{ matrix.os }}
+          path: ${{ runner.temp }}/jail-conformance
