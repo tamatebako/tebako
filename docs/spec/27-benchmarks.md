@@ -797,6 +797,17 @@ A cell the runtime suite produces carries a `source:` block:
   `absent` is reported and does not. The tripwire is
   `TEBAKO_BENCH_INJECT=<cell-or-axis>:<factor>` — a covenant that cannot
   be tripped on purpose is not a gate.
+- **The release reads the verdict it dispatched (added 2026-11-09).**
+  The fan-in's "Gate on the covenant" step turns the benchmark run red
+  on a trip; release.yml's `covenant-gate` job then carries that verdict
+  into the RELEASE pipeline's own conclusion — it polls the dispatched
+  run (finalize records its id as the `bench_run_id` output), reads the
+  gate step's conclusion, and fails the release pipeline on a `fail`
+  verdict. The assets are already published when this resolves, so the
+  red is the alarm and the record, not a recall (published assets are
+  immutable). A bench run whose gate step never concluded is not a pass.
+  The verdict JSON survives the trip: the fan-in's report-bundle
+  artifact uploads with `if: always()` and the gate job prints it.
 - **The shape follows the cost structure (amended 2026-11-08, the
   red-by-construction lesson of run 42456544287).** A ratio/speedup
   cell is honest only when the workload runs long enough that the fixed

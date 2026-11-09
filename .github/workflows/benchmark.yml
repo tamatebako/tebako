@@ -352,12 +352,19 @@ jobs:
             echo "no covenant verdict (no runtime report) — nothing to gate"
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        # always(): the release-side covenant gate (release.yml's
+        # covenant-gate job) reads covenant-verdict.json from this bundle
+        # on a TRIP too — a verdict that dies with its gate cannot be
+        # audited. The artifact name stays off the fan-in's own bench-*
+        # download pattern, so a re-run still pulls no phantom leg.
+        if: always()
         with:
           # NOT bench-*: the fan-in's download pattern is `bench-*`, and a
           # previous attempt's report artifact otherwise downloads as a
           # phantom leg — the merge then dies on its missing results.json
           # (the job is un-re-runnable; calibration run 42578483307's
-          # attempts 2+ all died here). No consumer names the artifact.
+          # attempts 2+ all died here). The one consumer is release.yml's
+          # covenant-gate job, which names it explicitly.
           name: report-bundle
           retention-days: 1
           path: |
