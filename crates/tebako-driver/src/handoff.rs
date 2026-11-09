@@ -188,7 +188,7 @@ impl Handoff {
                 _ if flag.starts_with("--tebako-") => {
                     return Err(DriverError::new(
                         EX_TEBAKO_MANIFEST,
-                        format!("unknown loader option '{flag}' — the handoff grammar is --tebako-image/--tebako-entry"),
+                        format!("unknown loader option '{flag}' — the handoff grammar is --tebako-image/--tebako-entry/--tebako-trace"),
                     ));
                 }
                 _ => {

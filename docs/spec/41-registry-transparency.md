@@ -1,7 +1,8 @@
 # 41 — Registry transparency: completeness proofs for the public fabric
 
-**Status: PLANNED** (the design is locked here first; §5's verbs ship
-together with this spec in the same change).
+**Status: SHIPPED** (the RFC 6962 tree, the canonical rows, and §5's
+three verbs — `registry snapshot`, `registry log verify`, `registry log
+prove` — are in tebako-cli; tebako#887, 17 tests).
 
 ## 1. The property nobody has
 

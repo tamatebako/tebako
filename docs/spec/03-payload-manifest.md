@@ -39,6 +39,12 @@ digest:
   blob_sha256: "…"                    # transport identity — see the fixed-point rule
 signing: {state: unsigned | signed, keyid: "…", mechanism: openpgp}
 encryption: {state: none}             # or per-part list {paths, algorithm, envelope_refs} — NEVER keys
+era: 2                                # OPTIONAL (additive — schema_minor 17, spec 18):
+                                      # the contract era this manifest speaks; absent =
+                                      # era 1 (the undeclared pre-era), a declared value
+                                      # is >= 2. Consumers that require the contract
+                                      # refuse by name (spec 18 §2.2); old readers ignore
+                                      # the key (the unknown-field rule).
 annotations: {…}                      # free-form; unknown keys preserved
 ```
 
@@ -139,6 +145,11 @@ windows_boot: materialize             # OPTIONAL (additive — schema_minor 11, 
                                       # exec-cache tree instead. Absent = the interpreter
                                       # reads the mounts directly (ruby). POSIX never reads it.
 capabilities: {exec: true, read: true, runtime: true}
+on_runtime:                           # OPTIONAL (additive — schema_minor 6, spec 33 §2):
+  {runtime: java, role: owner,        # the runtime-on-runtime composition block: present
+   constraint: "~> 21"}               # iff this runtime declares an owner edge (the
+                                      # coupling validates at the manifest level). Old
+                                      # readers ignore the key — and find no owner edge.
 ```
 
 **data** (read-only):
@@ -179,6 +190,12 @@ requires:
                               # wrapper exe executes FROM THE STORE.
     expose: [java, keytool]   # OPTIONAL — the depended entries this payload surfaces
                               # (spec 30 §3's shim surface)
+    registry: acme            # OPTIONAL (additive — schema_minor 14, spec 37 §3):
+                              # the edge resolves ONLY through this registry alias
+                              # ([a-z][a-z0-9-]*; whether the alias EXISTS is
+                              # resolution-time's UnknownRegistryAlias, never the
+                              # manifest's call — a manifest is installable against
+                              # a book that names it)
 ```
 
 - Dependency edges may also name **provided executables** (e.g. an app

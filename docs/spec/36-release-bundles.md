@@ -1,9 +1,9 @@
 # Spec 36 — Release bundles (the runtime publish unit)
 
-Status: **PLANNED** (locked direction 2026-09-24; ships with
-tebako-release v0.2.0 + the tebako-resolve bundle fetch path — the
-v0.16.28 line-shard recovery runs the per-file shape to completion, and
-pre-bundle releases stay installable forever, spec 13 §8).
+Status: **SHIPPED** (the bundle is the runtime publish unit: the shim's
+in-process unpack+verify (`runtime_bundle.rs`), the bundle-era fetch arm
+and §5's registry spelling are all in the tree; pre-bundle releases stay
+installable forever, spec 13 §8).
 
 Normative specification of the **bundle**: the single distribution
 artifact that carries one runtime leg's bytes (interpreter exe + env

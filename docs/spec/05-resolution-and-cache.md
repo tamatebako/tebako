@@ -1,8 +1,9 @@
 # Spec 05 — Resolution and machine cache (L3)
 
 Normative specification of runtime/payload resolution and the shared
-machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL
-(roadmap 07).
+machine cache. Status: SHIPPED for runtimes and payloads (the payload
+store's `payloads/<name>/<version>.tfs` grammar is load-bearing —
+tpkg's payload_store, consumed by install and the shim's dispatch).
 
 ## 1. runtime_ref (the resolution hint in the v1 trailer)
 
