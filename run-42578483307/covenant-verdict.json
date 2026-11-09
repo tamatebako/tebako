@@ -5,42 +5,42 @@
     {
       "id": "first-response.cold.median",
       "state": "pass",
-      "measured": 0.3384792965,
+      "measured": 1.0366724535,
       "bound": 3.0,
       "comparison": "<="
     },
     {
       "id": "first-response.warm.median",
       "state": "pass",
-      "measured": 0.337441093,
+      "measured": 1.040085543,
       "bound": 3.0,
       "comparison": "<="
     },
     {
       "id": "steady.cpu.throughput",
       "state": "pass",
-      "measured": 0.9635257898998755,
+      "measured": 0.9214008449637071,
       "bound": 0.8,
       "comparison": ">="
     },
     {
       "id": "steady.io.throughput",
       "state": "pass",
-      "measured": 0.6519565589455742,
+      "measured": 0.2917255871373346,
       "bound": 0.2,
       "comparison": ">="
     },
     {
       "id": "filesystem.stat.median",
       "state": "pass",
-      "measured": 2.1649037164869664,
+      "measured": 7.22611670308615,
       "bound": 15.0,
       "comparison": "<="
     },
     {
       "id": "memory.rss.peak",
       "state": "pass",
-      "measured": 195047424.0,
+      "measured": 498892800.0,
       "bound": 671088640.0,
       "comparison": "<="
     },

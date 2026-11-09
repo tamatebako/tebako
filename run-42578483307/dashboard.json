@@ -79,7 +79,7 @@
         "runs_on": "ubuntu-24.04",
         "arch": "x86_64",
         "cpus": 4,
-        "ram_bytes": 16759300096
+        "ram_bytes": 16760344576
       },
       "versions": {
         "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
@@ -90,13 +90,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 107.092320084,
-          "min_wall_s": 106.857389622,
-          "max_wall_s": 107.392094257,
-          "stdev_wall_s": 0.23098062979714112,
-          "mean_wall_s": 107.09704591700002,
-          "median_cpu_s": 134.43153999999998,
-          "median_peak_rss_bytes": 1256210432,
+          "median_wall_s": 121.25045714,
+          "min_wall_s": 120.246753926,
+          "max_wall_s": 158.781166491,
+          "stdev_wall_s": 19.88363226169419,
+          "mean_wall_s": 135.2466097322,
+          "median_cpu_s": 149.766494,
+          "median_peak_rss_bytes": 1264525312,
           "speedup_vs_v1": 1.0
         },
         {
@@ -104,13 +104,41 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 162.6393181735,
-          "min_wall_s": 144.043389395,
-          "max_wall_s": 181.235246952,
-          "stdev_wall_s": 26.298614683478856,
-          "mean_wall_s": 162.6393181735,
-          "median_cpu_s": 141.541022,
-          "median_peak_rss_bytes": 1371656192,
+          "median_wall_s": 143.116793107,
+          "min_wall_s": 142.64583973,
+          "max_wall_s": 143.587746484,
+          "stdev_wall_s": 0.6660286529988103,
+          "mean_wall_s": 143.116793107,
+          "median_cpu_s": 158.9639145,
+          "median_peak_rss_bytes": 1369311232,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 61.741886337,
+          "min_wall_s": 61.520210613,
+          "max_wall_s": 97.369334161,
+          "stdev_wall_s": 15.925230825113616,
+          "mean_wall_s": 68.8856751238,
+          "median_cpu_s": 80.499342,
+          "median_peak_rss_bytes": 937537536,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 97.9424624545,
+          "min_wall_s": 97.711434135,
+          "max_wall_s": 98.173490774,
+          "stdev_wall_s": 0.3267233827291621,
+          "mean_wall_s": 97.9424624545,
+          "median_cpu_s": 86.69021550000001,
+          "median_peak_rss_bytes": 939452416,
           "speedup_vs_v1": 1.0
         }
       ],
@@ -122,7 +150,7 @@
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 71) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-gnu-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-gnu-x86_64"
         },
         {
           "workload": "compile-small-iso",
@@ -131,7 +159,7 @@
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 69) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-gnu-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-gnu-x86_64"
         },
         {
           "workload": "compile-medium-rice",
@@ -140,7 +168,7 @@
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 71) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-gnu-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-gnu-x86_64"
         },
         {
           "workload": "compile-medium-rice",
@@ -149,20 +177,10 @@
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 69) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-gnu-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-gnu-x86_64"
         }
       ],
-      "failed": [
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit 1 (expected 0)",
-          "reason": null
-        }
-      ]
+      "failed": []
     },
     {
       "triplet": "linux-musl-arm64",
@@ -170,7 +188,7 @@
         "runs_on": "ubuntu-24.04-arm",
         "arch": "aarch64",
         "cpus": 4,
-        "ram_bytes": 16715927552
+        "ram_bytes": 16715923456
       },
       "versions": {
         "tebako": "2.8.74",
@@ -196,7 +214,7 @@
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-musl-arm64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log"
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 69) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
         },
         {
           "workload": "compile-medium-rice",
@@ -214,7 +232,7 @@
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-musl-arm64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log"
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 69) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
         }
       ],
       "failed": [
@@ -485,13 +503,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 82.4061767,
-          "min_wall_s": 81.8162607,
-          "max_wall_s": 107.5657796,
-          "stdev_wall_s": 11.18651546438674,
-          "mean_wall_s": 87.65540084,
-          "median_cpu_s": 98.890625,
-          "median_peak_rss_bytes": 1710428160,
+          "median_wall_s": 139.275124,
+          "min_wall_s": 135.7212292,
+          "max_wall_s": 178.2058296,
+          "stdev_wall_s": 20.478476357678932,
+          "mean_wall_s": 151.71687626,
+          "median_cpu_s": 168.265625,
+          "median_peak_rss_bytes": 1551892480,
           "speedup_vs_v1": 1.0
         },
         {
@@ -499,41 +517,13 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 155.3974858,
-          "min_wall_s": 153.7483795,
-          "max_wall_s": 157.0465921,
-          "stdev_wall_s": 2.3321884952549135,
-          "mean_wall_s": 155.3974858,
-          "median_cpu_s": 107.25,
-          "median_peak_rss_bytes": 1692172288,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 44.9751,
-          "min_wall_s": 43.4860422,
-          "max_wall_s": 79.9956835,
-          "stdev_wall_s": 15.926384897891502,
-          "mean_wall_s": 51.55327528,
-          "median_cpu_s": 59.203125,
-          "median_peak_rss_bytes": 1695887360,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 59.8984534,
-          "min_wall_s": 42.9677191,
-          "max_wall_s": 76.8291877,
-          "stdev_wall_s": 23.943674067995357,
-          "mean_wall_s": 59.8984534,
-          "median_cpu_s": 56.234375,
-          "median_peak_rss_bytes": 1655025664,
+          "median_wall_s": 161.1778185,
+          "min_wall_s": 159.8620972,
+          "max_wall_s": 162.4935398,
+          "stdev_wall_s": 1.8607109067631695,
+          "mean_wall_s": 161.1778185,
+          "median_cpu_s": 177.7734375,
+          "median_peak_rss_bytes": 1747533824,
           "speedup_vs_v1": 1.0
         }
       ],
@@ -545,7 +535,7 @@
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 69) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.72/SHA256SUMS: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.72/SHA256SUMS"
         },
         {
           "workload": "compile-small-iso",
@@ -563,7 +553,7 @@
           "iteration": null,
           "status": "unavailable",
           "error": null,
-          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 69) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.72/SHA256SUMS: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.72/SHA256SUMS"
         },
         {
           "workload": "compile-medium-rice",
@@ -575,7 +565,17 @@
           "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 75) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
         }
       ],
-      "failed": []
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
     }
   ]
 }
