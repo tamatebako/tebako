@@ -1,0 +1,101 @@
+name: Jail conformance
+
+# The jail attack suite (ci/jail-conformance.sh) on demand, per release or
+# on a branch that touches the jail. Two legs:
+#
+#   windows-latest  the NTFS vectors — alternate data streams above all,
+#                   which no POSIX leg can exercise (the probe SKIPs them
+#                   there and the matrix reads "not applicable").
+#   macos-15        the POSIX control: the same suite against the same
+#                   pinned pair must stay CONFORMANT.
+#
+# The suite runs in --pair mode against a PUBLISHED runtime pair (the
+# release gate's own shape): the published bytes are the ones a user
+# resolves, so they are the ones the jail has to be proven on. Every
+# download is sha256-verified against the release's own sidecar.
+
+on:
+  # PR-time evidence when the suite or this workflow changes (the Windows
+  # leg is where the ADS vector is live); dispatch for the release run.
+  pull_request:
+    paths:
+      - ci/jail-conformance.sh
+      - .github/workflows/jail-conformance.yml
+  workflow_dispatch:
+    inputs:
+      pair_version:
+        description: 'The tebako-runtime-ruby release to test (the pair version)'
+        type: string
+        default: '0.17.4'
+      ruby_version:
+        description: 'The ruby inside the pair'
+        type: string
+        default: '4.0.9'
+      tfs_version:
+        description: 'The tebako CLI release whose tfs images the app payload'
+        type: string
+        default: '2.8.74'
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: jail-conformance (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch the published pair + tfs (sha256-verified)
+        shell: bash
+        env:
+          PAIR_VERSION: ${{ inputs.pair_version }}
+          RUBY_VERSION: ${{ inputs.ruby_version }}
+          TFS_VERSION: ${{ inputs.tfs_version }}
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Windows)
+              pair="tebako-runtime-${PAIR_VERSION}-ruby-${RUBY_VERSION}-windows-ucrt64"
+              tfs="tfs-${TFS_VERSION}-windows-ucrt64.exe"
+              sidecars="$pair.sha256 $pair.tfs.sha256 $pair.dll.sha256"
+              ;;
+            macOS)
+              pair="tebako-runtime-${PAIR_VERSION}-ruby-${RUBY_VERSION}-macos-arm64"
+              tfs="tfs-${TFS_VERSION}-macos-arm64"
+              sidecars="$pair.sha256 $pair.tfs.sha256"
+              ;;
+          esac
+          mkdir -p pair && cd pair
+          base_r="https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v${PAIR_VERSION}"
+          base_t="https://github.com/tamatebako/tebako/releases/download/v${TFS_VERSION}"
+          curl -fsSL --retry 5 -o "$pair" "$base_r/$pair"
+          curl -fsSL --retry 5 -o "$pair.tfs" "$base_r/$pair.tfs"
+          [ "$RUNNER_OS" = "Windows" ] && \
+            curl -fsSL --retry 5 -o "$pair.dll" "$base_r/$pair.dll"
+          curl -fsSL --retry 5 -o "$tfs" "$base_t/$tfs"
+          for f in $sidecars; do
+            curl -fsSL --retry 5 -o "$f" "$base_r/$f"
+          done
+          curl -fsSL --retry 5 -o "$tfs.sha256" "$base_t/$tfs.sha256"
+          for f in $pair "$pair.tfs" "$tfs"; do
+            echo "$(cut -d' ' -f1 "$f.sha256")  $f" | sha256sum -c -
+          done
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "$(cut -d' ' -f1 "$pair.dll.sha256")  $pair.dll" | sha256sum -c -
+          fi
+          chmod +x "$pair" "$tfs"
+          echo "PAIR_EXE=$PWD/$pair" >> "$GITHUB_ENV"
+          echo "TFS_EXE=$PWD/$tfs" >> "$GITHUB_ENV"
+
+      - name: Run the attack suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ci/jail-conformance.sh --pair "$PAIR_EXE" --tfs "$TFS_EXE" "$TFS_EXE" \
+            "$RUNNER_TEMP/jail-conformance"

@@ -18,8 +18,12 @@
 #     escape lands in VFS space, where only mounts exist, so the vector
 #     measures path arithmetic rather than the policy)
 #     case folding (needs a case-insensitive host file system: macOS)
-#     alternate data streams (needs NTFS)
 #     TOCTOU on materialization (needs a race harness)
+#
+#   platform-gated
+#     ads  alternate data streams (NTFS): the harness arms the vector on
+#          Windows hosts and the probe SKIPs it elsewhere — a skip in the
+#          open arm marks the vector inapplicable, never incomplete.
 #
 # Three arms, because one is not enough to prove anything:
 #
@@ -124,6 +128,45 @@ mkdir -p "$WORK/otherdir"
 printf 'link-target-bytes\n' > "$WORK/otherdir/target.txt"
 printf 'other\n' > "$WORK/otherdir/one.txt"
 
+# Alternate data streams (NTFS only): the secret lives in a stream hung
+# off an ordinary host file, and the vector reads it back. The creation
+# is verified by reading the stream on the host — a non-NTFS volume or a
+# missing PowerShell leaves ADS_BASE empty and the probe SKIPs the vector
+# (a skip in the open arm is "not applicable", never incomplete).
+ADS_BASE=""
+WIN=0
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    WIN=1
+    ADS_CANDIDATE="$WORK/host/adsbase.txt"
+    printf 'base\n' > "$ADS_CANDIDATE"
+    ADS_WIN=$(cygpath -w "$ADS_CANDIDATE" 2>/dev/null || echo "")
+    if [ -n "$ADS_WIN" ] && command -v powershell >/dev/null 2>&1; then
+      if powershell -NoProfile -NonInteractive -Command \
+           "Set-Content -Path '$ADS_WIN' -Stream sota -Value 'secret-bytes'" >/dev/null 2>&1 \
+         && powershell -NoProfile -NonInteractive -Command \
+           "Get-Content -Path '$ADS_WIN' -Stream sota" 2>/dev/null | grep -q secret-bytes; then
+        ADS_BASE="$ADS_CANDIDATE"
+      fi
+    fi
+    ;;
+esac
+
+# Native Windows exes need Windows path spellings, and the driver's
+# `--tebako-image <path>:<slot>:<mount>` triple carries colons of its own —
+# MSYS's argument heuristic would read it as a path LIST and mangle it. So
+# the invocation disables conversion wholesale (MSYS2_ARG_CONV_EXCL) and
+# every host path crosses explicitly through here. The jail grammar splits
+# mount directives from the right, so a drive letter survives (tpkg's
+# parse_mount_directive).
+hostpath() {
+  if [ -z "$1" ] || [ "$WIN" != "1" ]; then
+    printf '%s' "$1"
+  else
+    cygpath -w "$1"
+  fi
+}
+
 cat > "$WORK/app/probe.rb" <<'RUBY'
 # One line per vector: NAME<TAB>verdict. READ-OK means the byte (or the
 # listing) arrived; DENIED:<class> means a policy refused it;
@@ -204,6 +247,15 @@ line("madetlink") do
   end
 end
 
+# Alternate data streams (NTFS): the stream hangs off a host file, so a
+# policy that judges only the base name leaks the stream. ARGV[5] is the
+# base path the harness armed — empty where ADS does not exist, and the
+# skip marks the vector inapplicable rather than unproven.
+line("ads") do
+  base = ARGV[5].to_s
+  base.empty? ? "SKIPPED:not-ntfs" : verdict { File.read("#{base}:sota") }
+end
+
 RUBY
 
 if [ -n "$PAIR" ]; then
@@ -215,9 +267,14 @@ if [ -n "$PAIR" ]; then
     echo "   app image FAILED"; exit 2;
   }
   EXE="$PAIR"
-  TEBAKO_RUNTIME_IMAGE="$PAIR.tfs"
+  if [ "$WIN" = "1" ]; then
+    TEBAKO_RUNTIME_IMAGE=$(cygpath -w "$PAIR.tfs")
+    ENTRY=(--tebako-image "$(cygpath -w "$WORK/app.tfs"):0:/app" --tebako-entry /probe.rb)
+  else
+    TEBAKO_RUNTIME_IMAGE="$PAIR.tfs"
+    ENTRY=(--tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /probe.rb)
+  fi
   export TEBAKO_RUNTIME_IMAGE
-  ENTRY=(--tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /probe.rb)
   echo "   pair: $PAIR (+ .tfs)"
 else
   echo "== press"
@@ -230,7 +287,7 @@ else
   echo "   pressed: $EXE"
 fi
 
-VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir granted outside madetlink"
+VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir granted outside madetlink ads"
 
 arm() {
   local label="$1"; local jail="$2"
@@ -251,14 +308,18 @@ arm() {
     envs+=("TEBAKO_JAIL=$jail")
   fi
   if [ "$label" = "record" ]; then
-    envs+=("TEBAKO_JAIL_JOURNAL=$WORK/journal.log")
+    envs+=("TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")")
   fi
+  [ "$WIN" = "1" ] && envs+=("MSYS2_ARG_CONV_EXCL=*")
   # The arm runs bounded (arc 05's cell): its own process group, the
   # per-arm deadline, the group torn down on any exit. A deadline hit or
   # a reaped orphan leaves the arm's rows ABSENT — the matrix counts
   # them incomplete, never a silent pass.
-  if ! run_bounded "$label" env "${envs[@]}" "$EXE" "${ENTRY[@]}" "$SECRET" "$WORK/otherdir" "$granted" "$outside" \
-    "$linkdir" 2>"$WORK/$label.err" > "$WORK/$label.out.raw"; then
+  if ! run_bounded "$label" env "${envs[@]}" "$EXE" "${ENTRY[@]}" \
+    "$(hostpath "$SECRET")" "$(hostpath "$WORK/otherdir")" \
+    "$(hostpath "$granted")" "$(hostpath "$outside")" \
+    "$(hostpath "$linkdir")" "$(hostpath "$ADS_BASE")" \
+    2>"$WORK/$label.err" > "$WORK/$label.out.raw"; then
     : > "$WORK/$label.out.raw"
   fi
   sed 's/^/   /' "$WORK/$label.out.raw"
@@ -267,7 +328,7 @@ arm() {
 
 arm open ""
 arm deny "deny"
-arm deny-grant "deny;$WORK/host/granted:/grant:ro"
+arm deny-grant "deny;$(hostpath "$WORK/host/granted"):/grant:ro"
 arm record "record"
 
 leaks=0
@@ -280,6 +341,26 @@ for v in $VECTORS; do
   g=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/deny-grant.out")
   r=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/record.out")
   case "$v" in
+    ads)
+      # NTFS-only: a skip in the open arm marks the vector inapplicable
+      # on this host, never incomplete. Once live, it answers to the
+      # same rule as every plain vector.
+      if [ "$o" = "SKIPPED:not-ntfs" ]; then
+        verdict="not applicable (no NTFS)"
+      elif [ -z "$o" ] || [ -z "$d" ] || [ -z "$r" ]; then
+        verdict="MISSING"; incomplete=$((incomplete + 1))
+      elif [ "${o#READ-OK}" != "" ]; then
+        verdict="probe not live ($o)"; incomplete=$((incomplete + 1))
+      elif [ "${r#READ-OK}" != "" ]; then
+        verdict="record did not allow ($r)"; incomplete=$((incomplete + 1))
+      else
+        case "$d" in
+          READ-OK) verdict="LEAK"; leaks=$((leaks + 1)) ;;
+          DENIED:EACCES|DENIED:EPERM) verdict="blocked" ;;
+          *) verdict="not a refusal ($d)"; incomplete=$((incomplete + 1)) ;;
+        esac
+      fi
+      ;;
     granted|outside|madetlink)
       # Grant-arm-only vectors: the other arms skip them by design.
       if [ "$v" = "madetlink" ]; then
