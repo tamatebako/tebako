@@ -8,162 +8,63 @@
         "runs_on": "ubuntu-24.04-arm",
         "arch": "aarch64",
         "cpus": 4,
-        "ram_bytes": 16715927552
+        "ram_bytes": 16715923456
       },
       "versions": {
-        "tebako": "2.8.74",
-        "runtime": "0.17.4-4.0.9",
-        "payload": "1.17.0-6",
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
-        "image_format": "limnifs"
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
       },
-      "cells": [
-        {
-          "workload": "compile-medium-rice",
-          "target": "v1-packed-mn",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 102.511910973,
-          "min_wall_s": 102.330592864,
-          "max_wall_s": 104.425721382,
-          "stdev_wall_s": 0.8804666597077464,
-          "mean_wall_s": 102.9934441286,
-          "median_cpu_s": 120.48481600000001,
-          "median_peak_rss_bytes": 1227206656,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v1-packed-mn",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 109.90845610100001,
-          "min_wall_s": 109.277937476,
-          "max_wall_s": 110.538974726,
-          "stdev_wall_s": 0.8916879908038364,
-          "mean_wall_s": 109.90845610100001,
-          "median_cpu_s": 127.11149549999999,
-          "median_peak_rss_bytes": 1313216512,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 202.34117748,
-          "min_wall_s": 201.06745657,
-          "max_wall_s": 202.980527053,
-          "stdev_wall_s": 0.7300898224048133,
-          "mean_wall_s": 202.1126206902,
-          "median_cpu_s": 214.31366,
-          "median_peak_rss_bytes": 1405190144,
-          "speedup_vs_v1": 0.5066290126888907
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 218.620641809,
-          "min_wall_s": 217.330157728,
-          "max_wall_s": 219.91112589,
-          "stdev_wall_s": 1.8250200893767832,
-          "mean_wall_s": 218.620641809,
-          "median_cpu_s": 231.3847065,
-          "median_peak_rss_bytes": 1524146176,
-          "speedup_vs_v1": 0.5027359502357631
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 50.165375341,
-          "min_wall_s": 49.355903239,
-          "max_wall_s": 50.489988759,
-          "stdev_wall_s": 0.4363851189301996,
-          "mean_wall_s": 50.0430197952,
-          "median_cpu_s": 60.949296999999994,
-          "median_peak_rss_bytes": 895385600,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 56.5859366685,
-          "min_wall_s": 55.795724991,
-          "max_wall_s": 57.376148346,
-          "stdev_wall_s": 1.117528071466095,
-          "mean_wall_s": 56.5859366685,
-          "median_cpu_s": 67.3740345,
-          "median_peak_rss_bytes": 889776128,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 112.356806137,
-          "min_wall_s": 111.451841727,
-          "max_wall_s": 112.477785988,
-          "stdev_wall_s": 0.4581246925814417,
-          "mean_wall_s": 112.08934956960002,
-          "median_cpu_s": 185.782047,
-          "median_peak_rss_bytes": 907165696,
-          "speedup_vs_v1": 0.4464827460459481
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 121.910329665,
-          "min_wall_s": 121.90248119,
-          "max_wall_s": 121.91817814,
-          "stdev_wall_s": 0.01109941978894032,
-          "mean_wall_s": 121.910329665,
-          "median_cpu_s": 193.7674505,
-          "median_peak_rss_bytes": 854528000,
-          "speedup_vs_v1": 0.46416031212444175
-        },
+      "cells": [],
+      "unavailable": [
         {
           "workload": "compile-small-iso",
           "target": "v2-shim",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 112.650599835,
-          "min_wall_s": 111.736259675,
-          "max_wall_s": 113.370484699,
-          "stdev_wall_s": 0.7190942875413264,
-          "mean_wall_s": 112.53824112720001,
-          "median_cpu_s": 186.823427,
-          "median_peak_rss_bytes": 921174016,
-          "speedup_vs_v1": 0.4453183153438821
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-gnu-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-gnu-arm64"
         },
         {
           "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-linux-gnu-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-linux-gnu-arm64"
+        },
+        {
+          "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 143.45822133,
-          "min_wall_s": 125.657312646,
-          "max_wall_s": 161.259130014,
-          "stdev_wall_s": 25.174286483477804,
-          "mean_wall_s": 143.45822133,
-          "median_cpu_s": 197.427885,
-          "median_peak_rss_bytes": 874053632,
-          "speedup_vs_v1": 0.39444192283922275
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-gnu-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-gnu-arm64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-linux-gnu-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-linux-gnu-arm64"
         }
       ],
-      "unavailable": [],
       "failed": [
         {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
           "workload": "compile-medium-rice",
-          "target": "v2-shim",
+          "target": "v1-packed-mn",
           "mode": "warm",
           "iteration": 0,
           "status": "failed",
@@ -178,14 +79,10 @@
         "runs_on": "ubuntu-24.04",
         "arch": "x86_64",
         "cpus": 4,
-        "ram_bytes": 16760344576
+        "ram_bytes": 16759300096
       },
       "versions": {
-        "tebako": "2.8.74",
-        "runtime": "0.17.4-4.0.9",
-        "payload": "1.17.0-6",
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
-        "image_format": "limnifs"
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
       },
       "cells": [
         {
@@ -193,13 +90,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 124.053983025,
-          "min_wall_s": 123.020411276,
-          "max_wall_s": 124.923270887,
-          "stdev_wall_s": 0.7165435236665567,
-          "mean_wall_s": 124.098849002,
-          "median_cpu_s": 151.222824,
-          "median_peak_rss_bytes": 1254805504,
+          "median_wall_s": 107.092320084,
+          "min_wall_s": 106.857389622,
+          "max_wall_s": 107.392094257,
+          "stdev_wall_s": 0.23098062979714112,
+          "mean_wall_s": 107.09704591700002,
+          "median_cpu_s": 134.43153999999998,
+          "median_peak_rss_bytes": 1256210432,
           "speedup_vs_v1": 1.0
         },
         {
@@ -207,133 +104,58 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 134.9456928995,
-          "min_wall_s": 134.076734463,
-          "max_wall_s": 135.814651336,
-          "stdev_wall_s": 1.228892806036812,
-          "mean_wall_s": 134.9456928995,
-          "median_cpu_s": 160.9491245,
-          "median_peak_rss_bytes": 1369624576,
+          "median_wall_s": 162.6393181735,
+          "min_wall_s": 144.043389395,
+          "max_wall_s": 181.235246952,
+          "stdev_wall_s": 26.298614683478856,
+          "mean_wall_s": 162.6393181735,
+          "median_cpu_s": 141.541022,
+          "median_peak_rss_bytes": 1371656192,
           "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 195.375537594,
-          "min_wall_s": 193.732899054,
-          "max_wall_s": 196.110581344,
-          "stdev_wall_s": 1.0766725325971638,
-          "mean_wall_s": 195.1014878634,
-          "median_cpu_s": 222.144485,
-          "median_peak_rss_bytes": 1365835776,
-          "speedup_vs_v1": 0.6349514609284929
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 220.3156587875,
-          "min_wall_s": 220.30890852,
-          "max_wall_s": 220.322409055,
-          "stdev_wall_s": 0.009546319848160404,
-          "mean_wall_s": 220.3156587875,
-          "median_cpu_s": 241.156302,
-          "median_peak_rss_bytes": 1512833024,
-          "speedup_vs_v1": 0.6125106751021202
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 61.508242634,
-          "min_wall_s": 61.357025671,
-          "max_wall_s": 62.266193101,
-          "stdev_wall_s": 0.3889388836184088,
-          "mean_wall_s": 61.7186899854,
-          "median_cpu_s": 80.447287,
-          "median_peak_rss_bytes": 952225792,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 68.70816494249999,
-          "min_wall_s": 68.180980044,
-          "max_wall_s": 69.235349841,
-          "stdev_wall_s": 0.7455520333369883,
-          "mean_wall_s": 68.70816494249999,
-          "median_cpu_s": 87.61832000000001,
-          "median_peak_rss_bytes": 946735104,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 105.090264251,
-          "min_wall_s": 104.282035001,
-          "max_wall_s": 113.315874174,
-          "stdev_wall_s": 4.314737735995162,
-          "mean_wall_s": 107.7160591474,
-          "median_cpu_s": 199.25782800000002,
-          "median_peak_rss_bytes": 900943872,
-          "speedup_vs_v1": 0.5852896371741183
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 122.503558642,
-          "min_wall_s": 121.636047914,
-          "max_wall_s": 123.37106937,
-          "stdev_wall_s": 1.2268454370417559,
-          "mean_wall_s": 122.503558642,
-          "median_cpu_s": 210.72516050000002,
-          "median_peak_rss_bytes": 864036864,
-          "speedup_vs_v1": 0.5608666858673899
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 106.162345542,
-          "min_wall_s": 102.669960276,
-          "max_wall_s": 110.820203766,
-          "stdev_wall_s": 3.0433559610080128,
-          "mean_wall_s": 106.2246184794,
-          "median_cpu_s": 200.98925499999999,
-          "median_peak_rss_bytes": 918929408,
-          "speedup_vs_v1": 0.5793790851170114
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 130.068214181,
-          "min_wall_s": 129.985612021,
-          "max_wall_s": 130.150816341,
-          "stdev_wall_s": 0.11681709495330293,
-          "mean_wall_s": 130.068214181,
-          "median_cpu_s": 215.966995,
-          "median_peak_rss_bytes": 861161472,
-          "speedup_vs_v1": 0.5282471615000975
         }
       ],
-      "unavailable": [],
-      "failed": [
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 71) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 69) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 71) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 69) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
           "mode": "warm",
           "iteration": 0,
           "status": "failed",
@@ -348,7 +170,7 @@
         "runs_on": "ubuntu-24.04-arm",
         "arch": "aarch64",
         "cpus": 4,
-        "ram_bytes": 16715923456
+        "ram_bytes": 16715927552
       },
       "versions": {
         "tebako": "2.8.74",
@@ -368,6 +190,15 @@
           "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
         },
         {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-musl-arm64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log"
+        },
+        {
           "workload": "compile-medium-rice",
           "target": "v1-packed-mn",
           "mode": null,
@@ -375,30 +206,21 @@
           "status": "unavailable",
           "error": null,
           "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-musl-arm64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log"
         }
       ],
       "failed": [
         {
           "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit 1 (expected 0)",
-          "reason": null
-        },
-        {
-          "workload": "compile-small-iso",
           "target": "v2-fat",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit 1 (expected 0)",
-          "reason": null
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-shim",
           "mode": "warm",
           "iteration": 0,
           "status": "failed",
@@ -422,17 +244,50 @@
         "runs_on": "ubuntu-24.04",
         "arch": "x86_64",
         "cpus": 4,
-        "ram_bytes": 16760348672
+        "ram_bytes": 16760344576
       },
       "versions": {
-        "tebako": "2.8.74",
-        "runtime": "0.17.4-4.0.9",
-        "payload": "1.17.0-6",
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
-        "image_format": "limnifs"
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
       },
       "cells": [],
-      "unavailable": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-musl-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-musl-x86_64"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-musl-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-musl-x86_64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-musl-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-musl-x86_64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-musl-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-musl-x86_64"
+        }
+      ],
       "failed": [
         {
           "workload": "compile-small-iso",
@@ -444,44 +299,8 @@
           "reason": null
         },
         {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit 1 (expected 0)",
-          "reason": null
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit 1 (expected 0)",
-          "reason": null
-        },
-        {
           "workload": "compile-medium-rice",
           "target": "v1-packed-mn",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit 1 (expected 0)",
-          "reason": null
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-shim",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit 1 (expected 0)",
-          "reason": null
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
           "mode": "warm",
           "iteration": 0,
           "status": "failed",
@@ -499,11 +318,7 @@
         "ram_bytes": 7516192768
       },
       "versions": {
-        "tebako": "2.8.74",
-        "runtime": "0.17.4-4.0.9",
-        "payload": "1.17.0-6",
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
-        "image_format": "limnifs"
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
       },
       "cells": [
         {
@@ -511,13 +326,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 161.429074625,
-          "min_wall_s": 152.000093833,
-          "max_wall_s": 167.087706583,
-          "stdev_wall_s": 5.751327774127147,
-          "mean_wall_s": 159.9054325584,
-          "median_cpu_s": 165.258296,
-          "median_peak_rss_bytes": 2124513280,
+          "median_wall_s": 146.645540042,
+          "min_wall_s": 126.900979917,
+          "max_wall_s": 150.901249667,
+          "stdev_wall_s": 9.460618449319854,
+          "mean_wall_s": 142.1031969502,
+          "median_cpu_s": 154.225875,
+          "median_peak_rss_bytes": 2108047360,
           "speedup_vs_v1": 1.0
         },
         {
@@ -525,133 +340,58 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 166.641514312,
-          "min_wall_s": 155.257303958,
-          "max_wall_s": 178.025724666,
-          "stdev_wall_s": 16.09970467953502,
-          "mean_wall_s": 166.641514312,
-          "median_cpu_s": 171.95425649999999,
-          "median_peak_rss_bytes": 2161696768,
+          "median_wall_s": 173.515073812,
+          "min_wall_s": 167.372790166,
+          "max_wall_s": 179.657357458,
+          "stdev_wall_s": 8.686500836115677,
+          "mean_wall_s": 173.515073812,
+          "median_cpu_s": 145.733898,
+          "median_peak_rss_bytes": 2145460224,
           "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 180.485853,
-          "min_wall_s": 164.516801459,
-          "max_wall_s": 186.200037083,
-          "stdev_wall_s": 9.005608422135944,
-          "mean_wall_s": 177.7644604834,
-          "median_cpu_s": 186.886529,
-          "median_peak_rss_bytes": 1695858688,
-          "speedup_vs_v1": 0.8944140049857536
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 193.51819408350002,
-          "min_wall_s": 193.347988458,
-          "max_wall_s": 193.688399709,
-          "stdev_wall_s": 0.24070710397430026,
-          "mean_wall_s": 193.51819408350002,
-          "median_cpu_s": 200.241352,
-          "median_peak_rss_bytes": 1735417856,
-          "speedup_vs_v1": 0.8611154889141681
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 82.538161625,
-          "min_wall_s": 78.298726167,
-          "max_wall_s": 102.703962625,
-          "stdev_wall_s": 10.047669384542132,
-          "mean_wall_s": 85.9664601334,
-          "median_cpu_s": 85.902487,
-          "median_peak_rss_bytes": 1800388608,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v1-packed-mn",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 129.4326944375,
-          "min_wall_s": 114.694590625,
-          "max_wall_s": 144.17079825,
-          "stdev_wall_s": 20.84282629530011,
-          "mean_wall_s": 129.4326944375,
-          "median_cpu_s": 133.101424,
-          "median_peak_rss_bytes": 1794277376,
-          "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 91.806640584,
-          "min_wall_s": 88.708609125,
-          "max_wall_s": 105.806466042,
-          "stdev_wall_s": 7.043086432324197,
-          "mean_wall_s": 93.6160400836,
-          "median_cpu_s": 165.75349300000002,
-          "median_peak_rss_bytes": 1036402688,
-          "speedup_vs_v1": 0.8990434798611365
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 121.153047354,
-          "min_wall_s": 117.126892875,
-          "max_wall_s": 125.179201833,
-          "stdev_wall_s": 5.693842268410981,
-          "mean_wall_s": 121.153047354,
-          "median_cpu_s": 212.6833355,
-          "median_peak_rss_bytes": 991576064,
-          "speedup_vs_v1": 1.068340394767847
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 86.528466166,
-          "min_wall_s": 84.943520125,
-          "max_wall_s": 98.689725333,
-          "stdev_wall_s": 5.707251787797409,
-          "mean_wall_s": 88.6801786414,
-          "median_cpu_s": 158.558362,
-          "median_peak_rss_bytes": 1007517696,
-          "speedup_vs_v1": 0.9538844877552224
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 123.383984792,
-          "min_wall_s": 123.126366459,
-          "max_wall_s": 123.641603125,
-          "stdev_wall_s": 0.36432734044455317,
-          "mean_wall_s": 123.383984792,
-          "median_cpu_s": 215.3689725,
-          "median_peak_rss_bytes": 998023168,
-          "speedup_vs_v1": 1.0490234583985667
         }
       ],
-      "unavailable": [],
-      "failed": [
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64"
+        },
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
           "mode": "warm",
           "iteration": 0,
           "status": "failed",
@@ -668,98 +408,8 @@
         "cpus": 4,
         "ram_bytes": 15032385536
       },
-      "versions": {
-        "tebako": "2.8.74",
-        "runtime": "0.17.4-4.0.9",
-        "payload": "1.17.0-6",
-        "image_format": "limnifs"
-      },
-      "cells": [
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 311.676823313,
-          "min_wall_s": 311.399238318,
-          "max_wall_s": 324.853982881,
-          "stdev_wall_s": 5.941535882470802,
-          "mean_wall_s": 314.228054531,
-          "median_cpu_s": 347.70475899999997,
-          "median_peak_rss_bytes": 1374302208,
-          "speedup_vs_v1": null
-        },
-        {
-          "workload": "compile-medium-rice",
-          "target": "v2-fat",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 332.3043892785,
-          "min_wall_s": 330.266294913,
-          "max_wall_s": 334.342483644,
-          "stdev_wall_s": 2.882300693086289,
-          "mean_wall_s": 332.3043892785,
-          "median_cpu_s": 369.2341925,
-          "median_peak_rss_bytes": 1393481728,
-          "speedup_vs_v1": null
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 143.382620494,
-          "min_wall_s": 141.443400772,
-          "max_wall_s": 146.260205326,
-          "stdev_wall_s": 1.934764294104552,
-          "mean_wall_s": 143.754268861,
-          "median_cpu_s": 268.786511,
-          "median_peak_rss_bytes": 824012800,
-          "speedup_vs_v1": null
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 173.4812190215,
-          "min_wall_s": 168.043310673,
-          "max_wall_s": 178.91912737,
-          "stdev_wall_s": 7.690363737390582,
-          "mean_wall_s": 173.4812190215,
-          "median_cpu_s": 313.212884,
-          "median_peak_rss_bytes": 802031616,
-          "speedup_vs_v1": null
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 144.189518026,
-          "min_wall_s": 142.656436621,
-          "max_wall_s": 145.752115196,
-          "stdev_wall_s": 1.440317930933426,
-          "mean_wall_s": 144.17306817,
-          "median_cpu_s": 271.400974,
-          "median_peak_rss_bytes": 814735360,
-          "speedup_vs_v1": null
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 167.9993373095,
-          "min_wall_s": 167.909430011,
-          "max_wall_s": 168.089244608,
-          "stdev_wall_s": 0.1271481208950187,
-          "mean_wall_s": 167.9993373095,
-          "median_cpu_s": 298.10069799999997,
-          "median_peak_rss_bytes": 796418048,
-          "speedup_vs_v1": null
-        }
-      ],
+      "versions": {},
+      "cells": [],
       "unavailable": [
         {
           "workload": "compile-small-iso",
@@ -771,6 +421,24 @@
           "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
         },
         {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/Users/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 75) — see /Users/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/Users/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 75) — see /Users/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
           "workload": "compile-medium-rice",
           "target": "v1-packed-mn",
           "mode": null,
@@ -778,19 +446,27 @@
           "status": "unavailable",
           "error": null,
           "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
-        }
-      ],
-      "failed": [
+        },
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit 1 (expected 0)",
-          "reason": null
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/Users/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 75) — see /Users/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/Users/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 75) — see /Users/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
         }
-      ]
+      ],
+      "failed": []
     },
     {
       "triplet": "windows-ucrt64",
@@ -801,11 +477,7 @@
         "ram_bytes": 17174360064
       },
       "versions": {
-        "tebako": "2.8.74",
-        "runtime": "0.17.4-4.0.9",
-        "payload": "1.17.0-6",
-        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
-        "image_format": "limnifs"
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
       },
       "cells": [
         {
@@ -813,13 +485,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 101.9997773,
-          "min_wall_s": 101.1785066,
-          "max_wall_s": 103.4445257,
-          "stdev_wall_s": 0.9325711974820908,
-          "mean_wall_s": 102.00636548,
-          "median_cpu_s": 123.40625,
-          "median_peak_rss_bytes": 1612144640,
+          "median_wall_s": 82.4061767,
+          "min_wall_s": 81.8162607,
+          "max_wall_s": 107.5657796,
+          "stdev_wall_s": 11.18651546438674,
+          "mean_wall_s": 87.65540084,
+          "median_cpu_s": 98.890625,
+          "median_peak_rss_bytes": 1710428160,
           "speedup_vs_v1": 1.0
         },
         {
@@ -827,13 +499,13 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 109.10801655,
-          "min_wall_s": 108.5317488,
-          "max_wall_s": 109.6842843,
-          "stdev_wall_s": 0.8149656676082275,
-          "mean_wall_s": 109.10801655,
-          "median_cpu_s": 131.1484375,
-          "median_peak_rss_bytes": 1799561216,
+          "median_wall_s": 155.3974858,
+          "min_wall_s": 153.7483795,
+          "max_wall_s": 157.0465921,
+          "stdev_wall_s": 2.3321884952549135,
+          "mean_wall_s": 155.3974858,
+          "median_cpu_s": 107.25,
+          "median_peak_rss_bytes": 1692172288,
           "speedup_vs_v1": 1.0
         },
         {
@@ -841,13 +513,13 @@
           "target": "v1-packed-mn",
           "mode": "warm",
           "n": 5,
-          "median_wall_s": 51.2590289,
-          "min_wall_s": 49.5796614,
-          "max_wall_s": 52.9417312,
-          "stdev_wall_s": 1.249822445115578,
-          "mean_wall_s": 51.38611321999999,
-          "median_cpu_s": 68.484375,
-          "median_peak_rss_bytes": 1670672384,
+          "median_wall_s": 44.9751,
+          "min_wall_s": 43.4860422,
+          "max_wall_s": 79.9956835,
+          "stdev_wall_s": 15.926384897891502,
+          "mean_wall_s": 51.55327528,
+          "median_cpu_s": 59.203125,
+          "median_peak_rss_bytes": 1695887360,
           "speedup_vs_v1": 1.0
         },
         {
@@ -855,97 +527,55 @@
           "target": "v1-packed-mn",
           "mode": "cold",
           "n": 2,
-          "median_wall_s": 59.366607599999995,
-          "min_wall_s": 57.6747655,
-          "max_wall_s": 61.0584497,
-          "stdev_wall_s": 2.3926260432137765,
-          "mean_wall_s": 59.366607599999995,
-          "median_cpu_s": 74.8984375,
-          "median_peak_rss_bytes": 1655367680,
+          "median_wall_s": 59.8984534,
+          "min_wall_s": 42.9677191,
+          "max_wall_s": 76.8291877,
+          "stdev_wall_s": 23.943674067995357,
+          "mean_wall_s": 59.8984534,
+          "median_cpu_s": 56.234375,
+          "median_peak_rss_bytes": 1655025664,
           "speedup_vs_v1": 1.0
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 48.2638953,
-          "min_wall_s": 46.8362951,
-          "max_wall_s": 50.5675782,
-          "stdev_wall_s": 1.6859987197389397,
-          "mean_wall_s": 48.52169146,
-          "median_cpu_s": 68.390625,
-          "median_peak_rss_bytes": 2601578496,
-          "speedup_vs_v1": 1.0620574361307302
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "warm",
-          "n": 5,
-          "median_wall_s": 49.2783146,
-          "min_wall_s": 48.2441294,
-          "max_wall_s": 50.3545719,
-          "stdev_wall_s": 0.7574208706318223,
-          "mean_wall_s": 49.245170599999994,
-          "median_cpu_s": 68.0,
-          "median_peak_rss_bytes": 2610380800,
-          "speedup_vs_v1": 1.0401944408220487
-        },
-        {
-          "workload": "compile-small-iso",
-          "target": "v2-shim",
-          "mode": "cold",
-          "n": 2,
-          "median_wall_s": 58.14426075,
-          "min_wall_s": 56.9016468,
-          "max_wall_s": 59.3868747,
-          "stdev_wall_s": 1.7573215008840017,
-          "mean_wall_s": 58.14426075,
-          "median_cpu_s": 73.890625,
-          "median_peak_rss_bytes": 2420563968,
-          "speedup_vs_v1": 1.0210226569954284
         }
       ],
-      "unavailable": [],
-      "failed": [
+      "unavailable": [
         {
           "workload": "compile-small-iso",
-          "target": "v2-fat",
-          "mode": "cold",
-          "iteration": 1,
-          "status": "failed",
-          "error": "exit -1073741515 (expected 0)",
-          "reason": null
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 69) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
         },
         {
           "workload": "compile-small-iso",
           "target": "v2-fat",
-          "mode": "cold",
-          "iteration": 2,
-          "status": "failed",
-          "error": "exit -1073741515 (expected 0)",
-          "reason": null
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 75) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
         },
         {
           "workload": "compile-medium-rice",
           "target": "v2-shim",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit -1073741515 (expected 0)",
-          "reason": null
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 69) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
         },
         {
           "workload": "compile-medium-rice",
           "target": "v2-fat",
-          "mode": "warm",
-          "iteration": 0,
-          "status": "failed",
-          "error": "warmup: exit -1073741515 (expected 0)",
-          "reason": null
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 75) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
         }
-      ]
+      ],
+      "failed": []
     }
   ]
 }

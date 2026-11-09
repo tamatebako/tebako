@@ -1,0 +1,1305 @@
+{
+  "suite": "runtime-on-system-vs-tebako",
+  "generated_by": "tebako-bench report",
+  "baseline": {
+    "target": "on-system",
+    "label": "on-system"
+  },
+  "notes": [
+    "Cold method: each cold iteration wipes the arm's caches before the measured run. For the tebako runtime arms the wipe covers the bench store and the per-target tempdir, so the measured run pays the driver's first mount and cache rebuild — the one-time, user-visible first-boot cost. The runtime pair's own download and verification happen at acquisition, outside the measured span.",
+    "Teardown is not a separate workload: a no-op run's wall clock is boot+teardown by construction, and teardown is ≈free by design — the in-process VFS dies with the process; a measured exit that ever shows a tail is a regression signal.",
+    "On-system arms report no cold numbers: the toolchain's provisioning time is not tebako's comparison."
+  ],
+  "triplets": [
+    {
+      "triplet": "linux-gnu-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715923456
+      },
+      "versions": {
+        "tebako": "2.8.74",
+        "extra": {
+          "on-system-python": "Python 3.14.7",
+          "tebako-python": "Python 3.14.7 (tamatebako/tebako-runtime-python v0.3.3)"
+        }
+      },
+      "cells": [
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.01285566,
+          "min_wall_s": 0.010748441,
+          "max_wall_s": 0.01293163,
+          "stdev_wall_s": 0.001150683848616639,
+          "mean_wall_s": 0.0120544502,
+          "median_cpu_s": 0.010695,
+          "median_peak_rss_bytes": 9076736,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.337441093,
+          "min_wall_s": 0.3370502,
+          "max_wall_s": 0.33909,
+          "stdev_wall_s": 0.0008194980155689752,
+          "mean_wall_s": 0.33767929199999996,
+          "median_cpu_s": 0.336314,
+          "median_peak_rss_bytes": 194756608,
+          "speedup_vs_v1": 0.0380974939528186
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.3384792965,
+          "min_wall_s": 0.337476949,
+          "max_wall_s": 0.339481644,
+          "stdev_wall_s": 0.0014175334287107664,
+          "mean_wall_s": 0.3384792965,
+          "median_cpu_s": 0.337764,
+          "median_peak_rss_bytes": 194795520,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 12.113853116,
+          "min_wall_s": 12.050723005,
+          "max_wall_s": 12.144876017,
+          "stdev_wall_s": 0.043506645834694595,
+          "mean_wall_s": 12.102261765,
+          "median_cpu_s": 12.111502000000002,
+          "median_peak_rss_bytes": 9150464,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 12.572422288,
+          "min_wall_s": 12.563642467,
+          "max_wall_s": 12.592305298,
+          "stdev_wall_s": 0.011368141625760619,
+          "mean_wall_s": 12.5745113792,
+          "median_cpu_s": 12.570091,
+          "median_peak_rss_bytes": 194838528,
+          "speedup_vs_v1": 0.9635257898998755
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 12.752433220499999,
+          "min_wall_s": 12.552398546,
+          "max_wall_s": 12.952467895,
+          "stdev_wall_s": 0.282891749622788,
+          "mean_wall_s": 12.752433220499999,
+          "median_cpu_s": 12.7494175,
+          "median_peak_rss_bytes": 194756608,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.405817619,
+          "min_wall_s": 0.387442947,
+          "max_wall_s": 0.411910199,
+          "stdev_wall_s": 0.009249953922569276,
+          "mean_wall_s": 0.4026589842,
+          "median_cpu_s": 0.40432199999999996,
+          "median_peak_rss_bytes": 10125312,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.622461134,
+          "min_wall_s": 0.622082662,
+          "max_wall_s": 0.634691295,
+          "stdev_wall_s": 0.005398551581855666,
+          "mean_wall_s": 0.6255744236,
+          "median_cpu_s": 0.622165,
+          "median_peak_rss_bytes": 195047424,
+          "speedup_vs_v1": 0.6519565589455742
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 0.6388071195,
+          "min_wall_s": 0.636721061,
+          "max_wall_s": 0.640893178,
+          "stdev_wall_s": 0.0029501322226036576,
+          "mean_wall_s": 0.6388071195,
+          "median_cpu_s": 0.6380035,
+          "median_peak_rss_bytes": 195041280,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 1.7473844139999999,
+          "min_wall_s": 1.7294541460000001,
+          "max_wall_s": 1.781960571,
+          "stdev_wall_s": 0.020976533972698143,
+          "mean_wall_s": 1.7515895305999998,
+          "median_cpu_s": 1.746259,
+          "median_peak_rss_bytes": 17510400,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 3.782919012,
+          "min_wall_s": 3.767581629,
+          "max_wall_s": 3.808827475,
+          "stdev_wall_s": 0.015198715450494348,
+          "mean_wall_s": 3.7842596416,
+          "median_cpu_s": 3.780496,
+          "median_peak_rss_bytes": 194756608,
+          "speedup_vs_v1": 0.46191430703565906
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 3.808348397,
+          "min_wall_s": 3.792761511,
+          "max_wall_s": 3.823935283,
+          "stdev_wall_s": 0.022043185576363197,
+          "mean_wall_s": 3.808348397,
+          "median_cpu_s": 3.8073765,
+          "median_peak_rss_bytes": 194754560,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 0.02950041,
+          "min_wall_s": 0.029442697,
+          "max_wall_s": 0.029604789,
+          "stdev_wall_s": 0.00006702009180238338,
+          "mean_wall_s": 0.029514711199999998,
+          "median_cpu_s": 0.027734,
+          "median_peak_rss_bytes": 17219584,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-gnu-arm64.sha256"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": "cold",
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-21.0.12-linux-gnu-arm64.tar.gz.sha256"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-musl-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760344576
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the musl runtime exe dynamically links libintl.so.8 — no boot on a bare musl system (tebako-runtime-python#76)"
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the musl runtime exe dynamically links libintl.so.8 — no boot on a bare musl system (tebako-runtime-python#76)"
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the musl runtime exe dynamically links libintl.so.8 — no boot on a bare musl system (tebako-runtime-python#76)"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the musl runtime exe dynamically links libintl.so.8 — no boot on a bare musl system (tebako-runtime-python#76)"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the musl runtime exe dynamically links libintl.so.8 — no boot on a bare musl system (tebako-runtime-python#76)"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-linux-musl-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256)"
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256)"
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256)"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256)"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256)"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-linux-musl-x86_64.tfs.sha256"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "macos-arm64",
+      "runner": {
+        "runs_on": "macos-15",
+        "arch": "aarch64",
+        "cpus": 3,
+        "ram_bytes": 7516192768
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-python' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256)"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256)"
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256)"
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256)"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256)"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256)"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-arm64.sha256"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "macos-x86_64",
+      "runner": {
+        "runs_on": "macos-15-intel",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 15032385536
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "ruby-boot",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs)"
+        },
+        {
+          "workload": "ruby-boot",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs)"
+        },
+        {
+          "workload": "ruby-fib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs)"
+        },
+        {
+          "workload": "ruby-stdlib",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs)"
+        },
+        {
+          "workload": "ruby-ioread",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "on-system-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-ruby' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs)"
+        },
+        {
+          "workload": "ruby-statloop",
+          "target": "tebako-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.4/tebako-runtime-0.17.4-ruby-3.3.13-macos-x86_64.tfs"
+        },
+        {
+          "workload": "python-boot",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg"
+        },
+        {
+          "workload": "python-boot",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-fib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg"
+        },
+        {
+          "workload": "python-fib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg"
+        },
+        {
+          "workload": "python-stdlib",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg"
+        },
+        {
+          "workload": "python-ioread",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "on-system-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg"
+        },
+        {
+          "workload": "python-statloop",
+          "target": "tebako-python",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-python/releases/download/v0.3.3/tebako-runtime-0.3.3-python-3.14.7-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-boot",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-boot",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-fib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-fib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-stdlib",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-ioread",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "on-system-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the paired arm 'tebako-java' is unavailable — the on-system vs tebako comparison needs both arms (runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256)"
+        },
+        {
+          "workload": "java-statloop",
+          "target": "tebako-java",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-openjdk/releases/download/v2.8.50/tebako-runtime-2.8.50-temurin-21.0.12-macos-x86_64.tar.gz.sha256"
+        }
+      ],
+      "failed": []
+    }
+  ]
+}

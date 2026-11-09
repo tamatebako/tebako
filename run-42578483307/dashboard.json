@@ -1,0 +1,581 @@
+{
+  "suite": "metanorma-v1-vs-v2",
+  "generated_by": "tebako-bench report",
+  "triplets": [
+    {
+      "triplet": "linux-gnu-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715923456
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-gnu-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-gnu-arm64"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-linux-gnu-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-linux-gnu-arm64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-gnu-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-gnu-arm64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-linux-gnu-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-linux-gnu-arm64"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-gnu-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16759300096
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 107.092320084,
+          "min_wall_s": 106.857389622,
+          "max_wall_s": 107.392094257,
+          "stdev_wall_s": 0.23098062979714112,
+          "mean_wall_s": 107.09704591700002,
+          "median_cpu_s": 134.43153999999998,
+          "median_peak_rss_bytes": 1256210432,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 162.6393181735,
+          "min_wall_s": 144.043389395,
+          "max_wall_s": 181.235246952,
+          "stdev_wall_s": 26.298614683478856,
+          "mean_wall_s": 162.6393181735,
+          "median_cpu_s": 141.541022,
+          "median_peak_rss_bytes": 1371656192,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 71) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 69) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 71) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/home/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 69) — see /home/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-musl-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715927552
+      },
+      "versions": {
+        "tebako": "2.8.74",
+        "runtime": "0.17.4-4.0.9",
+        "payload": "1.17.0-6",
+        "image_format": "limnifs"
+      },
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-musl-arm64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: the priming dispatch left no ruby runtime for linux-musl-arm64 in /home/runner/work/tebako/tebako/tebako-rs/out/home/.tebako/runtimes — see logs/acquire-prime-runtime.log"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-musl-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760344576
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-musl-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-musl-x86_64"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-musl-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-musl-x86_64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-musl-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-bootstrap-2.8.74-linux-musl-x86_64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-musl-x86_64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-2.8.74-linux-musl-x86_64"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "macos-arm64",
+      "runner": {
+        "runs_on": "macos-15",
+        "arch": "aarch64",
+        "cpus": 3,
+        "ram_bytes": 7516192768
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 146.645540042,
+          "min_wall_s": 126.900979917,
+          "max_wall_s": 150.901249667,
+          "stdev_wall_s": 9.460618449319854,
+          "mean_wall_s": 142.1031969502,
+          "median_cpu_s": 154.225875,
+          "median_peak_rss_bytes": 2108047360,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 173.515073812,
+          "min_wall_s": 167.372790166,
+          "max_wall_s": 179.657357458,
+          "stdev_wall_s": 8.686500836115677,
+          "mean_wall_s": 173.515073812,
+          "median_cpu_s": 145.733898,
+          "median_peak_rss_bytes": 2145460224,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/tebako-shim-2.8.74-macos-arm64"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "macos-x86_64",
+      "runner": {
+        "runs_on": "macos-15-intel",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 15032385536
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/Users/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 75) — see /Users/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/Users/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 75) — see /Users/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/Users/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 75) — see /Users/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `/Users/runner/work/tebako/tebako/tebako-rs/out/bin/tebako install metanorma@1.17.0` failed (exit 75) — see /Users/runner/work/tebako/tebako/tebako-rs/out/logs/acquire-install.log"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "windows-ucrt64",
+      "runner": {
+        "runs_on": "windows-latest",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 17174360064
+      },
+      "versions": {
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 82.4061767,
+          "min_wall_s": 81.8162607,
+          "max_wall_s": 107.5657796,
+          "stdev_wall_s": 11.18651546438674,
+          "mean_wall_s": 87.65540084,
+          "median_cpu_s": 98.890625,
+          "median_peak_rss_bytes": 1710428160,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 155.3974858,
+          "min_wall_s": 153.7483795,
+          "max_wall_s": 157.0465921,
+          "stdev_wall_s": 2.3321884952549135,
+          "mean_wall_s": 155.3974858,
+          "median_cpu_s": 107.25,
+          "median_peak_rss_bytes": 1692172288,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 44.9751,
+          "min_wall_s": 43.4860422,
+          "max_wall_s": 79.9956835,
+          "stdev_wall_s": 15.926384897891502,
+          "mean_wall_s": 51.55327528,
+          "median_cpu_s": 59.203125,
+          "median_peak_rss_bytes": 1695887360,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 59.8984534,
+          "min_wall_s": 42.9677191,
+          "max_wall_s": 76.8291877,
+          "stdev_wall_s": 23.943674067995357,
+          "mean_wall_s": 59.8984534,
+          "median_cpu_s": 56.234375,
+          "median_peak_rss_bytes": 1655025664,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 69) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 75) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 69) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "v2 acquisition failed: acquire: `D:\\a\\tebako\\tebako\\tebako-rs\\out\\bin\\tebako.exe install metanorma@1.17.0` failed (exit 75) — see D:\\a\\tebako\\tebako\\tebako-rs\\out\\logs\\acquire-install.log"
+        }
+      ],
+      "failed": []
+    }
+  ]
+}

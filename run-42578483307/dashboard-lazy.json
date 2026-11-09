@@ -1,0 +1,359 @@
+{
+  "suite": "runtime-lazy-vs-eager",
+  "generated_by": "tebako-bench report",
+  "baseline": {
+    "target": "eager-ruby",
+    "label": "eager-ruby"
+  },
+  "notes": [
+    "Cold method: each cold iteration wipes the arm's caches before the measured run. For the tebako runtime arms the wipe covers the bench store and the per-target tempdir, so the measured run pays the driver's first mount and cache rebuild — the one-time, user-visible first-boot cost. The runtime pair's own download and verification happen at acquisition, outside the measured span.",
+    "Teardown is not a separate workload: a no-op run's wall clock is boot+teardown by construction, and teardown is ≈free by design — the in-process VFS dies with the process; a measured exit that ever shows a tail is a regression signal.",
+    "On-system arms report no cold numbers: the toolchain's provisioning time is not tebako's comparison."
+  ],
+  "triplets": [
+    {
+      "triplet": "linux-gnu-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715923456
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/SHA256SUMS: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/SHA256SUMS"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu/tebako-runtime-0.17.1-ruby-3.3.12-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu/tebako-runtime-0.17.1-ruby-3.3.12-linux-gnu-arm64.sha256"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/SHA256SUMS: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/SHA256SUMS"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu/tebako-runtime-0.17.1-ruby-3.3.12-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu/tebako-runtime-0.17.1-ruby-3.3.12-linux-gnu-arm64.sha256"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/SHA256SUMS: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/SHA256SUMS"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu/tebako-runtime-0.17.1-ruby-3.3.12-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu/tebako-runtime-0.17.1-ruby-3.3.12-linux-gnu-arm64.sha256"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "the fixture image build failed: acquire: download failed for https://github.com/tamatebako/tebako/releases/download/v2.8.74/SHA256SUMS: 504 fetching https://github.com/tamatebako/tebako/releases/download/v2.8.74/SHA256SUMS"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu/tebako-runtime-0.17.1-ruby-3.3.12-linux-gnu-arm64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-gnu/tebako-runtime-0.17.1-ruby-3.3.12-linux-gnu-arm64.sha256"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "linux-musl-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760344576
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-linux-musl/tebako-runtime-0.17.1-ruby-3.3.12-linux-musl-x86_64.sha256"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "macos-arm64",
+      "runner": {
+        "runs_on": "macos-15",
+        "arch": "aarch64",
+        "cpus": 3,
+        "ram_bytes": 7516192768
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-arm64.tar.gz.sha256"
+        }
+      ],
+      "failed": []
+    },
+    {
+      "triplet": "macos-x86_64",
+      "runner": {
+        "runs_on": "macos-15-intel",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 15032385536
+      },
+      "versions": {},
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "boot",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tfs"
+        },
+        {
+          "workload": "boot",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "fib",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tfs"
+        },
+        {
+          "workload": "fib",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "ioread",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tfs"
+        },
+        {
+          "workload": "ioread",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tar.gz.sha256"
+        },
+        {
+          "workload": "treewalk",
+          "target": "eager-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "runtime acquisition failed: acquire: download failed for https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tfs: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tfs"
+        },
+        {
+          "workload": "treewalk",
+          "target": "lazy-ruby",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "lazy runtime acquisition failed: acquire: cannot probe https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tar.gz.sha256: 504 fetching https://github.com/tamatebako/tebako-runtime-ruby/releases/download/v0.17.1-ruby3.3-macos/tebako-runtime-0.17.1-ruby-3.3.12-macos-x86_64.tar.gz.sha256"
+        }
+      ],
+      "failed": []
+    }
+  ]
+}
