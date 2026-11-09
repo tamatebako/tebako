@@ -954,6 +954,28 @@ jobs:
             --ref main
           echo "dispatched benchmark.yml for ${{ needs.prepare.outputs.tag_name }}"
 
+      # The factory tools-pin roll (tebako-packages/index's pin-roll.yml)
+      # listens on the `tebako-release` repository_dispatch — the same
+      # fan-out gap applies across repos, so the wake is explicit here too
+      # (tebako#991: v2.8.74 shipped with the dispatch never sent; the roll
+      # ran on a manual dispatch instead). Cross-org: needs the PAT, and a
+      # missing PAT fails loudly rather than skipping the roll silently.
+      - name: Wake the factory pin-roll (cross-repo fan-out)
+        if: github.event_name == 'push' && needs.prepare.outputs.upload_url != ''
+        env:
+          GH_TOKEN: ${{ secrets.TEBAKO_CI_PAT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::TEBAKO_CI_PAT_TOKEN is not visible — the pin-roll wake cannot fire without it"
+            exit 1
+          fi
+          gh api repos/tebako-packages/index/dispatches \
+            -f event_type=tebako-release \
+            -F "client_payload[tag]=${{ needs.prepare.outputs.tag_name }}" \
+            -F "client_payload[repo]=$GITHUB_REPOSITORY"
+          echo "dispatched tebako-release to tebako-packages/index for ${{ needs.prepare.outputs.tag_name }}"
+
   # ==========================================================================
   # Windows (ucrt64) — the link-unit leg. The staticlibs build and scope
   # (the COFF arscope) and the mingw closure lands; the five binaries wait
