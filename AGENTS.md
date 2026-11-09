@@ -81,6 +81,13 @@ open/closed, DRY; specs for public behavior.
   result is a rotating cast of E0308/E0460/E0463 that looks like a code
   bug and is not. Test in debug (CI's shape) — the durable fix is
   roadmap 71 (tfs-capi split).
+- **Never put CARGO_TARGET_DIR under /tmp on macOS.** `/tmp` is a
+  symlink to `/private/tmp`, and botan-src's configure generates its
+  header symlinks with one `..` too few when the two spellings mix
+  (make dies on `'botan/asn1_obj.h' file not found` with the header
+  visibly present — a dangling symlink to `/private/private/tmp/…`).
+  Keep target dirs under the workspace root (e.g.
+  `target-<worktree-name>`).
 
 ## Verification culture
 

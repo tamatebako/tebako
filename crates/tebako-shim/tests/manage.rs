@@ -204,6 +204,100 @@ fn enable_an_undeclared_command_is_the_named_error_and_links_nothing() {
 }
 
 #[test]
+fn hide_frees_the_path_name_and_expose_restores_it() {
+    // tebako#1004: the PATH-exposure axis and the dispatch axis are
+    // different semantics. hide unlinks (the host tool answers again)
+    // while the claim stays dispatchable; expose relinks. Neither touches
+    // the disabled selectors.
+    let tmp = TempDir::new("hide-expose");
+    let home = tmp.path().join("home");
+    seed(&home);
+    let ctx = pinned_ctx(&home, tmp.path());
+
+    let link = home.join("shims").join(if cfg!(windows) {
+        "metanorma.exe"
+    } else {
+        "metanorma"
+    });
+
+    // Link it first (enable materializes the link in the seed's shape).
+    run_ok(
+        &["tebako-shim".into(), "enable".into(), "metanorma".into()],
+        &ctx,
+    );
+    assert!(link.exists(), "enable linked the command");
+
+    // hide frees the name; dispatch still resolves (Exec, never a
+    // refusal — the hidden axis is not the disabled axis).
+    let (text, code) = printed(run_ok(
+        &["tebako-shim".into(), "hide".into(), "metanorma".into()],
+        &ctx,
+    ));
+    assert_eq!(code, 0);
+    assert!(text.contains("hid metanorma"), "{text}");
+    assert!(!link.exists(), "hide removed the shim link");
+    match run_ok(&["metanorma".into()], &ctx) {
+        Action::Exec(_) => {}
+        Action::Print { .. } => panic!("expected Exec — hide keeps the claim dispatchable"),
+    }
+
+    // idempotent
+    let (text, _) = printed(run_ok(
+        &["tebako-shim".into(), "hide".into(), "metanorma".into()],
+        &ctx,
+    ));
+    assert!(text.contains("already hidden"), "{text}");
+
+    // expose relinks.
+    let (text, _) = printed(run_ok(
+        &["tebako-shim".into(), "expose".into(), "metanorma".into()],
+        &ctx,
+    ));
+    assert!(text.contains("exposed metanorma"), "{text}");
+    assert!(link.exists(), "expose relinked the shim");
+
+    // and the hidden set never gated dispatch in between (already proven
+    // by the Exec above) — the link's return changes nothing.
+    match run_ok(&["metanorma".into()], &ctx) {
+        Action::Exec(_) => {}
+        Action::Print { .. } => panic!("expected Exec after expose"),
+    }
+}
+
+#[test]
+fn install_shims_skips_the_hidden_set() {
+    // link_shims (the install --shims path) leaves a hidden name off
+    // PATH — hidden is the state of record across installs.
+    let tmp = TempDir::new("hide-install");
+    let home = tmp.path().join("home");
+    seed(&home);
+    let ctx = pinned_ctx(&home, tmp.path());
+
+    run_ok(
+        &["tebako-shim".into(), "hide".into(), "metanorma".into()],
+        &ctx,
+    );
+    let dispatcher = tmp.path().join("dispatcher-bin");
+    std::fs::write(&dispatcher, b"dispatcher\n").unwrap();
+    let (linked, notes) = tebako_shim::manage::link_shims(
+        &home,
+        &dispatcher,
+        &["metanorma".to_string(), "other".to_string()],
+    )
+    .expect("link");
+    let want = if cfg!(windows) { "metanorma.exe" } else { "metanorma" };
+    assert!(
+        !linked.iter().any(|p| p.ends_with(want)),
+        "the hidden name is not linked: {linked:?}"
+    );
+    assert!(
+        notes.iter().any(|n| n.contains("hidden")),
+        "the skip is named loudly: {notes:?}"
+    );
+    assert!(linked.iter().any(|p| p.ends_with("other")), "the unhidden command linked");
+}
+
+#[test]
 fn which_reports_the_full_resolution() {
     let tmp = TempDir::new("which");
     let home = tmp.path().join("home");

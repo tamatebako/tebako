@@ -1646,6 +1646,75 @@ pub fn claim_disabled(disabled: &Disabled, tool: &str, payload: &str) -> bool {
     })
 }
 
+// ---------------------------------------------------------------------
+// The hidden set (`~/.tebako/shims/.hidden.yaml`) — PATH exposure off,
+// claim kept
+// ---------------------------------------------------------------------
+
+/// The hidden set: command names whose shim link is REMOVED while the
+/// claim stays dispatchable (`tebako run <name>`, `tebako shim expose`).
+/// The two axes are different semantics (tebako#1004): `disable` gates
+/// dispatch and keeps the link; `hide` frees the PATH name and dispatches
+/// fine. A hidden name is never re-linked by install's `--shims`.
+pub type Hidden = std::collections::BTreeSet<String>;
+
+pub fn hidden_path(home: &Path) -> PathBuf {
+    home.join("shims").join(".hidden.yaml")
+}
+
+pub fn load_hidden(home: &Path) -> Result<Hidden, ShimError> {
+    let path = hidden_path(home);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Hidden::default()),
+        Err(e) => return fail(EX_TEBAKO_IO, format!("cannot read {}: {e}", path.display())),
+    };
+    // An empty file is the empty set; a malformed one is the named error.
+    let hidden: Hidden = serde_yaml::from_str::<Option<Hidden>>(&text)
+        .map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!("cannot parse {} ({e})", path.display()),
+            )
+        })?
+        .unwrap_or_default();
+    // Every name validates at LOAD (the disabled set's own discipline —
+    // an unknown shape is a named error, never silently ignored).
+    for name in &hidden {
+        crate::manifest::check_path_component("command name", name).map_err(|e| {
+            ShimError::new(EX_TEBAKO_MANIFEST, format!("{}: {}", path.display(), e.message))
+        })?;
+    }
+    Ok(hidden)
+}
+
+pub fn save_hidden(home: &Path, hidden: &Hidden) -> Result<(), ShimError> {
+    let dir = home.join("shims");
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot create {}: {e}", dir.display()),
+        )
+    })?;
+    let path = hidden_path(home);
+    let tmp = dir.join(format!(".hidden.yaml.{}.tmp", std::process::id()));
+    let text = serde_yaml::to_string(&hidden.iter().collect::<Vec<_>>()).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot serialize hidden state: {e}"),
+        )
+    })?;
+    std::fs::write(&tmp, text).map_err(|e| {
+        ShimError::new(EX_TEBAKO_IO, format!("cannot write {}: {e}", tmp.display()))
+    })?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot install {}: {e}", path.display()),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
