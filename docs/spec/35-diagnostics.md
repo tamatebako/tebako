@@ -1,6 +1,8 @@
 # Spec 35 — Diagnostics (`tebako doctor`)
 
-Status: PROPOSED (2026-09-12, roadmap 87)
+Status: SHIPPED (the `tebako doctor` verb: five read-only sections,
+exit 0/1/64 — tebako-cli's `doctor.rs`; read-only-gated at the CLI
+entry)
 Owner: tamatebako/tebako (tebako-cli, composing tebako-shim)
 
 ## 1. Principle

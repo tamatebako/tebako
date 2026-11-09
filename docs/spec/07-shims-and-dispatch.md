@@ -14,9 +14,9 @@ STALE cache + a failed refresh serves the stale bytes LOUD — stderr +
 journal — rather than failing, spec 05 §4's stale-serve, roadmap 86).
 The 2026-09-05 routing amendment (qualified pins, per-payload disable,
 `tebako-shim use`) SHIPS with this spec's PR-A — the status lines below
-reflect it. Still PLANNED: jail application (spec 08), and a
-runtime registry (v1 downloads resolve through the `runtimes:` preference
-in `config.yaml` as the exact ref).
+reflect it. The jail application shipped since: the dispatcher computes
+the union policy and exports `TEBAKO_JAIL` / `TEBAKO_JAIL_SOURCE` /
+`TEBAKO_JAIL_JOURNAL` (spec 08's dispatch surfaces).
 
 ## 0. v1 concrete choices (normative where the sections above were open)
 

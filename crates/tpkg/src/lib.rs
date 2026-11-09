@@ -16,7 +16,7 @@
 //!      0    10    magic "TEBAKOTFS\0" (10 bytes, NUL-terminated)
 //!     10     4    u32 version (TPKG_VERSION = 1)
 //!     14     4    u32 package_flags (bit 0: TPKG_FLAG_LEAN, bit 1: TPKG_FLAG_SIGNED_V2, bit 2: TPKG_FLAG_NO_INSTALL, bit 3: TPKG_FLAG_QUIET_NOTICES)
-//!     18     4    u32 slot_count (1..TPKG_MAX_SLOTS)
+//!     18     4    u32 slot_count (1..=TPKG_MAX_SLOTS)
 //!     22     8    u64 slot_table_offset (absolute file offset of slot 0 record)
 //!     30   128    char runtime_ref[128] (UTF-8, NUL-padded; empty = classic bundle)
 //!    158     4    u32 launcher_abi

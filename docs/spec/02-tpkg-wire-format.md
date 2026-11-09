@@ -70,7 +70,7 @@ refusal.
 |-------:|-----:|-------|
 | 0  | 8   | u64 offset (absolute file offset of the image) |
 | 8  | 8   | u64 size |
-| 16 | 4   | u32 format_id — IMAGE FORMAT ONLY: 0=auto, 1=dwarfs, 2=squashfs, 3=zip, 5=limnifs (spec 20, PLANNED) (4=runtime: legacy role wart, §5) |
+| 16 | 4   | u32 format_id — IMAGE FORMAT ONLY: 0=auto, 1=dwarfs, 2=squashfs, 3=zip, 5=limnifs (spec 20, SHIPPED — the default writer) (4=runtime: legacy role wart, §5) |
 | 20 | 4   | u32 flags (0 today; future home of role bits) |
 | 24 | 256 | char mount_point[256] (UTF-8, NUL-padded) |
 
@@ -161,7 +161,14 @@ Rules: blocks walk forward from the end of the slot table (type+length
 self-delimit); the v2 signing ext, when present, is LAST before the
 header (unchanged bytes/position); unknown block types are skipped by
 v1-era-aware readers (forward-compat) but rejected by `validate` with a
-named error; a package manifest never duplicates payload manifests — it
+named error. **The type word's high bit (`0x8000_0000`) is the CRITICAL
+flag** (the rule's owner is spec 18 §3.7/S10): a reader that does not
+know the block's base type (type word with the flag cleared) MUST refuse
+a critical unknown at contract-check time with the named
+`CriticalBlock(<base type>)` error — never skip it — while a
+non-critical unknown still skips (spec 00 invariant 7). The flag is
+wire-compatible: a block that does not opt in encodes byte-identically
+to before. A package manifest never duplicates payload manifests — it
 references slots, and payload manifests (spec 03) stay inside images
 (self-describing payloads). The 128-byte single `runtime_ref` remains
 for v1-era loaders; per-entry runtime references for suites and

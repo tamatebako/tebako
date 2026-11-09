@@ -283,6 +283,30 @@ All three compose with the enterprise-networking amendment (spec 04 §4:
 proxies, custom CA roots) unchanged — internal TLS inspection is a
 transport concern the federation grammar never sees.
 
+## 9a. The conformance surface (`tebako registry doctor`, SHIPPED)
+
+A registry operator proves an instance against the same checks a reader
+applies — never against a separate definition. `tebako registry doctor
+[alias|ref] [--full] [--json]` runs the conformance kit over a book
+entry or a one-off reference:
+
+- the **document gate** — the index parses against the schema, row
+  grammars hold (names, versions, the reference spellings of spec 04 §1
+  + §4 above), and every row's declared digests are well-formed;
+- **row resolution** — every row resolves through the same function
+  `tebako install` runs, so the doctor can never bless a row an install
+  would refuse;
+- **`--full`** adds the served-bytes pass: each row's artifacts are
+  fetched and hashed against the row's pins.
+
+The report names the registry, the transport that served it, the rows
+checked, and every finding in encounter order; a finding is a **note**
+(a property the spec does not require — a version the row does not
+publish, a sidecar the host does not carry) or a **problem** (a
+violation a reader hits). The exit class is the verdict: **0**
+conformant, **1** problems found — and nothing is probed, fetched, or
+served past what the report names.
+
 ## 10. Named errors (new or re-scoped here)
 
 | Name | Exit class | Moment |

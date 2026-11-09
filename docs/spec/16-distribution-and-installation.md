@@ -1,8 +1,9 @@
 # Spec 16 — Distribution and installation UX
 
 Normative specification of how end users install tebako itself and
-tebako-packaged applications. Status: decisions LOCKED 2026-07-26;
-implementation roadmap 28.
+tebako-packaged applications. Status: SHIPPED — the persona channels,
+the install verbs, and §6's `tebako bundle` (the pre-seeded store
+archive) are all in tebako-cli; decisions LOCKED 2026-07-26.
 
 ## 1. Personas (MECE — every install path serves exactly one)
 

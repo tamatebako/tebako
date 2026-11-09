@@ -317,7 +317,8 @@ patched-interpreter io-routing (ruby) or the preload interposition shim
 
 ## 4. Exit codes
 
-The runtime preserves the loader's named codes (65–74) when the failure
+The runtime preserves the loader's named codes (65–81 — spec 06 §4's
+table is the allocator; this spec's own 78 rows included) when the failure
 is loader-side; runtime-side failures use the interpreter's own codes.
 `--tebako-extract` is the runtime-side option riding the user-arg
 passthrough: dump mounted images to disk and exit 0.
