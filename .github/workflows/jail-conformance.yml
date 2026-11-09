@@ -54,9 +54,11 @@ jobs:
       - name: Fetch the published pair + tfs (sha256-verified)
         shell: bash
         env:
-          PAIR_VERSION: ${{ inputs.pair_version }}
-          RUBY_VERSION: ${{ inputs.ruby_version }}
-          TFS_VERSION: ${{ inputs.tfs_version }}
+          # inputs.* exist only on workflow_dispatch — on the PR trigger
+          # they read empty, so the defaults live inline.
+          PAIR_VERSION: ${{ inputs.pair_version || '0.17.4' }}
+          RUBY_VERSION: ${{ inputs.ruby_version || '4.0.9' }}
+          TFS_VERSION: ${{ inputs.tfs_version || '2.8.74' }}
         run: |
           set -euo pipefail
           case "$RUNNER_OS" in
