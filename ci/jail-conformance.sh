@@ -315,7 +315,7 @@ arm() {
   # per-arm deadline, the group torn down on any exit. A deadline hit or
   # a reaped orphan leaves the arm's rows ABSENT — the matrix counts
   # them incomplete, never a silent pass.
-  if ! run_bounded "$label" env "${envs[@]}" "$EXE" "${ENTRY[@]}" \
+  if ! run_bounded "$label" env ${envs[@]+"${envs[@]}"} "$EXE" "${ENTRY[@]}" \
     "$(hostpath "$SECRET")" "$(hostpath "$WORK/otherdir")" \
     "$(hostpath "$granted")" "$(hostpath "$outside")" \
     "$(hostpath "$linkdir")" "$(hostpath "$ADS_BASE")" \
