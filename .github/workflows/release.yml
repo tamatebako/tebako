@@ -856,6 +856,12 @@ jobs:
       # a GITHUB_TOKEN-created release event fans out to nobody (tebako#913).
       actions: write
     runs-on: ubuntu-24.04
+    outputs:
+      # The benchmark run this release dispatched (the wake step below) —
+      # the covenant-gate job polls it and carries the covenant verdict
+      # into this pipeline's conclusion (spec 27 §11.1's release-side
+      # consultation).
+      bench_run_id: ${{ steps.benchwake.outputs.run_id }}
     # tebako#649: finalize waits on the PUBLISH jobs, not the build legs —
     # the release's asset set is what the completeness gate counts, and
     # the publish jobs are its writers (a failed leg's publish job fails
@@ -975,6 +981,7 @@ jobs:
       # dispatch is explicit for that reason, gated to a real tag push so a
       # rehearsal on a branch wakes nothing.
       - name: Wake the benchmark suite (release fan-out)
+        id: benchwake
         if: github.event_name == 'push' && needs.prepare.outputs.upload_url != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -983,7 +990,26 @@ jobs:
           gh workflow run benchmark.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main
-          echo "dispatched benchmark.yml for ${{ needs.prepare.outputs.tag_name }}"
+          # The dispatch is fire-and-forget; the covenant-gate job needs
+          # the run's id. Poll for the workflow_dispatch run created just
+          # now — releases are serialized per repo, so the newest
+          # dispatch after the wake is this release's.
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id=$(gh run list --workflow benchmark.yml --branch main \
+              --event workflow_dispatch --limit 5 \
+              --json databaseId,createdAt \
+              --jq --arg after "$(date -u -d '-3 min' +%FT%TZ)" \
+              '[.[] | select(.createdAt > $after)] | first | .databaseId // empty')
+            [ -n "$run_id" ] && break
+            sleep 10
+          done
+          if [ -z "$run_id" ]; then
+            echo "::error::dispatched benchmark.yml but no dispatch run appeared within 5 min — the covenant gate cannot read a verdict"
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "dispatched benchmark.yml for ${{ needs.prepare.outputs.tag_name }} (run $run_id)"
 
       # The factory tools-pin roll (tebako-packages/index's pin-roll.yml)
       # listens on the `tebako-release` repository_dispatch — the same
@@ -1006,6 +1032,34 @@ jobs:
             -F "client_payload[tag]=${{ needs.prepare.outputs.tag_name }}" \
             -F "client_payload[repo]=$GITHUB_REPOSITORY"
           echo "dispatched tebako-release to tebako-packages/index for ${{ needs.prepare.outputs.tag_name }}"
+
+  # ==========================================================================
+  # covenant-gate: the release reads the benchmark verdict it dispatched
+  # ==========================================================================
+  # Spec 27 §11.1's release-side consultation. The covenant already gates
+  # the bench fan-in (the report job's "Gate on the covenant" step); this
+  # job waits on the dispatched run and carries that verdict into the
+  # RELEASE pipeline's own conclusion, so a performance breach turns the
+  # release red instead of shipping quietly under a green run. The assets
+  # are already published when this resolves — the red is the alarm and
+  # the record, not a recall (published assets are immutable).
+  covenant-gate:
+    name: Covenant gate (the bench verdict)
+    # Push-only, matching the wake: a rehearsal dispatches no bench run
+    # and has no verdict to read.
+    if: github.event_name == 'push' && needs.prepare.outputs.upload_url != ''
+    needs: [prepare, finalize]
+    runs-on: ubuntu-24.04
+    # The bench matrix + three suites land within ~2 h of the dispatch;
+    # 4 h is the named bound before the gate reports a stall instead.
+    timeout-minutes: 240
+    steps:
+      - name: Read the dispatched benchmark run's covenant verdict
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENCH_RUN_ID: ${{ needs.finalize.outputs.bench_run_id }}
+          TAG: ${{ needs.prepare.outputs.tag_name }}
+        run: bash .github/workflows/lib/covenant-gate.sh
 
   # ==========================================================================
   # Windows (ucrt64) — the link-unit leg. The staticlibs build and scope
