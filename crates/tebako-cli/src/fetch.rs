@@ -3,15 +3,16 @@
 //! HTTPS with webpki-roots bundled, redirects bounded at 5, `file://`
 //! mirrors supported. A 404 maps to `IndexUnavailable` (try the next
 //! index file), everything else is `DownloadFailed`; the caller retries
-//! non-404 failures up to DOWNLOAD_ATTEMPTS times with a fixed delay.
+//! non-404 failures up to DOWNLOAD_ATTEMPTS times, on tebako-http's
+//! exponential fetch_backoff schedule (tebako#1015).
 
 use std::io::Write;
 use std::path::PathBuf;
 
 pub use tebako_http::FetchError;
 
-pub const DOWNLOAD_ATTEMPTS: u32 = 3;
-pub const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+/// The attempts budget mirrors tebako-http's RANGE_ATTEMPTS (tebako#1015).
+pub const DOWNLOAD_ATTEMPTS: u32 = 6;
 
 /// Throttling is a schedule, not a failure: the round count + backoff
 /// policy live in tebako-http (THROTTLE_ROUNDS / throttle_backoff), the
@@ -29,7 +30,8 @@ pub fn read_url(url: &str) -> Result<Vec<u8>, FetchError> {
 /// (proxy auth refused, networking compiled out, invalid config,
 /// credential answers) return immediately — no retry can change a
 /// config answer; other failures
-/// retry up to DOWNLOAD_ATTEMPTS with a fixed delay.
+/// retry up to DOWNLOAD_ATTEMPTS on the exponential fetch_backoff
+/// schedule.
 pub fn with_retries<F>(url: &str, mut f: F) -> Result<Vec<u8>, FetchError>
 where
     F: FnMut() -> Result<Vec<u8>, FetchError>,
@@ -70,7 +72,7 @@ where
                         "failed to download {url} after {DOWNLOAD_ATTEMPTS} attempts: {msg}"
                     )));
                 }
-                std::thread::sleep(RETRY_DELAY);
+                std::thread::sleep(tebako_http::fetch_backoff(attempts));
             }
         }
     }

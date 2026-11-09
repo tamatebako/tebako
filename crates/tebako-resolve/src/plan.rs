@@ -33,7 +33,7 @@ use tebako_term::set::ProgressSet;
 
 use crate::error::ResolveError;
 use crate::reference::{Reference, Service};
-use crate::transport::{Transport, DOWNLOAD_ATTEMPTS, RETRY_DELAY};
+use crate::transport::{Transport, DOWNLOAD_ATTEMPTS};
 
 /// The default worker count (spec 05 §6 — docker's number).
 pub const DEFAULT_FETCH_JOBS: usize = 3;
@@ -645,7 +645,7 @@ fn run_item<T: Transport, W: std::io::Write + Send>(
                         ),
                     });
                 }
-                std::thread::sleep(RETRY_DELAY);
+                std::thread::sleep(tebako_http::fetch_backoff(attempts));
             }
             Err(ItemFail::Transport(
                 e @ (FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_)),

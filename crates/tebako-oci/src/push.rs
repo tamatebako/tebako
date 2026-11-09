@@ -32,8 +32,8 @@
 //! law mirrored for the write wire: a throttled answer waits
 //! [`tebako_http::throttle_backoff`] (Retry-After honored exactly) for
 //! up to [`tebako_http::THROTTLE_ROUNDS`] rounds; a transport failure
-//! retries the operation from zero up to [`PUSH_ATTEMPTS`] times with
-//! [`PUSH_RETRY_DELAY`] between. Auth-rechallenging alone cannot absorb
+//! retries the operation from zero up to [`PUSH_ATTEMPTS`] times on
+//! [`tebako_http::fetch_backoff`]'s schedule. Auth-rechallenging alone cannot absorb
 //! the broken-pipe class a long layer PUT takes (the first ghcr tag run
 //! lost a 200 MB upload to one); every operation the retry wraps is
 //! idempotent under it — the tag check and the manifest PUT name the
@@ -52,11 +52,10 @@ use crate::{
 
 /// One publish operation's attempt budget — the range GET's own
 /// ([`tebako_http::RANGE_ATTEMPTS`]); the wire crate has one retry law
-/// and this is its publish half, not a second schedule.
+/// and this is its publish half, not a second schedule. The wait between
+/// attempts is [`tebako_http::fetch_backoff`]'s exponential schedule,
+/// same law again.
 const PUSH_ATTEMPTS: u32 = tebako_http::RANGE_ATTEMPTS;
-/// The delay between publish attempts — [`tebako_http::RANGE_RETRY_DELAY`],
-/// same law.
-const PUSH_RETRY_DELAY: std::time::Duration = tebako_http::RANGE_RETRY_DELAY;
 
 /// What one [`push_artifact`] placed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,8 +79,8 @@ pub struct PushOutcome {
 /// GET's, mirrored for the write wire — the module doc's law): a
 /// throttled answer waits [`tebako_http::throttle_backoff`] for up to
 /// [`tebako_http::THROTTLE_ROUNDS`] rounds; a transport failure retries
-/// THE OPERATION FROM ZERO up to [`PUSH_ATTEMPTS`] times with
-/// [`PUSH_RETRY_DELAY`] between. Everything else is terminal by the
+/// THE OPERATION FROM ZERO up to [`PUSH_ATTEMPTS`] times on
+/// [`tebako_http::fetch_backoff`]'s schedule. Everything else is terminal by the
 /// crate's one law — the named answers (TagConflict, CredentialRequired,
 /// the malformed-artifact class) never retry.
 fn retry_push<T>(mut op: impl FnMut() -> Result<T, OciError>) -> Result<T, OciError> {
@@ -110,7 +109,7 @@ fn retry_push<T>(mut op: impl FnMut() -> Result<T, OciError>) -> Result<T, OciEr
                         "the publish failed after {PUSH_ATTEMPTS} attempts: {msg}"
                     ))));
                 }
-                std::thread::sleep(PUSH_RETRY_DELAY);
+                std::thread::sleep(tebako_http::fetch_backoff(attempts));
             }
             other => return other,
         }
@@ -930,7 +929,16 @@ mod tests {
         let http = MockHttp::new();
         http.push_get("/manifests/1.0", 404, &[], b"");
         http.push_post("/blobs/uploads/?mount=", 201, &[], b"");
-        for session in ["session-1", "session-2", "session-3"] {
+        let creds = MockCreds::anonymous();
+        let client = Client::new(&http, &creds);
+        // The script drives exactly PUSH_ATTEMPTS sessions — the budget
+        // (tebako#1015 raised it 3 → 6) is the contract under test, so
+        // the loop sizes itself from the constant rather than hard-coding
+        // the count twice.
+        let sessions: Vec<String> = (1..=PUSH_ATTEMPTS)
+            .map(|n| format!("session-{n}"))
+            .collect();
+        for session in &sessions {
             http.push_post(
                 "/blobs/uploads/?mount=",
                 202,
@@ -941,8 +949,6 @@ mod tests {
                 "broken pipe on {session}"
             )));
         }
-        let creds = MockCreds::anonymous();
-        let client = Client::new(&http, &creds);
         let err = push_artifact(
             &client,
             HOST,
@@ -958,9 +964,9 @@ mod tests {
             "{err:?}"
         );
         let msg = err.to_string();
-        assert!(msg.contains("after 3 attempts"), "{msg}");
+        assert!(msg.contains("after 6 attempts"), "{msg}");
         // the LAST failure is the reported one
-        assert!(msg.contains("session-3"), "{msg}");
+        assert!(msg.contains("session-6"), "{msg}");
     }
 
     #[test]
