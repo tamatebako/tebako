@@ -214,6 +214,18 @@ per declared entrypoint name — never as re-exec wrappers.
     disabled-state selectors of §0: bare → `all`; `@<version>` →
     `version`; `--of <payload>` alone → `payload@all`; with
     `@<version>` → `payload@version`.
+  - **`hide <tool>` / `expose <tool>`** — the PATH-exposure axis,
+    orthogonal to disable: `hide` unlinks the shim and records the name
+    in `~/.tebako/shims/.hidden.yaml` (the host tool answers again; the
+    claim stays dispatchable through `tebako run` and the version chain,
+    and install's shim registration skips it with a loud note);
+    `expose` removes the name and relinks (the same suite scan as
+    `enable` — an undeclared command is the named error, never a
+    dangling link). Neither verb touches the disabled selectors; `list`
+    marks the hidden state. (The verb is the PATH-exposure inverse only
+    — spec 30 §3's `expose:` manifest key, a payload surfacing a
+    depended runtime's entries, is a different axis with a different
+    owner.)
   - **`which <tool>`** names the provider payload and provider kind
     (own / exposed / pinned) beside the version and its source.
   - **`list [--json]`** shows per command the provider payload, provider

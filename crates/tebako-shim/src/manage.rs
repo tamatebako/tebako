@@ -32,6 +32,8 @@ invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manag
                                        re-enable a disabled tool, version, or payload claim
   tebako-shim disable <tool>[@<ver>] [--of <payload>]
                                        refuse dispatch of a tool, version, or payload claim
+  tebako-shim hide <tool>              free the PATH name (unlink; the claim stays dispatchable)
+  tebako-shim expose <tool>            relink a hidden tool's shim
   tebako-shim which <tool>             show the resolved provider, version, runtime, mounts, argv
   tebako-shim doctor                   diagnose the shim layer (missing/corrupt records, routing)
   tebako-shim install-shell [--shell bash|zsh|fish|csh]
@@ -55,6 +57,8 @@ invoked as <TEBAKO_HOME>\\shims\\<tool>.exe it dispatches; invoked as tebako-shi
                                        re-enable a disabled tool, version, or payload claim
   tebako-shim disable <tool>[@<ver>] [--of <payload>]
                                        refuse dispatch of a tool, version, or payload claim
+  tebako-shim hide <tool>              free the PATH name (unlink; the claim stays dispatchable)
+  tebako-shim expose <tool>            relink a hidden tool's shim
   tebako-shim which <tool>             show the resolved provider, version, runtime, mounts, argv
   tebako-shim doctor                   diagnose the shim layer (missing/corrupt records, routing)
   tebako-shim install-shell            prepend the shim dir to the user PATH (registry)
@@ -74,6 +78,8 @@ pub fn run_command(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
         "env" => cmd_env(rest, ctx),
         "enable" => cmd_enable(rest, ctx, true),
         "disable" => cmd_enable(rest, ctx, false),
+        "hide" => cmd_hide(rest, ctx, true),
+        "expose" => cmd_hide(rest, ctx, false),
         "which" => cmd_which(rest, ctx),
         "doctor" => cmd_doctor(ctx),
         "install-shell" => cmd_shell(rest, ctx, true),
@@ -274,7 +280,8 @@ fn cmd_env(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
 
 /// One command row of `list`: the declaring payload, the shim link, the
 /// effective resolution (provider payload + kind, version + source) or
-/// the named failure, and the tool's disabled selectors.
+/// the named failure, the tool's disabled selectors, and the hidden mark
+/// (tebako#1004's PATH-exposure axis).
 struct CommandRow {
     tool: String,
     payload: String,
@@ -282,6 +289,7 @@ struct CommandRow {
     resolved: Option<(String, String, String, resolve::ProviderKind)>,
     error: Option<String>,
     selectors: Vec<String>,
+    hidden: bool,
 }
 
 /// One payload row of `list`: name, (version, disabled) marks, and the
@@ -341,6 +349,7 @@ fn cmd_list(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
     names.sort();
 
     let disabled = config::load_disabled(&ctx.home)?;
+    let hidden_set = config::load_hidden(&ctx.home)?;
     let mut payloads: Vec<PayloadRow> = Vec::new();
     let mut commands: Vec<CommandRow> = Vec::new();
     for name in &names {
@@ -378,6 +387,7 @@ fn cmd_list(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
                     )),
                     error: None,
                     selectors: disabled.get(tool).cloned().unwrap_or_default(),
+                    hidden: hidden_set.contains(tool),
                 },
                 Err(e) => CommandRow {
                     tool: tool.clone(),
@@ -386,6 +396,7 @@ fn cmd_list(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
                     resolved: None,
                     error: Some(first_line(&e.message).to_string()),
                     selectors: disabled.get(tool).cloned().unwrap_or_default(),
+                    hidden: hidden_set.contains(tool),
                 },
             };
             commands.push(row);
@@ -456,13 +467,14 @@ fn cmd_list(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
         for crow in commands.iter().filter(|r| r.payload == row.name) {
             let _ = writeln!(
                 out,
-                "  command {}: shim {}",
+                "  command {}: shim {}{}",
                 crow.tool,
                 if crow.shim.exists() {
                     crow.shim.display().to_string()
                 } else {
                     "(not linked)".to_string()
-                }
+                },
+                if crow.hidden { " [hidden]" } else { "" },
             );
             match &crow.resolved {
                 Some((version, source, provider, kind)) => {
@@ -588,6 +600,7 @@ fn cmd_list_json(
                 "disabled".to_string(),
                 J::Array(row.selectors.iter().map(|sel| s(sel)).collect()),
             ));
+            obj.push(("hidden".to_string(), J::Bool(row.hidden)));
             J::Object(obj)
         })
         .collect();
@@ -814,8 +827,77 @@ fn cmd_enable(args: &[String], ctx: &Ctx, enable: bool) -> Result<Action, ShimEr
 }
 
 // ---------------------------------------------------------------------
-// which
+// hide / expose (the PATH-exposure axis — tebako#1004)
 // ---------------------------------------------------------------------
+
+/// `hide <tool>` unlinks the shim and records the name in the hidden set
+/// (`.hidden.yaml`), so the host tool answers again while the claim stays
+/// dispatchable (`tebako run <name>`) and future `install --shims` runs
+/// skip it. `expose <tool>` is the exact inverse: the name leaves the
+/// hidden set and the link materializes (the same suite scan as
+/// `enable` — an undeclared command earns the named error, never a
+/// dangling link). Neither verb touches the disabled selectors: the two
+/// axes are different semantics — `disable` gates dispatch and keeps the
+/// link; `hide` frees the PATH name and dispatches fine.
+fn cmd_hide(args: &[String], ctx: &Ctx, hide: bool) -> Result<Action, ShimError> {
+    let verb = if hide { "hide" } else { "expose" };
+    let mut target: Option<&str> = None;
+    for arg in args {
+        if target.is_none() && !arg.starts_with('-') {
+            target = Some(arg);
+        } else {
+            return fail(
+                EX_USAGE,
+                format!("unexpected argument \"{arg}\" — usage: tebako-shim {verb} <tool>"),
+            );
+        }
+    }
+    let Some(target) = target else {
+        return fail(EX_USAGE, format!("usage: tebako-shim {verb} <tool>"));
+    };
+    manifest::check_path_component("command name", target)?;
+    let mut hidden = config::load_hidden(&ctx.home)?;
+    let link = shims_dir(&ctx.home).join(shim_file_name(target));
+    let text = if hide {
+        let was_hidden = !hidden.insert(target.to_string());
+        // unlink tolerates a missing file (the hidden set is the state
+        // of record; the link is the manifestation).
+        unlink_shims(&ctx.home, std::slice::from_ref(&target.to_string()))?;
+        config::save_hidden(&ctx.home, &hidden)?;
+        if was_hidden {
+            format!("{target} was already hidden\n")
+        } else {
+            format!("hid {target} — the PATH name is free; the claim dispatches via tebako run\n")
+        }
+    } else {
+        let was_hidden = hidden.remove(target);
+        if was_hidden {
+            config::save_hidden(&ctx.home, &hidden)?;
+        }
+        // The declaration check before any link write — the same scan
+        // enable runs: undeclared is the named error, never a dangling
+        // link.
+        resolve::resolve(target, ctx)?;
+        if link.exists() {
+            format!("{target} is exposed\n")
+        } else {
+            let binary = std::env::current_exe().map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot locate the dispatcher binary: {e}"),
+                )
+            })?;
+            let (_shims, notes) =
+                link_shims(&ctx.home, &binary, std::slice::from_ref(&target.to_string()))?;
+            let mut text = format!("exposed {target} — linked {}\n", link.display());
+            for note in notes {
+                text.push_str(&format!("note: {note}\n"));
+            }
+            text
+        }
+    };
+    Ok(Action::Print { text, code: 0 })
+}
 
 fn cmd_which(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
     let Some(tool) = args.first() else {
@@ -1449,8 +1531,18 @@ pub fn link_shims(
     })?;
     let mut linked = Vec::new();
     let mut notes = Vec::new();
+    // The hidden set (tebako#1004): a name the user hid stays off PATH —
+    // install --shims skips it (the claim dispatches via tebako run and
+    // re-links only on an explicit `tebako shim expose`).
+    let hidden = config::load_hidden(home)?;
     for command in commands {
         manifest::check_path_component("command name", command)?;
+        if hidden.contains(command) {
+            notes.push(format!(
+                "shim \"{command}\": hidden — left off PATH (tebako shim expose {command} relinks)"
+            ));
+            continue;
+        }
         let link = dir.join(shim_file_name(command));
         if link.symlink_metadata().is_ok() {
             std::fs::remove_file(&link).map_err(|e| {
