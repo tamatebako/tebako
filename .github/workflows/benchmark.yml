@@ -353,7 +353,12 @@ jobs:
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: bench-report
+          # NOT bench-*: the fan-in's download pattern is `bench-*`, and a
+          # previous attempt's report artifact otherwise downloads as a
+          # phantom leg — the merge then dies on its missing results.json
+          # (the job is un-re-runnable; calibration run 42578483307's
+          # attempts 2+ all died here). No consumer names the artifact.
+          name: report-bundle
           retention-days: 1
           path: |
             report.md
