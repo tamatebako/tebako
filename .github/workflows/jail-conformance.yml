@@ -78,8 +78,18 @@ jobs:
           base_t="https://github.com/tamatebako/tebako/releases/download/v${TFS_VERSION}"
           curl -fsSL --retry 5 -o "$pair" "$base_r/$pair"
           curl -fsSL --retry 5 -o "$pair.tfs" "$base_r/$pair.tfs"
-          [ "$RUNNER_OS" = "Windows" ] && \
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # The exe links its runtime dll by the dll's CANONICAL name
+            # (the manifest's dll.install_as — e.g. x64-ucrt-ruby400.dll),
+            # not the asset's file name: the first run's exe died at
+            # 'error while loading shared libraries' until the dll sat
+            # beside it under the canonical name.
+            curl -fsSL --retry 5 -o "$pair.manifest.json" "$base_r/$pair.manifest.json"
             curl -fsSL --retry 5 -o "$pair.dll" "$base_r/$pair.dll"
+            dll_as=$(sed -n 's/.*"install_as": *"\([^"]*\)".*/\1/p' "$pair.manifest.json" | head -1)
+            [ -n "$dll_as" ] || { echo "::error::the pair's manifest carries no dll.install_as"; exit 1; }
+            cp "$pair.dll" "$dll_as"
+          fi
           curl -fsSL --retry 5 -o "$tfs" "$base_t/$tfs"
           for f in $sidecars; do
             curl -fsSL --retry 5 -o "$f" "$base_r/$f"
