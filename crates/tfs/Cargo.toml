@@ -93,7 +93,7 @@ getrandom = "0.2"
 # DWARFS_RS_VCPKG_ROOT / VCPKG_ROOT).
 # `enc` (default): the ENC confidentiality transform via tebako-signer
 # (rnp). Windows (ucrt64) ships WITHOUT it for now — rnp's mingw build is
-# unproven (TODO.v2-1/08), so windows consumers take
+# unproven, so windows consumers take
 # default-features = false, features = ["vendored-dwarfs", "backend-limnifs"]
 # and an ENC mount fails with named ENOTSUP. squashfs is POSIX-only and
 # stays out of the windows set; limnifs is pure Rust and rides everywhere.

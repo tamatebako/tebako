@@ -1,4 +1,4 @@
-//! NO_PROXY end-to-end (TODO.v2-1/33, spec 04 §4): the env-native path
+//! NO_PROXY end-to-end (spec 04 §4): the env-native path
 //! (`ureq::Proxy::try_from_env` inside `resolve_proxy`) must carry
 //! NO_PROXY's grammar to the wire — a covered target goes DIRECT (the
 //! proxy's CONNECT log stays empty), an uncovered one rides the proxy.

@@ -41,7 +41,7 @@ const CONTRACT_VARS: &[&str] = &[
     "TEBAKO_PRELOAD_SHIM",
     "TEBAKO_LOADER_INTERPOSED",
     "TEBAKO_OVERLAYS",
-    "TEBAKO_DECRYPT", // TODO(#737-followup): feed keys at mount, not lazily
+    "TEBAKO_DECRYPT", // keys are bound per-mount at mount time (spec 24 §4)
     // trust material the runtime's own fetches consume (spec 81's plane)
     "TEBAKO_EXTRA_CA",
     "TEBAKO_TLS_PLATFORM_ROOTS",

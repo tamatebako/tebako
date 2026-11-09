@@ -23,7 +23,7 @@ SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
 
 # Tool list: binary names equal the artifact tool names (no mapping
 # table — this script must also run under bash 3.2 / POSIX sh, which
-# have no `declare -A`). tebako-shim is the dispatcher (TODO.testing/07).
+# have no `declare -A`). tebako-shim is the dispatcher.
 # tebako-runtime-launcher is the spec-29 wrapper exe (the repacked-
 # runtime ship form — tamatebako/tebako-runtime-openjdk#23's download).
 TOOLS="tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher"

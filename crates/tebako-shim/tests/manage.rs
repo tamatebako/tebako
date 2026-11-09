@@ -341,7 +341,7 @@ fn install_shell_roundtrip_through_run() {
 
 #[test]
 fn link_and_unlink_use_the_platform_shim_name() {
-    // spec 07 §3 + TODO.v2-1/05: the shim file is `<command>` on unix
+    // spec 07 §3: the shim file is `<command>` on unix
     // (permission-bit executability) and `<command>.exe` on Windows
     // (PATHEXT resolution); unlink removes exactly the same name.
     let tmp = TempDir::new("link-name");

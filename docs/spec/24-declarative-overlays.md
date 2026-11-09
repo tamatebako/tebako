@@ -324,7 +324,7 @@ Discovery extends to the VFS write gate:
   contract holds: aggregate, drop automatic surface, draft-only), now
   emitting a draft **`needs.write:`** block beside `needs.host:` —
   paths mount-relative, persistence `ephemeral` (the observed
-  minimum), each with the `why:` TODO. The human gate is unchanged:
+  minimum), each with the `why:` left for the author to fill. The human gate is unchanged:
   the author flips persistence, prunes noise, fills `why`, merges
   into D1 or D2. The generator never edits a manifest.
 - Sealed-read denials (`class=ekey`) fold into a draft

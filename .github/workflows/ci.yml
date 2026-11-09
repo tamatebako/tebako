@@ -279,7 +279,7 @@ jobs:
       # whole driver + TFS stack — its budget is single-digit MB per
       # PLATFORM ARTIFACT, not the bootstrap's < 3 MB loader gate. The
       # linux ship form is static-musl (spec 29 §5) — wired with the
-      # openjdk promotion (TODO.java/04); the gnu dev-config build here
+      # openjdk promotion; the gnu dev-config build here
       # is measured and reported but NOT gated (the host toolchain's C++
       # stack lands it past 10 MiB). The native macOS artifact IS the
       # gated ship form: 10 MiB budget (measured 7.2 MiB on macos-14).
@@ -551,10 +551,10 @@ jobs:
             -e RUST_VERSION -e VCPKG_COMMIT -e GITHUB_WORKSPACE \
             alpine:3.21 sh "$GITHUB_WORKSPACE/tebako-rs/ci/musl-preload-smoke.sh"
 
-  # The pure-Rust crates compile and test on the real platform (TODO.v2-1/03):
+  # The pure-Rust crates compile and test on the real platform:
   # no vcpkg anywhere in this job — tfs/sqfs/rnp are all out of the graph.
   # This is where the Windows ports (bootstrap platform.rs, shim link
-  # layer) are proven; the vendored-dwarfs Windows build (TODO.v2-1/04)
+  # layer) are proven; the vendored-dwarfs Windows build
   # is the release leg's story, not this job's.
   test-windows:
     name: test (windows-latest)
@@ -589,7 +589,7 @@ jobs:
         run: cargo clippy -p tebako-bootstrap -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg -p tebako-bench --all-targets -- -D warnings
 
   # The bootstrap on the target the release binaries actually ship on
-  # (x86_64-pc-windows-gnu, ucrt64 — TODO.prepublish/03). ring does not
+  # (x86_64-pc-windows-gnu, ucrt64). ring does not
   # compile under mingw, so the HTTP stack rides rustls/aws-lc-rs there
   # (tebako-http's target-split provider); this leg proves that stack
   # builds, tests, and stays under the standing < 3 MiB size gate on the
@@ -664,7 +664,7 @@ jobs:
         run: bash ci/windows-gnu-bootstrap.sh
 
   # tebako-shim + tebako-resolve on the target the release binaries ship
-  # on (x86_64-pc-windows-gnu, ucrt64 — TODO.prepublish/03), mirroring
+  # on (x86_64-pc-windows-gnu, ucrt64), mirroring
   # the bootstrap leg. tebako-resolve rides along: its gix/reqwest TLS
   # rides rustls/aws-lc-rs on this target (ring does not compile under
   # mingw — the tebako-http provider split, commit 8de4335), proven here
@@ -708,7 +708,7 @@ jobs:
         shell: bash
         run: bash ci/windows-gnu-shim.sh
 
-  # The full-stack product crates on the same target (TODO.prepublish/03):
+  # The full-stack product crates on the same target:
   # tebako-cli, tfs-cli and tebako-pkg — tfs vendored-dwarfs (dwarfs-t-sys's
   # CMake/vcpkg build against the
   # x64-mingw-static baseline, the dwarfs-rs leg's proven setup) and

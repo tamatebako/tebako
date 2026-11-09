@@ -8,8 +8,8 @@
 //! `tfs mkimage` from a source tree carrying the `data.yaml` manifest
 //! fixture.
 #![cfg(not(windows))] // the ENC transform ships in the POSIX tfs build only
-                      // (TODO.v2-1/08); windows asserts the named ENOTSUP
-                      // surface in cli.rs (TODO.v2-1/02).
+                      // windows asserts the named ENOTSUP
+                      // surface in cli.rs.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

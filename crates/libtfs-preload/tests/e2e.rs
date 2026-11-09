@@ -1269,8 +1269,7 @@ fn macos_plain_close_on_a_memfs_fd() {
     assert!(r.stdout.contains("close-probe:ok"), "stdout: {}", r.stdout);
 }
 
-/// CPython's FileIO boot path (the python runtime factory dogfood,
-/// TODO.python/02): `FileIO.__init__` runs `_Py_set_inheritable` →
+/// CPython's FileIO boot path (the python runtime factory's dogfood): `FileIO.__init__` runs `_Py_set_inheritable` →
 /// `get_inheritable` → `fcntl(F_GETFD)` on the freshly opened flagged
 /// memfs fd with raise=1 (Modules/_io/fileio.c:451) — unpatched, the
 /// real fcntl answered EBADF and every source open died importing

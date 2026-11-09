@@ -1,4 +1,4 @@
-//! `tebako install <path>` — the local-package install (TODO.v2-1/12):
+//! `tebako install <path>` — the local-package install:
 //! slices land from the package's own bytes with the trailer's digests
 //! as anchors, idempotent skip, the drift rule, the NO_INSTALL refusal,
 //! runtime-slot skipping, and explicit-only shims. No network, temp

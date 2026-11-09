@@ -339,9 +339,9 @@ guess:
   wants it; ro entries that are strict ancestors of other drafted
   entries COLLAPSE (the bind's traverse set, spec 08 §2.1, covers
   their reads; an rw ancestor stays); paths absent at generation time
-  marked `optional: true` (§2); each entry carrying `why: "TODO —
-  observed: <r> read, <w> write"` for the author to replace with the
-  real reason.
+  marked `optional: true` (§2); each entry carrying
+  `why: "fill in — observed: <r> read, <w> write"` for the
+  author to replace with the real reason.
 - **The human gate**: the record shows the OBSERVED MINIMUM. The author
   reviews the draft — flipping ro↔rw where production differs from the
   observation, deleting noise, filling `why` — and merges it into the

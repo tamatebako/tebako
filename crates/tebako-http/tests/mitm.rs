@@ -1,4 +1,4 @@
-//! The MITM acceptance fixture (TODO.v2-1/33, spec 04 §4): a local
+//! The MITM acceptance fixture (spec 04 §4): a local
 //! rustls server presents a certificate signed by a self-signed test CA,
 //! reached THROUGH a local CONNECT proxy. The loader's client must:
 //!   - fail closed on the default (bundled webpki) roots;

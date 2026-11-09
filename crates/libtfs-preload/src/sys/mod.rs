@@ -423,8 +423,8 @@ static DIRENT_CACHE: Mutex<Option<HashMap<usize, Box<libc::dirent>>>> = Mutex::n
 /// bit. A memfs fd is a shim-side flag-bit integer with NO kernel state,
 /// so FD_CLOEXEC — set with O_CLOEXEC at open or with fcntl(F_SETFD) —
 /// must live here: the real fcntl would EBADF on the fake fd. That is
-/// the CPython io.FileIO boot blocker (the python runtime factory
-/// dogfood, TODO.python/02): FileIO.__init__ runs _Py_set_inheritable →
+/// the CPython io.FileIO boot blocker (the python runtime factory's
+/// dogfood): FileIO.__init__ runs _Py_set_inheritable →
 /// fcntl(F_GETFD) on the freshly opened fd with raise=1
 /// (Modules/_io/fileio.c:451 → Python/fileutils.c get_inheritable), so
 /// EVERY source open of the unpatched interpreter died before user code.

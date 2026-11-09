@@ -764,7 +764,7 @@ fn s16_image_contract_mismatch_refused() {
 }
 
 // ---------------------------------------------------------------------
-// TODO.v2-1/12: the explicit install verb + run-never-seeds
+// The explicit install verb + run-never-seeds
 // ---------------------------------------------------------------------
 
 #[test]
@@ -799,7 +799,7 @@ fn s17_install_verb_guides_and_the_flag_refuses() {
 
 #[test]
 fn s18_a_run_never_seeds_the_store() {
-    // TODO.v2-1/12's core law: a run is a run — the runtime cache fills
+    // The core law: a run is a run — the runtime cache fills
     // (intrinsic to executing) but NO payload slice touches the store.
     let h = h();
     let pkg = h.lean_pkg("myapp");

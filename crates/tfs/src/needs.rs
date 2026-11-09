@@ -15,7 +15,7 @@
 //! considers `$CWD` explicitly), collapses ro entries that are strict
 //! ancestors of other drafted entries (the bind's traverse set, spec 08
 //! §2.1, already covers their reads — an rw ancestor stays), and emits
-//! YAML with a `why:` TODO the slice developer replaces while reviewing
+//! YAML with a `why:` left for the slice developer to fill while reviewing
 //! each `access` bit.
 //!
 //! The spec 24 §6 extension folds the VFS write gate's journal into the

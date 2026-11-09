@@ -1,4 +1,4 @@
-# The benchmark covenant (TODO.sota/07, spec 27 §11).
+# The benchmark covenant (spec 27 §11).
 #
 # A cell is a budget: a metric id the run must produce, the comparison it
 # must satisfy, and the bound. A release fails on any `over`; an `absent`

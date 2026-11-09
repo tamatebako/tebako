@@ -1,5 +1,5 @@
 #![cfg(windows)]
-//! Real-registry round-trip (TODO.v2-1/05): install prepends exactly
+//! Real-registry round-trip: install prepends exactly
 //! once, uninstall removes exactly our entry. A unique sentinel dir per
 //! run; the drop guard uninstalls even when an assertion fails, so the
 //! user PATH is left untouched either way.

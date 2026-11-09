@@ -125,9 +125,9 @@ fn info_json_dwarfs() {
     assert!(err.contains("not available"), "{err}");
 }
 
-/// The ENC transform ships only in the POSIX tfs build (TODO.v2-1/08), so
+/// The ENC transform ships only in the POSIX tfs build, so
 /// on windows every encryption verb is the named ENOTSUP error with the
-/// crate's uniform error exit (TODO.v2-1/02) — never a silent skip. The
+/// crate's uniform error exit — never a silent skip. The
 /// full enc e2e lives in enc.rs (not(windows)).
 #[cfg(windows)]
 #[test]
