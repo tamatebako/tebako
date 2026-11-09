@@ -51,8 +51,8 @@ docker run --rm --platform linux/amd64 \
     # (spec 16 §6: a partial set is a named error) — fetch all four, each
     # sha256-verified against the release sidecar.
     for tool in tebako tebako-shim tfs tebako-pkg; do
-      curl -fsSL -o "$tool" "https://github.com/tamatebako/tebako/releases/download/${TEBAKO_CLI_VERSION}/${tool}-${TEBAKO_CLI_VERSION#v}-linux-gnu-x86_64"
-      curl -fsSL -o "$tool.sha256" "https://github.com/tamatebako/tebako/releases/download/${TEBAKO_CLI_VERSION}/${tool}-${TEBAKO_CLI_VERSION#v}-linux-gnu-x86_64.sha256"
+      curl -fsSL --retry 10 --retry-delay 8 --retry-all-errors -o "$tool" "https://github.com/tamatebako/tebako/releases/download/${TEBAKO_CLI_VERSION}/${tool}-${TEBAKO_CLI_VERSION#v}-linux-gnu-x86_64"
+      curl -fsSL --retry 10 --retry-delay 8 --retry-all-errors -o "$tool.sha256" "https://github.com/tamatebako/tebako/releases/download/${TEBAKO_CLI_VERSION}/${tool}-${TEBAKO_CLI_VERSION#v}-linux-gnu-x86_64.sha256"
       echo "$(cut -d" " -f1 "$tool.sha256")  $tool" | sha256sum -c -
       chmod +x "$tool"
     done
