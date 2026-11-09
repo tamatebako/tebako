@@ -910,11 +910,28 @@ pub fn stream_range_open(
 // Range GETs for the lazy mount-source byte layer
 // ---------------------------------------------------------------------
 
-/// One attempt budget for a single range GET (the gem's download
-/// discipline — tebako-resolve's DOWNLOAD_ATTEMPTS mirrors this value).
-pub const RANGE_ATTEMPTS: u32 = 3;
-/// Delay between range attempts (the gem's retry delay).
+/// One attempt budget for a single range GET. The v1 gem's download
+/// discipline fixed this at 3 with a fixed 1 s delay; tebako#1015 widened
+/// the budget and moved the wait onto [`fetch_backoff`] — a minute-scale
+/// CDN flap (the 2026-11-09 GitHub incident 504'd release assets for
+/// ~2 h) is the transient class this arm exists to ride out, and two
+/// seconds of cover never gave it the chance.
+pub const RANGE_ATTEMPTS: u32 = 6;
+/// The base delay unit between range attempts (the gem's retry delay) —
+/// [`fetch_backoff`] scales it per attempt.
 pub const RANGE_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+/// The transient-class schedule: [`RANGE_RETRY_DELAY`] × 2ⁿ with the
+/// exponent capped at 4 — the attempts wait 1, 2, 4, 8, 16 s (about 31 s
+/// of cover across the budget). This is not the throttle schedule: a
+/// 5xx/flap is the host's transient class, where minute-scale waits are
+/// wrong, and a fixed 1 s is what let a two-hour incident kill downloads
+/// the host would have served a minute later. The named error after the
+/// budget is unchanged — only the wait between attempts moved.
+pub fn fetch_backoff(attempt: u32) -> Duration {
+    let shift = (attempt.max(1) - 1).min(4);
+    RANGE_RETRY_DELAY * (1 << shift)
+}
 
 /// One half-open byte range `[offset, offset + len)` of a remote object.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1269,7 +1286,7 @@ fn get_range_inner(
                         "failed to fetch the range {ask:?} of {url} after {RANGE_ATTEMPTS} attempts: {msg}"
                     )));
                 }
-                std::thread::sleep(RANGE_RETRY_DELAY);
+                std::thread::sleep(fetch_backoff(attempts));
             }
             // Everything else is terminal by the crate's one law:
             // IndexUnavailable (try the next name), AuthRejected (the
@@ -1690,6 +1707,24 @@ pub fn delete(url: &str, bearer: Option<&str>) -> Result<(), FetchError> {
 
 #[cfg(test)]
 mod tests {
+    /// The transient-class schedule: 1, 2, 4, 8, 16 s with the exponent
+    /// capped at 4 (the sixth attempt never waits longer than 16 s), and
+    /// attempt 0 clamps to the base unit rather than shifting negative
+    /// (tebako#1015).
+    #[test]
+    fn fetch_backoff_is_exponential_and_capped() {
+        assert_eq!(fetch_backoff(1), Duration::from_secs(1));
+        assert_eq!(fetch_backoff(2), Duration::from_secs(2));
+        assert_eq!(fetch_backoff(3), Duration::from_secs(4));
+        assert_eq!(fetch_backoff(4), Duration::from_secs(8));
+        assert_eq!(fetch_backoff(5), Duration::from_secs(16));
+        assert_eq!(fetch_backoff(6), Duration::from_secs(16));
+        assert_eq!(fetch_backoff(0), Duration::from_secs(1));
+        // Six attempts sleep five times: 1+2+4+8+16 = 31 s of cover.
+        let cover: Duration = (1..RANGE_ATTEMPTS).map(fetch_backoff).sum();
+        assert_eq!(cover, Duration::from_secs(31));
+    }
+
     /// The constructor and the inverse are one pair: a path written and
     /// read back is the same path, on every platform. The four call sites
     /// that hand-rolled the peel each broke a different platform, because

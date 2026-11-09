@@ -10,10 +10,12 @@
 
 use tebako_http::FetchError;
 
-/// One attempt budget for a single GET (the gem's retry discipline).
-pub const DOWNLOAD_ATTEMPTS: u32 = 3;
-/// Delay between attempts (tebako-cli::fetch::RETRY_DELAY).
-pub const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+/// One attempt budget for a single GET — mirrors tebako-http's
+/// [`RANGE_ATTEMPTS`](tebako_http::RANGE_ATTEMPTS) (tebako#1015: the fixed
+/// 3×1 s budget never gave a minute-scale transient the chance to clear).
+/// The wait between attempts is tebako_http::fetch_backoff's exponential
+/// schedule.
+pub const DOWNLOAD_ATTEMPTS: u32 = 6;
 
 /// The resume seam's answer (spec 04 §2's chain of work — the pull's
 /// interrupted-transfer case). `Partial` appended the requested window;
@@ -425,7 +427,7 @@ impl Transport for HttpTransport {
                             "failed to download {url} after {DOWNLOAD_ATTEMPTS} attempts: {msg}"
                         )));
                     }
-                    std::thread::sleep(RETRY_DELAY);
+                    std::thread::sleep(tebako_http::fetch_backoff(attempts));
                 }
                 Err(e) => return Err(e),
             }
@@ -558,7 +560,7 @@ impl HttpTransport {
                             "failed to download {url} after {DOWNLOAD_ATTEMPTS} attempts: {msg}"
                         )));
                     }
-                    std::thread::sleep(RETRY_DELAY);
+                    std::thread::sleep(tebako_http::fetch_backoff(attempts));
                 }
                 //'s named networking failures are
                 // deterministic configuration answers — retried never,
