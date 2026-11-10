@@ -87,6 +87,12 @@ jobs:
       # read-only, where pushes degrade to a non-fatal vcpkg note.
       contents: read
       packages: write
+    env:
+      # The macOS support floor (harmless off macOS — nothing else reads
+      # it). The value's owner is tebako-runtime-ruby's contract.yml;
+      # CMake/cc-rs honor it, and the floor symbol gate (macOS legs, below)
+      # proves the link-level reality — tebako-runtime-ruby#323.
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.tiers.outputs.matrix) }}
@@ -311,6 +317,19 @@ jobs:
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: cargo test -p libtfs-preload --no-run
+
+      # The floor's symbol gate on the built preload dylib (macOS legs) —
+      # tebako-runtime-ruby#323's class, caught at PR time instead of the
+      # release rehearsal: every undefined symbol must resolve from the
+      # macOS 14.0 export set (ci/floor-symbols/macos-14.0.txt).
+      - name: Floor symbol gate (macOS, the link-level floor)
+        if: runner.os == 'macOS'
+        working-directory: tebako-rs
+        run: |
+          set -euo pipefail
+          dylib="target/debug/libtfs_preload.dylib"
+          [ -f "$dylib" ] || { echo "no preload dylib built on this leg — nothing to gate"; exit 0; }
+          bash ci/macos-floor-symbol-check.sh "$dylib"
 
       # The built preload shim as a downloadable artifact (linux-gnu):
       # the container-proof path for preload changes — a foreign-libc
