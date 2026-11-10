@@ -1283,6 +1283,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # PSGallery must be REGISTERED before Install-Module can name it:
+          # the factory's v0.17.6 publish (tebako-runtime-ruby run
+          # 42691344155) died here with "Unable to find repository
+          # 'PSGallery'" — the runner image no longer guarantees the
+          # default registration. Register-PSRepository -Default restores
+          # it idempotently (a healthy registration is a no-op).
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default
+          }
           if (-not (Get-Module -ListAvailable TrustedSigning)) {
             Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Repository PSGallery -Scope CurrentUser -Force -AllowClobber
           }
@@ -1782,6 +1791,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # PSGallery must be REGISTERED before Install-Module can name it:
+          # the factory's v0.17.6 publish (tebako-runtime-ruby run
+          # 42691344155) died here with "Unable to find repository
+          # 'PSGallery'" — the runner image no longer guarantees the
+          # default registration. Register-PSRepository -Default restores
+          # it idempotently (a healthy registration is a no-op).
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default
+          }
           if (-not (Get-Module -ListAvailable TrustedSigning)) {
             Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Repository PSGallery -Scope CurrentUser -Force -AllowClobber
           }
