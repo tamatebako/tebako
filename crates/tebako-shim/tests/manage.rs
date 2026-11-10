@@ -285,7 +285,11 @@ fn install_shims_skips_the_hidden_set() {
         &["metanorma".to_string(), "other".to_string()],
     )
     .expect("link");
-    let want = if cfg!(windows) { "metanorma.exe" } else { "metanorma" };
+    let want = if cfg!(windows) {
+        "metanorma.exe"
+    } else {
+        "metanorma"
+    };
     assert!(
         !linked.iter().any(|p| p.ends_with(want)),
         "the hidden name is not linked: {linked:?}"
@@ -294,7 +298,10 @@ fn install_shims_skips_the_hidden_set() {
         notes.iter().any(|n| n.contains("hidden")),
         "the skip is named loudly: {notes:?}"
     );
-    assert!(linked.iter().any(|p| p.ends_with("other")), "the unhidden command linked");
+    assert!(
+        linked.iter().any(|p| p.ends_with("other")),
+        "the unhidden command linked"
+    );
 }
 
 #[test]
