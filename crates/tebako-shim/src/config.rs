@@ -1682,7 +1682,10 @@ pub fn load_hidden(home: &Path) -> Result<Hidden, ShimError> {
     // an unknown shape is a named error, never silently ignored).
     for name in &hidden {
         crate::manifest::check_path_component("command name", name).map_err(|e| {
-            ShimError::new(EX_TEBAKO_MANIFEST, format!("{}: {}", path.display(), e.message))
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!("{}: {}", path.display(), e.message),
+            )
         })?;
     }
     Ok(hidden)
@@ -1698,12 +1701,8 @@ pub fn save_hidden(home: &Path, hidden: &Hidden) -> Result<(), ShimError> {
     })?;
     let path = hidden_path(home);
     let tmp = dir.join(format!(".hidden.yaml.{}.tmp", std::process::id()));
-    let text = serde_yaml::to_string(&hidden.iter().collect::<Vec<_>>()).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!("cannot serialize hidden state: {e}"),
-        )
-    })?;
+    let text = serde_yaml::to_string(&hidden.iter().collect::<Vec<_>>())
+        .map_err(|e| ShimError::new(EX_TEBAKO_IO, format!("cannot serialize hidden state: {e}")))?;
     std::fs::write(&tmp, text).map_err(|e| {
         ShimError::new(EX_TEBAKO_IO, format!("cannot write {}: {e}", tmp.display()))
     })?;

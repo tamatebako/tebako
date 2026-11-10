@@ -887,8 +887,11 @@ fn cmd_hide(args: &[String], ctx: &Ctx, hide: bool) -> Result<Action, ShimError>
                     format!("cannot locate the dispatcher binary: {e}"),
                 )
             })?;
-            let (_shims, notes) =
-                link_shims(&ctx.home, &binary, std::slice::from_ref(&target.to_string()))?;
+            let (_shims, notes) = link_shims(
+                &ctx.home,
+                &binary,
+                std::slice::from_ref(&target.to_string()),
+            )?;
             let mut text = format!("exposed {target} — linked {}\n", link.display());
             for note in notes {
                 text.push_str(&format!("note: {note}\n"));
