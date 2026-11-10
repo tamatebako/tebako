@@ -313,6 +313,17 @@ jobs:
       id-token: write
     runs-on: ${{ matrix.os }}
     needs: prepare
+    env:
+      # The macOS support floor. The value's owner is tebako-runtime-ruby's
+      # contract.yml (macos_deployment_target) — separate release chains, so
+      # this asserts parity by construction: the floor symbol gate below
+      # fails the leg when any shipped product references a symbol the
+      # floor's system libraries do not export (tebako-runtime-ruby#323 —
+      # v0.17.6's exe recorded minos 14.0 and still died at dyld on a
+      # macOS 14.1.1 host; the metadata was right, the references were not).
+      # CMake initializes CMAKE_OSX_DEPLOYMENT_TARGET from this and cc-rs
+      # reads it, so the dwarfs-t closure + vendored C++ land on the floor.
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     strategy:
       fail-fast: false
       matrix:
@@ -413,6 +424,26 @@ jobs:
             -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim \
             -p tebako-runtime-launcher \
             -p tfs -p tebako-driver -p libtfs-preload
+
+      # The floor's symbol gate (tebako-runtime-ruby#323): after the build,
+      # before any staging — every shipped product's undefined symbols must
+      # resolve from the macOS 14.0 export set (ci/floor-symbols/
+      # macos-14.0.txt). minos metadata records intent; this proves the
+      # link-level reality. Archives are refused by the gate — the closure
+      # is judged through the products its members land in.
+      - name: Floor symbol gate (the link-level floor, ruby#323)
+        working-directory: tebako-rs
+        run: |
+          set -euo pipefail
+          products=()
+          for b in tebako-bootstrap tebako-cli tebako-shim tfs-cli tebako-pkg tebako-runtime-launcher; do
+            p="target/${{ matrix.target }}/release/$b"
+            [ -x "$p" ] && products+=("$p")
+          done
+          dylib="target/${{ matrix.target }}/release/libtfs_preload.dylib"
+          [ -f "$dylib" ] && products+=("$dylib")
+          [ "${#products[@]}" -gt 0 ] || { echo "::error::no built products found to gate — the build step above produced nothing"; exit 1; }
+          bash ci/macos-floor-symbol-check.sh "${products[@]}"
 
       # Spec 31 §5: arm Apple signing when the repo variable
       # APPLE_SIGNING_ENABLED=true is set (unsigned stays first-class
