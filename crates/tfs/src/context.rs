@@ -694,7 +694,21 @@ impl FsContext {
     /// holds, and stat/readdir/realpath must still walk the boundary —
     /// GEM_PATH expansion realpaths each mounted home component-wise).
     /// Sorted, deduped; never `.`/`..`.
+    ///
+    /// The EMPTY path answers nothing: `normalize` maps every relative
+    /// cwd spelling (".", "./", "..") to "", and that spelling names the
+    /// HOST's working directory — the namespace root's boundary answer
+    /// belongs to the absolute "/" spelling alone. Claiming it for ""
+    /// serves the synthesized root listing for the host's own cwd: the
+    /// armed in-exe IO family (spec 22 §3.6) hands consumer spellings to
+    /// the engine verbatim, so Dir.children(".") on a host cwd came back
+    /// as the VFS root and mkmf's Dir["*.c"] source glob read empty —
+    /// native-extension builds silently produced no library
+    /// (tebako-runtime-ruby#326).
     fn synthesized_children(&self, path: &str) -> Vec<String> {
+        if path.is_empty() {
+            return Vec::new();
+        }
         // The point-join keeps a trailing slash the path already has:
         // the drive root `A:/` prefixes as `A:/` — never `A://`, which
         // no point starts with and the boundary names would vanish
@@ -3659,6 +3673,54 @@ mod tests {
         // its mounted child, the root enumerates both mount tops.
         assert_eq!(dir_names(&mut ctx, "/flavors.d"), ["hello-flavor-acme"]);
         assert_eq!(dir_names(&mut ctx, "/"), ["flavors.d", "x"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn relative_cwd_spellings_never_answer_the_namespace_root() {
+        // The armed in-exe IO family (spec 22 §3.6) hands the consumer's
+        // spelling to the engine verbatim, and normalize() drops every
+        // "." / ".." component — a relative cwd spelling (".", "./",
+        // "..") reduces to the empty path. The mount-boundary synthesis
+        // must not claim that spelling: the namespace root's answer
+        // belongs to "/" alone, while a relative spelling names the
+        // HOST's working directory. Answering it with the synthesized
+        // root listing turns Dir.children(".") on a host cwd into the
+        // VFS root's contents — mkmf's Dir["*.c"] source glob then reads
+        // empty and a native-extension build silently produces no
+        // library (tebako-runtime-ruby#326).
+        let dir = std::env::temp_dir().join(format!("tfs-relcwd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_zip(&dir);
+        let mut ctx = FsContext::new();
+        ctx.mount_checked(
+            crate::mount::build_from_file(image.to_str().unwrap(), "/__tfs__").unwrap(),
+        )
+        .unwrap();
+
+        // Every relative cwd spelling passes through to the host (ENOENT
+        // is the route layer's "not ours" answer).
+        for spelling in [".", "./", "..", "../sub/..", ""] {
+            assert_eq!(
+                ctx.opendir(spelling).unwrap_err(),
+                libc::ENOENT,
+                "opendir({spelling:?})"
+            );
+            assert_eq!(
+                ctx.stat(spelling).unwrap_err(),
+                libc::ENOENT,
+                "stat({spelling:?})"
+            );
+            assert!(
+                !ctx.path_is_embedded(spelling),
+                "path_is_embedded({spelling:?})"
+            );
+        }
+        // The root boundary keeps its own spelling (tebako#615): the
+        // interpreter's route gate still hands "/" to the engine.
+        assert!(ctx.path_is_embedded("/"));
+        assert_eq!(dir_names(&mut ctx, "/"), ["__tfs__"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

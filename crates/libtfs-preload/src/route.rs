@@ -844,6 +844,43 @@ mod tests {
         );
     }
 
+    /// A relative cwd spelling (".", "..", the empty literal) names the
+    /// HOST's working directory: the route layer hands it to the engine
+    /// verbatim, and the engine must answer "not ours" — never the
+    /// synthesized namespace-root listing the spelling normalizes onto
+    /// (tebako-runtime-ruby#326: Dir.children(".") on a host cwd came
+    /// back as the VFS root, emptying mkmf's source glob).
+    #[test]
+    fn relative_cwd_spellings_route_to_the_host() {
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        crate::sys::engine_call(|| {
+            let dir =
+                std::env::temp_dir().join(format!("libtfs-preload-relcwd-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let zip_path = dir.join("img.zip");
+            {
+                let file = std::fs::File::create(&zip_path).unwrap();
+                let mut zw = zip::ZipWriter::new(file);
+                let opts = zip::write::SimpleFileOptions::default();
+                zw.add_directory("data/", opts).unwrap();
+                zw.finish().unwrap();
+            }
+            let mp = format!("/tfsrelcwd{}", std::process::id());
+            let m = tfs::mount::build_from_file(zip_path.to_str().unwrap(), &mp).unwrap();
+            context().write().unwrap().mount_checked(m).unwrap();
+
+            for spelling in [".", "..", ""] {
+                assert_eq!(
+                    vfs_opendir(spelling),
+                    PathRoute::Host,
+                    "opendir {spelling:?}"
+                );
+                assert_eq!(vfs_stat(spelling), PathRoute::Host, "stat {spelling:?}");
+            }
+            std::fs::remove_dir_all(&dir).unwrap();
+        });
+    }
+
     /// The whole route matrix in ONE test function: the engine context
     /// (mounts, policy) is process-global, so context-touching assertions
     /// must not race parallel tests.
