@@ -16,10 +16,13 @@
 //! 2. a key of the image's path string (a dev boot without the store —
 //!    honest about WHAT it keys: the path, not the content).
 //!
-//! Extractions today land in a per-process leaf under the root
-//! (`tebako-dl-<hex>`, cleaned at exit — process-lifetime semantics);
-//! the keyed root is the segregation the contract fixes and the
-//! namespace the persistent write-once form upgrades into.
+//! Extractions land per platform under the root: the per-process leaf
+//! (`tebako-dl-<hex>`, cleaned at exit) on Linux, and the persistent,
+//! image-key-segregated `tebako-dlcache/<image-key>` namespace on macOS
+//! (tebako#1026 — a stable path prices the platform loader's first-seen
+//! scan once per image build, not once per launch). The keyed root is
+//! the segregation the contract fixes and the namespace both forms
+//! share.
 
 use std::path::{Path, PathBuf};
 
