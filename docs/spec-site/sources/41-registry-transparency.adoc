@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/41-registry-transparency.md @ cbb6eba6b56a3692ade3c93aada8c4e9900d8275
+// source: docs/spec/41-registry-transparency.md @ 2b612c1cfbf76eb0a15df28fc61b544eeb55809f
 
 *Status: PLANNED* (the design is locked here first; §5's verbs ship
 together with this spec in the same change).

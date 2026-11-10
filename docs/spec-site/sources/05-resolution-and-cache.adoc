@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/05-resolution-and-cache.md @ fa37a6be215778e3b048606fbe1a8e4565268bd5
+// source: docs/spec/05-resolution-and-cache.md @ b58b110a81b495deb197a7b58049dcf11ce144b0
 
 Normative specification of runtime/payload resolution and the shared
 machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL

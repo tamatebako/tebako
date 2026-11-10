@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/03-payload-manifest.md @ 61a28ba77a6948aae9967b6653707e5b34c4fc04
+// source: docs/spec/03-payload-manifest.md @ bb984d42d418c3748835ac574d22e537f01802d7
 
 Normative specification of the in-image manifest: every payload is a
 *self-describing artifact*, not a blob. Status: SHIPPED (the block + the

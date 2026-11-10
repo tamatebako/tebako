@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/07-shims-and-dispatch.md @ e567cf76bbc57c0278aad6b848fe7a3741ab4b90
+// source: docs/spec/07-shims-and-dispatch.md @ 21c06738864a182cc05ad5a1fb6280624b3670ab
 
 Normative specification of executable registration and version
 management. Status: PARTIAL — the dispatcher and version manager

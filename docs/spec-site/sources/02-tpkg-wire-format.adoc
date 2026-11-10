@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/02-tpkg-wire-format.md @ 4172076d933569d31be421613ad28753ff95c14d
+// source: docs/spec/02-tpkg-wire-format.md @ df19f89d78d6a72d551b92fc9f54b356c4a8366f
 
 Normative byte-level specification of the tebako package container.
 Source of truth: `crates/tpkg` (byte-exact with the reference C99
