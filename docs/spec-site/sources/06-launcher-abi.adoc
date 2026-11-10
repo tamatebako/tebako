@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/06-launcher-abi.md @ 58363c2697df59d870fc470ed42b92845e165ed9
+// source: docs/spec/06-launcher-abi.md @ 55588ee3f8ba633e78a79fca9d6116b68c647ee1
 
 Normative specification of the handoff contract. Version: *1*. Status:
 SHIPPED (macOS/Linux; Windows exec/lock port PARTIAL — roadmap 02).

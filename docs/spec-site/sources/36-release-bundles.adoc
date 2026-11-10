@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/36-release-bundles.md @ 659bd81722cd80a6d352c34a6abf52d1a09c6bc1
+// source: docs/spec/36-release-bundles.md @ 96f0016c33b7f98d097592156376a0a0eb2d2932
 
 Status: *PLANNED* (locked direction 2026-09-24; ships with
 tebako-release v0.2.0 + the tebako-resolve bundle fetch path — the

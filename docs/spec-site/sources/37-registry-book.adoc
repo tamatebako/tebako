@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/37-registry-book.md @ 7225caf80d37701311343dd5af2efbf18fb045ba
+// source: docs/spec/37-registry-book.md @ 2926ce8218a0817ee668a2849f2ee925fb703bde
 
 Status: *SHIPPED* — §2's registry book (the config model, alias
 grammar + derivation, `DuplicateRegistryAlias` /
