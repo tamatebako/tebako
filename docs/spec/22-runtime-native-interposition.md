@@ -284,6 +284,32 @@ memfs tree exactly, recurse with a visited set. The PE specializations
   DEPENDENCY-FREE (the truncated-header contract) and the OS loader
   answers for it honestly.
 
+**The exec-cache lifecycle (macOS).** The POSIX per-process
+`tebako-dl-<hex>` leaf is legal on macOS (unlink-while-loaded is) but
+prices every launch: each boot's fresh random path is a FIRST-SEEN path
+to the platform loader's malware scan (XProtect/syspolicyd), at
+hundreds of milliseconds per native extension per launch (tebako#1026).
+On macOS, dlmap materializations are therefore LEAVE-IN-PLACE and
+SEGREGATED per image build:
+`<TEBAKO_EXEC_CACHE>/tebako-dlcache/<image-key>/<P>` with the Rule-R1
+`<image-key>` idiom (the sidecar prefix, else the path key), so a
+rebuilt image never reads a stale extraction (Rule L3), every process
+sharing the image shares one copy, and the loader's scan cache prices
+the stable path once per image build. Write-once and verified by the
+Rule-R3 mechanics unchanged (stage, hash in flight, the
+`<P>.tfs-digest` record renamed before the content, per-boot rehash on
+reuse); a mismatch wipes the pair and re-extracts ONCE from the mounted
+(verified) image, and a copy that still fails is the surface's named
+error, never a silently served corruption. Never reaped at exit;
+reclamation is the store's cache maintenance (spec 05 §4), which reaps
+an `<image-key>` no store entry resolves to. The closure walk still
+runs on a reuse boot — it is the completeness check, healing a previous
+boot's mid-closure crash member by member. (The same
+`tebako-dlcache/<image-key>` namespace is the destination the windows
+dlmap stream upgrades into; the `dlls` spelling earlier in this section
+is superseded by the implemented marker, which no organic host path can
+collide with.)
+
 **The exec-cache lifecycle (windows).** A loaded DLL is LOCKED by the
 OS for the process's lifetime, so the POSIX idiom — a per-process
 `tebako-dl-<hex>` tmpdir reaped by the exit cleanup, legal there

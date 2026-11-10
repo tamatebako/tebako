@@ -2487,18 +2487,37 @@ fn dependency_executables_materialize_as_self_injecting_launchers() {
     assert_eq!(dirs[1], "/opt/openjdk/bin");
 
     // The wrapper re-arms the injection var explicitly and execs the
-    // materialized binary (the dl layout mirrors the full VFS path).
+    // materialized binary (the dl layout mirrors the full VFS path; the
+    // namespace is the platform's — the per-process leaf, or the
+    // persistent dlcache on macOS, tebako#1026 — so the target is read
+    // BACK from the wrapper, then asserted by its properties).
     let shim_host = env.var(INJECT_VAR).unwrap();
-    let target = wrap_dir.parent().unwrap().join("opt/openjdk/bin/java");
     let wrap = wrap_dir.join("java");
-    assert_eq!(
-        std::fs::read_to_string(&wrap).unwrap(),
-        format!(
-            "#!/bin/sh\n{v}='{shim_host}'\nexport {v}\nexec '{}' \"$@\"\n",
-            target.display(),
-            v = INJECT_VAR
-        )
+    let text = std::fs::read_to_string(&wrap).unwrap();
+    let prefix = format!("#!/bin/sh\n{v}='{shim_host}'\nexport {v}\nexec '", v = INJECT_VAR);
+    let target_text = text
+        .strip_prefix(&prefix)
+        .and_then(|rest| rest.strip_suffix("' \"$@\"\n"))
+        .unwrap_or_else(|| panic!("the wrapper's shape: {text}"));
+    assert!(
+        target_text.ends_with("/opt/openjdk/bin/java"),
+        "the mirrored VFS tail: {target_text}"
     );
+    let namespace = if cfg!(target_os = "macos") {
+        "/tebako-dlcache/"
+    } else {
+        "/tebako-dl-"
+    };
+    assert!(
+        target_text.contains(namespace),
+        "the platform's dl namespace ({namespace}): {target_text}"
+    );
+    assert_eq!(
+        std::fs::read(target_text).unwrap(),
+        b"#!/bin/sh\n",
+        "the materialized copy carries the toolkit image's java bytes"
+    );
+    let target = PathBuf::from(target_text);
     assert_eq!(
         std::fs::metadata(&wrap).unwrap().permissions().mode() & 0o777,
         0o755

@@ -171,7 +171,7 @@ pub struct Synthesis {
 fn is_exec_cache_noise(path: &str) -> bool {
     Path::new(path).components().any(|c| {
         let s = c.as_os_str().to_string_lossy();
-        s.starts_with("tebako-dl-") || s.starts_with("tebako-exec-")
+        s.starts_with("tebako-dl-") || s.starts_with("tebako-exec-") || s == "tebako-dlcache"
     })
 }
 

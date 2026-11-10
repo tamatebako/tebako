@@ -227,6 +227,12 @@ pub struct FsContext {
     compat_handle: Option<i32>,
     /// Per-process temp dir for dlmap2file extractions (created lazily).
     dl_tmpdir: Option<std::path::PathBuf>,
+    /// The persistent dlcache tier's platform gate, resolved at
+    /// construction (tebako#1026): macOS lands dlmap extractions in the
+    /// leave-in-place `tebako-dlcache/<image-key>` namespace; elsewhere
+    /// the per-process `tebako-dl-<hex>` leaf serves. Tests flip the
+    /// field directly — the engine is platform-free.
+    dl_persist: bool,
     /// dlmap2file cache: memfs path -> extracted host path. Extractions
     /// live for the process run and are removed at teardown (atexit).
     dl_cache: BTreeMap<String, std::path::PathBuf>,
@@ -276,6 +282,7 @@ impl FsContext {
             next_dir_id: 1,
             compat_handle: None,
             dl_tmpdir: None,
+            dl_persist: dlcache_persistent(),
             dl_cache: BTreeMap::new(),
             home_memos: BTreeMap::new(),
             home_trees: BTreeSet::new(),
@@ -792,7 +799,9 @@ impl FsContext {
     }
 
     /// The memfs tail of a dlmap-cache path. `dlmap2file` materializes a
-    /// memfs file at `<tmp>/tebako-dl-<hex>/<full memfs path>`; a
+    /// memfs file at `<tmp>/tebako-dl-<hex>/<full memfs path>` (the
+    /// per-process leaf) or — the persistent tier, tebako#1026 —
+    /// `<base>/tebako-dlcache/<image-key>/<full memfs path>`; a
     /// consumer that computes paths relative to a materialized binary
     /// (dyld's @rpath probes, a dlopen'd library's own dependencies)
     /// presents paths under the marker directory. Strip it: the
@@ -801,7 +810,13 @@ impl FsContext {
     fn dlmap_tail(path: &str) -> Option<String> {
         let mut components = path.split('/');
         while let Some(component) = components.next() {
-            if is_dlmap_marker(component) {
+            // The persistent spelling carries one extra component — the
+            // segregation key — between the marker and the memfs tail.
+            let skip_key = component == DLCACHE_MARKER;
+            if skip_key || is_dlmap_marker(component) {
+                if skip_key && components.next().is_none() {
+                    return None;
+                }
                 let tail: Vec<&str> = components.collect();
                 if tail.is_empty() {
                     return None;
@@ -2771,7 +2786,26 @@ impl FsContext {
             return Err(libc::EISDIR);
         }
 
+        // The persistent dlcache tier (tebako#1026): on macOS the
+        // extraction lands in the leave-in-place, image-key-segregated
+        // `tebako-dlcache/<image-key>` namespace under the exec-cache
+        // base, with the Rule-R3 write-once/digest-record discipline —
+        // a path STABLE across boots, so the platform loader's
+        // first-seen scan (XProtect/syspolicyd) prices once per image
+        // build instead of once per launch. Elsewhere the per-process
+        // `tebako-dl-<hex>` leaf serves (Linux has no scan cost; the
+        // windows tier extracts whole trees).
+        let persistent = matches!(dest, ClosureDest::Dlcache) && self.dl_persist;
         let root = match dest {
+            ClosureDest::Dlcache if persistent => {
+                match dlcache_root_under(dl_base(), &dlcache_image_key(mount)) {
+                    Some(root) => root,
+                    None => {
+                        trace_err(libc::EIO);
+                        return Err(libc::EIO);
+                    }
+                }
+            }
             ClosureDest::Dlcache => match ensure_dl_tmpdir(&mut self.dl_tmpdir) {
                 Ok(root) => root,
                 Err(e) => {
@@ -2783,67 +2817,116 @@ impl FsContext {
         };
 
         let host_path = root.join(Self::host_tail(path));
-        if let Some(parent) = host_path.parent() {
-            if std::fs::create_dir_all(parent).is_err() {
-                trace_err(libc::EIO);
-                return Err(libc::EIO);
-            }
-        }
 
-        // Stream the file out in chunks.
-        let mut out = match std::fs::File::create(&host_path) {
-            Ok(out) => out,
-            Err(_) => {
-                trace_err(libc::EIO);
-                return Err(libc::EIO);
-            }
-        };
+        // Persistent-tier reuse: a copy whose record re-verifies skips
+        // the write entirely. The closure walk below STILL runs — it is
+        // the completeness check, healing a previous boot's mid-closure
+        // crash member by member.
+        let served = persistent && dlcache_serve_verified(&host_path);
         let mut offset = 0u64;
-        let mut buf = vec![0u8; 8192];
-        loop {
-            let n = match mount.backend.pread(&rel_owned, &mut buf, offset) {
-                Ok(n) => n,
-                Err(e) => {
+        if served {
+            self.dl_cache.insert(path.to_string(), host_path.clone());
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Materialize, path, "cache-hit")
+                        .detail("dest", Value::String(dest_token.to_string()))
+                        .detail("host", Value::String(host_path.display().to_string()))
+                        .detail("tier", Value::String("persistent".to_string()))
+                        .dur(start),
+                );
+            }
+        } else {
+            if let Some(parent) = host_path.parent() {
+                if std::fs::create_dir_all(parent).is_err() {
+                    trace_err(libc::EIO);
+                    return Err(libc::EIO);
+                }
+            }
+
+            if persistent {
+                // Stage per-process, hash in flight, verify the staged
+                // copy, record then content (dlcache_install's
+                // write-once protocol).
+                let install = dlcache_install(&host_path, st.perms, |part| {
+                    use sha2::Digest as _;
+                    let mut hasher = sha2::Sha256::new();
+                    let mut out = std::fs::File::create(part).map_err(|_| libc::EIO)?;
+                    let mut buf = vec![0u8; 8192];
+                    loop {
+                        let n = mount.backend.pread(&rel_owned, &mut buf, offset)?;
+                        if n == 0 {
+                            break;
+                        }
+                        use std::io::Write as _;
+                        out.write_all(&buf[..n]).map_err(|_| libc::EIO)?;
+                        hasher.update(&buf[..n]);
+                        offset += n as u64;
+                    }
+                    Ok(dlcache_sha256_hex(&hasher.finalize()))
+                });
+                if let Err(e) = install {
                     trace_err(e);
                     return Err(e);
                 }
-            };
-            if n == 0 {
-                break;
-            }
-            use std::io::Write as _;
-            if let Err(e) = out.write_all(&buf[..n]).map_err(|_| {
-                let _ = std::fs::remove_file(&host_path);
-                libc::EIO
-            }) {
-                trace_err(e);
-                return Err(e);
-            }
-            offset += n as u64;
-        }
-        drop(out);
+            } else {
+                // Stream the file out in chunks.
+                let mut out = match std::fs::File::create(&host_path) {
+                    Ok(out) => out,
+                    Err(_) => {
+                        trace_err(libc::EIO);
+                        return Err(libc::EIO);
+                    }
+                };
+                let mut buf = vec![0u8; 8192];
+                loop {
+                    let n = match mount.backend.pread(&rel_owned, &mut buf, offset) {
+                        Ok(n) => n,
+                        Err(e) => {
+                            trace_err(e);
+                            return Err(e);
+                        }
+                    };
+                    if n == 0 {
+                        break;
+                    }
+                    use std::io::Write as _;
+                    if let Err(e) = out.write_all(&buf[..n]).map_err(|_| {
+                        let _ = std::fs::remove_file(&host_path);
+                        libc::EIO
+                    }) {
+                        trace_err(e);
+                        return Err(e);
+                    }
+                    offset += n as u64;
+                }
+                drop(out);
 
-        // Permissions, best effort (dlopen needs a readable file).
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let _ = std::fs::set_permissions(&host_path, std::fs::Permissions::from_mode(st.perms));
-        }
+                // Permissions, best effort (dlopen needs a readable file).
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt as _;
+                    let _ = std::fs::set_permissions(
+                        &host_path,
+                        std::fs::Permissions::from_mode(st.perms),
+                    );
+                }
+            }
 
-        if matches!(dest, ClosureDest::Dlcache) {
-            self.dl_cache.insert(path.to_string(), host_path.clone());
-        }
-        if let Some(start) = trace_start {
-            trace::emit(
-                trace::Event::new(
-                    trace::Op::Materialize,
-                    path,
-                    format!("ok:{}", host_path.display()),
-                )
-                .detail("dest", Value::String(dest_token.to_string()))
-                .detail("bytes", trace::num(offset))
-                .dur(start),
-            );
+            if matches!(dest, ClosureDest::Dlcache) {
+                self.dl_cache.insert(path.to_string(), host_path.clone());
+            }
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(
+                        trace::Op::Materialize,
+                        path,
+                        format!("ok:{}", host_path.display()),
+                    )
+                    .detail("dest", Value::String(dest_token.to_string()))
+                    .detail("bytes", trace::num(offset))
+                    .dur(start),
+                );
+            }
         }
         // Eager dependency closure: the platform loader's probes are
         // raw syscalls no userland hook can serve (dyld proven on
@@ -3282,11 +3365,7 @@ fn ensure_dl_tmpdir(slot: &mut Option<std::path::PathBuf>) -> Result<std::path::
 /// `tebako-dl-<hex>` marker keeps the dlmap-prefix redirect and the
 /// exit cleanup untouched.
 fn create_dl_tmpdir() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("TEBAKO_EXEC_CACHE")
-        .filter(|v| !v.is_empty())
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    create_dl_tmpdir_under(base)
+    create_dl_tmpdir_under(dl_base())
 }
 
 /// The base-keyed body of [`create_dl_tmpdir`], split out so the
@@ -3314,8 +3393,197 @@ fn create_dl_tmpdir_under(base: std::path::PathBuf) -> Option<std::path::PathBuf
     None
 }
 
+/// The exec-cache base for every dlmap extraction: the driver's named
+/// `TEBAKO_EXEC_CACHE` when present, else the system temp dir.
+fn dl_base() -> std::path::PathBuf {
+    std::env::var_os("TEBAKO_EXEC_CACHE")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+/// The persistent dlcache tier's namespace marker (tebako#1026): on macOS
+/// the dlmap closure lands at `<base>/tebako-dlcache/<image-key>/<full
+/// memfs path>` — leave-in-place and image-key-segregated, so the path is
+/// STABLE across boots and the platform loader's first-seen scan
+/// (XProtect/syspolicyd, ~350–650 ms per native extension per launch with
+/// the per-process leaf) prices once per image build, not once per boot.
+const DLCACHE_MARKER: &str = "tebako-dlcache";
+
+/// The persistent tier's platform gate: macOS carries the first-seen
+/// scan cost; Linux does not (its per-process leaf stays). The engine
+/// beneath the gate is platform-free — tests drive it on every leg
+/// through the `dl_persist` field, never through this predicate.
+const fn dlcache_persistent() -> bool {
+    cfg!(target_os = "macos")
+}
+
+/// Lowercase hex sha256 — the same idiom as exec_cache.rs and
+/// ffi::interpose (layering forbids sharing those copies).
+fn dlcache_sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    let digest = sha2::Sha256::digest(bytes);
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        out.push(char::from_digit((b >> 4) as u32, 16).unwrap());
+        out.push(char::from_digit((b & 0xf) as u32, 16).unwrap());
+    }
+    out
+}
+
+/// A mount's segregation key for the persistent tier (the exec_cache.rs
+/// rule, mirrored): the backing image's `.sha256` store sidecar prefix
+/// (Rule L3 — a rebuilt image never serves a stale extraction), else a
+/// key of the image's path string (a dev boot), else `host` for a mount
+/// with no archive path at all.
+fn dlcache_image_key(mount: &Mount) -> String {
+    let Some(archive) = mount.archive_path.as_deref() else {
+        return "host".to_string();
+    };
+    let archive = std::path::PathBuf::from(archive.to_string_lossy().into_owned());
+    let mut sidecar = archive.as_os_str().to_os_string();
+    sidecar.push(".sha256");
+    if let Ok(text) = std::fs::read_to_string(sidecar) {
+        if let Some(token) = text.split_whitespace().next() {
+            if token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return token[..16].to_string();
+            }
+        }
+    }
+    dlcache_sha256_hex(archive.to_string_lossy().as_bytes())[..16].to_string()
+}
+
+/// The persistent namespace root for one mount: `<base>/tebako-dlcache/
+/// <image-key>`, created on first use, NEVER registered for the exit
+/// cleanup — leave-in-place is the point.
+fn dlcache_root_under(base: std::path::PathBuf, image_key: &str) -> Option<std::path::PathBuf> {
+    let dir = base.join(DLCACHE_MARKER).join(image_key);
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// The digest record next to a persistent-tier file (the resources
+/// tier's Rule-R3 bookkeeping, materialize.rs's RECORD_SUFFIX).
+fn dlcache_record(host_path: &std::path::Path) -> std::path::PathBuf {
+    let mut record = host_path.as_os_str().to_os_string();
+    record.push(".tfs-digest");
+    std::path::PathBuf::from(record)
+}
+
+/// Hash a host file with the tfs-merkle-1 file construction (the same
+/// digest the resources tier's records pin).
+fn dlcache_hash_file(path: &std::path::Path) -> Option<String> {
+    use sha2::Digest as _;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = sha2::Sha256::new();
+    std::io::copy(&mut file, &mut hasher).ok()?;
+    Some(dlcache_sha256_hex(&hasher.finalize()))
+}
+
+/// The persistent tier's reuse verdict (tebako#1026, the tree tier's
+/// heal discipline lifted to files): `true` serves the cached copy —
+/// the record exists, parses, and the host file rehashes to it.
+/// Anything else wipes the pair and answers `false` (the caller
+/// re-extracts once; a cache that cannot heal fails named at the
+/// write). A missing file or record is the ordinary miss, also `false`.
+fn dlcache_serve_verified(host_path: &std::path::Path) -> bool {
+    let record_path = dlcache_record(host_path);
+    let (Ok(record), true) = (std::fs::read_to_string(&record_path), host_path.is_file()) else {
+        return false;
+    };
+    let Some(expected) = record.split_whitespace().next() else {
+        let _ = std::fs::remove_file(&record_path);
+        return false;
+    };
+    if expected.len() != 64 || !expected.bytes().all(|b| b.is_ascii_hexdigit()) {
+        let _ = std::fs::remove_file(&record_path);
+        return false;
+    }
+    match dlcache_hash_file(host_path).as_deref() == Some(expected) {
+        true => true,
+        false => {
+            // Tampered or corrupt: wipe both halves; the caller's
+            // re-extraction writes the honest copy.
+            let _ = std::fs::remove_file(host_path);
+            let _ = std::fs::remove_file(&record_path);
+            false
+        }
+    }
+}
+
+/// Install one extracted file under the persistent tier's write-once
+/// protocol: stage per-process, hash in flight, re-read the staged copy
+/// (a write-path lie is EIO, never an installed corruption), record
+/// renamed into place BEFORE the content (content without a record is
+/// foreign by construction), content read-only. Concurrent boots race
+/// benignly: distinct part files, identical bytes, last rename wins.
+/// `write_staged` streams the file's bytes to the staged path and
+/// answers the in-flight digest (or the errno the stream failed with).
+fn dlcache_install(
+    host_path: &std::path::Path,
+    perms: u32,
+    write_staged: impl FnOnce(&std::path::Path) -> Result<String, i32>,
+) -> Result<(), i32> {
+    let part = {
+        let mut p = host_path.as_os_str().to_os_string();
+        p.push(format!(".part-{}", std::process::id()));
+        std::path::PathBuf::from(p)
+    };
+    let cleanup = |part: &std::path::Path, record_part: Option<&std::path::Path>| {
+        let _ = std::fs::remove_file(part);
+        if let Some(r) = record_part {
+            let _ = std::fs::remove_file(r);
+        }
+    };
+    let record_path = dlcache_record(host_path);
+    let staged_digest = match write_staged(&part) {
+        Ok(d) => d,
+        Err(e) => {
+            cleanup(&part, None);
+            return Err(e);
+        }
+    };
+    // The staged copy must hash to the bytes the image served — re-read,
+    // never trust the in-flight tally (the resources tier's Rule R3).
+    match dlcache_hash_file(&part).as_deref() {
+        Some(d) if d == staged_digest => {}
+        _ => {
+            cleanup(&part, None);
+            return Err(libc::EIO);
+        }
+    }
+    let record_part = {
+        let mut p = record_path.as_os_str().to_os_string();
+        p.push(format!(".part-{}", std::process::id()));
+        std::path::PathBuf::from(p)
+    };
+    if std::fs::write(&record_part, format!("{staged_digest}\n")).is_err() {
+        cleanup(&part, None);
+        return Err(libc::EIO);
+    }
+    if std::fs::rename(&record_part, &record_path).is_err() {
+        cleanup(&part, Some(&record_part));
+        return Err(libc::EIO);
+    }
+    if std::fs::rename(&part, host_path).is_err() {
+        cleanup(&part, None);
+        let _ = std::fs::remove_file(&record_path);
+        return Err(libc::EIO);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        // Rule R3: installed content is read-only (the image's own
+        // perms with the write bits stripped).
+        let _ =
+            std::fs::set_permissions(host_path, std::fs::Permissions::from_mode(perms & !0o222));
+    }
+    Ok(())
+}
+
 /// Register process-teardown removal of the dl tmpdir (the C++ FsContext
-/// destructor semantics), once per process.
+/// destructor semantics), once per process. The persistent dlcache tier
+/// (DLCACHE_MARKER) is never registered — leave-in-place is its point.
 fn register_dl_cleanup(dir: &std::path::Path) {
     use std::sync::{Mutex, Once};
     static CLEANUP_DIR: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
@@ -5079,7 +5347,17 @@ mod tests {
         let host = ctx.dlmap2file("A:/t/lib/x.so").unwrap();
         let host = host.to_string_lossy().into_owned();
 
-        assert!(host.contains("tebako-dl-"), "under the dl root: {host}");
+        // The persistent tier (tebako#1026) answers the dlcache spelling
+        // on macOS; every other platform keeps the per-process leaf.
+        let root_marker = if cfg!(target_os = "macos") {
+            "tebako-dlcache"
+        } else {
+            "tebako-dl-"
+        };
+        assert!(
+            host.contains(root_marker),
+            "under the dl root ({root_marker}): {host}"
+        );
         assert!(!host.starts_with("A:"), "never the drive itself: {host}");
         assert!(
             std::path::Path::new(&host).is_file(),
@@ -5090,6 +5368,237 @@ mod tests {
             "the flattened tail mirrors the memfs path: {host}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- the persistent dlcache tier (tebako#1026) ----
+
+    #[test]
+    fn dlmap_tail_strips_the_persistent_marker_and_key() {
+        assert_eq!(
+            FsContext::dlmap_tail("/tmp/tebako-dlcache/0123456789abcdef/tfs/lib/x.so"),
+            Some("/tfs/lib/x.so".to_string())
+        );
+        // The key without a tail, and the marker alone, answer None.
+        assert_eq!(
+            FsContext::dlmap_tail("/tmp/tebako-dlcache/0123456789abcdef"),
+            None
+        );
+        assert_eq!(FsContext::dlmap_tail("/tmp/tebako-dlcache"), None);
+        // The per-process spelling still resolves.
+        assert_eq!(
+            FsContext::dlmap_tail("/tmp/tebako-dl-ab12/tfs/lib/x.so"),
+            Some("/tfs/lib/x.so".to_string())
+        );
+    }
+
+    #[test]
+    fn dlcache_image_key_prefers_the_sidecar_then_the_path() {
+        let dir = std::env::temp_dir().join(format!("tfs-dlkey-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let img = dir.join("runtime.tfs");
+        std::fs::write(&img, b"image").unwrap();
+        let mut mount = Mount {
+            handle: 0,
+            mount_point: "/tfs".to_string(),
+            mount_point_c: Box::new(std::ffi::CString::new("/tfs").unwrap()),
+            archive_path: Some(Box::new(
+                std::ffi::CString::new(img.to_string_lossy().into_owned()).unwrap(),
+            )),
+            slot: None,
+            union_tail: Vec::new(),
+            backend: Box::new(crate::backends_hostdir::HostDirBackend::new(&dir).unwrap()),
+            mode: crate::mount::MountMode::ReadOnly,
+        };
+        // No sidecar: the path key (16 hex).
+        let path_key = dlcache_image_key(&mount);
+        assert_eq!(path_key.len(), 16);
+        assert!(path_key.bytes().all(|b| b.is_ascii_hexdigit()));
+        // A sidecar pins the content key.
+        std::fs::write(
+            dir.join("runtime.tfs.sha256"),
+            format!("{}  runtime.tfs\n", "ab".repeat(32)),
+        )
+        .unwrap();
+        assert_eq!(dlcache_image_key(&mount), "abababababababab");
+        // A mount with no archive at all keys `host`.
+        mount.archive_path = None;
+        assert_eq!(dlcache_image_key(&mount), "host");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Mount a host dir with a per-test UNIQUE archive identity — the
+    /// persistent tier keys its namespace on the mount's image key, and
+    /// the default hostdir mount's `host` key would let parallel tests
+    /// share (and sweep) each other's namespace.
+    fn mount_hostdir_keyed(ctx: &mut FsContext, dir: &std::path::Path, point: &str, key: &str) {
+        let backend = crate::backends_hostdir::HostDirBackend::new(dir).unwrap();
+        let mount = Mount {
+            handle: 0,
+            mount_point: point.to_string(),
+            mount_point_c: Box::new(std::ffi::CString::new(point).unwrap()),
+            archive_path: Some(Box::new(
+                std::ffi::CString::new(format!("/dev/null/{key}.tfs")).unwrap(),
+            )),
+            slot: None,
+            union_tail: Vec::new(),
+            backend: Box::new(backend),
+            mode: crate::mount::MountMode::ReadOnly,
+        };
+        ctx.mount_checked(mount).unwrap();
+    }
+
+    /// Remove ONE keyed namespace a persistent-tier test populated (the
+    /// tier is leave-in-place by design) — never the shared marker root,
+    /// which parallel tests are using.
+    fn sweep_dlcache(host: &str) {
+        let marker = std::ffi::OsStr::new(DLCACHE_MARKER);
+        let root = std::path::Path::new(host)
+            .ancestors()
+            .find(|a| a.parent().is_some_and(|p| p.file_name() == Some(marker)))
+            .map(|a| a.to_path_buf());
+        if let Some(root) = root {
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn the_persistent_tier_reuses_across_process_lifetimes() {
+        // Two FRESH contexts (two "boots"), one image: the second boot
+        // serves the first boot's file — same path, same inode, no
+        // rewrite. The per-boot rehash is the price; the platform
+        // loader's first-seen scan is what disappears.
+        let dir = std::env::temp_dir().join(format!("tfs-dlpersist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("data")).unwrap();
+        std::fs::write(img.join("data/payload.dat"), b"persist-me\n").unwrap();
+        let point = format!("/t1026r{}", std::process::id());
+
+        let first = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/payload.dat"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert!(
+            first.contains(DLCACHE_MARKER),
+            "the persistent spelling: {first}"
+        );
+        assert!(std::path::Path::new(&first).is_file(), "{first}");
+        let meta_before = std::fs::metadata(&first).unwrap();
+        let record = dlcache_record(std::path::Path::new(&first));
+        assert!(record.is_file(), "the digest record landed: {record:?}");
+
+        let second = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/payload.dat"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(first, second, "the path is stable across boots");
+        let meta_after = std::fs::metadata(&second).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            assert_eq!(
+                meta_before.ino(),
+                meta_after.ino(),
+                "no rewrite on reuse — the loader's scan cache holds"
+            );
+        }
+        assert_eq!(
+            meta_before.modified().unwrap(),
+            meta_after.modified().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        sweep_dlcache(&second);
+    }
+
+    #[test]
+    fn the_persistent_tier_heals_a_tampered_copy() {
+        let dir = std::env::temp_dir().join(format!("tfs-dlheal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("data")).unwrap();
+        std::fs::write(img.join("data/payload.dat"), b"honest bytes\n").unwrap();
+        let point = format!("/t1026t{}", std::process::id());
+
+        let host = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/payload.dat"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        // Tamper: the installed copy is read-only, so restore the write
+        // bit first (a real tamperer in the user's own cache can).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(&host, std::fs::Permissions::from_mode(0o644));
+        }
+        std::fs::write(&host, b"FORGED").unwrap();
+
+        let healed = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/payload.dat"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(host, healed);
+        assert_eq!(std::fs::read(&healed).unwrap(), b"honest bytes\n");
+        let _ = std::fs::remove_dir_all(&dir);
+        sweep_dlcache(&healed);
+    }
+
+    #[test]
+    fn the_persistent_tier_reextracts_a_missing_record() {
+        let dir = std::env::temp_dir().join(format!("tfs-dlnorec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("data")).unwrap();
+        std::fs::write(img.join("data/payload.dat"), b"recorded\n").unwrap();
+        let point = format!("/t1026n{}", std::process::id());
+
+        let host = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/payload.dat"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        let record = dlcache_record(std::path::Path::new(&host));
+        std::fs::remove_file(&record).unwrap();
+        // Content without a record is foreign by construction: the next
+        // boot re-extracts and rewrites the record.
+        let again = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/payload.dat"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(host, again);
+        assert!(record.is_file(), "the record was rewritten");
+        assert_eq!(std::fs::read(&again).unwrap(), b"recorded\n");
+        let _ = std::fs::remove_dir_all(&dir);
+        sweep_dlcache(&again);
     }
 
     #[test]
