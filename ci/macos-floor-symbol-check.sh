@@ -45,11 +45,18 @@ for product in "$@"; do
   nm -m "$product" 2>/dev/null \
     | sed -n -e 's/^ *(undefined) external \([^ ]*\).*/\1/p' \
              -e 's/^ *(undefined) weak external \([^ ]*\).*/\1/p' \
-    | sort -u > "$undef"
-  comm -23 "$undef" "$FLOOR" > "$miss"
+    | LC_ALL=C sort -u > "$undef"
+  # LC_ALL=C is load-bearing, on both sides of the comm: the set leads
+  # with 26k `$ld$` linker-directive lines (`$` < `_` byte-wise), and a
+  # locale-collated comm (Darwin 15's en_US.UTF-8 ignores punctuation on
+  # the first pass — "ld" > "error") walks the two files in different
+  # orders and reports EVERY symbol as absent (the v2.8.75-floor-gate
+  # rehearsal's 155/356/443/437/464 false-miss legs).
+  n_floor=$(wc -l < "$FLOOR" | tr -d ' ')
+  LC_ALL=C comm -23 "$undef" "$FLOOR" > "$miss"
   n=$(wc -l < "$miss" | tr -d ' ')
   if [ "$n" != "0" ]; then
-    echo "::error::floor gate: $product references $n symbol(s) absent from the macOS 14.0 floor:"
+    echo "::error::floor gate: $product references $n symbol(s) absent from the macOS 14.0 floor ($n_floor exports):"
     sed 's/^/::error::  /' "$miss"
     status=1
   else
