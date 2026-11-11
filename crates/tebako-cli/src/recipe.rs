@@ -186,7 +186,7 @@ fn triplet(platform: &str) -> Option<&'static str> {
 /// The engine requirement the project declared, when it declared one.
 fn requirement(opts: &PressOptions) -> Option<&str> {
     match opts.engine {
-        PressEngine::Node => opts
+        PressEngine::Node | PressEngine::Python => opts
             .engine_requirement
             .as_deref()
             .filter(|r| !r.trim().is_empty()),

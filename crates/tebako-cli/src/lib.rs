@@ -99,6 +99,7 @@ pub mod node;
 pub mod options;
 pub mod packager;
 pub mod publish;
+pub mod python;
 pub mod recipe;
 pub mod registry;
 pub mod registry_log;
@@ -411,11 +412,17 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         .unwrap_or_else(|| package.clone());
 
     let platform = host_platform()?;
-    // The node arm's FIRST gate runs before any runtime is resolved: a
-    // project without a lockfile cannot be vendored, and a download that
+    // The vendoring arms' FIRST gate runs before any runtime is resolved:
+    // a project without a lockfile cannot be vendored, and a download that
     // ends in that refusal would be a wasted one.
-    if opts.engine == crate::options::PressEngine::Node {
-        crate::node::require_lockfile(Path::new(&opts.root()))?;
+    match opts.engine {
+        crate::options::PressEngine::Node => {
+            crate::node::require_lockfile(Path::new(&opts.root()))?
+        }
+        crate::options::PressEngine::Python => {
+            crate::python::require_lockfile(Path::new(&opts.root()))?
+        }
+        crate::options::PressEngine::Ruby => {}
     }
 
     // The bootstrap is resolved BEFORE the runtime download: the local
@@ -434,6 +441,9 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     let (resolved, resolved_dll) = if opts.engine == crate::options::PressEngine::Node {
         let pair = resolve_node_pair(opts)?;
         (pair_resolved(&pair), None)
+    } else if opts.engine == crate::options::PressEngine::Python {
+        let pair = resolve_python_pair(opts)?;
+        (pair_resolved(&pair), None)
     } else if let Some(pair) = &default_pair {
         (pair_resolved(pair), None)
     } else {
@@ -447,17 +457,17 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     let runtime_path = resolved.executable.clone();
     // The engine's language version, from the pair that was actually
     // resolved: for ruby the pre-resolution value and the pair agree by
-    // construction; for node the pair IS the authority (the press never
-    // guesses a node line).
+    // construction; for node and python the pair IS the authority (the
+    // press never guesses their line).
     let (ruby_ver, runtime_tebako_version) = if let Some(pair) = &default_pair {
         pair_versions(&pair.exe, opts.engine.as_str())?
-    } else if opts.engine == crate::options::PressEngine::Node {
-        let (lv, ver) = pair_versions(&runtime_path, "node")?;
+    } else if opts.engine != crate::options::PressEngine::Ruby {
+        let (lv, ver) = pair_versions(&runtime_path, opts.engine.as_str())?;
         (lv, ver)
     } else {
         (ruby_ver, opts.tebako_version.clone())
     };
-    if opts.engine == crate::options::PressEngine::Node {
+    if opts.engine != crate::options::PressEngine::Ruby {
         println!("{}", opts.press_announce(&ruby_ver));
     }
 
@@ -695,17 +705,18 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // into the SAME block (spec 08 §4 — one manifest, never two paths).
     // The lock (spec 23 §4) rides the same manifest.
     // The entry the package boots: ruby's dispatcher (which composes the
-    // scenario's entry) or, on the node arm, the app's own script — the
-    // driver composes `node <entry>` from the runtime's argv contract.
-    let entrypoint = if opts.engine == crate::options::PressEngine::Node {
-        format!("/local/{}", opts.entrance)
-    } else {
+    // scenario's entry) or, on the node and python arms, the app's own
+    // script — the driver composes `<engine> <entry>` from the runtime's
+    // argv contract.
+    let entrypoint = if opts.engine == crate::options::PressEngine::Ruby {
         "/local/stub.rb".to_string()
-    };
-    let interp_env = if opts.engine == crate::options::PressEngine::Node {
-        Default::default()
     } else {
+        format!("/local/{}", opts.entrance)
+    };
+    let interp_env = if opts.engine == crate::options::PressEngine::Ruby {
         authored_interp_env(&PathBuf::from(opts.root()))
+    } else {
+        Default::default()
     };
     let package_manifest = press_package_manifest(
         &package,
@@ -743,17 +754,17 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
             .iter()
             .map(|s| (s.name.clone(), s.mount.clone()))
             .collect();
-        let in_image_entry = if opts.engine == crate::options::PressEngine::Node {
-            format!("/local/{}", opts.entrance)
-        } else {
+        let in_image_entry = if opts.engine == crate::options::PressEngine::Ruby {
             scenario.fs_entry_point.clone()
-        };
-        let lockfile = if opts.engine == crate::options::PressEngine::Node {
-            Some("package-lock.json".to_string())
         } else {
-            Path::new(&scenario.gemfile_path)
+            format!("/local/{}", opts.entrance)
+        };
+        let lockfile = match opts.engine {
+            crate::options::PressEngine::Node => Some("package-lock.json".to_string()),
+            crate::options::PressEngine::Python => Some("requirements.txt".to_string()),
+            crate::options::PressEngine::Ruby => Path::new(&scenario.gemfile_path)
                 .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
+                .map(|n| n.to_string_lossy().into_owned()),
         };
         recipe::emit(
             &recipe::RecipeInputs {
@@ -774,14 +785,18 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     Ok(PathBuf::from(package))
 }
 
-/// Resolve the node runtime pair through the managed dispatch chain (the
+/// Resolve a runtime pair through the managed dispatch chain (the
 /// configured factory registries) — the arc's rule: a press and a
-/// `tebako run node` must pick the same pair, because they are the same
-/// resolver. The requirement (`engines.node`) becomes the constraint when
-/// the project declared one; a project that declared none takes the
-/// registry's newest line, exactly like a bare `tebako run node`.
-fn resolve_node_pair(
+/// `tebako run <engine>` must pick the same pair, because they are the
+/// same resolver. The requirement the project declared becomes the
+/// constraint; a project that declared none takes the registry's newest
+/// line, exactly like a bare `tebako run <engine>`. `req_label` names the
+/// requirement's source in the parse error (`engines.node`,
+/// `requires-python`, the Gemfile `ruby` directive).
+fn resolve_registry_pair(
     opts: &PressOptions,
+    engine: &str,
+    req_label: &str,
 ) -> Result<tpkg::runtime_store::CachedRuntime, TebakoError> {
     let constraint = match opts.engine_requirement.as_deref() {
         Some(spelled) if !spelled.trim().is_empty() => {
@@ -789,7 +804,7 @@ fn resolve_node_pair(
                 packaging_error(
                     130,
                     Some(&format!(
-                        "engines.node \"{spelled}\" is not a constraint this press can honour: {e}"
+                        "{req_label} \"{spelled}\" is not a constraint this press can honour: {e}"
                     )),
                 )
             })?
@@ -809,13 +824,27 @@ fn resolve_node_pair(
         cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
         env,
     };
-    tebako_shim::runtime::resolve_runtime_edge("node", None, &constraint, None, None, true, &ctx)
+    tebako_shim::runtime::resolve_runtime_edge(engine, None, &constraint, None, None, true, &ctx)
         .map_err(|e| {
             plain_error(format!(
-                "cannot resolve the node runtime pair: {}",
+                "cannot resolve the {engine} runtime pair: {}",
                 e.message
             ))
         })
+}
+
+/// Resolve the node runtime pair (the arc's Stage B arm).
+fn resolve_node_pair(
+    opts: &PressOptions,
+) -> Result<tpkg::runtime_store::CachedRuntime, TebakoError> {
+    resolve_registry_pair(opts, "node", "engines.node")
+}
+
+/// Resolve the python runtime pair (the arc's Stage C arm).
+fn resolve_python_pair(
+    opts: &PressOptions,
+) -> Result<tpkg::runtime_store::CachedRuntime, TebakoError> {
+    resolve_registry_pair(opts, "python", "requires-python")
 }
 
 /// A resolved runtime pair, as the press's image slot describes it.
@@ -853,39 +882,7 @@ fn ruby_takes_registry_default(opts: &PressOptions, with_gemfile: bool) -> bool 
 fn resolve_ruby_pair(
     opts: &PressOptions,
 ) -> Result<tpkg::runtime_store::CachedRuntime, TebakoError> {
-    let constraint = match opts.engine_requirement.as_deref() {
-        Some(spelled) if !spelled.trim().is_empty() => {
-            tpkg::Constraint::new(spelled).map_err(|e| {
-                packaging_error(
-                    130,
-                    Some(&format!(
-                        "the declared ruby requirement \"{spelled}\" is not a constraint this press can honour: {e}"
-                    )),
-                )
-            })?
-        }
-        _ => any_constraint(),
-    };
-    // A press bakes the runtime's FILES into the package, so it needs the
-    // whole env image on disk: the lazy install (spec 39 §10's default) seeds
-    // 4 MiB groups on demand at RUN time and leaves no whole image for the
-    // press to read. Force the eager install for the resolution.
-    let mut env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
-    env.insert("TEBAKO_RUNTIME_LAZY".to_string(), "0".to_string());
-    let home = tebako_shim::tebako_home(&env)
-        .map_err(|e| plain_error(format!("cannot resolve $TEBAKO_HOME: {}", e.message)))?;
-    let ctx = tebako_shim::Ctx {
-        home,
-        cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
-        env,
-    };
-    tebako_shim::runtime::resolve_runtime_edge("ruby", None, &constraint, None, None, true, &ctx)
-        .map_err(|e| {
-            plain_error(format!(
-                "cannot resolve the ruby runtime pair: {}",
-                e.message
-            ))
-        })
+    resolve_registry_pair(opts, "ruby", "the declared ruby requirement")
 }
 
 /// The "any version" constraint — what an unconstrained press asks the

@@ -24,8 +24,10 @@ pub fn build_app_image(
     ruby_ver: &str,
     bootstrap_path: &Path,
 ) -> Result<PathBuf, TebakoError> {
-    if opts.engine == crate::options::PressEngine::Node {
-        return build_node_image(opts, resolved);
+    match opts.engine {
+        crate::options::PressEngine::Node => return build_node_image(opts, resolved),
+        crate::options::PressEngine::Python => return build_python_image(opts, resolved),
+        crate::options::PressEngine::Ruby => {}
     }
     let runtime_path = &resolved.executable;
     // Layout source, both eras: the runtime's extracted layout in the store.
@@ -120,6 +122,93 @@ fn build_node_image(opts: &PressOptions, resolved: &Resolved) -> Result<PathBuf,
         .map_err(|e| plain_error(format!("invalid --exclude: {e}")))?;
     build_image(&opts.data_bundle_file(), &src, opts.format, &excludes)?;
     Ok(opts.data_bundle_file())
+}
+
+/// The python arm of `build_app_image` (arc 02's Stage C): the payload is
+/// the project COPY plus its vendored closure — no runtime tree, no
+/// dispatcher script (the driver composes `python <entry>` at run time).
+/// The vendoring runs through the RESOLVED pair, never the host's python,
+/// and the console script lands at the payload ROOT (the flat layout the
+/// handoff proof verified: `sys.path[0]` resolves the imports at any
+/// mount point, no PYTHONPATH, so the payload honours the MOUNT RULE).
+fn build_python_image(opts: &PressOptions, resolved: &Resolved) -> Result<PathBuf, TebakoError> {
+    println!("-- Running the python staging step");
+    let src = opts.data_src_dir();
+    for dir in [src.clone(), opts.data_pre_dir(), opts.data_bin_dir()] {
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir)
+            .map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
+    }
+    let app_root = src.join("local");
+    fs::create_dir_all(&app_root)
+        .map_err(|e| plain_error(format!("{e} creating {}", app_root.display())))?;
+    crate::python::stage_project(Path::new(&opts.root()), &app_root)?;
+    let image = resolved.image.as_ref().ok_or_else(|| {
+        plain_error(
+            "the resolved python runtime carries no env image — the vendor step mounts it for pip; press against an image-era python release",
+        )
+    })?;
+    let image_path = resolved
+        .executable
+        .parent()
+        .map(|dir| dir.join(&image.filename))
+        .unwrap_or_else(|| PathBuf::from(&image.filename));
+    crate::python::pip_install(
+        &resolved.executable,
+        &image_path,
+        &app_root,
+        &opts.entrance,
+        opts.verbose,
+    )?;
+    write_python_manifest(opts)?;
+    let excludes = tpkg::exclude::ExcludeSet::parse(&opts.exclude)
+        .map_err(|e| plain_error(format!("invalid --exclude: {e}")))?;
+    build_image(&opts.data_bundle_file(), &src, opts.format, &excludes)?;
+    Ok(opts.data_bundle_file())
+}
+
+/// The python payload's L1 identity: name from the output, entry the
+/// console command at the app slice's mount (`/local/<name>` — the
+/// flattened console script), and `requires-python` recorded as the
+/// runtime requirement when the project declared one.
+fn write_python_manifest(opts: &PressOptions) -> Result<(), TebakoError> {
+    let name = Path::new(&opts.package())
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "app".to_string());
+    let entry = &opts.entrance;
+    let version = crate::reproducible_stamp();
+    let requirement = opts
+        .engine_requirement
+        .as_deref()
+        .filter(|spelled| !spelled.trim().is_empty())
+        .map(|spelled| {
+            format!(
+                ", runtime_requirement: {{engine: python, constraint: \"{}\"}}",
+                spelled.replace('"', "")
+            )
+        })
+        .unwrap_or_default();
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  \
+         producer: {{tool: tebako-press, tool_version: \"{tv}\"}}\n  \
+         created: \"{version}\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  \
+         entrypoints: [{{name: {entry}, path: /local/{entry}{requirement}}}]\n  \
+         platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        name = name,
+        version = version,
+        tv = env!("CARGO_PKG_VERSION"),
+        z = "0".repeat(64),
+        entry = entry,
+        requirement = requirement,
+    );
+    let dir = opts.data_src_dir().join(tpkg::merkle::MANIFEST_DIR);
+    fs::create_dir_all(&dir).map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
+    fs::write(dir.join("manifest.yaml"), manifest)
+        .map_err(|e| plain_error(format!("{e} writing the app manifest")))
 }
 
 /// The node payload's L1 identity: name from the output, entry from the
