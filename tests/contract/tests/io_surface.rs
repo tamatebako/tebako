@@ -363,7 +363,14 @@ fn dlmap2file_layout_preserves_full_memfs_path() {
         .to_string_lossy()
         .into_owned();
     unsafe { libc::free(host.cast()) };
-    assert!(path.contains("/tebako-dl-"), "dlmap marker dir: {path}");
+    // The marker proves the answer came from the dlmap root, whichever
+    // tier serves it: the per-process `tebako-dl-<hex>` leaf (Linux) or
+    // the persistent `tebako-dlcache/<image-key>` tier (macOS — the
+    // first-seen scan prices once per image build, tebako#1026).
+    assert!(
+        path.contains("/tebako-dl-") || path.contains("/tebako-dlcache/"),
+        "dlmap marker dir (either tier): {path}"
+    );
     assert!(
         path.ends_with("/__tebako_test__/content/hello.txt"),
         "the full memfs path is the extraction tail: {path}"
