@@ -4,6 +4,21 @@
 tractable properties, and names the ones that are not tractable. Numbers are
 measurements from this repository, cited where they appear.*
 
+**Abstract.** Tebako packages a program and its runtime as mounted filesystem
+images rather than as a container userland or an extracted tree, and that one
+choice turns packaging into a composition problem. This paper gives the
+composition a formal account: the three primitives (loader, runtime, payload),
+the mount algebra with its three proven properties (order independence among
+disjoint mounts, depth without special cases, duplicate points as named
+errors), the resolution calculus that makes a composed package's content
+deterministic and lockable, and the audience law, which states and stratifies
+the system's central usability theorem — compilation flows inward and never
+outward, so each audience's obligations are strictly weaker than its
+predecessor's. Trust is a fetch-time property throughout: verification happens
+when bytes move, never when they run. The paper closes with the properties the
+model provably does not have, because a composition system that cannot state
+its boundaries cannot be reasoned about.
+
 ## 1. The problem
 
 A program written in a managed language is not runnable on a host that lacks
@@ -45,6 +60,18 @@ file, carrying slot records with offsets, sizes, formats and mount points, and a
 header naming the runtime reference and the ABI the loader speaks. The format
 version is fixed forever; extensions ride flags rather than version bumps, so a
 reader from an earlier era never breaks on a package from a later one.
+
+Well-formedness is decided syntactically before any trust question arises. Names
+obey a grammar (payload names, versions and mount points are all checked by the
+same component rule, and a malformed spelling is a named error, never a guess);
+manifests carry a schema version and a reader rejects by name any schema it
+predates; and versions move through *eras* — a tag era exists so that a
+numbering scheme retired by an architecture change can never be reoccupied by
+accident, which is what makes "the newest release" a well-defined phrase inside
+a repository that has shipped two architectures. None of these rules is
+cryptographic. They exist so that the trust machinery above them — digests,
+signatures, transparency logs — operates on objects whose identities were never
+ambiguous in the first place.
 
 ## 3. The algebra of mounts
 
@@ -104,7 +131,44 @@ mode refuses a different assignment line by line; the mode exists because an
 automated build that silently re-solves is a build whose green result no longer
 means what it did yesterday.
 
-## 5. Trust as a fetch-time property
+## 5. The audience law
+
+The model's hardest property is not technical but allocational: who must install
+a compiler. Four audiences exist, and the system stratifies them deliberately.
+
+1. **The runner** of a package downloads it and runs it. No compilation
+   machinery, no libraries, no runtime installation — the package is
+   self-describing and the loader fetches and verifies what it needs.
+2. **The data packager** (fonts, datasets, documents) presses a payload of pure
+   content. The toolchain arrives as binaries; nothing of tebako's own stack
+   compiles on that machine.
+3. **The application packager** compiles only their own code. The loader, the
+   imager, the resolver and the signing machinery all arrive as published
+   binaries, so the packager's build graph contains the application and nothing
+   else.
+4. **The ecosystem developer** — the only audience that compiles tebako itself —
+   builds the factories and the product.
+
+The theorem the architecture maintains is one directional law: *compilation
+flows inward and never outward*. Formally, every artifact an outer audience
+consumes is produced by an inner tier and verified by content digest at the
+boundary, so the correctness obligations of audience *n* are independent of the
+toolchain state of audience *n+1*. The law is checkable — the release chain
+asserts it per release by proving that no published artifact references a build
+path of the machine that produced it — and it is the difference between a
+packaging system and a build system that happens to distribute. A system that
+lets a build dependency leak across the boundary (a header the runner must
+compile against, a toolchain the packager must install) has made its outermost
+audience into its innermost one, and the leak is always discovered by the user
+least able to repair it.
+
+The law has a measurable consequence the project guards in continuous
+integration: the loader binary stays under three megabytes per platform, because
+the runner's trust surface is exactly the loader plus the digest sidecars, and a
+loader that grew a runtime's worth of machinery would violate the law by
+construction.
+
+## 6. Trust as a fetch-time property
 
 Verification happens when bytes are fetched, not when they are run. The anchor is
 a digest published beside the artifact, and the loader checks the served bytes
@@ -124,7 +188,7 @@ Silence is the remaining attack — a registry that publishes no log cannot be h
 to completeness — and the model names that limitation rather than papering over
 it.
 
-## 6. What was measured
+## 7. What was measured
 
 The composition model is cheap to state and expensive to get right; the numbers
 below are the ones this repository can defend.
@@ -141,7 +205,7 @@ below are the ones this repository can defend.
   reported because it is the measurement that redirected the work: lazy seeding,
   not delta, is the optimisation that pays on the current image framing.
 
-## 7. What the model does not do
+## 8. What the model does not do
 
 It does not isolate. A package runs as the user who starts it, and the jail
 policy governs which host paths it may reach, not whether it may reach the
@@ -158,7 +222,7 @@ It does not yet solve runtime edges with its own machinery: those are resolved b
 the dispatcher, and the solver refuses them by name rather than duplicating the
 dispatcher's matcher.
 
-## 8. Related work
+## 9. Related work
 
 Container images and their registries solved distribution at the granularity of a
 userland, and the ecosystem's trust machinery — digests, signatures, and
@@ -170,9 +234,37 @@ records content and not locations. This paper's contribution is narrow: an
 algebra for mounting composed images, and a resolution calculus that makes the
 composition's answer deterministic and auditable.
 
-## 9. Conclusion
+## 10. Conclusion
 
 Mounting rather than extracting turns packaging into a composition problem, and a
 composition problem needs an algebra, a solver, and a lockfile before it can be
 trusted. The model described here has all three, has them tested at the depth a
 user can feel, and states plainly where it stops.
+
+## Appendix A. The specification map
+
+Every claim in this paper has a normative home in the product's specification
+set (`docs/spec/`, versioned with the code); the paper is the account, the
+specifications are the proof obligations.
+
+- **The primitives (§2)** — the wire container and the trailer:
+  spec 02; the payload manifest: spec 03; the launcher handoff: spec 06;
+  the runtime-as-image contract: spec 17.
+- **The mount algebra (§3)** — the virtual filesystem model and the
+  longest-prefix rule: spec 11; the composition laws (nested mounts,
+  duplicate points, rollback): spec 17 and spec 23.
+- **The resolution calculus (§4)** — the reference grammar and registry
+  mirror rules: spec 04; the store layout and the content anchor:
+  spec 05; the solver and the tree order: spec 42.
+- **The audience law (§5)** — the four audiences and the inward-flow
+  rule: spec 00 (the locked invariants) and spec 19 (the bootstrap
+  distribution chain the law constrains).
+- **Trust (§6)** — signing and verification: spec 09; the transparency
+  log and its named limitation: spec 41; the audit journal: spec 40.
+- **The measurements (§7)** — the reference-suite fixtures and the
+  performance covenant: spec 27.
+- **The boundaries (§8)** — the jail policy's scope: spec 08.
+
+The specification set itself is versioned with the code it describes, and
+its public rendering lives on the project site; the two are checked into
+the same repository so a claim and its proof cannot drift apart.
