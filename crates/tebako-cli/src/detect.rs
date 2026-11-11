@@ -12,15 +12,14 @@
 
 use std::path::{Path, PathBuf};
 
-/// What the project is — the engine axis the press targets. Ruby is the
-/// engine the press backend implements today; Node's plan is DERIVED (so
-/// the refusal can name the entry and the requirement it read) while its
-/// vendoring backend is still to come; python and rust are recognized so
-/// the refusal names them instead of calling the directory empty.
+/// What the project is — the engine axis the press targets. Ruby, Node
+/// and Python carry vendoring backends; rust is recognized so the refusal
+/// names it instead of calling the directory empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectKind {
     Ruby,
     Node,
+    Python,
 }
 
 impl ProjectKind {
@@ -28,6 +27,7 @@ impl ProjectKind {
         match self {
             ProjectKind::Ruby => "ruby",
             ProjectKind::Node => "node",
+            ProjectKind::Python => "python",
         }
     }
 }
@@ -61,13 +61,10 @@ pub fn detect(dir: &Path) -> Result<ProjectPlan, String> {
     let (marker_name, kind) = match marker {
         Some((name, kind)) => (*name, *kind),
         None => {
-            // A node project's plan IS derivable (package.json carries the
-            // entry and the engine requirement), so it is derived here and
-            // refused at the BACKEND, where the message can name what was
-            // read. The kinds whose mainfest the press cannot yet read at
-            // all keep the recognized-but-unsupported sentence: an author
-            // whose python project is refused should not be told the
-            // directory is empty.
+            // Node and python plans derive from their manifests
+            // (package.json, PEP 621) and ship vendoring backends. Rust is
+            // recognized so its refusal names the project kind instead of
+            // calling the directory empty.
             if dir.join("package.json").is_file() {
                 let (entry, requirement) = node_plan(&dir)?;
                 return Ok(ProjectPlan {
@@ -77,20 +74,18 @@ pub fn detect(dir: &Path) -> Result<ProjectPlan, String> {
                     requirement,
                 });
             }
-            // python's plan IS derivable from PEP 621 (the console command
-            // and `requires-python`), so it is derived here and refused at
-            // the BACKEND, where the message can name what was read — the
-            // node path's shape. An unreadable pyproject.toml reports its
-            // own parse error instead of a generic "not available".
+            // python's plan derives from PEP 621 (the console command and
+            // `requires-python`) and its vendoring backend ships. An
+            // unreadable pyproject.toml reports its own parse error
+            // instead of a generic "not available".
             if dir.join("pyproject.toml").is_file() {
                 return match python_plan(&dir) {
-                    Ok((entry, requirement)) => Err(format!(
-                        "this directory is a python project (pyproject.toml): its console command is '{}'{}. The python press backend is not available in this release — the plan was derived, not guessed, and is refused here rather than at build time; press a ruby project, or see the feedstock model in the guides for other engines",
-                        entry.display(),
-                        requirement
-                            .map(|r| format!(" and it requires python {r}"))
-                            .unwrap_or_default()
-                    )),
+                    Ok((entry, requirement)) => Ok(ProjectPlan {
+                        root: dir,
+                        entry,
+                        kind: ProjectKind::Python,
+                        requirement,
+                    }),
                     Err(e) => Err(format!(
                         "this directory is a python project (pyproject.toml), but {e}"
                     )),
@@ -505,11 +500,34 @@ mod tests {
     }
 
     #[test]
-    fn the_kinds_with_no_manifest_reader_still_name_their_engine() {
-        let py = temp("python");
-        std::fs::write(py.join("pyproject.toml"), "").unwrap();
-        assert!(detect(&py).unwrap_err().contains("python"));
+    fn a_python_project_plan_is_derived_from_pep621() {
+        let dir = temp("python-plan");
+        std::fs::write(
+            dir.join("pyproject.toml"),
+            "[project]\nname = \"hello-py\"\nversion = \"0.1.0\"\nrequires-python = \">=3.11\"\n\n[project.scripts]\nhello-py = \"hello_py.cli:main\"\n",
+        )
+        .unwrap();
+        let plan = detect(&dir).unwrap();
+        assert_eq!(plan.kind, ProjectKind::Python);
+        assert_eq!(plan.entry, PathBuf::from("hello-py"));
+        assert_eq!(plan.requirement.as_deref(), Some(">=3.11"));
+    }
 
+    #[test]
+    fn a_python_project_with_no_console_script_is_refused_by_name() {
+        let dir = temp("python-noscript");
+        std::fs::write(
+            dir.join("pyproject.toml"),
+            "[project]\nname = \"lib\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let err = detect(&dir).unwrap_err();
+        assert!(err.contains("python project"), "{err}");
+        assert!(err.contains("[project.scripts]"), "{err}");
+    }
+
+    #[test]
+    fn the_kinds_with_no_manifest_reader_still_name_their_engine() {
         let rs = temp("rust");
         std::fs::write(rs.join("Cargo.toml"), "").unwrap();
         assert!(detect(&rs).unwrap_err().contains("rust"));

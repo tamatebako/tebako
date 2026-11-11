@@ -85,11 +85,13 @@ fn a_python_project_names_its_engine_and_the_current_limit() {
     assert!(err.contains("[project.scripts]"), "{err}");
 }
 
-/// PEP 621's console command and `requires-python` are derived, so the
-/// refusal names what was read instead of calling the directory unknown
-/// (tebako#862's first increment).
+/// PEP 621's console command and `requires-python` derive the plan, and
+/// the vendoring backend ships — so a script-carrying project proceeds
+/// past detection and meets the backend's FIRST gate instead: the
+/// lockfile-true requirement (no `requirements.txt` → a named refusal
+/// before any runtime resolution).
 #[test]
-fn a_python_project_names_the_console_command_and_requirement_it_read() {
+fn a_python_project_reaches_the_backend_and_meets_the_lockfile_gate() {
     let dir = scratch("python-scripts");
     fs::write(
         dir.join("pyproject.toml"),
@@ -98,10 +100,11 @@ fn a_python_project_names_the_console_command_and_requirement_it_read() {
     .unwrap();
 
     let (code, err) = press(&dir);
-    assert_eq!(code, 1, "{err}");
-    assert!(err.contains("console command is 'mycli'"), "{err}");
-    assert!(err.contains("requires python >=3.11,<4"), "{err}");
-    assert!(err.contains("derived, not guessed"), "{err}");
+    // Named packaging errors exit 255 (the usage-refusal 1 is detection's).
+    assert_eq!(code, 255, "{err}");
+    assert!(err.contains("requirements.txt"), "{err}");
+    assert!(err.contains("lockfile-true"), "{err}");
+    assert!(err.contains("uv pip compile"), "{err}");
 }
 
 #[test]

@@ -133,13 +133,14 @@ impl PressImageFormat {
 }
 
 /// The engine a press targets. Ruby is the historical path (the scenario
-/// machinery + bundler deploy); Node stages the project and vendors its
-/// closure through the RESOLVED node pair instead.
+/// machinery + bundler deploy); Node and Python stage the project and
+/// vendor the closure through the RESOLVED pair instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PressEngine {
     #[default]
     Ruby,
     Node,
+    Python,
 }
 
 impl PressEngine {
@@ -147,6 +148,7 @@ impl PressEngine {
         match self {
             PressEngine::Ruby => "ruby",
             PressEngine::Node => "node",
+            PressEngine::Python => "python",
         }
     }
 }
@@ -352,6 +354,7 @@ impl PressOptions {
         let version_label = match self.engine {
             PressEngine::Ruby => "Ruby version:",
             PressEngine::Node => "Node version:",
+            PressEngine::Python => "Python version:",
         };
         format!(
             "Running tebako press at {}\n   Mode:                      '{}'\n   {:<26}'{}'\n   Project root:              '{}'\n   Application entry point:   '{}'\n   Package file name:         '{}'\n   Loging level:              '{}'\n   Package working directory: '{}'",

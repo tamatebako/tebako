@@ -12,7 +12,9 @@ use tebako_cli::{cache_list, cache_list_json, cache_prune, cache_seal, press, VE
 const USAGE: &str = "Usage:
   tebako press                        detect the project in the current directory
                                       (Gemfile: the bin/ or exe/ script, or the
-                                      single root *.rb) and derive the root + entry
+                                      single root *.rb; package.json: bin/main;
+                                      pyproject.toml: the [project.scripts] command)
+                                      and derive the root + entry
   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>] [-c <cwd>]
                [-R <ruby>] [-m self-contained|shared-runtime] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
@@ -28,7 +30,7 @@ const USAGE: &str = "Usage:
   tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
                [--] [<args>...]
   tebako run <engine>[:<command>] [<args>...]
-                                       the runtime-own surface (spec 07 §10): boot the
+                                       the runtime-own surface: boot the
                                        engine's runtime directly — the bare form runs the
                                        interpreter, :command a declared entrypoint; args
                                        ride verbatim
@@ -1765,6 +1767,9 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         ruby_requested: ruby,
         engine: match detected.as_ref().map(|p| p.kind) {
             Some(tebako_cli::detect::ProjectKind::Node) => tebako_cli::options::PressEngine::Node,
+            Some(tebako_cli::detect::ProjectKind::Python) => {
+                tebako_cli::options::PressEngine::Python
+            }
             _ => tebako_cli::options::PressEngine::Ruby,
         },
         engine_requirement: detected.as_ref().and_then(|p| p.requirement.clone()),
