@@ -153,14 +153,16 @@ The theorem the architecture maintains is one directional law: *compilation
 flows inward and never outward*. Formally, every artifact an outer audience
 consumes is produced by an inner tier and verified by content digest at the
 boundary, so the correctness obligations of audience *n* are independent of the
-toolchain state of audience *n+1*. The law is checkable — the release chain
-asserts it per release by proving that no published artifact references a build
-path of the machine that produced it — and it is the difference between a
-packaging system and a build system that happens to distribute. A system that
-lets a build dependency leak across the boundary (a header the runner must
-compile against, a toolchain the packager must install) has made its outermost
-audience into its innermost one, and the leak is always discovered by the user
-least able to repair it.
+toolchain state of audience *n+1*. The law is checkable — the release chain publishes only through its own
+audited pipeline, whose per-release gates (the loader's size limit, the
+dynamic-dependency audit that proves the binaries need nothing beyond the
+system loader, and the link-unit contract checks) exist precisely to keep
+the boundary load-bearing — and it is the difference between a packaging
+system and a build system that happens to distribute. A system that lets a
+build dependency leak across the boundary (a header the runner must compile
+against, a toolchain the packager must install) has made its outermost
+audience into its innermost one, and the leak is always discovered by the
+user least able to repair it.
 
 The law has a measurable consequence the project guards in continuous
 integration: the loader binary stays under three megabytes per platform, because
