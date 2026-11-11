@@ -1,0 +1,894 @@
+{
+  "suite": "metanorma-v1-vs-v2",
+  "generated_by": "tebako-bench report",
+  "triplets": [
+    {
+      "triplet": "linux-gnu-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715923456
+      },
+      "versions": {
+        "tebako": "2.8.76",
+        "runtime": "0.17.7-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 102.585143734,
+          "min_wall_s": 101.04120543,
+          "max_wall_s": 104.339889896,
+          "stdev_wall_s": 1.3189655580283337,
+          "mean_wall_s": 102.63398080459999,
+          "median_cpu_s": 119.778297,
+          "median_peak_rss_bytes": 1222737920,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 110.861279912,
+          "min_wall_s": 110.445249201,
+          "max_wall_s": 111.277310623,
+          "stdev_wall_s": 0.5883562738599283,
+          "mean_wall_s": 110.861279912,
+          "median_cpu_s": 129.71853149999998,
+          "median_peak_rss_bytes": 1312434176,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 210.166825422,
+          "min_wall_s": 209.05264056,
+          "max_wall_s": 211.320035043,
+          "stdev_wall_s": 0.8404902706057523,
+          "mean_wall_s": 210.1751529056,
+          "median_cpu_s": 222.458237,
+          "median_peak_rss_bytes": 1798696960,
+          "speedup_vs_v1": 0.48811292423538466
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 228.119446901,
+          "min_wall_s": 227.800823247,
+          "max_wall_s": 228.438070555,
+          "stdev_wall_s": 0.45060189277966184,
+          "mean_wall_s": 228.119446901,
+          "median_cpu_s": 241.9819155,
+          "median_peak_rss_bytes": 1875646464,
+          "speedup_vs_v1": 0.48597908428259484
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 51.550814057,
+          "min_wall_s": 50.593388771,
+          "max_wall_s": 52.275186372,
+          "stdev_wall_s": 0.701863232989959,
+          "mean_wall_s": 51.5304634858,
+          "median_cpu_s": 62.97556,
+          "median_peak_rss_bytes": 894881792,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 56.199090342,
+          "min_wall_s": 56.156864064,
+          "max_wall_s": 56.24131662,
+          "stdev_wall_s": 0.05971697503613823,
+          "mean_wall_s": 56.199090342,
+          "median_cpu_s": 68.0723735,
+          "median_peak_rss_bytes": 890056704,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 123.141113822,
+          "min_wall_s": 122.635871503,
+          "max_wall_s": 124.083125841,
+          "stdev_wall_s": 0.5234786413696505,
+          "mean_wall_s": 123.2551658776,
+          "median_cpu_s": 197.05858800000001,
+          "median_peak_rss_bytes": 1270108160,
+          "speedup_vs_v1": 0.41863202676172395
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 131.2260223085,
+          "min_wall_s": 131.156201181,
+          "max_wall_s": 131.295843436,
+          "stdev_wall_s": 0.0987419854506899,
+          "mean_wall_s": 131.2260223085,
+          "median_cpu_s": 205.7303285,
+          "median_peak_rss_bytes": 1226606592,
+          "speedup_vs_v1": 0.4282617833975127
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 124.033168236,
+          "min_wall_s": 122.870822053,
+          "max_wall_s": 124.885774063,
+          "stdev_wall_s": 0.7473797328214641,
+          "mean_wall_s": 123.8948841254,
+          "median_cpu_s": 198.284865,
+          "median_peak_rss_bytes": 1277894656,
+          "speedup_vs_v1": 0.415621198669322
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 134.386195903,
+          "min_wall_s": 134.088845134,
+          "max_wall_s": 134.683546672,
+          "stdev_wall_s": 0.420517490301876,
+          "mean_wall_s": 134.386195903,
+          "median_cpu_s": 208.379235,
+          "median_peak_rss_bytes": 1236219904,
+          "speedup_vs_v1": 0.4181909456129298
+        }
+      ],
+      "unavailable": [],
+      "failed": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-gnu-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760344576
+      },
+      "versions": {
+        "tebako": "2.8.76",
+        "runtime": "0.17.7-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 126.058457968,
+          "min_wall_s": 124.161509484,
+          "max_wall_s": 126.517094587,
+          "stdev_wall_s": 0.9108869723823874,
+          "mean_wall_s": 125.7113481346,
+          "median_cpu_s": 153.675861,
+          "median_peak_rss_bytes": 1259290624,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 133.7985412315,
+          "min_wall_s": 133.30388758,
+          "max_wall_s": 134.293194883,
+          "stdev_wall_s": 0.6995459026286772,
+          "mean_wall_s": 133.7985412315,
+          "median_cpu_s": 161.45662800000002,
+          "median_peak_rss_bytes": 1393000448,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 206.193616418,
+          "min_wall_s": 204.428990791,
+          "max_wall_s": 207.393358905,
+          "stdev_wall_s": 1.2100466713458493,
+          "mean_wall_s": 205.97388597859998,
+          "median_cpu_s": 231.61488400000002,
+          "median_peak_rss_bytes": 1754558464,
+          "speedup_vs_v1": 0.6113596538917658
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 230.7477370645,
+          "min_wall_s": 230.018247997,
+          "max_wall_s": 231.477226132,
+          "stdev_wall_s": 1.0316533328613988,
+          "mean_wall_s": 230.7477370645,
+          "median_cpu_s": 249.4903945,
+          "median_peak_rss_bytes": 1863895040,
+          "speedup_vs_v1": 0.5798476853278948
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 63.532413755,
+          "min_wall_s": 63.30568566,
+          "max_wall_s": 64.654398584,
+          "stdev_wall_s": 0.6038867280813661,
+          "mean_wall_s": 63.88497013359999,
+          "median_cpu_s": 83.370508,
+          "median_peak_rss_bytes": 952492032,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 70.36886963149999,
+          "min_wall_s": 70.262363341,
+          "max_wall_s": 70.475375922,
+          "stdev_wall_s": 0.1506226405031494,
+          "mean_wall_s": 70.36886963149999,
+          "median_cpu_s": 89.921671,
+          "median_peak_rss_bytes": 943908864,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 120.250395814,
+          "min_wall_s": 118.663276786,
+          "max_wall_s": 126.893595146,
+          "stdev_wall_s": 4.214592792319029,
+          "mean_wall_s": 122.24974314619999,
+          "median_cpu_s": 211.737703,
+          "median_peak_rss_bytes": 1268301824,
+          "speedup_vs_v1": 0.528334342061295
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 141.38605447150002,
+          "min_wall_s": 141.187865628,
+          "max_wall_s": 141.584243315,
+          "stdev_wall_s": 0.28028135038874713,
+          "mean_wall_s": 141.38605447150002,
+          "median_cpu_s": 221.42557250000002,
+          "median_peak_rss_bytes": 1226192896,
+          "speedup_vs_v1": 0.49770728728896413
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 125.697702564,
+          "min_wall_s": 118.182329833,
+          "max_wall_s": 127.517340459,
+          "stdev_wall_s": 4.054600034199138,
+          "mean_wall_s": 123.56302733560001,
+          "median_cpu_s": 210.34340799999998,
+          "median_peak_rss_bytes": 1285894144,
+          "speedup_vs_v1": 0.5054381461160912
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 145.220278161,
+          "min_wall_s": 143.713936927,
+          "max_wall_s": 146.726619395,
+          "stdev_wall_s": 2.1302882026846297,
+          "mean_wall_s": 145.220278161,
+          "median_cpu_s": 225.6968295,
+          "median_peak_rss_bytes": 1237411840,
+          "speedup_vs_v1": 0.48456641539747497
+        }
+      ],
+      "unavailable": [],
+      "failed": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-musl-arm64",
+      "runner": {
+        "runs_on": "ubuntu-24.04-arm",
+        "arch": "aarch64",
+        "cpus": 4,
+        "ram_bytes": 16715927552
+      },
+      "versions": {
+        "tebako": "2.8.76",
+        "runtime": "0.17.7-4.0.9",
+        "payload": "1.17.0-6",
+        "image_format": "limnifs"
+      },
+      "cells": [],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for linux-musl-arm64 — packed-mn shipped no asset for this triplet"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "linux-musl-x86_64",
+      "runner": {
+        "runs_on": "ubuntu-24.04",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 16760352768
+      },
+      "versions": {
+        "tebako": "2.8.76",
+        "runtime": "0.17.7-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
+      },
+      "cells": [],
+      "unavailable": [],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "macos-arm64",
+      "runner": {
+        "runs_on": "macos-15",
+        "arch": "aarch64",
+        "cpus": 3,
+        "ram_bytes": 7516192768
+      },
+      "versions": {
+        "tebako": "2.8.76",
+        "runtime": "0.17.7-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 152.769794625,
+          "min_wall_s": 122.1168895,
+          "max_wall_s": 181.639954083,
+          "stdev_wall_s": 21.56189736986094,
+          "mean_wall_s": 151.6441496498,
+          "median_cpu_s": 157.602789,
+          "median_peak_rss_bytes": 2149236736,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 168.6610544165,
+          "min_wall_s": 156.725006333,
+          "max_wall_s": 180.5971025,
+          "stdev_wall_s": 16.880121080823084,
+          "mean_wall_s": 168.6610544165,
+          "median_cpu_s": 177.626812,
+          "median_peak_rss_bytes": 2110726144,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 94.128075708,
+          "min_wall_s": 81.022938042,
+          "max_wall_s": 109.510822167,
+          "stdev_wall_s": 11.845782386381174,
+          "mean_wall_s": 97.2290923916,
+          "median_cpu_s": 98.41264899999999,
+          "median_peak_rss_bytes": 1769783296,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 112.031848833,
+          "min_wall_s": 92.479808458,
+          "max_wall_s": 131.583889208,
+          "stdev_wall_s": 27.650760670391332,
+          "mean_wall_s": 112.031848833,
+          "median_cpu_s": 115.8568135,
+          "median_peak_rss_bytes": 1821876224,
+          "speedup_vs_v1": 1.0
+        }
+      ],
+      "unavailable": [],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 69 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 69 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "macos-x86_64",
+      "runner": {
+        "runs_on": "macos-15-intel",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 15032385536
+      },
+      "versions": {
+        "tebako": "2.8.76",
+        "runtime": "0.17.7-4.0.9",
+        "payload": "1.17.0-6",
+        "image_format": "limnifs"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 346.343535019,
+          "min_wall_s": 307.446868657,
+          "max_wall_s": 351.236290723,
+          "stdev_wall_s": 18.587480683217073,
+          "mean_wall_s": 337.3316998514,
+          "median_cpu_s": 386.022576,
+          "median_peak_rss_bytes": 1386586112,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 338.55516909849996,
+          "min_wall_s": 334.936623763,
+          "max_wall_s": 342.173714434,
+          "stdev_wall_s": 5.117395889525985,
+          "mean_wall_s": 338.55516909849996,
+          "median_cpu_s": 370.72535,
+          "median_peak_rss_bytes": 1491857408,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 152.620072237,
+          "min_wall_s": 122.569193117,
+          "max_wall_s": 166.655405672,
+          "stdev_wall_s": 18.96522355603284,
+          "mean_wall_s": 145.357809283,
+          "median_cpu_s": 281.50966,
+          "median_peak_rss_bytes": 806133760,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 160.7530879465,
+          "min_wall_s": 142.57657936,
+          "max_wall_s": 178.929596533,
+          "stdev_wall_s": 25.705464959619302,
+          "mean_wall_s": 160.7530879465,
+          "median_cpu_s": 278.2503105,
+          "median_peak_rss_bytes": 787675136,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 138.903296744,
+          "min_wall_s": 123.602216637,
+          "max_wall_s": 172.112624066,
+          "stdev_wall_s": 18.619763430619884,
+          "mean_wall_s": 144.589851902,
+          "median_cpu_s": 243.73329299999997,
+          "median_peak_rss_bytes": 817078272,
+          "speedup_vs_v1": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 159.052188302,
+          "min_wall_s": 145.050158503,
+          "max_wall_s": 173.054218101,
+          "stdev_wall_s": 19.801860442498022,
+          "mean_wall_s": 159.052188302,
+          "median_cpu_s": 274.742216,
+          "median_peak_rss_bytes": 805281792,
+          "speedup_vs_v1": null
+        }
+      ],
+      "unavailable": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": null,
+          "iteration": null,
+          "status": "unavailable",
+          "error": null,
+          "reason": "platforms.yaml: v1_asset is null for macos-x86_64 — packed-mn shipped no asset for this triplet"
+        }
+      ],
+      "failed": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit 1 (expected 0)",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "triplet": "windows-ucrt64",
+      "runner": {
+        "runs_on": "windows-latest",
+        "arch": "x86_64",
+        "cpus": 4,
+        "ram_bytes": 17174360064
+      },
+      "versions": {
+        "tebako": "2.8.76",
+        "runtime": "0.17.7-4.0.9",
+        "payload": "1.17.0-6",
+        "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+        "image_format": "limnifs"
+      },
+      "cells": [
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 137.0575277,
+          "min_wall_s": 136.4919653,
+          "max_wall_s": 138.4529087,
+          "stdev_wall_s": 0.8171640382966723,
+          "mean_wall_s": 137.31282679999998,
+          "median_cpu_s": 168.609375,
+          "median_peak_rss_bytes": 1627148288,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 146.30431665,
+          "min_wall_s": 145.3866338,
+          "max_wall_s": 147.2219995,
+          "stdev_wall_s": 1.2977995324272025,
+          "mean_wall_s": 146.30431665,
+          "median_cpu_s": 180.8203125,
+          "median_peak_rss_bytes": 1519437824,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 67.9040005,
+          "min_wall_s": 66.9769368,
+          "max_wall_s": 68.1522899,
+          "stdev_wall_s": 0.5260208273116583,
+          "mean_wall_s": 67.67741407999999,
+          "median_cpu_s": 91.375,
+          "median_peak_rss_bytes": 1664962560,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v1-packed-mn",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 73.4680698,
+          "min_wall_s": 72.8752254,
+          "max_wall_s": 74.0609142,
+          "stdev_wall_s": 0.838408590856936,
+          "mean_wall_s": 73.4680698,
+          "median_cpu_s": 97.890625,
+          "median_peak_rss_bytes": 1642170368,
+          "speedup_vs_v1": 1.0
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 62.437812,
+          "min_wall_s": 62.0674665,
+          "max_wall_s": 62.7805381,
+          "stdev_wall_s": 0.3266920087653566,
+          "mean_wall_s": 62.42573116,
+          "median_cpu_s": 88.953125,
+          "median_peak_rss_bytes": 2613301248,
+          "speedup_vs_v1": 1.0875461250948382
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "warm",
+          "n": 5,
+          "median_wall_s": 64.3924927,
+          "min_wall_s": 63.7488098,
+          "max_wall_s": 64.7901515,
+          "stdev_wall_s": 0.4782040252910537,
+          "mean_wall_s": 64.30478038,
+          "median_cpu_s": 92.21875,
+          "median_peak_rss_bytes": 2635026432,
+          "speedup_vs_v1": 1.0545328756934422
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-shim",
+          "mode": "cold",
+          "n": 2,
+          "median_wall_s": 70.3797302,
+          "min_wall_s": 69.2929432,
+          "max_wall_s": 71.4665172,
+          "stdev_wall_s": 1.5369489148107705,
+          "mean_wall_s": 70.3797302,
+          "median_cpu_s": 98.1484375,
+          "median_peak_rss_bytes": 2632763392,
+          "speedup_vs_v1": 1.0438810946166428
+        }
+      ],
+      "unavailable": [],
+      "failed": [
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "iteration": 1,
+          "status": "failed",
+          "error": "exit -1073741515 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-small-iso",
+          "target": "v2-fat",
+          "mode": "cold",
+          "iteration": 2,
+          "status": "failed",
+          "error": "exit -1073741515 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-shim",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit -1073741515 (expected 0)",
+          "reason": null
+        },
+        {
+          "workload": "compile-medium-rice",
+          "target": "v2-fat",
+          "mode": "warm",
+          "iteration": 0,
+          "status": "failed",
+          "error": "warmup: exit -1073741515 (expected 0)",
+          "reason": null
+        }
+      ]
+    }
+  ]
+}

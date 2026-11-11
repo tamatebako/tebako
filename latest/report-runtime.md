@@ -2,196 +2,196 @@
 
 ## linux-gnu-arm64
 
-Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.6 GiB
+Runner: ubuntu-24.04-arm · aarch64 · 4 cpus · 15941.5 GiB
 Versions: tebako 2.8.76
 
 ### java-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.034 | 0.030 | 0.074 | 0.019 | 0.041 | 0.033 | 36.1 | 1.00× |
-| tebako-java | 5 | 0.746 | 0.733 | 0.755 | 0.008 | 0.745 | 0.746 | 173.2 | 0.05× |
+| on-system-java | 5 | 0.035 | 0.032 | 0.037 | 0.002 | 0.035 | 0.034 | 36.1 | 1.00× |
+| tebako-java | 5 | 0.753 | 0.731 | 0.756 | 0.011 | 0.746 | 0.753 | 173.2 | 0.05× |
 
 ### java-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 0.746 | 0.736 | 0.757 | 0.015 | 0.746 | 0.747 | 173.2 | — |
+| tebako-java | 2 | 0.755 | 0.741 | 0.769 | 0.020 | 0.755 | 0.756 | 173.2 | — |
 
 ### java-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 7.559 | 7.554 | 7.584 | 0.012 | 7.565 | 7.562 | 37.2 | 1.00× |
-| tebako-java | 5 | 8.272 | 8.263 | 8.283 | 0.007 | 8.273 | 8.279 | 173.2 | 0.91× |
+| on-system-java | 5 | 7.559 | 7.553 | 7.561 | 0.003 | 7.558 | 7.566 | 37.2 | 1.00× |
+| tebako-java | 5 | 8.282 | 8.275 | 8.290 | 0.006 | 8.282 | 8.290 | 173.2 | 0.91× |
 
 ### java-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 8.278 | 8.271 | 8.285 | 0.010 | 8.278 | 8.285 | 173.2 | — |
+| tebako-java | 2 | 8.293 | 8.292 | 8.295 | 0.002 | 8.293 | 8.296 | 173.2 | — |
 
 ### java-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.799 | 0.734 | 0.844 | 0.041 | 0.789 | 0.843 | 44.9 | 1.00× |
-| tebako-java | 5 | 1.425 | 1.363 | 1.480 | 0.054 | 1.424 | 1.484 | 201.0 | 0.56× |
+| on-system-java | 5 | 0.972 | 0.954 | 0.993 | 0.017 | 0.972 | 1.022 | 44.9 | 1.00× |
+| tebako-java | 5 | 1.586 | 1.554 | 1.603 | 0.019 | 1.581 | 1.632 | 201.0 | 0.61× |
 
 ### java-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.411 | 1.393 | 1.428 | 0.025 | 1.411 | 1.459 | 200.9 | — |
+| tebako-java | 2 | 1.601 | 1.600 | 1.602 | 0.001 | 1.601 | 1.648 | 200.9 | — |
 
 ### java-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.184 | 0.181 | 0.188 | 0.003 | 0.185 | 0.342 | 64.5 | 1.00× |
-| tebako-java | 5 | 1.002 | 0.995 | 1.016 | 0.009 | 1.005 | 1.287 | 173.2 | 0.18× |
+| on-system-java | 5 | 0.192 | 0.189 | 0.197 | 0.003 | 0.192 | 0.353 | 62.5 | 1.00× |
+| tebako-java | 5 | 1.018 | 1.006 | 1.031 | 0.010 | 1.018 | 1.318 | 173.2 | 0.19× |
 
 ### java-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.039 | 1.037 | 1.040 | 0.002 | 1.039 | 1.323 | 173.2 | — |
+| tebako-java | 2 | 1.046 | 1.046 | 1.046 | 0.000 | 1.046 | 1.341 | 173.2 | — |
 
 ### java-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.164 | 0.150 | 0.176 | 0.009 | 0.164 | 0.365 | 78.4 | 1.00× |
-| tebako-java | 5 | 0.879 | 0.878 | 0.900 | 0.009 | 0.883 | 1.072 | 173.2 | 0.19× |
+| on-system-java | 5 | 0.168 | 0.158 | 0.171 | 0.005 | 0.167 | 0.362 | 78.7 | 1.00× |
+| tebako-java | 5 | 0.886 | 0.875 | 0.891 | 0.006 | 0.885 | 1.077 | 173.2 | 0.19× |
 
 ### java-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 0.880 | 0.870 | 0.891 | 0.015 | 0.880 | 1.062 | 173.2 | — |
+| tebako-java | 2 | 0.917 | 0.916 | 0.917 | 0.001 | 0.917 | 1.123 | 173.2 | — |
 
 ### python-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | on-system-python | 5 | 0.013 | 0.013 | 0.013 | 0.000 | 0.013 | 0.011 | 8.7 | 1.00× |
-| tebako-python | 5 | 0.352 | 0.344 | 0.365 | 0.009 | 0.354 | 0.350 | 185.7 | 0.04× |
+| tebako-python | 5 | 0.371 | 0.356 | 0.375 | 0.009 | 0.367 | 0.370 | 185.7 | 0.03× |
 
 ### python-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 0.351 | 0.346 | 0.357 | 0.008 | 0.351 | 0.351 | 185.8 | — |
+| tebako-python | 2 | 0.372 | 0.371 | 0.373 | 0.001 | 0.372 | 0.371 | 185.8 | — |
 
 ### python-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 12.061 | 12.051 | 12.167 | 0.049 | 12.087 | 12.059 | 8.7 | 1.00× |
-| tebako-python | 5 | 12.607 | 12.554 | 12.616 | 0.028 | 12.592 | 12.606 | 185.7 | 0.96× |
+| on-system-python | 5 | 12.118 | 12.061 | 12.143 | 0.039 | 12.106 | 12.116 | 8.7 | 1.00× |
+| tebako-python | 5 | 12.593 | 12.581 | 12.652 | 0.028 | 12.603 | 12.592 | 185.7 | 0.96× |
 
 ### python-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 12.579 | 12.571 | 12.586 | 0.011 | 12.579 | 12.577 | 185.8 | — |
+| tebako-python | 2 | 12.596 | 12.583 | 12.610 | 0.019 | 12.596 | 12.594 | 185.7 | — |
 
 ### python-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 0.454 | 0.442 | 0.508 | 0.032 | 0.470 | 0.452 | 9.7 | 1.00× |
-| tebako-python | 5 | 0.684 | 0.684 | 0.733 | 0.022 | 0.698 | 0.683 | 186.0 | 0.66× |
+| on-system-python | 5 | 0.610 | 0.604 | 0.620 | 0.007 | 0.612 | 0.609 | 9.7 | 1.00× |
+| tebako-python | 5 | 0.844 | 0.819 | 0.854 | 0.014 | 0.840 | 0.842 | 186.0 | 0.72× |
 
 ### python-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 0.685 | 0.673 | 0.697 | 0.017 | 0.685 | 0.684 | 186.0 | — |
+| tebako-python | 2 | 0.832 | 0.825 | 0.839 | 0.010 | 0.832 | 0.832 | 186.0 | — |
 
 ### python-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 1.841 | 1.812 | 1.860 | 0.019 | 1.842 | 1.840 | 16.7 | 1.00× |
-| tebako-python | 5 | 3.885 | 3.820 | 3.894 | 0.030 | 3.871 | 3.883 | 185.7 | 0.47× |
+| on-system-python | 5 | 1.876 | 1.843 | 1.925 | 0.031 | 1.881 | 1.874 | 16.7 | 1.00× |
+| tebako-python | 5 | 3.858 | 3.817 | 3.860 | 0.018 | 3.849 | 3.856 | 185.7 | 0.49× |
 
 ### python-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 3.799 | 3.778 | 3.819 | 0.029 | 3.799 | 3.797 | 185.7 | — |
+| tebako-python | 2 | 3.826 | 3.822 | 3.830 | 0.005 | 3.826 | 3.824 | 185.7 | — |
 
 ### python-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 0.032 | 0.030 | 0.032 | 0.001 | 0.031 | 0.030 | 16.3 | 1.00× |
+| on-system-python | 5 | 0.032 | 0.032 | 0.032 | 0.000 | 0.032 | 0.030 | 16.4 | 1.00× |
 
 ### ruby-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.048 | 0.048 | 0.048 | 0.000 | 0.048 | 0.048 | 12.4 | 1.00× |
-| tebako-ruby | 5 | 0.248 | 0.246 | 0.248 | 0.001 | 0.247 | 0.246 | 74.3 | 0.19× |
+| on-system-ruby | 5 | 0.050 | 0.048 | 0.050 | 0.001 | 0.050 | 0.049 | 12.4 | 1.00× |
+| tebako-ruby | 5 | 0.250 | 0.246 | 0.250 | 0.002 | 0.249 | 0.248 | 74.4 | 0.20× |
 
 ### ruby-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.247 | 0.244 | 0.250 | 0.004 | 0.247 | 0.246 | 74.3 | — |
+| tebako-ruby | 2 | 0.249 | 0.248 | 0.250 | 0.002 | 0.249 | 0.248 | 74.5 | — |
 
 ### ruby-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 2.232 | 2.222 | 2.250 | 0.011 | 2.234 | 2.231 | 12.6 | 1.00× |
-| tebako-ruby | 5 | 2.494 | 2.485 | 2.507 | 0.008 | 2.495 | 2.493 | 74.4 | 0.89× |
+| on-system-ruby | 5 | 2.231 | 2.226 | 2.248 | 0.009 | 2.234 | 2.231 | 12.6 | 1.00× |
+| tebako-ruby | 5 | 2.493 | 2.476 | 2.531 | 0.022 | 2.495 | 2.492 | 74.3 | 0.90× |
 
 ### ruby-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 2.488 | 2.479 | 2.496 | 0.012 | 2.488 | 2.486 | 74.5 | — |
+| tebako-ruby | 2 | 2.526 | 2.482 | 2.570 | 0.063 | 2.526 | 2.525 | 74.2 | — |
 
 ### ruby-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.681 | 0.615 | 0.770 | 0.060 | 0.677 | 0.680 | 78.4 | 1.00× |
-| tebako-ruby | 5 | 1.199 | 1.133 | 1.204 | 0.030 | 1.184 | 1.197 | 197.0 | 0.57× |
+| on-system-ruby | 5 | 0.750 | 0.732 | 0.891 | 0.065 | 0.777 | 0.748 | 78.4 | 1.00× |
+| tebako-ruby | 5 | 1.283 | 1.214 | 1.354 | 0.057 | 1.275 | 1.281 | 197.1 | 0.58× |
 
 ### ruby-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.183 | 1.169 | 1.196 | 0.019 | 1.183 | 1.182 | 196.9 | — |
+| tebako-ruby | 2 | 1.373 | 1.368 | 1.378 | 0.007 | 1.373 | 1.373 | 197.1 | — |
 
 ### ruby-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.103 | 0.100 | 0.105 | 0.002 | 0.103 | 0.101 | 15.2 | 1.00× |
-| tebako-ruby | 5 | 1.160 | 1.154 | 1.161 | 0.003 | 1.158 | 1.159 | 77.3 | 0.09× |
+| on-system-ruby | 5 | 0.107 | 0.107 | 0.111 | 0.002 | 0.108 | 0.106 | 15.2 | 1.00× |
+| tebako-ruby | 5 | 1.158 | 1.156 | 1.162 | 0.002 | 1.159 | 1.158 | 77.3 | 0.09× |
 
 ### ruby-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.154 | 1.154 | 1.154 | 0.000 | 1.154 | 1.153 | 77.3 | — |
+| tebako-ruby | 2 | 1.161 | 1.159 | 1.162 | 0.002 | 1.161 | 1.160 | 76.9 | — |
 
 ### ruby-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.084 | 0.082 | 0.088 | 0.002 | 0.085 | 0.083 | 18.9 | 1.00× |
-| tebako-ruby | 5 | 0.265 | 0.265 | 0.273 | 0.004 | 0.267 | 0.264 | 78.1 | 0.32× |
+| on-system-ruby | 5 | 0.086 | 0.084 | 0.088 | 0.002 | 0.085 | 0.084 | 18.9 | 1.00× |
+| tebako-ruby | 5 | 0.269 | 0.267 | 0.271 | 0.001 | 0.269 | 0.268 | 78.2 | 0.32× |
 
 ### ruby-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.270 | 0.269 | 0.271 | 0.001 | 0.270 | 0.269 | 78.1 | — |
+| tebako-ruby | 2 | 0.267 | 0.265 | 0.269 | 0.003 | 0.267 | 0.266 | 78.1 | — |
 
 Unavailable arms:
 
@@ -224,189 +224,189 @@ Versions: tebako 2.8.76
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.032 | 0.031 | 0.032 | 0.001 | 0.032 | 0.035 | 37.5 | 1.00× |
-| tebako-java | 5 | 0.845 | 0.831 | 0.872 | 0.016 | 0.846 | 0.841 | 182.2 | 0.04× |
+| on-system-java | 5 | 0.036 | 0.034 | 0.039 | 0.002 | 0.036 | 0.039 | 37.0 | 1.00× |
+| tebako-java | 5 | 1.046 | 1.037 | 1.060 | 0.009 | 1.047 | 1.051 | 182.1 | 0.03× |
 
 ### java-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 0.868 | 0.843 | 0.892 | 0.035 | 0.868 | 0.870 | 182.3 | — |
+| tebako-java | 2 | 1.042 | 1.040 | 1.044 | 0.003 | 1.042 | 1.045 | 182.0 | — |
 
 ### java-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 9.075 | 9.060 | 9.212 | 0.067 | 9.116 | 9.080 | 39.1 | 1.00× |
-| tebako-java | 5 | 9.916 | 9.889 | 9.949 | 0.023 | 9.915 | 9.923 | 182.3 | 0.92× |
+| on-system-java | 5 | 11.830 | 11.754 | 11.855 | 0.041 | 11.814 | 11.840 | 39.0 | 1.00× |
+| tebako-java | 5 | 12.851 | 12.817 | 12.859 | 0.017 | 12.845 | 12.862 | 182.1 | 0.92× |
 
 ### java-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 9.920 | 9.908 | 9.931 | 0.016 | 9.920 | 9.929 | 182.2 | — |
+| tebako-java | 2 | 12.815 | 12.797 | 12.833 | 0.026 | 12.815 | 12.828 | 182.1 | — |
 
 ### java-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.852 | 0.852 | 0.859 | 0.003 | 0.854 | 0.919 | 48.3 | 1.00× |
-| tebako-java | 5 | 1.400 | 1.378 | 1.451 | 0.029 | 1.406 | 1.489 | 208.3 | 0.61× |
+| on-system-java | 5 | 3.540 | 3.473 | 3.976 | 0.210 | 3.616 | 3.614 | 47.6 | 1.00× |
+| tebako-java | 5 | 1.760 | 1.725 | 1.777 | 0.023 | 1.754 | 1.862 | 208.1 | 2.01× |
 
 ### java-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.411 | 1.397 | 1.424 | 0.019 | 1.411 | 1.488 | 208.3 | — |
+| tebako-java | 2 | 1.781 | 1.780 | 1.783 | 0.002 | 1.781 | 1.887 | 208.1 | — |
 
 ### java-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.224 | 0.220 | 0.232 | 0.005 | 0.225 | 0.447 | 69.4 | 1.00× |
-| tebako-java | 5 | 1.110 | 1.094 | 1.135 | 0.018 | 1.113 | 1.397 | 182.2 | 0.20× |
+| on-system-java | 5 | 0.276 | 0.267 | 0.294 | 0.010 | 0.278 | 0.536 | 68.9 | 1.00× |
+| tebako-java | 5 | 1.370 | 1.364 | 1.379 | 0.007 | 1.371 | 1.701 | 182.1 | 0.20× |
 
 ### java-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.141 | 1.128 | 1.154 | 0.018 | 1.141 | 1.459 | 182.2 | — |
+| tebako-java | 2 | 1.369 | 1.364 | 1.375 | 0.008 | 1.369 | 1.716 | 182.2 | — |
 
 ### java-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.173 | 0.162 | 0.188 | 0.011 | 0.174 | 0.385 | 81.7 | 1.00× |
-| tebako-java | 5 | 0.995 | 0.971 | 1.038 | 0.026 | 0.997 | 1.221 | 182.2 | 0.17× |
+| on-system-java | 5 | 0.228 | 0.220 | 0.228 | 0.004 | 0.226 | 0.534 | 81.2 | 1.00× |
+| tebako-java | 5 | 1.218 | 1.208 | 1.231 | 0.008 | 1.218 | 1.424 | 182.2 | 0.19× |
 
 ### java-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 0.983 | 0.979 | 0.986 | 0.005 | 0.983 | 1.215 | 182.2 | — |
+| tebako-java | 2 | 1.230 | 1.229 | 1.232 | 0.002 | 1.230 | 1.544 | 182.2 | — |
 
 ### python-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 0.013 | 0.013 | 0.013 | 0.000 | 0.013 | 0.011 | 9.5 | 1.00× |
-| tebako-python | 5 | 0.400 | 0.393 | 0.403 | 0.004 | 0.399 | 0.400 | 194.6 | 0.03× |
+| on-system-python | 5 | 0.013 | 0.013 | 0.015 | 0.001 | 0.013 | 0.013 | 9.5 | 1.00× |
+| tebako-python | 5 | 0.473 | 0.471 | 0.498 | 0.012 | 0.480 | 0.472 | 194.5 | 0.03× |
 
 ### python-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 0.401 | 0.399 | 0.403 | 0.003 | 0.401 | 0.400 | 194.5 | — |
+| tebako-python | 2 | 0.496 | 0.496 | 0.496 | 0.000 | 0.496 | 0.495 | 194.4 | — |
 
 ### python-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 10.595 | 9.994 | 11.811 | 0.745 | 10.723 | 10.593 | 9.6 | 1.00× |
-| tebako-python | 5 | 10.684 | 10.150 | 10.752 | 0.282 | 10.519 | 10.679 | 194.5 | 0.99× |
+| on-system-python | 5 | 13.425 | 13.207 | 13.607 | 0.159 | 13.406 | 13.424 | 9.5 | 1.00× |
+| tebako-python | 5 | 13.110 | 13.017 | 13.485 | 0.192 | 13.182 | 13.107 | 194.1 | 1.02× |
 
 ### python-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 10.596 | 10.301 | 10.891 | 0.417 | 10.596 | 10.593 | 194.6 | — |
+| tebako-python | 2 | 13.318 | 13.257 | 13.380 | 0.087 | 13.318 | 13.316 | 194.5 | — |
 
 ### python-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 0.436 | 0.434 | 0.438 | 0.002 | 0.436 | 0.436 | 10.5 | 1.00× |
-| tebako-python | 5 | 0.750 | 0.743 | 0.756 | 0.005 | 0.749 | 0.749 | 195.0 | 0.58× |
+| on-system-python | 5 | 0.479 | 0.475 | 0.486 | 0.004 | 0.480 | 0.477 | 10.5 | 1.00× |
+| tebako-python | 5 | 0.844 | 0.836 | 0.887 | 0.020 | 0.852 | 0.844 | 194.8 | 0.57× |
 
 ### python-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 0.751 | 0.749 | 0.753 | 0.003 | 0.751 | 0.751 | 195.0 | — |
+| tebako-python | 2 | 0.858 | 0.851 | 0.864 | 0.009 | 0.858 | 0.857 | 194.8 | — |
 
 ### python-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 2.458 | 2.421 | 2.477 | 0.020 | 2.455 | 2.457 | 17.5 | 1.00× |
-| tebako-python | 5 | 2.813 | 2.801 | 2.828 | 0.010 | 2.812 | 2.811 | 194.7 | 0.87× |
+| on-system-python | 5 | 2.733 | 2.717 | 2.815 | 0.040 | 2.750 | 2.732 | 17.4 | 1.00× |
+| tebako-python | 5 | 3.493 | 3.411 | 3.616 | 0.075 | 3.500 | 3.492 | 194.3 | 0.78× |
 
 ### python-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 2.833 | 2.829 | 2.836 | 0.005 | 2.833 | 2.831 | 194.5 | — |
+| tebako-python | 2 | 3.472 | 3.456 | 3.489 | 0.023 | 3.472 | 3.472 | 194.4 | — |
 
 ### python-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 0.030 | 0.030 | 0.032 | 0.001 | 0.030 | 0.029 | 17.5 | 1.00× |
+| on-system-python | 5 | 0.034 | 0.034 | 0.034 | 0.000 | 0.034 | 0.033 | 17.4 | 1.00× |
 
 ### ruby-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.057 | 0.057 | 0.059 | 0.001 | 0.057 | 0.056 | 28.0 | 1.00× |
-| tebako-ruby | 5 | 0.246 | 0.243 | 0.253 | 0.004 | 0.248 | 0.246 | 82.4 | 0.23× |
+| on-system-ruby | 5 | 0.070 | 0.070 | 0.074 | 0.002 | 0.071 | 0.068 | 27.9 | 1.00× |
+| tebako-ruby | 5 | 0.305 | 0.300 | 0.321 | 0.008 | 0.307 | 0.304 | 82.6 | 0.23× |
 
 ### ruby-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.244 | 0.244 | 0.244 | 0.000 | 0.244 | 0.244 | 82.5 | — |
+| tebako-ruby | 2 | 0.303 | 0.302 | 0.304 | 0.002 | 0.303 | 0.301 | 82.5 | — |
 
 ### ruby-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 2.279 | 2.263 | 2.291 | 0.011 | 2.276 | 2.277 | 28.2 | 1.00× |
-| tebako-ruby | 5 | 2.063 | 2.040 | 2.239 | 0.081 | 2.097 | 2.063 | 82.5 | 1.10× |
+| on-system-ruby | 5 | 2.915 | 2.889 | 3.047 | 0.065 | 2.940 | 2.913 | 28.1 | 1.00× |
+| tebako-ruby | 5 | 2.811 | 2.804 | 2.869 | 0.027 | 2.822 | 2.809 | 82.4 | 1.04× |
 
 ### ruby-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 2.079 | 2.062 | 2.097 | 0.024 | 2.079 | 2.079 | 82.7 | — |
+| tebako-ruby | 2 | 2.812 | 2.785 | 2.839 | 0.038 | 2.812 | 2.812 | 82.5 | — |
 
 ### ruby-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.755 | 0.698 | 0.811 | 0.041 | 0.756 | 0.755 | 94.0 | 1.00× |
-| tebako-ruby | 5 | 2.550 | 2.097 | 3.392 | 0.570 | 2.778 | 2.549 | 204.9 | 0.30× |
+| on-system-ruby | 5 | 0.750 | 0.742 | 0.769 | 0.010 | 0.752 | 0.749 | 93.9 | 1.00× |
+| tebako-ruby | 5 | 1.834 | 1.496 | 3.481 | 0.792 | 2.204 | 1.833 | 205.0 | 0.41× |
 
 ### ruby-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 2.595 | 2.595 | 2.595 | 0.000 | 2.595 | 2.594 | 205.3 | — |
+| tebako-ruby | 2 | 2.218 | 1.760 | 2.676 | 0.647 | 2.218 | 2.217 | 205.0 | — |
 
 ### ruby-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.132 | 0.130 | 0.138 | 0.003 | 0.133 | 0.131 | 30.7 | 1.00× |
-| tebako-ruby | 5 | 0.894 | 0.886 | 0.911 | 0.010 | 0.895 | 0.894 | 85.7 | 0.15× |
+| on-system-ruby | 5 | 0.151 | 0.147 | 0.156 | 0.004 | 0.152 | 0.149 | 30.6 | 1.00× |
+| tebako-ruby | 5 | 1.084 | 1.081 | 1.088 | 0.002 | 1.084 | 1.082 | 85.4 | 0.14× |
 
 ### ruby-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.894 | 0.891 | 0.898 | 0.004 | 0.894 | 0.894 | 85.3 | — |
+| tebako-ruby | 2 | 1.092 | 1.083 | 1.101 | 0.012 | 1.092 | 1.090 | 85.4 | — |
 
 ### ruby-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.084 | 0.084 | 0.084 | 0.000 | 0.084 | 0.082 | 34.4 | 1.00× |
-| tebako-ruby | 5 | 0.261 | 0.261 | 0.284 | 0.010 | 0.266 | 0.260 | 87.3 | 0.32× |
+| on-system-ruby | 5 | 0.105 | 0.103 | 0.109 | 0.002 | 0.106 | 0.104 | 34.3 | 1.00× |
+| tebako-ruby | 5 | 0.325 | 0.321 | 0.328 | 0.002 | 0.325 | 0.324 | 87.0 | 0.32× |
 
 ### ruby-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.262 | 0.261 | 0.263 | 0.002 | 0.262 | 0.261 | 87.4 | — |
+| tebako-ruby | 2 | 0.324 | 0.324 | 0.324 | 0.000 | 0.324 | 0.323 | 87.1 | — |
 
 Unavailable arms:
 
@@ -439,131 +439,131 @@ Versions: tebako 2.8.76
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.032 | 0.030 | 0.034 | 0.002 | 0.032 | 0.034 | 35.9 | 1.00× |
-| tebako-java | 5 | 0.938 | 0.914 | 0.943 | 0.012 | 0.934 | 0.939 | 174.7 | 0.03× |
+| on-system-java | 5 | 0.033 | 0.032 | 0.037 | 0.002 | 0.034 | 0.034 | 36.1 | 1.00× |
+| tebako-java | 5 | 0.943 | 0.932 | 0.979 | 0.019 | 0.949 | 0.944 | 174.7 | 0.04× |
 
 ### java-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 0.964 | 0.963 | 0.966 | 0.002 | 0.964 | 0.964 | 174.7 | — |
+| tebako-java | 2 | 0.959 | 0.945 | 0.972 | 0.019 | 0.959 | 0.958 | 174.7 | — |
 
 ### java-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 7.556 | 7.555 | 7.562 | 0.003 | 7.557 | 7.562 | 37.2 | 1.00× |
-| tebako-java | 5 | 8.465 | 8.456 | 8.478 | 0.008 | 8.467 | 8.471 | 174.7 | 0.89× |
+| on-system-java | 5 | 7.558 | 7.548 | 7.560 | 0.005 | 7.556 | 7.563 | 37.2 | 1.00× |
+| tebako-java | 5 | 8.490 | 8.474 | 8.493 | 0.008 | 8.486 | 8.494 | 174.7 | 0.89× |
 
 ### java-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 8.477 | 8.476 | 8.477 | 0.001 | 8.477 | 8.482 | 174.7 | — |
+| tebako-java | 2 | 8.488 | 8.476 | 8.501 | 0.018 | 8.488 | 8.492 | 174.7 | — |
 
 ### java-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.772 | 0.742 | 0.789 | 0.017 | 0.768 | 0.829 | 44.8 | 1.00× |
-| tebako-java | 5 | 1.665 | 1.649 | 1.701 | 0.019 | 1.669 | 1.726 | 204.4 | 0.46× |
+| on-system-java | 5 | 0.830 | 0.790 | 0.854 | 0.026 | 0.826 | 0.888 | 44.8 | 1.00× |
+| tebako-java | 5 | 1.680 | 1.668 | 1.698 | 0.013 | 1.682 | 1.742 | 204.3 | 0.49× |
 
 ### java-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.705 | 1.703 | 1.706 | 0.003 | 1.705 | 1.758 | 204.3 | — |
+| tebako-java | 2 | 1.745 | 1.707 | 1.783 | 0.054 | 1.745 | 1.794 | 203.4 | — |
 
 ### java-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.205 | 0.187 | 0.206 | 0.010 | 0.199 | 0.388 | 65.5 | 1.00× |
-| tebako-java | 5 | 1.245 | 1.228 | 1.270 | 0.015 | 1.247 | 1.563 | 174.7 | 0.16× |
+| on-system-java | 5 | 0.231 | 0.220 | 0.239 | 0.009 | 0.231 | 0.464 | 70.2 | 1.00× |
+| tebako-java | 5 | 1.273 | 1.262 | 1.297 | 0.014 | 1.275 | 1.601 | 174.7 | 0.18× |
 
 ### java-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.248 | 1.232 | 1.264 | 0.022 | 1.248 | 1.556 | 174.7 | — |
+| tebako-java | 2 | 1.287 | 1.282 | 1.293 | 0.008 | 1.287 | 1.607 | 174.7 | — |
 
 ### java-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.160 | 0.150 | 0.169 | 0.008 | 0.160 | 0.354 | 78.7 | 1.00× |
-| tebako-java | 5 | 1.094 | 1.070 | 1.101 | 0.015 | 1.088 | 1.316 | 174.7 | 0.15× |
+| on-system-java | 5 | 0.163 | 0.153 | 0.178 | 0.009 | 0.164 | 0.355 | 78.4 | 1.00× |
+| tebako-java | 5 | 1.099 | 1.077 | 1.102 | 0.012 | 1.093 | 1.316 | 174.7 | 0.15× |
 
 ### java-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.101 | 1.095 | 1.107 | 0.008 | 1.101 | 1.325 | 174.7 | — |
+| tebako-java | 2 | 1.118 | 1.116 | 1.119 | 0.002 | 1.118 | 1.329 | 174.7 | — |
 
 ### ruby-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.050 | 0.048 | 0.057 | 0.003 | 0.051 | 0.049 | 12.4 | 1.00× |
-| tebako-ruby | 5 | 0.256 | 0.250 | 0.260 | 0.004 | 0.256 | 0.255 | 76.1 | 0.20× |
+| on-system-ruby | 5 | 0.050 | 0.048 | 0.050 | 0.001 | 0.050 | 0.049 | 12.5 | 1.00× |
+| tebako-ruby | 5 | 0.258 | 0.250 | 0.260 | 0.005 | 0.256 | 0.256 | 76.1 | 0.20× |
 
 ### ruby-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.254 | 0.254 | 0.254 | 0.000 | 0.254 | 0.253 | 76.1 | — |
+| tebako-ruby | 2 | 0.254 | 0.250 | 0.258 | 0.006 | 0.254 | 0.252 | 76.2 | — |
 
 ### ruby-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 2.232 | 2.222 | 2.237 | 0.006 | 2.230 | 2.230 | 12.6 | 1.00× |
-| tebako-ruby | 5 | 2.564 | 2.561 | 2.613 | 0.022 | 2.574 | 2.563 | 76.2 | 0.87× |
+| on-system-ruby | 5 | 2.232 | 2.223 | 2.239 | 0.007 | 2.230 | 2.231 | 12.6 | 1.00× |
+| tebako-ruby | 5 | 2.567 | 2.562 | 2.575 | 0.005 | 2.567 | 2.566 | 76.2 | 0.87× |
 
 ### ruby-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 2.570 | 2.567 | 2.573 | 0.004 | 2.570 | 2.569 | 76.2 | — |
+| tebako-ruby | 2 | 2.558 | 2.557 | 2.559 | 0.001 | 2.558 | 2.557 | 76.3 | — |
 
 ### ruby-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.777 | 0.721 | 0.797 | 0.033 | 0.760 | 0.775 | 78.4 | 1.00× |
-| tebako-ruby | 5 | 1.810 | 1.227 | 1.842 | 0.313 | 1.595 | 1.809 | 199.6 | 0.43× |
+| on-system-ruby | 5 | 0.714 | 0.672 | 0.812 | 0.052 | 0.724 | 0.713 | 78.4 | 1.00× |
+| tebako-ruby | 5 | 1.822 | 1.779 | 1.846 | 0.026 | 1.818 | 1.820 | 199.7 | 0.39× |
 
 ### ruby-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.527 | 1.235 | 1.820 | 0.413 | 1.527 | 1.527 | 199.4 | — |
+| tebako-ruby | 2 | 1.512 | 1.181 | 1.843 | 0.468 | 1.512 | 1.511 | 199.5 | — |
 
 ### ruby-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.098 | 0.098 | 0.100 | 0.001 | 0.099 | 0.098 | 15.2 | 1.00× |
-| tebako-ruby | 5 | 1.234 | 1.230 | 1.240 | 0.004 | 1.234 | 1.233 | 79.0 | 0.08× |
+| on-system-ruby | 5 | 0.100 | 0.100 | 0.117 | 0.008 | 0.104 | 0.100 | 15.2 | 1.00× |
+| tebako-ruby | 5 | 1.248 | 1.234 | 1.252 | 0.008 | 1.243 | 1.246 | 79.0 | 0.08× |
 
 ### ruby-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.234 | 1.233 | 1.235 | 0.002 | 1.234 | 1.233 | 79.1 | — |
+| tebako-ruby | 2 | 1.241 | 1.240 | 1.241 | 0.001 | 1.241 | 1.240 | 79.0 | — |
 
 ### ruby-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.086 | 0.084 | 0.086 | 0.001 | 0.085 | 0.084 | 18.9 | 1.00× |
-| tebako-ruby | 5 | 0.275 | 0.275 | 0.277 | 0.001 | 0.276 | 0.274 | 81.5 | 0.31× |
+| on-system-ruby | 5 | 0.086 | 0.086 | 0.088 | 0.001 | 0.086 | 0.085 | 18.9 | 1.00× |
+| tebako-ruby | 5 | 0.277 | 0.277 | 0.280 | 0.001 | 0.278 | 0.275 | 81.5 | 0.31× |
 
 ### ruby-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.277 | 0.277 | 0.277 | 0.000 | 0.277 | 0.275 | 81.5 | — |
+| tebako-ruby | 2 | 0.276 | 0.275 | 0.277 | 0.001 | 0.276 | 0.275 | 81.4 | — |
 
 Unavailable arms:
 
@@ -597,131 +597,131 @@ Versions: tebako 2.8.76
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.026 | 0.026 | 0.029 | 0.001 | 0.026 | 0.029 | 37.2 | 1.00× |
-| tebako-java | 5 | 1.024 | 1.004 | 1.027 | 0.011 | 1.018 | 1.025 | 175.6 | 0.03× |
+| on-system-java | 5 | 0.031 | 0.030 | 0.035 | 0.002 | 0.032 | 0.034 | 37.6 | 1.00× |
+| tebako-java | 5 | 1.155 | 1.151 | 1.163 | 0.005 | 1.156 | 1.159 | 175.6 | 0.03× |
 
 ### java-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.033 | 1.014 | 1.053 | 0.027 | 1.033 | 1.034 | 175.6 | — |
+| tebako-java | 2 | 1.164 | 1.152 | 1.176 | 0.017 | 1.164 | 1.168 | 175.6 | — |
 
 ### java-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 6.343 | 6.329 | 6.470 | 0.059 | 6.365 | 6.346 | 39.1 | 1.00× |
-| tebako-java | 5 | 7.354 | 7.297 | 8.128 | 0.357 | 7.492 | 7.358 | 175.6 | 0.86× |
+| on-system-java | 5 | 9.095 | 9.073 | 9.110 | 0.014 | 9.092 | 9.105 | 39.1 | 1.00× |
+| tebako-java | 5 | 10.247 | 10.186 | 10.267 | 0.033 | 10.233 | 10.257 | 175.6 | 0.89× |
 
 ### java-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 7.334 | 7.319 | 7.348 | 0.020 | 7.334 | 7.338 | 175.6 | — |
+| tebako-java | 2 | 10.243 | 10.226 | 10.259 | 0.023 | 10.243 | 10.251 | 175.6 | — |
 
 ### java-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.475 | 0.463 | 0.482 | 0.007 | 0.474 | 0.542 | 48.7 | 1.00× |
-| tebako-java | 5 | 1.401 | 1.386 | 1.435 | 0.019 | 1.406 | 1.471 | 209.6 | 0.34× |
+| on-system-java | 5 | 0.825 | 0.820 | 0.835 | 0.006 | 0.826 | 0.901 | 48.7 | 1.00× |
+| tebako-java | 5 | 1.682 | 1.676 | 1.705 | 0.014 | 1.689 | 1.769 | 209.5 | 0.49× |
 
 ### java-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.453 | 1.425 | 1.482 | 0.041 | 1.453 | 1.520 | 209.6 | — |
+| tebako-java | 2 | 1.707 | 1.703 | 1.711 | 0.006 | 1.707 | 1.790 | 209.6 | — |
 
 ### java-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.194 | 0.187 | 0.203 | 0.007 | 0.194 | 0.385 | 71.1 | 1.00× |
-| tebako-java | 5 | 1.274 | 1.266 | 1.363 | 0.041 | 1.289 | 1.550 | 175.7 | 0.15× |
+| on-system-java | 5 | 0.221 | 0.218 | 0.226 | 0.004 | 0.222 | 0.434 | 69.7 | 1.00× |
+| tebako-java | 5 | 1.460 | 1.449 | 1.485 | 0.014 | 1.462 | 1.768 | 175.6 | 0.15× |
 
 ### java-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.272 | 1.264 | 1.281 | 0.012 | 1.272 | 1.541 | 175.7 | — |
+| tebako-java | 2 | 1.473 | 1.461 | 1.484 | 0.017 | 1.473 | 1.784 | 175.7 | — |
 
 ### java-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.136 | 0.126 | 0.139 | 0.005 | 0.135 | 0.313 | 81.9 | 1.00× |
-| tebako-java | 5 | 1.133 | 1.117 | 1.151 | 0.014 | 1.134 | 1.337 | 175.7 | 0.12× |
+| on-system-java | 5 | 0.172 | 0.156 | 0.182 | 0.010 | 0.172 | 0.395 | 81.5 | 1.00× |
+| tebako-java | 5 | 1.305 | 1.293 | 1.314 | 0.009 | 1.305 | 1.560 | 175.6 | 0.13× |
 
 ### java-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.132 | 1.122 | 1.143 | 0.015 | 1.132 | 1.308 | 175.7 | — |
+| tebako-java | 2 | 1.302 | 1.297 | 1.307 | 0.007 | 1.302 | 1.546 | 175.7 | — |
 
 ### ruby-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.042 | 0.042 | 0.044 | 0.001 | 0.042 | 0.042 | 28.1 | 1.00× |
-| tebako-ruby | 5 | 0.254 | 0.245 | 0.256 | 0.004 | 0.252 | 0.252 | 79.6 | 0.17× |
+| on-system-ruby | 5 | 0.055 | 0.055 | 0.055 | 0.000 | 0.055 | 0.054 | 28.0 | 1.00× |
+| tebako-ruby | 5 | 0.268 | 0.267 | 0.286 | 0.008 | 0.272 | 0.267 | 79.8 | 0.20× |
 
 ### ruby-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.255 | 0.245 | 0.264 | 0.013 | 0.255 | 0.254 | 79.8 | — |
+| tebako-ruby | 2 | 0.268 | 0.267 | 0.269 | 0.001 | 0.268 | 0.267 | 79.5 | — |
 
 ### ruby-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 1.499 | 1.464 | 1.587 | 0.051 | 1.519 | 1.498 | 28.2 | 1.00× |
-| tebako-ruby | 5 | 1.559 | 1.537 | 1.562 | 0.010 | 1.554 | 1.557 | 79.6 | 0.96× |
+| on-system-ruby | 5 | 2.282 | 2.255 | 2.356 | 0.041 | 2.291 | 2.281 | 28.2 | 1.00× |
+| tebako-ruby | 5 | 2.103 | 2.094 | 2.182 | 0.037 | 2.116 | 2.101 | 79.5 | 1.09× |
 
 ### ruby-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.545 | 1.544 | 1.547 | 0.002 | 1.545 | 1.544 | 79.6 | — |
+| tebako-ruby | 2 | 2.295 | 2.104 | 2.486 | 0.270 | 2.295 | 2.293 | 79.7 | — |
 
 ### ruby-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.457 | 0.455 | 0.462 | 0.003 | 0.458 | 0.455 | 94.0 | 1.00× |
-| tebako-ruby | 5 | 1.396 | 0.989 | 1.419 | 0.186 | 1.321 | 1.394 | 201.8 | 0.33× |
+| on-system-ruby | 5 | 0.643 | 0.630 | 0.659 | 0.012 | 0.642 | 0.640 | 94.0 | 1.00× |
+| tebako-ruby | 5 | 1.791 | 1.293 | 1.810 | 0.224 | 1.692 | 1.790 | 201.9 | 0.36× |
 
 ### ruby-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.210 | 1.008 | 1.413 | 0.286 | 1.210 | 1.209 | 201.9 | — |
+| tebako-ruby | 2 | 1.554 | 1.279 | 1.829 | 0.389 | 1.554 | 1.553 | 202.0 | — |
 
 ### ruby-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.106 | 0.104 | 0.106 | 0.001 | 0.105 | 0.104 | 30.7 | 1.00× |
-| tebako-ruby | 5 | 1.162 | 1.118 | 1.172 | 0.022 | 1.153 | 1.161 | 82.5 | 0.09× |
+| on-system-ruby | 5 | 0.130 | 0.128 | 0.131 | 0.001 | 0.129 | 0.128 | 30.7 | 1.00× |
+| tebako-ruby | 5 | 1.102 | 1.093 | 1.112 | 0.008 | 1.102 | 1.102 | 82.4 | 0.12× |
 
 ### ruby-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.189 | 1.188 | 1.190 | 0.002 | 1.189 | 1.188 | 82.5 | — |
+| tebako-ruby | 2 | 1.102 | 1.099 | 1.105 | 0.004 | 1.102 | 1.101 | 82.4 | — |
 
 ### ruby-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.067 | 0.065 | 0.068 | 0.001 | 0.066 | 0.065 | 34.5 | 1.00× |
-| tebako-ruby | 5 | 0.269 | 0.262 | 0.277 | 0.006 | 0.270 | 0.267 | 84.7 | 0.25× |
+| on-system-ruby | 5 | 0.084 | 0.082 | 0.085 | 0.001 | 0.083 | 0.082 | 34.4 | 1.00× |
+| tebako-ruby | 5 | 0.286 | 0.284 | 0.286 | 0.001 | 0.285 | 0.284 | 84.9 | 0.29× |
 
 ### ruby-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.270 | 0.268 | 0.271 | 0.002 | 0.270 | 0.269 | 84.6 | — |
+| tebako-ruby | 2 | 0.287 | 0.286 | 0.288 | 0.001 | 0.287 | 0.286 | 85.0 | — |
 
 Unavailable arms:
 
@@ -755,189 +755,189 @@ Versions: tebako 2.8.76
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.036 | 0.036 | 0.061 | 0.012 | 0.044 | 0.030 | 34.0 | 1.00× |
-| tebako-java | 5 | 1.087 | 0.921 | 1.197 | 0.118 | 1.062 | 0.946 | 190.7 | 0.03× |
+| on-system-java | 5 | 0.053 | 0.034 | 0.134 | 0.041 | 0.069 | 0.027 | 34.0 | 1.00× |
+| tebako-java | 5 | 0.940 | 0.907 | 1.015 | 0.043 | 0.947 | 0.856 | 190.8 | 0.06× |
 
 ### java-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.202 | 0.893 | 1.510 | 0.437 | 1.202 | 0.953 | 188.7 | — |
+| tebako-java | 2 | 0.996 | 0.972 | 1.021 | 0.034 | 0.996 | 0.873 | 190.7 | — |
 
 ### java-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 10.280 | 9.602 | 11.093 | 0.671 | 10.361 | 10.257 | 35.0 | 1.00× |
-| tebako-java | 5 | 10.970 | 10.730 | 13.253 | 1.082 | 11.553 | 10.821 | 191.6 | 0.94× |
+| on-system-java | 5 | 9.527 | 9.464 | 9.793 | 0.134 | 9.568 | 9.508 | 35.0 | 1.00× |
+| tebako-java | 5 | 10.825 | 10.670 | 11.192 | 0.225 | 10.899 | 10.638 | 191.6 | 0.88× |
 
 ### java-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 10.816 | 10.537 | 11.096 | 0.395 | 10.816 | 10.642 | 191.6 | — |
+| tebako-java | 2 | 10.720 | 10.477 | 10.962 | 0.343 | 10.720 | 10.529 | 191.7 | — |
 
 ### java-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 1.011 | 0.965 | 1.269 | 0.124 | 1.065 | 1.025 | 43.8 | 1.00× |
-| tebako-java | 5 | 1.562 | 1.356 | 1.884 | 0.218 | 1.563 | 1.416 | 266.2 | 0.65× |
+| on-system-java | 5 | 1.002 | 0.977 | 1.176 | 0.081 | 1.032 | 1.023 | 43.7 | 1.00× |
+| tebako-java | 5 | 1.739 | 1.591 | 2.101 | 0.226 | 1.807 | 1.645 | 266.4 | 0.58× |
 
 ### java-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.710 | 1.710 | 1.711 | 0.001 | 1.710 | 1.617 | 266.1 | — |
+| tebako-java | 2 | 1.720 | 1.633 | 1.807 | 0.123 | 1.720 | 1.618 | 266.4 | — |
 
 ### java-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.294 | 0.281 | 0.333 | 0.021 | 0.304 | 0.487 | 60.9 | 1.00× |
-| tebako-java | 5 | 1.435 | 1.250 | 1.574 | 0.131 | 1.428 | 1.498 | 215.4 | 0.20× |
+| on-system-java | 5 | 0.246 | 0.227 | 0.354 | 0.056 | 0.277 | 0.313 | 60.6 | 1.00× |
+| tebako-java | 5 | 1.291 | 1.235 | 1.296 | 0.030 | 1.271 | 1.309 | 215.2 | 0.19× |
 
 ### java-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.473 | 1.420 | 1.525 | 0.074 | 1.473 | 1.472 | 215.6 | — |
+| tebako-java | 2 | 1.238 | 1.083 | 1.392 | 0.218 | 1.238 | 1.272 | 214.8 | — |
 
 ### java-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.224 | 0.168 | 0.284 | 0.047 | 0.233 | 0.326 | 73.8 | 1.00× |
-| tebako-java | 5 | 1.213 | 1.108 | 1.533 | 0.202 | 1.297 | 1.228 | 230.8 | 0.18× |
+| on-system-java | 5 | 0.198 | 0.138 | 0.240 | 0.038 | 0.198 | 0.255 | 74.1 | 1.00× |
+| tebako-java | 5 | 1.219 | 1.096 | 1.316 | 0.083 | 1.219 | 1.177 | 230.7 | 0.16× |
 
 ### java-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.364 | 1.319 | 1.409 | 0.064 | 1.364 | 1.355 | 230.7 | — |
+| tebako-java | 2 | 1.503 | 1.480 | 1.526 | 0.033 | 1.503 | 1.461 | 229.7 | — |
 
 ### python-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 0.035 | 0.032 | 0.048 | 0.006 | 0.038 | 0.026 | 11.5 | 1.00× |
-| tebako-python | 5 | 0.335 | 0.315 | 0.359 | 0.018 | 0.339 | 0.307 | 131.4 | 0.10× |
+| on-system-python | 5 | 0.030 | 0.019 | 0.038 | 0.009 | 0.028 | 0.018 | 11.4 | 1.00× |
+| tebako-python | 5 | 0.267 | 0.251 | 0.309 | 0.022 | 0.275 | 0.240 | 132.1 | 0.11× |
 
 ### python-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 0.394 | 0.392 | 0.395 | 0.002 | 0.394 | 0.355 | 131.1 | — |
+| tebako-python | 2 | 0.277 | 0.267 | 0.288 | 0.015 | 0.277 | 0.257 | 131.8 | — |
 
 ### python-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 9.548 | 9.103 | 10.305 | 0.472 | 9.579 | 9.521 | 11.4 | 1.00× |
-| tebako-python | 5 | 10.951 | 10.761 | 12.069 | 0.553 | 11.215 | 10.924 | 130.3 | 0.87× |
+| on-system-python | 5 | 8.529 | 8.503 | 9.167 | 0.283 | 8.669 | 8.505 | 11.4 | 1.00× |
+| tebako-python | 5 | 10.278 | 10.080 | 10.868 | 0.315 | 10.339 | 10.212 | 131.4 | 0.83× |
 
 ### python-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 10.793 | 10.775 | 10.811 | 0.026 | 10.793 | 10.757 | 130.4 | — |
+| tebako-python | 2 | 10.415 | 10.263 | 10.567 | 0.215 | 10.415 | 10.389 | 131.4 | — |
 
 ### python-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 0.616 | 0.574 | 0.646 | 0.029 | 0.609 | 0.602 | 14.5 | 1.00× |
-| tebako-python | 5 | 0.461 | 0.431 | 0.477 | 0.019 | 0.454 | 0.444 | 198.4 | 1.34× |
+| on-system-python | 5 | 0.580 | 0.558 | 0.670 | 0.046 | 0.592 | 0.554 | 13.6 | 1.00× |
+| tebako-python | 5 | 0.482 | 0.432 | 0.506 | 0.030 | 0.474 | 0.453 | 200.7 | 1.20× |
 
 ### python-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 0.464 | 0.453 | 0.475 | 0.015 | 0.464 | 0.450 | 199.4 | — |
+| tebako-python | 2 | 0.442 | 0.440 | 0.444 | 0.003 | 0.442 | 0.419 | 198.8 | — |
 
 ### python-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 1.691 | 1.679 | 1.750 | 0.030 | 1.706 | 1.689 | 20.3 | 1.00× |
-| tebako-python | 5 | 3.773 | 3.624 | 3.818 | 0.091 | 3.723 | 3.748 | 141.5 | 0.45× |
+| on-system-python | 5 | 1.648 | 1.581 | 1.846 | 0.104 | 1.668 | 1.627 | 20.3 | 1.00× |
+| tebako-python | 5 | 3.552 | 3.489 | 3.659 | 0.070 | 3.562 | 3.520 | 141.0 | 0.46× |
 
 ### python-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-python | 2 | 3.970 | 3.856 | 4.084 | 0.161 | 3.970 | 3.944 | 143.3 | — |
+| tebako-python | 2 | 3.377 | 3.373 | 3.380 | 0.005 | 3.377 | 3.365 | 140.1 | — |
 
 ### python-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-python | 5 | 0.037 | 0.032 | 0.051 | 0.008 | 0.039 | 0.031 | 18.1 | 1.00× |
+| on-system-python | 5 | 0.041 | 0.031 | 0.066 | 0.015 | 0.044 | 0.030 | 18.0 | 1.00× |
 
 ### ruby-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.065 | 0.057 | 0.073 | 0.007 | 0.065 | 0.050 | 12.5 | 1.00× |
-| tebako-ruby | 5 | 0.273 | 0.258 | 0.302 | 0.017 | 0.279 | 0.258 | 64.5 | 0.24× |
+| on-system-ruby | 5 | 0.056 | 0.053 | 0.072 | 0.008 | 0.059 | 0.046 | 12.4 | 1.00× |
+| tebako-ruby | 5 | 0.250 | 0.233 | 0.269 | 0.015 | 0.248 | 0.238 | 65.0 | 0.22× |
 
 ### ruby-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.335 | 0.298 | 0.372 | 0.052 | 0.335 | 0.291 | 65.8 | — |
+| tebako-ruby | 2 | 0.268 | 0.268 | 0.268 | 0.000 | 0.268 | 0.253 | 65.3 | — |
 
 ### ruby-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 2.787 | 2.594 | 2.829 | 0.094 | 2.743 | 2.762 | 12.8 | 1.00× |
-| tebako-ruby | 5 | 2.621 | 2.588 | 2.716 | 0.054 | 2.642 | 2.599 | 66.2 | 1.06× |
+| on-system-ruby | 5 | 2.310 | 2.142 | 2.420 | 0.120 | 2.270 | 2.282 | 12.5 | 1.00× |
+| tebako-ruby | 5 | 2.429 | 2.359 | 2.627 | 0.108 | 2.448 | 2.407 | 64.9 | 0.95× |
 
 ### ruby-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 2.733 | 2.713 | 2.752 | 0.028 | 2.733 | 2.713 | 64.6 | — |
+| tebako-ruby | 2 | 2.441 | 2.416 | 2.466 | 0.036 | 2.441 | 2.421 | 66.1 | — |
 
 ### ruby-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 2.039 | 1.762 | 2.282 | 0.193 | 2.015 | 2.017 | 183.8 | 1.00× |
-| tebako-ruby | 5 | 1.390 | 1.201 | 2.259 | 0.435 | 1.538 | 1.368 | 269.4 | 1.47× |
+| on-system-ruby | 5 | 1.756 | 1.429 | 1.798 | 0.163 | 1.657 | 1.718 | 151.0 | 1.00× |
+| tebako-ruby | 5 | 1.107 | 1.004 | 1.168 | 0.070 | 1.080 | 1.059 | 269.5 | 1.59× |
 
 ### ruby-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.525 | 1.500 | 1.550 | 0.035 | 1.525 | 1.494 | 287.6 | — |
+| tebako-ruby | 2 | 0.931 | 0.906 | 0.956 | 0.035 | 0.931 | 0.916 | 270.1 | — |
 
 ### ruby-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.153 | 0.124 | 0.182 | 0.023 | 0.155 | 0.142 | 14.8 | 1.00× |
-| tebako-ruby | 5 | 1.418 | 1.328 | 1.451 | 0.052 | 1.398 | 1.365 | 67.3 | 0.11× |
+| on-system-ruby | 5 | 0.150 | 0.117 | 0.160 | 0.018 | 0.142 | 0.128 | 14.9 | 1.00× |
+| tebako-ruby | 5 | 1.224 | 1.176 | 1.238 | 0.025 | 1.211 | 1.206 | 66.8 | 0.12× |
 
 ### ruby-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.325 | 1.263 | 1.387 | 0.087 | 1.325 | 1.308 | 68.1 | — |
+| tebako-ruby | 2 | 1.130 | 1.096 | 1.164 | 0.048 | 1.130 | 1.111 | 68.2 | — |
 
 ### ruby-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.088 | 0.079 | 0.095 | 0.007 | 0.086 | 0.067 | 19.4 | 1.00× |
-| tebako-ruby | 5 | 0.261 | 0.246 | 0.299 | 0.021 | 0.266 | 0.241 | 70.3 | 0.34× |
+| on-system-ruby | 5 | 0.066 | 0.054 | 0.103 | 0.020 | 0.073 | 0.057 | 18.9 | 1.00× |
+| tebako-ruby | 5 | 0.240 | 0.211 | 0.294 | 0.031 | 0.245 | 0.218 | 70.5 | 0.28× |
 
 ### ruby-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.320 | 0.319 | 0.320 | 0.001 | 0.320 | 0.307 | 71.0 | — |
+| tebako-ruby | 2 | 0.286 | 0.279 | 0.294 | 0.011 | 0.286 | 0.260 | 71.6 | — |
 
 Unavailable arms:
 
@@ -970,131 +970,131 @@ Versions: tebako 2.8.76
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.165 | 0.151 | 0.191 | 0.016 | 0.168 | 0.171 | 25.3 | 1.00× |
-| tebako-java | 5 | 2.482 | 1.996 | 2.659 | 0.283 | 2.396 | 2.124 | 155.4 | 0.07× |
+| on-system-java | 5 | 0.144 | 0.141 | 0.222 | 0.035 | 0.159 | 0.149 | 25.4 | 1.00× |
+| tebako-java | 5 | 1.814 | 1.801 | 2.254 | 0.195 | 1.909 | 1.737 | 155.9 | 0.08× |
 
 ### java-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 2.239 | 2.235 | 2.244 | 0.006 | 2.239 | 2.060 | 155.4 | — |
+| tebako-java | 2 | 1.641 | 1.561 | 1.721 | 0.114 | 1.641 | 1.521 | 155.9 | — |
 
 ### java-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 14.442 | 14.139 | 16.115 | 0.793 | 14.730 | 14.446 | 25.8 | 1.00× |
-| tebako-java | 5 | 17.390 | 15.413 | 17.706 | 0.963 | 16.950 | 17.118 | 156.4 | 0.83× |
+| on-system-java | 5 | 13.196 | 11.814 | 14.614 | 1.156 | 13.117 | 13.189 | 25.8 | 1.00× |
+| tebako-java | 5 | 15.879 | 13.696 | 17.794 | 1.505 | 15.838 | 15.648 | 156.1 | 0.83× |
 
 ### java-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 17.954 | 17.505 | 18.403 | 0.635 | 17.954 | 17.654 | 156.1 | — |
+| tebako-java | 2 | 16.315 | 16.180 | 16.451 | 0.191 | 16.315 | 16.211 | 156.3 | — |
 
 ### java-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 2.062 | 1.817 | 2.241 | 0.155 | 2.029 | 2.097 | 35.0 | 1.00× |
-| tebako-java | 5 | 3.249 | 3.149 | 3.449 | 0.127 | 3.288 | 3.354 | 230.3 | 0.63× |
+| on-system-java | 5 | 1.879 | 1.833 | 2.109 | 0.109 | 1.921 | 1.979 | 34.6 | 1.00× |
+| tebako-java | 5 | 3.415 | 3.248 | 3.547 | 0.125 | 3.395 | 3.382 | 230.3 | 0.55× |
 
 ### java-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 3.718 | 3.640 | 3.795 | 0.110 | 3.718 | 3.683 | 230.5 | — |
+| tebako-java | 2 | 3.266 | 3.078 | 3.454 | 0.266 | 3.266 | 3.209 | 230.4 | — |
 
 ### java-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.860 | 0.743 | 1.538 | 0.327 | 0.980 | 1.623 | 70.7 | 1.00× |
-| tebako-java | 5 | 2.821 | 2.374 | 3.255 | 0.388 | 2.833 | 3.433 | 176.3 | 0.30× |
+| on-system-java | 5 | 0.720 | 0.533 | 0.933 | 0.145 | 0.717 | 1.330 | 74.0 | 1.00× |
+| tebako-java | 5 | 2.749 | 2.203 | 3.028 | 0.333 | 2.727 | 3.185 | 176.3 | 0.26× |
 
 ### java-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 2.324 | 2.238 | 2.409 | 0.121 | 2.324 | 2.798 | 176.2 | — |
+| tebako-java | 2 | 2.626 | 2.396 | 2.855 | 0.324 | 2.626 | 2.988 | 176.3 | — |
 
 ### java-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.479 | 0.347 | 0.793 | 0.172 | 0.512 | 0.856 | 63.6 | 1.00× |
-| tebako-java | 5 | 2.091 | 1.924 | 2.256 | 0.134 | 2.095 | 2.279 | 168.9 | 0.23× |
+| on-system-java | 5 | 0.417 | 0.409 | 0.513 | 0.044 | 0.435 | 0.788 | 63.5 | 1.00× |
+| tebako-java | 5 | 2.338 | 2.069 | 2.492 | 0.196 | 2.284 | 2.416 | 168.1 | 0.18× |
 
 ### java-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 2.209 | 2.139 | 2.279 | 0.099 | 2.209 | 2.362 | 168.8 | — |
+| tebako-java | 2 | 2.159 | 2.113 | 2.206 | 0.066 | 2.159 | 2.376 | 168.4 | — |
 
 ### ruby-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.126 | 0.115 | 0.154 | 0.017 | 0.134 | 0.116 | 9.4 | 1.00× |
-| tebako-ruby | 5 | 0.535 | 0.524 | 0.557 | 0.016 | 0.539 | 0.518 | 59.6 | 0.24× |
+| on-system-ruby | 5 | 0.096 | 0.083 | 0.103 | 0.008 | 0.094 | 0.080 | 9.6 | 1.00× |
+| tebako-ruby | 5 | 0.367 | 0.355 | 0.388 | 0.012 | 0.368 | 0.354 | 59.3 | 0.26× |
 
 ### ruby-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.511 | 0.509 | 0.513 | 0.003 | 0.511 | 0.501 | 59.5 | — |
+| tebako-ruby | 2 | 0.362 | 0.356 | 0.368 | 0.008 | 0.362 | 0.353 | 59.4 | — |
 
 ### ruby-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 9.514 | 9.144 | 9.775 | 0.287 | 9.494 | 9.493 | 9.7 | 1.00× |
-| tebako-ruby | 5 | 5.303 | 5.137 | 5.519 | 0.158 | 5.349 | 5.290 | 59.6 | 1.79× |
+| on-system-ruby | 5 | 8.128 | 7.906 | 8.362 | 0.191 | 8.093 | 8.114 | 9.7 | 1.00× |
+| tebako-ruby | 5 | 4.677 | 4.449 | 4.879 | 0.189 | 4.691 | 4.662 | 59.5 | 1.74× |
 
 ### ruby-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 4.967 | 4.925 | 5.009 | 0.060 | 4.967 | 4.954 | 59.4 | — |
+| tebako-ruby | 2 | 4.326 | 4.229 | 4.423 | 0.138 | 4.326 | 4.270 | 59.5 | — |
 
 ### ruby-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 3.639 | 3.473 | 3.756 | 0.107 | 3.642 | 3.626 | 74.3 | 1.00× |
-| tebako-ruby | 5 | 4.332 | 4.015 | 4.955 | 0.383 | 4.404 | 4.319 | 173.2 | 0.84× |
+| on-system-ruby | 5 | 3.361 | 3.254 | 3.474 | 0.084 | 3.350 | 3.352 | 74.6 | 1.00× |
+| tebako-ruby | 5 | 3.955 | 3.715 | 4.106 | 0.144 | 3.942 | 3.937 | 172.6 | 0.85× |
 
 ### ruby-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 4.186 | 4.151 | 4.222 | 0.051 | 4.186 | 4.169 | 172.6 | — |
+| tebako-ruby | 2 | 3.891 | 3.851 | 3.931 | 0.056 | 3.891 | 3.878 | 172.6 | — |
 
 ### ruby-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.308 | 0.293 | 0.351 | 0.024 | 0.312 | 0.292 | 11.6 | 1.00× |
-| tebako-ruby | 5 | 1.958 | 1.948 | 2.385 | 0.188 | 2.067 | 1.944 | 61.9 | 0.16× |
+| on-system-ruby | 5 | 0.354 | 0.305 | 0.403 | 0.046 | 0.355 | 0.344 | 11.8 | 1.00× |
+| tebako-ruby | 5 | 2.223 | 1.970 | 2.420 | 0.174 | 2.192 | 2.208 | 62.0 | 0.16× |
 
 ### ruby-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 2.319 | 2.256 | 2.383 | 0.090 | 2.319 | 2.303 | 62.0 | — |
+| tebako-ruby | 2 | 1.863 | 1.757 | 1.968 | 0.149 | 1.863 | 1.849 | 61.9 | — |
 
 ### ruby-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.190 | 0.168 | 0.293 | 0.050 | 0.210 | 0.175 | 14.9 | 1.00× |
-| tebako-ruby | 5 | 0.559 | 0.507 | 0.657 | 0.058 | 0.567 | 0.542 | 63.5 | 0.34× |
+| on-system-ruby | 5 | 0.144 | 0.131 | 0.156 | 0.009 | 0.143 | 0.132 | 14.8 | 1.00× |
+| tebako-ruby | 5 | 0.410 | 0.409 | 0.423 | 0.006 | 0.414 | 0.402 | 63.3 | 0.35× |
 
 ### ruby-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.525 | 0.523 | 0.527 | 0.003 | 0.525 | 0.509 | 63.5 | — |
+| tebako-ruby | 2 | 0.434 | 0.424 | 0.444 | 0.014 | 0.434 | 0.417 | 63.4 | — |
 
 Unavailable arms:
 
@@ -1128,124 +1128,124 @@ Versions: tebako 2.8.76
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.073 | 0.067 | 0.083 | 0.007 | 0.073 | 0.109 | 331.1 | 1.00× |
-| tebako-java | 5 | 0.790 | 0.774 | 0.812 | 0.015 | 0.794 | 0.781 | 463.3 | 0.09× |
+| on-system-java | 5 | 0.067 | 0.064 | 0.067 | 0.001 | 0.066 | 0.094 | 331.1 | 1.00× |
+| tebako-java | 5 | 0.760 | 0.757 | 0.782 | 0.012 | 0.767 | 0.797 | 463.0 | 0.09× |
 
 ### java-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 0.822 | 0.800 | 0.844 | 0.031 | 0.822 | 0.836 | 463.2 | — |
+| tebako-java | 2 | 0.765 | 0.760 | 0.771 | 0.008 | 0.765 | 0.758 | 463.2 | — |
 
 ### java-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 13.803 | 13.461 | 14.231 | 0.362 | 13.847 | 13.703 | 331.3 | 1.00× |
-| tebako-java | 5 | 14.773 | 14.107 | 15.973 | 0.759 | 14.766 | 14.750 | 463.3 | 0.93× |
+| on-system-java | 5 | 11.966 | 11.945 | 12.043 | 0.039 | 11.977 | 11.906 | 331.3 | 1.00× |
+| tebako-java | 5 | 12.679 | 12.622 | 12.695 | 0.030 | 12.666 | 12.609 | 463.4 | 0.94× |
 
 ### java-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 14.169 | 14.166 | 14.173 | 0.004 | 14.169 | 14.141 | 463.8 | — |
+| tebako-java | 2 | 13.928 | 12.672 | 15.184 | 1.776 | 13.928 | 13.406 | 463.2 | — |
 
 ### java-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 3.167 | 3.103 | 3.236 | 0.052 | 3.170 | 3.281 | 337.4 | 1.00× |
+| on-system-java | 5 | 2.097 | 1.956 | 2.227 | 0.102 | 2.086 | 2.203 | 337.5 | 1.00× |
 
 ### java-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.895 | 0.876 | 0.919 | 0.016 | 0.895 | 1.391 | 349.9 | 1.00× |
-| tebako-java | 5 | 1.064 | 1.063 | 1.088 | 0.013 | 1.073 | 1.469 | 476.1 | 0.84× |
+| on-system-java | 5 | 1.279 | 1.198 | 1.317 | 0.044 | 1.271 | 1.859 | 349.6 | 1.00× |
+| tebako-java | 5 | 1.270 | 1.208 | 1.357 | 0.055 | 1.273 | 1.766 | 478.9 | 1.01× |
 
 ### java-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 1.084 | 1.077 | 1.092 | 0.010 | 1.084 | 1.492 | 477.5 | — |
+| tebako-java | 2 | 1.258 | 1.252 | 1.264 | 0.009 | 1.258 | 1.703 | 476.7 | — |
 
 ### java-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-java | 5 | 0.263 | 0.246 | 0.276 | 0.013 | 0.263 | 0.625 | 337.6 | 1.00× |
-| tebako-java | 5 | 0.967 | 0.945 | 0.990 | 0.016 | 0.969 | 1.328 | 470.5 | 0.27× |
+| on-system-java | 5 | 0.316 | 0.297 | 0.367 | 0.027 | 0.322 | 0.688 | 338.1 | 1.00× |
+| tebako-java | 5 | 1.078 | 1.033 | 1.416 | 0.159 | 1.136 | 1.406 | 470.5 | 0.29× |
 
 ### java-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-java | 2 | 0.968 | 0.958 | 0.979 | 0.015 | 0.968 | 1.281 | 469.9 | — |
+| tebako-java | 2 | 1.090 | 1.087 | 1.094 | 0.005 | 1.090 | 1.445 | 470.3 | — |
 
 ### ruby-boot — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.152 | 0.149 | 0.169 | 0.008 | 0.155 | 0.156 | 51.6 | 1.00× |
-| tebako-ruby | 5 | 0.231 | 0.229 | 0.239 | 0.004 | 0.232 | 0.219 | 68.4 | 0.66× |
+| on-system-ruby | 5 | 0.178 | 0.174 | 0.183 | 0.004 | 0.178 | 0.172 | 51.6 | 1.00× |
+| tebako-ruby | 5 | 0.241 | 0.238 | 0.271 | 0.014 | 0.246 | 0.234 | 68.4 | 0.74× |
 
 ### ruby-boot — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.241 | 0.228 | 0.253 | 0.017 | 0.241 | 0.227 | 68.4 | — |
+| tebako-ruby | 2 | 0.282 | 0.268 | 0.297 | 0.021 | 0.282 | 0.281 | 68.6 | — |
 
 ### ruby-fib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 2.193 | 2.179 | 2.375 | 0.082 | 2.237 | 2.203 | 51.6 | 1.00× |
-| tebako-ruby | 5 | 2.288 | 2.237 | 2.346 | 0.043 | 2.290 | 2.266 | 68.4 | 0.96× |
+| on-system-ruby | 5 | 2.646 | 2.644 | 2.673 | 0.012 | 2.653 | 2.641 | 51.6 | 1.00× |
+| tebako-ruby | 5 | 2.676 | 2.662 | 2.710 | 0.018 | 2.680 | 2.656 | 68.4 | 0.99× |
 
 ### ruby-fib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 2.241 | 2.231 | 2.250 | 0.014 | 2.241 | 2.219 | 68.5 | — |
+| tebako-ruby | 2 | 2.703 | 2.702 | 2.704 | 0.001 | 2.703 | 2.719 | 68.6 | — |
 
 ### ruby-ioread — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 5.162 | 5.061 | 5.408 | 0.131 | 5.209 | 5.172 | 117.7 | 1.00× |
-| tebako-ruby | 5 | 3.953 | 3.898 | 4.027 | 0.062 | 3.960 | 3.906 | 134.5 | 1.31× |
+| on-system-ruby | 5 | 3.506 | 3.396 | 3.662 | 0.120 | 3.516 | 3.469 | 117.7 | 1.00× |
+| tebako-ruby | 5 | 2.769 | 2.750 | 2.780 | 0.011 | 2.767 | 2.750 | 134.7 | 1.27× |
 
 ### ruby-ioread — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 3.911 | 3.911 | 3.912 | 0.001 | 3.911 | 3.883 | 134.6 | — |
+| tebako-ruby | 2 | 2.770 | 2.770 | 2.771 | 0.001 | 2.770 | 2.750 | 134.8 | — |
 
 ### ruby-statloop — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 2.872 | 2.832 | 2.899 | 0.027 | 2.867 | 2.859 | 53.8 | 1.00× |
-| tebako-ruby | 5 | 1.231 | 1.226 | 1.256 | 0.012 | 1.236 | 1.234 | 69.0 | 2.33× |
+| on-system-ruby | 5 | 3.717 | 3.702 | 3.862 | 0.067 | 3.744 | 3.672 | 53.7 | 1.00× |
+| tebako-ruby | 5 | 1.344 | 1.335 | 1.355 | 0.008 | 1.343 | 1.328 | 69.1 | 2.76× |
 
 ### ruby-statloop — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 1.233 | 1.230 | 1.236 | 0.004 | 1.233 | 1.250 | 69.1 | — |
+| tebako-ruby | 2 | 1.348 | 1.334 | 1.363 | 0.021 | 1.348 | 1.336 | 69.4 | — |
 
 ### ruby-stdlib — warm
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| on-system-ruby | 5 | 0.206 | 0.203 | 0.213 | 0.004 | 0.207 | 0.203 | 53.0 | 1.00× |
-| tebako-ruby | 5 | 0.254 | 0.250 | 0.262 | 0.005 | 0.256 | 0.250 | 69.1 | 0.81× |
+| on-system-ruby | 5 | 0.233 | 0.227 | 0.240 | 0.006 | 0.233 | 0.219 | 52.8 | 1.00× |
+| tebako-ruby | 5 | 0.269 | 0.265 | 0.276 | 0.004 | 0.270 | 0.266 | 69.1 | 0.86× |
 
 ### ruby-stdlib — cold (install/first-boot)
 
 | target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
 |--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| tebako-ruby | 2 | 0.259 | 0.256 | 0.262 | 0.004 | 0.259 | 0.250 | 69.2 | — |
+| tebako-ruby | 2 | 0.273 | 0.271 | 0.274 | 0.002 | 0.273 | 0.273 | 69.2 | — |
 
 Unavailable arms:
 
@@ -1276,7 +1276,7 @@ Failed runs:
 
 ---
 
-Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.6 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.6 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-15 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
+Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.6 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-15 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
 
 GitHub-hosted runners are shared, multi-tenant machines; treat differences under ~10% as noise and read min alongside median — min is the cross-noise-comparable figure (noise inflates, never deflates).
 

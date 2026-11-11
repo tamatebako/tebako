@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "verdict": "pass",
+  "cells": [
+    {
+      "id": "first-response.cold.median",
+      "state": "pass",
+      "measured": 1.641096263,
+      "bound": 3.0,
+      "comparison": "<="
+    },
+    {
+      "id": "first-response.warm.median",
+      "state": "pass",
+      "measured": 1.814493008,
+      "bound": 3.0,
+      "comparison": "<="
+    },
+    {
+      "id": "steady.cpu.throughput",
+      "state": "pass",
+      "measured": 0.8298324341861792,
+      "bound": 0.8,
+      "comparison": ">="
+    },
+    {
+      "id": "steady.io.throughput",
+      "state": "pass",
+      "measured": 0.3589764560588129,
+      "bound": 0.2,
+      "comparison": ">="
+    },
+    {
+      "id": "filesystem.stat.median",
+      "state": "pass",
+      "measured": 12.42606018400627,
+      "bound": 15.0,
+      "comparison": "<="
+    },
+    {
+      "id": "memory.rss.peak",
+      "state": "pass",
+      "measured": 502210560.0,
+      "bound": 671088640.0,
+      "comparison": "<="
+    },
+    {
+      "id": "teardown.exit_seconds",
+      "state": "absent",
+      "bound": 0.5,
+      "comparison": "<="
+    },
+    {
+      "id": "teardown.materialize_vs_extract",
+      "state": "absent",
+      "bound": 1.0,
+      "comparison": "<="
+    },
+    {
+      "id": "author-loop.repress.median",
+      "state": "absent",
+      "bound": 6.0,
+      "comparison": "<="
+    },
+    {
+      "id": "author-loop.first_run.median",
+      "state": "absent",
+      "bound": 2.5,
+      "comparison": "<="
+    }
+  ]
+}
