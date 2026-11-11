@@ -36,8 +36,10 @@ invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manag
   tebako-shim expose <tool>            relink a hidden tool's shim
   tebako-shim which <tool>             show the resolved provider, version, runtime, mounts, argv
   tebako-shim doctor                   diagnose the shim layer (missing/corrupt records, routing)
-  tebako-shim install-shell [--shell bash|zsh|fish|csh]
-                                       prepend ~/.tebako/shims to PATH in the shell startup file
+  tebako-shim install-shell [--shell bash|zsh|fish|csh] [--position prepend|append]
+                                       put ~/.tebako/shims on PATH in the shell startup file
+                                       (prepend wins over existing resolutions — the default;
+                                       append defers to them, tebako#1004 §4)
   tebako-shim uninstall-shell [--shell bash|zsh|fish|csh]
                                        remove exactly the managed block";
 
@@ -1668,9 +1670,10 @@ pub fn unlink_shims(
 // ---------------------------------------------------------------------
 
 #[cfg(not(windows))]
-fn parse_shell_flag(args: &[String], ctx: &Ctx) -> Result<Shell, ShimError> {
+fn parse_shell_flag(args: &[String], ctx: &Ctx) -> Result<(Shell, shell::Position), ShimError> {
     let mut i = 0;
     let mut shell: Option<String> = None;
+    let mut position: Option<String> = None;
     while i < args.len() {
         let arg = &args[i];
         if arg == "--shell" {
@@ -1681,18 +1684,31 @@ fn parse_shell_flag(args: &[String], ctx: &Ctx) -> Result<Shell, ShimError> {
             }
         } else if let Some(v) = arg.strip_prefix("--shell=") {
             shell = Some(v.to_string());
+        } else if arg == "--position" {
+            i += 1;
+            position = args.get(i).cloned();
+            if position.is_none() {
+                return fail(EX_USAGE, "--position expects prepend|append");
+            }
+        } else if let Some(v) = arg.strip_prefix("--position=") {
+            position = Some(v.to_string());
         } else {
             return fail(
                 EX_USAGE,
-                format!("unexpected argument \"{arg}\" — usage: tebako-shim install-shell [--shell bash|zsh|fish|csh]"),
+                format!("unexpected argument \"{arg}\" — usage: tebako-shim install-shell [--shell bash|zsh|fish|csh] [--position prepend|append]"),
             );
         }
         i += 1;
     }
-    match shell {
-        Some(name) => Shell::parse(&name),
-        None => Shell::detect(ctx.env_get("SHELL")),
-    }
+    let shell = match shell {
+        Some(name) => Shell::parse(&name)?,
+        None => Shell::detect(ctx.env_get("SHELL"))?,
+    };
+    let position = match position {
+        Some(name) => shell::Position::parse(&name)?,
+        None => shell::Position::Prepend,
+    };
+    Ok((shell, position))
 }
 
 #[cfg(not(windows))]
@@ -1710,10 +1726,10 @@ fn user_home(ctx: &Ctx) -> Result<PathBuf, ShimError> {
 
 #[cfg(not(windows))]
 fn cmd_shell(args: &[String], ctx: &Ctx, install: bool) -> Result<Action, ShimError> {
-    let sh = parse_shell_flag(args, ctx)?;
+    let (sh, position) = parse_shell_flag(args, ctx)?;
     let file = shell::startup_file(sh, &user_home(ctx)?);
     let text = if install {
-        match shell::install(sh, &file)? {
+        match shell::install(sh, &file, position)? {
             shell::Change::Installed => format!(
                 "installed the tebako shim block in {} ({})\nrestart the shell, or re-source the file",
                 file.display(),

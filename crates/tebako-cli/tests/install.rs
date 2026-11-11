@@ -2074,6 +2074,131 @@ fn install_links_only_the_active_entrypoints() {
 }
 
 // ---------------------------------------------------------------------
+// the PATH-claim selection (tebako#1004 §2)
+// ---------------------------------------------------------------------
+
+/// The two-entrypoint suite fixture, shared by the selection tests.
+fn selection_fixture(tag: &str) -> Fixture {
+    let fx = Fixture::new(tag);
+    let manifest = "identity:\n  schema_version: 1\n  kind: app\n  name: metasuite\n  version: 2.0.0\n  producer: {tool: tebako, tool_version: 0.15.9}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n    blob_sha256: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\n  signing: {state: unsigned}\n  encryption: {state: none}\nprovides:\n  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\"}\n    - name: fontist\n      path: /app/bin/fontist\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\"}\n  platforms: universal\n  capabilities: {exec: true, read: true}\n";
+    let image = zip_image_with_manifest(manifest);
+    let payload_ref = fx.payload("metasuite-2.0.0.tfs", &image);
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: metasuite\n    kind: app\n    versions:\n      - version: 2.0.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        entrypoints: [metanorma, fontist]\n    default: 2.0.0\n"
+    );
+    install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
+    fx
+}
+
+#[test]
+fn install_only_shims_narrows_the_claim() {
+    let fx = selection_fixture("selonly");
+    let only = std::collections::BTreeSet::from(["metanorma".to_string()]);
+    let out = install::install_selected(
+        &fx.home,
+        "metasuite",
+        None,
+        Some(&fx.shim_binary),
+        &install::ShimSelection::Only(only),
+    )
+    .unwrap();
+    assert_eq!(out.commands, vec!["metanorma"]);
+    assert_eq!(out.shims.len(), 1);
+    assert!(shim_path(&fx.home, "metanorma").exists());
+    assert!(!shim_path(&fx.home, "fontist").exists());
+    // The mirror still declares both — `tebako run fontist` dispatches.
+    let mirror = tebako_shim::manifest::Manifest::load(
+        &fx.payloads_dir().join("metasuite/2.0.0.manifest.yaml"),
+    )
+    .unwrap();
+    assert!(mirror.entrypoint("fontist").is_some());
+}
+
+#[test]
+fn install_no_shims_claims_nothing() {
+    let fx = selection_fixture("selnone");
+    let out = install::install_selected(
+        &fx.home,
+        "metasuite",
+        None,
+        Some(&fx.shim_binary),
+        &install::ShimSelection::Nothing,
+    )
+    .unwrap();
+    assert!(out.commands.is_empty());
+    assert!(out.shims.is_empty());
+    assert!(!shim_path(&fx.home, "metanorma").exists());
+    assert!(!shim_path(&fx.home, "fontist").exists());
+}
+
+#[test]
+fn install_default_subtracts_the_hidden_set() {
+    let fx = selection_fixture("selhidden");
+    tebako_shim::config::save_hidden(
+        &fx.home,
+        &std::collections::BTreeSet::from(["fontist".to_string()]),
+    )
+    .unwrap();
+    let out = install::install_selected(
+        &fx.home,
+        "metasuite",
+        None,
+        Some(&fx.shim_binary),
+        &install::ShimSelection::Declared,
+    )
+    .unwrap();
+    assert_eq!(out.commands, vec!["metanorma"]);
+    assert!(shim_path(&fx.home, "metanorma").exists());
+    assert!(
+        !shim_path(&fx.home, "fontist").exists(),
+        "a freed name stays freed"
+    );
+}
+
+#[test]
+fn install_only_shims_refuses_undeclared_and_hidden_names() {
+    let fx = selection_fixture("selrefuse");
+    let ghost = std::collections::BTreeSet::from(["ghost".to_string()]);
+    let err = install::install_selected(
+        &fx.home,
+        "metasuite",
+        None,
+        Some(&fx.shim_binary),
+        &install::ShimSelection::Only(ghost),
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("ghost"), "{err}");
+    assert!(
+        err.to_string().contains("metanorma"),
+        "names the declared set: {err}"
+    );
+    assert!(
+        !shim_path(&fx.home, "metanorma").exists(),
+        "no partial claim on the refusal"
+    );
+
+    tebako_shim::config::save_hidden(
+        &fx.home,
+        &std::collections::BTreeSet::from(["fontist".to_string()]),
+    )
+    .unwrap();
+    let hid = std::collections::BTreeSet::from(["fontist".to_string()]);
+    let err = install::install_selected(
+        &fx.home,
+        "metasuite",
+        None,
+        Some(&fx.shim_binary),
+        &install::ShimSelection::Only(hid),
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("expose"),
+        "points at expose: {err}"
+    );
+    assert!(!shim_path(&fx.home, "metanorma").exists());
+}
+
+// ---------------------------------------------------------------------
 // uninstall
 // ---------------------------------------------------------------------
 

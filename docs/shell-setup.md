@@ -41,6 +41,14 @@ export PATH="$HOME/.tebako/shims:$PATH"
 `install-shell --shell bash|zsh|fish|csh` overrides detection (it reads
 `$SHELL` otherwise).
 
+**Append instead of prepend:** `install-shell --position append` puts the
+shims dir LAST on PATH, so an existing provider of the same command name
+(a version manager's ruby, the system's java) keeps winning and tebako
+answers only for names nothing else provides. Prepend is the default
+because a shim you install should answer. Re-running with the other
+position rewrites the managed block in place; user lines outside the
+markers are never touched.
+
 **Other shells** — no managed block yet; add the equivalent yourself:
 
 - **nushell** (`~/.config/nushell/config.nu`):

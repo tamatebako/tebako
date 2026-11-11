@@ -519,6 +519,85 @@ pub fn update_registries_with<T: Transport>(
 // install
 // ---------------------------------------------------------------------
 
+/// Which declared commands claim PATH names at install (tebako#1004 §2).
+/// The dispatch claim itself is untouched in every arm — `tebako run
+/// <name>` reaches the tool regardless; this axis is only the PATH
+/// manifestation (the shim link).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ShimSelection {
+    /// The manifest's `active` set, minus names the user hid
+    /// (`tebako shim hide` — a freed name stays freed across reinstalls).
+    #[default]
+    Declared,
+    /// Exactly these commands. A name the payload never declares, or one
+    /// the user hid, is a named usage error — never a dangling link,
+    /// never a silent re-claim of a freed name.
+    Only(std::collections::BTreeSet<String>),
+    /// No PATH claims at all (`--no-shims`).
+    Nothing,
+}
+
+/// Apply the selection to one payload's declared commands. `declared` is
+/// the install's candidate set (the manifest's active dispatchables, or
+/// a spawned runtime's exposed commands). Answers (links, notes): the
+/// note names a hidden subtraction once, per install (spec 07's "loud
+/// note" — a silently narrowed PATH is exactly the #1004 complaint).
+fn select_shims(
+    home: &Path,
+    declared: &[String],
+    selection: &ShimSelection,
+) -> Result<(Vec<String>, Vec<String>), TebakoError> {
+    let hidden = config::load_hidden(home).map_err(map_shim)?;
+    match selection {
+        ShimSelection::Nothing => Ok((Vec::new(), Vec::new())),
+        ShimSelection::Declared => {
+            let kept: Vec<String> = declared
+                .iter()
+                .filter(|c| hidden.contains(*c))
+                .cloned()
+                .collect();
+            let notes = if kept.is_empty() {
+                Vec::new()
+            } else {
+                vec![format!(
+                    "kept hidden off PATH: {} (`tebako shim expose <name>` reclaims)",
+                    kept.join(", ")
+                )]
+            };
+            Ok((
+                declared
+                    .iter()
+                    .filter(|c| !hidden.contains(*c))
+                    .cloned()
+                    .collect(),
+                notes,
+            ))
+        }
+        ShimSelection::Only(names) => {
+            for name in names {
+                if !declared.iter().any(|d| d == name) {
+                    return Err(err(
+                        EX_USAGE,
+                        format!(
+                            "--only-shims names \"{name}\", which this install does not declare (declared: {})",
+                            declared.join(", ")
+                        ),
+                    ));
+                }
+                if hidden.contains(name) {
+                    return Err(err(
+                        EX_USAGE,
+                        format!(
+                            "--only-shims names \"{name}\", which is hidden — `tebako shim expose {name}` first (the freed name stays freed otherwise)"
+                        ),
+                    ));
+                }
+            }
+            Ok((names.iter().cloned().collect(), Vec::new()))
+        }
+    }
+}
+
 /// What an install produced.
 #[derive(Debug)]
 pub struct InstallOutcome {
@@ -599,12 +678,45 @@ pub fn install(
     install_with(home, target, host, shim_binary, &Fetcher::new())
 }
 
+/// [`install`] carrying the PATH-claim selection (tebako#1004 §2).
+pub fn install_selected(
+    home: &Path,
+    target: &str,
+    host: Option<Platform>,
+    shim_binary: Option<&Path>,
+    selection: &ShimSelection,
+) -> Result<InstallOutcome, TebakoError> {
+    install_with_selection(home, target, host, shim_binary, selection, &Fetcher::new())
+}
+
 /// The transport-injected half of [`install`] (tests).
 pub fn install_with<T: Transport + Sync>(
     home: &Path,
     target: &str,
     host: Option<Platform>,
     shim_binary: Option<&Path>,
+    fetcher: &Fetcher<T>,
+) -> Result<InstallOutcome, TebakoError> {
+    install_with_selection(
+        home,
+        target,
+        host,
+        shim_binary,
+        &ShimSelection::default(),
+        fetcher,
+    )
+}
+
+/// [`install_with`] carrying the PATH-claim selection (tebako#1004 §2):
+/// the choice narrows every link site of the install — the payload's own
+/// dispatchables, its dependency closure's, and the spawned runtimes'
+/// exposed commands.
+pub fn install_with_selection<T: Transport + Sync>(
+    home: &Path,
+    target: &str,
+    host: Option<Platform>,
+    shim_binary: Option<&Path>,
+    selection: &ShimSelection,
     fetcher: &Fetcher<T>,
 ) -> Result<InstallOutcome, TebakoError> {
     if looks_like_reference(target) {
@@ -614,12 +726,13 @@ pub fn install_with<T: Transport + Sync>(
             fetcher,
             plan,
             shim_binary,
+            selection,
             &mut Vec::new(),
             &mut ClosureTree::new(target.to_string()),
             0,
         )
     } else if let Some(erf) = engine_install_target(home, target)? {
-        install_engine(home, &erf, shim_binary)
+        install_engine(home, &erf, shim_binary, selection)
     } else {
         let plan = plan_from_nickname(home, fetcher, target, host)?;
         finish_install(
@@ -627,6 +740,7 @@ pub fn install_with<T: Transport + Sync>(
             fetcher,
             plan,
             shim_binary,
+            selection,
             &mut Vec::new(),
             &mut ClosureTree::new(target.to_string()),
             0,
@@ -823,6 +937,7 @@ fn install_engine(
     home: &Path,
     erf: &crate::engine::EngineRef,
     shim_binary: Option<&Path>,
+    selection: &ShimSelection,
 ) -> Result<InstallOutcome, TebakoError> {
     let ctx = tebako_shim::Ctx {
         home: home.to_path_buf(),
@@ -921,19 +1036,40 @@ fn install_engine(
     if erf.command.is_none() {
         refuse_payload_claim(home, engine, &command)?;
     }
-    let binary = resolve_shim_binary(shim_binary)?;
+    // tebako#1004 §2: the selection gates the PATH claim only — the
+    // runtime-own record (dispatch bookkeeping) stands regardless, so
+    // `tebako run <command>` works after a --no-shims install.
+    let (claim, selection_notes) = select_shims(home, std::slice::from_ref(&command), selection)?;
+    for note in selection_notes {
+        journal(
+            home,
+            &format!("event=shim-selection engine={engine} note={note}"),
+        );
+    }
     // A stale runtime-own claim of ours is replaced silently — link_shims'
     // displacement note is for the payload-wins direction only.
     tebako_shim::runtime_own::remove(home, &command).map_err(map_shim)?;
-    let (links, mut notes) =
-        manage::link_shims(home, &binary, std::slice::from_ref(&command)).map_err(map_shim)?;
+    let (links, mut notes) = if claim.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        let binary = resolve_shim_binary(shim_binary)?;
+        manage::link_shims(home, &binary, std::slice::from_ref(&command)).map_err(map_shim)?
+    };
     tebako_shim::runtime_own::record(home, &command, engine, &token).map_err(map_shim)?;
-    journal(
-        home,
-        &format!("event=runtime-own-shim command={command} engine={engine} entry={token}"),
-    );
-    // tebako#996: name the shadow the registration casts, if one stands.
-    if let Some(shadow) = existing_resolution(&ctx.env, home, &command) {
+    if !claim.is_empty() {
+        journal(
+            home,
+            &format!("event=runtime-own-shim command={command} engine={engine} entry={token}"),
+        );
+    }
+    // tebako#996: name the shadow the registration casts, if one stands
+    // (meaningful only when the link actually landed).
+    let shadow = if claim.is_empty() {
+        None
+    } else {
+        existing_resolution(&ctx.env, home, &command)
+    };
+    if let Some(shadow) = shadow {
         let (relation, existing) = match &shadow {
             Shadow::Shadows(existing) => ("shadows", existing),
             Shadow::Trails(existing) => ("trails", existing),
@@ -1991,6 +2127,7 @@ fn finish_install<T: Transport + Sync>(
     fetcher: &Fetcher<T>,
     plan: InstallPlan,
     shim_binary: Option<&Path>,
+    selection: &ShimSelection,
     chain: &mut Vec<String>,
     tree: &mut ClosureTree,
     depth: usize,
@@ -2364,8 +2501,16 @@ fn finish_install<T: Transport + Sync>(
     // short-circuits on the cache check — the chain guard (S32) turns
     // a true cycle into the named error first.
     chain.push(plan.name.clone());
-    let closure =
-        install_dependency_closure(home, fetcher, &mirror, shim_binary, chain, tree, depth);
+    let closure = install_dependency_closure(
+        home,
+        fetcher,
+        &mirror,
+        shim_binary,
+        selection,
+        chain,
+        tree,
+        depth,
+    );
     chain.pop();
     closure?;
 
@@ -2374,12 +2519,16 @@ fn finish_install<T: Transport + Sync>(
     // commit point — then the PATH surface, then the journal line.
     materialize_zero_runtime(home, &entry, &mirror)?;
     mirror.save(&record.manifest_mirror).map_err(map_shim)?;
-    let commands: Vec<String> = mirror
+    let declared: Vec<String> = mirror
         .dispatchables()
         .iter()
         .filter(|e| e.active)
         .map(|e| e.name.clone())
         .collect();
+    // tebako#1004 §2: the PATH-claim selection (hidden names stay freed;
+    // --only-shims narrows; --no-shims claims nothing).
+    let (commands, selection_notes) = select_shims(home, &declared, selection)?;
+    notes.extend(selection_notes);
     let shims = if commands.is_empty() {
         Vec::new()
     } else {
@@ -2488,6 +2637,7 @@ fn install_dependency_closure<T: Transport + Sync>(
     fetcher: &Fetcher<T>,
     mirror: &Manifest,
     shim_binary: Option<&Path>,
+    selection: &ShimSelection,
     chain: &mut Vec<String>,
     tree: &mut ClosureTree,
     depth: usize,
@@ -2566,6 +2716,7 @@ fn install_dependency_closure<T: Transport + Sync>(
                 mirror.min_runtime_tebako(),
                 expose,
                 shim_binary,
+                selection,
             )?;
             continue;
         }
@@ -2592,6 +2743,7 @@ fn install_dependency_closure<T: Transport + Sync>(
                 registry.as_deref(),
                 expose,
                 shim_binary,
+                selection,
                 chain,
                 tree,
                 depth,
@@ -2667,7 +2819,16 @@ fn install_dependency_closure<T: Transport + Sync>(
             ));
         }
         let plan = plan_from_dependency_edge(home, fetcher, mirror, kind, name, constraint, scope)?;
-        finish_install(home, fetcher, plan, shim_binary, chain, tree, depth + 1)?;
+        finish_install(
+            home,
+            fetcher,
+            plan,
+            shim_binary,
+            selection,
+            chain,
+            tree,
+            depth + 1,
+        )?;
         tree.set_state(node, NodeState::Fetched);
     }
     Ok(())
@@ -2691,6 +2852,7 @@ fn install_runtime_edge(
     min_runtime_tebako: Option<&str>,
     expose: &[String],
     shim_binary: Option<&Path>,
+    selection: &ShimSelection,
 ) -> Result<(), TebakoError> {
     let ctx = tebako_shim::Ctx {
         home: home.to_path_buf(),
@@ -2784,6 +2946,15 @@ fn install_runtime_edge(
             names.push(name.clone());
         }
     }
+    // tebako#1004 §2: the selection gates the spawn surface's PATH
+    // claims too (hidden names stay freed; --only-shims narrows).
+    let (names, selection_notes) = select_shims(home, &names, selection)?;
+    for note in selection_notes {
+        journal(
+            home,
+            &format!("event=shim-selection engine={engine} note={note}"),
+        );
+    }
     if names.is_empty() {
         return Ok(());
     }
@@ -2822,6 +2993,7 @@ fn install_executable_edge<T: Transport + Sync>(
     registry: Option<&str>,
     expose: &[String],
     shim_binary: Option<&Path>,
+    selection: &ShimSelection,
     chain: &mut Vec<String>,
     tree: &mut ClosureTree,
     depth: usize,
@@ -2866,7 +3038,17 @@ fn install_executable_edge<T: Transport + Sync>(
                 constraint,
                 registry,
             )?;
-            finish_install(home, fetcher, plan, shim_binary, chain, tree, depth + 1)?.version
+            finish_install(
+                home,
+                fetcher,
+                plan,
+                shim_binary,
+                selection,
+                chain,
+                tree,
+                depth + 1,
+            )?
+            .version
         }
     };
     journal(
@@ -2953,6 +3135,15 @@ fn install_executable_edge<T: Transport + Sync>(
         if ep.is_active() {
             names.push(exposed.clone());
         }
+    }
+    // tebako#1004 §2: the same selection gates a spawned runtime's
+    // exposed commands (the java-class shadower).
+    let (names, selection_notes) = select_shims(home, &names, selection)?;
+    for note in selection_notes {
+        journal(
+            home,
+            &format!("event=shim-selection provider={provider} note={note}"),
+        );
     }
     if names.is_empty() {
         return Ok(());
