@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/03-payload-manifest.md @ bb984d42d418c3748835ac574d22e537f01802d7
+// source: docs/spec/03-payload-manifest.md @ 970c71031d7a5448d8da4112768fb3d5e30156af
 
 Normative specification of the in-image manifest: every payload is a
 *self-describing artifact*, not a blob. Status: SHIPPED (the block + the
@@ -135,8 +135,28 @@ an orthogonal per-entrypoint key:
                       # PATH-registered at install
 ----
 
-`active` is the payload author's default exposure. Install registers only
-the active set (spec 07 §1); an inactive-but-declared command stays
+`active` is the payload author's default exposure. The three tiers of a
+command's life are distinct and separately owned (tebako#1004):
+
+. *Declared* — the payload author's complete inventory
+(`+++provides.entrypoints[]+++`). Everything dispatchable lives here;
+`+++tebako run &lt;name&gt;+++` resolves against this tier alone, so every
+declared command runs regardless of the other two tiers.
+. *Default-active* — the payload author's choice of which declared
+commands claim a PATH name by default (`+++active: true+++`; absent the
+key the entry is active). This is a DEFAULT, never a lock: it decides
+only what an unqualified install links.
+. *Linked* — the installing user's per-machine choice of which commands
+actually hold `+++~/.tebako/shims/&lt;name&gt;+++`. The installer's default is
+the default-active set; `+++--only-shims+++`/`+++--no-shims+++` narrow it at
+install (spec 07 §1), `+++tebako shim hide|expose+++` adjust it afterwards
+(spec 07 §3), and a hidden name stays hidden across reinstalls. The
+disable axis (dispatch refusal, spec 07 §0) is orthogonal to all three
+tiers and composes with them: a command can be linked yet disabled (the
+shim stands, dispatch refuses) or hidden yet enabled (the PATH name is
+free, `+++tebako run+++` answers).
+
+An inactive-but-declared command stays
 dispatchable — `+++tebako shim enable &lt;name&gt;+++` links it on demand, `+++tebako run &lt;name&gt;+++` reaches it directly, and the user's per-machine
 enable/disable always overrides the manifest default (spec 07 §3).
 Additive on the wire: pre-flag readers ignore the key and register every

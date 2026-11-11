@@ -110,8 +110,28 @@ an orthogonal per-entrypoint key:
                       # PATH-registered at install
 ```
 
-`active` is the payload author's default exposure. Install registers only
-the active set (spec 07 §1); an inactive-but-declared command stays
+`active` is the payload author's default exposure. The three tiers of a
+command's life are distinct and separately owned (tebako#1004):
+
+1. **Declared** — the payload author's complete inventory
+   (`provides.entrypoints[]`). Everything dispatchable lives here;
+   `tebako run <name>` resolves against this tier alone, so every
+   declared command runs regardless of the other two tiers.
+2. **Default-active** — the payload author's choice of which declared
+   commands claim a PATH name by default (`active: true`; absent the
+   key the entry is active). This is a DEFAULT, never a lock: it
+   decides only what an unqualified install links.
+3. **Linked** — the installing user's per-machine choice of which
+   commands actually hold `~/.tebako/shims/<name>`. The installer's
+   default is the default-active set; `--only-shims`/`--no-shims`
+   narrow it at install (spec 07 §1), `tebako shim hide|expose` adjust
+   it afterwards (spec 07 §3), and a hidden name stays hidden across
+   reinstalls. The disable axis (dispatch refusal, spec 07 §0) is
+   orthogonal to all three tiers and composes with them: a command can
+   be linked yet disabled (the shim stands, dispatch refuses) or
+   hidden yet enabled (the PATH name is free, `tebako run` answers).
+
+An inactive-but-declared command (tier 1 without tier 2) stays
 dispatchable — `tebako shim enable <name>` links it on demand, `tebako
 run <name>` reaches it directly, and the user's per-machine
 enable/disable always overrides the manifest default (spec 07 §3).
