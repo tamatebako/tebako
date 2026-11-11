@@ -897,6 +897,26 @@ int tebako_fs_host_policy(int default_open, const tebako_host_mount_t* mounts, s
  */
 int tebako_fs_host_guard(void);
 
+/**
+ * @brief Whether an UNPLANNED spawned host child may run (spec 08 §5)
+ *
+ * The spawn boundary for an arbitrary host binary the interpreter spawns
+ * outside any declared edge (ruby's `IO.popen(["cat", path])`). POSIX
+ * always answers 1: the preload tier (LD_PRELOAD/DYLD_INSERT_LIBRARIES)
+ * inherits into the child, so the interposed exec judges the exec target
+ * and the child's own reads route through the same bound policy. Windows
+ * has no injection tier, so a spawned host child would run plain-host
+ * with the bound policy invisible to it: 1 exactly while the bound
+ * policy is TRIVIALLY OPEN (the open default — no mounts, no argument
+ * files; a process that never installed a policy is trivially open), 0
+ * under any non-trivial one — the unplanned spawn is refused fail-closed.
+ * Spec 30/32 planned children re-apply their own jail union in-process
+ * and are unaffected.
+ *
+ * @return 1 when the unplanned spawn is permitted, 0 when it is refused
+ */
+int tebako_fs_spawn_host_permitted(void);
+
 /* ============================================================
  * Utility Functions
  * ============================================================ */

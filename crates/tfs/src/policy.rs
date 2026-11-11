@@ -321,6 +321,21 @@ impl HostPolicy {
         self.default != PolicyDefault::Open
     }
 
+    /// True when this policy is TRIVIALLY OPEN: the open default with no
+    /// mounts and no argument files — nothing enforced, nothing authored
+    /// (the context's initial state; argument files only ever ALLOW, but
+    /// an authored policy is never trivial). Net grants are inert under
+    /// the open default (`net_check` allows every peer), so they do not
+    /// count against triviality.
+    ///
+    /// This is the windows spawn boundary's predicate (spec 08 §5,
+    /// tebako#1021): with no injection tier to carry the policy into a
+    /// spawned host child, an unplanned spawn is permitted only while the
+    /// bound policy is trivially open.
+    pub fn trivially_open(&self) -> bool {
+        self.default == PolicyDefault::Open && self.mounts.is_empty() && self.arg_files.is_empty()
+    }
+
     /// Bind a policy: canonicalize every host path (mount sources and
     /// argument files) NOW, so later checks compare canonical forms.
     ///
@@ -987,6 +1002,61 @@ mod tests {
         assert!(p.never_denies());
         assert!(p.mounts.is_empty());
         assert!(p.floor_mounts.is_empty());
+    }
+
+    #[test]
+    fn trivially_open_is_exactly_the_unauthored_open_default() {
+        // The context's initial state and an explicit bare `open` bind are
+        // trivially open: nothing enforced, nothing authored (spec 08 §5's
+        // spawn boundary predicate, tebako#1021).
+        assert!(HostPolicy::default().trivially_open());
+        assert!(HostPolicy::open().trivially_open());
+        assert!(
+            HostPolicy::bind(PolicyDefault::Open, vec![], vec![], vec![])
+                .unwrap()
+                .trivially_open()
+        );
+
+        // A mount, an argument file, or a closed/recording default each
+        // make the policy non-trivial.
+        let tree = Tree::new("trivial");
+        assert!(!HostPolicy::bind(
+            PolicyDefault::Open,
+            vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+        .trivially_open());
+        assert!(!HostPolicy::bind(
+            PolicyDefault::Open,
+            vec![],
+            vec![tree.input.clone()],
+            vec![]
+        )
+        .unwrap()
+        .trivially_open());
+        assert!(
+            !HostPolicy::bind(PolicyDefault::Deny, vec![], vec![], vec![])
+                .unwrap()
+                .trivially_open()
+        );
+        assert!(
+            !HostPolicy::bind(PolicyDefault::Record, vec![], vec![], vec![])
+                .unwrap()
+                .trivially_open()
+        );
+
+        // A net grant is inert under the open default (`net_check` allows
+        // every peer), so it does not count against triviality.
+        assert!(HostPolicy::bind(
+            PolicyDefault::Open,
+            vec![],
+            vec![],
+            vec![NetGrant::parse("example.com").unwrap()],
+        )
+        .unwrap()
+        .trivially_open());
     }
 
     #[test]

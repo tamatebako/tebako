@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/08-jails.md @ 58583b91852da35373ad0a779b1ac42d40cf8ffc
+// source: docs/spec/08-jails.md @ 70a26efa5e2c7f213def6e30561152f6795b5606
 
 Normative specification of host-filesystem access control for running
 payloads. Status: SHIPPED (roadmaps 09 + 30 + 35) — the TFS enforcement
@@ -302,7 +302,7 @@ operation it audits.
 
 
 [%unnumbered]
-== 5. Scope (honest, locked 2026-07-26; the network axis joins, 2026-11-07)
+== 5. Scope (honest, locked 2026-07-26; the network axis joins, 2026-11-07; the platform spawn boundary, 2026-11-11)
 
 Jails cover the FILESYSTEM and the NETWORK. The `network:` list is the
 enforcement contract: deny-by-default with explicit grants, judged
@@ -355,6 +355,31 @@ defining the file-IO family in the exe is follow-up wiring in the
 runtime factory, tebako-runtime-ruby); an
 interpreter's patched IO and preload-delivered children are covered.
 
+*The platform spawn boundary (tebako#1021):* a jailed payload's
+UNPLANNED host child — an arbitrary host binary the interpreter spawns
+outside any declared edge (ruby's `IO.popen(["cat", secret])`) — is the
+one place the two platforms diverge today. On POSIX the preload tier
+(`LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`, spec 22 §3) inherits into the
+child: the interposed exec judges the exec target and the child's own
+reads route through the same bound policy, so the shell-out vector is
+judged exactly like an in-process one. Windows has no injection tier yet
+(spec 22, phase W): a spawned host child would run plain-host with the
+bound policy invisible to it, so under any non-trivial policy the
+unplanned spawn boundary is FAIL-CLOSED — the interpreter's spawn path
+asks `int tebako_fs_spawn_host_permitted(void)` and refuses the spawn by
+name when it answers 0. The export answers 1 exactly while the bound
+policy is TRIVIALLY OPEN — the open default with no mounts and no
+argument files, i.e. there is nothing to enforce; a process that never
+bound a policy is trivially open by construction — and 0 under any
+non-trivial one. The refusal is strictly narrower than POSIX by
+necessity: POSIX can judge the exec TARGET and permit a granted binary,
+while on windows the child's READS would escape, so the whole unplanned
+spawn is refused. PLANNED children are unaffected: the spec 30/32
+spawned runtime/payload edges re-apply their own jail union in-process
+from the `TEBAKO_JAIL` trio (spec 30 §4), so no inheritance is needed.
+The divergence is tracked as tebako#1021 until the windows injection
+tier lands.
+
 
 [%unnumbered]
 == 6. Executor-layer trust (locked 2026-07-27)
@@ -406,6 +431,7 @@ reddens the release matrix, not a dashboard nobody reads.
 | 19 | the runtime EXE's own statically-linked stat/open definitions | OUT OF SCOPE today — gated only for the symbols the exe defines (spec 22 §2); follow-up wiring lives in the runtime factory | §5
 | 20 | a payload's own sockets (network confinement) | blocked (EPERM) from the 2026-11-07 amendment — the §1 `net:` grant + the preload's socket family (`connect`/`sendto`/`sendmsg` judged, `getaddrinfo` observed for the name bridge; DNS itself never gated); a `connect` to an ungranted peer is the policy's named refusal | `net::tests::deny_judges_by_numeric_and_observed_name`, `net::tests::ipv6_peers_judge_by_observed_name`, `policy::tests::net_check_denies_only_under_deny_and_matches_port`, `policy::tests::jail_spec_parses_net_grants` + `net_grants_env_round_trip`, `needs::tests::network_lines_draft_peer_entries_preferring_the_name`
 | 21 | a jailed payload opening a listener (inbound service: `bind`/`listen`/`accept`) | OUT OF SCOPE in v1 — the axis judges OUTBOUND peers; inbound confinement is a later layer, named here so nobody reads the axis as bidirectional | §5
+| 22 | an unplanned spawned HOST child (ruby's `IO.popen(["cat", secret])`) reading what the policy denies the parent | blocked — POSIX by the inherited preload tier (the exec target and the child's own reads are both judged); windows by the fail-closed spawn boundary (§5): under any non-trivial policy the spawn itself is refused. The end-to-end windows leg rides the runtime-side patch (tebako#1021; the conformance suite's shellout line carries a named KNOWN-GAP until a published runtime pair calls the export) | `spawn_host_permitted_is_the_platform_spawn_boundary`, `policy::tests::trivially_open_is_exactly_the_unauthored_open_default`, the contract C harness's `spawn_host_permitted=1` line
 |===
 
 

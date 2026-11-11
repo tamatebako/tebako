@@ -36,6 +36,7 @@ tebako_fs_readdir
 tebako_fs_readlink
 tebako_fs_rewinddir
 tebako_fs_seekdir
+tebako_fs_spawn_host_permitted
 tebako_fs_stat
 tebako_fs_telldir
 tebako_fs_unmount
