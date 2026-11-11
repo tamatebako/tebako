@@ -993,9 +993,14 @@ jobs:
           # The dispatch is fire-and-forget; the covenant-gate job needs
           # the run's id. Poll for the workflow_dispatch run created just
           # now — releases are serialized per repo, so the newest
-          # dispatch after the wake is this release's.
+          # dispatch after the wake is this release's. Twenty minutes,
+          # not five: under a saturated runner pool the dispatch-to-
+          # creation latency alone exceeded five minutes — the v2.8.76
+          # release's gate missed its own run by one second, twice
+          # (creation at 01:54:47 against the 01:54:46 timeout; the
+          # re-run's at 02:07:01 against 02:07:00).
           run_id=""
-          for _ in $(seq 1 30); do
+          for _ in $(seq 1 120); do
             run_id=$(gh run list --workflow benchmark.yml --branch main \
               --event workflow_dispatch --limit 5 \
               --json databaseId,createdAt \
