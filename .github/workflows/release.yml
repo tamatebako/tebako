@@ -1001,16 +1001,16 @@ jobs:
           # re-run's at 02:07:01 against 02:07:00).
           run_id=""
           for _ in $(seq 1 120); do
+            after=$(date -u -d '-3 min' +%FT%TZ)
             run_id=$(gh run list --workflow benchmark.yml --branch main \
               --event workflow_dispatch --limit 5 \
               --json databaseId,createdAt \
-              --jq --arg after "$(date -u -d '-3 min' +%FT%TZ)" \
-              '[.[] | select(.createdAt > $after)] | first | .databaseId // empty')
+              --jq "[.[] | select(.createdAt > \"${after}\")] | first | .databaseId // empty")
             [ -n "$run_id" ] && break
             sleep 10
           done
           if [ -z "$run_id" ]; then
-            echo "::error::dispatched benchmark.yml but no dispatch run appeared within 5 min — the covenant gate cannot read a verdict"
+            echo "::error::dispatched benchmark.yml but no dispatch run appeared within 20 min — the covenant gate cannot read a verdict"
             exit 1
           fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
