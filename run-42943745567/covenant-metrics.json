@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "metrics": {
+    "filesystem.stat.median": 12.569038828523897,
+    "first-response.cold.median": 2.2392302859999997,
+    "first-response.warm.median": 2.481732837,
+    "memory.rss.peak": 499200000.0,
+    "steady.cpu.throughput": 0.8304928151389215,
+    "steady.io.throughput": 0.2962271418619114
+  }
+}
