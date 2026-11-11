@@ -409,14 +409,7 @@ for v in $VECTORS; do
       else
         case "$d" in
           READ-OK)
-            if [ "$v" = "shellout" ] && [ "$WIN" = "1" ]; then
-              # the spawn boundary does not carry the jail into the child
-              # on Windows (tebako#1021) — a named known-gap, never a
-              # silent pass, and never counted as covered
-              verdict="KNOWN-GAP windows (tebako#1021)"; knowngaps=$((knowngaps + 1))
-            else
-              verdict="LEAK"; leaks=$((leaks + 1))
-            fi ;;
+            verdict="LEAK"; leaks=$((leaks + 1)) ;;
           DENIED:EACCES|DENIED:EPERM) verdict="blocked" ;;
           DENIED:*)
             case "$v" in
