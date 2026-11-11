@@ -2494,7 +2494,10 @@ fn dependency_executables_materialize_as_self_injecting_launchers() {
     let shim_host = env.var(INJECT_VAR).unwrap();
     let wrap = wrap_dir.join("java");
     let text = std::fs::read_to_string(&wrap).unwrap();
-    let prefix = format!("#!/bin/sh\n{v}='{shim_host}'\nexport {v}\nexec '", v = INJECT_VAR);
+    let prefix = format!(
+        "#!/bin/sh\n{v}='{shim_host}'\nexport {v}\nexec '",
+        v = INJECT_VAR
+    );
     let target_text = text
         .strip_prefix(&prefix)
         .and_then(|rest| rest.strip_suffix("' \"$@\"\n"))
