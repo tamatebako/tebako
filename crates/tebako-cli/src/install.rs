@@ -2122,6 +2122,7 @@ impl InstallSink {
 /// name before walking its edges and pops after — a `requires:` edge
 /// naming a payload already on the path is a dependency CYCLE, a named
 /// error instead of the cache check's silent short-circuit.
+#[allow(clippy::too_many_arguments)] // the install plumbing + the selection + the tree view
 fn finish_install<T: Transport + Sync>(
     home: &Path,
     fetcher: &Fetcher<T>,
