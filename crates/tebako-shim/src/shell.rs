@@ -11,6 +11,31 @@ use crate::{fail, ShimError, EX_TEBAKO_IO, EX_TEBAKO_MANIFEST, EX_USAGE};
 pub const BEGIN_MARKER: &str = "# >>> tebako shims >>>";
 pub const END_MARKER: &str = "# <<< tebako shims <<<";
 
+/// Where the managed block puts the shims dir on PATH (tebako#1004 §4):
+/// prepend wins over everything already there (the default — a shim
+/// must answer); append defers to existing resolutions (version
+/// managers like mise/rbenv keep their lead, tebako answers only for
+/// names nothing else provides).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Position {
+    #[default]
+    Prepend,
+    Append,
+}
+
+impl Position {
+    pub fn parse(name: &str) -> Result<Position, ShimError> {
+        match name {
+            "prepend" => Ok(Position::Prepend),
+            "append" => Ok(Position::Append),
+            _ => fail(
+                EX_USAGE,
+                format!("unsupported position \"{name}\" — supported: prepend, append"),
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shell {
     Bash,
@@ -73,11 +98,16 @@ pub fn startup_file(shell: Shell, user_home: &Path) -> PathBuf {
 }
 
 /// The managed block, BEGIN/END markers included.
-pub fn block_text(shell: Shell) -> String {
-    let line = match shell {
-        Shell::Bash | Shell::Zsh => "export PATH=\"$HOME/.tebako/shims:$PATH\"",
-        Shell::Fish => "set -gx PATH \"$HOME/.tebako/shims\" $PATH",
-        Shell::Csh => "setenv PATH \"$HOME/.tebako/shims:$PATH\"",
+pub fn block_text(shell: Shell, position: Position) -> String {
+    let line = match (shell, position) {
+        (Shell::Bash | Shell::Zsh, Position::Prepend) => {
+            "export PATH=\"$HOME/.tebako/shims:$PATH\""
+        }
+        (Shell::Bash | Shell::Zsh, Position::Append) => "export PATH=\"$PATH:$HOME/.tebako/shims\"",
+        (Shell::Fish, Position::Prepend) => "set -gx PATH \"$HOME/.tebako/shims\" $PATH",
+        (Shell::Fish, Position::Append) => "set -gx PATH $PATH \"$HOME/.tebako/shims\"",
+        (Shell::Csh, Position::Prepend) => "setenv PATH \"$HOME/.tebako/shims:$PATH\"",
+        (Shell::Csh, Position::Append) => "setenv PATH \"$PATH:$HOME/.tebako/shims\"",
     };
     format!("{BEGIN_MARKER}\n{line}\n{END_MARKER}\n")
 }
@@ -115,17 +145,56 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), ShimError> {
 }
 
 /// Insert the managed block. Idempotent: a file already carrying the
-/// BEGIN marker is left byte-identical.
-pub fn install(shell: Shell, file: &Path) -> Result<Change, ShimError> {
+/// BEGIN marker at the requested position is left byte-identical; a
+/// block present at the OTHER position is rewritten in place (a
+/// position change is an install action, tebako#1004 §4), lines outside
+/// the markers never touched.
+pub fn install(shell: Shell, file: &Path, position: Position) -> Result<Change, ShimError> {
     let existing = std::fs::read_to_string(file).unwrap_or_default();
     if existing.lines().any(|l| l.trim() == BEGIN_MARKER) {
-        return Ok(Change::AlreadyPresent);
+        let wanted = block_text(shell, position);
+        // The block is well-formed when a file carried it (install only
+        // ever writes both markers); an unterminated one is the
+        // uninstall path's named error — mirror it here, never guess.
+        let lines: Vec<&str> = existing.lines().collect();
+        let begin = lines.iter().position(|l| l.trim() == BEGIN_MARKER).unwrap();
+        let Some(end_rel) = lines[begin..].iter().position(|l| l.trim() == END_MARKER) else {
+            return fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "unterminated tebako block in {} (\"{BEGIN_MARKER}\" without \"{END_MARKER}\") — remove it manually; refusing to guess",
+                    file.display()
+                ),
+            );
+        };
+        let end = begin + end_rel;
+        let current = format!(
+            "{}\n",
+            lines[begin..=end]
+                .iter()
+                .map(|l| l.trim_end_matches('\r'))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        if current == wanted {
+            return Ok(Change::AlreadyPresent);
+        }
+        let mut out: Vec<&str> = Vec::with_capacity(lines.len());
+        out.extend_from_slice(&lines[..begin]);
+        out.extend(wanted.trim_end_matches('\n').split('\n'));
+        out.extend_from_slice(&lines[end + 1..]);
+        let mut text = out.join("\n");
+        if existing.ends_with('\n') && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        write_atomic(file, &text)?;
+        return Ok(Change::Installed);
     }
     let mut text = existing;
     if !text.is_empty() && !text.ends_with('\n') {
         text.push('\n');
     }
-    text.push_str(&block_text(shell));
+    text.push_str(&block_text(shell, position));
     write_atomic(file, &text)?;
     Ok(Change::Installed)
 }

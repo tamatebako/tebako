@@ -175,7 +175,7 @@ payloads (inkscape & co.) are feedstocks in the
 | `tebako trace import procmon <csv>` | convert a procmon CSV export into the retrace-shaped JSON outside stream `cover` consumes (byte-parity with procmon2retrace — spec 25 §6.2) |
 | `tebako trace explain <capture>` | replay a capture into the hop chain and name the first red hop (the signature table lives in data — spec 25 §5) |
 | `tebako check <target>` | run a payload's in-image acceptance checks — a name, a bare `.tfs` (with `--runtime`/`--runtime-image`), a pressed package, or a composition `tebako.yaml`; `--list`/`--check`/`--record`/`--keep-scratch` (spec 26 §2) |
-| `tebako install <ref\|name@ver>` | install a payload from a registry + register its shims |
+| `tebako install <ref\|name@ver>` | install a payload from a registry + register its shims (`--only-shims a,b` narrows, `--no-shims` claims nothing — `tebako run` dispatches either way) |
 | `tebako info [topic]` | the store/system surface: system, runtimes, payloads, shims, registries, store (`--remote` adds what the world offers; `--json` everywhere) |
 | `tebako inspect <artifact>` | payload/package introspection: manifest, provides, requires, platforms, verify (strict), JSON |
 | `tebako doctor [--json]` | the diagnostics surface: store / dispatch / network / trust / registries — read-only, exit 0 healthy / 1 problems (spec 35) |

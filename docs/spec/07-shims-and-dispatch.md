@@ -197,6 +197,15 @@ per declared entrypoint name — never as re-exec wrappers.
   point); a local-package install (`tebako install <path>`) links only
   with the explicit `--shims`; a run — of any package, ever — links
   nothing. A one-off act never claims PATH names.
+  **The install-time selection (tebako#1004 §2):** a registry install
+  narrows the claim with `--only-shims a,b` (exactly those commands
+  link; an undeclared or hidden name is the named usage error, never a
+  dangling link) or claims nothing with `--no-shims` — dispatch through
+  `tebako run <name>` stands either way, and the choice rides the whole
+  closure: the payload's own dispatchables, its dependencies', and the
+  spawned runtimes' `expose:` commands. A `hide`d name stays hidden
+  through reinstalls (the install prints the subtraction once — a
+  silently narrowed PATH is the complaint this fixes).
 - NO eval-init hook for switching: the dispatcher reads the project file
   itself (the mise model, not the rbenv `eval "$(… init -)"` model).
 - `tebako-shim use / disable / enable / list / which / doctor` manage

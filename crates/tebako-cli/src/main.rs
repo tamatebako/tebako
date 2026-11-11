@@ -94,6 +94,8 @@ const USAGE: &str = "Usage:
   tebako trust list                    list the TLS trust store's CA certificates
   tebako trust remove <name>           remove a CA certificate from the trust store
   tebako install <ref | [alias/]name[@ver]>    install a payload + register its shims
+                                       (--no-shims claims nothing on PATH; --only-shims a,b
+                                       narrows the claim — `tebako run <name>` dispatches either way)
   tebako install <engine>[:<command>]  pre-stage the engine's runtime and register the
                                        runtime-own shim (spec 07 §10 — the bare form
                                        registers the default entry's name)
@@ -1013,29 +1015,83 @@ fn run_update_registries(args: &[String]) -> Result<(), CliExit> {
 fn run_install(args: &[String]) -> Result<(), CliExit> {
     let mut target: Option<&String> = None;
     let mut link_shims = false;
-    for arg in args {
-        match arg.as_str() {
+    let mut no_shims = false;
+    let mut only_shims: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        match arg {
             "--shims" => link_shims = true,
-            _ if target.is_none() => target = Some(arg),
+            "--no-shims" => no_shims = true,
+            "--only-shims" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => only_shims = Some(v.clone()),
+                    None => {
+                        return Err(CliExit::Usage(
+                            "--only-shims expects a comma-separated command list".to_string(),
+                        ))
+                    }
+                }
+            }
+            _ if arg.starts_with("--only-shims=") => {
+                only_shims = Some(arg.trim_start_matches("--only-shims=").to_string())
+            }
+            _ if target.is_none() => target = Some(&args[i]),
             _ => {
                 return Err(CliExit::Usage(
-                    "usage: tebako install <ref | [alias/]name[@version] | ./package> [--shims]"
+                    "usage: tebako install <ref | [alias/]name[@version] | ./package> [--shims] [--no-shims] [--only-shims a,b,...]"
                         .to_string(),
                 ))
             }
         }
+        i += 1;
     }
     let Some(target) = target else {
         return Err(CliExit::Usage(
-            "usage: tebako install <ref | [alias/]name[@version] | ./package | engine[:command]> [--shims]"
+            "usage: tebako install <ref | [alias/]name[@version] | ./package | engine[:command]> [--shims] [--no-shims] [--only-shims a,b,...]"
                 .to_string(),
         ));
+    };
+    // tebako#1004 §2: the PATH-claim selection for registry installs.
+    // --shims stays the local-install opt-in; mixing the axes is a usage
+    // error, never a guess.
+    let selection = match (no_shims, &only_shims) {
+        (true, Some(_)) => {
+            return Err(CliExit::Usage(
+                "--no-shims and --only-shims name opposite selections — pick one".to_string(),
+            ))
+        }
+        (true, None) => tebako_cli::install::ShimSelection::Nothing,
+        (false, Some(list)) => {
+            let mut names = std::collections::BTreeSet::new();
+            for name in list.split(',') {
+                let name = name.trim();
+                if name.is_empty() {
+                    return Err(CliExit::Usage(
+                        "--only-shims carries an empty name — comma-separate command names"
+                            .to_string(),
+                    ));
+                }
+                tebako_shim::manifest::check_path_component("command name", name)
+                    .map_err(|e| CliExit::Usage(format!("--only-shims: {}", e.message)))?;
+                names.insert(name.to_string());
+            }
+            tebako_cli::install::ShimSelection::Only(names)
+        }
+        (false, None) => tebako_cli::install::ShimSelection::Declared,
     };
     // A local pressed package (fat or lean): slot-wise install from its
     // own bytes — never a registry flow. Shims link only
     // via the explicit --shims.
     let path = std::path::Path::new(target);
     if path.is_file() && tebako_cli::install::is_tpkg_package(path) {
+        if only_shims.is_some() {
+            return Err(CliExit::Usage(
+                "--only-shims applies to registry installs — a local package claims nothing unless --shims"
+                    .to_string(),
+            ));
+        }
         let outcome = tebako_cli::install::install_local(&tebako_home()?, path, link_shims, None)?;
         for note in &outcome.notes {
             eprintln!("tebako: note: {note}");
@@ -1065,11 +1121,12 @@ fn run_install(args: &[String]) -> Result<(), CliExit> {
     }
     if link_shims {
         return Err(CliExit::Usage(
-            "--shims only applies to a local package install (registry installs always register shims)"
+            "--shims only applies to a local package install (registry installs claim the declared set by default — narrow with --only-shims or --no-shims)"
                 .to_string(),
         ));
     }
-    let outcome = tebako_cli::install::install(&tebako_home()?, target, None, None)?;
+    let outcome =
+        tebako_cli::install::install_selected(&tebako_home()?, target, None, None, &selection)?;
     for note in &outcome.notes {
         eprintln!("tebako: note: {note}");
     }
