@@ -74,7 +74,21 @@ more source of names: the edge's `expose:` list registers one shim per
 exposed depended-runtime entry under the same active-flag and
 enable-on-demand rules — dispatch of such a shim IS spec 30 §2's
 spawned dispatch (argv0 → the payload's version chain → the depended
-runtime's resolution), never a direct store-path exec. Four artifacts,
+runtime's resolution), never a direct store-path exec.
+
+**The three tiers, separately owned (spec 03 §2.2's ladder, restated at
+the dispatch surface):** a command's life is *declared* (the payload
+author's complete inventory — the only set `tebako run` resolves
+against) → *default-active* (the author's choice of what an unqualified
+install links; `active: false` marks the rest) → *linked* (the
+installing user's per-machine choice: the default-active set minus the
+hidden set, narrowed at install by `--only-shims`/`--no-shims` and
+adjusted afterwards by `hide`/`expose`). Each tier is a subset of the
+previous; the first two are the slice owner's, the third is the
+installer's. The disable axis (§0) is orthogonal to all three and
+composes with them.
+
+Four artifacts,
 four jobs:
 
 - **payload** — a signed `.tfs` image (versioned, runtime-independent).
