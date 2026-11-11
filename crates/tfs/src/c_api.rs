@@ -1547,3 +1547,46 @@ pub unsafe extern "C" fn tebako_fs_host_guard() -> libc::c_int {
     set_errno(0);
     libc::c_int::from(guarded)
 }
+
+/// `tebako_fs_spawn_host_permitted`: 1 when an UNPLANNED spawned host child
+/// may run — an arbitrary host binary the interpreter spawns outside any
+/// declared edge (ruby's `IO.popen(["cat", path])`) — 0 when the spawn
+/// boundary refuses it (spec 08 §5, tebako#1021).
+///
+/// POSIX always answers 1: the preload tier (`LD_PRELOAD` /
+/// `DYLD_INSERT_LIBRARIES`) inherits into the child, so the interposed
+/// exec judges the exec target and the child's own reads route through
+/// the same bound policy.
+///
+/// Windows has no injection tier (spec 22, phase W): a spawned host child
+/// would run plain-host with the bound policy invisible to it, so under
+/// any non-trivial policy the unplanned spawn boundary is FAIL-CLOSED —
+/// the answer is 1 exactly while the bound policy is TRIVIALLY OPEN (the
+/// open default with no mounts and no argument files; a process that
+/// never bound a policy is trivially open by construction) and 0
+/// otherwise. Stricter than POSIX by necessity: POSIX can judge the exec
+/// TARGET and permit a granted binary, while on windows the child's READS
+/// would escape, so the whole unplanned spawn is refused. Spec 30/32
+/// PLANNED children are unaffected — the child re-applies its own jail
+/// union in-process from the `TEBAKO_JAIL` trio.
+///
+/// # Safety
+/// Process-global state only; no pointers are taken.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_spawn_host_permitted() -> libc::c_int {
+    // POSIX: the preload tier carries the policy into the child, so the
+    // spawn is always permitted — the policy is never consulted.
+    #[cfg(not(windows))]
+    {
+        set_errno(0);
+        1
+    }
+    // Windows: no injection tier exists to judge the child, so the spawn
+    // boundary fails closed under any non-trivial policy.
+    #[cfg(windows)]
+    {
+        let permitted = context().read().unwrap().host_trivially_open();
+        set_errno(0);
+        libc::c_int::from(permitted)
+    }
+}

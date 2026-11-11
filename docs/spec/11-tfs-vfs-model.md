@@ -137,6 +137,10 @@ the host-passthrough path of every IO route; additive),
 policy judges an UNCOVERED host path, so a runtime's IO shim can widen
 its route predicate from coverage to "coverage, or the host namespace is
 guarded"; additive),
+`tebako_fs_spawn_host_permitted` (spec 08 §5 — the platform spawn
+boundary: a constant 1 on POSIX, where the preload tier carries the
+policy into spawned children; on windows 1 only while the bound policy
+is trivially open, the unplanned-spawn fail-closed gate; additive),
 `abi_version()` = 1, plus the additive mount-with-mode entry points
 (`tebako_fs_mount_from_{file,file_at,memory}_with_mode` taking
 `TEBAKO_MOUNT_RO`/`_COW`/`_RW`; SHIPPED — RO semantics unchanged, COW

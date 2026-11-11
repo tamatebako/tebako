@@ -838,6 +838,46 @@ fn host_guard_names_whether_the_policy_judges_uncovered_paths() {
 }
 
 #[test]
+fn spawn_host_permitted_is_the_platform_spawn_boundary() {
+    let f = setup("spawn-boundary");
+
+    #[cfg(not(windows))]
+    {
+        // POSIX: the preload tier (LD_PRELOAD/DYLD_INSERT_LIBRARIES)
+        // inherits into the child, so the exec target and the child's own
+        // reads are both judged — the unplanned spawn is a constant 1
+        // however the bound policy moves (spec 08 §5, tebako#1021).
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 1);
+        assert_eq!(install_policy(0, &[], &[]), 0);
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 1);
+        assert_eq!(install_policy(0, &[(&f.work, "/work", 1)], &[]), 0);
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 1);
+    }
+
+    #[cfg(windows)]
+    {
+        // Windows: no injection tier exists to judge the child, so the
+        // boundary fails closed under any non-trivial policy. The initial
+        // open state (and profile 1 spelled explicitly) is trivially open:
+        // permitted.
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 1);
+        assert_eq!(install_policy(1, &[], &[]), 0);
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 1);
+        // A closed default, a mount, or an argument file each make the
+        // policy non-trivial: the unplanned spawn is refused.
+        assert_eq!(install_policy(0, &[], &[]), 0);
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 0);
+        assert_eq!(install_policy(1, &[(&f.work, "/work", 1)], &[]), 0);
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 0);
+        assert_eq!(install_policy(1, &[], &[&f.input]), 0);
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 0);
+        // Back to trivially open: permitted again.
+        assert_eq!(install_policy(1, &[], &[]), 0);
+        assert_eq!(unsafe { c_api::tebako_fs_spawn_host_permitted() }, 1);
+    }
+}
+
+#[test]
 fn a_relative_path_is_anchored_at_the_working_directory() {
     let _f = setup("cwd-anchor");
     let cwd = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();

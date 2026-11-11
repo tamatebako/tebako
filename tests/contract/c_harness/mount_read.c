@@ -3,7 +3,9 @@
  * @brief Minimal C consumer of the Rust libtfs C ABI (contract smoke).
  *
  * Mounts a ZIP image passed as argv[1], reads the file argv[2] through
- * tebako_fs_open/tebako_fs_read/tebako_fs_close and prints it to stdout.
+ * tebako_fs_open/tebako_fs_read/tebako_fs_close and prints it to stdout,
+ * and probes tebako_fs_spawn_host_permitted() under the no-policy state
+ * (spec 08 §5's platform spawn boundary).
  * Exercises the C ABI exactly like a real consumer: no Rust headers, no
  * C++ — only the exported tebako_fs_* symbols.
  *
@@ -30,6 +32,7 @@ extern int tebako_get_errno(void);
 extern const char* tebako_strerror(int err);
 extern const char* tebako_get_mount_point(void);
 extern const char* tebako_get_backend_name(void);
+extern int tebako_fs_spawn_host_permitted(void);
 
 int main(int argc, char** argv)
 {
@@ -52,6 +55,19 @@ int main(int argc, char** argv)
     return 1;
   }
   printf("mounted at %s (backend %s)\n", tebako_get_mount_point(), tebako_get_backend_name());
+
+  /* The platform spawn boundary (spec 08 §5): with no policy installed
+   * the bound policy is trivially open, so the unplanned spawn is
+   * permitted on every platform (1 on POSIX always; 1 on windows while
+   * trivially open). */
+  {
+    int permitted = tebako_fs_spawn_host_permitted();
+    printf("spawn_host_permitted=%d\n", permitted);
+    if (permitted != 1) {
+      fprintf(stderr, "spawn boundary: expected 1 with no policy installed, got %d\n", permitted);
+      return 1;
+    }
+  }
 
   if (tebako_fs_stat(argv[2], &st) != 0 || !S_ISREG(st.st_mode)) {
     fprintf(stderr, "stat failed: %s\n", tebako_strerror(tebako_get_errno()));

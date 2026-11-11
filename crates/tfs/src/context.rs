@@ -316,6 +316,16 @@ impl FsContext {
         self.host_policy.guards_uncovered()
     }
 
+    /// Whether the bound policy is TRIVIALLY OPEN (see
+    /// [`HostPolicy::trivially_open`]) — the open default with no mounts
+    /// and no argument files. The windows spawn boundary consults it
+    /// (spec 08 §5, tebako#1021): with no injection tier to carry the
+    /// policy into a spawned host child, an unplanned spawn is permitted
+    /// only under a trivially open policy.
+    pub fn host_trivially_open(&self) -> bool {
+        self.host_policy.trivially_open()
+    }
+
     /// Gate one host-passthrough path decision against the policy.
     /// Ok(()) = allowed (answer ENOENT, the consumer passes through to the
     /// host fs as today); Err(EPERM)/Err(EROFS) = the jail's answer.

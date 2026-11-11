@@ -101,6 +101,10 @@ fn c_harness_mounts_and_reads_zip() {
         stdout.contains("backend ZIP"),
         "expected backend name: {stdout}"
     );
+    assert!(
+        stdout.contains("spawn_host_permitted=1"),
+        "expected the spawn boundary open with no policy installed: {stdout}"
+    );
     assert!(stdout.contains("size=13"), "expected file size: {stdout}");
     assert!(
         stdout.contains("content=Hello, World!"),

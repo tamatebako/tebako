@@ -666,7 +666,12 @@ a compiler.
 ### 3.4 Spawned children and the jail — the platform floor (locked 2026-08-14)
 
 A spawned child inherits the process's jail through the handoff env's
-`TEBAKO_JAIL`, and the preload shim enforces it inside the child. What
+`TEBAKO_JAIL`, and the preload shim enforces it inside the child. (On
+windows there is no preload to inherit, so an UNPLANNED host child — a
+shell-out to an arbitrary host binary, not a declared edge — cannot be
+judged inside the child at all: under any non-trivial policy the spawn
+boundary itself is fail-closed, spec 08 §5's platform spawn boundary
+(`tebako_fs_spawn_host_permitted`, tebako#1021).) What
 the child may read on the host is therefore exactly what the bound
 policy grants — and under a scratch-only jail
 (`deny;<scratch>:<scratch>:rw`) a materialized JVM could not finish its
