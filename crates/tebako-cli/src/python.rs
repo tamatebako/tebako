@@ -313,6 +313,14 @@ mod tests {
         dir
     }
 
+    /// A just-written script must be fully out to the filesystem before a
+    /// later spawn reads it as an executable — on the containerized arm
+    /// runner's filesystem the exec of a freshly written file answered
+    /// ETXTBSY (os error 26) once (ci run 43155362497, ubuntu-24.04-arm).
+    fn sync_out(path: &Path) {
+        std::fs::File::open(path).unwrap().sync_all().unwrap();
+    }
+
     fn fixture(dir: &Path) {
         std::fs::write(
             dir.join("pyproject.toml"),
@@ -394,6 +402,7 @@ mod tests {
         let mut perms = std::fs::metadata(&fake).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&fake, perms).unwrap();
+        sync_out(&fake);
 
         let stage = dir.join("stage");
         std::fs::create_dir_all(&stage).unwrap();
@@ -428,6 +437,7 @@ mod tests {
         let mut perms = std::fs::metadata(&fake).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&fake, perms).unwrap();
+        sync_out(&fake);
         let stage = dir.join("stage");
         std::fs::create_dir_all(&stage).unwrap();
         let image = dir.join("runtime.tfs");
@@ -455,6 +465,7 @@ mod tests {
         let mut perms = std::fs::metadata(&fake).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&fake, perms).unwrap();
+        sync_out(&fake);
         let stage = dir.join("stage");
         std::fs::create_dir_all(&stage).unwrap();
         let image = dir.join("runtime.tfs");
