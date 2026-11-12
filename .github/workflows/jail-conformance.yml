@@ -26,7 +26,7 @@ on:
       pair_version:
         description: 'The tebako-runtime-ruby release to test (the pair version)'
         type: string
-        default: '0.17.4'
+        default: '0.17.9'
       ruby_version:
         description: 'The ruby inside the pair'
         type: string
@@ -34,7 +34,7 @@ on:
       tfs_version:
         description: 'The tebako CLI release whose tfs images the app payload'
         type: string
-        default: '2.8.74'
+        default: '2.8.78'
 
 permissions:
   contents: read
@@ -56,9 +56,9 @@ jobs:
         env:
           # inputs.* exist only on workflow_dispatch — on the PR trigger
           # they read empty, so the defaults live inline.
-          PAIR_VERSION: ${{ inputs.pair_version || '0.17.4' }}
+          PAIR_VERSION: ${{ inputs.pair_version || '0.17.9' }}
           RUBY_VERSION: ${{ inputs.ruby_version || '4.0.9' }}
-          TFS_VERSION: ${{ inputs.tfs_version || '2.8.74' }}
+          TFS_VERSION: ${{ inputs.tfs_version || '2.8.78' }}
         run: |
           set -euo pipefail
           case "$RUNNER_OS" in
