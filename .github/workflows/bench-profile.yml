@@ -1,0 +1,119 @@
+name: bench-profile
+
+# tebako-runtime-python#79's diagnostic rig: the published macos-x86_64
+# python runtime computes pure Python at a fraction of the on-system
+# interpreter's speed on Intel Macs (covenant run 42525964214: fib(40)
+# warm 53.7–66.6 s tebako vs 9.05–9.77 s native, deterministic), while
+# the same runtime line is at parity on linux-gnu-x86_64. Configure is
+# identical across triplets (computed gotos yes, no PGO either side —
+# the v0.3.4 build logs), so the penalty is a run-time surface, and a
+# profile on the failing host class names it.
+#
+# The rig: download the published runtime pair (sha256-verified against
+# the release's own sidecar), time fib both arms, and `sample` the
+# tebako process mid-run for the hot stacks. Dispatch-only, one macos
+# -15-intel leg (the covenant leg's runner class — a genuine Intel Mac,
+# never an arm64 host under translation). Nothing here gates anything;
+# the artifact is the evidence.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pair_version:
+        description: 'The tebako-runtime-python release under test'
+        type: string
+        default: '0.3.4'
+      python_version:
+        description: 'The python inside the pair (and the on-system arm)'
+        type: string
+        default: '3.14.7'
+      n:
+        description: 'fib depth (40 matches the covenant workload)'
+        type: string
+        default: '40'
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    name: profile the tebako python fib (macos-15-intel)
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - name: Provision the on-system arm
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Fetch the published pair (sha256-verified)
+        env:
+          PAIR: ${{ inputs.pair_version }}
+          PY: ${{ inputs.python_version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/tamatebako/tebako-runtime-python/releases/download/v${PAIR}"
+          exe="tebako-runtime-${PAIR}-python-${PY}-macos-x86_64"
+          curl -sLO "$base/$exe" && curl -sLO "$base/$exe.tfs" && curl -sLO "$base/SHA256SUMS"
+          grep -E " ${exe}(\.tfs)?\$" SHA256SUMS > sums.txt
+          shasum -a 256 -c sums.txt
+          chmod +x "$exe"
+          file "$exe"
+          otool -l "$exe" | grep -A3 LC_BUILD_VERSION | head -4
+
+      - name: Time both arms
+        env:
+          PAIR: ${{ inputs.pair_version }}
+          PY: ${{ inputs.python_version }}
+          N: ${{ inputs.n }}
+        run: |
+          set -euo pipefail
+          exe="tebako-runtime-${PAIR}-python-${PY}-macos-x86_64"
+          cat > fib.py <<'PY'
+          import time, sys
+          def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)
+          n = int(sys.argv[1])
+          t = time.perf_counter(); r = fib(n)
+          print(f"fib({n})={r} wall={time.perf_counter()-t:.3f}s")
+          PY
+          echo "== on-system python ($(/usr/bin/env python3 -V 2>&1), $(which python3))"
+          for i in 1 2 3; do python3 fib.py "$N"; done
+          echo "== tebako python (pair v${PAIR})"
+          # one unmeasured boot to warm the exec cache, then the measured reps
+          TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" --tebako-entry /bin/python3 -c 'print("warm-up ok")'
+          for i in 1 2 3; do
+            TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" --tebako-entry /bin/python3 fib.py "$N"
+          done
+
+      - name: Sample the tebako arm mid-run
+        env:
+          PAIR: ${{ inputs.pair_version }}
+          PY: ${{ inputs.python_version }}
+          N: ${{ inputs.n }}
+        run: |
+          set -euo pipefail
+          exe="tebako-runtime-${PAIR}-python-${PY}-macos-x86_64"
+          TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" --tebako-entry /bin/python3 fib.py "$N" &
+          pid=$!
+          # let it boot and settle into the eval loop, then sample 10 s
+          sleep 8
+          sample "$pid" 10 -file sample-tebako.txt || echo "::warning::sample failed (the run may have finished fast — the defect reproduces as SLOW, so a fast finish is itself the signal)"
+          # the on-system reference profile, same shape
+          python3 fib.py "$N" &
+          npid=$!
+          sleep 4
+          sample "$npid" 5 -file sample-native.txt || true
+          wait "$pid" || true
+          wait "$npid" || true
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: py79-profile
+          retention-days: 30
+          path: |
+            sample-tebako.txt
+            sample-native.txt
+          if-no-files-found: warn
