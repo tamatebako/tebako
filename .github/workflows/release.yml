@@ -1059,6 +1059,9 @@ jobs:
     # 4 h is the named bound before the gate reports a stall instead.
     timeout-minutes: 240
     steps:
+      # The gate's script lives in the repo — checkout first; without it
+      # the step dies 127 on an empty workspace (v2.8.78's gate run).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Read the dispatched benchmark run's covenant verdict
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
