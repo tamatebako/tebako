@@ -105,6 +105,14 @@ the rate limit of the interface that performs it.
    first, until the account reaches the intended share of its allowance.
    The artifact listing reports a size per artifact, which allows the
    deletion order to follow the bytes rather than the age.
+   An artifact uploaded by a run that is still queued or in progress is
+   NOT deletable, whatever its size: a parked run's later legs download
+   the artifacts its earlier legs produced, and deleting one mid-queue
+   reddens the run with "Artifact not found" when the scheduler resumes
+   (the 2026-11-12 recovery deleted the link-unit and src-roll inputs of
+   runs parked behind the gate and then paid for five full reruns). The
+   artifact's `created_at` names its age; the run's state names its
+   liveness, and only the second one decides.
 3. Caches are deleted per repository. A cache is derived data by
    definition, so its deletion cannot lose a result that the next run is
    unable to recompute.
