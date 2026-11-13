@@ -261,7 +261,14 @@ compose: manifest request ∩ user policy = effective jail, on both axes.
   event=jail-deny path=<p> op=read|write source=<s>` to the tebako
   journal (`TEBAKO_JAIL_JOURNAL` > `$TEBAKO_HOME/journal.log` >
   `~/.tebako/journal.log`), best-effort — journaling never fails the
-  operation it audits.
+  operation it audits. One exception, at policy-install time (locked
+  2026-11-14): when `TEBAKO_JAIL_JOURNAL` explicitly names the journal
+  and that file cannot be opened for append, a policy that can deny
+  refuses to install — a named error, not a run — because a denial
+  without its record is indistinguishable from a policy that never
+  engaged. The implicit default-home journal keeps the best-effort
+  shape, and per-event write failures on an opened journal never fail
+  the audited operation.
 
 ## 5. Scope (honest, locked 2026-07-26; the network axis joins, 2026-11-07; the platform spawn boundary, 2026-11-11)
 

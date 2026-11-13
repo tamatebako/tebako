@@ -84,16 +84,42 @@ pub const PRESS_SIGN_OPT_OUT_EVENT: &str = "press-sign-opt-out";
 /// taken — never from inside a `host_check` (see the module docs). `None`
 /// when no home resolves or the open fails (journaling then simply stays
 /// silent — the jail's answers are unaffected).
+///
+/// The failure-blind convenience wrapper over [`try_open_journal`]; callers
+/// guarding a policy that can deny should use the strict form so a
+/// configured-but-unwritable journal names itself instead of dropping the
+/// audit trail (tebako#1055).
 pub fn open_journal() -> Option<std::fs::File> {
-    let journal = journal_file()?;
+    try_open_journal().ok().flatten()
+}
+
+/// The strict form of [`open_journal`]:
+/// - `Ok(None)` — no journal path resolves (unconfigured; silent is fine),
+/// - `Ok(Some(file))` — open for append,
+/// - `Err((path, error))` — a path resolved but the directory create or the
+///   open failed. The path rides along so the caller's error names it.
+///
+/// Whether a failure here refuses the run is the CALLER's policy decision:
+/// an explicitly configured journal (`TEBAKO_JAIL_JOURNAL`) that cannot be
+/// opened means a denying jail would run unrecorded — indistinguishable
+/// from a jail that never engaged.
+pub fn try_open_journal() -> Result<Option<std::fs::File>, (PathBuf, std::io::Error)> {
+    let Some(journal) = journal_file() else {
+        return Ok(None);
+    };
+    open_journal_at(&journal).map(Some).map_err(|e| (journal, e))
+}
+
+/// The filesystem half, split from resolution so tests drive it without
+/// touching the process environment.
+fn open_journal_at(journal: &Path) -> std::io::Result<std::fs::File> {
     if let Some(dir) = journal.parent() {
-        let _ = std::fs::create_dir_all(dir);
+        std::fs::create_dir_all(dir)?;
     }
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(journal)
-        .ok()
 }
 
 /// Append one jail-denial line to the already-open journal `file`. A bare
@@ -559,6 +585,53 @@ mod tests {
             "event=lib-load name=user32 verdict=host"
         );
         assert!(lines.next().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_journal_at_creates_the_parent_and_the_file() {
+        let dir =
+            std::env::temp_dir().join(format!("tfs-journal-openat-ok-{}", std::process::id()));
+        let log = dir.join("nested").join("journal.log");
+        let file = open_journal_at(&log).expect("opens");
+        drop(file);
+        assert!(log.is_file());
+        // Append mode: a second open keeps the existing bytes.
+        std::fs::write(&log, b"seed\n").unwrap();
+        let file = open_journal_at(&log).expect("reopens");
+        drop(file);
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "seed\n");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_journal_at_fails_when_the_journal_is_a_directory() {
+        let dir =
+            std::env::temp_dir().join(format!("tfs-journal-openat-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = open_journal_at(&dir).expect_err("a directory is not openable for append");
+        assert_eq!(err.kind(), std::io::ErrorKind::IsADirectory);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn try_open_journal_names_the_path_and_the_error() {
+        // The strict form distinguishes "configured but unwritable" from
+        // "unconfigured" (tebako#1055): an explicit TEBAKO_JAIL_JOURNAL
+        // whose parent is a FILE must come back Err naming that path —
+        // never None (which would read as unconfigured and stay silent).
+        let dir =
+            std::env::temp_dir().join(format!("tfs-journal-strict-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let blocker = dir.join("a-file");
+        std::fs::write(&blocker, b"x").unwrap();
+        let log = blocker.join("journal.log");
+        let _guard = JOURNAL_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("TEBAKO_JAIL_JOURNAL", &log);
+        let result = try_open_journal();
+        std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+        let (path, _err) = result.expect_err("the open fails through the file parent");
+        assert_eq!(path, log);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
