@@ -24,9 +24,13 @@ on:
         type: string
         default: '0.3.5'
       python_version:
-        description: 'The python inside the pair (and the on-system arm)'
+        description: 'The python INSIDE the pair (asset naming; the published line is 3.11.16)'
         type: string
         default: '3.11.16'
+      on_system_python:
+        description: 'The on-system comparison arm (setup-python; darwin-x64 tops out at 3.11.9 in the manifest — patch skew is noise against the covenant gap)'
+        type: string
+        default: '3.11.9'
       n:
         description: 'fib depth (40 matches the covenant workload)'
         type: string
@@ -44,7 +48,7 @@ jobs:
       - name: Provision the on-system arm
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ inputs.python_version }}
+          python-version: ${{ inputs.on_system_python }}
 
       - name: Fetch the published pair (sha256-verified)
         env:
