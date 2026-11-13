@@ -36,6 +36,43 @@ command's own flags can never be confused with tebako's.
    replaces itself with the runtime process; on Windows it spawns,
    waits, and passes the exit code back.
 
+## The three sets — who declares, who installs, who decides
+
+Which names land on PATH is the product of three explicit decisions,
+each owned at a different layer:
+
+1. **Declared — the slice owner.** The payload's manifest lists every
+   command the image can provide: a name and its in-image path. This is
+   the whole vocabulary — nothing outside it can ever be linked.
+2. **Installed by default — the slice owner.** Each declared command
+   carries `active` (default `true`). `active: false` marks a
+   *companion*: provided, but not linked by default, so a payload that
+   ships twenty-five tools claims only its headline names and leaves
+   the rest free for other software.
+3. **Actually installed — the person installing.** The default is the
+   active set. `tebako install --only-shims a,b` narrows it (naming a
+   companion there is a named error that points at the expose step).
+   After install, the machine's owner re-decides at any time, along two
+   independent axes:
+
+   ```
+   tebako-shim list                     # installed payloads, defaults, links
+   tebako-shim which metanorma          # what this name would run today
+
+   tebako-shim disable metanorma        # dispatch refuses; the link stays
+   tebako-shim enable  metanorma        # dispatch answers again
+   tebako-shim enable  fontist          # …and a companion's link materializes
+
+   tebako-shim hide    metanorma        # free the PATH name; `tebako run` still works
+   tebako-shim expose  metanorma        # claim the name back
+   ```
+
+   `disable` gates what runs when the name is invoked (per tool, per
+   `tool@version`, per `--of payload` when two payloads provide the same
+   name); `hide` frees the name itself so the host's own tool answers
+   again — and future installs keep skipping it. Neither uninstalls
+   anything.
+
 ## PATH setup
 
 `tebako-shim install-shell` performs the one-time setup:
@@ -51,6 +88,11 @@ After that, installing or removing applications only adds or removes
 files in the shim directory — PATH itself is never edited again. The
 `doctor` command checks the whole arrangement (PATH entry, links,
 payload integrity) and names any problem it finds.
+
+If you run a version manager (mise, rbenv, pyenv, …), position decides
+who wins: `tebako-shim install-shell --position append` puts the shim
+directory behind it, so the manager's commands win and tebako's fill
+the gaps; the default `prepend` is the reverse.
 
 ## Explicitness
 

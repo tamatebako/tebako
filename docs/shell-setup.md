@@ -20,6 +20,11 @@ tebako-shim doctor
 
 `uninstall-shell` removes exactly that block and nothing else.
 
+Two knobs matter up front: `--shell bash|zsh|fish|csh` names the shell
+when detection guesses wrong, and `--position append` puts the shim
+directory at the *end* of PATH — behind a version manager such as mise
+or rbenv — instead of the default front.
+
 ## What it does, per shell (and how to do it by hand)
 
 The whole mechanism is ONE directory on PATH: `~/.tebako/shims`. The
