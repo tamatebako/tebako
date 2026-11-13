@@ -2473,7 +2473,13 @@ impl FsContext {
             },
         }
         let tmp = self.ensure_dl_tmpdir()?;
-        let host = tmp.join(normalized.trim_start_matches('/'));
+        // The drive-qualified windows spelling (`A:/probe`) is absolute
+        // to Path::join — the tmpdir would be replaced outright and the
+        // twin would target the VFS path itself, the extraction would
+        // write nowhere sane, and the spawn's chdir would fall through
+        // to the raw VFS path (tebako-runtime-ruby#344's windows leg).
+        // Flatten through the same host_tail the dlcache path uses.
+        let host = tmp.join(Self::host_tail(&normalized));
         if self.dl_dirs.insert(normalized.clone()) {
             let mut skipped = 0usize;
             let mount = self.mounts.get(&handle).ok_or(libc::ENODEV)?;
@@ -4734,6 +4740,50 @@ mod tests {
         assert_eq!(e, libc::ENOTDIR, "{e}");
         let e = ctx.exec_materialize_dir("/elsewhere").unwrap_err();
         assert_eq!(e, libc::ENOENT, "{e}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exec_materialize_dir_of_a_drive_letter_mount_stays_under_the_dl_root() {
+        // tebako-runtime-ruby#344's windows leg: a chdir into an in-image
+        // dir died ENOENT on the raw VFS path because the twin's join —
+        // tmp.join("A:/probe") — takes the drive-qualified argument as
+        // absolute and REPLACES the tmpdir, so the extraction targeted
+        // the VFS path itself and the arm fell through NULL. The twin
+        // must ride the flattened host_tail (A:/probe -> A_/probe), the
+        // same flattening the dlcache path proved (tebako#502).
+        let dir = std::env::temp_dir().join(format!("tfs-dir-drive-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("img.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.add_directory("sub/", options).unwrap();
+        writer.start_file("sub/tool.dll", options).unwrap();
+        writer.write_all(b"MZ").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(path.to_str().unwrap(), "A:/probe").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize_dir("A:/probe/sub").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(host.is_dir(), "the dir twin is a host dir: {host:?}");
+        assert!(
+            std::path::Path::new(&host).join("tool.dll").is_file(),
+            "the subtree landed: {host:?}"
+        );
+        assert!(
+            !host.to_string_lossy().starts_with("A:"),
+            "never the drive itself: {host:?}"
+        );
+        assert!(
+            host.to_string_lossy().contains("A_/probe"),
+            "the flattened tail mirrors the memfs path: {host:?}"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
