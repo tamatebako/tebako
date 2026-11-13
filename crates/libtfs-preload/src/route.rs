@@ -726,7 +726,27 @@ fn init_inner() -> Result<(), String> {
         let journal = if policy.never_denies() {
             None
         } else {
-            tfs::journal::open_journal()
+            // tebako#1055: a denying jail whose audit journal cannot be
+            // opened would run UNRECORDED — indistinguishable from a jail
+            // that never engaged. When the journal was explicitly
+            // configured (TEBAKO_JAIL_JOURNAL), that failure refuses the
+            // run by name; the implicit default-home journal keeps the
+            // legacy best-effort shape.
+            let explicit = std::env::var("TEBAKO_JAIL_JOURNAL")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .is_some();
+            match tfs::journal::try_open_journal() {
+                Ok(j) => j,
+                Err((path, e)) if explicit => {
+                    return Err(format!(
+                        "TEBAKO_JAIL_JOURNAL: cannot open the audit journal {}: {} — refusing to run a denying jail unrecorded",
+                        path.display(),
+                        e
+                    ))
+                }
+                Err(_) => None,
+            }
         };
         context()
             .write()
