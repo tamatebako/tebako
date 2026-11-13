@@ -59,9 +59,15 @@ jobs:
           set -euo pipefail
           base="https://github.com/tamatebako/tebako-runtime-python/releases/download/v${PAIR}"
           exe="tebako-runtime-${PAIR}-python-${PY}-macos-x86_64"
-          curl -sLO "$base/$exe" && curl -sLO "$base/$exe.tfs" && curl -sLO "$base/SHA256SUMS"
-          grep -E " ${exe}(\.tfs)?\$" SHA256SUMS > sums.txt
-          shasum -a 256 -c sums.txt
+          # the python factory ships per-asset .sha256 sidecars (no
+          # aggregate SHA256SUMS — that is the ruby factory's convention);
+          # verify against the sidecars directly, and curl -f so a 404
+          # fails AT the fetch, not three steps later in grep
+          for f in "$exe" "$exe.tfs"; do
+            curl -sfLO "$base/$f"
+            curl -sfLO "$base/$f.sha256"
+            shasum -a 256 -c "$f.sha256"
+          done
           chmod +x "$exe"
           file "$exe"
           otool -l "$exe" | grep -A3 LC_BUILD_VERSION | head -4
