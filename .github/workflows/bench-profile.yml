@@ -80,7 +80,13 @@ jobs:
         run: |
           set -euo pipefail
           exe="tebako-runtime-${PAIR}-python-${PY}-macos-x86_64"
-          cat > fib.py <<'PY'
+          # one workload, both arms, as -c text: the python runtime exe IS
+          # the interpreter with argv pass-through (the factory's
+          # boot_smoke boots it with a bare -c) — NO --tebako-entry (that
+          # flag resolves a FILE in the mounted tree; there is no
+          # /bin/python3 inside the env image — exit 65), and -c never
+          # touches the host fs, so no jail/VFS question arises at all.
+          read -r -d '' CODE <<'PY' || true
           import time, sys
           def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)
           n = int(sys.argv[1])
@@ -88,12 +94,11 @@ jobs:
           print(f"fib({n})={r} wall={time.perf_counter()-t:.3f}s")
           PY
           echo "== on-system python ($(/usr/bin/env python3 -V 2>&1), $(which python3))"
-          for i in 1 2 3; do python3 fib.py "$N"; done
+          for i in 1 2 3; do python3 -c "$CODE" "$N"; done
           echo "== tebako python (pair v${PAIR})"
-          # one unmeasured boot to warm the exec cache, then the measured reps
-          TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" --tebako-entry /bin/python3 -c 'print("warm-up ok")'
+          TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" -c 'print("warm-up ok")'
           for i in 1 2 3; do
-            TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" --tebako-entry /bin/python3 fib.py "$N"
+            TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" -c "$CODE" "$N"
           done
 
       - name: Sample the tebako arm mid-run
@@ -104,7 +109,14 @@ jobs:
         run: |
           set -euo pipefail
           exe="tebako-runtime-${PAIR}-python-${PY}-macos-x86_64"
-          TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" --tebako-entry /bin/python3 fib.py "$N" &
+          read -r -d '' CODE <<'PY' || true
+          import time, sys
+          def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)
+          n = int(sys.argv[1])
+          t = time.perf_counter(); r = fib(n)
+          print(f"fib({n})={r} wall={time.perf_counter()-t:.3f}s")
+          PY
+          TEBAKO_RUNTIME_IMAGE="$PWD/$exe.tfs" "./$exe" -c "$CODE" "$N" &
           pid=$!
           # let it boot and settle into the eval loop, then sample 10 s
           sleep 8
