@@ -22,11 +22,11 @@ on:
       pair_version:
         description: 'The tebako-runtime-python release under test'
         type: string
-        default: '0.3.4'
+        default: '0.3.5'
       python_version:
         description: 'The python inside the pair (and the on-system arm)'
         type: string
-        default: '3.14.7'
+        default: '3.11.16'
       n:
         description: 'fib depth (40 matches the covenant workload)'
         type: string
