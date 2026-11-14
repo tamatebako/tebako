@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/08-jails.md @ 70a26efa5e2c7f213def6e30561152f6795b5606
+// source: docs/spec/08-jails.md @ f39d6212ba0d0a7afd6394df6c1595f94a0a1220
 
 Normative specification of host-filesystem access control for running
 payloads. Status: SHIPPED (roadmaps 09 + 30 + 35) — the TFS enforcement
@@ -298,7 +298,14 @@ exports the effective policy as `TEBAKO_JAIL` (+ `TEBAKO_JAIL_SOURCE`
 * *Audit journal (§2):* every denial in the TFS layer appends `+++&lt;ts&gt; event=jail-deny path=&lt;p&gt; op=read|write source=&lt;s&gt;+++` to the tebako
 journal (`TEBAKO_JAIL_JOURNAL` > `+++$TEBAKO_HOME/journal.log+++` >
 `+++~/.tebako/journal.log+++`), best-effort — journaling never fails the
-operation it audits.
+operation it audits. One exception, at policy-install time (locked
+2026-11-14): when `TEBAKO_JAIL_JOURNAL` explicitly names the journal
+and that file cannot be opened for append, a policy that can deny
+refuses to install — a named error, not a run — because a denial
+without its record is indistinguishable from a policy that never
+engaged. The implicit default-home journal keeps the best-effort
+shape, and per-event write failures on an opened journal never fail
+the audited operation.
 
 
 [%unnumbered]

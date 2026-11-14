@@ -107,7 +107,9 @@ pub fn try_open_journal() -> Result<Option<std::fs::File>, (PathBuf, std::io::Er
     let Some(journal) = journal_file() else {
         return Ok(None);
     };
-    open_journal_at(&journal).map(Some).map_err(|e| (journal, e))
+    open_journal_at(&journal)
+        .map(Some)
+        .map_err(|e| (journal, e))
 }
 
 /// The filesystem half, split from resolution so tests drive it without
@@ -620,8 +622,7 @@ mod tests {
         // "unconfigured" (tebako#1055): an explicit TEBAKO_JAIL_JOURNAL
         // whose parent is a FILE must come back Err naming that path —
         // never None (which would read as unconfigured and stay silent).
-        let dir =
-            std::env::temp_dir().join(format!("tfs-journal-strict-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("tfs-journal-strict-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let blocker = dir.join("a-file");
         std::fs::write(&blocker, b"x").unwrap();
