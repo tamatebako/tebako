@@ -38,13 +38,14 @@
 //! serving, `Corrupt` → `EIO`, `UnsupportedFeature` → `ENOTSUP`, path
 //! misses → `ENOENT`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 #[cfg(feature = "backend-remote")]
 use std::sync::Arc;
 
 use limnifs_core::{
-    parse_feature_flags_section, parse_history, parse_manifest_header, parse_metadata_blob,
-    parse_metadata_reference_with_ceilings, parse_slab, parse_slab_header, parse_slab_index,
+    dir_node_hash, parse_feature_flags_section, parse_history, parse_manifest_header,
+    parse_metadata_blob, parse_metadata_reference_with_ceilings, parse_slab, parse_slab_header,
+    parse_slab_index,
     slab_cache::CachedSlabStore,
     slab_source::SlabSource as LimnifsSlabSource,
     slab_store::{SlabSource, SlabStore},
@@ -142,6 +143,15 @@ pub struct LimnifsBackend {
     header: ManifestHeader,
     /// The parsed metadata blob (inodes + directory nodes).
     blob: MetadataBlob,
+    /// Inode number → `blob.inodes` index, built once at open (O(N)).
+    /// The blob's own `inode_by_number` is a linear scan, which made
+    /// both mount-open's path walk and every served lookup O(N) per
+    /// call (tebako#1057).
+    by_number: HashMap<u64, usize>,
+    /// Directory-node hash → `blob.dir_nodes` index, each node's hash
+    /// computed once at open. The blob's own `dir_node_by_hash`
+    /// re-hashes every candidate per probe (O(M) BLAKE3 per lookup).
+    by_dir_hash: HashMap<[u8; 32], usize>,
     /// Path → inode number (keys relative, no leading slash; `""` is
     /// the root), built once at open (O(N)) for O(1) lookups.
     paths: HashMap<String, u64>,
@@ -230,6 +240,12 @@ struct PrefixWalk {
     header: ManifestHeader,
     /// The parsed metadata blob (inodes + directory nodes).
     blob: MetadataBlob,
+    /// Inode number → `blob.inodes` index (first occurrence wins, the
+    /// blob's own `inode_by_number` semantics).
+    by_number: HashMap<u64, usize>,
+    /// Directory-node hash → `blob.dir_nodes` index (first occurrence
+    /// wins, the blob's own `dir_node_by_hash` semantics).
+    by_dir_hash: HashMap<[u8; 32], usize>,
     /// Path → inode number (Backend-convention keys).
     paths: HashMap<String, u64>,
     /// The root directory's inode number.
@@ -293,13 +309,57 @@ fn parse_manifest_prefix(data: &[u8]) -> Result<PrefixWalk, i32> {
         })
     })?;
 
+    // The open-time lookup indices (tebako#1057): the blob's own
+    // `inode_by_number`, `dir_node_by_hash`, and `build_path_index` are
+    // linear scans — the dir-node one re-serializes and re-hashes every
+    // candidate per probe — so a mount-open over them is O(N²) in the
+    // inode count (measured: ~1 s at 10k inodes, ~5.6 s at 20k, ~19 s
+    // at 40k, release build). The preload constructor re-mounts every
+    // declared image in every spawned child process, so a
+    // gem-closure-scale image turned each child's dyld initializer into
+    // minutes of compute and the parent parked on a child that never
+    // finished starting. Build the maps once, here: O(N) open, O(1)
+    // lookups.
+    let mut by_number: HashMap<u64, usize> = HashMap::with_capacity(blob.inodes.len());
+    for (idx, inode) in blob.inodes.iter().enumerate() {
+        by_number.entry(inode.number).or_insert(idx);
+    }
+    let mut by_dir_hash: HashMap<[u8; 32], usize> = HashMap::with_capacity(blob.dir_nodes.len());
+    for (idx, node) in blob.dir_nodes.iter().enumerate() {
+        by_dir_hash
+            .entry(dir_node_hash(&node.entries))
+            .or_insert(idx);
+    }
+
+    // The path walk the blob's own `build_path_index` runs (BFS from
+    // the root, every entry indexed), but over the O(1) maps. The
+    // limnifs index is absolute (`/a/b`); the Backend trait speaks
+    // relative paths (`a/b`, `""` for root), so the walk builds
+    // relative keys directly.
     let mut paths: HashMap<String, u64> =
         HashMap::with_capacity(blob.inodes.len().saturating_add(1));
     paths.insert(String::new(), root);
-    for (path, number) in blob.build_path_index() {
-        // The limnifs index is absolute (`/a/b`); the Backend trait
-        // speaks relative paths (`a/b`, `""` for root).
-        paths.insert(normalize(&path).to_string(), number);
+    let mut queue: VecDeque<(u64, String)> = VecDeque::with_capacity(blob.inodes.len());
+    queue.push_back((root, String::new()));
+    while let Some((number, prefix)) = queue.pop_front() {
+        let Some(&inode_idx) = by_number.get(&number) else {
+            continue;
+        };
+        let ContentHandle::Directory(dir_hash) = &blob.inodes[inode_idx].content_handle else {
+            continue;
+        };
+        let Some(&node_idx) = by_dir_hash.get(dir_hash) else {
+            continue;
+        };
+        for entry in &blob.dir_nodes[node_idx].entries {
+            let path = if prefix.is_empty() {
+                entry.name.clone()
+            } else {
+                format!("{prefix}/{}", entry.name)
+            };
+            paths.insert(path.clone(), entry.inode_number);
+            queue.push_back((entry.inode_number, path));
+        }
     }
 
     let slab_index = parse_slab_index(&mut cursor).map_err(open_error)?;
@@ -321,6 +381,8 @@ fn parse_manifest_prefix(data: &[u8]) -> Result<PrefixWalk, i32> {
     Ok(PrefixWalk {
         header,
         blob,
+        by_number,
+        by_dir_hash,
         paths,
         root,
         slab_index,
@@ -428,6 +490,8 @@ impl LimnifsBackend {
         Ok(LimnifsBackend {
             header: walk.header,
             blob: walk.blob,
+            by_number: walk.by_number,
+            by_dir_hash: walk.by_dir_hash,
             paths: walk.paths,
             root: walk.root,
             store: SlabServing::Cached(Box::new(store)),
@@ -573,6 +637,8 @@ impl LimnifsBackend {
         Ok(LimnifsBackend {
             header: walk.header,
             blob: walk.blob,
+            by_number: walk.by_number,
+            by_dir_hash: walk.by_dir_hash,
             paths: walk.paths,
             root: walk.root,
             store: SlabServing::Paged(set),
@@ -589,14 +655,17 @@ impl LimnifsBackend {
         } else {
             *self.paths.get(path).ok_or(libc::ENOENT)?
         };
-        self.blob.inode_by_number(number).ok_or_else(|| {
-            tebako_log::log!(
-                tebako_log::Level::Trace,
-                "tfs",
-                "limnifs: dangling inode number {number} (EIO)"
-            );
-            libc::EIO
-        })
+        self.by_number
+            .get(&number)
+            .map(|&idx| &self.blob.inodes[idx])
+            .ok_or_else(|| {
+                tebako_log::log!(
+                    tebako_log::Level::Trace,
+                    "tfs",
+                    "limnifs: dangling inode number {number} (EIO)"
+                );
+                libc::EIO
+            })
     }
 
     /// The `[start, start + len)` window of one drop's plaintext,
@@ -749,7 +818,11 @@ impl Backend for LimnifsBackend {
         let ContentHandle::Directory(hash) = &inode.content_handle else {
             return Err(libc::ENOTDIR);
         };
-        let node = self.blob.dir_node_by_hash(hash).ok_or(libc::EIO)?;
+        let node = self
+            .by_dir_hash
+            .get(hash)
+            .map(|&idx| &self.blob.dir_nodes[idx])
+            .ok_or(libc::EIO)?;
         Ok(node
             .entries
             .iter()
