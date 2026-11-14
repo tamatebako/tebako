@@ -406,11 +406,19 @@ pub fn resolve_prefix(prefix_arg: Option<&str>) -> PathBuf {
                 absolutize(&env_prefix.replace('\\', "/"))
             }
             _ => {
-                println!("No prefix specified, using ~/.tebako");
-                let home = std::env::var("HOME")
-                    .or_else(|_| std::env::var("USERPROFILE"))
-                    .unwrap_or_else(|_| ".".to_string());
-                PathBuf::from(home).join(".tebako")
+                // tebako#1059: the press's work area rides the store's
+                // canonical root — the owner rule ($TEBAKO_HOME >
+                // platform default), never a re-derived HOME read that
+                // leaks intermediates into the operator's real home when
+                // TEBAKO_HOME points elsewhere.
+                let home = crate::compose::tebako_home().unwrap_or_else(|_| {
+                    let home = std::env::var("HOME")
+                        .or_else(|_| std::env::var("USERPROFILE"))
+                        .unwrap_or_else(|_| ".".to_string());
+                    PathBuf::from(home).join(".tebako")
+                });
+                println!("No prefix specified, using {}", home.display());
+                home
             }
         },
     }
