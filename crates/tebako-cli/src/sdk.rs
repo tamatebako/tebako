@@ -43,11 +43,15 @@ use crate::options::host_platform;
 // comes from. Must carry the src tarball for every ruby version on the
 // current runtime matrix: v0.2.1 (the historic pin) stops at 3.3.7/3.4.2,
 // so presses against the 0.16.11 line (3.3.12/3.4.10) failed closed at
-// exit 135 (tebako#482). v0.2.38 carries the full current matrix
-// (3.1.6/3.2.11/3.3.12/3.4.10/4.0.7). Rolling-release
+// exit 135 (tebako#482). v0.2.38 carried the 0.16-era matrix; the 0.17.11
+// runtime line ships ruby 3.3.13/4.0.9, whose source tarballs live in
+// v0.2.42 (tebako#1059's third layer: the line bump, the test pins, and
+// this pin move together). Rolling-release
 // tarballs are NOT content-stable (tamatebako/ruby#100); the durable SSOT
-// fix is resolving the pointer from the runtime manifest's built_from.
-pub const DEFAULT_SRC_RELEASE: &str = "v0.2.38";
+// fix is resolving the pointer from the runtime manifest's built_from —
+// which requires the factory to EMIT the source-release tag there first
+// (today's built_from names the tarball, not the tag).
+pub const DEFAULT_SRC_RELEASE: &str = "v0.2.42";
 pub const DEFAULT_MIRROR: &str = "https://github.com/tamatebako/ruby/releases/download";
 const SUMS_FILE: &str = "SHA256SUMS";
 const MARKER_FILE: &str = ".sdk-complete";
