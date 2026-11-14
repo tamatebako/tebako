@@ -16,9 +16,11 @@ pub const BUNDLER_MIN_VERSION: &str = "2.4.22";
 /// the default line must PUBLISH this version (resolution of a version a
 /// line does not carry is the named exit-120 error with the available set
 /// — the pairing is exercised by the press e2e suite). The 0.16.32 line
-/// carries 3.1.6 / 3.2.11 / 3.3.12 / 3.4.10 / 4.0.7 (per-ruby shards,
-/// spec 36 §6).
-pub const DEFAULT_RUBY_VERSION: &str = "3.3.12";
+/// carried 3.1.6 / 3.2.11 / 3.3.12 / 3.4.10 / 4.0.7 (per-ruby shards,
+/// spec 36 §6); the 0.17.11 line carries 3.3.13 / 4.0.9 (tebako#1059's
+/// fourth coupled constant: the default ruby moves with the default
+/// line's shipped set).
+pub const DEFAULT_RUBY_VERSION: &str = "3.3.13";
 pub const MIN_RUBY_VERSION_WINDOWS: &str = "3.1.6";
 
 /// Ruby versions the CLI can press packages for (the prebuilt runtime
