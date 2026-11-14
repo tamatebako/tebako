@@ -1110,7 +1110,7 @@ fn image_era_fixture(tag: &str) -> Option<(PathBuf, String, String, String)> {
         );
         return None;
     }
-    let ruby = "3.3.12";
+    let ruby = "3.3.13";
     let asset = format!("tebako-runtime-{ver}-{ruby}-{plat}");
     let exe_src = dir.join(&asset);
     let image_name = format!("{asset}.tfs");
@@ -1191,7 +1191,7 @@ fn press_against_mirror(
         .arg("-p")
         .arg(&prefix)
         .arg("-R")
-        .arg("3.3.12")
+        .arg("3.3.13")
         .env(
             "TEBAKO_RUNTIME_MIRROR",
             tebako_http::file_url(Path::new(&mirror_root)),
@@ -1236,7 +1236,7 @@ fn image_era_press_and_cold_run() {
 
     // The press installed the image into the cache (bootstrap interop).
     let entry_dir = home.join("runtimes").join(format!(
-        "ruby-3.3.12-{}-{}",
+        "ruby-3.3.13-{}-{}",
         tebako_cli::DEFAULT_TEBAKO_VERSION,
         tebako_cli::options::host_platform().unwrap()
     ));
@@ -1418,7 +1418,7 @@ fn official_pair_fixture(tag: &str) -> Option<(PathBuf, String, String, String)>
         );
         return None;
     }
-    let ruby = "3.3.12";
+    let ruby = "3.3.13";
     let asset = format!("tebako-runtime-{ver}-{ruby}-{plat}");
     let image_name = format!("{asset}.tfs");
 
@@ -1481,7 +1481,7 @@ fn image_era_full_flow_official_pair() {
     };
     let home = work.join("home");
     let entry_dir = home.join("runtimes").join(format!(
-        "ruby-3.3.12-{}-{}",
+        "ruby-3.3.13-{}-{}",
         tebako_cli::DEFAULT_TEBAKO_VERSION,
         tebako_cli::options::host_platform().unwrap()
     ));
@@ -1674,7 +1674,7 @@ fn native_ext_press_builds_and_packages() {
         eprintln!("skipping native-ext e2e: runtime resolution failed");
         return;
     };
-    let Some(sdk_mirror) = sdk_mirror_fixture(&work, "3.3.12") else {
+    let Some(sdk_mirror) = sdk_mirror_fixture(&work, "3.3.13") else {
         eprintln!("skipping native-ext e2e: cannot mirror the ruby src release");
         return;
     };
@@ -1705,7 +1705,7 @@ fn native_ext_press_builds_and_packages() {
         .arg("-p")
         .arg(&prefix)
         .arg("-R")
-        .arg("3.3.12")
+        .arg("3.3.13")
         .env(
             "TEBAKO_RUNTIME_MIRROR",
             tebako_http::file_url(Path::new(&mirror_root)),
@@ -1799,7 +1799,7 @@ fn native_ext_press_builds_and_packages() {
         .arg("-p")
         .arg(&prefix)
         .arg("-R")
-        .arg("3.3.12")
+        .arg("3.3.13")
         .env(
             "TEBAKO_RUNTIME_MIRROR",
             tebako_http::file_url(Path::new(&mirror_root)),
