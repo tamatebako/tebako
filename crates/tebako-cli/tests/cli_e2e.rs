@@ -1111,8 +1111,21 @@ fn image_era_fixture(tag: &str) -> Option<(PathBuf, String, String, String)> {
         return None;
     }
     let ruby = "3.3.13";
-    let asset = format!("tebako-runtime-{ver}-{ruby}-{plat}");
-    let exe_src = dir.join(&asset);
+    // Find the fixture pair by pattern, never a hand-built name: the
+    // asset grammar moves between eras (the 0.17 line carries the
+    // language segment), and a constructed name silently rots
+    // (tebako#1059's CI red).
+    let exe_src = std::fs::read_dir(&dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .find(|n| {
+            n.starts_with(&format!("tebako-runtime-{ver}-"))
+                && n.ends_with(&format!("-{plat}"))
+                && n.contains(&format!("-{ruby}-"))
+        })
+        .map(|n| dir.join(&n))?;
+    let asset = exe_src.file_name()?.to_string_lossy().into_owned();
     let image_name = format!("{asset}.tfs");
     let img_src = [dir.join(&image_name), dir.join(format!("{asset}.dwarfs"))]
         .into_iter()
@@ -1419,8 +1432,6 @@ fn official_pair_fixture(tag: &str) -> Option<(PathBuf, String, String, String)>
         return None;
     }
     let ruby = "3.3.13";
-    let asset = format!("tebako-runtime-{ver}-{ruby}-{plat}");
-    let image_name = format!("{asset}.tfs");
 
     let work = workdir(tag);
     let mirror_root = work.join("mirror");
@@ -1433,6 +1444,16 @@ fn official_pair_fixture(tag: &str) -> Option<(PathBuf, String, String, String)>
     // exe in the same cache entry.
     let resolver = tebako_cli::resolve::Resolver::new();
     let resolved = resolver.resolve_runtime(ruby, &plat, ver).ok()?;
+    // The names come from the resolved pair, never a hand-built spelling:
+    // the asset grammar moves between eras (the 0.17 line carries the
+    // language segment), and a constructed name silently rots (the
+    // tebako#1059 CI red).
+    let asset = resolved
+        .executable
+        .file_name()?
+        .to_string_lossy()
+        .into_owned();
+    let image_name = resolved.image.as_ref()?.filename.clone();
     fs::copy(&resolved.executable, mirror.join(&asset)).unwrap();
 
     // The official image: the factory-imaged counterpart of this exact
