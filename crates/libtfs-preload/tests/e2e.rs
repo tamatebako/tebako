@@ -946,6 +946,102 @@ fn misformatted_env_is_a_named_error() {
     assert!(stderr.contains("cannot mount"), "stderr: {stderr}");
 }
 
+/// Spawn `tool` under the shim and wait, but never past the deadline: a
+/// wedged child is killed and reported as None (the in-test watchdog —
+/// `cmd.output()` would park the suite forever on a spin regression).
+#[cfg(target_os = "macos")]
+fn run_deadlined(cmd: &mut Command, secs: u64) -> Option<std::process::ExitStatus> {
+    let mut child = cmd.stderr(std::process::Stdio::piped()).spawn().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+    loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            return Some(s);
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+/// tebako#1057 (the macos-15 hang): a preload-inherited foreign child —
+/// the fontist cold-start `git clone`'s remote helper — never finished
+/// dyld's initializer pass, because the constructor's mount-open ran
+/// O(N²) in the image's inode count (limnifs-core's linear
+/// inode/dir-node walks, with a BLAKE3 re-hash per dir-node probe).
+/// On a closure-scale payload that is minutes of compute per spawned
+/// child, and the parent parks on the child forever. Mount-open is now
+/// O(N): a closure-wide image mounts far under this deadline and the
+/// child — which reads only a HOST path, the remote-helper shape —
+/// starts and exits 0.
+#[cfg(target_os = "macos")]
+#[test]
+fn ctor_mount_open_of_a_closure_wide_image_is_bounded() {
+    let Some(f) = fixtures() else { return };
+    // The closure-wide limnifs fixture: 50k files in a gem-tree shape
+    // (the incident closure's scale). Built inside this test so the
+    // shared fixtures stay cheap for the other proofs.
+    let root = f.dir.join("wide-src");
+    for gem in 0..2000u32 {
+        let d = root.join(format!("gems/gem-{gem:05}/lib/gem{gem:05}"));
+        std::fs::create_dir_all(&d).unwrap();
+        for file in 0..25u32 {
+            std::fs::write(d.join(format!("file{file:03}.rb")), "class F\nend\n").unwrap();
+        }
+    }
+    let mut config = limnifs_write::WriteConfig::default_v0_1();
+    config.dictionaries.enabled = false;
+    let artifact = limnifs_write::write_directory_with_config(&root, &config).unwrap();
+    assert!(
+        artifact.metadata_sidecar.is_none(),
+        "the wide fixture keeps its metadata inline"
+    );
+    let mut image = artifact.bytes;
+    for slab in &artifact.slabs {
+        image.extend_from_slice(&slab.bytes);
+    }
+    let wide = f.dir.join("wide.tfs");
+    std::fs::write(&wide, &image).unwrap();
+
+    let mut cmd = Command::new(f.dir.join("bin").join("print-data"));
+    cmd.arg("/etc/hosts")
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", format!("{}:{MOUNT}", wide.display()))
+        .env_remove("TEBAKO_JAIL")
+        .env_remove("DYLD_PRINT_LIBRARIES");
+    // The fixed open is ~0.1 s here; the quadratic shape needed ~19 s on
+    // this image class on a fast local machine (and minutes on the CI
+    // runner's real closure). 12 s fails the regression, never the fix.
+    let Some(status) = run_deadlined(&mut cmd, 12) else {
+        panic!(
+            "print-data under a closure-wide mount wedged past 12 s — \
+             the tebako#1057 quadratic mount-open is back"
+        );
+    };
+    assert_eq!(status.code(), Some(0));
+}
+
+/// tebako#1057's companion contract: with a STALE mounts declaration
+/// (the image gone from the store) the constructor answers with the
+/// named error immediately — a foreign child fails fast, never spins.
+#[cfg(target_os = "macos")]
+#[test]
+fn ctor_stale_mounts_env_fails_fast() {
+    let Some(f) = fixtures() else { return };
+    let mut cmd = Command::new(f.dir.join("bin").join("print-data"));
+    cmd.arg("/etc/hosts")
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", "/no/such/image.tfs:/tfs")
+        .env_remove("TEBAKO_JAIL")
+        .env_remove("DYLD_PRINT_LIBRARIES");
+    let Some(status) = run_deadlined(&mut cmd, 10) else {
+        panic!("a stale TEBAKO_TFS_MOUNTS wedged the constructor past 10 s");
+    };
+    assert_eq!(status.code(), Some(tfs_preload::spec::EX_CONFIG));
+}
+
 // ---------------------------------------------------------------------
 // Roadmap 39: the *at family, execve/posix_spawn of memfs paths, dir
 // streams, and the Rust dynamic tool
