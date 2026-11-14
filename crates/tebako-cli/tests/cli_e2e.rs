@@ -473,10 +473,14 @@ fn press_unconstrained_takes_the_registry_pair() {
         "one press must leave one runtime entry, got {runtimes:?}"
     );
     let entry = &runtimes[0];
+    // The press must resolve the current default pair. (tebako#1059 moved
+    // the contract: the compile-time constant TRACKS the line, so the old
+    // name-inequality proxy — "anything but the constant" — is vacuous;
+    // the guard is now the direct property: the resolution landed on the
+    // default line. A resolution drift red by name, here.)
     assert!(
-        !entry.contains(&format!("-{}-", tebako_cli::DEFAULT_TEBAKO_VERSION)),
-        "the unconstrained press still took the compile-time line {entry}: \
-         it must resolve the registries' default pair instead"
+        entry.contains(&format!("-{}-", tebako_cli::DEFAULT_TEBAKO_VERSION)),
+        "the unconstrained press resolved off the default line: {entry}"
     );
     assert!(
         log.contains("Ruby version:")
