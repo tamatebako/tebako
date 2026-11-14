@@ -403,8 +403,13 @@ for v in $VECTORS; do
         verdict="MISSING"; incomplete=$((incomplete + 1))
       elif [ "${o#READ-OK}" != "" ]; then
         verdict="probe not live"; incomplete=$((incomplete + 1))
-      elif [ "${r#READ-OK}" != "" ]; then
+      elif [ "${r#READ-OK}" != "" ] && { [ "$v" != "shellout" ] || [ "$WIN" != "1" ] || [ "$r" != "DENIED:EPERM" ]; }; then
         # record allows and journals: a vector it refuses is a broken mode.
+        # Exception, the windows shellout (tebako#1039's boundary): the
+        # child carries no preload, so record mode could never journal it —
+        # the boundary refuses the child instead, and that refusal IS the
+        # record contract holding (nothing escapes unrecorded). The row
+        # then falls through to the deny-arm verdict below.
         verdict="record did not allow ($r)"; incomplete=$((incomplete + 1))
       else
         case "$d" in
