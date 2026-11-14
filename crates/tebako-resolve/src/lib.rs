@@ -104,10 +104,14 @@ pub use transport::{HttpTransport, Transport};
 /// the pin sat at 0.16.23 every default macOS press (ad-hoc re-signed,
 /// spec 31 §1.2) produced a package whose pre-0.16.26 driver reads the
 /// trailer at physical EOF, past the appended codesign superblob, and
-/// EINVALs the payload mount. The line ships ruby 3.1.6 / 3.2.11 /
-/// 3.3.12 / 3.4.10 / 4.0.7 as per-ruby shards (spec 36 §6; the
-/// resolver's era-ordered probing serves them).
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.32";
+/// EINVALs the payload mount. 0.17.11 (tebako#1059): the default was
+/// frozen at the 0.16 era while the registry line moved — a default
+/// press resolved the pre-spawn-arm era's runtime (its chdir into a
+/// mounted image dies ENOENT; the arm shipped in the 0.17 line), so a
+/// bare press today produced yesterday's behavior. The default tracks
+/// the current published line from here on; the line ships ruby
+/// 3.3.13 / 4.0.9 (the registry's default: 4.0.9-0.17.11).
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.17.11";
 
 /// The first runtime line whose embedded driver locates the tpkg
 /// trailer by spec 02 §1's LOGICAL EOF — the floor for RUNNING a
