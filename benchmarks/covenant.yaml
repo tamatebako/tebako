@@ -82,10 +82,10 @@ cells:
   # one statistic with two bounds (the producer reads the median wall for
   # both) — folded 2026-11-08 per §11.1's no-duplicate rule.
   - id: filesystem.stat.median
-    bound: 15.0
+    bound: 26.0
     comparison: le
     unit: ratio-to-native
-    note: stat through the mount router, the median of a repeated tree walk; measured worst 12.4 (musl-arm64 ruby, run 42521298313)
+    note: stat through the mount router, the median of a repeated tree walk; measured worst 21.1 (musl-x86_64 ruby, run 43697407682, fleet ubuntu24/20261111.127 — the label's .370→.127 fleet move doubled the leg's ratio with BOTH arms shifting, tebako#1067; pre-move worst 12.4 on .370, run 42521298313)
     source: {workloads: ["-statloop"], target: "tebako-", mode: warm, measure: wall, shape: ratio, aggregate: worst}
 
   # -- memory: the mount machinery is a fixed resident cost; the budget is
