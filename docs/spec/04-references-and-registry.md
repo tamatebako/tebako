@@ -142,6 +142,20 @@ payloads:
   `tebako registry validate` names a multi-platform row's `abi` a
   producer-gate violation (2026-10-08) — the reader stays lenient so
   already-published registries keep resolving.
+- **The per-triplet runtime `abi` line (additive, registry MINOR 11,
+  tebako#1047):** a `platforms[<triplet>]` entry of a `kind: runtime`
+  row may carry `abi:` — the platform line THAT row's artifact was
+  built against (`arm64-darwin-24`), stamped by the factory from its
+  own manifest at publish (SSOT flows from the factory; the registry
+  renderer never hand-writes it). This is the runtime-side half of the
+  abi contract: the payload's `runtime_requirement.abi` says what it
+  needs, the runtime row's `platforms[<triplet>].abi` says what the
+  artifact IS, and the download pick excludes a non-matching row BEFORE
+  any byte moves (spec 05 §5). An absent key is unknown, never excluded
+  — pre-MINOR-11 rows stay eligible and the post-download check remains
+  the backstop; a `platforms: universal` row carries no per-triplet
+  entries, so the filter cannot evaluate there either. Present but empty
+  is a named producer-gate violation.
 - **The variant dimension (additive, 2026-10-09, tebako#557; spec 28
   §2–§3):** a version entry carries EITHER the shorthand above
   (top-level `platforms:` + `runtime_requirement:` — exactly the

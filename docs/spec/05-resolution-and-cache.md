@@ -384,7 +384,16 @@ produces a named compatibility error, never a segfault. Runtimes publish
 their platform string as the per-package `abi` key in the release index
 (spec 13); cached runtimes installed before the field existed stay
 eligible (the compat window — a payload's abi check never fails against
-an unknown line).
+an unknown line). Registry MINOR 11 (tebako#1047) carries the same line
+on the aggregate registry's per-triplet platform entries
+(`platforms[<triplet>].abi`, stamped by the factory — spec 04 §2), and
+the registry-walk download pick excludes a row whose entry declares a
+non-matching `abi` BEFORE any byte moves: "newest compatible" becomes
+literally true, and the nothing-matches refusal names the excluded rows
+on their own axis (`excluded by the payload's abi line "…"`). A row
+without the key is unknown, never excluded — the post-download check
+stays the backstop for pre-MINOR-11 rows and `platforms: universal`
+rows alike.
 
 **Version ordering (the plain-wins rule — the single owner is
 `tpkg::versions::compare`; every consumer flows it).** Versions are

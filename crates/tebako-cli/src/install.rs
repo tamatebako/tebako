@@ -1956,6 +1956,10 @@ pub(crate) fn resolve_row_reference(
             oci,
             release: row_release,
             mirrors: row_mirrors,
+            // The platform-ABI line (MINOR 11) is the runtime download
+            // pick's exclusion key (tebako-shim's walk) — the payload
+            // install path never filters on it.
+            abi: _,
         }) => {
             if channel_oci {
                 // spec 38 §11: the channel is DECLARED, never probed —

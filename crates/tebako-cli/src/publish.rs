@@ -1424,6 +1424,11 @@ pub fn publish_full_with_oci_sink(
                     // writes one release per version, so the
                     // version-level ref already names the tag.
                     release: None,
+                    // The per-triplet abi line (MINOR 11, tebako#1047)
+                    // is stamped by the RUNTIME factory from its own
+                    // manifest at publish — `tebako publish` renders
+                    // payload rows and never authors it.
+                    abi: None,
                 },
             ),
         )
