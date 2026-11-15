@@ -2816,7 +2816,15 @@ pub fn init() {
 // succeeds and records the point; chdir to a host path passes through
 // and clears the virtual state. The route layer's relative-path
 // resolution consults the recorded point.
-#[no_mangle]
+//
+// tebako#1063: the name export is LINUX-ONLY (LD_PRELOAD symbol
+// precedence), exactly like the other 41 tuple-backed shims. An
+// unconditional no_mangle exports `_chdir` from this dylib on macOS
+// too, and the interpose tuple's `libc::chdir` replacee then
+// self-resolves to OUR export at link time — dyld sees
+// (replacement == replacee), the interpose no-ops, and a foreign
+// caller's libSystem-bound chdir bypasses the shim entirely.
+#[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn chdir(path: *const libc::c_char) -> libc::c_int {
     let Some(p) = c_path(path) else {
         return unsafe { plat::real_chdir()(path) };
@@ -2836,7 +2844,8 @@ pub unsafe extern "C" fn chdir(path: *const libc::c_char) -> libc::c_int {
     }
 }
 
-#[no_mangle]
+// Same tebako#1063 Linux-only export rule as chdir above.
+#[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn fchdir(fd: libc::c_int) -> libc::c_int {
     let rc = unsafe { plat::real_fchdir()(fd) };
     if rc == 0 {
@@ -2847,7 +2856,12 @@ pub unsafe extern "C" fn fchdir(fd: libc::c_int) -> libc::c_int {
 
 /// getcwd answers the VIRTUAL cwd when one is set (spec 07 §8a): the
 /// process sees its in-image working directory, not the host's.
-#[no_mangle]
+///
+/// tebako#1063: the name export is LINUX-ONLY — see chdir. (The macOS
+/// tuple for getcwd additionally carries the tebako#920 dyld quirk
+/// guard in `real_getcwd`; that guard stays valid — it compares against
+/// this fn's address, mangled name or not.)
+#[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn getcwd(buf: *mut libc::c_char, size: libc::size_t) -> *mut libc::c_char {
     if let Some(cwd) = route::virtual_cwd() {
         let bytes = cwd.as_bytes();
