@@ -195,16 +195,25 @@ jobs:
         # hours, and both aarch64 legs then failed on the same compile.
         # A release is cut from a commit ci.yml has PASSED, or not at all:
         # a failure, a cancellation, a run that never appears, and a run
-        # still going after an hour are each a named refusal, never a
+        # still going after three hours are each a named refusal, never a
         # guess. This is the owner-locked "no production until everything
         # works" made executable.
+        #
+        # The three-hour budget is measured, not arbitrary: v2.8.81's
+        # first release run (43655114184) died here at exactly the
+        # 120-minute mark while the commit's macos-15 leg sat 45 minutes
+        # in the runner queue under fleet pressure and then ran 83 —
+        # green four minutes after the refusal. The gate's shape is right
+        # (the refusal saved nothing that night and cost a rerun); the
+        # budget just has to cover a queued full matrix, not a started
+        # one.
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
-          deadline=$((SECONDS + 7200))
+          deadline=$((SECONDS + 10800))
           cancels=0
           while :; do
             row="$(gh run list --workflow ci.yml --commit "$sha" --limit 20 \
@@ -236,7 +245,7 @@ jobs:
                   exit 1
                 }
                 # The re-fired run is a full matrix — the budget restarts.
-                deadline=$((SECONDS + 7200))
+                deadline=$((SECONDS + 10800))
                 sleep 60
                 continue
               fi
@@ -244,7 +253,7 @@ jobs:
               exit 1
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::ci.yml on $sha still '$status' after 120 minutes — refusing to release"
+              echo "::error::ci.yml on $sha still '$status' after 180 minutes — refusing to release"
               exit 1
             fi
             echo "ci.yml on $sha: $status — waiting"
