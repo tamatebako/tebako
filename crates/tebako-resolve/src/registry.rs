@@ -254,6 +254,17 @@ pub struct PlatformArtifact {
     pub mirrors: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<ReleaseRef>,
+    /// The additive platform-ABI line (spec 05 §5, registry MINOR 11;
+    /// tebako#1047): the platform line THIS row's artifact was built
+    /// against (`arm64-darwin-24`), stamped by the factory from its own
+    /// manifest at publish — the SSOT flows from the factory, the
+    /// registry renderer never hand-writes it. A native-extension
+    /// payload's `runtime_requirement.abi` excludes a non-matching row
+    /// from the download pick BEFORE any byte moves; an absent key is
+    /// pre-MINOR-11 — unknown, never excluded (the post-download check
+    /// stays the backstop).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abi: Option<String>,
 }
 
 /// `blksum: {filename, sha256}` (spec 39 §3, additive — MINOR 4): the
@@ -1079,6 +1090,7 @@ impl VariantView<'_> {
                     oci: e.oci.as_deref(),
                     release: e.release.as_ref().map(|r| r.r#ref.as_str()),
                     mirrors: e.mirrors.as_deref(),
+                    abi: e.abi.as_deref(),
                 })
             }
         }
@@ -1277,6 +1289,17 @@ fn validate_platforms_map(
                     mirrors,
                 )?;
             }
+            // The additive platform-ABI line (spec 05 §5, MINOR 11;
+            // tebako#1047): present but empty is a named authoring error
+            // (a row that does not know its line omits the key — the
+            // compat window is absence, never a blank).
+            if let Some(abi) = &entry.abi {
+                if abi.trim().is_empty() {
+                    return Err(invalid_entry(format!(
+                        "payload '{payload_name}' {version} {loc}[{platform}].abi must not be empty — a row without a known platform line omits the key"
+                    )));
+                }
+            }
             // The additive per-row shard release ref (spec 04 §2,
             // MINOR 6; tebako#711): the same grammar discipline as the
             // version-level ref under per-triplet platforms — no
@@ -1346,6 +1369,11 @@ pub enum PlatformSelection<'a> {
         /// The entry's ordered fallback locators (spec 04 §2, MINOR
         /// 10) — tried after the primary, held to `sha256`.
         mirrors: Option<&'a [String]>,
+        /// The row's platform-ABI line (spec 05 §5, MINOR 11;
+        /// tebako#1047) — the download pick's pre-download exclusion
+        /// key for native-extension payloads; `None` is the pre-amendment
+        /// compat window (unknown, never excluded).
+        abi: Option<&'a str>,
     },
 }
 
@@ -2025,6 +2053,7 @@ payloads:
                 oci: None,
                 release: None,
                 mirrors: None,
+                abi: None,
             })
         );
         assert_eq!(
@@ -2035,6 +2064,7 @@ payloads:
                 oci: None,
                 release: None,
                 mirrors: None,
+                abi: None,
             })
         );
         // a triplet the registry does not publish → None (the caller's
@@ -2233,6 +2263,7 @@ payloads:
                 oci: None,
                 release: Some("tfs:github:o/ruby:v0.17.1-ruby4.0-macos"),
                 mirrors: None,
+                abi: None,
             })
         );
         // … and the unsharded row flows None (the version-level ref
@@ -2245,6 +2276,7 @@ payloads:
                 oci: None,
                 release: None,
                 mirrors: None,
+                abi: None,
             })
         );
         // round-trip identity with the field present
@@ -2282,6 +2314,68 @@ payloads:
                 "expected '{needle}' in: {err}"
             );
         }
+    }
+
+    #[test]
+    fn the_per_triplet_abi_line_round_trips_and_an_empty_one_is_named() {
+        // spec 05 §5 (registry MINOR 11; tebako#1047): a kind:runtime
+        // row's per-triplet platform entry carries the platform line its
+        // artifact was built against; the selection flows it to the
+        // download pick's pre-download exclusion. Absence is the compat
+        // window (None); present-but-empty is a named authoring error.
+        let whole = "a".repeat(64);
+        let yaml = format!(
+            "schema_version: 1\npayloads:\n  - name: ruby\n    kind: runtime\n    engine: ruby\n    versions:\n      - version: 4.0.7-0.17.13\n        platforms:\n          aarch64-macos:\n            artifact: tebako-runtime-0.17.13-ruby-4.0-aarch64-macos.tfs\n            sha256: \"{whole}\"\n            abi: arm64-darwin-24\n          x86_64-linux-gnu:\n            artifact: tebako-runtime-0.17.13-ruby-4.0-x86_64-linux-gnu.tfs\n            sha256: \"{whole}\"\n        release: {{ref: tfs:github:o/ruby:v0.17.13}}\n"
+        );
+        let registry = Registry::from_yaml(&yaml).unwrap();
+        let v = registry
+            .payload("ruby")
+            .unwrap()
+            .version("4.0.7-0.17.13")
+            .unwrap();
+        let view = v.resolve_variant(None).unwrap();
+        // the carrying row flows its line …
+        assert_eq!(
+            view.select(Platform::Aarch64Macos),
+            Some(PlatformSelection::Selected {
+                artifact: "tebako-runtime-0.17.13-ruby-4.0-aarch64-macos.tfs",
+                sha256: &whole,
+                oci: None,
+                release: None,
+                mirrors: None,
+                abi: Some("arm64-darwin-24"),
+            })
+        );
+        // … and the omitting row flows None — the pre-MINOR-11 compat
+        // window, never an exclusion of its own.
+        assert_eq!(
+            view.select(Platform::X86_64LinuxGnu),
+            Some(PlatformSelection::Selected {
+                artifact: "tebako-runtime-0.17.13-ruby-4.0-x86_64-linux-gnu.tfs",
+                sha256: &whole,
+                oci: None,
+                release: None,
+                mirrors: None,
+                abi: None,
+            })
+        );
+        // round-trip identity with the field present
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+
+        // Present but empty is a named authoring error — the compat
+        // window is ABSENCE, never a blank.
+        let empty = yaml.replace("abi: arm64-darwin-24", "abi: \"\"");
+        let err = Registry::from_yaml(&empty).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("platforms[aarch64-macos].abi must not be empty"),
+            "{err}"
+        );
+        // A blank-but-spaced value is the same error (trimmed).
+        let blank = yaml.replace("abi: arm64-darwin-24", "abi: \"  \"");
+        let err = Registry::from_yaml(&blank).unwrap_err();
+        assert!(err.to_string().contains("abi must not be empty"), "{err}");
     }
 
     #[test]
@@ -2879,6 +2973,7 @@ payloads:
                 oci: None,
                 release: None,
                 mirrors: None,
+                abi: None,
             })
         );
         // …scoped to the variant: the 4.0 arm is not published for linux.

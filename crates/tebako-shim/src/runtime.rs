@@ -1261,6 +1261,14 @@ fn registry_selected_target_noted(
     if entries.is_empty() {
         return Ok(None);
     }
+    // tebako#1047 (registry MINOR 11, spec 05 §5): a native-extension
+    // payload's abi line excludes candidate rows BEFORE any byte moves —
+    // a per-triplet platform entry carrying a non-matching `abi:` is out
+    // of the competition. An entry without the key is pre-MINOR-11 —
+    // unknown, never excluded (the post-download check stays the
+    // backstop); a `platforms: universal` row has no per-triplet entries,
+    // so the filter cannot evaluate there either.
+    let want_abi = reqs.entries().iter().find_map(|r| r.abi.as_deref());
     let host = tpkg::Platform::host();
     let platform = platform_string();
     // spec 38 §11: the book entry's declared channel rides the source —
@@ -1293,6 +1301,10 @@ fn registry_selected_target_noted(
     // Every host-covered row, satisfying or not — the availability
     // error's "released for <platform>" listing (withdrawn rows marked).
     let mut declared: Vec<(String, bool)> = Vec::new();
+    // Rows excluded by the payload's abi line (tebako#1047) — the
+    // availability refusal names them on their own axis, never blurred
+    // into "nothing satisfies".
+    let mut abi_excluded: Vec<(String, String)> = Vec::new();
     for entry in entries {
         for row in &entry.versions {
             // The no-selector variant pick (spec 28 §4 rule 1) scopes the
@@ -1318,6 +1330,30 @@ fn registry_selected_target_noted(
                 .any(|r| versions::from_validated(&r.constraint).matches(line));
             if !satisfied {
                 continue;
+            }
+            // The pre-download abi exclusion (tebako#1047): the row
+            // satisfies the version constraint but its platform entry
+            // declares a different platform line — out of the
+            // competition, named in the refusal. Absence of the key is
+            // the compat window, never an exclusion.
+            if let Some(want) = want_abi {
+                if let tebako_resolve::registry::PlatformSelection::Selected {
+                    abi: Some(have),
+                    ..
+                } = &selection
+                {
+                    if *have != want {
+                        journal(
+                            &ctx.home,
+                            &format!(
+                                "event=runtime-index-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=abi-mismatch have={have} want={want}",
+                                entry.name, row.version
+                            ),
+                        );
+                        abi_excluded.push((row.version.clone(), (*have).to_string()));
+                        continue;
+                    }
+                }
             }
             // The row's fetch coordinates. The primary path derives
             // them from the row's release.ref — spec 37 §8's federated
@@ -1478,10 +1514,27 @@ fn registry_selected_target_noted(
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        // tebako#1047: rows excluded by the payload's abi line are named
+        // on their own axis — "nothing satisfies" alone would send the
+        // operator chasing the version axis when the platform LINE is
+        // what moved.
+        abi_excluded.sort_by(|a, b| a.0.cmp(&b.0));
+        abi_excluded.dedup();
+        let abi_note = match (want_abi, abi_excluded.is_empty()) {
+            (Some(want), false) => format!(
+                "\n  excluded by the payload's abi line \"{want}\": {}",
+                abi_excluded
+                    .iter()
+                    .map(|(v, have)| format!("{v} (abi \"{have}\")"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            _ => String::new(),
+        };
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "no released {engine} runtime for {platform} satisfies \"{reqs}\"\n  released for {platform}: {known}\n  this payload needs a newer {engine} than this platform provides yet"
+                "no released {engine} runtime for {platform} satisfies \"{reqs}\"\n  released for {platform}: {known}{abi_note}\n  this payload needs a newer {engine} than this platform provides yet"
             ),
         );
     };
@@ -4569,6 +4622,23 @@ mod tests {
         })
     }
 
+    /// A native-extension requirement (spec 05 §5): the abi line in
+    /// force requires the implementation axis (the manifest validator's
+    /// rule — the walk reads the mirror as authored).
+    fn reqs_abi(
+        engine: &str,
+        constraint: &str,
+        implementation: &str,
+        abi: &str,
+    ) -> RuntimeRequirements {
+        RuntimeRequirements::one(RuntimeRequirement {
+            engine: engine.to_string(),
+            constraint: tpkg::Constraint::new(constraint).unwrap(),
+            implementation: Some(implementation.to_string()),
+            abi: Some(abi.to_string()),
+        })
+    }
+
     fn pref(version: &str, tebako: &str, source: Option<&str>) -> RuntimePref {
         RuntimePref {
             version: version.to_string(),
@@ -5506,6 +5576,111 @@ payloads:
         assert_eq!(pref.version, "4.0.6");
         assert_eq!(pref.tebako, "0.16.23");
         assert_eq!(source.tag.as_deref(), Some("v0.16.23"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// tebako#1047's fixture: one factory, two satisfying rows — the
+    /// NEWER on a different platform line (`abi:` on the platform entry),
+    /// plus one pre-MINOR-11 row (no abi key — the compat window).
+    fn abi_line_registry() -> String {
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        format!(
+            "schema_version: 1\npayloads:\n  - name: ruby\n    kind: runtime\n    engine: ruby\n    implementation: mri\n    versions:\n      - version: '4.0.6-0.16.23'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.16.23-4.0.6-{asset}, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.16.23'}}\n      - version: '4.0.7-0.17.13'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.17.13-4.0.7-{asset}, sha256: '{}', abi: arm64-darwin-99}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.17.13'}}\n      - version: '4.0.8-0.17.13'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.17.13-4.0.8-{asset}, sha256: '{}', abi: arm64-darwin-24}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.17.13'}}\n",
+            sha64('c'),
+            sha64('d'),
+            sha64('e'),
+        )
+    }
+
+    #[test]
+    fn the_registry_facet_excludes_an_abi_mismatched_row_pre_download() {
+        // tebako#1047 (registry MINOR 11, spec 05 §5): the payload's abi
+        // line filters the download pick BEFORE any byte moves — the
+        // newest satisfying row on a DIFFERENT platform line (4.0.7, abi
+        // arm64-darwin-99) is out of the competition; the matching 4.0.8
+        // wins; the keyless 4.0.6 row stays eligible (the compat window)
+        // and loses only on version order.
+        let home = temp_home("regfacet-abi");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-ruby",
+            abi_line_registry().as_bytes(),
+        )
+        .unwrap();
+        let source = RuntimeSource {
+            base: "https://github.com/acme/tebako-runtime-ruby/releases/download".to_string(),
+            tag: None,
+            channel: "default",
+            signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
+            registry: None,
+            oci: None,
+            artifact_stem: None,
+        };
+        let (pref, source) = registry_selected_target(
+            &reqs_abi("ruby", ">= 3.3, < 5.0", "mri", "arm64-darwin-24"),
+            &source,
+            &ctx,
+        )
+        .unwrap()
+        .expect("a matching-abi row picks");
+        assert_eq!(pref.version, "4.0.8");
+        assert_eq!(pref.tebako, "0.17.13");
+        assert_eq!(source.tag.as_deref(), Some("v0.17.13"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_names_the_abi_exclusions_when_nothing_remains() {
+        // tebako#1047: with only a mismatched row released, the refusal
+        // names the exclusion on its OWN axis — "nothing satisfies" alone
+        // would send the operator chasing the version axis.
+        let home = temp_home("regfacet-abi-refusal");
+        let ctx = test_ctx(&home);
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        let yaml = format!(
+            "schema_version: 1\npayloads:\n  - name: ruby\n    kind: runtime\n    engine: ruby\n    implementation: mri\n    versions:\n      - version: '4.0.7-0.17.13'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-0.17.13-4.0.7-{asset}, sha256: '{}', abi: arm64-darwin-99}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-ruby:v0.17.13'}}\n",
+            sha64('f'),
+        );
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-ruby",
+            yaml.as_bytes(),
+        )
+        .unwrap();
+        let source = RuntimeSource {
+            base: "https://github.com/acme/tebako-runtime-ruby/releases/download".to_string(),
+            tag: None,
+            channel: "default",
+            signer_pin: None,
+            asset_infix: "",
+            require_signed: None,
+            registry: None,
+            oci: None,
+            artifact_stem: None,
+        };
+        let err = registry_selected_target(
+            &reqs_abi("ruby", ">= 3.3, < 5.0", "mri", "arm64-darwin-24"),
+            &source,
+            &ctx,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        let text = err.message;
+        assert!(
+            text.contains("excluded by the payload's abi line \"arm64-darwin-24\""),
+            "{text}"
+        );
+        assert!(
+            text.contains("4.0.7-0.17.13 (abi \"arm64-darwin-99\")"),
+            "{text}"
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 
