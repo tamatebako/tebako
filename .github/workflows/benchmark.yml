@@ -37,6 +37,7 @@ permissions:
 jobs:
   matrix:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
     steps:
@@ -50,6 +51,10 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
+    # The 2026-11-15 covenant trip's envelope: the slowest leg
+    # (macos-15-intel under a saturated pool) took 110 min. 150 bounds a
+    # hung leg as a named failure instead of a silent 6-hour stall.
+    timeout-minutes: 150
     steps:
       # ci.yml's layout: the repo lands in tebako-rs/ and its sibling path
       # dependency dwarfs-rs in dwarfs-rs/ — cargo must LOAD every workspace
@@ -264,6 +269,9 @@ jobs:
     needs: run
     if: always()
     runs-on: ubuntu-24.04
+    # The harness build (tebako-bench's cargo compile) dominates this
+    # job; 30 min is generous for it plus the merge and the gate.
+    timeout-minutes: 30
     permissions:
       contents: write # the bench-history append
     steps:
