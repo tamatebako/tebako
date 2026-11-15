@@ -32,11 +32,7 @@ fn tuple_shims() -> BTreeSet<String> {
     let src = read("src/sys/macos.rs");
     // Join continuation lines so a multi-line invocation parses as one
     // statement, then walk `interpose!(` / `interpose_tuple!(` blocks.
-    let joined = src
-        .lines()
-        .map(|l| l.trim())
-        .collect::<Vec<_>>()
-        .join(" ");
+    let joined = src.lines().map(|l| l.trim()).collect::<Vec<_>>().join(" ");
     let mut out = BTreeSet::new();
     let mut rest = joined.as_str();
     loop {
