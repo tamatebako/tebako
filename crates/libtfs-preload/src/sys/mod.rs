@@ -632,22 +632,53 @@ unsafe fn stat_via(
     }
     match engine_call(|| route_fn(p)) {
         // SAFETY: st is a valid struct stat pointer per the call contract.
-        Some(PathRoute::Vfs(raw)) => match unsafe { fill_stat(&raw) } {
-            Ok(s) => {
-                unsafe { *st = s };
-                0
+        Some(PathRoute::Vfs(raw)) => {
+            // tebako#1057: a dlmap-tree spelling whose copy is on the
+            // host answers the copy's own stat — the memfs RawStat has
+            // no dev/ino and fill_stat zeroes the pair, and a zeroed
+            // pair breaks every consumer whose walk keys on (st_dev,
+            // st_ino): a spawned child handed a `chdir` into an in-image
+            // directory spins in libc's getcwd fallback walk at 100%
+            // (the metanorma html-xml check's 1200s timeouts on macOS).
+            // The probe must go through `real` — an existence check via
+            // the interposed surface (Path::exists → stat) re-enters
+            // this function and overflows the stack on Linux, where the
+            // exported symbol shadows libc's process-wide. The image
+            // entry remains the answer for a tail whose copy never
+            // landed.
+            if is_dlmap_tree(p) && real(orig, st) == 0 {
+                return 0;
             }
-            Err(e) => {
-                set_errno(e);
-                -1
+            match unsafe { fill_stat(&raw) } {
+                Ok(s) => {
+                    unsafe { *st = s };
+                    0
+                }
+                Err(e) => {
+                    set_errno(e);
+                    -1
+                }
             }
-        },
+        }
         Some(PathRoute::Denied(e)) => {
             set_errno(e);
             -1
         }
         Some(PathRoute::Host) | None => real(orig, st),
     }
+}
+
+/// A path inside the extraction tree: the per-process `tebako-dl-<hex>`
+/// leaf or the persistent `tebako-dlcache/<image-key>` tier (mirrors the
+/// engine's own markers — tfs::context's is_dlmap_marker +
+/// DLCACHE_MARKER).
+fn is_dlmap_tree(path: &str) -> bool {
+    path.split('/').any(|component| {
+        component == "tebako-dlcache"
+            || component
+                .strip_prefix("tebako-dl-")
+                .is_some_and(|hex| !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+    })
 }
 
 /// Interposed `stat`.
@@ -2954,6 +2985,80 @@ mod tests {
         assert!(unsafe { getcwd(small.as_mut_ptr(), small.len()) }.is_null());
         assert_eq!(errno(), libc::ERANGE);
         crate::route::clear_virtual_cwd();
+    }
+
+    /// tebako#1057: a stat on a landed dlmap-tree copy answers the
+    /// HOST copy's own stat — the engine's dlmap redirect answers the
+    /// image entry, whose memfs RawStat carries no dev/ino, and a
+    /// zeroed pair spins every consumer whose walk keys on (st_dev,
+    /// st_ino) — a spawned child parked in libc's getcwd fallback walk
+    /// on macOS (the metanorma html-xml check's 1200s timeouts). The
+    /// never-landed tail keeps the image's answer (the redirect's
+    /// contract).
+    #[test]
+    fn stat_on_a_landed_dlmap_copy_answers_the_host() {
+        use std::io::Write as _;
+        let _guard = crate::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("img.zip");
+        let mut zw = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+        let opts = zip::write::SimpleFileOptions::default();
+        zw.start_file("content/data.bin", opts).unwrap();
+        zw.write_all(&[b'X'; 1024]).unwrap();
+        zw.start_file("content/ghost.bin", opts).unwrap();
+        zw.write_all(&[b'Y'; 64]).unwrap();
+        zw.finish().unwrap();
+
+        let mp = format!("/tfsstat{}", std::process::id());
+        let m = tfs::mount::build_from_file(zip_path.to_str().unwrap(), &mp).unwrap();
+        let handle = tfs::context::context()
+            .write()
+            .unwrap()
+            .mount_checked(m)
+            .unwrap();
+
+        // The landed copy: the dl tree on disk, spelling the image path
+        // under the marker dir.
+        let dl = dir.path().join("tebako-dl-a1b2c3");
+        let copy = dl.join(mp.trim_start_matches('/')).join("content/data.bin");
+        std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
+        std::fs::write(&copy, vec![b'X'; 1024]).unwrap();
+
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        let cp = std::ffi::CString::new(copy.to_str().unwrap()).unwrap();
+        let rc = unsafe { stat(cp.as_ptr(), &mut st) };
+        assert_eq!(rc, 0, "stat errno: {}", errno());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            let real = std::fs::metadata(&copy).unwrap();
+            assert_eq!(
+                st.st_ino,
+                real.ino(),
+                "the landed copy answers its own inode"
+            );
+        }
+
+        // The never-landed spelling keeps the image's answer (rc 0,
+        // size from the image) — the redirect's contract holds.
+        let ghost = dl
+            .join(mp.trim_start_matches('/'))
+            .join("content/ghost.bin");
+        let gp = std::ffi::CString::new(ghost.to_str().unwrap()).unwrap();
+        let rc = unsafe { stat(gp.as_ptr(), &mut st) };
+        assert_eq!(
+            rc,
+            0,
+            "the image answers a never-landed tail: errno {}",
+            errno()
+        );
+
+        tfs::context::context()
+            .write()
+            .unwrap()
+            .unmount_handle(handle)
+            .unwrap();
+        drop(dir);
     }
 
     /// tebako#851: while a transport fetch is in flight the interposed
