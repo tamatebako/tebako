@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "metrics": {
-    "filesystem.stat.median": 12.135719513337127,
-    "first-response.cold.median": 1.545782103,
-    "first-response.warm.median": 1.599662426,
-    "memory.rss.peak": 499212288.0,
-    "steady.cpu.throughput": 0.8274685284206453,
-    "steady.io.throughput": 0.3672127101853785
+    "filesystem.stat.median": 21.067814176507817,
+    "first-response.cold.median": 2.2860732535,
+    "first-response.warm.median": 2.375525421,
+    "memory.rss.peak": 499290112.0,
+    "steady.cpu.throughput": 0.8367681527599266,
+    "steady.io.throughput": 0.2803207997435199
   }
 }
