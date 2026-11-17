@@ -174,8 +174,27 @@ if [ "${APPLE_INSTALLER_SIGNING_ENABLED:-false}" = "true" ]; then
   : "${INSTALLER_SIGN_HASH:?the setup step did not export INSTALLER_SIGN_HASH}"
   : "${INSTALLER_KEYCHAIN:?the setup step did not export INSTALLER_KEYCHAIN}"
   mv "out/$ASSET" "out/$ASSET.unsigned"
-  productsign --keychain "$INSTALLER_KEYCHAIN" --sign "$INSTALLER_SIGN_HASH" \
-    "out/$ASSET.unsigned" "out/$ASSET"
+  # productsign reaches Apple's timestamp authority; a transient blip
+  # fails the CMS encoding with -67882 ("A timestamp was expected but
+  # was not found") and kills the leg — the metanorma v1.18.6-1 respin's
+  # x86_64 pkg leg lost twice to it (tebako#1084). Retry only that
+  # signature, on a short ladder; any other failure stands immediately
+  # (a broken identity or unsigned input must not hide behind retries).
+  ps_attempt=1
+  while true; do
+    if productsign --keychain "$INSTALLER_KEYCHAIN" --sign "$INSTALLER_SIGN_HASH" \
+      "out/$ASSET.unsigned" "out/$ASSET" 2>&1 | tee build/productsign.txt; then
+      break
+    fi
+    if grep -qE -- '-67882|timestamp' build/productsign.txt && [ "$ps_attempt" -lt 5 ]; then
+      echo "productsign hit the timestamp blip (-67882) — retry $ps_attempt of 4 in 45 s"
+      ps_attempt=$((ps_attempt + 1))
+      sleep 45
+      continue
+    fi
+    echo "::error::productsign failed for $ASSET (not the timestamp blip, or 5 attempts exhausted)"
+    exit 1
+  done
   pkgutil --check-signature "out/$ASSET" | tee build/pkg-sig.txt
   grep -q "Developer ID Installer" build/pkg-sig.txt \
     || { echo "::error::pkg not signed by a Developer ID Installer identity"; exit 1; }
