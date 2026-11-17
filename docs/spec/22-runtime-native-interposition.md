@@ -321,7 +321,19 @@ Rule-R3 mechanics unchanged (stage, hash in flight, the
 `<P>.tfs-digest` record renamed before the content, per-boot rehash on
 reuse); a mismatch wipes the pair and re-extracts ONCE from the mounted
 (verified) image, and a copy that still fails is the surface's named
-error, never a silently served corruption. Never reaped at exit;
+error, never a silently served corruption. The staged copy carries its
+final read-only mode from the rename instant — an inode at the final
+path is never visible in its creation mode, so a racing installer's
+replace-rename cannot swap a pre-chmod inode under a consumer
+(tebako#1083). The same first-seen assessment has a CONSUME-side
+window: an execve or dlopen landing while the async assessment of a
+just-installed copy is still in flight fails EACCES transiently and
+heals within tens of milliseconds (measured on darwin 23 and 24:
+stable inode, correct mode, first 50 ms retry succeeds). The exec and
+dlopen surfaces therefore retry exactly that errno on a path the
+current run materialized — a bounded 5 × 50 ms ladder; every other
+errno, and a persistent failure, reports exactly as without the
+retry. Never reaped at exit;
 reclamation is the store's cache maintenance (spec 05 §4), which reaps
 an `<image-key>` no store entry resolves to. The closure walk still
 runs on a reuse boot — it is the completeness check, healing a previous

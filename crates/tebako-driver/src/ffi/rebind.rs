@@ -87,7 +87,25 @@ extern "C" fn rebound_dlopen(path: *const c_char, mode: c_int) -> *mut c_void {
         .map(|mut c| c.dlmap2file(&path_s))
         .unwrap_or(Err(libc::EIO));
     match mapped {
-        Ok(host) => unsafe { real(host.as_ptr(), mode) },
+        Ok(host) => {
+            // tebako#1083: the platform loader's async first-seen
+            // assessment of a just-materialized copy is not
+            // instantaneous — a dlopen inside the window fails
+            // transiently and the same path loads tens of milliseconds
+            // later (the preload's dlopen arm retries the same window).
+            // Bounded; a persistent failure reports as before, slower
+            // by the ladder.
+            let mut handle = unsafe { real(host.as_ptr(), mode) };
+            let mut attempts_left = 5u32;
+            let mut delay_ms = 50u64;
+            while handle.is_null() && attempts_left > 0 {
+                attempts_left -= 1;
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                delay_ms += 50;
+                handle = unsafe { real(host.as_ptr(), mode) };
+            }
+            handle
+        }
         Err(e) => {
             if e == libc::ENOENT {
                 // Covered but not held: a host path the mount happens to
