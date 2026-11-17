@@ -23,6 +23,12 @@
 #[cfg(target_os = "macos")]
 pub(crate) mod interpose;
 
+/// The in-process dlopen/dlerror rebinding (tebako#1080): hardened
+/// runtime exes lose DYLD_INSERT_LIBRARIES on macOS 14 — the rebind
+/// covers the interpreter process without dyld's cooperation.
+#[cfg(target_os = "macos")]
+pub(crate) mod rebind;
+
 use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::OnceLock;
@@ -210,6 +216,12 @@ fn boot_impl(argc: *mut c_int, argv: *mut *mut *mut c_char, runtime_root: *const
     // miniruby: tebako_main's build-time pass-through returns above.
     #[cfg(target_os = "macos")]
     interpose::self_insert(argvp);
+    // tebako#1080: the insertion above is silently dropped by dyld on
+    // macOS 14 for hardened-runtime images — rebind the dlopen surface
+    // in-process as well (idempotent, and a no-op duplicate wherever
+    // the insertion did land: both route through the same semantics).
+    #[cfg(target_os = "macos")]
+    rebind::install();
     let n = unsafe { *argc };
     if n < 0 {
         return EX_TEBAKO_IO;
