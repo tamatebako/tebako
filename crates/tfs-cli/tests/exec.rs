@@ -194,7 +194,11 @@ struct Run {
 }
 
 fn tfs_exec(f: &Fixtures, args: &[&str]) -> Run {
-    let mut full: Vec<String> = vec!["exec".to_string(), format!("{}:{MOUNT}", f.zip.display())];
+    tfs_exec_zip(&f.zip, &f.shim, args)
+}
+
+fn tfs_exec_zip(zip: &Path, shim: &Path, args: &[&str]) -> Run {
+    let mut full: Vec<String> = vec!["exec".to_string(), format!("{}:{MOUNT}", zip.display())];
     full.extend(args.iter().map(|s| s.to_string()));
     let out = Command::new(bin().unwrap())
         .args(&full)
@@ -207,7 +211,7 @@ fn tfs_exec(f: &Fixtures, args: &[&str]) -> Run {
         .env_remove("LD_PRELOAD")
         .env_remove("TEBAKO_TFS_MOUNTS")
         .env_remove("TEBAKO_JAIL")
-        .env("TEBAKO_TFS_PRELOAD", &f.shim)
+        .env("TEBAKO_TFS_PRELOAD", shim)
         .output()
         .unwrap();
     Run {
@@ -279,6 +283,46 @@ fn exec_deny_jail_eperm_and_plain_ok() {
     let r = tfs_exec(f, &["--", "/tfs/bin/print-data", "/etc/hosts"]);
     assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
     assert!(!r.stdout.is_empty());
+}
+
+/// tebako#1083: concurrent first-touch materialization of the same
+/// in-image entrypoint must never exec a pre-chmod inode. The persistent
+/// dlcache tier is one image-keyed namespace across processes; a serve
+/// verified against the installed copy could return while a slower
+/// installer's replace-rename landed a creation-mode (no +x) inode, and
+/// the consumer's execve died EACCES — the chmod in tfs_exec_zip is two
+/// syscalls away from the execve and cannot close that window; the
+/// install side must never publish a wrong-mode inode. The hammer shape
+/// is the failing one from the CI leg: a fresh image key per round (a
+/// fresh zip path — the dev-boot key derives from the path string) and a
+/// wave of concurrent first-touch execs against it.
+#[test]
+fn exec_concurrent_first_materialization_never_eacces() {
+    let Some(f) = fixtures() else { return };
+    for round in 0..6 {
+        let zip = f.dir.join(format!("img-race-{round}.zip"));
+        std::fs::copy(&f.zip, &zip).unwrap();
+        std::thread::scope(|s| {
+            let handles: Vec<_> = (0..4)
+                .map(|_| {
+                    let zip = &zip;
+                    let shim = &f.shim;
+                    s.spawn(move || {
+                        tfs_exec_zip(
+                            zip,
+                            shim,
+                            &["--", "/tfs/bin/print-data", "/tfs/data/secret.txt"],
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            for h in handles {
+                let r = h.join().unwrap();
+                assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+                assert_eq!(r.stdout, SECRET, "stderr: {}", r.stderr);
+            }
+        });
+    }
 }
 
 /// The native-tool path end to end (spec 08 §2/§5): a dynamic tool inside

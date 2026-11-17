@@ -1408,9 +1408,8 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
         },
     };
     let shim = exec_shim_path()?;
-    let cmd0 = materialize_entrypoint(&decls, &opts.cmd[0])?;
-    let mounts_env = tfs::mount_spec::to_env_spec(&decls);
-    // The audit-journal source label names the composition surface (spec
+    let (cmd0, cmd0_materialized) = materialize_entrypoint(&decls, &opts.cmd[0])?;
+    let mounts_env = tfs::mount_spec::to_env_spec(&decls);    // The audit-journal source label names the composition surface (spec
     // 08 §2): the compose file or the --jail flag.
     let jail_source = if opts.compose.is_some() {
         "tfs exec --compose"
@@ -1423,6 +1422,7 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
         jail_env.as_deref(),
         jail_source,
         &cmd0,
+        cmd0_materialized,
         &opts.cmd[1..],
     )
 }
@@ -1518,13 +1518,13 @@ pub fn cmd_needs_from_journal(journal_path: &str) -> Result<String, (String, i32
 fn materialize_entrypoint(
     decls: &[tfs::mount_spec::MountDecl],
     cmd: &str,
-) -> Result<String, (String, i32)> {
+) -> Result<(String, bool), (String, i32)> {
     use tfs::context::context;
 
     // A command that is not an absolute path (bare name → PATH search, or
     // relative) is a host command by construction.
     if !cmd.starts_with('/') {
-        return Ok(cmd.to_string());
+        return Ok((cmd.to_string(), false));
     }
     for d in decls {
         let mount = tfs::mount::build_from_file(&d.image, &d.mount).map_err(|e| {
@@ -1580,9 +1580,9 @@ fn materialize_entrypoint(
                 .mode();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode | 0o111))
                 .map_err(|e| (format!("Error: cannot chmod materialized {path}: {e}"), 1))?;
-            Ok(path)
+            Ok((path, true))
         }
-        None => Ok(cmd.to_string()),
+        None => Ok((cmd.to_string(), false)),
     }
 }
 
@@ -1599,6 +1599,7 @@ fn exec_child(
     jail_env: Option<&str>,
     jail_source: &str,
     cmd: &str,
+    cmd_materialized: bool,
     args: &[String],
 ) -> Result<(), (String, i32)> {
     use std::os::unix::process::CommandExt as _;
@@ -1616,8 +1617,26 @@ fn exec_child(
         command.env("TEBAKO_JAIL", j);
         command.env("TEBAKO_JAIL_SOURCE", jail_source);
     }
-    let err = command.exec(); // returns only on failure
-    Err((format!("Error: cannot exec {cmd}: {err}"), 1))
+    // tebako#1083: the platform loader's async first-seen assessment of
+    // a just-installed file is not instantaneous — an execve that lands
+    // inside the window returns EACCES, and the same path execs cleanly
+    // tens of milliseconds later (measured on darwin 23 + 24: heal at
+    // the first 50 ms retry, stable inode and mode throughout). Retry
+    // exactly that errno, only for a path WE materialized into the exec
+    // cache this run, bounded — every other failure, and a persistent
+    // one, reports exactly as before.
+    let mut delay_ms = 50u64;
+    let mut attempts_left = 5u32;
+    loop {
+        let err = command.exec(); // returns only on failure
+        if cmd_materialized && err.raw_os_error() == Some(libc::EACCES) && attempts_left > 0 {
+            attempts_left -= 1;
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            delay_ms += 50;
+            continue;
+        }
+        return Err((format!("Error: cannot exec {cmd}: {err}"), 1));
+    }
 }
 
 /// When `source_dir` carries `__tpkg__/manifest.yaml`: compute the

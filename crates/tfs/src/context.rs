@@ -3531,8 +3531,12 @@ fn dlcache_serve_verified(host_path: &std::path::Path) -> bool {
 /// protocol: stage per-process, hash in flight, re-read the staged copy
 /// (a write-path lie is EIO, never an installed corruption), record
 /// renamed into place BEFORE the content (content without a record is
-/// foreign by construction), content read-only. Concurrent boots race
-/// benignly: distinct part files, identical bytes, last rename wins.
+/// foreign by construction), staged copy chmod'ed read-only BEFORE its
+/// rename — an inode at the final path carries its final mode from the
+/// first instant it is visible, so a racing installer's replace-rename
+/// can never swap a pre-chmod inode under a consumer's execve
+/// (tebako#1083). Concurrent boots race benignly: distinct part files,
+/// identical bytes, identical modes, last rename wins.
 /// `write_staged` streams the file's bytes to the staged path and
 /// answers the in-flight digest (or the errno the stream failed with).
 fn dlcache_install(
@@ -3581,18 +3585,28 @@ fn dlcache_install(
         cleanup(&part, Some(&record_part));
         return Err(libc::EIO);
     }
-    if std::fs::rename(&part, host_path).is_err() {
-        cleanup(&part, None);
-        let _ = std::fs::remove_file(&record_path);
-        return Err(libc::EIO);
-    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
         // Rule R3: installed content is read-only (the image's own
-        // perms with the write bits stripped).
-        let _ =
-            std::fs::set_permissions(host_path, std::fs::Permissions::from_mode(perms & !0o222));
+        // perms with the write bits stripped) — applied to the STAGED
+        // copy, before the content rename: an inode at the final path
+        // carries its final mode from the first instant it is visible.
+        // A post-rename chmod leaves a creation-mode window in which a
+        // concurrent serve execs fine, but a racing installer's
+        // replace-rename then swaps in ITS pre-chmod inode under the
+        // already-chmod'ed consumer's execve — EACCES (tebako#1083).
+        if std::fs::set_permissions(&part, std::fs::Permissions::from_mode(perms & !0o222))
+            .is_err()
+        {
+            cleanup(&part, None);
+            return Err(libc::EIO);
+        }
+    }
+    if std::fs::rename(&part, host_path).is_err() {
+        cleanup(&part, None);
+        let _ = std::fs::remove_file(&record_path);
+        return Err(libc::EIO);
     }
     Ok(())
 }

@@ -1665,7 +1665,24 @@ pub unsafe extern "C" fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void
     };
     match engine_call(|| route::vfs_dlmap(p)) {
         // SAFETY: `host` outlives the call.
-        Some(PathRoute::Vfs(host)) => unsafe { plat::real_dlopen()(host.as_ptr(), mode) },
+        Some(PathRoute::Vfs(host)) => {
+            // tebako#1083: the platform loader's async first-seen
+            // assessment of a just-materialized copy is not
+            // instantaneous — a dlopen inside the window fails
+            // transiently and the same path loads tens of milliseconds
+            // later. Retry bounded; a persistent failure reports as
+            // before, only slower by the ladder.
+            let mut handle = unsafe { plat::real_dlopen()(host.as_ptr(), mode) };
+            let mut attempts_left = 5u32;
+            let mut delay_ms = 50u64;
+            while handle.is_null() && attempts_left > 0 {
+                attempts_left -= 1;
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                delay_ms += 50;
+                handle = unsafe { plat::real_dlopen()(host.as_ptr(), mode) };
+            }
+            handle
+        }
         Some(PathRoute::Denied(e)) => {
             set_errno(e);
             std::ptr::null_mut()
