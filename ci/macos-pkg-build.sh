@@ -90,12 +90,21 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
   {
     echo '#!/bin/bash'
     echo "# $PRODUCT_NAME bootstrap seed (spec 16 §7) — composed at build time; safe to re-run (tebako install is idempotent)."
-    echo 'set -u'
+    # set -euo pipefail + the ERR trap: a failed add-registry/install must fail the
+    # seed LOUDLY (the "seed: failed" marker the rehearsal greps) — the old 'set
+    # -u' let a dead fetch fall through to a misleading "seed: complete"
+    # (tebako#1078).
+    echo 'set -euo pipefail'
+    echo 'trap '"'"'echo "seed: failed" >&2'"'"' ERR'
     echo '# The seed may run detached from a PackageKit sandbox whose cwd is torn down at'
     echo '# install completion — never inherit a cwd (the shim dies on getcwd() otherwise).'
     echo 'cd /'
     echo 'ROOT="$(cd "$(dirname "$0")" && pwd)"'
     echo 'export TEBAKO_HOME="$ROOT/home"'
+    # The detached run ALSO inherits the sandbox TMPDIR, torn down with it —
+    # the add-registry git fetch died there (tebako#1078, the pkg-leg race on
+    # macos-15). A tmpdir under the home survives the teardown.
+    echo 'export TMPDIR="$TEBAKO_HOME/tmp"; mkdir -p "$TMPDIR"'
     echo 'mkdir -p "$TEBAKO_HOME/shims"'
     echo "echo \"seeding the $PRODUCT_NAME payload set into \$TEBAKO_HOME (network required)…\""
     echo "\"\$ROOT/bin/tebako\" add-registry \"$BOOTSTRAP_REGISTRY\""
@@ -252,6 +261,12 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
       { [ -d "$INSTALL_ROOT/home/runtimes" ] && [ -n "$(ls -A "$INSTALL_ROOT/home/runtimes" 2>/dev/null)" ]; } || seeded=0
     done
     [ "$seeded" = 1 ] && break
+    # A loudly-failed seed (the ERR trap's marker) fails the rehearsal NOW —
+    # never spin the full budget on a dead seed (tebako#1078).
+    if grep -q 'seed: failed' "$INSTALL_ROOT/home/seed.log" 2>/dev/null; then
+      echo "== the detached seed FAILED — seed.log tail:"; sudo tail -30 "$INSTALL_ROOT/home/seed.log" 2>/dev/null || true
+      echo "::error::the detached seed failed (seed.log above) — the rehearsal's store is incomplete"; exit 1
+    fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       echo "== the detached seed did not land within 1800s — seed.log tail:"; sudo tail -30 "$INSTALL_ROOT/home/seed.log" 2>/dev/null || true
       echo "== install.log tail:"; sudo grep -a "$PRODUCT_NAME" /var/log/install.log 2>/dev/null | tail -20 || true
