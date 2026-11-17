@@ -1409,8 +1409,9 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
     };
     let shim = exec_shim_path()?;
     let (cmd0, cmd0_materialized) = materialize_entrypoint(&decls, &opts.cmd[0])?;
-    let mounts_env = tfs::mount_spec::to_env_spec(&decls); // The audit-journal source label names the composition surface (spec
-                                                           // 08 §2): the compose file or the --jail flag.
+    let mounts_env = tfs::mount_spec::to_env_spec(&decls);
+    // The audit-journal source label names the composition surface (spec
+    // 08 §2): the compose file or the --jail flag.
     let jail_source = if opts.compose.is_some() {
         "tfs exec --compose"
     } else {
