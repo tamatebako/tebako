@@ -3596,8 +3596,7 @@ fn dlcache_install(
         // concurrent serve execs fine, but a racing installer's
         // replace-rename then swaps in ITS pre-chmod inode under the
         // already-chmod'ed consumer's execve — EACCES (tebako#1083).
-        if std::fs::set_permissions(&part, std::fs::Permissions::from_mode(perms & !0o222))
-            .is_err()
+        if std::fs::set_permissions(&part, std::fs::Permissions::from_mode(perms & !0o222)).is_err()
         {
             cleanup(&part, None);
             return Err(libc::EIO);
