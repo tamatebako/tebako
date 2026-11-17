@@ -93,6 +93,27 @@ mechanics above are uniform; the DELIVERY is platform-split:
   warning, the fallback this section already promises. A signed runtime
   carries the blob and inserts exactly as before.
 
+  **The macOS 14 insertion drop (tebako#1080).** On darwin 23, dyld
+  silently drops `DYLD_INSERT_LIBRARIES` when the target image carries
+  the hardened runtime — regardless of the inserted dylib's signature
+  and of the `disable-library-validation` entitlement (verified with a
+  signed toy binary: unsigned self + insertion interposes; hardened
+  self + the same insertion is ignored, no error, both dylibs absent
+  from the image census). A hardened runtime exe on macOS 14 therefore
+  runs uninserted: the interpreter's own loads still route (the ruby
+  patch family is in-process), but a `dlopen` originating in a
+  later-loaded bundle (ffi, fiddle) escapes to the host with the raw
+  dyld error. So the interpreter process does not depend on the
+  insertion: at the same boot head the driver rebinds `dlopen`/`dlerror`
+  in-process (`ffi/rebind.rs`) — the indirect symbol tables of the
+  exec-cache-materialized images are rewritten at boot and on each
+  later `_dyld_register_func_for_add_image` arrival, with the same
+  route semantics as the interpose dylib (coverage check →
+  `dlmap2file` → the host copy; ENOENT pass-through; the verdict on the
+  `dlerror` channel). The two channels share semantics and never
+  double-apply: the rebind owns the dlcache-scoped slots, the insertion
+  (where honored) matches libSystem's originals only.
+
 **Windows (msys) delivery record (design-pinned 2026-08-14, phase W1;
 the implementation is W2).** Windows has no process-wide preemption
 surface (no exe-definition preemption as on ELF, no interpose section
