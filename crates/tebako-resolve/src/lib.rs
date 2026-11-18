@@ -111,7 +111,7 @@ pub use transport::{HttpTransport, Transport};
 /// bare press today produced yesterday's behavior. The default tracks
 /// the current published line from here on. 0.17.12: the line ships
 /// ruby 3.3.13 / 4.0.9 (the registry's default: 4.0.9-0.17.12).
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.17.14";
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.17.15";
 
 /// The first runtime line whose embedded driver locates the tpkg
 /// trailer by spec 02 §1's LOGICAL EOF — the floor for RUNNING a
