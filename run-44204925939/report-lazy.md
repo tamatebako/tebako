@@ -305,6 +305,67 @@ Versions: tebako 2.8.83
 | eager-ruby | 3 | 0.397 | 0.394 | 0.398 | 0.002 | 0.396 | 0.380 | 92.7 | 1.00× |
 | lazy-ruby | 3 | 1.135 | 1.099 | 1.196 | 0.049 | 1.144 | 1.208 | 64.3 | 0.35× |
 
+## macos-x86_64
+
+Runner: macos-15-intel · x86_64 · 4 cpus · 14336.0 GiB
+Versions: tebako 2.8.83
+
+### boot — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| eager-ruby | 5 | 0.388 | 0.377 | 0.390 | 0.006 | 0.385 | 0.374 | 57.4 | 1.00× |
+| lazy-ruby | 5 | 0.391 | 0.371 | 0.418 | 0.019 | 0.392 | 0.379 | 57.2 | 0.99× |
+
+### boot — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| eager-ruby | 3 | 0.369 | 0.366 | 0.369 | 0.002 | 0.368 | 0.356 | 57.2 | 1.00× |
+| lazy-ruby | 3 | 3.811 | 3.499 | 4.039 | 0.271 | 3.783 | 3.822 | 42.9 | 0.10× |
+
+### fib — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| eager-ruby | 5 | 0.797 | 0.716 | 0.885 | 0.070 | 0.797 | 0.789 | 57.3 | 1.00× |
+| lazy-ruby | 5 | 0.841 | 0.728 | 0.863 | 0.068 | 0.802 | 0.831 | 57.1 | 0.95× |
+
+### fib — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| eager-ruby | 3 | 0.851 | 0.834 | 0.878 | 0.022 | 0.854 | 0.843 | 57.1 | 1.00× |
+| lazy-ruby | 3 | 3.938 | 3.892 | 4.347 | 0.250 | 4.059 | 4.041 | 42.7 | 0.22× |
+
+### ioread — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| eager-ruby | 5 | 0.452 | 0.411 | 0.498 | 0.032 | 0.453 | 0.443 | 141.8 | 1.00× |
+| lazy-ruby | 5 | 0.459 | 0.412 | 0.587 | 0.068 | 0.472 | 0.438 | 141.8 | 0.99× |
+
+### ioread — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| eager-ruby | 3 | 0.418 | 0.411 | 0.423 | 0.006 | 0.417 | 0.407 | 141.8 | 1.00× |
+| lazy-ruby | 3 | 3.968 | 3.523 | 4.333 | 0.406 | 3.941 | 4.131 | 127.4 | 0.11× |
+
+### treewalk — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| eager-ruby | 5 | 0.850 | 0.801 | 1.059 | 0.104 | 0.885 | 0.840 | 82.9 | 1.00× |
+| lazy-ruby | 5 | 0.823 | 0.771 | 0.891 | 0.048 | 0.821 | 0.810 | 82.8 | 1.03× |
+
+### treewalk — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs eager-ruby |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| eager-ruby | 3 | 0.797 | 0.796 | 0.823 | 0.015 | 0.805 | 0.786 | 83.3 | 1.00× |
+| lazy-ruby | 3 | 4.011 | 3.925 | 4.123 | 0.099 | 4.020 | 4.143 | 47.0 | 0.20× |
+
 ## windows-ucrt64
 
 Runner: windows-latest · x86_64 · 4 cpus · 16378.7 GiB
@@ -368,7 +429,7 @@ Versions: tebako 2.8.83
 
 ---
 
-Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15701.6 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-15 / aarch64 / 3 cpus / 7168.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
+Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15701.6 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-15 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
 
 GitHub-hosted runners are shared, multi-tenant machines; treat differences under ~10% as noise and read min alongside median — min is the cross-noise-comparable figure (noise inflates, never deflates).
 

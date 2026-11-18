@@ -5,14 +5,14 @@
     {
       "id": "first-response.cold.median",
       "state": "pass",
-      "measured": 1.3971915259999999,
+      "measured": 2.031079879,
       "bound": 3.0,
       "comparison": "<="
     },
     {
       "id": "first-response.warm.median",
       "state": "pass",
-      "measured": 1.414869237,
+      "measured": 2.059431027,
       "bound": 3.0,
       "comparison": "<="
     },

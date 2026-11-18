@@ -961,6 +961,164 @@ Failed runs:
 
 - python-stdlib / tebako-python [warm] #0 (exit 1): failed — warmup: exit 1 (expected 0)
 
+## macos-x86_64
+
+Runner: macos-15-intel · x86_64 · 4 cpus · 14336.0 GiB
+Versions: tebako 2.8.83
+
+### java-boot — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-java | 5 | 0.147 | 0.119 | 0.179 | 0.024 | 0.143 | 0.153 | 25.3 | 1.00× |
+| tebako-java | 5 | 2.059 | 1.586 | 2.310 | 0.272 | 2.026 | 1.754 | 155.4 | 0.07× |
+
+### java-boot — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-java | 2 | 2.031 | 1.842 | 2.220 | 0.267 | 2.031 | 1.807 | 155.7 | — |
+
+### java-fib — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-java | 5 | 14.118 | 13.640 | 17.167 | 1.420 | 14.679 | 14.109 | 25.8 | 1.00× |
+| tebako-java | 5 | 16.541 | 15.792 | 20.111 | 1.706 | 17.121 | 16.402 | 156.4 | 0.85× |
+
+### java-fib — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-java | 2 | 16.224 | 16.178 | 16.269 | 0.064 | 16.224 | 16.160 | 156.4 | — |
+
+### java-ioread — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-java | 5 | 1.915 | 1.714 | 2.581 | 0.336 | 2.004 | 1.994 | 34.6 | 1.00× |
+| tebako-java | 5 | 3.639 | 3.110 | 5.422 | 0.905 | 3.852 | 3.685 | 230.4 | 0.53× |
+
+### java-ioread — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-java | 2 | 3.216 | 3.128 | 3.305 | 0.125 | 3.216 | 3.256 | 230.0 | — |
+
+### java-statloop — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-java | 5 | 0.747 | 0.592 | 0.871 | 0.112 | 0.720 | 1.250 | 68.2 | 1.00× |
+| tebako-java | 5 | 2.732 | 2.244 | 3.885 | 0.677 | 2.925 | 3.090 | 176.3 | 0.27× |
+
+### java-statloop — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-java | 2 | 2.275 | 2.083 | 2.468 | 0.272 | 2.275 | 2.701 | 176.1 | — |
+
+### java-stdlib — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-java | 5 | 0.409 | 0.352 | 0.583 | 0.091 | 0.447 | 0.864 | 63.8 | 1.00× |
+| tebako-java | 5 | 2.116 | 1.861 | 2.869 | 0.391 | 2.201 | 2.272 | 168.5 | 0.19× |
+
+### java-stdlib — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-java | 2 | 1.880 | 1.849 | 1.912 | 0.045 | 1.880 | 2.241 | 168.0 | — |
+
+### ruby-boot — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-ruby | 5 | 0.135 | 0.113 | 0.146 | 0.016 | 0.131 | 0.120 | 9.7 | 1.00× |
+| tebako-ruby | 5 | 0.504 | 0.447 | 0.542 | 0.035 | 0.500 | 0.494 | 59.4 | 0.27× |
+
+### ruby-boot — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-ruby | 2 | 0.530 | 0.506 | 0.555 | 0.035 | 0.530 | 0.520 | 59.4 | — |
+
+### ruby-fib — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-ruby | 5 | 9.552 | 9.252 | 9.980 | 0.260 | 9.577 | 9.533 | 9.6 | 1.00× |
+| tebako-ruby | 5 | 5.347 | 5.162 | 5.496 | 0.120 | 5.335 | 5.327 | 59.3 | 1.79× |
+
+### ruby-fib — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-ruby | 2 | 5.236 | 5.173 | 5.299 | 0.090 | 5.236 | 5.205 | 59.7 | — |
+
+### ruby-ioread — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-ruby | 5 | 3.656 | 3.322 | 4.248 | 0.373 | 3.725 | 3.639 | 74.5 | 1.00× |
+| tebako-ruby | 5 | 4.537 | 4.074 | 5.519 | 0.535 | 4.645 | 4.509 | 172.6 | 0.81× |
+
+### ruby-ioread — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-ruby | 2 | 4.361 | 4.195 | 4.528 | 0.236 | 4.361 | 4.341 | 172.8 | — |
+
+### ruby-statloop — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-ruby | 5 | 0.347 | 0.306 | 0.382 | 0.031 | 0.350 | 0.331 | 11.7 | 1.00× |
+| tebako-ruby | 5 | 2.198 | 1.944 | 2.384 | 0.183 | 2.212 | 2.180 | 61.9 | 0.16× |
+
+### ruby-statloop — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-ruby | 2 | 1.987 | 1.926 | 2.048 | 0.086 | 1.987 | 1.970 | 61.8 | — |
+
+### ruby-stdlib — warm
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| on-system-ruby | 5 | 0.183 | 0.154 | 0.218 | 0.024 | 0.186 | 0.174 | 15.0 | 1.00× |
+| tebako-ruby | 5 | 0.543 | 0.512 | 0.603 | 0.034 | 0.550 | 0.530 | 63.3 | 0.34× |
+
+### ruby-stdlib — cold (install/first-boot)
+
+| target | n | median s | min s | max s | stdev s | mean s | cpu median s | peak RSS MiB | vs on-system |
+|--------|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| tebako-ruby | 2 | 0.498 | 0.491 | 0.505 | 0.010 | 0.498 | 0.486 | 63.5 | — |
+
+Unavailable arms:
+
+- ruby-boot / on-system-ruby [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- ruby-fib / on-system-ruby [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- ruby-stdlib / on-system-ruby [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- ruby-ioread / on-system-ruby [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- ruby-statloop / on-system-ruby [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- python-boot / on-system-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-boot / tebako-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-fib / on-system-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-fib / tebako-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-stdlib / on-system-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-stdlib / tebako-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-ioread / on-system-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-ioread / tebako-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-statloop / on-system-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- python-statloop / tebako-python: unavailable — platforms.yaml declares this gap: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+- java-boot / on-system-java [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- java-fib / on-system-java [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- java-stdlib / on-system-java [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- java-ioread / on-system-java [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+- java-statloop / on-system-java [cold]: unavailable — on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison
+
 ## windows-ucrt64
 
 Runner: windows-latest · x86_64 · 4 cpus · 16378.7 GiB
@@ -1118,7 +1276,7 @@ Failed runs:
 
 ---
 
-Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15701.6 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-15 / aarch64 / 3 cpus / 7168.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
+Runner metadata: linux-gnu-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-gnu-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15701.6 GiB; linux-musl-arm64 = ubuntu-24.04-arm / aarch64 / 4 cpus / 15941.5 GiB; linux-musl-x86_64 = ubuntu-24.04 / x86_64 / 4 cpus / 15983.9 GiB; macos-arm64 = macos-15 / aarch64 / 3 cpus / 7168.0 GiB; macos-x86_64 = macos-15-intel / x86_64 / 4 cpus / 14336.0 GiB; windows-ucrt64 = windows-latest / x86_64 / 4 cpus / 16378.7 GiB;
 
 GitHub-hosted runners are shared, multi-tenant machines; treat differences under ~10% as noise and read min alongside median — min is the cross-noise-comparable figure (noise inflates, never deflates).
 

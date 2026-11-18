@@ -62885,7 +62885,7 @@
       "workload": "compile-medium-rice",
       "target": "v2-fat",
       "mode": "warm",
-      "median_wall_s": 431.687915107,
+      "median_wall_s": 322.887855495,
       "ratio_vs_baseline": null
     },
     {
@@ -62896,7 +62896,7 @@
       "workload": "compile-medium-rice",
       "target": "v2-fat",
       "mode": "cold",
-      "median_wall_s": 488.42511922049994,
+      "median_wall_s": 374.9426560445,
       "ratio_vs_baseline": null
     },
     {
@@ -62907,7 +62907,7 @@
       "workload": "compile-small-iso",
       "target": "v2-fat",
       "mode": "warm",
-      "median_wall_s": 203.998769258,
+      "median_wall_s": 107.379098365,
       "ratio_vs_baseline": null
     },
     {
@@ -62918,7 +62918,7 @@
       "workload": "compile-small-iso",
       "target": "v2-fat",
       "mode": "cold",
-      "median_wall_s": 199.071762784,
+      "median_wall_s": 144.700248297,
       "ratio_vs_baseline": null
     },
     {
@@ -62929,7 +62929,7 @@
       "workload": "compile-small-iso",
       "target": "v2-shim",
       "mode": "warm",
-      "median_wall_s": 211.25953002,
+      "median_wall_s": 105.779846328,
       "ratio_vs_baseline": null
     },
     {
@@ -62940,7 +62940,7 @@
       "workload": "compile-small-iso",
       "target": "v2-shim",
       "mode": "cold",
-      "median_wall_s": 237.3295779115,
+      "median_wall_s": 146.6986165345,
       "ratio_vs_baseline": null
     },
     {
@@ -66462,6 +66462,512 @@
       "mode": "cold",
       "median_wall_s": 0.8610867,
       "ratio_vs_baseline": 2.1434682204956164
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-boot",
+      "target": "on-system-java",
+      "mode": "warm",
+      "median_wall_s": 0.146770725,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-boot",
+      "target": "tebako-java",
+      "mode": "warm",
+      "median_wall_s": 2.059431027,
+      "ratio_vs_baseline": 14.031619909215548
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-boot",
+      "target": "tebako-java",
+      "mode": "cold",
+      "median_wall_s": 2.031079879,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-fib",
+      "target": "on-system-java",
+      "mode": "warm",
+      "median_wall_s": 14.117902032,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-fib",
+      "target": "tebako-java",
+      "mode": "warm",
+      "median_wall_s": 16.541012614,
+      "ratio_vs_baseline": 1.1716338997471236
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-fib",
+      "target": "tebako-java",
+      "mode": "cold",
+      "median_wall_s": 16.223710799000003,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-ioread",
+      "target": "on-system-java",
+      "mode": "warm",
+      "median_wall_s": 1.915181059,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-ioread",
+      "target": "tebako-java",
+      "mode": "warm",
+      "median_wall_s": 3.639294101,
+      "ratio_vs_baseline": 1.9002350111483637
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-ioread",
+      "target": "tebako-java",
+      "mode": "cold",
+      "median_wall_s": 3.216301652,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-statloop",
+      "target": "on-system-java",
+      "mode": "warm",
+      "median_wall_s": 0.746970656,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-statloop",
+      "target": "tebako-java",
+      "mode": "warm",
+      "median_wall_s": 2.732038461,
+      "ratio_vs_baseline": 3.657491012605454
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-statloop",
+      "target": "tebako-java",
+      "mode": "cold",
+      "median_wall_s": 2.275426206,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-stdlib",
+      "target": "on-system-java",
+      "mode": "warm",
+      "median_wall_s": 0.409352335,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-stdlib",
+      "target": "tebako-java",
+      "mode": "warm",
+      "median_wall_s": 2.11588773,
+      "ratio_vs_baseline": 5.168866888227228
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "java-stdlib",
+      "target": "tebako-java",
+      "mode": "cold",
+      "median_wall_s": 1.8800973115,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-boot",
+      "target": "on-system-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.13479872,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-boot",
+      "target": "tebako-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.50357774,
+      "ratio_vs_baseline": 3.735775384217298
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-boot",
+      "target": "tebako-ruby",
+      "mode": "cold",
+      "median_wall_s": 0.5301092814999999,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-fib",
+      "target": "on-system-ruby",
+      "mode": "warm",
+      "median_wall_s": 9.551620438,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-fib",
+      "target": "tebako-ruby",
+      "mode": "warm",
+      "median_wall_s": 5.347199065,
+      "ratio_vs_baseline": 0.5598211423610172
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-fib",
+      "target": "tebako-ruby",
+      "mode": "cold",
+      "median_wall_s": 5.2360970785,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-ioread",
+      "target": "on-system-ruby",
+      "mode": "warm",
+      "median_wall_s": 3.656326977,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-ioread",
+      "target": "tebako-ruby",
+      "mode": "warm",
+      "median_wall_s": 4.53732643,
+      "ratio_vs_baseline": 1.2409520424573341
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-ioread",
+      "target": "tebako-ruby",
+      "mode": "cold",
+      "median_wall_s": 4.361403429999999,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-statloop",
+      "target": "on-system-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.347166541,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-statloop",
+      "target": "tebako-ruby",
+      "mode": "warm",
+      "median_wall_s": 2.198250125,
+      "ratio_vs_baseline": 6.3319757677915165
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-statloop",
+      "target": "tebako-ruby",
+      "mode": "cold",
+      "median_wall_s": 1.98705971,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-stdlib",
+      "target": "on-system-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.183031012,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-stdlib",
+      "target": "tebako-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.542791228,
+      "ratio_vs_baseline": 2.965569725418991
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-on-system-vs-tebako",
+      "triplet": "macos-x86_64",
+      "workload": "ruby-stdlib",
+      "target": "tebako-ruby",
+      "mode": "cold",
+      "median_wall_s": 0.49784052700000003,
+      "ratio_vs_baseline": null
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "boot",
+      "target": "eager-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.388056187,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "boot",
+      "target": "eager-ruby",
+      "mode": "cold",
+      "median_wall_s": 0.368597708,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "boot",
+      "target": "lazy-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.390720369,
+      "ratio_vs_baseline": 1.0068654542544377
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "boot",
+      "target": "lazy-ruby",
+      "mode": "cold",
+      "median_wall_s": 3.810758671,
+      "ratio_vs_baseline": 10.338530566771727
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "fib",
+      "target": "eager-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.796891514,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "fib",
+      "target": "eager-ruby",
+      "mode": "cold",
+      "median_wall_s": 0.851068418,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "fib",
+      "target": "lazy-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.841484272,
+      "ratio_vs_baseline": 1.0559583798002397
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "fib",
+      "target": "lazy-ruby",
+      "mode": "cold",
+      "median_wall_s": 3.938218955,
+      "ratio_vs_baseline": 4.6273823252127775
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "ioread",
+      "target": "eager-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.452359162,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "ioread",
+      "target": "eager-ruby",
+      "mode": "cold",
+      "median_wall_s": 0.417679766,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "ioread",
+      "target": "lazy-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.458982909,
+      "ratio_vs_baseline": 1.0146426723639568
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "ioread",
+      "target": "lazy-ruby",
+      "mode": "cold",
+      "median_wall_s": 3.967666654,
+      "ratio_vs_baseline": 9.499302999513747
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "treewalk",
+      "target": "eager-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.849707783,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "treewalk",
+      "target": "eager-ruby",
+      "mode": "cold",
+      "median_wall_s": 0.796562988,
+      "ratio_vs_baseline": 1.0
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "treewalk",
+      "target": "lazy-ruby",
+      "mode": "warm",
+      "median_wall_s": 0.822736467,
+      "ratio_vs_baseline": 0.9682581276297431
+    },
+    {
+      "release": "run-44204925939",
+      "date": "2026-11-18",
+      "suite": "runtime-lazy-vs-eager",
+      "triplet": "macos-x86_64",
+      "workload": "treewalk",
+      "target": "lazy-ruby",
+      "mode": "cold",
+      "median_wall_s": 4.011380526,
+      "ratio_vs_baseline": 5.035861051078612
     }
   ]
 }
