@@ -298,7 +298,12 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
   # hits the root-held runtime install lock and dies on EACCES in the
   # root-owned home. The seed's "seed: complete" line in seed.log is the
   # readiness signal (a heavy payload closure can take many minutes).
-  deadline=$(( $(date +%s) + 1800 ))
+  # Budget: the v1.18.6-2 tag build's arm64 leg burned the full 1800s
+  # mid-install (run 44276073858 — the seed was healthy, the closure is
+  # just that big on a loaded runner: the runtime pair + the payload +
+  # the spawned openjdk/python pairs + the warm dispatch's first-run
+  # resolution). 3600s, overridable for a bigger future closure.
+  deadline=$(( $(date +%s) + ${SEED_BUDGET:-3600} ))
   while :; do
     seeded=1
     [ -f "$INSTALL_ROOT/home/config.yaml" ] || seeded=0
@@ -318,9 +323,9 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
       echo "::error::the detached seed failed (seed.log above) — the rehearsal's store is incomplete"; exit 1
     fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
-      echo "== the detached seed did not land within 1800s — seed.log tail:"; sudo tail -30 "$INSTALL_ROOT/home/seed.log" 2>/dev/null || true
+      echo "== the detached seed did not land within ${SEED_BUDGET:-3600}s — seed.log tail:"; sudo tail -30 "$INSTALL_ROOT/home/seed.log" 2>/dev/null || true
       echo "== install.log tail:"; sudo grep -a "$PRODUCT_NAME" /var/log/install.log 2>/dev/null | tail -20 || true
-      echo "::error::the detached seed's effects did not land within 1800s (forensics above)"; exit 1
+      echo "::error::the detached seed's effects did not land within ${SEED_BUDGET:-3600}s (forensics above)"; exit 1
     fi
     sleep 5
   done
