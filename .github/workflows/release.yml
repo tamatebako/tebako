@@ -1391,8 +1391,14 @@ jobs:
           # 'PSGallery'" — the runner image no longer guarantees the
           # default registration. Register-PSRepository -Default restores
           # it idempotently (a healthy registration is a no-op).
-          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
-            Register-PSRepository -Default
+          # tebako#1087: a registration with a blank SourceLocation passes
+          # the existence check and then nuget.exe dies on an empty
+          # -source (v2.8.83 release run 44190263839, three windows legs at
+          # once). Re-anchor explicitly whenever the registration is
+          # missing OR its SourceLocation is blank.
+          $repo = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+          if (-not $repo -or [string]::IsNullOrWhiteSpace($repo.SourceLocation)) {
+            Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2" -InstallationPolicy Trusted -Force -ErrorAction Stop
           }
           if (-not (Get-Module -ListAvailable TrustedSigning)) {
             Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Repository PSGallery -Scope CurrentUser -Force -AllowClobber
@@ -1899,8 +1905,14 @@ jobs:
           # 'PSGallery'" — the runner image no longer guarantees the
           # default registration. Register-PSRepository -Default restores
           # it idempotently (a healthy registration is a no-op).
-          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
-            Register-PSRepository -Default
+          # tebako#1087: a registration with a blank SourceLocation passes
+          # the existence check and then nuget.exe dies on an empty
+          # -source (v2.8.83 release run 44190263839, three windows legs at
+          # once). Re-anchor explicitly whenever the registration is
+          # missing OR its SourceLocation is blank.
+          $repo = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+          if (-not $repo -or [string]::IsNullOrWhiteSpace($repo.SourceLocation)) {
+            Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2" -InstallationPolicy Trusted -Force -ErrorAction Stop
           }
           if (-not (Get-Module -ListAvailable TrustedSigning)) {
             Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Repository PSGallery -Scope CurrentUser -Force -AllowClobber
