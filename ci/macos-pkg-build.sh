@@ -258,6 +258,37 @@ grep -q "$INSTALL_ROOT/bin" "/etc/paths.d/$PRODUCT_NAME" || { echo "::error::/et
 if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
   [ -x "$INSTALL_ROOT/bootstrap-seed.sh" ] || { echo "::error::bootstrap-seed.sh missing after install"; exit 1; }
   grep -q "$INSTALL_ROOT/home/shims" "/etc/paths.d/$PRODUCT_NAME" || { echo "::error::/etc/paths.d/$PRODUCT_NAME lacks the shims line"; exit 1; }
+  # tebako#290: the detached seed rides UNAUTHENTICATED api.github.com, and
+  # a shared CI egress IP exhausts the 60/hr anonymous budget — the
+  # registry fetch dies throttled-403 (six backoff rounds), the effects
+  # never land, and the poll below burns its 1800s budget (PR #288's pkg
+  # leg, run 43957753605; pmn#292's x86_64 leg, run 44261962036).
+  # tebako-http already honors GITHUB_TOKEN for api.github.com reads, so
+  # when the workflow env carries one, run the same steps authenticated,
+  # as root, BEFORE polling: `tebako install` is idempotent, the store's
+  # flocks serialize the two passes, and the pass warms the 24h registry
+  # cache — the detached seed's own add-registry then reads the cache and
+  # completes. The pass is best-effort: a persistent failure falls through
+  # to the poll, which stays the gate. On a real user's machine no token
+  # exists and nothing here runs — the detached seed is the only path.
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    echo "== authenticated seed pass (CI de-flake, tebako#290; the detached seed still proves the real-user path)"
+    seed_try() { # <cmd...> — 6 attempts with linear backoff, then soft-fail
+      local i
+      for i in 1 2 3 4 5 6; do
+        sudo TEBAKO_HOME="$INSTALL_ROOT/home" TEBAKO_GITHUB_TOKEN="$GITHUB_TOKEN" "$@" && return 0
+        sleep $((i * 10))
+      done
+      return 1
+    }
+    seed_try "$INSTALL_ROOT/bin/tebako" add-registry "$BOOTSTRAP_REGISTRY" || echo "::warning::authenticated add-registry did not land — the poll remains the gate"
+    for p in $BOOTSTRAP_PAYLOADS; do
+      seed_try "$INSTALL_ROOT/bin/tebako" install "$p" || echo "::warning::authenticated install of $p did not land — the poll remains the gate"
+    done
+    for w in ${BOOTSTRAP_WARM:-}; do
+      [ -x "$INSTALL_ROOT/home/shims/$w" ] && seed_try "$INSTALL_ROOT/home/shims/$w" ${BOOTSTRAP_WARM_CMD:---version} || echo "::warning::authenticated warm of $w did not land — the poll remains the gate"
+    done
+  fi
   # The seed runs DETACHED at install time (PackageKit's script budget), so
   # its effects land asynchronously — poll for them with a generous budget,
   # and on timeout dump the seed log + the installer log (the runner is
