@@ -159,6 +159,96 @@ fn warm_schedule_rotates_targets_per_iteration() {
     assert!(engine::warm_schedule(2, 0, true).is_empty());
 }
 
+/// The fleet witness's premise (tebako#1071): with the suites' authored
+/// `interleave: true` and the runtime suite's target order (on-system
+/// first), iteration i of both arms runs ADJACENTLY — native, tebako,
+/// native, tebako — so the per-index paired ratio reads two arms that
+/// shared the fleet's momentary state.
+#[test]
+fn paired_arms_run_adjacent_per_iteration() {
+    let dir = tempfile::tempdir().unwrap();
+    let layout = BenchLayout::new(&dir.path().join("out")).unwrap();
+    let repo_root = dir.path().to_path_buf();
+    let suite = SuiteFile {
+        schema_version: 1,
+        name: "runtime-test".to_string(),
+        baseline: Some("on-system".to_string()),
+        workloads: vec![Workload {
+            id: "ruby-boot".to_string(),
+            opt_in: false,
+            kind: WorkloadKind::Exec,
+            targets: None,
+            source: None,
+            argv: vec!["--touch".to_string(), "out.txt".to_string()],
+            expect: Expect {
+                exit: 0,
+                files: vec!["out.txt".to_string()],
+            },
+            timeout_s: 30,
+        }],
+        targets: Vec::new(),
+        run_policy: RunPolicy {
+            warmup: 0,
+            repetitions: 3,
+            cold_repetitions: 0,
+            interleave: true,
+        },
+    };
+    // The runtime suite's declaration order: the on-system arm first.
+    let prepared = vec![
+        ready("on-system-ruby", TargetKind::OnSystem),
+        ready("tebako-ruby", TargetKind::V1Exe),
+    ];
+    let runs = engine::execute_matrix(
+        &layout,
+        &suite,
+        &[],
+        &prepared,
+        &LegContext::default(),
+        &repo_root,
+        &mut noop_reprime,
+    )
+    .unwrap();
+    let warm: Vec<(&str, u32)> = runs
+        .iter()
+        .filter(|r| r.mode == Some(RunMode::Warm) && r.status == RunStatus::Ok)
+        .map(|r| (r.target.as_str(), r.iteration.unwrap()))
+        .collect();
+    assert_eq!(
+        warm,
+        vec![
+            ("on-system-ruby", 1),
+            ("tebako-ruby", 1),
+            ("on-system-ruby", 2),
+            ("tebako-ruby", 2),
+            ("on-system-ruby", 3),
+            ("tebako-ruby", 3),
+        ],
+        "the paired interleave: native, tebako, per iteration"
+    );
+}
+
+/// The leg records the runner image identity when the GH-hosted runner
+/// exposes it (tebako#1071), and records nothing off CI.
+#[test]
+fn runner_meta_captures_the_runner_image_identity() {
+    std::env::set_var("ImageOS", "ubuntu24");
+    std::env::set_var("ImageVersion", "20261111.127");
+    let meta =
+        engine::runner_meta(&test_platforms("linux-musl-x86_64"), "linux-musl-x86_64").unwrap();
+    assert_eq!(meta.image_os.as_deref(), Some("ubuntu24"));
+    assert_eq!(meta.image_version.as_deref(), Some("20261111.127"));
+    std::env::remove_var("ImageOS");
+    std::env::remove_var("ImageVersion");
+    let meta =
+        engine::runner_meta(&test_platforms("linux-musl-x86_64"), "linux-musl-x86_64").unwrap();
+    assert_eq!(
+        meta.image_os, None,
+        "absent off CI, never a fabricated value"
+    );
+    assert_eq!(meta.image_version, None);
+}
+
 fn ok_run(w: &str, t: &str, mode: RunMode, wall: f64, cpu: f64, rss: u64) -> RunRecord {
     RunRecord {
         workload: w.to_string(),
@@ -431,6 +521,8 @@ fn unavailable_arms_emit_named_gap_rows() {
             arch: "test".to_string(),
             cpus: 1,
             ram_bytes: 1,
+            image_os: None,
+            image_version: None,
         },
         Versions::default(),
         runs,
@@ -493,6 +585,8 @@ fn failed_warmup_is_recorded_once_and_the_cell_is_skipped() {
             arch: "test".to_string(),
             cpus: 1,
             ram_bytes: 1,
+            image_os: None,
+            image_version: None,
         },
         Versions::default(),
         runs,

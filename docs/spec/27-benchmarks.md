@@ -12,7 +12,12 @@ plumbing with the release-over-release trend feed (§11); amended
 first-output stamp and the teardown-delta shape (§4, §11.1), the
 materialize cell's spawn/extraction arms (§10.6), the author loop's
 v2-tools arm and press workloads (§2, §11.1), and the workload
-`targets` allowlist (§2, §10.2))
+`targets` allowlist (§2, §10.2); amended 2026-11-21 — the fleet
+witness (tebako#1071): the runner image identity in the result
+document (§6), the paired per-iteration ratio on the dashboard (§7),
+the trend feed's additive rss/image fields (§11), and the covenant
+verdict's per-cell `native_drift`/`pair_delta` with the trip
+classification (§11.1))
 Depends on: 00 (locked invariants), 02 (tpkg wire format), 05
 (resolution and cache), 14 (engineering process), 16 (distribution —
 slim/fat), 17 (runtime driver contract), 19 (bootstrap distribution),
@@ -421,7 +426,8 @@ serde model are cross-checked in unit tests.
 
 ```json
 {"schema_version": 1, "suite": "metanorma-v1-vs-v2", "triplet": "linux-gnu-x86_64",
- "runner": {"runs_on": "ubuntu-24.04", "arch": "x86_64", "cpus": 4, "ram_bytes": 16777216000},
+ "runner": {"runs_on": "ubuntu-24.04", "arch": "x86_64", "cpus": 4, "ram_bytes": 16777216000,
+            "image_os": "ubuntu24", "image_version": "20261111.127"},
  "versions": {"tebako": "0.2.4", "runtime": "0.16.9-3.3.12", "payload": "1.16.9-3",
               "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)", "image_format": "dwarfs"},
  "runs": [{"workload": "compile-small-iso", "target": "v2-shim", "mode": "warm",
@@ -452,6 +458,13 @@ Contract rules:
 - **`runner` metadata is mandatory on every result** — `runs_on` (the
   GitHub runner label), `arch`, `cpus`, `ram_bytes`. Numbers without
   their environment are not numbers.
+- **The runner image identity rides the runner block** (added
+  2026-11-21, tebako#1071): `image_os` / `image_version`, read from the
+  GH-hosted runner's `$ImageOS`/`$ImageVersion` (e.g. `ubuntu24` /
+  `20261111.127`). Both are additive and absent off CI — a fleet move IS
+  an image change, and the covenant witness's adjudication (§11.1) reads
+  exactly this pair. The dashboard's per-triplet runner block and the
+  report's `Runner:` line mirror them.
 - **`versions`** records what actually ran — resolved versions, not
   requested ones (the runtime line resolves to `0.16.9-3.3.12`, the
   payload to `1.16.9-3`). `image_format` is the v2 arms' backend
@@ -485,6 +498,16 @@ Contract rules:
   declares one (additive only; the `speedup_vs_v1` cell field name
   never changes — downstream consumers label the column from
   `baseline.label`).
+- **The dashboard carries the paired per-iteration ratio** (added
+  2026-11-21, tebako#1071): each cell's `paired_ratio_vs_baseline` is
+  the median of the per-index ratios (the cell's iteration i ÷ the
+  baseline arm's iteration i) over the iterations BOTH arms recorded
+  ok. The §2/§10.3 interleave makes iteration i of both arms adjacent
+  in time, so the per-index ratio cancels within-iteration fleet drift
+  the ratio of medians would keep. Null when the cell has no baseline
+  arm or no shared iteration (the on-system cold gap) — never a
+  fabricated ratio. The covenant's fleet witness reads THIS published
+  figure (§11.1), never a private recomputation.
 - The report footer carries: the runner metadata block per triplet, the
   shared-runner noise caveat ("GitHub-hosted runners are shared,
   multi-tenant machines; treat differences under ~10% as noise and read
@@ -832,6 +855,14 @@ publish without waiting for a release):
   and the website derives from the medians, so the two never
   disagree.) A cell with no baseline arm carries
   `ratio_vs_baseline: null`.
+
+  Each cell additionally carries (added 2026-11-21, tebako#1071, both
+  additive — entries published before the fleet witness landed lack
+  them, and the witness's rolling reads skip those):
+  `median_peak_rss_bytes` (the rss-measure witness's history input) and
+  `image_os` / `image_version` (the leg's runner image identity,
+  mirrored from the dashboard's runner block — the image-changed
+  observation compares them against the run's own).
 - **The website wake-up** — after pushing bench-history the fan-in
   fires `repository_dispatch` with `event_type=bench-update` to
   tebako.org, authenticated by the org's CI PAT secret. The PAT being
@@ -932,3 +963,72 @@ none):
   shape** — a duplicated measurement is a taxonomy bug, not double
   coverage (`filesystem.read.throughput` was `steady.io.throughput`'s
   exact duplicate and was removed in the same amendment).
+
+#### 11.1.1 The fleet witness: `native_drift`, `pair_delta`, and the trip classification (added 2026-11-21, tebako#1071)
+
+A breached cell used to start an archaeology dig (the tebako#1067
+adjudication took three runs and a manual runner-image-history dig).
+The covenant now carries the dig's inputs in the artifact. Two facts
+make it mechanical: the paired interleave (§2 `interleave: true` —
+iteration i of both arms of a comparison pair runs adjacently, pinned
+by the engine's unit tests) and the bench-history trend feed (§11),
+which the fan-in fetches BEFORE the merge step and hands to the
+producer as `tebako-bench report --history <trend.json>` — the
+previously published feed, never the run's own (the append happens
+after the gate).
+
+**The producer attaches a witness to every sourced cell's metrics
+entry** (the MetricsFile's additive `witness` map, keyed by cell id —
+the merge law is the metrics map's own: later wins). The witness
+records:
+
+- the leg the worst-of aggregate KEPT (triplet × workload × target ×
+  mode) — the leg that trips the gate;
+- `reference` — the cell's baseline arm (the `source.baseline`
+  override when declared, else the dashboard's declared baseline): the
+  native on-system arm for every comparison cell of the runtime suite;
+- `native_drift` — the reference arm's current median ÷ its rolling
+  median over the last ≤ **8** published entries for that leg
+  (`WITNESS_WINDOW`), in the cell's own measure (wall; rss rides the
+  trend feed's `median_peak_rss_bytes`);
+- `pair_delta` — the current paired ratio (the dashboard's
+  `paired_ratio_vs_baseline` — the published per-index figure, never a
+  private recomputation; falling back to the ratio of medians on a
+  dashboard that predates the field) ÷ ITS rolling median over the same
+  window (the feed's `ratio_vs_baseline`);
+- `image_os` / `image_version` — the leg's runner image identity (§6),
+  and `image_changed` — whether it differs from the newest history
+  entry carrying one for the same suite × triplet.
+
+Both drift numbers are ratios against the cell's own history: 1.00 =
+flat. A rolling median requires ≥ **3** qualifying published entries
+(`WITNESS_MIN_HISTORY`); the trend feed's 20-release cap bounds the
+window. Every degradation is an explicit `null` with the reason in
+`note` — a missing feed ("no history feed"), a thin history ("history
+too thin … N published entries"), an absent reference arm, a zero
+rolling median — never a silent hole (invariant 9).
+
+**The verdict artifact gains, per cell, `native_drift`, `pair_delta`,
+and the full `witness` record** (the pass cells too — the witness is
+the record, not the alarm). When a cell trips (`over`), the evaluator
+classifies it from the two drift numbers against the tolerance band
+`WITNESS_TOLERANCE = 1.30` (a drift or delta inside [1/1.30, 1.30] is
+FLAT, outside is MOVED — set from the healthy fleet's observed spread,
+which reaches ×1.27 on the native statloop legs and ×1.19 on the
+published pair ratios, bench-history through 2026-11-15):
+
+| native_drift | pair_delta | class | reading |
+|---|---|---|---|
+| MOVED | flat | `fleet-move` | both arms rode the same shift — a runner image/infra move, not a regression |
+| flat | MOVED | `regression` | the tebako arm moved against a flat native arm |
+| MOVED | MOVED | `ambiguous` | both arms moved divergently — adjudicate (the witness names the leg and its image; #1067's own shape lands here: ×0.59 native, ×2.24 pair) |
+| flat | flat | `ambiguous` | the trip has no witness support — a tight or miscalibrated bound; adjudicate |
+
+A trip whose witness degraded (null drifts) carries NO class — the gate
+says "unclassified" and the note says why. The covenant report text
+prints, under every OVER line, the witness line (leg, both drifts, the
+image identity with the changed-vs-history observation) and the class
+sentence; the fan-in's "Gate on the covenant" step and release.yml's
+covenant-gate print the same per-trip lines from the verdict JSON. The
+release-side gate's pass/fail law is unchanged: `over` fails, the class
+is the reading, never a pardon.

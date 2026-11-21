@@ -17,6 +17,9 @@ fn cell(release: &str, suite: &str, target: &str, median: f64, ratio: Option<f64
         mode: RunMode::Warm,
         median_wall_s: median,
         ratio_vs_baseline: ratio,
+        median_peak_rss_bytes: None,
+        image_os: None,
+        image_version: None,
     }
 }
 
@@ -57,17 +60,18 @@ fn dashboard_json(with_baseline: bool) -> String {
     format!(
         r#"{{"suite": "runtime-on-system-vs-tebako", "generated_by": "tebako-bench report",
 {baseline}"triplets": [{{"triplet": "macos-arm64",
-  "runner": {{"runs_on": "macos-14", "arch": "aarch64", "cpus": 4, "ram_bytes": 1}},
+  "runner": {{"runs_on": "macos-14", "arch": "aarch64", "cpus": 4, "ram_bytes": 1,
+    "image_os": "macos15", "image_version": "20261111.127"}},
   "versions": {{}},
   "cells": [
     {{"workload": "ruby-boot", "target": "on-system-ruby", "mode": "warm", "n": 5,
       "median_wall_s": 2.0, "min_wall_s": 2.0, "max_wall_s": 2.0, "stdev_wall_s": null,
-      "mean_wall_s": 2.0, "median_cpu_s": 2.0, "median_peak_rss_bytes": 1,
-      "speedup_vs_v1": 1.0}},
+      "mean_wall_s": 2.0, "median_cpu_s": 2.0, "median_peak_rss_bytes": 268435456,
+      "speedup_vs_v1": 1.0, "paired_ratio_vs_baseline": 1.0}},
     {{"workload": "ruby-boot", "target": "tebako-ruby", "mode": "warm", "n": 5,
       "median_wall_s": 5.0, "min_wall_s": 5.0, "max_wall_s": 5.0, "stdev_wall_s": null,
-      "mean_wall_s": 5.0, "median_cpu_s": 5.0, "median_peak_rss_bytes": 1,
-      "speedup_vs_v1": 0.4}}
+      "mean_wall_s": 5.0, "median_cpu_s": 5.0, "median_peak_rss_bytes": 536870912,
+      "speedup_vs_v1": 0.4, "paired_ratio_vs_baseline": 2.5}}
   ], "unavailable": [], "failed": []}}]}}"#
     )
 }
@@ -121,6 +125,11 @@ fn trend_emits_the_overhead_ratio_from_the_declared_baseline() {
     );
     assert_eq!(tb.release, "v9.9.9");
     assert_eq!(tb.suite, "runtime-on-system-vs-tebako");
+    // The witness's additive fields ride the feed (tebako#1071): the
+    // cell's peak RSS and the leg's runner image identity.
+    assert_eq!(tb.median_peak_rss_bytes, Some(536870912));
+    assert_eq!(tb.image_os.as_deref(), Some("macos15"));
+    assert_eq!(tb.image_version.as_deref(), Some("20261111.127"));
 }
 
 #[test]

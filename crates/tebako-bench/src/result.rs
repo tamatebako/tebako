@@ -45,6 +45,14 @@ pub struct RunnerMeta {
     pub arch: String,
     pub cpus: u32,
     pub ram_bytes: u64,
+    /// The runner image identity (tebako#1071's fleet witness): GH-hosted
+    /// runners expose `$ImageOS`/`$ImageVersion` (e.g. `ubuntu24` /
+    /// `20261111.127`); absent off CI. The covenant's adjudication reads
+    /// exactly this when a cell trips — a fleet move IS an image change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_os: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

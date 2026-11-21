@@ -5,6 +5,7 @@
 //! tebako-bench run --suite <suite.yaml> --platforms <platforms.yaml>
 //!                  --triplet <t> --out <dir> [--opt-in <workload-id>]...
 //! tebako-bench report <results.json>... --md <report.md> --json <dashboard.json>
+//!                     [--metrics <m.json>] [--history <trend.json>]
 //! tebako-bench trend --release <name> --date <YYYY-MM-DD> --dashboard <d>...
 //!                    [--previous <trend.json>] --out <trend.json>
 //! tebako-bench validate --kind suite|result <file>
@@ -83,6 +84,12 @@ enum Command {
         /// The release the metrics belong to.
         #[arg(long)]
         release: Option<String>,
+        /// The bench-history trend feed (the fleet witness's rolling
+        /// baseline, tebako#1071): the workflow fetches
+        /// latest/trend.json and names it here; absent, the witness
+        /// drifts degrade to explicit nulls with the reason noted.
+        #[arg(long)]
+        history: Option<PathBuf>,
     },
     /// Append a run's dashboards to the release-over-release trend feed
     /// (spec 27 §11: dedupe per full key, capped at the last 20 releases).
@@ -140,6 +147,84 @@ fn main() -> ExitCode {
     }
 }
 
+/// The witness line under a tripped cell (tebako#1071): the leg the
+/// aggregate kept, the two drift numbers, and the runner image identity
+/// (changed-vs-history included). With no witness record at all (an
+/// unsourced cell), says so — never a silent gap.
+fn witness_line(cell: &tebako_bench::covenant::CellVerdict) -> String {
+    use tebako_bench::covenant::CellWitness;
+    let drift = |v: Option<f64>| {
+        v.map(|x| format!("×{x:.2}"))
+            .unwrap_or_else(|| "—".to_string())
+    };
+    match &cell.witness {
+        None => "witness: none (the cell declares no source)".to_string(),
+        Some(CellWitness {
+            triplet,
+            workload,
+            target,
+            mode,
+            reference,
+            native_drift,
+            pair_delta,
+            image_os,
+            image_version,
+            image_changed,
+            note,
+        }) => {
+            let mode = match mode {
+                tebako_bench::result::RunMode::Warm => "warm",
+                tebako_bench::result::RunMode::Cold => "cold",
+            };
+            let image = match (image_os, image_version) {
+                (Some(os), Some(ver)) => format!(
+                    " · image {os}/{ver}{}",
+                    match image_changed {
+                        Some(true) => " (CHANGED vs the previous published run)",
+                        Some(false) => " (unchanged)",
+                        None => "",
+                    }
+                ),
+                _ => " · image unrecorded (off a GH-hosted runner)".to_string(),
+            };
+            let note = note
+                .as_deref()
+                .map(|n| format!(" · note: {n}"))
+                .unwrap_or_default();
+            format!(
+                "witness: leg {triplet} · {workload} · {mode} · {target} vs {} · native_drift {} · pair_delta {}{}{}",
+                reference.as_deref().unwrap_or("(none)"),
+                drift(*native_drift),
+                drift(*pair_delta),
+                image,
+                note
+            )
+        }
+    }
+}
+
+/// The class tally for the summary line: " [fleet-move 1, regression 1]"
+/// when any tripped cell classified, empty otherwise.
+fn class_tally(report: &tebako_bench::covenant::Report) -> String {
+    let mut counts: Vec<(&'static str, usize)> = Vec::new();
+    for cell in &report.cells {
+        if cell.state != tebako_bench::covenant::State::Over {
+            continue;
+        }
+        let token = cell.class.map(|c| c.token()).unwrap_or("unclassified");
+        match counts.iter_mut().find(|(t, _)| *t == token) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((token, 1)),
+        }
+    }
+    if counts.is_empty() {
+        String::new()
+    } else {
+        let parts: Vec<String> = counts.iter().map(|(t, n)| format!("{t} {n}")).collect();
+        format!(" [{}]", parts.join(", "))
+    }
+}
+
 fn run(cli: Cli) -> Result<u8, BenchError> {
     match cli.command {
         Command::Covenant {
@@ -152,6 +237,7 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
                 schema_version: 1,
                 release: None,
                 metrics: Default::default(),
+                witness: Default::default(),
             };
             for path in &metrics {
                 let text = std::fs::read_to_string(path).map_err(|e| {
@@ -187,17 +273,26 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
                         cell.comparison,
                         cell.bound
                     ),
-                    tebako_bench::covenant::State::Over => println!(
-                        "OVER  {} {:.3} {} {:.3}{}",
-                        cell.id,
-                        cell.measured.unwrap_or_default(),
-                        cell.comparison,
-                        cell.bound,
-                        match cell.injected {
-                            Some(v) => format!(" (injected: measured {v:.3})"),
-                            None => String::new(),
+                    tebako_bench::covenant::State::Over => {
+                        println!(
+                            "OVER  {} {:.3} {} {:.3}{}",
+                            cell.id,
+                            cell.measured.unwrap_or_default(),
+                            cell.comparison,
+                            cell.bound,
+                            match cell.injected {
+                                Some(v) => format!(" (injected: measured {v:.3})"),
+                                None => String::new(),
+                            }
+                        );
+                        // The fleet witness (tebako#1071): a trip names its
+                        // class and the leg the witness read — adjudication
+                        // is a read of this output, not an archaeology dig.
+                        println!("        {}", witness_line(cell));
+                        if let (Some(class), Some(note)) = (cell.class, &cell.class_note) {
+                            println!("        class: {} — {note}", class.token());
                         }
-                    ),
+                    }
                     tebako_bench::covenant::State::Absent => {
                         println!("ABSENT {} — the run carries no sample", cell.id)
                     }
@@ -212,13 +307,14 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
                 })?;
             }
             println!(
-                "covenant: {} ({} over, {} absent)",
+                "covenant: {} ({} over{}, {} absent)",
                 report.verdict.to_uppercase(),
                 report
                     .cells
                     .iter()
                     .filter(|c| c.state == tebako_bench::covenant::State::Over)
                     .count(),
+                class_tally(&report),
                 report
                     .cells
                     .iter()
@@ -287,6 +383,7 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
             metrics,
             covenant,
             release,
+            history,
         } => {
             let has_metrics = metrics.is_some();
             tebako_bench::report::report(&tebako_bench::report::ReportRequest {
@@ -296,6 +393,7 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
                 metrics,
                 covenant: if has_metrics { Some(covenant) } else { None },
                 release,
+                history,
             })
         }
         Command::Trend {

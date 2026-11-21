@@ -52,6 +52,19 @@ pub struct TrendCell {
     pub mode: RunMode,
     pub median_wall_s: f64,
     pub ratio_vs_baseline: Option<f64>,
+    /// The cell's median peak RSS (additive, tebako#1071): the
+    /// rss-measure fleet witness's history input. Absent on entries
+    /// published before the witness landed.
+    #[serde(default)]
+    pub median_peak_rss_bytes: Option<u64>,
+    /// The leg's runner image identity (additive, tebako#1071), mirrored
+    /// from the dashboard's runner block — the witness's image-changed
+    /// observation compares these against the run's own. Absent off CI
+    /// and on entries published before the witness landed.
+    #[serde(default)]
+    pub image_os: Option<String>,
+    #[serde(default)]
+    pub image_version: Option<String>,
 }
 
 /// The dedupe key (spec 27 §11: release × suite × triplet × workload ×
@@ -127,6 +140,9 @@ pub fn trend(req: &TrendRequest) -> Result<u8, BenchError> {
                     mode: c.mode,
                     median_wall_s: c.median_wall_s,
                     ratio_vs_baseline: ratio,
+                    median_peak_rss_bytes: Some(c.median_peak_rss_bytes),
+                    image_os: t.runner.image_os.clone(),
+                    image_version: t.runner.image_version.clone(),
                 });
             }
         }
