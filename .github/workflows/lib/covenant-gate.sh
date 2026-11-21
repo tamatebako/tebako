@@ -33,8 +33,13 @@ gate=$(gh run view "$BENCH_RUN_ID" --json jobs \
   --jq '[.jobs[] | select(.name=="report") | .steps[] | select(.name=="Gate on the covenant") | .conclusion] | first // "absent"')
 
 # The numbers, whichever way the gate went (the bundle uploads with
-# if: always() precisely so a trip still shows its verdict).
+# if: always() precisely so a trip still shows its verdict). The fleet
+# witness's per-trip class lines (tebako#1071) print first — the
+# adjudication read.
 if gh run download "$BENCH_RUN_ID" -n report-bundle -D covenant-report 2>/dev/null; then
+  jq -r '.cells[] | select(.state == "over") |
+    "covenant trip: \(.id) — class: \(.class // "unclassified") — \(.class_note // "no fleet witness available; adjudicate by hand")\(.witness | if . == null then "" else " [leg \(.triplet) · \(.workload) · \(.mode)\(if .image_version then " · image \(.image_os // "?")/\(.image_version)\(if .image_changed == true then " (CHANGED vs the previous published run)" elif .image_changed == false then " (unchanged)" else "" end)" else "" end)]" end)"' \
+    covenant-report/covenant-verdict.json || true
   cat covenant-report/covenant-verdict.json || true
 fi
 

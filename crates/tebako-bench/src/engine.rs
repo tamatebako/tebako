@@ -1458,8 +1458,12 @@ pub fn check_expect(cwd: &Path, expect: &Expect, exit_code: i32) -> Option<Strin
 
 /// The warm-run order (§2's run_policy): interleaved — rotate targets
 /// per iteration so runner drift decorrelates across arms; otherwise
-/// each target to completion in turn (debugging only). Pure: the
-/// ordering is pinned by unit tests.
+/// each target to completion in turn (debugging only). The interleave is
+/// the fleet witness's premise (tebako#1071): iteration i of both arms
+/// of a comparison pair runs adjacent in time, so the per-index paired
+/// ratio (the dashboard's `paired_ratio_vs_baseline`) cancels
+/// within-iteration fleet drift. Pure: the ordering is pinned by unit
+/// tests.
 pub fn warm_schedule(n_targets: usize, repetitions: u32, interleave: bool) -> Vec<(usize, u32)> {
     if interleave {
         (1..=repetitions)
@@ -1525,7 +1529,7 @@ pub fn compute_stats(runs: &[RunRecord]) -> Vec<StatRecord> {
 }
 
 /// Median of a sorted f64 slice (even counts average the two middles).
-fn median_f64(sorted: &[f64]) -> f64 {
+pub(crate) fn median_f64(sorted: &[f64]) -> f64 {
     let n = sorted.len();
     if n == 0 {
         return 0.0;
@@ -1562,11 +1566,14 @@ fn stdev_sample(sorted: &[f64], mean: f64) -> Option<f64> {
 
 /// The §6 runner metadata: the runner label flows from platforms.yaml,
 /// the rest is read off the machine (numbers without their environment
-/// are not numbers).
+/// are not numbers). The runner image identity (tebako#1071) comes from
+/// the GH-hosted runner's `$ImageOS`/`$ImageVersion` — absent off CI,
+/// where a benchmark leg's fleet membership is meaningless anyway.
 pub fn runner_meta(platforms: &PlatformFile, triplet: &str) -> Result<RunnerMeta, BenchError> {
     let entry = platforms.triplets.get(triplet).ok_or_else(|| {
         BenchError::operational(format!("engine: platforms.yaml has no triplet '{triplet}'"))
     })?;
+    let image_env = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
     Ok(RunnerMeta {
         runs_on: entry.runner.clone(),
         arch: std::env::consts::ARCH.to_string(),
@@ -1574,6 +1581,8 @@ pub fn runner_meta(platforms: &PlatformFile, triplet: &str) -> Result<RunnerMeta
             .map(|n| n.get() as u32)
             .unwrap_or(1),
         ram_bytes: crate::ram_total_bytes()?,
+        image_os: image_env("ImageOS"),
+        image_version: image_env("ImageVersion"),
     })
 }
 

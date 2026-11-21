@@ -35,6 +35,8 @@ fn runner() -> RunnerMeta {
         arch: "x86_64".to_string(),
         cpus: 4,
         ram_bytes: 16 * 1024 * 1024 * 1024,
+        image_os: Some("ubuntu24".to_string()),
+        image_version: Some("20261111.127".to_string()),
     }
 }
 
@@ -90,6 +92,7 @@ fn run_report(dir: &Path, results: &[std::path::PathBuf]) -> (Result<u8, String>
         metrics: None,
         covenant: None,
         release: None,
+        history: None,
     })
     .map_err(|e| e.message);
     let md_text = std::fs::read_to_string(&md).unwrap_or_default();
@@ -356,6 +359,116 @@ fn declared_baseline_drives_the_ratio_label_and_notes() {
         .unwrap()
         .clone();
     assert_eq!(cell["speedup_vs_v1"], 0.5, "the field name never changes");
+    // The paired per-iteration ratio (tebako#1071): per-index ratios
+    // 3.9/1.9, 4.0/2.0, 4.1/2.1 → median 2.0; the baseline arm pairs
+    // against itself at exactly 1.0. The markdown runner line carries
+    // the leg's image identity.
+    assert_eq!(cell["paired_ratio_vs_baseline"], 2.0);
+    let base_cell = dash["triplets"][0]["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["target"] == "on-system-ruby")
+        .unwrap()
+        .clone();
+    assert_eq!(base_cell["paired_ratio_vs_baseline"], 1.0);
+    assert!(md.contains("image ubuntu24/20261111.127"), "{md}");
+}
+
+/// The covenant arm with the history feed (tebako#1071): the produced
+/// metrics carry the fleet witness for the sourced cell.
+#[test]
+fn metrics_carry_the_fleet_witness_when_history_rides() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = write_result(dir.path(), "a.json", &runtime_file("linux-musl-x86_64"));
+    let covenant = dir.path().join("covenant.yaml");
+    std::fs::write(
+        &covenant,
+        "schema_version: 1\ncells:\n  - id: test.boot.ratio\n    bound: 3.0\n    comparison: le\n    source: {workloads: [\"-boot\"], target: \"tebako-\", mode: warm, measure: wall, shape: ratio, aggregate: worst}\n",
+    )
+    .unwrap();
+    // Three published runs, all flat: native 2.0, pair ratio 2.0.
+    let mut cells = Vec::new();
+    for i in 0..3 {
+        for (target, median, ratio) in [("on-system-ruby", 2.0, 1.0), ("tebako-ruby", 4.0, 2.0)] {
+            cells.push(serde_json::json!({
+                "release": format!("run-{i}"), "date": "2026-11-10",
+                "suite": "runtime-on-system-vs-tebako",
+                "triplet": "linux-musl-x86_64", "workload": "ruby-boot",
+                "target": target, "mode": "warm",
+                "median_wall_s": median, "ratio_vs_baseline": ratio,
+                "median_peak_rss_bytes": 536870912_u64,
+                "image_os": "ubuntu24", "image_version": "20261111.370"
+            }));
+        }
+    }
+    let history = dir.path().join("trend.json");
+    std::fs::write(
+        &history,
+        serde_json::to_string(&serde_json::json!({
+            "generated_by": "tebako-bench trend", "cells": cells
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let metrics = dir.path().join("metrics.json");
+    let rc = report::report(&ReportRequest {
+        results: vec![a],
+        md: dir.path().join("report.md"),
+        json: dir.path().join("dashboard.json"),
+        metrics: Some(metrics.clone()),
+        covenant: Some(covenant),
+        release: Some("v9.9.9".to_string()),
+        history: Some(history),
+    })
+    .map_err(|e| e.message);
+    assert_eq!(rc, Ok(0));
+    let m: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&metrics).unwrap()).unwrap();
+    assert_eq!(m["metrics"]["test.boot.ratio"], 2.0);
+    let w = &m["witness"]["test.boot.ratio"];
+    assert_eq!(w["triplet"], "linux-musl-x86_64");
+    assert_eq!(w["reference"], "on-system-ruby");
+    assert_eq!(w["native_drift"], 1.0);
+    assert_eq!(w["pair_delta"], 1.0);
+    assert_eq!(w["image_version"], "20261111.127");
+    assert_eq!(w["image_changed"], true, ".127 vs the history's .370");
+}
+
+/// Without --history the witness degrades to explicit nulls + the note
+/// (never a silent hole); the metric itself is unaffected.
+#[test]
+fn metrics_degrade_the_witness_without_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = write_result(dir.path(), "a.json", &runtime_file("linux-musl-x86_64"));
+    let covenant = dir.path().join("covenant.yaml");
+    std::fs::write(
+        &covenant,
+        "schema_version: 1\ncells:\n  - id: test.boot.ratio\n    bound: 3.0\n    comparison: le\n    source: {workloads: [\"-boot\"], target: \"tebako-\", mode: warm, measure: wall, shape: ratio, aggregate: worst}\n",
+    )
+    .unwrap();
+    let metrics = dir.path().join("metrics.json");
+    let rc = report::report(&ReportRequest {
+        results: vec![a],
+        md: dir.path().join("report.md"),
+        json: dir.path().join("dashboard.json"),
+        metrics: Some(metrics.clone()),
+        covenant: Some(covenant),
+        release: None,
+        history: None,
+    })
+    .map_err(|e| e.message);
+    assert_eq!(rc, Ok(0));
+    let m: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&metrics).unwrap()).unwrap();
+    assert_eq!(m["metrics"]["test.boot.ratio"], 2.0);
+    let w = &m["witness"]["test.boot.ratio"];
+    assert!(w["native_drift"].is_null());
+    assert!(w["pair_delta"].is_null());
+    assert!(
+        w["note"].as_str().unwrap().contains("no history feed"),
+        "{w}"
+    );
 }
 
 #[test]

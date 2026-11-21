@@ -20,6 +20,19 @@
 //! evaluator honours `TEBAKO_BENCH_INJECT=<cell-or-axis>:<factor>`: the
 //! measured value of every matching cell is multiplied before comparison.
 //! The dry run that proves the gate works is one cell at `1.10`.
+//!
+//! The fleet witness (tebako#1071, spec 27 §11.1): the producer attaches
+//! each sourced cell's witness to the metrics it emits — the leg the
+//! worst-of aggregate kept, the reference (native) arm's drift against
+//! its own rolling published median, the pair delta (the current paired
+//! ratio against ITS rolling median), and the leg's runner image
+//! identity. When a cell trips, the verdict names the class those two
+//! numbers imply: `fleet-move` (native drift large, pair delta small),
+//! `regression` (the tebako arm moved against a flat native arm), or
+//! `ambiguous` (both moved divergently, or the trip has no witness
+//! support) — adjudication is a read of the artifact, not an
+//! archaeology dig (the #1067 trip took three runs and a manual
+//! image-history dig).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -172,6 +185,135 @@ pub struct MetricsFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<String>,
     pub metrics: BTreeMap<String, f64>,
+    /// The fleet witness per sourced cell (additive, tebako#1071): the
+    /// producer derives it from the same dashboard selection the value
+    /// came from, plus the rolling bench-history medians when the
+    /// workflow hands them over. Keyed by the cell id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub witness: BTreeMap<String, CellWitness>,
+}
+
+/// One sourced cell's fleet witness (tebako#1071): the leg the aggregate
+/// kept, the reference arm's drift and the pair delta against the
+/// rolling published medians, and the leg's runner image identity. Both
+/// drift numbers are ratios against the cell's own rolling history:
+/// 1.00 = flat.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CellWitness {
+    /// The leg (triplet × workload × target × mode) whose derived value
+    /// the aggregate kept — the leg that trips the gate on a breach.
+    pub triplet: String,
+    pub workload: String,
+    pub target: String,
+    pub mode: crate::result::RunMode,
+    /// The reference arm the witness reads: the cell's baseline (the
+    /// `source.baseline` override when declared, else the dashboard's
+    /// declared baseline) — the native on-system arm for every
+    /// comparison cell of the runtime suite. Absent when the cell's
+    /// workload ran no reference arm (the author loop's v2-tools cells).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// The reference arm's current median ÷ its rolling median over the
+    /// last ≤ `WITNESS_WINDOW` published runs — 1.00 = the native arm is
+    /// flat against its own history. Null with `note` when unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_drift: Option<f64>,
+    /// The current paired ratio (the dashboard's per-index
+    /// `paired_ratio_vs_baseline`, falling back to the ratio of medians)
+    /// ÷ its rolling median over the same window — 1.00 = the two arms'
+    /// relationship is unchanged whatever the fleet did. Null with
+    /// `note` when unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pair_delta: Option<f64>,
+    /// The leg's runner image identity (captured per leg in the result
+    /// document's runner block); absent off CI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_os: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_version: Option<String>,
+    /// The leg's image identity differs from the newest history entry
+    /// carrying one for the same suite × triplet; absent when either
+    /// side lacks the identity (off CI, or history predating the field).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_changed: Option<bool>,
+    /// Why a drift is null — never a silent null (invariant 9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// The classification a tripped cell earns from its witness
+/// (tebako#1071): the gate names the class so adjudication is a read of
+/// the artifact, not an archaeology dig.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Class {
+    /// Native-arm drift large + pair delta small: both arms rode the same
+    /// shift — a runner image / infra move, not a regression.
+    FleetMove,
+    /// The tebako arm moved against a flat native arm — a real regression.
+    Regression,
+    /// Both moved divergently, or the trip has no witness support — a
+    /// human adjudicates (the witness names the leg and its image).
+    Ambiguous,
+}
+
+impl Class {
+    pub fn token(self) -> &'static str {
+        match self {
+            Class::FleetMove => "fleet-move",
+            Class::Regression => "regression",
+            Class::Ambiguous => "ambiguous",
+        }
+    }
+}
+
+/// The witness window: the rolling medians read the last ≤8 published
+/// entries for the cell's leg (the trend feed keeps 20 releases).
+pub const WITNESS_WINDOW: usize = 8;
+/// Below this many history entries the rolling median is noise — the
+/// drift fields degrade to null with the note naming the count.
+pub const WITNESS_MIN_HISTORY: usize = 3;
+/// The moved/flat band: a drift or delta outside [1/1.30, 1.30] counts
+/// as MOVED. Set from the healthy fleet's observed spread — the
+/// on-system statloop legs drift up to ×1.27 week over week and the
+/// published pair ratios up to ×1.19 (bench-history through
+/// 2026-11-15), while the tebako#1067 fleet move read ×0.59 on the
+/// native arm and ×2.24 on the pair.
+pub const WITNESS_TOLERANCE: f64 = 1.30;
+
+/// The classification rule (spec 27 §11.1): both witness numbers read
+/// against the tolerance band. None when either witness number degraded
+/// to null — the gate reports the trip unclassified and the note says
+/// why.
+pub fn classify(native_drift: Option<f64>, pair_delta: Option<f64>) -> Option<(Class, String)> {
+    let (drift, delta) = (native_drift?, pair_delta?);
+    let moved = |x: f64| !(1.0 / WITNESS_TOLERANCE..=WITNESS_TOLERANCE).contains(&x);
+    Some(match (moved(drift), moved(delta)) {
+        (true, false) => (
+            Class::FleetMove,
+            format!(
+                "native-arm drift large (×{drift:.2}) with the pair delta small (×{delta:.2}) — fleet move (runner image/infra), not a regression"
+            ),
+        ),
+        (false, true) => (
+            Class::Regression,
+            format!(
+                "the tebako arm moved (pair delta ×{delta:.2}) against a flat native arm (×{drift:.2}) — regression"
+            ),
+        ),
+        (true, true) => (
+            Class::Ambiguous,
+            format!(
+                "both arms moved divergently (native ×{drift:.2}, pair ×{delta:.2}) — ambiguous; adjudicate"
+            ),
+        ),
+        (false, false) => (
+            Class::Ambiguous,
+            format!(
+                "neither witness moved (native ×{drift:.2}, pair ×{delta:.2}) — the trip has no witness support (a tight or miscalibrated bound); adjudicate"
+            ),
+        ),
+    })
 }
 
 /// One cell's verdict.
@@ -185,6 +327,27 @@ pub struct CellVerdict {
     pub comparison: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub injected: Option<f64>,
+    /// The fleet witness (additive, tebako#1071): the native arm's drift
+    /// and the pair delta against the cell's rolling history (1.00 =
+    /// flat), flattened here for the gate's read; the full record (the
+    /// leg, the reference arm, the image identity) rides `witness`.
+    /// Null when the producer could not derive them — `witness.note`
+    /// says why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_drift: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pair_delta: Option<f64>,
+    /// The trip's class (fleet-move | regression | ambiguous), set on
+    /// `over` cells whose witness carried both numbers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<Class>,
+    /// The classification sentence, as the report text prints it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_note: Option<String>,
+    /// The cell's full witness record (the leg the aggregate kept, the
+    /// reference arm, the runner image identity).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub witness: Option<CellWitness>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -301,13 +464,17 @@ impl MetricsFile {
 
     /// Merge another run's metrics into this one (a release runs several
     /// suites; each contributes its cells). Later values win, and the merge
-    /// is recorded so a duplicated id is visible rather than silent.
+    /// is recorded so a duplicated id is visible rather than silent. The
+    /// witness map follows the same law (tebako#1071).
     pub fn merge(&mut self, other: &MetricsFile) -> Vec<String> {
         let mut collisions = Vec::new();
         for (k, v) in &other.metrics {
             if self.metrics.insert(k.clone(), *v).is_some() {
                 collisions.push(k.clone());
             }
+        }
+        for (k, v) in &other.witness {
+            self.witness.insert(k.clone(), v.clone());
         }
         if self.release.is_none() {
             self.release = other.release.clone();
@@ -338,7 +505,10 @@ pub fn parse_inject(spec: &str) -> Result<(String, f64), BenchError> {
 
 /// Evaluate every cell. `inject` multiplies the measured value of each cell
 /// whose id equals the key or begins with `key + "."` (so `filesystem`
-/// reaches `filesystem.stat.p95`).
+/// reaches `filesystem.stat.p95`). Each cell's verdict also carries the
+/// witness the producer attached to the metrics (tebako#1071): the drift
+/// numbers flat, the full record under `witness`, and on `over` cells the
+/// trip's classification (spec 27 §11.1).
 pub fn evaluate(
     covenant: &CovenantFile,
     metrics: &MetricsFile,
@@ -360,6 +530,17 @@ pub fn evaluate(
                 Some(v) if cell.comparison.holds(v, cell.bound) => State::Pass,
                 Some(_) => State::Over,
             };
+            let witness = metrics.witness.get(&cell.id).cloned();
+            let (native_drift, pair_delta) = witness
+                .as_ref()
+                .map(|w| (w.native_drift, w.pair_delta))
+                .unwrap_or((None, None));
+            let (class, class_note) = match state {
+                State::Over => classify(native_drift, pair_delta)
+                    .map(|(c, note)| (Some(c), Some(note)))
+                    .unwrap_or((None, None)),
+                _ => (None, None),
+            };
             CellVerdict {
                 id: cell.id.clone(),
                 state,
@@ -367,6 +548,11 @@ pub fn evaluate(
                 bound: cell.bound,
                 comparison: cell.comparison.token().to_string(),
                 injected,
+                native_drift,
+                pair_delta,
+                class,
+                class_note,
+                witness,
             }
         })
         .collect::<Vec<_>>();
@@ -400,6 +586,53 @@ fn measure_of(cell: &crate::report::DashboardCell, measure: Measure) -> f64 {
     }
 }
 
+/// One selected dashboard cell's contribution: the derived value plus
+/// the provenance the fleet witness reads (tebako#1071) — which leg it
+/// came from, the reference arm (the cell's baseline) it compares
+/// against, and the paired inputs the witness's pair delta needs.
+struct Candidate {
+    value: f64,
+    suite: String,
+    triplet: String,
+    workload: String,
+    target: String,
+    mode: crate::result::RunMode,
+    /// The reference arm's concrete target id + its current median for
+    /// the cell's measure; None when the workload ran no reference arm.
+    reference: Option<(String, f64)>,
+    /// The published paired per-iteration ratio (None → the witness
+    /// falls back to the ratio of medians).
+    paired_ratio: Option<f64>,
+    /// The selected cell's own median for the measure.
+    cell_median: f64,
+}
+
+/// The cell's reference arm for one selected dashboard cell (the
+/// witness's "native arm"): the `source.baseline` override when
+/// declared (exact then prefix, the §11.1 rule), else the dashboard's
+/// declared baseline. None when no such arm produced a cell.
+fn reference_cell<'d>(
+    source: &CellSource,
+    dash: &'d crate::report::Dashboard,
+    t: &'d crate::report::DashboardTriplet,
+    c: &crate::report::DashboardCell,
+) -> Option<&'d crate::report::DashboardCell> {
+    match &source.baseline {
+        Some(prefix) => t
+            .cells
+            .iter()
+            .find(|bc| bc.workload == c.workload && bc.mode == c.mode && bc.target == *prefix)
+            .or_else(|| {
+                t.cells.iter().find(|bc| {
+                    bc.workload == c.workload
+                        && bc.mode == c.mode
+                        && bc.target.starts_with(prefix.as_str())
+                })
+            }),
+        None => crate::report::baseline_cell(dash, &t.triplet, &c.workload, c.mode),
+    }
+}
+
 /// One sourced cell's value across the dashboards: every dashboard cell
 /// the source selects (workload suffix + target prefix + mode) derives a
 /// value per the shape, and the aggregate keeps the WORST of them — the
@@ -408,13 +641,14 @@ fn measure_of(cell: &crate::report::DashboardCell, measure: Measure) -> f64 {
 /// absent contributes nothing (the named-gap rule — never an invented
 /// ratio), a teardown-delta cell whose runs produced no output
 /// contributes nothing (no first-output median), and a cell selecting
-/// nothing answers None (the covenant reports it absent).
+/// nothing answers None (the covenant reports it absent). The returned
+/// candidate is the one the aggregate KEPT — the witness reads its leg.
 fn derive_cell(
     source: &CellSource,
     comparison: Comparison,
     dashboards: &[crate::report::Dashboard],
-) -> Option<f64> {
-    let mut values: Vec<f64> = Vec::new();
+) -> Option<Candidate> {
+    let mut candidates: Vec<Candidate> = Vec::new();
     for dash in dashboards {
         for t in &dash.triplets {
             for c in &t.cells {
@@ -427,6 +661,7 @@ fn derive_cell(
                 if !selected {
                     continue;
                 }
+                let reference = reference_cell(source, dash, t, c);
                 let value = match source.shape {
                     Shape::Absolute => Some(measure_of(c, source.measure)),
                     // wall − first-output on the SAME cell; absent when
@@ -439,30 +674,7 @@ fn derive_cell(
                         // No baseline arm for this cell → it contributes
                         // nothing (the named-gap rule, never an invented
                         // ratio) — skip it; other cells may still answer.
-                        // The override prefix when the source declares
-                        // one (exact then prefix, the declared-baseline
-                        // rule), else the dashboard's declared baseline.
-                        let baseline = match &source.baseline {
-                            Some(prefix) => t
-                                .cells
-                                .iter()
-                                .find(|bc| {
-                                    bc.workload == c.workload
-                                        && bc.mode == c.mode
-                                        && bc.target == *prefix
-                                })
-                                .or_else(|| {
-                                    t.cells.iter().find(|bc| {
-                                        bc.workload == c.workload
-                                            && bc.mode == c.mode
-                                            && bc.target.starts_with(prefix.as_str())
-                                    })
-                                }),
-                            None => {
-                                crate::report::baseline_cell(dash, &t.triplet, &c.workload, c.mode)
-                            }
-                        };
-                        baseline.map(|bc| measure_of(bc, source.measure)).map(|b| {
+                        reference.map(|bc| measure_of(bc, source.measure)).map(|b| {
                             if source.shape == Shape::Ratio {
                                 base / b
                             } else {
@@ -472,43 +684,247 @@ fn derive_cell(
                     }
                 };
                 if let Some(v) = value {
-                    values.push(v);
+                    candidates.push(Candidate {
+                        value: v,
+                        suite: dash.suite.clone(),
+                        triplet: t.triplet.clone(),
+                        workload: c.workload.clone(),
+                        target: c.target.clone(),
+                        mode: c.mode,
+                        reference: reference
+                            .map(|bc| (bc.target.clone(), measure_of(bc, source.measure))),
+                        paired_ratio: c.paired_ratio_vs_baseline,
+                        cell_median: measure_of(c, source.measure),
+                    });
                 }
             }
         }
     }
-    if values.is_empty() {
+    if candidates.is_empty() {
         return None;
     }
-    // The worst-of aggregation (the only shape today).
-    match comparison {
-        Comparison::Le => values.into_iter().reduce(f64::max),
-        Comparison::Ge => values.into_iter().reduce(f64::min),
+    // The worst-of aggregation (the only shape today), keeping the
+    // candidate the aggregate picked so the witness reads the leg that
+    // trips the gate.
+    let worst = candidates.into_iter().reduce(|a, b| match comparison {
+        Comparison::Le => {
+            if b.value > a.value {
+                b
+            } else {
+                a
+            }
+        }
+        Comparison::Ge => {
+            if b.value < a.value {
+                b
+            } else {
+                a
+            }
+        }
+    })?;
+    Some(worst)
+}
+
+/// The rolling median of the last ≤ `WITNESS_WINDOW` history entries for
+/// one leg of one cell, newest last in the feed's order. None (with the
+/// reason) when the feed names fewer than `WITNESS_MIN_HISTORY`
+/// qualifying entries — a thinner history is noise, not a baseline.
+fn rolling_median(
+    history: &crate::trend::TrendFile,
+    suite: &str,
+    triplet: &str,
+    workload: &str,
+    target: &str,
+    mode: crate::result::RunMode,
+    pick: impl Fn(&crate::trend::TrendCell) -> Option<f64>,
+) -> Result<f64, String> {
+    let mut values: Vec<f64> = history
+        .cells
+        .iter()
+        .filter(|c| {
+            c.suite == suite
+                && c.triplet == triplet
+                && c.workload == workload
+                && c.target == target
+                && c.mode == mode
+        })
+        .filter_map(&pick)
+        .collect();
+    let n = values.len();
+    if n < WITNESS_MIN_HISTORY {
+        return Err(format!(
+            "history too thin for {target} on {triplet}: {n} published entr{} (need {WITNESS_MIN_HISTORY})",
+            if n == 1 { "y" } else { "ies" }
+        ));
+    }
+    let values = &mut values[n.saturating_sub(WITNESS_WINDOW)..];
+    values.sort_by(f64::total_cmp);
+    Ok(crate::engine::median_f64(values))
+}
+
+/// Derive one sourced cell's fleet witness (tebako#1071) from the
+/// candidate the aggregate kept: the leg identity + image off the
+/// current dashboard, the two drift numbers against the rolling history
+/// when the feed carried enough of it. Every degradation is an explicit
+/// null with the reason in `note` — never a silent hole.
+fn derive_witness(
+    source: &CellSource,
+    kept: &Candidate,
+    dashboards: &[crate::report::Dashboard],
+    history: Option<&crate::trend::TrendFile>,
+) -> CellWitness {
+    let dash = dashboards
+        .iter()
+        .find(|d| d.suite == kept.suite && d.triplets.iter().any(|t| t.triplet == kept.triplet));
+    let runner = dash
+        .and_then(|d| d.triplets.iter().find(|t| t.triplet == kept.triplet))
+        .map(|t| &t.runner);
+    let image_os = runner.and_then(|r| r.image_os.clone());
+    let image_version = runner.and_then(|r| r.image_version.clone());
+
+    let mut notes: Vec<String> = Vec::new();
+    let mut native_drift = None;
+    let mut pair_delta = None;
+
+    let Some((ref_target, ref_median)) = &kept.reference else {
+        notes.push(format!(
+            "no reference arm for {}/{} — the workload ran no baseline cell, the witness has nothing to compare against",
+            kept.workload, kept.target
+        ));
+        return CellWitness {
+            triplet: kept.triplet.clone(),
+            workload: kept.workload.clone(),
+            target: kept.target.clone(),
+            mode: kept.mode,
+            reference: None,
+            native_drift,
+            pair_delta,
+            image_os,
+            image_version,
+            image_changed: None,
+            note: Some(notes.join("; ")),
+        };
+    };
+
+    if let Some(h) = history {
+        let measure_pick = |c: &crate::trend::TrendCell| -> Option<f64> {
+            match source.measure {
+                Measure::Wall => Some(c.median_wall_s),
+                Measure::Rss => c.median_peak_rss_bytes.map(|b| b as f64),
+            }
+        };
+        match rolling_median(
+            h,
+            &kept.suite,
+            &kept.triplet,
+            &kept.workload,
+            ref_target,
+            kept.mode,
+            measure_pick,
+        ) {
+            Ok(rolling) if rolling > 0.0 => native_drift = Some(ref_median / rolling),
+            Ok(_) => notes.push("the rolling reference median is zero".to_string()),
+            Err(why) => notes.push(why),
+        }
+        // The current pair ratio: the published paired per-iteration
+        // figure when the cell carries one, else the ratio of medians.
+        let current_pair = kept
+            .paired_ratio
+            .or_else(|| (*ref_median > 0.0).then(|| kept.cell_median / ref_median));
+        match current_pair {
+            None => notes.push(format!(
+                "no pair ratio for {}/{} — the reference median is zero",
+                kept.workload, kept.target
+            )),
+            Some(current) => match rolling_median(
+                h,
+                &kept.suite,
+                &kept.triplet,
+                &kept.workload,
+                &kept.target,
+                kept.mode,
+                |c| c.ratio_vs_baseline,
+            ) {
+                Ok(rolling) if rolling > 0.0 => pair_delta = Some(current / rolling),
+                Ok(_) => notes.push("the rolling pair ratio is zero".to_string()),
+                Err(why) => notes.push(why),
+            },
+        }
+    } else {
+        notes.push(
+            "no history feed (the gate ran without the bench-history trend) — the drifts are null"
+                .to_string(),
+        );
+    }
+
+    // The image-changed observation (the #1067 smoking gun): the leg's
+    // image identity vs the newest history entry carrying one for the
+    // same suite × triplet.
+    let image_changed = match (history, &image_os, &image_version) {
+        (Some(h), Some(os), Some(ver)) => h
+            .cells
+            .iter()
+            .rev()
+            .find(|c| {
+                c.suite == kept.suite && c.triplet == kept.triplet && c.image_version.is_some()
+            })
+            .map(|prev| {
+                prev.image_os.as_deref() != Some(os.as_str())
+                    || prev.image_version.as_deref() != Some(ver.as_str())
+            }),
+        _ => None,
+    };
+
+    CellWitness {
+        triplet: kept.triplet.clone(),
+        workload: kept.workload.clone(),
+        target: kept.target.clone(),
+        mode: kept.mode,
+        reference: Some(ref_target.clone()),
+        native_drift,
+        pair_delta,
+        image_os,
+        image_version,
+        image_changed,
+        note: if notes.is_empty() {
+            None
+        } else {
+            Some(notes.join("; "))
+        },
     }
 }
 
 /// The producer: the MetricsFile a run's dashboards imply for the
 /// covenant's sourced cells. Cells whose source selects nothing (a suite
 /// the run did not execute, an arm that produced no numbers) stay absent
-/// — the covenant reports the gap, never a fabricated number.
+/// — the covenant reports the gap, never a fabricated number. Each
+/// derived cell also carries its fleet witness (tebako#1071); `history`
+/// is the bench-history trend feed when the workflow fetched it.
 pub fn produce(
     covenant: &CovenantFile,
     dashboards: &[crate::report::Dashboard],
     release: Option<&str>,
+    history: Option<&crate::trend::TrendFile>,
 ) -> MetricsFile {
     let mut metrics = BTreeMap::new();
+    let mut witness = BTreeMap::new();
     for cell in &covenant.cells {
         let Some(source) = &cell.source else {
             continue;
         };
-        if let Some(value) = derive_cell(source, cell.comparison, dashboards) {
-            metrics.insert(cell.id.clone(), value);
+        if let Some(kept) = derive_cell(source, cell.comparison, dashboards) {
+            witness.insert(
+                cell.id.clone(),
+                derive_witness(source, &kept, dashboards, history),
+            );
+            metrics.insert(cell.id.clone(), kept.value);
         }
     }
     MetricsFile {
         schema_version: 1,
         release: release.map(str::to_string),
         metrics,
+        witness,
     }
 }
 
@@ -531,6 +947,7 @@ mod tests {
             schema_version: 1,
             release: Some("v2.8.61".to_string()),
             metrics: pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+            witness: Default::default(),
         }
     }
 
@@ -696,12 +1113,22 @@ mod tests {
             median_cpu_s: median_wall_s,
             median_peak_rss_bytes,
             speedup_vs_v1: None,
+            paired_ratio_vs_baseline: None,
         }
     }
 
     /// A one-triplet dashboard over the given cells, the runtime suite's
     /// declared baseline (`on-system`) in place.
     fn dashboard(cells: Vec<crate::report::DashboardCell>) -> crate::report::Dashboard {
+        dashboard_on("macos-arm64", cells)
+    }
+
+    /// The dashboard helper with the triplet chosen (the witness tests
+    /// key history per triplet).
+    fn dashboard_on(
+        triplet: &str,
+        cells: Vec<crate::report::DashboardCell>,
+    ) -> crate::report::Dashboard {
         crate::report::Dashboard {
             suite: "runtime-on-system-vs-tebako".to_string(),
             generated_by: "test".to_string(),
@@ -711,12 +1138,14 @@ mod tests {
             }),
             notes: Vec::new(),
             triplets: vec![crate::report::DashboardTriplet {
-                triplet: "macos-arm64".to_string(),
+                triplet: triplet.to_string(),
                 runner: crate::result::RunnerMeta {
                     runs_on: "macos-15".to_string(),
                     arch: "arm64".to_string(),
                     cpus: 10,
                     ram_bytes: 32 * 1024 * 1024 * 1024,
+                    image_os: Some("macos15".to_string()),
+                    image_version: Some("20261111.127".to_string()),
                 },
                 versions: Default::default(),
                 cells,
@@ -780,7 +1209,7 @@ mod tests {
             Measure::Wall,
             Shape::Ratio,
         )]);
-        let m = produce(&cov, &[dash], Some("v9.9.9"));
+        let m = produce(&cov, &[dash], Some("v9.9.9"), None);
         assert_eq!(m.release.as_deref(), Some("v9.9.9"));
         assert_eq!(m.metrics.get("first-response.warm.median"), Some(&1.60));
     }
@@ -804,7 +1233,7 @@ mod tests {
             Measure::Wall,
             Shape::Speedup,
         )]);
-        let m = produce(&cov, &[dash], None);
+        let m = produce(&cov, &[dash], None, None);
         let got = m.metrics["steady.cpu.throughput"];
         // the min of 1.25 and 1.0/1.111
         let expect = 1.0f64 / 1.111f64;
@@ -826,7 +1255,7 @@ mod tests {
             Measure::Rss,
             Shape::Ratio,
         )]);
-        let m = produce(&cov, &[dash], None);
+        let m = produce(&cov, &[dash], None, None);
         assert_eq!(m.metrics.get("memory.rss.ratio"), Some(&1.2));
     }
 
@@ -844,7 +1273,7 @@ mod tests {
             Measure::Wall,
             Shape::Ratio,
         )]);
-        let m = produce(&cov, &[dash], None);
+        let m = produce(&cov, &[dash], None, None);
         assert!(!m.metrics.contains_key("first-response.warm.median"));
     }
 
@@ -863,7 +1292,7 @@ mod tests {
             Measure::Wall,
             Shape::Ratio,
         )]);
-        let m = produce(&cov, &[dash], None);
+        let m = produce(&cov, &[dash], None, None);
         assert!(!m.metrics.contains_key("first-response.warm.median"));
     }
 
@@ -897,7 +1326,7 @@ mod tests {
             Measure::Wall,
             Shape::TeardownDelta,
         )]);
-        let m = produce(&cov, &[dash], None);
+        let m = produce(&cov, &[dash], None, None);
         let got = m.metrics["teardown.exit_seconds"];
         assert!((got - 0.20).abs() < 1e-9, "{got} != 0.20");
     }
@@ -916,7 +1345,7 @@ mod tests {
             Measure::Wall,
             Shape::TeardownDelta,
         )]);
-        let m = produce(&cov, &[dash], None);
+        let m = produce(&cov, &[dash], None, None);
         assert!(!m.metrics.contains_key("teardown.exit_seconds"));
     }
 
@@ -940,7 +1369,7 @@ mod tests {
         );
         cell.source.as_mut().unwrap().baseline = Some("extract-".to_string());
         let cov = covenant_with(vec![cell]);
-        let m = produce(&cov, &[dash], None);
+        let m = produce(&cov, &[dash], None, None);
         let got = m.metrics["teardown.materialize_vs_extract"];
         assert!((got - 0.29 / 0.40).abs() < 1e-9, "{got} != 0.725");
     }
@@ -955,5 +1384,375 @@ mod tests {
         let bad = "schema_version: 1\ncells:\n  - id: x\n    bound: 1.0\n    comparison: le\n    source: {workloads: [\"-boot\"], target: \"tebako-\", baseline: \"extract-\", mode: warm, measure: wall, shape: absolute, aggregate: worst}\n";
         let err = CovenantFile::from_yaml(bad).unwrap_err();
         assert!(err.to_string().contains("ratio|speedup"), "{err}");
+    }
+
+    // ---- the fleet witness (tebako#1071) ----
+
+    fn trend_cell(
+        release: &str,
+        triplet: &str,
+        workload: &str,
+        target: &str,
+        median: f64,
+        ratio: Option<f64>,
+        image_version: &str,
+    ) -> crate::trend::TrendCell {
+        crate::trend::TrendCell {
+            release: release.to_string(),
+            date: "2026-11-10".to_string(),
+            suite: "runtime-on-system-vs-tebako".to_string(),
+            triplet: triplet.to_string(),
+            workload: workload.to_string(),
+            target: target.to_string(),
+            mode: crate::result::RunMode::Warm,
+            median_wall_s: median,
+            ratio_vs_baseline: ratio,
+            median_peak_rss_bytes: Some(100),
+            image_os: Some("ubuntu24".to_string()),
+            image_version: Some(image_version.to_string()),
+        }
+    }
+
+    /// Eight flat published runs of the statloop leg: native median
+    /// 0.10, tebako median 1.00 (pair ratio 10.0), image .370 — the
+    /// pre-move fleet (the #1067 shape).
+    fn healthy_history() -> crate::trend::TrendFile {
+        let mut cells = Vec::new();
+        for i in 0..8 {
+            let rel = format!("run-4{i}");
+            cells.push(trend_cell(
+                &rel,
+                "linux-musl-x86_64",
+                "ruby-statloop",
+                "on-system-ruby",
+                0.10,
+                Some(1.0),
+                "20261111.370",
+            ));
+            cells.push(trend_cell(
+                &rel,
+                "linux-musl-x86_64",
+                "ruby-statloop",
+                "tebako-ruby",
+                1.00,
+                Some(10.0),
+                "20261111.370",
+            ));
+        }
+        crate::trend::TrendFile {
+            generated_by: "test".to_string(),
+            cells,
+        }
+    }
+
+    /// The current run's statloop dashboard on the musl leg with the
+    /// given arm medians; the tebako cell carries the published paired
+    /// per-iteration ratio (the interleave's figure).
+    fn statloop_dashboard(native: f64, tebako: f64, paired: f64) -> crate::report::Dashboard {
+        let mut dash = dashboard_on(
+            "linux-musl-x86_64",
+            vec![
+                dash_cell(
+                    "ruby-statloop",
+                    "on-system-ruby",
+                    crate::result::RunMode::Warm,
+                    native,
+                    10,
+                ),
+                {
+                    let mut c = dash_cell(
+                        "ruby-statloop",
+                        "tebako-ruby",
+                        crate::result::RunMode::Warm,
+                        tebako,
+                        12,
+                    );
+                    c.paired_ratio_vs_baseline = Some(paired);
+                    c
+                },
+            ],
+        );
+        dash.triplets[0].runner.image_os = Some("ubuntu24".to_string());
+        dash.triplets[0].runner.image_version = Some("20261111.127".to_string());
+        dash
+    }
+
+    fn statloop_covenant(bound: f64) -> CovenantFile {
+        covenant_with(vec![sourced(
+            "filesystem.stat.median",
+            bound,
+            Comparison::Le,
+            &["-statloop"],
+            Measure::Wall,
+            Shape::Ratio,
+        )])
+    }
+
+    #[test]
+    fn a_flat_fleet_reads_both_witnesses_flat() {
+        let m = produce(
+            &statloop_covenant(26.0),
+            &[statloop_dashboard(0.10, 1.00, 10.0)],
+            None,
+            Some(&healthy_history()),
+        );
+        let w = &m.witness["filesystem.stat.median"];
+        assert_eq!(w.triplet, "linux-musl-x86_64");
+        assert_eq!(w.workload, "ruby-statloop");
+        assert_eq!(w.target, "tebako-ruby");
+        assert_eq!(w.reference.as_deref(), Some("on-system-ruby"));
+        assert_eq!(w.native_drift, Some(1.0), "native 0.10 vs rolling 0.10");
+        assert_eq!(w.pair_delta, Some(1.0), "paired 10.0 vs rolling 10.0");
+        assert_eq!(w.note, None);
+        assert_eq!(w.image_version.as_deref(), Some("20261111.127"));
+        assert_eq!(
+            w.image_changed,
+            Some(true),
+            "the leg's .127 vs the history's .370 — the #1067 smoking gun"
+        );
+    }
+
+    #[test]
+    fn a_fleet_move_reads_native_drift_large_pair_delta_small() {
+        // Both arms doubled together (the runner got slower): the native
+        // drift is large, the paired relationship is unmoved.
+        let m = produce(
+            &statloop_covenant(26.0),
+            &[statloop_dashboard(0.20, 2.00, 10.0)],
+            None,
+            Some(&healthy_history()),
+        );
+        let w = &m.witness["filesystem.stat.median"];
+        assert_eq!(w.native_drift, Some(2.0));
+        assert_eq!(w.pair_delta, Some(1.0));
+        // The trip (20.0 > 9.0) classifies as a fleet move.
+        let report = evaluate(&statloop_covenant(9.0), &m, None);
+        let cell = &report.cells[0];
+        assert_eq!(cell.state, State::Over);
+        assert_eq!(cell.class, Some(Class::FleetMove));
+        assert!(
+            cell.class_note.as_deref().unwrap().contains("fleet move"),
+            "{:?}",
+            cell.class_note
+        );
+        assert_eq!(cell.native_drift, Some(2.0));
+        assert_eq!(cell.pair_delta, Some(1.0));
+    }
+
+    #[test]
+    fn a_regression_reads_native_flat_pair_delta_moved() {
+        // The tebako arm alone worsened: native flat, pair moved.
+        let m = produce(
+            &statloop_covenant(26.0),
+            &[statloop_dashboard(0.10, 1.80, 18.0)],
+            None,
+            Some(&healthy_history()),
+        );
+        let report = evaluate(&statloop_covenant(9.0), &m, None);
+        let cell = &report.cells[0];
+        assert_eq!(cell.state, State::Over);
+        assert_eq!(cell.class, Some(Class::Regression));
+        assert!(
+            cell.class_note.as_deref().unwrap().contains("regression"),
+            "{:?}",
+            cell.class_note
+        );
+    }
+
+    #[test]
+    fn divergent_arms_read_ambiguous_the_1067_shape() {
+        // #1067 itself: the new image made the native stat FASTER (×0.6)
+        // while the mount-routed path slowed — both witnesses moved.
+        let m = produce(
+            &statloop_covenant(26.0),
+            &[statloop_dashboard(0.06, 1.60, 26.67)],
+            None,
+            Some(&healthy_history()),
+        );
+        let w = &m.witness["filesystem.stat.median"];
+        assert!(
+            (w.native_drift.unwrap() - 0.6).abs() < 1e-9,
+            "{:?}",
+            w.native_drift
+        );
+        assert!(
+            (w.pair_delta.unwrap() - 2.667).abs() < 1e-3,
+            "{:?}",
+            w.pair_delta
+        );
+        let report = evaluate(&statloop_covenant(9.0), &m, None);
+        let cell = &report.cells[0];
+        assert_eq!(cell.class, Some(Class::Ambiguous));
+        assert!(
+            cell.class_note.as_deref().unwrap().contains("divergently"),
+            "{:?}",
+            cell.class_note
+        );
+        // The adjudication input rides the artifact: the leg and its
+        // image identity.
+        let w = cell.witness.as_ref().unwrap();
+        assert_eq!(w.triplet, "linux-musl-x86_64");
+        assert_eq!(w.image_changed, Some(true));
+    }
+
+    #[test]
+    fn a_passing_cell_carries_the_witness_but_no_class() {
+        let m = produce(
+            &statloop_covenant(26.0),
+            &[statloop_dashboard(0.10, 1.00, 10.0)],
+            None,
+            Some(&healthy_history()),
+        );
+        let report = evaluate(&statloop_covenant(26.0), &m, None);
+        let cell = &report.cells[0];
+        assert_eq!(cell.state, State::Pass);
+        assert_eq!(cell.native_drift, Some(1.0), "the witness is the record");
+        assert_eq!(cell.class, None, "classes are for trips");
+    }
+
+    #[test]
+    fn thin_history_degrades_to_null_with_the_note() {
+        let mut h = healthy_history();
+        h.cells.truncate(4); // two releases, under the 3-entry floor
+        let m = produce(
+            &statloop_covenant(26.0),
+            &[statloop_dashboard(0.10, 1.00, 10.0)],
+            None,
+            Some(&h),
+        );
+        let w = &m.witness["filesystem.stat.median"];
+        assert_eq!(w.native_drift, None);
+        assert_eq!(w.pair_delta, None);
+        let note = w.note.as_deref().unwrap();
+        assert!(note.contains("history too thin"), "{note}");
+        assert!(note.contains("2"), "{note}");
+    }
+
+    #[test]
+    fn no_history_feed_degrades_to_null_with_the_note() {
+        let m = produce(
+            &statloop_covenant(26.0),
+            &[statloop_dashboard(0.10, 1.00, 10.0)],
+            None,
+            None,
+        );
+        let w = &m.witness["filesystem.stat.median"];
+        assert_eq!(w.native_drift, None);
+        assert_eq!(w.pair_delta, None);
+        assert!(
+            w.note.as_deref().unwrap().contains("no history feed"),
+            "{:?}",
+            w.note
+        );
+        // The leg + image identity are still recorded (the current
+        // dashboard carries them) — only the drifts degrade.
+        assert_eq!(w.image_version.as_deref(), Some("20261111.127"));
+        assert_eq!(w.image_changed, None);
+    }
+
+    #[test]
+    fn no_reference_arm_degrades_with_the_note() {
+        use crate::result::RunMode::Warm;
+        // An absolute cell whose workload ran no baseline arm (the
+        // author loop's shape): the witness has nothing to compare
+        // against and says so.
+        let dash = dashboard_on(
+            "macos-arm64",
+            vec![dash_cell("author-repress", "v2-tools", Warm, 7.9, 100)],
+        );
+        let mut cell = sourced(
+            "author-loop.repress.median",
+            6.0,
+            Comparison::Le,
+            &["-repress"],
+            Measure::Wall,
+            Shape::Absolute,
+        );
+        cell.source.as_mut().unwrap().target = "v2-tools".to_string();
+        let cov = covenant_with(vec![cell]);
+        let m = produce(&cov, &[dash], None, Some(&healthy_history()));
+        let w = &m.witness["author-loop.repress.median"];
+        assert_eq!(w.reference, None);
+        assert_eq!(w.native_drift, None);
+        assert_eq!(w.pair_delta, None);
+        assert!(
+            w.note.as_deref().unwrap().contains("no reference arm"),
+            "{:?}",
+            w.note
+        );
+    }
+
+    #[test]
+    fn the_pair_delta_falls_back_to_the_ratio_of_medians() {
+        // A dashboard cell without the published paired ratio (an old
+        // dashboard): the witness divides the medians instead.
+        let mut dash = statloop_dashboard(0.10, 1.00, 10.0);
+        dash.triplets[0].cells[1].paired_ratio_vs_baseline = None;
+        let m = produce(
+            &statloop_covenant(26.0),
+            &[dash],
+            None,
+            Some(&healthy_history()),
+        );
+        let w = &m.witness["filesystem.stat.median"];
+        assert_eq!(w.pair_delta, Some(1.0), "1.00/0.10 = 10.0 vs rolling 10.0");
+    }
+
+    #[test]
+    fn classify_is_the_truth_table() {
+        let class_of = |d: f64, p: f64| classify(Some(d), Some(p)).map(|(c, _)| c);
+        // fleet move: native drift large, pair delta small
+        assert_eq!(class_of(2.0, 1.0), Some(Class::FleetMove));
+        assert_eq!(class_of(0.5, 1.29), Some(Class::FleetMove));
+        // regression: tebako arm moved, native flat
+        assert_eq!(class_of(1.0, 2.0), Some(Class::Regression));
+        assert_eq!(class_of(1.29, 1.31), Some(Class::Regression));
+        // ambiguous: both moved divergently, or neither witness supports
+        // the trip
+        assert_eq!(class_of(0.6, 2.24), Some(Class::Ambiguous));
+        assert_eq!(class_of(1.0, 1.0), Some(Class::Ambiguous));
+        // the tolerance band's edges are flat (the trip then has no
+        // witness support → ambiguous); just outside them is a move
+        assert_eq!(class_of(WITNESS_TOLERANCE, 1.0), Some(Class::Ambiguous));
+        assert_eq!(
+            class_of(1.0 / WITNESS_TOLERANCE, 1.0),
+            Some(Class::Ambiguous)
+        );
+        assert_eq!(
+            class_of(WITNESS_TOLERANCE + 0.01, 1.0),
+            Some(Class::FleetMove)
+        );
+        assert_eq!(
+            class_of(1.0 / (WITNESS_TOLERANCE + 0.01), 1.0),
+            Some(Class::FleetMove)
+        );
+        // no witness numbers, no class
+        assert_eq!(classify(None, Some(2.0)), None);
+        assert_eq!(classify(Some(1.0), None), None);
+    }
+
+    #[test]
+    fn the_witness_map_merges_last_wins() {
+        let mut a = metrics(&[("x.y", 1.0)]);
+        let mut b = metrics(&[("z.w", 2.0)]);
+        let w = |t: &str| CellWitness {
+            triplet: t.to_string(),
+            workload: "ruby-statloop".to_string(),
+            target: "tebako-ruby".to_string(),
+            mode: crate::result::RunMode::Warm,
+            reference: Some("on-system-ruby".to_string()),
+            native_drift: Some(1.0),
+            pair_delta: Some(1.0),
+            image_os: None,
+            image_version: None,
+            image_changed: None,
+            note: None,
+        };
+        a.witness.insert("x.y".to_string(), w("macos-arm64"));
+        b.witness.insert("z.w".to_string(), w("linux-musl-x86_64"));
+        let collisions = a.merge(&b);
+        assert!(collisions.is_empty());
+        assert_eq!(a.witness.len(), 2);
+        assert_eq!(a.witness["z.w"].triplet, "linux-musl-x86_64");
     }
 }

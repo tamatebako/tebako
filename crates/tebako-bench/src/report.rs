@@ -42,6 +42,12 @@ pub struct ReportRequest {
     pub covenant: Option<PathBuf>,
     /// The release the metrics belong to (the MetricsFile's `release`).
     pub release: Option<String>,
+    /// The bench-history trend feed (`latest/trend.json`, tebako#1071):
+    /// when set alongside `metrics`, each sourced cell's MetricsFile
+    /// entry carries the fleet witness (the native arm's drift and the
+    /// pair delta against the rolling published medians). Absent, the
+    /// witness degrades to explicit nulls with the reason noted.
+    pub history: Option<PathBuf>,
 }
 
 /// One input file with its stats re-derived from its own run records.
@@ -102,6 +108,17 @@ pub struct DashboardCell {
     /// shape). The field NAME is frozen (additive-only law); the
     /// baseline it divides by comes from the dashboard's `baseline`.
     pub speedup_vs_v1: Option<f64>,
+    /// The paired per-iteration ratio (additive, tebako#1071): the
+    /// median of the per-index ratios (this arm's iteration i ÷ the
+    /// baseline arm's iteration i) over the iterations BOTH arms ran
+    /// ok — the interleave's payoff (§10.3): iteration i of both arms
+    /// ran adjacently, so the per-index ratio cancels within-iteration
+    /// fleet drift the ratio of medians would keep. Null when no
+    /// baseline arm exists or no iteration pair matched (the cold mode
+    /// of a pair whose baseline has no cold story). The covenant's fleet
+    /// witness reads this published figure, never a private
+    /// recomputation.
+    pub paired_ratio_vs_baseline: Option<f64>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -208,17 +225,38 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
 
     // The covenant arm (spec 27 §11): the sourced cells ride the
     // dashboard just written — one dashboard, one derivation, so the
-    // gate and the page never disagree.
+    // gate and the page never disagree. The fleet witness (tebako#1071)
+    // additionally reads the bench-history trend feed when --history
+    // names it; absent, the witness degrades to explicit nulls.
     if let Some(metrics_path) = &req.metrics {
         let covenant_path = req
             .covenant
             .clone()
             .unwrap_or_else(|| PathBuf::from("benchmarks/covenant.yaml"));
         let covenant = crate::covenant::CovenantFile::load(&covenant_path)?;
+        let history = match &req.history {
+            Some(path) => {
+                let text = std::fs::read_to_string(path).map_err(|e| {
+                    BenchError::operational(format!(
+                        "report: cannot read the history feed {}: {e}",
+                        path.display()
+                    ))
+                })?;
+                let file: crate::trend::TrendFile = serde_json::from_str(&text).map_err(|e| {
+                    BenchError::operational(format!(
+                        "report: cannot parse the history feed {}: {e}",
+                        path.display()
+                    ))
+                })?;
+                Some(file)
+            }
+            None => None,
+        };
         let metrics = crate::covenant::produce(
             &covenant,
             std::slice::from_ref(&dash),
             req.release.as_deref(),
+            history.as_ref(),
         );
         let text = serde_json::to_string_pretty(&metrics)
             .map_err(|e| BenchError::operational(format!("metrics serialize: {e}")))?;
@@ -261,6 +299,43 @@ fn baseline<'a>(
 
 fn speedup(stats: &[StatRecord], s: &StatRecord, declared: Option<&str>) -> Option<f64> {
     baseline(stats, s, declared).map(|b| b.median_wall_s / s.median_wall_s)
+}
+
+/// The paired per-iteration ratio (tebako#1071): iteration i of the
+/// cell's arm ÷ iteration i of the baseline arm, median over the
+/// iteration indices BOTH arms recorded ok (the interleave runs them
+/// adjacently, so each pair shares the fleet's momentary state). None
+/// when no baseline arm exists or no iteration pairs — never a
+/// fabricated ratio.
+pub(crate) fn paired_ratio(
+    runs: &[RunRecord],
+    stats: &[StatRecord],
+    s: &StatRecord,
+    declared: Option<&str>,
+) -> Option<f64> {
+    let b = baseline(stats, s, declared)?;
+    let by_iteration = |target: &str| -> BTreeMap<u32, f64> {
+        runs.iter()
+            .filter(|r| {
+                r.status == RunStatus::Ok
+                    && r.workload == s.workload
+                    && r.target == target
+                    && r.mode == Some(s.mode)
+            })
+            .filter_map(|r| Some((r.iteration?, r.wall_s?)))
+            .collect()
+    };
+    let mine = by_iteration(&s.target);
+    let theirs = by_iteration(&b.target);
+    let mut ratios: Vec<f64> = mine
+        .iter()
+        .filter_map(|(i, v)| theirs.get(i).map(|bv| v / bv))
+        .collect();
+    if ratios.is_empty() {
+        return None;
+    }
+    ratios.sort_by(f64::total_cmp);
+    Some(crate::engine::median_f64(&ratios))
 }
 
 /// The baseline arm's dashboard cell for a (triplet × workload × mode):
@@ -307,8 +382,12 @@ fn render_markdown(
     for t in triplets {
         let f = &t.file;
         out.push_str(&format!("\n## {}\n", f.triplet));
+        let image = match (&f.runner.image_os, &f.runner.image_version) {
+            (Some(os), Some(ver)) => format!(" · image {os}/{ver}"),
+            _ => String::new(),
+        };
         out.push_str(&format!(
-            "\nRunner: {} · {} · {} cpus · {:.1} GiB\n",
+            "\nRunner: {} · {} · {} cpus · {:.1} GiB{image}\n",
             f.runner.runs_on,
             f.runner.arch,
             f.runner.cpus,
@@ -496,6 +575,12 @@ fn dashboard(
                         median_cpu_s: s.median_cpu_s,
                         median_peak_rss_bytes: s.median_peak_rss_bytes,
                         speedup_vs_v1: speedup(&t.stats, s, baseline_name.as_deref()),
+                        paired_ratio_vs_baseline: paired_ratio(
+                            &t.file.runs,
+                            &t.stats,
+                            s,
+                            baseline_name.as_deref(),
+                        ),
                     })
                     .collect();
                 let row = |r: &RunRecord| DashboardRow {

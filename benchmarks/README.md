@@ -33,7 +33,19 @@ by design. The contract is `docs/spec/27-benchmarks.md`.
   measure (wall | rss), shape (ratio | speedup | absolute |
   teardown-delta), worst-of aggregation. The `covenant` subcommand
   evaluates the produced metrics: `over` fails the gate, `absent` is
-  the named coverage gap.
+  the named coverage gap. **The verdict artifact also carries the fleet
+  witness (tebako#1071)**: per cell, `native_drift` (the native arm's
+  median ÷ its own rolling median over the last ≤8 published runs, read
+  from the bench-history trend feed the fan-in hands the producer via
+  `--history`), `pair_delta` (the current paired per-iteration ratio ÷
+  its rolling median), and the full `witness` record (the leg the
+  worst-of aggregate kept + its runner image identity, `image_changed`
+  vs the previous published run included). On a trip the cell's `class`
+  names the reading: `fleet-move` (native drift large, pair delta
+  small), `regression` (the tebako arm moved against a flat native
+  arm), or `ambiguous` (both moved divergently, or the trip has no
+  witness support) — adjudication is a read of the artifact. Degraded
+  witnesses are explicit `null`s with the reason in `note`.
 - `platforms.yaml` — WHERE: triplet → runner (+ alpine container for musl
   legs), the packed-mn tag for the v1 arm, and the named gaps
   (`v1_asset: null`, `v2_payload: false`, `runtime_gaps` for the runtime
@@ -64,11 +76,13 @@ cargo build -p tebako-bench
   --platforms benchmarks/platforms.yaml --triplet macos-arm64 --out out
 ```
 
-Merging triplet results into the report + dashboard:
+Merging triplet results into the report + dashboard (+ the covenant
+metrics, with the fleet witness reading the bench-history trend feed):
 
 ```
 ./target/debug/tebako-bench report legs/*/out/results.json \
-  --md report.md --json dashboard.json
+  --md report.md --json dashboard.json \
+  [--metrics covenant-metrics.json --history latest-trend.json]
 ```
 
 Appending a run's dashboards to the trend feed (the fan-in's job):
@@ -89,15 +103,18 @@ operational fault.
 `release: published` only — never per-PR. The leg matrix is generated
 from `platforms.yaml`; each leg runs the metanorma suite (musl legs
 inside the pinned alpine container) and the runtime suite (on the host,
-against the provisioned ruby/python/java). The fan-in job merges each
-suite's per-triplet `results.json` files into `report.md` +
-`dashboard.json` and `report-runtime.md` + `dashboard-runtime.json`, and
-on release AND dispatch runs publishes all four to the `bench-history`
-branch — under the per-run entry (`<tag>/` or `run-<run-id>/`) and the
-`latest/` mirrors — refreshes `latest/trend.json` (the
-release-over-release feed, capped at the last 20 releases), and fires a
-`bench-update` repository_dispatch at tebako.org (soft-fail: the site's
-nightly rebuild is the fallback).
+against the provisioned ruby/python/java). The fan-in job fetches the
+bench-history branch's `latest/trend.json` (the fleet witness's rolling
+baseline), merges each suite's per-triplet `results.json` files into
+`report.md` + `dashboard.json` and `report-runtime.md` +
+`dashboard-runtime.json`, evaluates the covenant — the "Gate on the
+covenant" step prints every tripped cell's witness line and class —
+and on release AND dispatch runs publishes all four to the
+`bench-history` branch — under the per-run entry (`<tag>/` or
+`run-<run-id>/`) and the `latest/` mirrors — refreshes
+`latest/trend.json` (the release-over-release feed, capped at the last
+20 releases), and fires a `bench-update` repository_dispatch at
+tebako.org (soft-fail: the site's nightly rebuild is the fallback).
 
 ## Reading the numbers
 

@@ -5,6 +5,13 @@
 # cell is a coverage gap — reported loudly, never silently satisfied and
 # never a false red.
 #
+# Every produced cell also carries its fleet witness (tebako#1071, spec
+# 27 §11.1.1): the native arm's drift and the pair delta against the
+# cell's rolling bench-history medians, and the leg's runner image
+# identity. On a trip the verdict names the class — `fleet-move`,
+# `regression`, or `ambiguous` — so adjudication is a read of the
+# artifact, not an archaeology dig.
+#
 # Two cell shapes, each honest about what it measures:
 #
 # * **Ratio/speedup against the native interpreter on the same host** —

@@ -23,7 +23,9 @@
         "runs_on": { "type": "string", "minLength": 1, "description": "The CI runner label (e.g. ubuntu-24.04, macos-14, windows-latest)." },
         "arch": { "type": "string", "minLength": 1 },
         "cpus": { "type": "integer", "minimum": 1 },
-        "ram_bytes": { "type": "integer", "minimum": 1 }
+        "ram_bytes": { "type": "integer", "minimum": 1 },
+        "image_os": { "type": "string", "minLength": 1, "description": "The runner image identity (2026-11-21 additive, tebako#1071): the GH-hosted runner's $ImageOS (e.g. ubuntu24); absent off CI." },
+        "image_version": { "type": "string", "minLength": 1, "description": "The GH-hosted runner's $ImageVersion (e.g. 20261111.127) — a fleet move IS an image change; absent off CI." }
       },
       "description": "Mandatory environment metadata — numbers without their environment are not numbers."
     },

@@ -2,7 +2,8 @@
   "schema_version": 1,
   "suite": "golden-fixture-suite",
   "triplet": "macos-arm64",
-  "runner": { "runs_on": "macos-14", "arch": "arm64", "cpus": 8, "ram_bytes": 16777216000 },
+  "runner": { "runs_on": "macos-14", "arch": "arm64", "cpus": 8, "ram_bytes": 16777216000,
+              "image_os": "macos15", "image_version": "20261111.127" },
   "versions": {
     "tebako": "0.2.4",
     "runtime": "0.16.9-3.3.12",
