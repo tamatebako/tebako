@@ -32,6 +32,20 @@ workloads:
     argv: ["-e", "10.times { Dir.glob(File.join(Gem.default_dir, '**', '*')).each { |f| File.stat(f) } }"]
     expect: { exit: 0, files: [] }
     timeout_s: 300
+  # The spawn edge (spec 27 §10.6): one in-image executable spawn —
+  # `gem --version` with PATH pinned to the host's /usr/bin:/bin, so the
+  # resolution can ONLY succeed inside the runtime image (the host's
+  # PATH-resolved gem is deliberately out of the running). This is the
+  # materialize cell's tebako arm: what v2 pays at mount instead of at
+  # extraction. The on-system arm is NOT in the allowlist — the CI
+  # runner's ruby gems live in setup-ruby's gem home, not /usr/bin, so
+  # the pinned PATH would fail that leg on CI for a reason that has
+  # nothing to do with the comparison.
+  - id: ruby-spawn
+    argv: ["-e", 'system({"PATH"=>"/usr/bin:/bin"}, "gem", "--version") or exit(1)']
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+    targets: [tebako-ruby, extract-ruby]
 
   # python — the same five questions.
   - id: python-boot
@@ -112,5 +126,17 @@ targets:
   - id: tebako-java
     kind: runtime-exe
     runtime: { repo: tamatebako/tebako-runtime-openjdk, tag: v2.8.50, lang_version: "21.0.12", implementation: temurin }
+
+  # The extraction arm (spec 27 §10.6): the SAME runtime ref as
+  # tebako-ruby, timed being extracted whole by the release's tfs tool —
+  # the materialize cell's baseline ("what v1's unpack-everything pays
+  # every boot"). Not a comparison pair: no on-system counterpart exists,
+  # and only allowlisted workloads land on it. Ruby only — java's
+  # runtime home materializes the whole tree per boot (the ratio would
+  # red by construction) and python's image ships no in-image
+  # executables to spawn.
+  - id: extract-ruby
+    kind: tfs-extract
+    runtime: { repo: tamatebako/tebako-runtime-ruby, tag: v0.17.4, lang_version: "3.3.13" }
 
 run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

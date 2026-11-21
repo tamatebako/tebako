@@ -60,6 +60,16 @@ pub struct Sample {
     pub exit: i32,
     /// True when the run was killed at the spec's timeout.
     pub timed_out: bool,
+    /// Time to FIRST OUTPUT: elapsed spawn→the run log first growing past
+    /// its spawn-time length, polled on the same tick as the wait loop
+    /// (spec 27 §4, amended 2026-11-21 — the teardown cell's input:
+    /// wall − first-output is the exit tail a finished dispatch shows).
+    /// `None` when the child never wrote (a silent workload measures
+    /// nothing here — never a fabricated zero). A child that writes and
+    /// exits inside one tick records the reap instant (an upper bound —
+    /// the favorable reading, so the gate trips only on an OBSERVED
+    /// tail, never on the sampler's own granularity).
+    pub first_output_s: Option<f64>,
 }
 
 /// The one-per-process measured-run surface. Not `Clone`/`Sync`: the

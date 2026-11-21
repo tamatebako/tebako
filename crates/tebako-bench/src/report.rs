@@ -91,6 +91,10 @@ pub struct DashboardCell {
     pub max_wall_s: f64,
     pub stdev_wall_s: Option<f64>,
     pub mean_wall_s: f64,
+    /// Median time to first output (additive, 2026-11-21 — the teardown
+    /// covenant cell's input); null when no run in the cell produced
+    /// output.
+    pub median_first_output_s: Option<f64>,
     pub median_cpu_s: f64,
     pub median_peak_rss_bytes: u64,
     /// baseline median / this median on the same triplet × workload ×
@@ -488,6 +492,7 @@ fn dashboard(
                         max_wall_s: s.max_wall_s,
                         stdev_wall_s: s.stdev_wall_s,
                         mean_wall_s: s.mean_wall_s,
+                        median_first_output_s: s.median_first_output_s,
                         median_cpu_s: s.median_cpu_s,
                         median_peak_rss_bytes: s.median_peak_rss_bytes,
                         speedup_vs_v1: speedup(&t.stats, s, baseline_name.as_deref()),

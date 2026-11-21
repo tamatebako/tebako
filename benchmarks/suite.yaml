@@ -41,6 +41,27 @@ workloads:
     expect: { exit: 0, files: ["document.xml"] }
     timeout_s: 900
 
+  # The author loop (spec 27 §11.1): re-press an unchanged project, and
+  # boot what the press produced. The re-press runs the arm's staged
+  # tebako CLI from the run cell's copy of the vendored fixture project
+  # (`{package}` is the cell's output path); the first run boots the
+  # package the arm's priming press staged at acquisition. Both legs are
+  # warm-store by contract — a cold press would re-resolve the runtime
+  # (a download) inside the measured span, so the arm's cold cell is a
+  # named gap.
+  - id: author-repress
+    kind: press
+    source: { kind: vendored, path: benchmarks/fixtures/author-loop/main.rb }
+    targets: [v2-tools]
+    argv: ["press", "-r", ".", "-e", "main.rb", "-o", "{package}"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+  - id: author-first-run
+    targets: [v2-tools]
+    argv: []
+    expect: { exit: 0, files: [] }
+    timeout_s: 120
+
 targets:
   # Old world: the packed-mn release executable (per-triplet asset from
   # platforms.yaml). Frozen at metanorma-cli 1.14.4 — the version skew
@@ -79,5 +100,17 @@ targets:
       - "tfs:github:tebako-packages/metanorma"
       - "tfs:github:tamatebako/tebako-runtime-ruby"
       - "tfs:github:tamatebako/tebako-runtime-openjdk"
+
+  # The author loop's tooling arm (spec 27 §11.1): the release's tebako
+  # CLI priming-presses the vendored author-loop fixture at acquisition
+  # (the default-runtime resolution and download land there, outside
+  # every measured span), and the pressed package serves
+  # author-first-run while author-repress re-presses the project per
+  # measured run. The ruby factory registry is the default-runtime
+  # resolution source (tebako#895's chain).
+  - id: v2-tools
+    kind: v2-tools
+    registries:
+      - "tfs:github:tamatebako/tebako-runtime-ruby"
 
 run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

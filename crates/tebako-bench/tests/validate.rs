@@ -78,6 +78,26 @@ fn invalid_fixtures_are_named() {
             "runtime",
         ),
         (
+            DocKind::Suite,
+            "suite-invalid-tfs-extract-missing-runtime.yaml",
+            "runtime",
+        ),
+        (
+            DocKind::Suite,
+            "suite-invalid-v2-tools-missing-registries.yaml",
+            "registries",
+        ),
+        (
+            DocKind::Suite,
+            "suite-invalid-press-no-source.yaml",
+            "source",
+        ),
+        (
+            DocKind::Suite,
+            "suite-invalid-workload-targets-unknown.yaml",
+            "names no declared target",
+        ),
+        (
             DocKind::Result,
             "result-invalid-gap-no-reason.json",
             "reason",
@@ -163,6 +183,16 @@ fn repo_authored_documents_validate() {
     );
 }
 
+/// The authored covenant must parse and pass its own structural gate —
+/// a broken covenant.yaml would otherwise surface only in CI.
+#[test]
+fn repo_authored_covenant_validates() {
+    tebako_bench::covenant::CovenantFile::load(std::path::Path::new(&repo_path(
+        "benchmarks/covenant.yaml",
+    )))
+    .expect("benchmarks/covenant.yaml parses and passes its checks");
+}
+
 /// MECE: the schema gate and the model gate must agree on validity for
 /// every fixture — a disagreement is a harness bug, not a document verdict.
 #[test]
@@ -174,6 +204,15 @@ fn schema_and_model_gates_agree() {
         (DocKind::Suite, "suite-invalid-floating-ref.yaml"),
         (DocKind::Suite, "suite-invalid-v2-missing-payload.yaml"),
         (DocKind::Suite, "suite-invalid-lazy-missing-runtime.yaml"),
+        (
+            DocKind::Suite,
+            "suite-invalid-tfs-extract-missing-runtime.yaml",
+        ),
+        (
+            DocKind::Suite,
+            "suite-invalid-v2-tools-missing-registries.yaml",
+        ),
+        (DocKind::Suite, "suite-invalid-press-no-source.yaml"),
         (DocKind::Result, "result-valid.json"),
         (DocKind::Result, "result-invalid-gap-no-reason.json"),
         (DocKind::Result, "result-invalid-ok-missing-metrics.json"),

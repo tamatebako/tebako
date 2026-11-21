@@ -311,7 +311,8 @@ jobs:
             legs+=("${d}results.json")
           done
           tebako-rs/target/debug/tebako-bench report "${legs[@]}" \
-            --md report.md --json dashboard.json
+            --md report.md --json dashboard.json \
+            --metrics covenant-metrics-suite.json --covenant tebako-rs/benchmarks/covenant.yaml
           rc=$?
           rt_legs=(legs/bench-runtime-*/results.json)
           if [ -e "${rt_legs[0]}" ]; then
@@ -319,19 +320,6 @@ jobs:
               --md report-runtime.md --json dashboard-runtime.json \
               --metrics covenant-metrics.json --covenant tebako-rs/benchmarks/covenant.yaml
             rc_rt=$?
-            # The covenant evaluation (spec 27 §11.1): the runtime
-            # report's own dashboard drives the sourced cells; the verdict
-            # lands in covenant-verdict.json for the gate step. An `absent`
-            # cell is the named coverage gap, reported, never a false red.
-            # TEBAKO_BENCH_INJECT rides the dispatch input — the trip
-            # proof's deliberate breach.
-            if [ -f covenant-metrics.json ]; then
-              TEBAKO_BENCH_INJECT="${{ inputs.inject }}" \
-                tebako-rs/target/debug/tebako-bench covenant \
-                --metrics covenant-metrics.json --covenant tebako-rs/benchmarks/covenant.yaml --json covenant-verdict.json || true
-            else
-              echo "no covenant metrics produced — the gate reports every cell absent"
-            fi
           else
             rc_rt=0
             echo "no runtime-suite legs uploaded — skipping the runtime report"
@@ -344,6 +332,24 @@ jobs:
           else
             rc_lz=0
             echo "no lazy-suite legs uploaded — skipping the lazy report"
+          fi
+          # The covenant evaluation (spec 27 §11.1): the reports' own
+          # dashboards drive the sourced cells — the metanorma suite's
+          # metrics (the author loop lives there) merged with the runtime
+          # suite's; the verdict lands in covenant-verdict.json for the
+          # gate step. An `absent` cell is the named coverage gap,
+          # reported, never a false red. TEBAKO_BENCH_INJECT rides the
+          # dispatch input — the trip proof's deliberate breach.
+          metrics_args=()
+          for m in covenant-metrics-suite.json covenant-metrics.json; do
+            [ -f "$m" ] && metrics_args+=(--metrics "$m")
+          done
+          if [ "${#metrics_args[@]}" -gt 0 ]; then
+            TEBAKO_BENCH_INJECT="${{ inputs.inject }}" \
+              tebako-rs/target/debug/tebako-bench covenant \
+              "${metrics_args[@]}" --covenant tebako-rs/benchmarks/covenant.yaml --json covenant-verdict.json || true
+          else
+            echo "no covenant metrics produced — the gate reports every cell absent"
           fi
           set -e
           if [ "$rc" -eq 2 ] || [ "$rc_rt" -eq 2 ] || [ "$rc_lz" -eq 2 ]; then exit 2; fi
@@ -382,6 +388,7 @@ jobs:
             dashboard-runtime.json
             report-lazy.md
             covenant-metrics.json
+            covenant-metrics-suite.json
             covenant-verdict.json
             dashboard-lazy.json
           if-no-files-found: error
@@ -418,9 +425,17 @@ jobs:
           if [ -f ../covenant-verdict.json ]; then
             # The covenant's verdict + the metrics it judged ride the
             # publication — the website's covenant cell renders the gate's
-            # own record, per release, never a hand-written copy.
-            cp ../covenant-verdict.json ../covenant-metrics.json "$dest/"
-            cp ../covenant-verdict.json ../covenant-metrics.json .bench-history/latest/
+            # own record, per release, never a hand-written copy. Either
+            # metrics file may be absent (the runtime suite's when its
+            # legs never uploaded, the metanorma suite's on a red report).
+            cp ../covenant-verdict.json "$dest/"
+            cp ../covenant-verdict.json .bench-history/latest/
+            for m in ../covenant-metrics.json ../covenant-metrics-suite.json; do
+              if [ -f "$m" ]; then
+                cp "$m" "$dest/"
+                cp "$m" .bench-history/latest/
+              fi
+            done
           fi
           if [ -f ../dashboard-lazy.json ]; then
             cp ../report-lazy.md ../dashboard-lazy.json "$dest/"

@@ -43,15 +43,26 @@
           "default": false,
           "description": "When true the workload runs only on explicit opt-in (e.g. needs credentials — the OIML r060 private-fonts case). A skipped opt-in workload emits NO result rows."
         },
+        "kind": {
+          "enum": ["exec", "press"],
+          "default": "exec",
+          "description": "2026-11-21 amendment: exec (default) runs the target's measured program with the workload argv; press runs the v2-tools arm's staged tebako CLI with the argv (the author loop's re-press — '{package}' substitutes the run cell's package output path). Press workloads need source + targets (v2-tools arms only) and a non-empty argv."
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/id" },
+          "description": "2026-11-21 amendment: the explicit arm allowlist — when present it REPLACES the id-prefix routing law: the workload runs on exactly these target ids (each must exist — semantic rule). Absent, the prefix law routes."
+        },
         "source": {
           "$ref": "#/$defs/source",
           "description": "Optional (2026-09-17 amendment): interpreter workloads (the runtime suite) have no document; {doc} in argv is then a semantic error."
         },
         "argv": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "items": { "type": "string", "minLength": 1 },
-          "description": "The argument vector passed to the target's entrypoint. Substitutions: '{doc}' (the workload document's path in the run scratch; requires source), '{fixture}' (the ioread data file, resolved per target — in-image for runtime-exe arms, host path otherwise), '{classes}' (the in-leg compiled Java classes directory). Every other token is literal."
+          "description": "The argument vector passed to the target's entrypoint. Substitutions: '{doc}' (the workload document's path in the run scratch; requires source), '{fixture}' (the ioread data file, resolved per target — in-image for runtime-exe arms, host path otherwise), '{classes}' (the in-leg compiled Java classes directory), '{package}' (press-kind: the run cell's package output path, 2026-11-21). May be EMPTY on an exec workload (the target's program runs bare — the pressed package's first run); a press workload's argv is never empty. Every other token is literal."
         },
         "expect": { "$ref": "#/$defs/expect" },
         "timeout_s": {
@@ -59,7 +70,13 @@
           "minimum": 1,
           "description": "Per-run timeout in seconds. Expiry kills the child tree and records status \"timeout\" — a benchmark may be slow, never hung."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "press" } }, "required": ["kind"] },
+          "then": { "required": ["source", "targets"], "properties": { "argv": { "minItems": 1 } } }
+        }
+      ]
     },
     "source": {
       "type": "object",
@@ -107,8 +124,8 @@
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "kind": {
-          "enum": ["v1-exe", "v2-managed", "v2-press", "on-system", "runtime-exe", "runtime-exe-lazy"],
-          "description": "v1-exe: the packed-mn release asset (asset from platforms.yaml). v2-managed: registry install + shim dispatch, warm store. v2-press: fat tpkg assembled in-leg from verified published artifacts. on-system: the host toolchain binary (CI-provisioned, version-pinned). runtime-exe: the tebako runtime pair fetched sha256-verified from its factory release. runtime-exe-lazy (2026-10-01 amendment, spec 27 §10.5): the same pair staged as a spec 39 LAZY_SEEDING entry, the image + blksum sidecar served by the harness's in-process loopback Range fixture."
+          "enum": ["v1-exe", "v2-managed", "v2-press", "on-system", "runtime-exe", "runtime-exe-lazy", "tfs-extract", "v2-tools"],
+          "description": "v1-exe: the packed-mn release asset (asset from platforms.yaml). v2-managed: registry install + shim dispatch, warm store. v2-press: fat tpkg assembled in-leg from verified published artifacts. on-system: the host toolchain binary (CI-provisioned, version-pinned). runtime-exe: the tebako runtime pair fetched sha256-verified from its factory release. runtime-exe-lazy (2026-10-01 amendment, spec 27 §10.5): the same pair staged as a spec 39 LAZY_SEEDING entry, the image + blksum sidecar served by the harness's in-process loopback Range fixture. tfs-extract (2026-11-21 amendment, spec 27 §10.6): whole-image extraction timed like any other target — the measured program is the release's tfs tool, every run `tfs extract -q -d <run cell> <the runtime ref's env image>`. v2-tools (2026-11-21 amendment, spec 27 §11.1): the author loop's tooling arm — the release's tebako CLI priming-presses the arm's one press workload at acquisition; the pressed package serves its exec workloads."
         },
         "payload": {
           "type": "string",
@@ -178,6 +195,14 @@
         {
           "if": { "properties": { "kind": { "const": "runtime-exe-lazy" } }, "required": ["kind"] },
           "then": { "required": ["runtime"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "tfs-extract" } }, "required": ["kind"] },
+          "then": { "required": ["runtime"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "v2-tools" } }, "required": ["kind"] },
+          "then": { "required": ["registries"] }
         }
       ]
     },

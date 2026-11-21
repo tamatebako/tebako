@@ -77,6 +77,7 @@
           "description": "ok: expectation met, all metrics present. failed: ran, expectation missed — never enters statistics. timeout: killed at the workload's timeout_s. unavailable: the named-gap record — the arm was never attempted on this triplet; reason is mandatory."
         },
         "wall_s": { "type": "number", "minimum": 0, "description": "Instant-elapsed seconds around spawn→wait." },
+        "first_output_s": { "type": "number", "minimum": 0, "description": "Time to first output within the same span (2026-11-21 additive — the teardown covenant cell's input); absent when the child never wrote." },
         "cpu_user_s": { "type": "number", "minimum": 0, "description": "POSIX: wait4 rusage of the reaped child; Windows: GetProcessTimes user. spec 27 §4." },
         "cpu_sys_s": { "type": "number", "minimum": 0, "description": "Same span, system CPU." },
         "peak_rss_bytes": {
@@ -120,6 +121,7 @@
         "max_wall_s": { "type": "number", "minimum": 0 },
         "stdev_wall_s": { "type": "number", "minimum": 0, "description": "Sample standard deviation (n−1); absent when n < 2." },
         "mean_wall_s": { "type": "number", "minimum": 0 },
+        "median_first_output_s": { "type": "number", "minimum": 0, "description": "Median of the runs' first-output times (2026-11-21 additive); absent when no run in the cell produced output." },
         "median_cpu_s": { "type": "number", "minimum": 0, "description": "Median of (cpu_user_s + cpu_sys_s)." },
         "median_peak_rss_bytes": { "type": "integer", "minimum": 0 }
       }

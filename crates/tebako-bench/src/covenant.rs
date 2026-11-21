@@ -51,9 +51,9 @@ pub struct Cell {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     /// How the run produces this cell's metric (spec 27 §11's covenant
-    /// arm). Absent on a cell no bench suite produces (the author-loop
-    /// cells read the walkthrough's recorded timings) — such a cell
-    /// answers `absent` from a bench run, the honest coverage gap.
+    /// arm). Every cell the suites produce carries one; a cell whose
+    /// source selects nothing answers `absent` from a bench run, the
+    /// honest coverage gap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<CellSource>,
 }
@@ -71,8 +71,18 @@ pub struct CellSource {
     pub workloads: Vec<String>,
     /// The arm's target prefix (`tebako-` selects `tebako-ruby`,
     /// `tebako-python`, …). The baseline arm is read off the dashboard's
-    /// declared baseline, never re-declared here.
+    /// declared baseline, never re-declared here — unless `baseline`
+    /// overrides it.
     pub target: String,
+    /// The baseline arm's target prefix OVERRIDE (spec 27 §11.1, amended
+    /// 2026-11-21): ratio/speedup divide by the cell matching this
+    /// prefix on the same triplet × workload × mode instead of the
+    /// dashboard's declared baseline — the materialize cell divides the
+    /// tebako arm by the harness's `extract-` arm, which is no suite's
+    /// declared baseline. Rides ratio|speedup only (a check error
+    /// otherwise).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<String>,
     /// The mode the cell measures.
     pub mode: crate::result::RunMode,
     /// The measure the cell rides.
@@ -107,6 +117,15 @@ pub enum Shape {
     Speedup,
     /// The absolute measure, as produced.
     Absolute,
+    /// The teardown delta (spec 27 §11.1, amended 2026-11-21): the cell's
+    /// median wall minus its median first-output time — the exit tail a
+    /// finished dispatch shows, on the same dashboard cell. Rides
+    /// `measure: wall` only (a check error otherwise); divides by
+    /// nothing, so it takes no `baseline` override. A cell whose runs
+    /// produced no output carries no first-output median and contributes
+    /// nothing.
+    #[serde(rename = "teardown-delta")]
+    TeardownDelta,
 }
 
 /// The aggregation across the dashboard cells one source selects.
@@ -253,6 +272,18 @@ impl CovenantFile {
                         c.id
                     )));
                 }
+                if source.shape == Shape::TeardownDelta && source.measure != Measure::Wall {
+                    return Err(BenchError::operational(format!(
+                        "covenant cell {:?} declares teardown-delta on a non-wall measure — the shape is wall minus first-output",
+                        c.id
+                    )));
+                }
+                if source.baseline.is_some() && !matches!(source.shape, Shape::Ratio | Shape::Speedup) {
+                    return Err(BenchError::operational(format!(
+                        "covenant cell {:?} declares a baseline override on a shape that divides by nothing — it rides ratio|speedup only",
+                        c.id
+                    )));
+                }
             }
         }
         Ok(())
@@ -373,8 +404,9 @@ fn measure_of(cell: &crate::report::DashboardCell, measure: Measure) -> f64 {
 /// max for a `le` bound, the min for a `ge` bound, so the gate is as
 /// honest as its worst leg. A ratio/speedup cell whose baseline arm is
 /// absent contributes nothing (the named-gap rule — never an invented
-/// ratio), and a cell selecting nothing answers None (the covenant
-/// reports it absent).
+/// ratio), a teardown-delta cell whose runs produced no output
+/// contributes nothing (no first-output median), and a cell selecting
+/// nothing answers None (the covenant reports it absent).
 fn derive_cell(
     source: &CellSource,
     comparison: Comparison,
@@ -393,14 +425,42 @@ fn derive_cell(
                 if !selected {
                     continue;
                 }
-                let base = measure_of(c, source.measure);
                 let value = match source.shape {
-                    Shape::Absolute => Some(base),
+                    Shape::Absolute => Some(measure_of(c, source.measure)),
+                    // wall − first-output on the SAME cell; absent when
+                    // the cell's runs never produced output.
+                    Shape::TeardownDelta => c
+                        .median_first_output_s
+                        .map(|first| c.median_wall_s - first),
                     Shape::Ratio | Shape::Speedup => {
+                        let base = measure_of(c, source.measure);
                         // No baseline arm for this cell → it contributes
                         // nothing (the named-gap rule, never an invented
                         // ratio) — skip it; other cells may still answer.
-                        crate::report::baseline_cell(dash, &t.triplet, &c.workload, c.mode)
+                        // The override prefix when the source declares
+                        // one (exact then prefix, the declared-baseline
+                        // rule), else the dashboard's declared baseline.
+                        let baseline = match &source.baseline {
+                            Some(prefix) => t
+                                .cells
+                                .iter()
+                                .find(|bc| {
+                                    bc.workload == c.workload
+                                        && bc.mode == c.mode
+                                        && bc.target == *prefix
+                                })
+                                .or_else(|| {
+                                    t.cells.iter().find(|bc| {
+                                        bc.workload == c.workload
+                                            && bc.mode == c.mode
+                                            && bc.target.starts_with(prefix.as_str())
+                                    })
+                                }),
+                            None => crate::report::baseline_cell(
+                                dash, &t.triplet, &c.workload, c.mode,
+                            ),
+                        };
+                        baseline
                             .map(|bc| measure_of(bc, source.measure))
                             .map(|b| {
                                 if source.shape == Shape::Ratio {
@@ -428,10 +488,9 @@ fn derive_cell(
 }
 
 /// The producer: the MetricsFile a run's dashboards imply for the
-/// covenant's sourced cells. Cells without a source (the author-loop
-/// cells — the walkthrough's recorded timings) and cells whose source
-/// selects nothing stay absent — the covenant reports the gap, never a
-/// fabricated number.
+/// covenant's sourced cells. Cells whose source selects nothing (a suite
+/// the run did not execute, an arm that produced no numbers) stay absent
+/// — the covenant reports the gap, never a fabricated number.
 pub fn produce(
     covenant: &CovenantFile,
     dashboards: &[crate::report::Dashboard],
@@ -633,6 +692,7 @@ mod tests {
             max_wall_s: median_wall_s,
             stdev_wall_s: None,
             mean_wall_s: median_wall_s,
+            median_first_output_s: None,
             median_cpu_s: median_wall_s,
             median_peak_rss_bytes,
             speedup_vs_v1: None,
@@ -683,6 +743,7 @@ mod tests {
             source: Some(CellSource {
                 workloads: workloads.iter().map(|s| s.to_string()).collect(),
                 target: "tebako-".to_string(),
+                baseline: None,
                 mode: crate::result::RunMode::Warm,
                 measure,
                 shape,
@@ -811,5 +872,88 @@ mod tests {
         let bad = "schema_version: 1\ncells:\n  - id: x\n    bound: 1.0\n    comparison: le\n    source: {workloads: [], target: \"tebako-\", mode: warm, measure: wall, shape: ratio, aggregate: worst}\n";
         let err = CovenantFile::from_yaml(bad).unwrap_err();
         assert!(err.to_string().contains("no workload selector"), "{err}");
+    }
+
+    #[test]
+    fn the_producer_derives_a_teardown_delta_worst_of() {
+        use crate::result::RunMode::Warm;
+        // wall − first-output per cell: ruby 0.40 − 0.39 = 0.01, java
+        // 2.10 − 1.90 = 0.20 — the le-bound cell reads the WORST (max).
+        let mut ruby = dash_cell("ruby-boot", "tebako-ruby", Warm, 0.40, 12);
+        ruby.median_first_output_s = Some(0.39);
+        let mut java = dash_cell("java-boot", "tebako-java", Warm, 2.10, 12);
+        java.median_first_output_s = Some(1.90);
+        let dash = dashboard(vec![
+            dash_cell("ruby-boot", "on-system-ruby", Warm, 0.05, 10),
+            ruby,
+            dash_cell("java-boot", "on-system-java", Warm, 0.60, 10),
+            java,
+        ]);
+        let cov = covenant_with(vec![sourced(
+            "teardown.exit_seconds",
+            0.5,
+            Comparison::Le,
+            &["-boot"],
+            Measure::Wall,
+            Shape::TeardownDelta,
+        )]);
+        let m = produce(&cov, &[dash], None);
+        let got = m.metrics["teardown.exit_seconds"];
+        assert!((got - 0.20).abs() < 1e-9, "{got} != 0.20");
+    }
+
+    #[test]
+    fn a_teardown_delta_with_no_first_output_contributes_nothing() {
+        use crate::result::RunMode::Warm;
+        // The selected cells carry no first-output median (silent runs)
+        // — the delta derives nothing and the metric stays absent.
+        let dash = dashboard(vec![dash_cell("ruby-boot", "tebako-ruby", Warm, 0.40, 12)]);
+        let cov = covenant_with(vec![sourced(
+            "teardown.exit_seconds",
+            0.5,
+            Comparison::Le,
+            &["-boot"],
+            Measure::Wall,
+            Shape::TeardownDelta,
+        )]);
+        let m = produce(&cov, &[dash], None);
+        assert!(!m.metrics.contains_key("teardown.exit_seconds"));
+    }
+
+    #[test]
+    fn the_producer_honours_a_baseline_override() {
+        use crate::result::RunMode::Warm;
+        // The override divides the tebako arm by the harness's extract
+        // arm — not the dashboard's declared on-system baseline.
+        let dash = dashboard(vec![
+            dash_cell("ruby-spawn", "on-system-ruby", Warm, 0.02, 10),
+            dash_cell("ruby-spawn", "tebako-ruby", Warm, 0.29, 12),
+            dash_cell("ruby-spawn", "extract-ruby", Warm, 0.40, 12),
+        ]);
+        let mut cell = sourced(
+            "teardown.materialize_vs_extract",
+            1.0,
+            Comparison::Le,
+            &["-spawn"],
+            Measure::Wall,
+            Shape::Ratio,
+        );
+        cell.source.as_mut().unwrap().baseline = Some("extract-".to_string());
+        let cov = covenant_with(vec![cell]);
+        let m = produce(&cov, &[dash], None);
+        let got = m.metrics["teardown.materialize_vs_extract"];
+        assert!((got - 0.29 / 0.40).abs() < 1e-9, "{got} != 0.725");
+    }
+
+    #[test]
+    fn the_check_pins_the_shape_rules() {
+        // teardown-delta rides the wall measure only.
+        let bad = "schema_version: 1\ncells:\n  - id: x\n    bound: 1.0\n    comparison: le\n    source: {workloads: [\"-boot\"], target: \"tebako-\", mode: warm, measure: rss, shape: teardown-delta, aggregate: worst}\n";
+        let err = CovenantFile::from_yaml(bad).unwrap_err();
+        assert!(err.to_string().contains("wall"), "{err}");
+        // A baseline override rides ratio|speedup only.
+        let bad = "schema_version: 1\ncells:\n  - id: x\n    bound: 1.0\n    comparison: le\n    source: {workloads: [\"-boot\"], target: \"tebako-\", baseline: \"extract-\", mode: warm, measure: wall, shape: absolute, aggregate: worst}\n";
+        let err = CovenantFile::from_yaml(bad).unwrap_err();
+        assert!(err.to_string().contains("ratio|speedup"), "{err}");
     }
 }

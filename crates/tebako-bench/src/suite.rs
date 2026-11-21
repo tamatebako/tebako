@@ -28,6 +28,19 @@ pub struct Workload {
     /// on explicit request; skipped ones emit NO result rows (spec 27 §2).
     #[serde(default)]
     pub opt_in: bool,
+    /// What one run of this workload does (spec 27 §2, amended 2026-11-21):
+    /// `exec` (the default) runs the target's measured program with the
+    /// workload argv; `press` runs the v2-tools arm's staged `tebako` CLI
+    /// with the workload argv (the author loop's re-press — `{package}`
+    /// substitutes the run cell's package output path).
+    #[serde(default)]
+    pub kind: WorkloadKind,
+    /// The explicit arm allowlist (spec 27 §10.2, amended 2026-11-21):
+    /// when present it REPLACES the id-prefix routing law — the workload
+    /// runs on exactly these target ids (each must exist — a semantic
+    /// error otherwise). Absent, the prefix law routes as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub targets: Option<Vec<String>>,
     /// The workload document. Absent for interpreter workloads (the runtime
     /// suite, spec 27 §10): the run's scratch cell is empty and `{doc}` is
     /// a validation error there.
@@ -36,11 +49,29 @@ pub struct Workload {
     /// Substitutions: `{doc}` — the workload document's path in the run
     /// scratch (requires `source`); `{fixture}` — the ioread data file,
     /// resolved per target (in-image for runtime-exe, host path otherwise);
-    /// `{classes}` — the in-leg compiled Java classes directory. Every
-    /// other token is literal.
+    /// `{classes}` — the in-leg compiled Java classes directory;
+    /// `{package}` — the press-kind run cell's package output path
+    /// (2026-11-21). May be EMPTY on an exec workload (the target's
+    /// program runs bare — the pressed package's first run); a press
+    /// workload's argv is never empty (the press args are the workload).
+    /// Every other token is literal.
     pub argv: Vec<String>,
     pub expect: Expect,
     pub timeout_s: u64,
+}
+
+/// What one run of a workload measures (spec 27 §2, amended 2026-11-21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkloadKind {
+    /// Run the target's measured program with the workload argv.
+    #[default]
+    Exec,
+    /// Run the v2-tools arm's staged `tebako` CLI with the workload argv
+    /// (a `tebako press` of the workload's source project; `{package}`
+    /// substitutes the run cell's output path). Press workloads route to
+    /// v2-tools targets only.
+    Press,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,6 +179,26 @@ pub enum TargetKind {
     /// Range fixture. The driver state-detects the seeding entry — no
     /// opt-in env rides the measured run.
     RuntimeExeLazy,
+    /// Whole-image extraction, timed like any other target (spec 27
+    /// §10.6, added 2026-11-21): the arm's measured program is the
+    /// release's `tfs` tool and every measured run is
+    /// `tfs extract -q -d <run cell> <the runtime ref's env image>`,
+    /// whatever the workload's argv says (the argv is ignored BY KIND
+    /// CONTRACT — the extraction is the workload). Carries `runtime`
+    /// exactly like runtime-exe; the image is shared with the paired
+    /// runtime-exe arm's acquisition, never double-downloaded.
+    TfsExtract,
+    /// The author loop's tooling arm (spec 27 §11.1, added 2026-11-21):
+    /// the release's `tebako` CLI stages a priming press of the
+    /// target's one press workload at acquisition (the runtime download
+    /// lands there, outside every measured span), and the pressed
+    /// package is the arm's measured program for its exec workloads.
+    /// Carries `registries` — the press resolves the default runtime
+    /// pair through them (tebako#895's chain). No cold story: a cold
+    /// press would re-resolve the runtime (a download) inside the
+    /// measured span and the matrix is offline — the cold cell is a
+    /// named gap.
+    V2Tools,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,16 +297,24 @@ impl SuiteFile {
                         }
                     }
                 }
-                TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy => {
+                TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy | TargetKind::TfsExtract => {
                     if t.runtime.is_none() {
                         violations.push(format!(
                             "targets/{}: a {} target needs runtime (repo, tag, lang_version)",
                             t.id,
-                            if t.kind == TargetKind::RuntimeExe {
-                                "runtime-exe"
-                            } else {
-                                "runtime-exe-lazy"
+                            match t.kind {
+                                TargetKind::RuntimeExe => "runtime-exe",
+                                TargetKind::RuntimeExeLazy => "runtime-exe-lazy",
+                                _ => "tfs-extract",
                             }
+                        ));
+                    }
+                }
+                TargetKind::V2Tools => {
+                    if t.registries.is_none() {
+                        violations.push(format!(
+                            "targets/{}: a v2-tools target needs registries (the press resolves the default runtime pair through them)",
+                            t.id
                         ));
                     }
                 }
@@ -272,6 +331,88 @@ impl SuiteFile {
             if !exact && prefix == 0 {
                 violations.push(format!(
                     "baseline: '{baseline}' names no target, neither exactly nor as a prefix"
+                ));
+            }
+        }
+        // The workload-level rules that reach across both lists
+        // (2026-11-21): the explicit arm allowlist and the press kind.
+        for w in &self.workloads {
+            if let Some(allow) = &w.targets {
+                if allow.is_empty() {
+                    violations.push(format!(
+                        "workloads/{}/targets: an empty allowlist routes nowhere — a workload that runs on no arm produces nothing",
+                        w.id
+                    ));
+                }
+                for id in allow {
+                    if !self.targets.iter().any(|t| &t.id == id) {
+                        violations.push(format!(
+                            "workloads/{}/targets: '{id}' names no declared target",
+                            w.id
+                        ));
+                    }
+                }
+            }
+            if w.kind == WorkloadKind::Press {
+                if w.source.is_none() {
+                    violations.push(format!(
+                        "workloads/{}: a press workload needs a source (the project it re-presses)",
+                        w.id
+                    ));
+                }
+                if w.targets.is_none() {
+                    violations.push(format!(
+                        "workloads/{}/targets: a press workload needs an explicit allowlist naming its v2-tools arm",
+                        w.id
+                    ));
+                }
+                if w.argv.is_empty() {
+                    violations.push(format!(
+                        "workloads/{}: a press workload's argv carries the press arguments — empty presses nothing",
+                        w.id
+                    ));
+                }
+                for id in w.targets.iter().flatten() {
+                    match self.targets.iter().find(|t| &t.id == id) {
+                        Some(t) if t.kind == TargetKind::V2Tools => {}
+                        Some(t) => violations.push(format!(
+                            "workloads/{}/targets: a press workload runs on v2-tools arms only — '{id}' is {}",
+                            w.id,
+                            match t.kind {
+                                TargetKind::V1Exe => "v1-exe",
+                                TargetKind::V2Managed => "v2-managed",
+                                TargetKind::V2Press => "v2-press",
+                                TargetKind::OnSystem => "on-system",
+                                TargetKind::RuntimeExe => "runtime-exe",
+                                TargetKind::RuntimeExeLazy => "runtime-exe-lazy",
+                                TargetKind::TfsExtract => "tfs-extract",
+                                TargetKind::V2Tools => unreachable!(),
+                            }
+                        )),
+                        None => {} // the unknown id is named above
+                    }
+                }
+            }
+        }
+        // A v2-tools arm presses exactly one project at acquisition (its
+        // package serves the arm's exec workloads) — two press workloads
+        // routing to the same arm is an ambiguity, named.
+        for t in &self.targets {
+            if t.kind != TargetKind::V2Tools {
+                continue;
+            }
+            let presses = self
+                .workloads
+                .iter()
+                .filter(|w| {
+                    w.kind == WorkloadKind::Press
+                        && w.targets.as_ref().map(|a| a.contains(&t.id)).unwrap_or(false)
+                })
+                .count();
+            if presses != 1 {
+                violations.push(format!(
+                    "targets/{}: a v2-tools arm needs exactly one press workload routing to it, found {presses}",
+                    t.id
                 ));
             }
         }

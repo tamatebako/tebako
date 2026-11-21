@@ -205,7 +205,13 @@ impl BenchLayout {
     ///   RESEEDS — the sealed image and block cache go, the pristine
     ///   seed descriptor returns, so every cold cell re-measures the
     ///   on-demand stream from an empty entry.
-    /// - on-system never reaches here: its cold cell is a declared gap.
+    /// - tfs-extract (spec 27 §10.6): nothing extra — every measured run
+    ///   extracts into a fresh scratch cell, cold-by-construction, so the
+    ///   wipe is the common payload caches only.
+    /// - on-system never reaches here: its cold cell is a declared gap —
+    ///   and neither does v2-tools (a cold press would re-resolve the
+    ///   runtime, a download, inside the measured span and the matrix is
+    ///   offline; spec 27 §11.1).
     pub fn wipe_cold_caches(
         &self,
         target: &str,
@@ -234,6 +240,10 @@ impl BenchLayout {
                 wipes.push(self.tmp.join(target));
             }
             TargetKind::OnSystem => {}
+            // The extraction is cold-by-construction (fresh cell per
+            // run); v2-tools never reaches here (its cold cell is a
+            // named gap in the engine's cold loop).
+            TargetKind::TfsExtract | TargetKind::V2Tools => {}
         }
         for dir in &wipes {
             remove_tree(dir)?;
@@ -637,21 +647,7 @@ pub fn install_payload(
             "acquire: payload reference '{payload}' is not name@version"
         ))
     })?;
-    let registries = target.registries.as_deref().unwrap_or(&[]);
-    if registries.is_empty() {
-        return Err(BenchError::operational(format!(
-            "acquire: v2 target '{}' carries no registries",
-            target.id
-        )));
-    }
-    for r in registries {
-        run_admin(
-            layout,
-            &tools.cli,
-            &["add-registry", r],
-            "acquire-add-registry.log",
-        )?;
-    }
+    add_registries(layout, tools, target)?;
     run_admin(
         layout,
         &tools.cli,
@@ -698,11 +694,37 @@ pub fn install_payload(
     })
 }
 
+/// `tebako add-registry <ref>...` in the bench home — the registry
+/// registration half of the dogfood path, shared by the v2 payload
+/// install and the v2-tools priming press (spec 27 §11.1): both resolve
+/// through the target's declared registries.
+pub fn add_registries(
+    layout: &BenchLayout,
+    tools: &TebakoTools,
+    target: &Target,
+) -> Result<(), BenchError> {
+    let registries = target.registries.as_deref().unwrap_or(&[]);
+    if registries.is_empty() {
+        return Err(BenchError::operational(format!(
+            "acquire: target '{}' carries no registries",
+            target.id
+        )));
+    }
+    for r in registries {
+        run_admin(
+            layout,
+            &tools.cli,
+            &["add-registry", r],
+            "acquire-add-registry.log",
+        )?;
+    }
+    Ok(())
+}
+
 /// The feedstock release tag the installed payload came from, read from
 /// the store's registry cache (`registries/*.yaml` — the verbatim fetched
 /// L3 mirror): `release.ref`'s trailing `:tag`.
-fn registry_release_tag(
-    layout: &BenchLayout,
+fn registry_release_tag(    layout: &BenchLayout,
     name: &str,
     version: &str,
 ) -> Result<String, BenchError> {
@@ -2418,6 +2440,22 @@ pub fn run_admin_with_env(
     extra_env: &[(String, String)],
     log_name: &str,
 ) -> Result<(), BenchError> {
+    run_admin_in(layout, &layout.home, program, args, extra_env, log_name)
+}
+
+/// `run_admin_with_env` with the working directory explicit: the
+/// v2-tools priming press runs from inside the staged project tree
+/// (spec 27 §11.1 — a relative `-r .` and the project's own files
+/// resolve against it); every other admin command runs in the bench
+/// home as before.
+pub fn run_admin_in(
+    layout: &BenchLayout,
+    cwd: &Path,
+    program: &Path,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    log_name: &str,
+) -> Result<(), BenchError> {
     let log_path = layout.logs.join(log_name);
     let log = std::fs::OpenOptions::new()
         .create(true)
@@ -2431,7 +2469,7 @@ pub fn run_admin_with_env(
     })?;
     let mut cmd = std::process::Command::new(program);
     cmd.args(args)
-        .current_dir(&layout.home)
+        .current_dir(cwd)
         // The store location for admin commands is target-independent —
         // the tmp override uses a fixed "admin" slot so v1's TMPDIR rules
         // never leak into v2 store population.

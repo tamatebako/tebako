@@ -85,6 +85,15 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
     let start = Instant::now();
     let deadline = start + spec.timeout;
 
+    // The first-output baseline (spec 27 §4's ttfb): the log's length at
+    // spawn (it is append-mode — a reused log keeps its bytes). The poll
+    // loop watches for growth PAST this; a child that never writes keeps
+    // `first_output_s` at None.
+    let log_baseline = std::fs::metadata(&spec.log_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let mut first_output_s: Option<f64> = None;
+
     let child = cmd.spawn().map_err(|e| {
         BenchError::operational(format!(
             "sampler: cannot spawn {:?} in {}: {e}",
@@ -118,6 +127,9 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
             if let Some(v) = poll_vmhwm(pid) {
                 vmhwm_bytes = Some(vmhwm_bytes.map_or(v, |seen: u64| seen.max(v)));
             }
+            if first_output_s.is_none() && log_grew(&spec.log_path, log_baseline) {
+                first_output_s = Some(start.elapsed().as_secs_f64());
+            }
             if Instant::now() >= deadline {
                 // SAFETY: pid is the child's group leader id; the group is
                 // ours (created by this spawn). ESRCH (already exited) is
@@ -147,6 +159,15 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
     };
     let wall_s = start.elapsed().as_secs_f64();
 
+    // A child that wrote and exited inside one tick never showed growth
+    // to the poll loop; one final read after the reap catches it. The
+    // recorded value is then the reap instant — the upper bound (the
+    // output preceded the exit), so the teardown delta reads favorably
+    // and the covenant trips only on an observed tail.
+    if first_output_s.is_none() && log_grew(&spec.log_path, log_baseline) {
+        first_output_s = Some(wall_s);
+    }
+
     // wait4 reaped the child; std's Child must never be wait()ed now (its
     // Drop does not reap — safe to drop).
     drop(child);
@@ -173,7 +194,18 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
         peak_rss_bytes,
         exit,
         timed_out,
+        first_output_s,
     })
+}
+
+/// The first-output probe: true when the run log grew past its
+/// spawn-time length. `std::fs::metadata` — cross-platform, no FFI; an
+/// unreadable entry (never happens for a log we hold open, but the poll
+/// must never fail the run) reads as "no growth yet".
+fn log_grew(log_path: &std::path::Path, baseline: u64) -> bool {
+    std::fs::metadata(log_path)
+        .map(|m| m.len() > baseline)
+        .unwrap_or(false)
 }
 
 /// The child's own peak RSS, from `/proc/<pid>/status`'s VmHWM line

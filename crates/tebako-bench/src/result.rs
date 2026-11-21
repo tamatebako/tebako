@@ -89,6 +89,11 @@ pub struct RunRecord {
     /// Instant-elapsed seconds around spawn→wait.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_s: Option<f64>,
+    /// Time to first output within the same span (the teardown cell's
+    /// input, spec 27 §4 amended 2026-11-21); absent when the child never
+    /// wrote (a silent workload — never a fabricated zero).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_output_s: Option<f64>,
     /// POSIX wait4 rusage of the reaped child / Windows GetProcessTimes
     /// (spec 27 §4 — one measured child at a time, attributed exactly).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -148,6 +153,10 @@ pub struct StatRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stdev_wall_s: Option<f64>,
     pub mean_wall_s: f64,
+    /// Median of the runs' first-output times (the same runs that carry
+    /// one); absent when no run in the cell produced output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub median_first_output_s: Option<f64>,
     /// Median of (cpu_user_s + cpu_sys_s).
     pub median_cpu_s: f64,
     pub median_peak_rss_bytes: u64,

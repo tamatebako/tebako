@@ -215,6 +215,40 @@ fn the_sample_covers_the_child_tree_not_the_launcher() {
 }
 
 #[test]
+fn first_output_marks_the_first_write_and_stays_none_when_silent() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut sampler = Sampler::new();
+    // The child sleeps 400ms, prints, exits: first output lands between
+    // the sleep and the wall (either poll-loop-observed or, inside one
+    // tick, the reap instant — both are ≥ the sleep and ≤ the wall).
+    let sample = sampler
+        .run(&spec(
+            dir.path(),
+            "ttfb",
+            &["--sleep-ms", "400", "--print", "first"],
+            30,
+        ))
+        .unwrap();
+    let ttfb = sample
+        .first_output_s
+        .expect("a printing child records its first output");
+    assert!(
+        ttfb >= 0.35,
+        "the print lands only after the 400ms sleep, got {ttfb}s"
+    );
+    assert!(
+        ttfb <= sample.wall_s,
+        "first output never outlives the run: {ttfb}s vs {}s",
+        sample.wall_s
+    );
+    // The silent child records nothing — never a fabricated zero.
+    let silent = sampler
+        .run(&spec(dir.path(), "silent", &["--sleep-ms", "50"], 30))
+        .unwrap();
+    assert_eq!(silent.first_output_s, None);
+}
+
+#[test]
 fn timeout_kills_the_child_and_records_137() {
     let dir = tempfile::tempdir().unwrap();
     let mut sampler = Sampler::new();
