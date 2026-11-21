@@ -406,7 +406,10 @@ impl SuiteFile {
                 .iter()
                 .filter(|w| {
                     w.kind == WorkloadKind::Press
-                        && w.targets.as_ref().map(|a| a.contains(&t.id)).unwrap_or(false)
+                        && w.targets
+                            .as_ref()
+                            .map(|a| a.contains(&t.id))
+                            .unwrap_or(false)
                 })
                 .count();
             if presses != 1 {

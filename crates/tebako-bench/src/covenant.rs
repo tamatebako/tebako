@@ -278,7 +278,9 @@ impl CovenantFile {
                         c.id
                     )));
                 }
-                if source.baseline.is_some() && !matches!(source.shape, Shape::Ratio | Shape::Speedup) {
+                if source.baseline.is_some()
+                    && !matches!(source.shape, Shape::Ratio | Shape::Speedup)
+                {
                     return Err(BenchError::operational(format!(
                         "covenant cell {:?} declares a baseline override on a shape that divides by nothing — it rides ratio|speedup only",
                         c.id
@@ -429,9 +431,9 @@ fn derive_cell(
                     Shape::Absolute => Some(measure_of(c, source.measure)),
                     // wall − first-output on the SAME cell; absent when
                     // the cell's runs never produced output.
-                    Shape::TeardownDelta => c
-                        .median_first_output_s
-                        .map(|first| c.median_wall_s - first),
+                    Shape::TeardownDelta => {
+                        c.median_first_output_s.map(|first| c.median_wall_s - first)
+                    }
                     Shape::Ratio | Shape::Speedup => {
                         let base = measure_of(c, source.measure);
                         // No baseline arm for this cell → it contributes
@@ -456,19 +458,17 @@ fn derive_cell(
                                             && bc.target.starts_with(prefix.as_str())
                                     })
                                 }),
-                            None => crate::report::baseline_cell(
-                                dash, &t.triplet, &c.workload, c.mode,
-                            ),
+                            None => {
+                                crate::report::baseline_cell(dash, &t.triplet, &c.workload, c.mode)
+                            }
                         };
-                        baseline
-                            .map(|bc| measure_of(bc, source.measure))
-                            .map(|b| {
-                                if source.shape == Shape::Ratio {
-                                    base / b
-                                } else {
-                                    b / base
-                                }
-                            })
+                        baseline.map(|bc| measure_of(bc, source.measure)).map(|b| {
+                            if source.shape == Shape::Ratio {
+                                base / b
+                            } else {
+                                b / base
+                            }
+                        })
                     }
                 };
                 if let Some(v) = value {
