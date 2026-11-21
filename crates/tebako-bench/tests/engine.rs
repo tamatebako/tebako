@@ -949,12 +949,8 @@ fn a_press_workload_runs_the_leg_cli_with_package_substituted() {
     assert_eq!(warm_ok, 1, "the press run executed the leg CLI: {runs:?}");
     // {package} substituted to the run cell's package base, printed by
     // the child into the run log.
-    let log = std::fs::read_to_string(
-        layout
-            .logs
-            .join("author-repress--v2-tools--warm-1.log"),
-    )
-    .expect("the run log exists");
+    let log = std::fs::read_to_string(layout.logs.join("author-repress--v2-tools--warm-1.log"))
+        .expect("the run log exists");
     let cell_app = layout
         .scratch
         .join("author-repress")
@@ -962,7 +958,7 @@ fn a_press_workload_runs_the_leg_cli_with_package_substituted() {
         .join("warm-1")
         .join("app");
     assert!(
-        log.contains(&cell_app.to_string_lossy().as_ref()),
+        log.contains(cell_app.to_string_lossy().as_ref()),
         "the log carries the substituted package path: {log}"
     );
     // The v2-tools cold cell is the named gap, never a measured run.

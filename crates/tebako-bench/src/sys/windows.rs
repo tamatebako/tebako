@@ -166,9 +166,8 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
                 // The same inside-one-tick catch as posix: a child that
                 // wrote and exited between polls records the reap
                 // instant (the upper bound — the favorable reading).
-                let first_output_s = first_output_s.or_else(|| {
-                    log_grew(&spec.log_path, log_baseline).then_some(wall_s)
-                });
+                let first_output_s = first_output_s
+                    .or_else(|| log_grew(&spec.log_path, log_baseline).then_some(wall_s));
                 Ok(Sample {
                     wall_s,
                     cpu_user_s,

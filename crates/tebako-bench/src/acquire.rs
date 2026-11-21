@@ -724,7 +724,8 @@ pub fn add_registries(
 /// The feedstock release tag the installed payload came from, read from
 /// the store's registry cache (`registries/*.yaml` — the verbatim fetched
 /// L3 mirror): `release.ref`'s trailing `:tag`.
-fn registry_release_tag(    layout: &BenchLayout,
+fn registry_release_tag(
+    layout: &BenchLayout,
     name: &str,
     version: &str,
 ) -> Result<String, BenchError> {
