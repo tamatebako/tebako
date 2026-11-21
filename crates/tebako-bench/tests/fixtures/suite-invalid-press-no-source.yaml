@@ -1,0 +1,15 @@
+schema_version: 1
+name: press-no-source-suite
+workloads:
+  - id: author-repress
+    kind: press
+    targets: [v2-tools]
+    argv: ["press", "-r", ".", "-e", "main.rb", "-o", "{package}"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 300
+targets:
+  - id: v2-tools
+    kind: v2-tools
+    registries:
+      - "tfs:github:tamatebako/tebako-runtime-ruby"
+run_policy: { warmup: 1, repetitions: 3, cold_repetitions: 1, interleave: true }

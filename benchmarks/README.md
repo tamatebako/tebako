@@ -7,18 +7,33 @@ by design. The contract is `docs/spec/27-benchmarks.md`.
 ## The documents (SSOT — workflows read these, never hardcode)
 
 - `suite.yaml` — the metanorma suite (v2 tebako vs v1 packed-mn): the
-  workloads (document, argv, expectations, timeout), the three targets
-  (`v1-packed-mn` / `v2-shim` / `v2-fat`), and the run policy (warmup 1,
-  warm 5 interleaved, cold 2).
+  compile workloads (document, argv, expectations, timeout), the three
+  comparison targets (`v1-packed-mn` / `v2-shim` / `v2-fat`), the author
+  loop (the `v2-tools` arm priming-presses `fixtures/author-loop/` at
+  acquisition; `author-repress` re-presses it per measured run and
+  `author-first-run` boots the pressed package), and the run policy
+  (warmup 1, warm 5 interleaved, cold 2).
 - `suite-runtime.yaml` — the runtime comparison suite (on-system vs
   tebako): five interpreter workloads per runtime (boot / fib / stdlib /
-  ioread / statloop) for ruby, python, and java. The `on-system-<lang>`
+  ioread / statloop) for ruby, python, and java, plus the materialize
+  cell's pair: `ruby-spawn` (an in-image `gem --version` with the host
+  PATH pinned away) running on `tebako-ruby` and on `extract-ruby` (the
+  `tfs-extract` arm — the same runtime ref's env image extracted whole
+  by the release's `tfs` tool). The `on-system-<lang>`
   arms are the CI-provisioned toolchains, version-pinned to the tebako
   runtimes under test; the `tebako-<lang>` arms are the factory runtime
   pairs (exe + env image) fetched sha256-verified. The harness asserts
   version parity before measuring — a mismatch gaps BOTH arms of the
   pair. The declared baseline is `on-system` (the report's ratio column
   is "vs on-system").
+- `covenant.yaml` — the per-axis budgets (spec 27 §11.1). Every cell
+  carries a `source:` block the report's `--metrics` producer derives
+  from the run's dashboard: workload suffix selectors, target prefix
+  (with an optional `baseline` override for ratio/speedup), mode,
+  measure (wall | rss), shape (ratio | speedup | absolute |
+  teardown-delta), worst-of aggregation. The `covenant` subcommand
+  evaluates the produced metrics: `over` fails the gate, `absent` is
+  the named coverage gap.
 - `platforms.yaml` — WHERE: triplet → runner (+ alpine container for musl
   legs), the packed-mn tag for the v1 arm, and the named gaps
   (`v1_asset: null`, `v2_payload: false`, `runtime_gaps` for the runtime
@@ -27,7 +42,10 @@ by design. The contract is `docs/spec/27-benchmarks.md`.
 - `fixtures/` — vendored workload sources, byte-pinned to their upstream
   commits (see each file's comment in suite.yaml), plus `fixtures/java/`
   (the runtime suite's .java sources, compiled once in-leg with the
-  on-system javac; both JVMs run the same .class files).
+  on-system javac; both JVMs run the same .class files) and
+  `fixtures/author-loop/` (the bare ruby project the author-loop cells
+  press and boot — no Gemfile, so the re-press measures the press
+  pipeline, never dependency work).
 
 Validate any suite document after editing:
 

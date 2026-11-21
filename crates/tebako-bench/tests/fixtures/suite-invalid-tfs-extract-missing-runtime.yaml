@@ -1,0 +1,11 @@
+schema_version: 1
+name: tfs-extract-missing-runtime-suite
+workloads:
+  - id: boot
+    argv: ["-e", "puts 1"]
+    expect: { exit: 0, files: [] }
+    timeout_s: 60
+targets:
+  - id: extract-ruby
+    kind: tfs-extract
+run_policy: { warmup: 1, repetitions: 3, cold_repetitions: 1, interleave: true }

@@ -90,6 +90,11 @@ pub struct LegContext {
     pub fixture_image: Option<PathBuf>,
     pub classes_dir: Option<PathBuf>,
     pub lazy_servers: Vec<crate::lazy_server::LazyServer>,
+    /// The staged `tebako` CLI a press-kind workload runs (spec 27
+    /// §11.1's author loop, 2026-11-21): set when any v2-tools arm is
+    /// ready — the CLI is staged once per leg, shared by every press
+    /// run, and never itself measured (the press IS the workload).
+    pub press_cli: Option<PathBuf>,
 }
 
 /// The `run` surface: acquire, execute, emit, and return the exit code
@@ -220,6 +225,9 @@ fn prepare_targets(
     let mut tools: Option<TebakoTools> = None;
     let mut versions = Versions::default();
     let mut prepared = Vec::new();
+    // The leg-wide staged `tebako` CLI the press-kind workloads run:
+    // set by the first ready v2-tools arm (spec 27 §11.1).
+    let mut press_cli: Option<PathBuf> = None;
     // The lazy arms' loopback fixtures — they serve for the whole leg
     // (the seal thread's between-runs fetches ride them too) and land in
     // the LegContext so the drop happens at leg end.
@@ -320,6 +328,56 @@ fn prepare_targets(
                     }
                     Err(e) => Prepared::Unavailable {
                         reason: format!("lazy runtime acquisition failed: {e}"),
+                    },
+                }
+            }
+            TargetKind::TfsExtract => {
+                // Whole-image extraction, timed like any other target
+                // (spec 27 §10.6): the release's tfs tool against the
+                // runtime ref's env image. The pair acquisition is
+                // shared with the runtime-exe arm's (the assets are
+                // content-named under <out>/assets — one download per
+                // leg per release).
+                match acquire::acquire_runtime_pair(layout, triplet, target).and_then(|pair| {
+                    acquire::fetch_tfs_tool(layout, tebako_release, triplet)
+                        .map(|(tfs, version)| (pair, tfs, version))
+                }) {
+                    Ok((pair, tfs, version)) => {
+                        versions.tebako = Some(version);
+                        Prepared::Ready {
+                            program: tfs,
+                            image: Some(pair.image),
+                            runtime_dir: None,
+                            mount_root: None,
+                        }
+                    }
+                    Err(e) => Prepared::Unavailable {
+                        reason: format!("tfs-extract acquisition failed: {e}"),
+                    },
+                }
+            }
+            TargetKind::V2Tools => {
+                match prepare_v2_tools(
+                    layout,
+                    triplet,
+                    tebako_release,
+                    &mut tools,
+                    target,
+                    suite,
+                    repo_root,
+                ) {
+                    Ok(staged) => {
+                        versions.tebako = Some(staged.tools_version);
+                        press_cli = Some(staged.cli);
+                        Prepared::Ready {
+                            program: staged.package,
+                            image: None,
+                            runtime_dir: None,
+                            mount_root: None,
+                        }
+                    }
+                    Err(e) => Prepared::Unavailable {
+                        reason: format!("v2-tools acquisition failed: {e}"),
                     },
                 }
             }
@@ -474,6 +532,7 @@ fn prepare_targets(
     // in-leg image the tebako arms mount) and the compiled java classes.
     let mut leg = LegContext {
         lazy_servers,
+        press_cli,
         ..LegContext::default()
     };
     if suite
@@ -631,7 +690,9 @@ fn prepare_v2(
         TargetKind::V1Exe
         | TargetKind::OnSystem
         | TargetKind::RuntimeExe
-        | TargetKind::RuntimeExeLazy => {
+        | TargetKind::RuntimeExeLazy
+        | TargetKind::TfsExtract
+        | TargetKind::V2Tools => {
             return Err(BenchError::operational(format!(
                 "engine: prepare_v2 called for the non-v2 target '{}' (harness bug)",
                 target.id
@@ -649,14 +710,134 @@ fn prepare_v2(
     })
 }
 
+/// What a staged v2-tools arm reports upward: the priming press's
+/// package (the arm's measured program for its exec workloads), the
+/// staged `tebako` CLI (the press workload's measured program, carried
+/// leg-wide through the LegContext), and the resolved tebako version.
+struct StagedV2Tools {
+    package: PathBuf,
+    cli: PathBuf,
+    tools_version: String,
+}
+
+/// Stage the author loop's tooling arm (spec 27 §11.1): register the
+/// target's registries, materialize the one press workload's project
+/// into `targets/<id>/project`, and run the priming `tebako press` from
+/// inside it — the runtime resolution and download land here, in
+/// acquisition, the only networked moment (the measured matrix stays
+/// offline). The pressed package (`targets/<id>/app<suffix>`) is what
+/// the arm's exec workloads boot; the press workload re-presses the
+/// same project from its run cell against the same staged CLI.
+fn prepare_v2_tools(
+    layout: &BenchLayout,
+    triplet: &str,
+    tebako_release: Option<&str>,
+    tools: &mut Option<TebakoTools>,
+    target: &Target,
+    suite: &SuiteFile,
+    repo_root: &Path,
+) -> Result<StagedV2Tools, BenchError> {
+    if tools.is_none() {
+        *tools = Some(acquire::fetch_tebako_tools(
+            layout,
+            tebako_release,
+            triplet,
+        )?);
+    }
+    let tools_ref = tools.as_ref().ok_or_else(|| {
+        BenchError::operational(
+            "engine: the tools slot is empty right after the fetch (harness bug)",
+        )
+    })?;
+    acquire::add_registries(layout, tools_ref, target)?;
+
+    // The semantic gate (exactly one press workload per v2-tools arm)
+    // makes this find unambiguous.
+    let press = suite
+        .workloads
+        .iter()
+        .find(|w| {
+            w.kind == crate::suite::WorkloadKind::Press
+                && w.targets
+                    .as_ref()
+                    .map(|a| a.contains(&target.id))
+                    .unwrap_or(false)
+        })
+        .ok_or_else(|| {
+            BenchError::operational(format!(
+                "engine: no press workload routes to the v2-tools target '{}' (harness bug — the semantic gate pins exactly one)",
+                target.id
+            ))
+        })?;
+    let source = acquire::materialize_source(press, layout, repo_root)?.ok_or_else(|| {
+        BenchError::operational(format!(
+            "engine: the press workload '{}' carries no source (harness bug — the semantic gate requires one)",
+            press.id
+        ))
+    })?;
+    let project_dir = layout.targets.join(&target.id).join("project");
+    if project_dir.exists() {
+        std::fs::remove_dir_all(&project_dir).map_err(|e| {
+            BenchError::operational(format!(
+                "engine: cannot clear {}: {e}",
+                project_dir.display()
+            ))
+        })?;
+    }
+    copy_tree(&source.root, &project_dir)?;
+
+    // The priming press runs from inside the staged project (a relative
+    // `-r .` resolves there) with `{package}` pointing at the arm's
+    // package base — press appends the platform suffix itself.
+    let package_base = layout.targets.join(&target.id).join("app");
+    let args: Vec<String> = press
+        .argv
+        .iter()
+        .map(|a| {
+            if a == "{package}" {
+                package_base.to_string_lossy().into_owned()
+            } else {
+                a.clone()
+            }
+        })
+        .collect();
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    acquire::run_admin_in(
+        layout,
+        &project_dir,
+        &tools_ref.cli,
+        &arg_refs,
+        &[],
+        &format!("acquire-press-{}.log", target.id),
+    )?;
+    let package = PathBuf::from(format!(
+        "{}{}",
+        package_base.to_string_lossy(),
+        acquire::exe_suffix(triplet)
+    ));
+    if !package.is_file() {
+        return Err(BenchError::operational(format!(
+            "engine: the priming press of v2-tools target '{}' left no {} — the press log names why",
+            target.id,
+            package.display()
+        )));
+    }
+    Ok(StagedV2Tools {
+        package,
+        cli: tools_ref.cli.clone(),
+        tools_version: tools_ref.version.clone(),
+    })
+}
+
 /// The measured matrix (spec 27 §5): per selected workload, the named
 /// gaps first (explicit rows), warmups per ready target, the warm
 /// repetitions (targets interleaved per iteration when the policy says
 /// so — drift decorrelation), then the cold repetitions (wipe → the
-/// v2-managed-only unmeasured reprime → measured run). Each workload
-/// runs on the arms its id routes it to (spec 27 §10.2: the language
-/// pair for prefixed runtime-suite workloads, every target otherwise).
-/// Returns every run record in execution order.
+/// v2-managed-only unmeasured reprime → measured run).
+/// Returns every run record in execution order. Each workload runs on
+/// the arms it routes to (spec 27 §10.2: the explicit `targets`
+/// allowlist when it carries one, else the language pair its id prefix
+/// names, else every target).
 pub fn execute_matrix(
     layout: &BenchLayout,
     suite: &SuiteFile,
@@ -695,25 +876,59 @@ pub fn execute_matrix(
     for w in workloads {
         let source = acquire::materialize_source(w, layout, repo_root)?;
 
-        // The workload→arm routing law (spec 27 §10.2): a workload whose
-        // id prefix names a declared language pair runs on EXACTLY that
-        // pair; every other workload runs on every target.
-        let lang = crate::suite::workload_lang(&w.id);
-        let routed: Vec<usize> = {
-            let pair: Vec<usize> = prepared
+        // The workload→arm routing law (spec 27 §10.2, amended
+        // 2026-11-21): an explicit `targets` allowlist REPLACES the
+        // prefix law — the workload runs on exactly those arms. Absent,
+        // a workload whose id prefix names a declared language pair runs
+        // on EXACTLY that pair; every other workload runs on every
+        // target.
+        let routed: Vec<usize> = match &w.targets {
+            Some(allow) => allow
                 .iter()
-                .enumerate()
-                .filter(|(_, pt)| {
-                    crate::suite::pair_suffix(&pt.target.id)
-                        .map(|(_, l)| l == lang)
-                        .unwrap_or(false)
+                .map(|id| {
+                    prepared
+                        .iter()
+                        .position(|pt| &pt.target.id == id)
+                        .ok_or_else(|| {
+                            BenchError::operational(format!(
+                                "engine: workload '{}' allowlists the unknown target '{id}' (harness bug — the semantic gate checks this)",
+                                w.id
+                            ))
+                        })
                 })
-                .map(|(i, _)| i)
-                .collect();
-            if pair.is_empty() {
-                (0..prepared.len()).collect()
-            } else {
-                pair
+                .collect::<Result<Vec<_>, _>>()?,
+            None => {
+                let lang = crate::suite::workload_lang(&w.id);
+                let pair: Vec<usize> = prepared
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, pt)| {
+                        crate::suite::pair_suffix(&pt.target.id)
+                            .map(|(_, l)| l == lang)
+                            .unwrap_or(false)
+                    })
+                    .map(|(i, _)| i)
+                    .collect();
+                if pair.is_empty() {
+                    // The tfs-extract/v2-tools arms are excluded from the
+                    // every-target fallback: their run content is fixed by
+                    // the kind contract (the extraction; the staged
+                    // package or CLI), so a workload that does not name
+                    // them has no business landing on them.
+                    prepared
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, pt)| {
+                            !matches!(
+                                pt.target.kind,
+                                TargetKind::TfsExtract | TargetKind::V2Tools
+                            )
+                        })
+                        .map(|(i, _)| i)
+                        .collect()
+                } else {
+                    pair
+                }
             }
         };
 
@@ -728,6 +943,7 @@ pub fn execute_matrix(
                     iteration: None,
                     status: RunStatus::Unavailable,
                     wall_s: None,
+                    first_output_s: None,
                     cpu_user_s: None,
                     cpu_sys_s: None,
                     peak_rss_bytes: None,
@@ -774,6 +990,7 @@ pub fn execute_matrix(
                             iteration: None,
                             status: RunStatus::Unavailable,
                             wall_s: None,
+                            first_output_s: None,
                             cpu_user_s: None,
                             cpu_sys_s: None,
                             peak_rss_bytes: None,
@@ -834,10 +1051,22 @@ pub fn execute_matrix(
             if dead.contains(&t_idx) {
                 continue;
             }
-            // On-system arms have no cold story — the toolchain's
-            // provisioning time is not tebako's comparison (spec 27 §10).
-            // One named row per workload, never fabricated numbers.
-            if pt.target.kind == TargetKind::OnSystem {
+            // On-system and v2-tools arms have no cold story — the
+            // toolchain's provisioning time is not tebako's comparison
+            // (spec 27 §10), and a cold press would re-resolve the
+            // runtime (a download) inside the measured span while the
+            // matrix is offline (spec 27 §11.1). One named row per
+            // workload, never fabricated numbers.
+            let no_cold: Option<&str> = match pt.target.kind {
+                TargetKind::OnSystem => Some(
+                    "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison",
+                ),
+                TargetKind::V2Tools => Some(
+                    "v2-tools arms have no cold story — a cold press would re-resolve the runtime (a download) inside the measured span and the matrix is offline; the author-loop cells are warm",
+                ),
+                _ => None,
+            };
+            if let Some(reason) = no_cold {
                 runs.push(RunRecord {
                     workload: w.id.clone(),
                     target: pt.target.id.clone(),
@@ -845,15 +1074,13 @@ pub fn execute_matrix(
                     iteration: None,
                     status: RunStatus::Unavailable,
                     wall_s: None,
+                    first_output_s: None,
                     cpu_user_s: None,
                     cpu_sys_s: None,
                     peak_rss_bytes: None,
                     exit: None,
                     error: None,
-                    reason: Some(
-                        "on-system arms have no cold story — the toolchain's provisioning time is not tebako's comparison"
-                            .to_string(),
-                    ),
+                    reason: Some(reason.to_string()),
                 });
                 continue;
             }
@@ -995,6 +1222,20 @@ fn run_once(
         ))
     })?;
     let wants_fixture = workload.argv.iter().any(|a| a == "{fixture}");
+    // The measured program: the target's staged program — except a
+    // press-kind workload, which measures the leg's staged `tebako` CLI
+    // (spec 27 §11.1: the press IS the workload; the CLI is never itself
+    // a payload).
+    let program = if workload.kind == crate::suite::WorkloadKind::Press {
+        ctx.press_cli.as_ref().ok_or_else(|| {
+            BenchError::operational(format!(
+                "engine: press workload '{}' runs but no v2-tools arm staged the tebako CLI (harness bug)",
+                workload.id
+            ))
+        })?
+    } else {
+        program
+    };
     let mut argv = vec![program.to_string_lossy().into_owned()];
     if wants_fixture
         && matches!(
@@ -1011,43 +1252,63 @@ fn run_once(
         argv.push("--tebako-image".to_string());
         argv.push(format!("{}:-:/bench-fixture", img.display()));
     }
-    for a in &workload.argv {
-        argv.push(match a.as_str() {
-            "{doc}" => doc_name.clone().ok_or_else(|| {
-                BenchError::operational(format!(
-                    "engine: workload '{}' uses {{doc}} but carries no source (harness bug — the semantic gate rejects this)",
-                    workload.id
-                ))
-            })?,
-            "{fixture}" => match target.kind {
-                TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy => {
-                    acquire::fixture_vfs_path(mount_root.as_deref())
-                }
-                _ => ctx
-                    .fixture_host
+    if target.kind == TargetKind::TfsExtract {
+        // The extraction IS the workload (the kind contract, spec 27
+        // §10.6): the whole env image into a fresh per-run directory —
+        // the workload's authored argv is ignored.
+        let image = image.as_ref().ok_or_else(|| {
+            BenchError::operational(format!(
+                "engine: tfs-extract target '{}' is ready without its env image (harness bug)",
+                target.id
+            ))
+        })?;
+        argv.push("extract".to_string());
+        argv.push("-q".to_string());
+        argv.push("-d".to_string());
+        argv.push(cell.join("extracted").to_string_lossy().into_owned());
+        argv.push(image.to_string_lossy().into_owned());
+    } else {
+        for a in &workload.argv {
+            argv.push(match a.as_str() {
+                "{doc}" => doc_name.clone().ok_or_else(|| {
+                    BenchError::operational(format!(
+                        "engine: workload '{}' uses {{doc}} but carries no source (harness bug — the semantic gate rejects this)",
+                        workload.id
+                    ))
+                })?,
+                "{fixture}" => match target.kind {
+                    TargetKind::RuntimeExe | TargetKind::RuntimeExeLazy => {
+                        acquire::fixture_vfs_path(mount_root.as_deref())
+                    }
+                    _ => ctx
+                        .fixture_host
+                        .as_ref()
+                        .ok_or_else(|| {
+                            BenchError::operational(format!(
+                                "engine: workload '{}' uses {{fixture}} but the leg staged no fixture (harness bug)",
+                                workload.id
+                            ))
+                        })?
+                        .to_string_lossy()
+                        .into_owned(),
+                },
+                "{classes}" => ctx
+                    .classes_dir
                     .as_ref()
                     .ok_or_else(|| {
                         BenchError::operational(format!(
-                            "engine: workload '{}' uses {{fixture}} but the leg staged no fixture (harness bug)",
+                            "engine: workload '{}' uses {{classes}} but the leg compiled no classes (harness bug)",
                             workload.id
                         ))
                     })?
                     .to_string_lossy()
                     .into_owned(),
-            },
-            "{classes}" => ctx
-                .classes_dir
-                .as_ref()
-                .ok_or_else(|| {
-                    BenchError::operational(format!(
-                        "engine: workload '{}' uses {{classes}} but the leg compiled no classes (harness bug)",
-                        workload.id
-                    ))
-                })?
-                .to_string_lossy()
-                .into_owned(),
-            _ => a.clone(),
-        });
+                // The press-kind run cell's package output path (press
+                // appends the platform suffix itself).
+                "{package}" => cell.join("app").to_string_lossy().into_owned(),
+                _ => a.clone(),
+            });
+        }
     }
     let mut env = layout.child_env(&target.id);
     if target.kind == TargetKind::V2Managed {
@@ -1105,6 +1366,7 @@ fn warmup_outcome(
         iteration: Some(0),
         status: RunStatus::Failed,
         wall_s: Some(sample.wall_s),
+        first_output_s: sample.first_output_s,
         cpu_user_s: Some(sample.cpu_user_s),
         cpu_sys_s: Some(sample.cpu_sys_s),
         peak_rss_bytes: Some(sample.peak_rss_bytes),
@@ -1135,6 +1397,7 @@ fn measured_record(
         iteration: Some(iteration),
         status: RunStatus::Ok,
         wall_s: Some(sample.wall_s),
+        first_output_s: sample.first_output_s,
         cpu_user_s: Some(sample.cpu_user_s),
         cpu_sys_s: Some(sample.cpu_sys_s),
         peak_rss_bytes: Some(sample.peak_rss_bytes),
@@ -1166,6 +1429,7 @@ fn timeout_record(
         iteration: Some(iteration),
         status: RunStatus::Timeout,
         wall_s: Some(sample.wall_s),
+        first_output_s: sample.first_output_s,
         cpu_user_s: None,
         cpu_sys_s: None,
         peak_rss_bytes: None,
@@ -1226,6 +1490,9 @@ pub fn compute_stats(runs: &[RunRecord]) -> Vec<StatRecord> {
         .map(|((workload, target, mode), cell)| {
             let mut walls: Vec<f64> = cell.iter().filter_map(|r| r.wall_s).collect();
             walls.sort_by(|a, b| a.total_cmp(b));
+            let mut first_outputs: Vec<f64> =
+                cell.iter().filter_map(|r| r.first_output_s).collect();
+            first_outputs.sort_by(|a, b| a.total_cmp(b));
             let mut cpus: Vec<f64> = cell
                 .iter()
                 .filter_map(|r| Some(r.cpu_user_s? + r.cpu_sys_s?))
@@ -1245,6 +1512,11 @@ pub fn compute_stats(runs: &[RunRecord]) -> Vec<StatRecord> {
                 max_wall_s: walls.last().copied().unwrap_or(0.0),
                 stdev_wall_s: stdev_sample(&walls, mean),
                 mean_wall_s: mean,
+                median_first_output_s: if first_outputs.is_empty() {
+                    None
+                } else {
+                    Some(median_f64(&first_outputs))
+                },
                 median_cpu_s: median_f64(&cpus),
                 median_peak_rss_bytes: median_u64(&rss),
             }

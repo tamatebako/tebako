@@ -27,16 +27,15 @@
 #   headroom over the measured worst leg (cited in each note) so a slow
 #   shared runner never trips them — they trip on regressions.
 #
-# Every cell the runtime suite produces carries a `source:` (spec 27 §11's
-# covenant arm): the workload suffix selectors, the tebako arm's target
-# prefix, the mode, the measure (wall | rss), the shape (ratio | speedup |
-# absolute), and the aggregation (worst — the gate is as honest as its
-# worst leg). The producer (`tebako-bench report --metrics`) derives each
-# sourced cell from the run's dashboard — the gate judges the published
-# statistic, never a private recomputation. The cells the suite does not
-# produce (the author loop reads the walkthrough's recorded timings; the
-# teardown cells await their workloads) carry no source and answer
-# `absent` — the honest coverage gap.
+# Every cell carries a `source:` (spec 27 §11's covenant arm): the
+# workload suffix selectors, the tebako arm's target prefix, the mode, the
+# measure (wall | rss), the shape (ratio | speedup | absolute |
+# teardown-delta), and the aggregation (worst — the gate is as honest as
+# its worst leg). The producer (`tebako-bench report --metrics`) derives
+# each sourced cell from the run's dashboard — the gate judges the
+# published statistic, never a private recomputation. A cell whose source
+# selects nothing in a run (a suite the run did not execute, an arm that
+# produced no numbers) answers `absent` — the honest coverage gap.
 schema_version: 1
 cells:
   # -- first response: the wrapper + mount + boot budget a user feels once.
@@ -98,29 +97,50 @@ cells:
     note: resident-set peak at steady state, worst leg; worst measured 470 MB (run 42456544287)
     source: {workloads: ["-boot", "-fib", "-ioread", "-statloop"], target: "tebako-", mode: warm, measure: rss, shape: absolute, aggregate: worst}
 
-  # -- teardown and lifecycle. No suite workload produces these yet — the
-  # cells carry no source and answer `absent` (the coverage gap, named).
+  # -- teardown and lifecycle. exit_seconds rides the boot cells'
+  # first-output medians: the wall median minus the first-output median
+  # on the SAME cell is the exit tail a finished dispatch shows (the
+  # sampler stamps the child's first write; spec 27 §11.1's
+  # teardown-delta shape, 2026-11-21). materialize_vs_extract divides
+  # the ruby spawn-edge leg (an in-image `gem --version` with the host
+  # PATH pinned away, so resolution can only succeed inside the runtime
+  # image) by the whole-image extraction of the SAME runtime ref — v2's
+  # pay-at-mount against v1's unpack-everything. Ruby only: java's
+  # runtime home materializes the whole tree per boot (the ratio would
+  # red by construction) and python's image ships no in-image
+  # executables to spawn (spec 27 §10.6).
   - id: teardown.exit_seconds
     bound: 0.5
     comparison: le
     unit: s
-    note: exit latency of a finished dispatch
+    note: exit latency of a finished dispatch — median wall minus median first-output on the boot legs
+    source: {workloads: ["-boot"], target: "tebako-", mode: warm, measure: wall, shape: teardown-delta, aggregate: worst}
   - id: teardown.materialize_vs_extract
     bound: 1.0
     comparison: le
     unit: ratio
-    note: exec-cache materialization must never be slower than whole-image extraction
+    note: exec-cache materialization must never be slower than whole-image extraction; measured 0.73 on macos-arm64 (0.29 s spawn vs 0.40 s extract, 2026-11-21 walkthrough)
+    source: {workloads: ["-spawn"], target: "tebako-", baseline: "extract-", mode: warm, measure: wall, shape: ratio, aggregate: worst}
 
-  # -- the author loop: the two numbers the walkthrough publishes. These
-  # read the walkthrough's recorded timings, never a bench run — no
-  # source, so a bench run reports them `absent`.
+  # -- the author loop: the two numbers the walkthrough publishes, now
+  # produced by the metanorma suite's v2-tools arm (spec 27 §11.1). The
+  # priming press at acquisition downloads the runtime; the re-press
+  # workload measures `tebako press` of the unchanged vendored project
+  # per run; the first-run workload boots the primed package. Both are
+  # warm-store semantics (the arm's cold cell is a named gap — a cold
+  # press would re-resolve the runtime inside the measured span). The
+  # bounds predate the first fleet numbers (the 2026-11-21 walkthrough
+  # measured 7.93 s re-press / 2.73 s first run on a shared macos-arm64
+  # machine) — the first dispatch calibrates them.
   - id: author-loop.repress.median
     bound: 6.0
     comparison: le
     unit: s
-    note: median of five re-presses of an unchanged project
+    note: median of five re-presses of an unchanged project; bound pending fleet calibration (walkthrough measured 7.93 s on a shared machine)
+    source: {workloads: ["-repress"], target: "v2-tools", mode: warm, measure: wall, shape: absolute, aggregate: worst}
   - id: author-loop.first_run.median
     bound: 2.5
     comparison: le
     unit: s
-    note: median of five first executions of a pressed package
+    note: median of five first executions of a pressed package, warm store; bound pending fleet calibration (walkthrough measured 2.73 s)
+    source: {workloads: ["-first-run"], target: "v2-tools", mode: warm, measure: wall, shape: absolute, aggregate: worst}

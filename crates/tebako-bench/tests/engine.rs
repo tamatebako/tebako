@@ -12,7 +12,7 @@ use tebako_bench::engine::{self, LegContext, Prepared, PreparedTarget};
 use tebako_bench::platforms::{PackedMn, PlatformFile, Triplet};
 use tebako_bench::result::{ResultFile, RunMode, RunRecord, RunStatus, RunnerMeta, Versions};
 use tebako_bench::suite::{
-    Expect, RunPolicy, Source, SourceKind, SuiteFile, Target, TargetKind, Workload,
+    Expect, RunPolicy, Source, SourceKind, SuiteFile, Target, TargetKind, Workload, WorkloadKind,
 };
 use tebako_bench::{acquire::BenchLayout, validate, DocKind};
 
@@ -43,6 +43,8 @@ fn test_suite(argv: &[&str], files: &[&str], policy: RunPolicy) -> SuiteFile {
         workloads: vec![Workload {
             id: "w-small".to_string(),
             opt_in: false,
+            kind: WorkloadKind::Exec,
+            targets: None,
             source: Some(Source {
                 kind: SourceKind::Vendored,
                 path: "fixtures/doc.adoc".to_string(),
@@ -165,6 +167,7 @@ fn ok_run(w: &str, t: &str, mode: RunMode, wall: f64, cpu: f64, rss: u64) -> Run
         iteration: Some(1),
         status: RunStatus::Ok,
         wall_s: Some(wall),
+        first_output_s: None,
         cpu_user_s: Some(cpu / 2.0),
         cpu_sys_s: Some(cpu / 2.0),
         peak_rss_bytes: Some(rss),
@@ -213,6 +216,25 @@ fn stats_math_matches_the_spec_rules() {
     let cold = &stats[1];
     assert_eq!((cold.mode, cold.n), (RunMode::Cold, 1));
     assert_eq!(cold.stdev_wall_s, None, "stdev absent under n < 2");
+
+    // The first-output median rides the runs that carry one (2026-11-21):
+    // absent when every run is silent, the median of the present values
+    // otherwise.
+    assert_eq!(warm.median_first_output_s, None);
+    let first_out_runs = vec![
+        RunRecord {
+            first_output_s: Some(9.0),
+            ..ok_run("w", "t", RunMode::Warm, 10.0, 8.0, 100)
+        },
+        RunRecord {
+            first_output_s: Some(11.0),
+            ..ok_run("w", "t", RunMode::Warm, 12.0, 10.0, 200)
+        },
+        // the silent run is skipped, not zeroed
+        ok_run("w", "t", RunMode::Warm, 14.0, 12.0, 300),
+    ];
+    let stats = engine::compute_stats(&first_out_runs);
+    assert_eq!(stats[0].median_first_output_s, Some(10.0));
 
     // Even counts average the two middles.
     runs.retain(|r| r.status == RunStatus::Ok && r.mode == Some(RunMode::Warm));
@@ -687,6 +709,8 @@ fn the_language_prefix_routes_each_workload_to_its_pair() {
     let mk = |id: &str| Workload {
         id: id.to_string(),
         opt_in: false,
+        kind: WorkloadKind::Exec,
+        targets: None,
         source: None,
         argv: vec!["--touch".to_string(), "out.txt".to_string()],
         expect: Expect {
@@ -775,6 +799,188 @@ fn the_language_prefix_routes_each_workload_to_its_pair() {
             .count();
         assert_eq!(warm_ok, 2, "{lang}: both arms measured warm");
     }
+}
+
+#[test]
+fn the_targets_allowlist_replaces_the_prefix_law() {
+    let dir = tempfile::tempdir().unwrap();
+    let layout = BenchLayout::new(&dir.path().join("out")).unwrap();
+    let repo_root = dir.path().to_path_buf();
+    let mk = |id: &str, targets: Option<Vec<String>>| Workload {
+        id: id.to_string(),
+        opt_in: false,
+        kind: WorkloadKind::Exec,
+        targets,
+        source: None,
+        argv: vec!["--touch".to_string(), "out.txt".to_string()],
+        expect: Expect {
+            exit: 0,
+            files: vec!["out.txt".to_string()],
+        },
+        timeout_s: 30,
+    };
+    let suite = SuiteFile {
+        schema_version: 1,
+        name: "allowlist-test".to_string(),
+        baseline: None,
+        workloads: vec![
+            // The allowlist REPLACES the prefix law: the ruby workload
+            // names the extract arm and skips the on-system arm.
+            mk(
+                "ruby-spawn",
+                Some(vec!["tebako-ruby".to_string(), "extract-ruby".to_string()]),
+            ),
+            // An unpaired prefix still runs on every target EXCEPT the
+            // tfs-extract/v2-tools arms — their run content is fixed by
+            // the kind contract, so only allowlisted workloads land there.
+            mk("compile-small-iso", None),
+        ],
+        targets: Vec::new(),
+        run_policy: RunPolicy {
+            warmup: 1,
+            repetitions: 1,
+            cold_repetitions: 1,
+            interleave: true,
+        },
+    };
+    let prepared = vec![
+        ready("on-system-ruby", TargetKind::OnSystem),
+        ready("tebako-ruby", TargetKind::V1Exe),
+        ready("extract-ruby", TargetKind::TfsExtract),
+        ready("v2-tools", TargetKind::V2Tools),
+    ];
+    let runs = engine::execute_matrix(
+        &layout,
+        &suite,
+        &[],
+        &prepared,
+        &LegContext::default(),
+        &repo_root,
+        &mut noop_reprime,
+    )
+    .unwrap();
+
+    let targets_of = |workload: &str| -> Vec<&str> {
+        let mut v: Vec<&str> = runs
+            .iter()
+            .filter(|r| r.workload == workload)
+            .map(|r| r.target.as_str())
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    assert_eq!(
+        targets_of("ruby-spawn"),
+        vec!["extract-ruby", "tebako-ruby"],
+        "the allowlist is the routing, exactly"
+    );
+    assert_eq!(
+        targets_of("compile-small-iso"),
+        vec!["on-system-ruby", "tebako-ruby"],
+        "the every-target fallback excludes the tfs-extract/v2-tools arms"
+    );
+}
+
+#[test]
+fn a_press_workload_runs_the_leg_cli_with_package_substituted() {
+    let dir = tempfile::tempdir().unwrap();
+    let layout = BenchLayout::new(&dir.path().join("out")).unwrap();
+    let repo_root = dir.path().to_path_buf();
+    let suite = SuiteFile {
+        schema_version: 1,
+        name: "press-test".to_string(),
+        baseline: None,
+        workloads: vec![Workload {
+            id: "author-repress".to_string(),
+            opt_in: false,
+            kind: WorkloadKind::Press,
+            targets: Some(vec!["v2-tools".to_string()]),
+            source: None,
+            argv: vec![
+                "--touch".to_string(),
+                "out.txt".to_string(),
+                "--print".to_string(),
+                "{package}".to_string(),
+            ],
+            expect: Expect {
+                exit: 0,
+                files: vec!["out.txt".to_string()],
+            },
+            timeout_s: 30,
+        }],
+        targets: Vec::new(),
+        run_policy: RunPolicy {
+            warmup: 1,
+            repetitions: 1,
+            cold_repetitions: 1,
+            interleave: true,
+        },
+    };
+    // The arm's own staged program deliberately cannot spawn: if the
+    // press run used IT instead of the leg's CLI, the arm would gap.
+    let mut arm = ready("v2-tools", TargetKind::V2Tools);
+    arm.state = Prepared::Ready {
+        program: PathBuf::from("definitely-not-a-real-program"),
+        image: None,
+        runtime_dir: None,
+        mount_root: None,
+    };
+    let prepared = vec![arm];
+    let ctx = LegContext {
+        press_cli: Some(child_path()),
+        ..LegContext::default()
+    };
+    let runs = engine::execute_matrix(
+        &layout,
+        &suite,
+        &[],
+        &prepared,
+        &ctx,
+        &repo_root,
+        &mut noop_reprime,
+    )
+    .unwrap();
+
+    let warm_ok = runs
+        .iter()
+        .filter(|r| r.status == RunStatus::Ok && r.mode == Some(RunMode::Warm))
+        .count();
+    assert_eq!(warm_ok, 1, "the press run executed the leg CLI: {runs:?}");
+    // {package} substituted to the run cell's package base, printed by
+    // the child into the run log.
+    let log = std::fs::read_to_string(
+        layout
+            .logs
+            .join("author-repress--v2-tools--warm-1.log"),
+    )
+    .expect("the run log exists");
+    let cell_app = layout
+        .scratch
+        .join("author-repress")
+        .join("v2-tools")
+        .join("warm-1")
+        .join("app");
+    assert!(
+        log.contains(&cell_app.to_string_lossy().as_ref()),
+        "the log carries the substituted package path: {log}"
+    );
+    // The v2-tools cold cell is the named gap, never a measured run.
+    let cold: Vec<&RunRecord> = runs
+        .iter()
+        .filter(|r| r.mode == Some(RunMode::Cold))
+        .collect();
+    assert_eq!(cold.len(), 1);
+    assert_eq!(cold[0].status, RunStatus::Unavailable);
+    assert!(
+        cold[0]
+            .reason
+            .as_deref()
+            .unwrap_or("")
+            .contains("cold press"),
+        "the gap names why: {:?}",
+        cold[0].reason
+    );
 }
 
 #[test]

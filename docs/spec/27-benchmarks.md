@@ -7,7 +7,12 @@ acquisition slice, the run engine, the report renderer, and
 `.github/workflows/benchmark.yml` have landed; amended 2026-09-17 —
 the speedup baseline generalization (§2/§7), the on-system-vs-tebako
 runtime comparison suite (§10), and the bench-history publication
-plumbing with the release-over-release trend feed (§11))
+plumbing with the release-over-release trend feed (§11); amended
+2026-11-21 — the covenant's four absent cells are sourced: the
+first-output stamp and the teardown-delta shape (§4, §11.1), the
+materialize cell's spawn/extraction arms (§10.6), the author loop's
+v2-tools arm and press workloads (§2, §11.1), and the workload
+`targets` allowlist (§2, §10.2))
 Depends on: 00 (locked invariants), 02 (tpkg wire format), 05
 (resolution and cache), 14 (engineering process), 16 (distribution —
 slim/fat), 17 (runtime driver contract), 19 (bootstrap distribution),
@@ -168,7 +173,10 @@ Contract rules:
   takes its asset from the platforms document (§3). The runtime
   comparison suite (§10) adds two more kinds: `on-system` (the host
   toolchain binary, CI-provisioned) and `runtime-exe` (a tebako
-  runtime pair fetched sha256-verified from its factory release).
+  runtime pair fetched sha256-verified from its factory release);
+  §10.5 adds `runtime-exe-lazy`, §10.6 adds `tfs-extract`
+  (whole-image extraction, timed like any other target), and §11.1
+  adds `v2-tools` (the author loop's tooling arm).
 - **baseline** (amended 2026-09-17) — optional; names the arm the
   report's speedup column is computed against. The value is either an
   exact target id or a PREFIX matching exactly one target per
@@ -192,6 +200,23 @@ Contract rules:
     other kind the host path of the harness-generated fixture.
   - `{classes}` — the directory of the in-leg compiled Java classes
     (§10's compile-once rule); the host path for every kind.
+- **The workload kind and the arm allowlist** (amended 2026-11-21) —
+  `kind: exec` (the default) runs the target's measured program with
+  the workload argv; `kind: press` runs the v2-tools arm's staged
+  `tebako` CLI with the argv (the author loop's re-press, §11.1) and
+  requires `source`, a non-empty argv, and an explicit `targets`
+  allowlist naming v2-tools arms only — exactly one press workload per
+  v2-tools arm (the arm presses one project at acquisition; two would
+  be an ambiguity). `targets`, when present on ANY workload, REPLACES
+  the §10.2 id-prefix routing law: the workload runs on exactly the
+  named arms (each must exist — a validation error otherwise). The
+  `tfs-extract` and `v2-tools` arms are excluded from the prefix
+  law's every-target fallback: their run content is fixed by the kind
+  contract, so only allowlisted workloads land on them. `argv` may be
+  EMPTY on an exec workload (the target's program runs bare — the
+  pressed package's first run). One more substitution joins the set:
+  - `{package}` — the press-kind run cell's package output base path
+    (the platform suffix is the press's own append).
 - **run_policy** — `warmup` full runs per (workload × target) before
   any measurement (primes the fontist/relaton/OS caches);
   `repetitions` measured warm runs per (workload × target);
@@ -247,6 +272,19 @@ rule (unsafe only inside FFI boundary modules).
 
 - **Wall time** — `std::time::Instant` around the spawn→wait span.
   Unit: seconds, f64, recorded as `wall_s`.
+- **First output** (added 2026-11-21) — the sampler also timestamps the
+  child's first write to its captured stream: the run log is
+  append-mode, so the baseline is the log's length at spawn and the
+  ~2 ms poll loop records the instant the length first grows past it
+  (POSIX: inside the `wait4` loop; Windows: the same poll inside the
+  job-object wait). A child that wrote and exited inside one tick is
+  caught by one final post-reap read, recording the reap instant — the
+  upper bound (the output preceded the exit), so the derived teardown
+  delta reads favorably and the covenant trips only on an observed
+  tail. Recorded as `first_output_s` (seconds from spawn), absent when
+  the child never wrote. This is the teardown cell's raw material
+  (§11.1's `teardown-delta` shape): wall − first-output on the same
+  cell is the exit tail a finished dispatch shows.
 - **CPU time** —
   - POSIX: `libc::wait4(pid, …)` reaps the measured child itself, so
     the returned `rusage` is the child's OWN (utime/stime exact).
@@ -422,6 +460,12 @@ Contract rules:
   "ok"` runs only, and only when `n ≥ 1`; `stdev` is the sample
   standard deviation (n−1), absent when `n < 2`. An arm whose runs all
   failed has NO stats row — the failed run records tell the story.
+- **`first_output_s`** (added 2026-11-21) — run records carry the
+  seconds from spawn to the child's first output byte (§4), absent
+  when the child never wrote; stats carry `median_first_output_s` over
+  the cell's ok runs that produced output (absent when none did), and
+  the dashboard mirrors it. Both fields are additive; older results
+  and dashboards without them stay valid.
 
 ## 7. Statistical and reporting rules
 
@@ -660,11 +704,15 @@ Compilation failure gaps both java arms with the reason named.
   install time is not tebako's comparison. Its cold cell is a declared
   named gap (`unavailable` with the mode scoped to `cold`), rendered
   "—", never a fabricated number.
-- **Teardown is NOT a separate workload.** A no-op run's wall clock is
-  boot+teardown by construction, and teardown is ≈free by design (the
+- **Teardown is measured, not asserted (amended 2026-11-21).** A no-op
+  run's wall clock is boot+teardown by construction, and the sampler's
+  first-output stamp (§4) splits it: the cell's median wall minus its
+  median first-output is the exit tail a finished dispatch shows, and
+  the covenant's `teardown.exit_seconds` cell budgets exactly that
+  (§11.1's `teardown-delta` shape). The design claim stands — the
   in-process VFS dies with the process; no unmount ceremony, no FUSE
-  thread join). The method note states this; if a measured exit ever
-  shows a tail, THAT is a regression signal.
+  thread join — and is now gated, not just stated: if a measured exit
+  ever shows a tail, THAT is the regression the covenant trips on.
 
 ### 10.4 The declared gaps
 
@@ -718,6 +766,37 @@ pathology included. One new arm kind:
   legs (spec 39 §10's rule needs every tier-1 platform before the
   default flips).
 
+### 10.6 The materialize cell's arms — the spawn edge and the extraction arm (added 2026-11-21)
+
+The covenant's `teardown.materialize_vs_extract` cell needs two numbers
+no pair arm produces: what v2 pays to make an in-image executable
+runnable (the mount plus the exec-cache materialize), and what
+unpack-everything pays (the whole-image extraction). One new arm kind
+and one new workload supply them:
+
+| kind | What it is |
+|------|-----------|
+| `tfs-extract` | Whole-image extraction, timed like any other target: the measured program is the release's `tfs` tool and every run is `tfs extract -q -d <run cell>/extracted <image>` — the workload's argv is ignored BY KIND CONTRACT (the extraction is the workload). Carries `runtime` exactly like `runtime-exe` and shares the pair's acquisition (the assets are content-named; one download per leg per release). Cold is cold-by-construction (every run extracts into a fresh cell), so the §5 wipe is the common payload caches only. |
+
+- **The spawn edge is a workload, not an arm.** `ruby-spawn` runs
+  `system({"PATH"=>"/usr/bin:/bin"}, "gem", "--version")` on the
+  `tebako-ruby` arm: the env image's `/bin/*` entries are scripts with
+  dead shebangs, and the PATH pin removes the host's gem from the
+  running, so resolution can ONLY succeed inside the runtime image —
+  the measured span pays the driver's mount plus the exec-cache
+  materialization of the gem script. The workload's allowlist is
+  `[tebako-ruby, extract-ruby]` (§2's routing amendment): the
+  on-system arm is deliberately out — the CI runner's ruby gems live
+  in setup-ruby's gem home, not /usr/bin, so the pinned PATH would
+  fail that leg for a reason outside the comparison.
+- **Ruby only, by construction.** Java's runtime home materializes the
+  whole tree per boot, so its ratio would red by construction (the
+  cell would measure java's design, not v2's), and python's image
+  ships no in-image executables to spawn. The cell's source therefore
+  selects `-spawn` and divides by the `extract-` arm through §11.1's
+  baseline override — the harness's extraction arm, never the
+  dashboard's declared baseline.
+
 ## 11. Publication: bench-history, the latest mirrors, and the trend feed (added 2026-09-17)
 
 The `benchmark.yml` fan-in publishes on release runs AND on
@@ -764,7 +843,9 @@ publish without waiting for a release):
 
 The covenant (`benchmarks/covenant.yaml`) is the budget's home; this
 subsection is the grammar that ties a cell to the run that produces it.
-A cell the runtime suite produces carries a `source:` block:
+Every cell carries a `source:` block (amended 2026-11-21 — at the
+covenant's landing the cells the suites did not yet produce carried
+none):
 
 ```yaml
 - id: first-response.cold.median
@@ -774,9 +855,10 @@ A cell the runtime suite produces carries a `source:` block:
   source:
     workloads: ["-boot"]   # a dashboard cell matches when its workload id ENDS WITH one of these
     target: "tebako-"      # the arm's target prefix (the baseline arm is the dashboard's declared baseline, never re-declared here)
+    # baseline: "extract-" # optional (2026-11-21): ratio/speedup divide by the cell matching this prefix instead — the materialize cell's extraction arm
     mode: cold             # cold | warm
     measure: wall          # wall (median_wall_s) | rss (median_peak_rss_bytes)
-    shape: ratio           # ratio (cell ÷ baseline) | speedup (baseline ÷ cell) | absolute
+    shape: ratio           # ratio (cell ÷ baseline) | speedup (baseline ÷ cell) | absolute | teardown-delta (2026-11-21: the cell's median wall − its median first-output)
     aggregate: worst       # worst-of across the selected cells: the max for a `le` bound, the min for a `ge`
 ```
 
@@ -788,10 +870,36 @@ A cell the runtime suite produces carries a `source:` block:
   baseline arm for a selected cell, produces NOTHING for that cell — the
   covenant reports it `absent` (the named coverage gap, never an
   invented number and never a false red).
-- **The cells the suite does not produce carry no `source:`** — the
-  author-loop cells (the walkthrough's recorded timings) and the
-  teardown cells (no workload produces them yet) answer `absent` from a
-  bench run. The covenant names them; the gate reports the gap.
+- **Every cell carries a `source:` (amended 2026-11-21).** The four
+  cells that answered `absent` at the covenant's landing are sourced
+  now: the author loop reads the metanorma suite's `v2-tools` arm
+  (below), the teardown cells read the runtime suite's boot and spawn
+  legs (§10.3, §10.6). A sourced cell that selects nothing in a run
+  still answers `absent` — the gap moves from "no source exists" to
+  "no data arrived", which is the truth.
+- **The author loop's arm (added 2026-11-21).** The `v2-tools` target
+  kind stages the release's `tebako` CLI, registers the target's
+  `registries`, and runs ONE priming press of the arm's press workload
+  at acquisition — the default-runtime resolution and download land
+  there (tebako#895's chain), outside every measured span, so the
+  matrix stays offline. The pressed package (`targets/<id>/app<suffix>`)
+  is the arm's measured program for its exec workloads
+  (`author-first-run`, empty argv — the package boots bare); the press
+  workload (`author-repress`) re-presses the vendored fixture project
+  per measured run, from the run cell, `{package}` substituting the
+  cell's output path. The arm has NO cold story: a cold press would
+  re-resolve the runtime (a download) inside the measured span, so the
+  cold cell is a named gap and the cells' semantics are warm
+  executions on a warm store.
+- **Two shape additions (added 2026-11-21).** `teardown-delta` — the
+  cell's median wall minus its median first-output, the exit tail on
+  the same dashboard cell; it rides `measure: wall` only and divides
+  by nothing, so it takes no baseline (a cell whose runs produced no
+  output contributes nothing). And `source.baseline` — an override
+  prefix for ratio/speedup cells whose baseline is NOT the dashboard's
+  declared one (the materialize cell divides `tebako-` by the
+  harness's `extract-` arm): exact target id first, then prefix, on
+  the same triplet × workload × mode.
 - **The gate is `tebako-bench covenant`** (the evaluator, §11's
   vocabulary) against the produced metrics: `over` fails the release,
   `absent` is reported and does not. The tripwire is

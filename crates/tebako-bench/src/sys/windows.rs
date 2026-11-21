@@ -98,6 +98,12 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
     let start = Instant::now();
     let deadline = start + spec.timeout;
 
+    // The first-output baseline (see posix.rs): the append-mode log's
+    // length at spawn; the poll loop watches for growth past it.
+    let log_baseline = std::fs::metadata(&spec.log_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
     let mut child = cmd.spawn().map_err(|e| {
         close_job(job, false);
         BenchError::operational(format!(
@@ -135,7 +141,7 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
         job
     };
 
-    let result = poll_child(h, deadline, job);
+    let result = poll_child(h, deadline, job, &spec.log_path, log_baseline, &start);
     let timed_out = matches!(result, PollOutcome::TimedOut { .. });
     // The job close IS the tree kill on timeout; otherwise disarm first
     // (closing an armed job would kill the tree). The sample was taken
@@ -154,15 +160,25 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
             cpu_user_s,
             cpu_sys_s,
             peak_rss_bytes,
+            first_output_s,
         } => match wait {
-            Ok(status) => Ok(Sample {
-                wall_s,
-                cpu_user_s,
-                cpu_sys_s,
-                peak_rss_bytes,
-                exit: status.code().unwrap_or(-1),
-                timed_out: false,
-            }),
+            Ok(status) => {
+                // The same inside-one-tick catch as posix: a child that
+                // wrote and exited between polls records the reap
+                // instant (the upper bound — the favorable reading).
+                let first_output_s = first_output_s.or_else(|| {
+                    log_grew(&spec.log_path, log_baseline).then_some(wall_s)
+                });
+                Ok(Sample {
+                    wall_s,
+                    cpu_user_s,
+                    cpu_sys_s,
+                    peak_rss_bytes,
+                    exit: status.code().unwrap_or(-1),
+                    timed_out: false,
+                    first_output_s,
+                })
+            }
             Err(e) => Err(BenchError::operational(format!(
                 "sampler: child wait() failed: {e}"
             ))),
@@ -171,6 +187,7 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
             cpu_user_s,
             cpu_sys_s,
             peak_rss_bytes,
+            first_output_s,
         } => {
             // The job close (or the TerminateProcess fallback in
             // poll_child) already killed the child; drain the wait so no
@@ -183,6 +200,7 @@ pub(crate) fn run_child(spec: &ChildSpec) -> Result<Sample, BenchError> {
                 peak_rss_bytes,
                 exit: 137,
                 timed_out: true,
+                first_output_s,
             })
         }
         PollOutcome::Failed(e) => {
@@ -199,11 +217,13 @@ enum PollOutcome {
         cpu_user_s: f64,
         cpu_sys_s: f64,
         peak_rss_bytes: u64,
+        first_output_s: Option<f64>,
     },
     TimedOut {
         cpu_user_s: f64,
         cpu_sys_s: f64,
         peak_rss_bytes: u64,
+        first_output_s: Option<f64>,
     },
     Failed(BenchError),
 }
@@ -211,9 +231,19 @@ enum PollOutcome {
 /// WaitForSingleObject polling against the deadline; on expiry the caller
 /// kills via the job close — here we only terminate directly when there
 /// is no job. Both resource branches sample BEFORE the job is closed:
-/// its counters die with the handle.
-fn poll_child(h: HANDLE, deadline: Instant, job: HANDLE) -> PollOutcome {
+/// its counters die with the handle. The first-output poll rides the
+/// same loop (a 50 ms tick — coarser than POSIX's 2 ms, the same on
+/// every arm of a leg).
+fn poll_child(
+    h: HANDLE,
+    deadline: Instant,
+    job: HANDLE,
+    log_path: &std::path::Path,
+    log_baseline: u64,
+    start: &Instant,
+) -> PollOutcome {
     let no_job = job.is_null();
+    let mut first_output_s: Option<f64> = None;
     loop {
         // SAFETY: h is our valid process handle.
         let rc = unsafe { WaitForSingleObject(h, POLL_INTERVAL_MS) };
@@ -223,6 +253,7 @@ fn poll_child(h: HANDLE, deadline: Instant, job: HANDLE) -> PollOutcome {
                     cpu_user_s,
                     cpu_sys_s,
                     peak_rss_bytes,
+                    first_output_s,
                 },
                 Err(e) => PollOutcome::Failed(e),
             };
@@ -234,6 +265,9 @@ fn poll_child(h: HANDLE, deadline: Instant, job: HANDLE) -> PollOutcome {
             )));
         }
         debug_assert_eq!(rc, WAIT_TIMEOUT);
+        if first_output_s.is_none() && log_grew(log_path, log_baseline) {
+            first_output_s = Some(start.elapsed().as_secs_f64());
+        }
         if Instant::now() >= deadline {
             let metrics = tree_metrics(h, job);
             if no_job {
@@ -248,11 +282,19 @@ fn poll_child(h: HANDLE, deadline: Instant, job: HANDLE) -> PollOutcome {
                     cpu_user_s,
                     cpu_sys_s,
                     peak_rss_bytes,
+                    first_output_s,
                 },
                 Err(e) => PollOutcome::Failed(e),
             };
         }
     }
+}
+
+/// The first-output probe (see posix.rs).
+fn log_grew(log_path: &std::path::Path, baseline: u64) -> bool {
+    std::fs::metadata(log_path)
+        .map(|m| m.len() > baseline)
+        .unwrap_or(false)
 }
 
 /// user/kernel CPU seconds + peak RSS bytes for the MEASURED TREE: the
