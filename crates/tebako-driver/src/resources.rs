@@ -60,6 +60,15 @@ mod imp {
     /// axis's violation record, beside `jail-deny`).
     const JAIL_RESOURCE_EVENT: &str = "jail-resource";
 
+    /// libc spells the `setrlimit` resource argument per-platform:
+    /// `c_uint` on linux-gnu, `c_int` everywhere else the workspace
+    /// targets (macOS, musl). One alias keeps the plan and its tests
+    /// portable across the legs.
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    pub(super) type RlimitResource = libc::c_uint;
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    pub(super) type RlimitResource = libc::c_int;
+
     /// The watchdog's poll slice (spec 08 §2.2: 50 ms — far under any
     /// declared wall, far above syscall cost).
     const POLL_NSEC: i64 = 50_000_000;
@@ -233,7 +242,7 @@ mod imp {
 
     /// The rlimit mapping (spec 08 §2.2's table) — one row per declared
     /// key, in the grammar's key order.
-    pub(super) fn rlimit_plan(bounds: &ResourceBounds) -> Vec<(libc::c_int, u64, &'static str)> {
+    pub(super) fn rlimit_plan(bounds: &ResourceBounds) -> Vec<(RlimitResource, u64, &'static str)> {
         let mut plan = Vec::with_capacity(3);
         if let Some(v) = bounds.cpu_seconds {
             plan.push((libc::RLIMIT_CPU, v, "cpu_seconds"));
@@ -270,7 +279,7 @@ mod imp {
     /// realistic `memory` bound is not armable there at all — named,
     /// never silently clamped.
     #[cfg(target_os = "macos")]
-    fn refusal_note(resource: libc::c_int, errno: Option<i32>) -> &'static str {
+    fn refusal_note(resource: RlimitResource, errno: Option<i32>) -> &'static str {
         if resource == libc::RLIMIT_AS && errno == Some(libc::EINVAL) {
             " (macOS refuses RLIMIT_AS below its address-space floor — 512 GiB on arm64 — so a realistic memory bound is not armable on this platform)"
         } else {
@@ -279,7 +288,7 @@ mod imp {
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn refusal_note(_resource: libc::c_int, _errno: Option<i32>) -> &'static str {
+    fn refusal_note(_resource: RlimitResource, _errno: Option<i32>) -> &'static str {
         ""
     }
 
@@ -605,7 +614,7 @@ mod tests {
                 // the kernel refuses anything lower there, spec 08
                 // §2.2's platform-reality note) and armably below every
                 // Linux hard limit.
-                let want: [(libc::c_int, libc::rlim_t); 3] = [
+                let want: [(RlimitResource, libc::rlim_t); 3] = [
                     (libc::RLIMIT_CPU, 600),
                     (libc::RLIMIT_AS, 1 << 39),
                     (libc::RLIMIT_NPROC, 512),
