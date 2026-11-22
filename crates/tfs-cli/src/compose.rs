@@ -220,6 +220,10 @@ pub fn parse_compose(
             mounts: grants,
             arg_files: Vec::new(),
             net_grants,
+            // The compose grammar authors no resource bounds (spec 08
+            // §2.2's driver-only arm); the exec surface refuses a
+            // resources-carrying spec by name.
+            resources: tfs::policy::ResourceBounds::default(),
         })
     } else {
         None

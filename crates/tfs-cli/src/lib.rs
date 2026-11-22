@@ -1339,6 +1339,17 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
                 .map_err(|e| (format!("Error: --compose: {e}"), 1))?;
             let env = match spec.jail {
                 Some(jail) => {
+                    // The resource axis never rides the preload delivery:
+                    // only the runtime driver arms those bounds (spec 08
+                    // §2.2), and a run never carries a bound it would
+                    // silently drop.
+                    if !jail.resources.is_empty() {
+                        return Err((
+                            "Error: --compose: the jail declares resource bounds (cpu_seconds/memory/processes/wall_seconds) — only the runtime driver arms those (spec 08 §2.2); tfs exec's preload delivery cannot, so this composition is refused"
+                                .to_string(),
+                            1,
+                        ));
+                    }
                     // Validate NOW (grant paths must exist at compose time)
                     // and carry the canonical form into the child.
                     let policy = HostPolicy::bind(
@@ -1390,6 +1401,13 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
         None => match &opts.jail {
             Some(spec) => {
                 let parsed = JailSpec::parse(spec).map_err(|e| (format!("Error: {e}"), 1))?;
+                if !parsed.resources.is_empty() {
+                    return Err((
+                        "Error: --jail: resource bounds (cpu_seconds/memory/processes/wall_seconds) are enforced by the runtime driver (spec 08 §2.2); tfs exec's preload delivery cannot arm them and never runs a bound it would silently drop"
+                            .to_string(),
+                        1,
+                    ));
+                }
                 let policy = HostPolicy::bind(
                     parsed.default,
                     parsed.mounts,
