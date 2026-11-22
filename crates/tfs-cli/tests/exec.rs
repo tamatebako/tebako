@@ -476,3 +476,27 @@ fn exec_usage_and_named_errors() {
         r.stderr
     );
 }
+
+/// spec 08 §2.2 row 28: the preload-only delivery never arms resource
+/// bounds — `tfs exec` refuses a resources-carrying jail by name (the
+/// runtime driver is the only armer), never a silent drop.
+#[test]
+fn exec_refuses_resource_bounds_by_name() {
+    let Some(f) = fixtures() else { return };
+    let r = tfs_exec(
+        f,
+        &[
+            "--jail",
+            "open;resources:wall_seconds=5",
+            "--",
+            "/tfs/bin/print-data",
+            "/tfs/data/secret.txt",
+        ],
+    );
+    assert_eq!(r.rc, 1, "stderr: {}", r.stderr);
+    assert!(
+        r.stderr.contains("resource bounds") && r.stderr.contains("runtime driver"),
+        "stderr: {}",
+        r.stderr
+    );
+}
