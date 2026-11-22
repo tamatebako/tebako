@@ -13,7 +13,13 @@ carries it to native binaries); manifest integration (§4 —
 manifest∩user composition at handoff, and the audit-journal logging of
 violations (`event=jail-deny`) are SHIPPED with roadmap 35. Enforcement
 exists because every file access already flows through the TFS layer —
-one choke point covers every consumer.
+one choke point covers every consumer. The RESOURCE axis (§2.2 — bounded
+consumption: `cpu_seconds` / `memory` / `processes` / `wall_seconds`) is
+SHIPPED for the POSIX runtime-driver delivery in this amendment's PR
+(the 2026-10-26 scar: a jail probe's child ran 96.9 % CPU for 1d21h
+unnoticed — the jail confined access but nothing bounded consumption);
+its windows arm (Job Objects) and the preload-only (`tfs exec`) arm are
+PLANNED, named in §2.2 and §7 — never silently unbounded.
 
 ## 1. Policy model (docker `-v` semantics)
 
@@ -39,7 +45,7 @@ shim consume — the loader's wire spelling of a policy).** ABNF:
 ```abnf
 policy      = default *(";" grant)
 default     = "open" / "deny"
-grant       = host-grant / argfile-grant / net-grant
+grant       = host-grant / argfile-grant / net-grant / resource-grant
 host-grant  = host-path ":" mount-path ":" access
 host-path   = 1*(%x21-3A / %x3C-7E)        ; any visible char except ';'
 mount-path  = 1*(%x21-3A / %x3C-7E)        ; the in-VFS point, same alphabet
@@ -49,6 +55,14 @@ net-grant   = "net:" net-host [":" port]   ; an outbound peer grant (the
                                            ; network axis, §2)
 net-host    = 1*(%x21-29 / %x2B-39 / %x3C-7E) ; a dns name or IP — no ':' or ';'
 port        = 1*DIGIT
+resource-grant = "resources:" assignment *("," assignment) ; §2.2 — the
+                                           ; consumption bounds
+assignment  = resource-key "=" resource-value
+resource-key = "cpu_seconds" / "memory" / "processes" / "wall_seconds"
+resource-value = 1*DIGIT [ memory-unit ]   ; decimal; zero is out of range
+memory-unit = ("K" / "M" / "G") [ "B" ]    ; memory only, case-insensitive,
+                                           ; 1024-based — a suffix on any
+                                           ; other key is malformed
 ```
 
 `open` grants host cwd + writes (today's behavior); `deny` is the
@@ -61,7 +75,12 @@ bind, §2's inheritance rule). Examples: `deny;/home/u/src:/work:rw`,
 `deny;/home/u/src:/work:rw;@/home/u/in.csv`, `open`. A network grant is
 its own form: `deny;net:example.com` (the host, any port),
 `deny;net:example.com:443` (one port), and the two compose with host
-grants in any order.
+grants in any order. The resource grant (§2.2) is one comma-separated
+directive — `deny;resources:cpu_seconds=60,wall_seconds=300`,
+`open;resources:memory=256M,processes=64` — order-free with every other
+grant form, duplicate keys a named error. Like `net:`, a `resources:`
+token is never `host:mount:ro|rw` (a RELATIVE host path literally
+starting `resources:` is pathological and loses the token).
 
 ## 2. Semantics
 
@@ -157,6 +176,138 @@ process, so the floor grants it always.
   error, pinned in the audit journal — never a crash in someone else's
   library.
 
+## 2.2 The resource axis — bounded consumption (locked 2026-11-22)
+
+The jail's first axis confines ACCESS (fs, network). The resource axis
+bounds CONSUMPTION. The evidence for requiring it is ours: on
+2026-10-26 a jail probe's child ran 96.9 % CPU for **1 day 21 hours**
+before anyone noticed — the jail held, nothing bounded the runaway.
+Hermetic is confined AND bounded; docker has cgroups, and the jail needs
+the userland equivalent or "safer than a container" is false. Like the
+jail, bounding is **opt-in**: a policy without `resources:` is
+byte-identical to before (unbounded — today's behavior, always).
+
+**The four bounds (MECE; the only spellable keys).** The YAML block form
+(the payload manifest's `capabilities.host` and the package manifest's
+`jail:` block, §4):
+
+```yaml
+resources:
+  cpu_seconds: 60        # CPU time ceiling, seconds
+  memory: 256M           # address-space ceiling, bytes — bare integer or
+                         # a K/M/G (1024-based, case-insensitive, optional
+                         # trailing B) suffix; both forms are bytes
+  processes: 64          # process-count ceiling
+  wall_seconds: 300      # wall-clock ceiling, seconds
+```
+
+The env form is one directive of comma-separated assignments
+(`resources:cpu_seconds=60,memory=256M,processes=64,wall_seconds=300`),
+order-free; any key may appear alone. Malformed input is a named error,
+exit 73 (`EX_TEBAKO_JAIL`) — unknown or duplicated keys, empty or
+non-numeric values, zero, `u64` overflow, a unit suffix on a non-memory
+key — never a guess.
+
+**Enforcement (POSIX — SHIPPED in this amendment's PR; windows
+PLANNED below).** The runtime driver installs the resource arm in
+`apply_jail` — the same boot moment as the jail itself (after the
+mounts, before the interpreter handoff), so the limits cover the
+interpreter and every descendant it spawns (rlimits inherit across
+fork/exec; a preload-delivered native child of a bounded tree is
+therefore kernel-bounded and never re-applies). The mapping:
+
+| key | POSIX mechanism | the payload-visible answer at the bound |
+|-----|-----------------|------------------------------------------|
+| `cpu_seconds` | `setrlimit(RLIMIT_CPU)` soft = hard | `SIGXCPU` death (128+24 from the parent) |
+| `memory` | `setrlimit(RLIMIT_AS)` | address-space growth fails — the interpreter's own allocator error (ruby: `NoMemoryError`) |
+| `processes` | `setrlimit(RLIMIT_NPROC)` | `fork`/`spawn` fails `EAGAIN` |
+| `wall_seconds` | the driver's watchdog (below) | the named stderr line + process-group `SIGKILL`; the observed exit is the signal |
+
+A `setrlimit` the kernel refuses (e.g. a spawned-runtime child whose
+composed union would exceed the tree's inherited hard limit) fails the
+boot by name, exit 73 — a bound is never silently loosened.
+
+**The honesty notes (what the bounds ARE):**
+- `cpu_seconds` counts CPU, not wall: a sleeping payload never reaches
+  it. Pair with `wall_seconds` for runaways that do not burn.
+- `memory` covers the WHOLE process — the runtime's own footprint is
+  inside the budget (a runtime that needs 300 MB dies under
+  `memory: 256M` at boot; budget the interpreter).
+- `processes` is `RLIMIT_NPROC`, a **per-real-uid** ceiling, not a
+  per-tree one (linux counts tasks, macOS processes) — POSIX userland
+  has no per-tree process primitive without cgroups (the named
+  non-goal, §5). Declare it against the uid's current count; a bound at
+  or below that count forbids ALL forking.
+- `wall_seconds` is the tree's wall-clock budget (below). Clock-set
+  jumps skew the cross-process inheritance note below by their jump —
+  wall is not a precision instrument across `adjtime`.
+
+**The wall watchdog (the `wall_seconds` mechanism, POSIX).** The
+tree-root driver — the first driver boot in the process tree that sees
+the bound — ensures process-group ownership (`setpgid(0,0)` when not
+already a group leader; a group leader cannot re-group and does not need
+to), then forks a watchdog child and exports
+`TEBAKO_RESOURCE_DEADLINE=<unix seconds>` (a contract variable — it
+survives the tebako#737 scrub and flows to every descendant). The
+watchdog polls on a 50 ms slice and fires on either condition:
+
+1. **Deadline** — the named line
+   (`tebako-driver: resource bound exceeded (wall_seconds=<n>) — the
+   payload process group was killed`) on stderr, an
+   `event=jail-resource bound=wall_seconds op=kill cause=wall` line in
+   the audit journal (best effort, raw `open(2)`/`write(2)` — the
+   watchdog is a post-fork child and touches no shared state), then
+   `SIGKILL` to the process group.
+2. **Root exit** — the arming process is gone (the watchdog watches its
+   parent's pid): the same kill with `cause=root-exit`. **A bounded
+   run's tree dies with its root** — the orphan class of the 2026-10-26
+   scar closed by construction, transitively: every armed watchdog
+   watches its own armer, so a middle layer's death reaps its subtree.
+
+**Deadline inheritance.** A descendant driver boot (the spec 30
+spawned-runtime child) reads the inherited deadline: a descendant whose
+composed `wall_seconds` is TIGHTER than the inherited remaining budget
+re-groups its own subtree and arms its own watchdog at
+`min(own, inherited)`; a descendant without a tighter wall arms nothing
+(the root's watchdog covers it). The tree's ceiling therefore holds
+through every composition — no spawn chain outlives the root's declared
+wall. A malformed `TEBAKO_RESOURCE_DEADLINE` is a named error (exit 73):
+the inheritance channel never degrades silently. `wall_seconds` is the
+only inherited bound; the rlimits are kernel-inherited by construction
+and the per-process composition (`union`, §4) still applies — clamped
+by the kernel's inherited hard limits (above).
+
+**Named boundaries (never implied):**
+- A payload that calls `setsid(2)` deliberately leaves the watched
+  group. POSIX userland without cgroups cannot hold a determined
+  escapee; the escape requires the payload's own syscall and is OUT OF
+  SCOPE (§5), exactly the static-binary class on the fs axis.
+- A wall-bounded payload that LEADS a job-control pipeline group cannot
+  re-group (POSIX forbids a group leader `setpgid`), so its watchdog's
+  kill covers the whole job group — wrap it (`( pkg )`) to isolate.
+- When the arming process was not already a group leader (a CI
+  supervisor's child), re-grouping moves the payload out of the
+  supervisor's signal group: the supervisor's SIGTERM/Ctrl-C no longer
+  reaches it and the declared wall remains the ceiling. This is the
+  tree-kill mechanism's price; it engages only when `wall_seconds` is
+  declared.
+- **Windows: PLANNED** — Job Objects with
+  `JOB_OBJECT_LIMIT_PROCESS_TIME` / `JOB_OBJECT_LIMIT_PROCESS_MEMORY` /
+  `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` / `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
+  (the per-tree primitive POSIX lacks) are the immediate follow-up PR;
+  until it lands a windows driver boot with ANY resource bound declared
+  fails closed, exit 73, by name — never silently unbounded. The grammar
+  is stable across both arms.
+- **The preload-only delivery (`tfs exec`): PLANNED** — the preload
+  constructor is the named seam for the same rlimits; today the
+  `tfs exec` surfaces REFUSE a `resources:`-carrying spec by name (never
+  a silent drop), and a preload-delivered child of a driver-rooted
+  bounded tree is kernel-inherited-bounded (it re-parses the spec, so
+  the directive parses there by design).
+- `record` composes with `resources:` (bounds are not grants — the
+  record rejection covers mounts, net grants, and argument files only);
+  the watchdog's kill lands in the same journal.
+
 ## 3. Enforcement point (the single choke)
 
 New TFS C ABI entry:
@@ -233,6 +384,17 @@ list of outbound peers the payload was built to need (deny-by-default
 with explicit grants; a data-only payload needs no network). Dispatch
 surfaces (spec 07)
 compose: manifest request ∩ user policy = effective jail, on both axes.
+
+Since the 2026-11-22 amendment the block also carries `resources:` (§2.2
+— the four consumption bounds), authored in the YAML block form. The
+composition rules on the resource axis mirror the access axes' locked
+precedence: **intersect (request ∩ user tightening) is per-key MIN** —
+the tighter bound wins; a key present on either side survives (the
+user's silence is not a tightening; the manifest's silence keeps the
+user's bound) — and **union (the spec 30 §4 spawn bridge) is per-key
+MAX**, because the child must be able to do what EITHER side declared,
+still clamped by the kernel's inherited hard limits and by the
+inherited wall deadline (§2.2).
 
 ### Shipped surfaces (roadmap 35)
 
@@ -366,9 +528,15 @@ vector below is either **blocked and proven by a named test**, or
 **named out of scope with the reason** — there is no third state. The
 host-filesystem vectors live in `crates/tfs/tests/jails.rs`; the
 environment vector lives beside its implementation
-(`crates/tebako-driver/src/env_scrub.rs`). Both run on every platform
-leg of every CI run and therefore on every release: a regression
-reddens the release matrix, not a dashboard nobody reads.
+(`crates/tebako-driver/src/env_scrub.rs`); the resource axis's grammar
+lives beside its owners (`crates/tpkg/src/jail.rs` the authored model,
+`crates/tfs/src/policy.rs` the engine mirror — one grammar, one message
+set) and its POSIX mechanism beside its armer
+(`crates/tebako-driver/src/resources.rs`), with the end-to-end arms
+(fork bomb, infinite looper, under-bounds control) in the release-gate
+suite's resource arm (`ci/jail-conformance.sh`). All run on every
+platform leg of every CI run and therefore on every release: a
+regression reddens the release matrix, not a dashboard nobody reads.
 
 | # | vector | verdict | the proof |
 |---|--------|---------|-----------|
@@ -394,7 +562,16 @@ reddens the release matrix, not a dashboard nobody reads.
 | 20 | a payload's own sockets (network confinement) | blocked (EPERM) from the 2026-11-07 amendment — the §1 `net:` grant + the preload's socket family (`connect`/`sendto`/`sendmsg` judged, `getaddrinfo` observed for the name bridge; DNS itself never gated); a `connect` to an ungranted peer is the policy's named refusal | `net::tests::deny_judges_by_numeric_and_observed_name`, `net::tests::ipv6_peers_judge_by_observed_name`, `policy::tests::net_check_denies_only_under_deny_and_matches_port`, `policy::tests::jail_spec_parses_net_grants` + `net_grants_env_round_trip`, `needs::tests::network_lines_draft_peer_entries_preferring_the_name` |
 | 21 | a jailed payload opening a listener (inbound service: `bind`/`listen`/`accept`) | OUT OF SCOPE in v1 — the axis judges OUTBOUND peers; inbound confinement is a later layer, named here so nobody reads the axis as bidirectional | §5 |
 | 22 | an unplanned spawned HOST child (ruby's `IO.popen(["cat", secret])`) reading what the policy denies the parent | blocked — POSIX by the inherited preload tier (the exec target and the child's own reads are both judged); windows by the fail-closed spawn boundary (§5): under any non-trivial policy the spawn itself is refused. The end-to-end windows leg rides the runtime-side patch (tebako#1021; the conformance suite's shellout line carries a named KNOWN-GAP until a published runtime pair calls the export) | `spawn_host_permitted_is_the_platform_spawn_boundary`, `policy::tests::trivially_open_is_exactly_the_unauthored_open_default`, the contract C harness's `spawn_host_permitted=1` line |
+| 23 | a fork bomb under a declared `processes` bound | bounded — `fork` fails `EAGAIN` at the `RLIMIT_NPROC` ceiling; the bomb dies by name at the bound and the watchdog reaps its sleeper children with the root (§2.2's die-with-root) | the conformance suite's resource arm (`ci/jail-conformance.sh` — POSIX, `--pair`); `resources::tests` (the rlimit mapping + the syscall-level fork probes) |
+| 24 | an infinite-looper under a declared `wall_seconds` bound | killed at the bound — the watchdog's named stderr line, the `event=jail-resource` journal line, the process group's `SIGKILL`; the observed exit is the signal | the conformance suite's `wall` arm; `resources::tests::the_watchdog_kills_the_group_at_the_deadline` |
+| 25 | an infinite-looper under a declared `cpu_seconds` bound | `SIGXCPU` death at the `RLIMIT_CPU` ceiling | the conformance suite's `cpu` arm; the `resources::tests` rlimit mapping |
+| 26 | an under-bounds control run (generous `cpu_seconds`/`memory`/`processes`/`wall_seconds` declared, nothing stressed) | passes byte-identically to the unbounded run — the axis never perturbs an in-budget payload | the conformance suite's `control` arm |
+| 27 | windows resource enforcement | PLANNED — Job Objects (§2.2); until the arm lands the windows driver boot fails closed (exit 73) on any declared bound — never silently unbounded | — (named, not claimed) |
+| 28 | the preload-only delivery (`tfs exec`) of the resource axis | PLANNED — the preload constructor is the named seam; today the `tfs exec` surfaces refuse a `resources:`-carrying spec by name, and a driver-rooted bounded tree's native children are kernel-inherited-bounded (§2.2) | §2.2 |
+| 29 | a payload calling `setsid(2)` to escape the wall group | OUT OF SCOPE — POSIX userland without cgroups cannot hold a determined escapee (the escape needs the payload's own syscall); cgroup-grade per-tree accounting is the named non-goal (§5) | §2.2 |
 
 Row 16 is the one open vector that is IN scope and not yet proven: it is
 named here so nobody reads the matrix as "done", and it does not close
-until a windows test stands behind it.
+until a windows test stands behind it. Rows 27 and 28 name the resource
+axis's own two open arms the same way — the axis ships POSIX-first and
+says so.
