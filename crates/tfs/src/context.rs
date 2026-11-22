@@ -2952,13 +2952,12 @@ impl FsContext {
         // them exactly as before.
         visited.insert(path.to_string());
         let Some(parsed) = (|| {
-            use std::io::Read as _;
+            use std::io::{Read as _, Seek as _, SeekFrom};
             let mut head = Vec::new();
-            std::fs::File::open(&host_path)
-                .and_then(|f| {
-                    f.take(exec_closure::HEADER_WINDOW as u64)
-                        .read_to_end(&mut head)
-                })
+            let mut file = std::fs::File::open(&host_path).ok()?;
+            (&file)
+                .take(exec_closure::HEADER_WINDOW as u64)
+                .read_to_end(&mut head)
                 .ok()?;
             // Incident 13: a PE import directory is section-resident
             // (.rdata), past the header window in a multi-MiB module (a
@@ -2966,14 +2965,32 @@ impl FsContext {
             // answers an empty closure and the OS load then 126s on the
             // vendored siblings that never materialized. A dlmap target
             // is a load module by construction, so PE images are parsed
-            // WHOLE; the ELF/Mach-O window stands (their load tables
-            // ride the headers).
+            // WHOLE.
             if head.starts_with(b"MZ") {
                 if let Ok(full) = std::fs::read(&host_path) {
                     head = full;
                 }
             }
-            exec_closure::parse(&head)
+            // tebako#1096: an ELF's PT_DYNAMIC and its string table are
+            // ordinary allocated segments and can sit ANYWHERE in the
+            // file — numpy's manylinux _multiarray_umath.so carries
+            // PT_DYNAMIC at ~9.4 MiB of a 10.6 MB image, past the probe
+            // window; a window-only parse answered None, the module
+            // rode alone, and numpy.libs/libscipy_openblas64 never
+            // materialized. The window stays the probe (the ELF header
+            // and program-header table ride the first bytes of any real
+            // image); the regions the program headers name beyond it
+            // are read from the file, bounded by the parser's region
+            // cap and clipped at EOF — read only what the headers name.
+            let flen = file.metadata().ok().map(|m| m.len()).unwrap_or(0);
+            exec_closure::parse_backed(&head, &mut |off, size| {
+                let want = usize::try_from(size.min(flen.saturating_sub(off))).ok()?;
+                let mut buf = vec![0u8; want];
+                file.seek(SeekFrom::Start(off))
+                    .and_then(|_| file.read_exact(&mut buf))
+                    .ok()
+                    .map(|_| buf)
+            })
         })() else {
             let debug = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
             if debug {
@@ -5222,6 +5239,75 @@ mod tests {
         out
     }
 
+    /// A minimal 64-bit LE ELF with one PT_LOAD covering the whole
+    /// file and a PT_DYNAMIC at `dynamic_at` (0 packs it after the
+    /// program headers; larger zero-pads — the tebako#1096 manylinux
+    /// shape: .dynamic riding behind MiBs of .text) holding the given
+    /// DT_NEEDED / DT_RUNPATH strings. The same byte construction as
+    /// exec_closure's elf64_deep — fixture builders stay local to their
+    /// test module, like pe64_fixture.
+    fn elf64_deep_fixture(dynamic_at: usize, needed: &[&str], runpath: Option<&str>) -> Vec<u8> {
+        let phoff = 64usize;
+        let phentsize = 56usize;
+        let phnum = 2usize;
+        let packed = (phoff + phentsize * phnum + 7) & !7;
+        let dyn_off = if dynamic_at == 0 { packed } else { dynamic_at };
+        let dyn_entries = needed.len() + usize::from(runpath.is_some()) + 3; // + STRSZ + STRTAB + NULL
+        let strtab_off = dyn_off + dyn_entries * 16;
+        let mut strings = vec![0u8];
+        let mut offsets = Vec::new();
+        for name in needed {
+            offsets.push(strings.len() as u64);
+            strings.extend_from_slice(name.as_bytes());
+            strings.push(0);
+        }
+        let runpath_off = runpath.map(|rp| {
+            let off = strings.len() as u64;
+            strings.extend_from_slice(rp.as_bytes());
+            strings.push(0);
+            off
+        });
+        let total = strtab_off + strings.len();
+
+        let mut out = vec![0u8; total];
+        out[0..4].copy_from_slice(b"\x7fELF");
+        out[4] = 2; // 64-bit
+        out[5] = 1; // little-endian
+        out[6] = 1; // version
+        out[16..18].copy_from_slice(&3_u16.to_le_bytes()); // ET_DYN
+        out[18..20].copy_from_slice(&62_u16.to_le_bytes()); // EM_X86_64
+        out[32..40].copy_from_slice(&(phoff as u64).to_le_bytes());
+        out[54..56].copy_from_slice(&(phentsize as u16).to_le_bytes());
+        out[56..58].copy_from_slice(&(phnum as u16).to_le_bytes());
+        // PT_LOAD covering the whole file at vaddr 0 (identity map).
+        out[phoff..phoff + 4].copy_from_slice(&1_u32.to_le_bytes());
+        out[phoff + 32..phoff + 40].copy_from_slice(&(total as u64).to_le_bytes());
+        // PT_DYNAMIC.
+        let dph = phoff + phentsize;
+        out[dph..dph + 4].copy_from_slice(&2_u32.to_le_bytes());
+        out[dph + 8..dph + 16].copy_from_slice(&(dyn_off as u64).to_le_bytes());
+        out[dph + 32..dph + 40].copy_from_slice(&((dyn_entries * 16) as u64).to_le_bytes());
+        let mut at = dyn_off;
+        for off in &offsets {
+            out[at..at + 8].copy_from_slice(&1_u64.to_le_bytes()); // DT_NEEDED
+            out[at + 8..at + 16].copy_from_slice(&off.to_le_bytes());
+            at += 16;
+        }
+        if let Some(off) = runpath_off {
+            out[at..at + 8].copy_from_slice(&29_u64.to_le_bytes()); // DT_RUNPATH
+            out[at + 8..at + 16].copy_from_slice(&off.to_le_bytes());
+            at += 16;
+        }
+        out[at..at + 8].copy_from_slice(&10_u64.to_le_bytes()); // DT_STRSZ
+        out[at + 8..at + 16].copy_from_slice(&(strings.len() as u64).to_le_bytes());
+        at += 16;
+        out[at..at + 8].copy_from_slice(&5_u64.to_le_bytes()); // DT_STRTAB
+        out[at + 8..at + 16].copy_from_slice(&(strtab_off as u64).to_le_bytes());
+        // DT_NULL rides the zero padding.
+        out[strtab_off..strtab_off + strings.len()].copy_from_slice(&strings);
+        out
+    }
+
     /// Mount a host-dir fixture tree at `point` on a fresh context.
     fn mount_hostdir(ctx: &mut FsContext, dir: &std::path::Path, point: &str) {
         let backend = crate::backends_hostdir::HostDirBackend::new(dir).unwrap();
@@ -5703,6 +5789,56 @@ mod tests {
         assert!(
             dest.join("tfs/bin/sibling.dll").is_file(),
             "the deep import table's sibling materializes beside the importer"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn elf_closure_with_a_deep_dynamic_segment_still_walks() {
+        // tebako#1096 — the manylinux numpy shape: PT_DYNAMIC past the
+        // 1-MiB probe window (numpy's 10.6 MB _multiarray_umath.so
+        // carries it at ~9.4 MiB). The windowed parse answered None,
+        // the module "rode alone", and ld.so's raw-syscall probe missed
+        // the vendored sibling (numpy.libs/libscipy_openblas64) at
+        // import. The region reads the program headers name must walk.
+        let dir = std::env::temp_dir().join(format!("tfs-elf-deep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let core = dir.join("img/py/numpy/_core");
+        std::fs::create_dir_all(&core).unwrap();
+        std::fs::create_dir_all(dir.join("img/py/numpy/numpy.libs")).unwrap();
+        std::fs::write(
+            core.join("_multiarray_umath.cpython-314-x86_64-linux-gnu.so"),
+            elf64_deep_fixture(
+                exec_closure::HEADER_WINDOW + 0x400,
+                &["libscipy_openblas64_-4b78795a.so"],
+                Some("$ORIGIN/../numpy.libs"),
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("img/py/numpy/numpy.libs/libscipy_openblas64_-4b78795a.so"),
+            elf64_deep_fixture(0, &[], None),
+        )
+        .unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &dir.join("img"), "/tfs");
+        let host = ctx
+            .extract_exec_closure(
+                "/tfs/py/numpy/_core/_multiarray_umath.cpython-314-x86_64-linux-gnu.so",
+                &dest,
+            )
+            .unwrap();
+
+        assert_eq!(
+            host,
+            dest.join("tfs/py/numpy/_core/_multiarray_umath.cpython-314-x86_64-linux-gnu.so")
+        );
+        assert!(
+            dest.join("tfs/py/numpy/numpy.libs/libscipy_openblas64_-4b78795a.so")
+                .is_file(),
+            "the deep dynamic segment's openblas sibling materializes via $ORIGIN/../numpy.libs"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -15,18 +15,29 @@
 //! importer-dir-only rule, recursion with a visited set) lives in
 //! `context.rs`.
 //!
-//! Mach-O and ELF parse only the header region (the first
-//! [`HEADER_WINDOW`] bytes of the extracted copy): their load commands
-//! and dynamic tables ride the first pages of any real image. PE is the
-//! exception (incident 13): the import directory is SECTION-resident
-//! (.rdata), which sits past the window in a multi-MiB module (a
-//! -static-libstdc++ build) — a windowed parse silently answers an
-//! empty closure, so [`parse`] hands PE the whole buffer it was given
-//! (the caller reads PE images in full). A truncated or unparseable
-//! header yields no dependencies — the loader then answers for the host
-//! libraries exactly as before.
+//! Mach-O load commands and the ELF header + program-header table ride
+//! the first pages of any real image, so the first [`HEADER_WINDOW`]
+//! bytes of the extracted copy are the probe the format parse runs
+//! against. The ELF dep-metadata SEGMENTS are the exception
+//! (tebako#1096): PT_DYNAMIC and the string table are ordinary
+//! allocated segments and can sit anywhere in the file — a manylinux
+//! wheel's 10.6 MB `_multiarray_umath` .so carries PT_DYNAMIC at ~9.4
+//! MiB — so the ELF walk reads the regions the program headers NAME,
+//! served from the window when it covers them and otherwise read
+//! bounded from the file by the caller's region reader
+//! ([`parse_backed`]). PE is the other exception (incident 13): the
+//! import directory is SECTION-resident (.rdata), which sits past the
+//! window in a multi-MiB module (a -static-libstdc++ build) — a
+//! windowed parse silently answers an empty closure, so [`parse`] hands
+//! PE the whole buffer it was given (the caller reads PE images in
+//! full). A truncated or unparseable header yields no dependencies —
+//! the loader then answers for the host libraries exactly as before.
 
-/// Header bytes examined for dependency metadata.
+/// Header bytes examined for dependency metadata: the probe window the
+/// caller reads up front. Mach-O load commands and the ELF header +
+/// program-header table always ride it; ELF dep-metadata segments past
+/// it are read by header-named region (tebako#1096), and PE images are
+/// read whole (incident 13) — the window is never their bound.
 pub(crate) const HEADER_WINDOW: usize = 1 << 20;
 
 /// The executable container format a header parsed as. Resolution
@@ -58,14 +69,41 @@ pub struct ImageDeps {
 
 /// Parse a Mach-O (thin 32/64 or fat), ELF (32/64, either endianness),
 /// or PE (PE32/PE32+) header. None when the bytes are none of the
-/// formats.
+/// formats. The in-memory form of [`parse_backed`]: regions the ELF
+/// program headers name past the probe window answer from `bytes`
+/// itself, so a window-only slice of a deep-dynamic ELF parses as None
+/// (the truncated-header contract) and the whole image parses whole.
 pub fn parse(bytes: &[u8]) -> Option<ImageDeps> {
-    let window = &bytes[..bytes.len().min(HEADER_WINDOW)];
-    // PE parses the WHOLE buffer (the module doc — incident 13): its
-    // import directory is section-resident, not header-resident.
+    parse_backed(bytes, &mut |off, size| {
+        let start = usize::try_from(off).ok()?;
+        if start > bytes.len() {
+            return None;
+        }
+        let end = start
+            .saturating_add(usize::try_from(size).ok()?)
+            .min(bytes.len());
+        Some(bytes[start..end].to_vec())
+    })
+}
+
+/// Parse with the probe window `head` plus a bounded region reader for
+/// the ELF dep-metadata segments the window does not cover
+/// (tebako#1096): `read(offset, size)` answers the file's bytes at a
+/// region the ELF program headers NAME (the program-header table, the
+/// dynamic segment, the string table — never a fixed window guess), at
+/// most [`ELF_REGION_CAP`] bytes per call, clipped at EOF. Mach-O reads
+/// the window exactly as [`parse`] does (load commands ride the
+/// header); PE needs `head` to BE the whole image — the caller applies
+/// the incident-13 rule (an MZ sniff reads the file in full) before
+/// calling.
+pub fn parse_backed(
+    head: &[u8],
+    read: &mut dyn FnMut(u64, u64) -> Option<Vec<u8>>,
+) -> Option<ImageDeps> {
+    let window = &head[..head.len().min(HEADER_WINDOW)];
     parse_macho(window)
-        .or_else(|| parse_elf(window))
-        .or_else(|| parse_pe(bytes))
+        .or_else(|| parse_elf(head, read))
+        .or_else(|| parse_pe(head))
 }
 
 /// Cheap magic-number answer: does this file CLAIM to be a load module?
@@ -232,16 +270,24 @@ const DT_RPATH: i64 = 15;
 const DT_RUNPATH: i64 = 29;
 const DT_NULL: i64 = 0;
 
-fn parse_elf(bytes: &[u8]) -> Option<ImageDeps> {
-    if bytes.get(..4)? != b"\x7fELF" {
+/// The sane ceiling on ONE header-named ELF region read (the
+/// program-header table, the dynamic segment, the string table). A
+/// region whose declared extent outruns the cap is a malformed image:
+/// the answer is None (the truncated-header contract — the platform
+/// loader answers for the file), NEVER a capped read answering a
+/// partial dep set.
+const ELF_REGION_CAP: u64 = 64 << 20;
+
+fn parse_elf(head: &[u8], read: &mut dyn FnMut(u64, u64) -> Option<Vec<u8>>) -> Option<ImageDeps> {
+    if head.get(..4)? != b"\x7fELF" {
         return None;
     }
-    let is64 = match bytes[4] {
+    let is64 = match head.get(4).copied()? {
         1 => false,
         2 => true,
         _ => return None,
     };
-    let little = match bytes[5] {
+    let little = match head.get(5).copied()? {
         1 => true,
         2 => false,
         _ => return None,
@@ -270,88 +316,128 @@ fn parse_elf(bytes: &[u8]) -> Option<ImageDeps> {
 
     let (phoff, phentsize, phnum) = if is64 {
         (
-            u64e(bytes.get(32..40)?)? as usize,
-            u16e(bytes.get(54..56)?)? as usize,
-            u16e(bytes.get(56..58)?)? as usize,
+            u64e(head.get(32..40)?)?,
+            u16e(head.get(54..56)?)?,
+            u16e(head.get(56..58)?)?,
         )
     } else {
         (
-            u32e(bytes.get(28..32)?)? as usize,
-            u16e(bytes.get(42..44)?)? as usize,
-            u16e(bytes.get(44..46)?)? as usize,
+            u32e(head.get(28..32)?)? as u64,
+            u16e(head.get(42..44)?)?,
+            u16e(head.get(44..46)?)?,
         )
     };
 
+    // A header-named byte region of the image: served from the probe
+    // window when it covers the region whole, otherwise read bounded
+    // from the file by the caller (tebako#1096 — PT_DYNAMIC and the
+    // string table are ordinary allocated segments and can sit anywhere
+    // in the file; the window is a probe, never their bound). An
+    // over-cap declared extent is the malformed answer.
+    let mut region = |off: u64, size: u64| -> Option<Vec<u8>> {
+        let start = usize::try_from(off).ok()?;
+        let span = usize::try_from(size).ok()?;
+        if let Some(covered) = head.get(start..start.checked_add(span)?) {
+            return Some(covered.to_vec());
+        }
+        if size > ELF_REGION_CAP {
+            return None;
+        }
+        read(off, size)
+    };
+
+    // e_phentsize must cover every program-header field read below; a
+    // smaller declared entry is a malformed header.
+    let need_phentsize: u16 = if is64 { 56 } else { 32 };
+    if phentsize < need_phentsize {
+        return None;
+    }
+
     // Program headers: collect PT_LOAD (vaddr→offset) and PT_DYNAMIC.
+    let phsize = u64::from(phnum).checked_mul(u64::from(phentsize))?;
+    let ph = region(phoff, phsize)?;
     let mut loads: Vec<(u64, u64, u64)> = Vec::new(); // (vaddr, offset, filesz)
-    let mut dynamic: Option<(usize, usize)> = None; // (offset, filesz)
-    for i in 0..phnum {
-        let base = phoff.checked_add(i.checked_mul(phentsize)?)?;
-        let p_type = u32e(bytes.get(base..base + 4)?)?;
+    let mut dynamic: Option<(u64, u64)> = None; // (offset, filesz)
+    for i in 0..usize::from(phnum) {
+        let base = i.checked_mul(usize::from(phentsize))?;
+        let p_type = u32e(ph.get(base..base + 4)?)?;
         let (p_offset, p_vaddr, p_filesz) = if is64 {
             (
-                u64e(bytes.get(base + 8..base + 16)?)?,
-                u64e(bytes.get(base + 16..base + 24)?)?,
-                u64e(bytes.get(base + 32..base + 40)?)?,
+                u64e(ph.get(base + 8..base + 16)?)?,
+                u64e(ph.get(base + 16..base + 24)?)?,
+                u64e(ph.get(base + 32..base + 40)?)?,
             )
         } else {
             (
-                u32e(bytes.get(base + 4..base + 8)?)? as u64,
-                u32e(bytes.get(base + 8..base + 12)?)? as u64,
-                u32e(bytes.get(base + 16..base + 20)?)? as u64,
+                u32e(ph.get(base + 4..base + 8)?)? as u64,
+                u32e(ph.get(base + 8..base + 12)?)? as u64,
+                u32e(ph.get(base + 16..base + 20)?)? as u64,
             )
         };
         match p_type {
             PT_LOAD => loads.push((p_vaddr, p_offset, p_filesz)),
-            PT_DYNAMIC => dynamic = Some((p_offset as usize, p_filesz as usize)),
+            PT_DYNAMIC => dynamic = Some((p_offset, p_filesz)),
             _ => {}
         }
     }
     let (dyn_off, dyn_filesz) = dynamic?;
-    let vaddr_to_off = |vaddr: u64| -> Option<usize> {
-        loads
-            .iter()
-            .find(|(v, _, filesz)| vaddr >= *v && vaddr < v + filesz)
-            .map(|(v, off, _)| (vaddr - v + off) as usize)
+    let vaddr_to_off = |vaddr: u64| -> Option<u64> {
+        loads.iter().find_map(|(v, off, filesz)| {
+            let end = v.checked_add(*filesz)?;
+            if vaddr >= *v && vaddr < end {
+                vaddr.checked_sub(*v)?.checked_add(*off)
+            } else {
+                None
+            }
+        })
     };
 
+    // The dynamic segment, read where the program headers name it. A
+    // short read (a truncated image clipped at EOF) is the malformed
+    // answer — never a partially scanned segment.
+    let dyn_filesz_len = usize::try_from(dyn_filesz).ok()?;
+    let dyn_bytes = region(dyn_off, dyn_filesz)?;
+    if dyn_bytes.len() < dyn_filesz_len {
+        return None;
+    }
     // Dynamic entries: (i64 tag, u64 val) on 64-bit, (i32, u32) on 32.
     let entsz = if is64 { 16 } else { 8 };
-    let mut strtab: Option<usize> = None;
-    let mut strsz: Option<usize> = None;
+    let mut strtab: Option<u64> = None;
+    let mut strsz: Option<u64> = None;
     let mut needed: Vec<u64> = Vec::new();
     let mut rpath: Option<u64> = None;
     let mut runpath: Option<u64> = None;
-    for i in 0..(dyn_filesz / entsz) {
-        let base = dyn_off.checked_add(i.checked_mul(entsz)?)?;
+    for i in 0..(dyn_filesz_len / entsz) {
+        let base = i.checked_mul(entsz)?;
         let (tag, val) = if is64 {
             (
-                u64e(bytes.get(base..base + 8)?)? as i64,
-                u64e(bytes.get(base + 8..base + 16)?)?,
+                u64e(dyn_bytes.get(base..base + 8)?)? as i64,
+                u64e(dyn_bytes.get(base + 8..base + 16)?)?,
             )
         } else {
             (
-                u32e(bytes.get(base..base + 4)?)? as i32 as i64,
-                u32e(bytes.get(base + 4..base + 8)?)? as u64,
+                u32e(dyn_bytes.get(base..base + 4)?)? as i32 as i64,
+                u32e(dyn_bytes.get(base + 4..base + 8)?)? as u64,
             )
         };
         match tag {
             DT_NULL => break,
             DT_NEEDED => needed.push(val),
             DT_STRTAB => strtab = vaddr_to_off(val),
-            DT_STRSZ => strsz = Some(val as usize),
+            DT_STRSZ => strsz = Some(val),
             DT_RPATH => rpath = Some(val),
             DT_RUNPATH => runpath = Some(val),
             _ => {}
         }
     }
     let strtab = strtab?;
-    let strsz = strsz
-        .unwrap_or(usize::MAX)
-        .min(bytes.len().saturating_sub(strtab));
-    let strings = bytes.get(strtab..strtab.checked_add(strsz)?)?;
+    // An undeclared DT_STRSZ reads the cap and NUL-scans within — the
+    // old in-buffer scan's file-backed analogue; a declared extent past
+    // the cap is the malformed answer inside `region` (never a
+    // truncated string table answering a partial dep set).
+    let strings = region(strtab, strsz.unwrap_or(ELF_REGION_CAP))?;
     let str_at = |offset: u64| -> Option<String> {
-        let tail = strings.get(offset as usize..)?;
+        let tail = strings.get(usize::try_from(offset).ok()?..)?;
         let end = tail.iter().position(|&b| b == 0).unwrap_or(tail.len());
         let s = std::str::from_utf8(&tail[..end]).ok()?;
         if s.is_empty() {
@@ -619,14 +705,29 @@ mod tests {
 
     /// Build a minimal 64-bit LE ELF with one PT_LOAD covering the
     /// whole file and a PT_DYNAMIC with the given needed/runpath
-    /// strings.
-    fn elf64(needed: &[&str], runpath: Option<&str>) -> Vec<u8> {
+    /// strings. `deep_at == 0` packs the dynamic segment right after
+    /// the program headers; any larger value zero-pads the image so the
+    /// segment starts at exactly that file offset — a multi-MiB module
+    /// whose .dynamic rides behind its .text (tebako#1096's manylinux
+    /// numpy). `total_len` past the computed end zero-pads the image to
+    /// exactly that size (the deep module's trailing sections).
+    fn elf64_deep(
+        deep_at: usize,
+        total_len: usize,
+        needed: &[&str],
+        runpath: Option<&str>,
+    ) -> Vec<u8> {
         let phoff = 64usize;
         let phentsize = 56usize;
         let phnum = 2usize;
-        let dyn_off = (phoff + phentsize * phnum + 7) & !7;
-        // string table right after the dynamic section (3 entries + null)
-        let dyn_entries = 3 + usize::from(runpath.is_some()) + 1;
+        let packed = (phoff + phentsize * phnum + 7) & !7;
+        let dyn_off = if deep_at == 0 { packed } else { deep_at };
+        assert!(
+            dyn_off >= packed,
+            "the dynamic segment never overlaps the headers"
+        );
+        // string table right after the dynamic segment
+        let dyn_entries = needed.len() + usize::from(runpath.is_some()) + 3; // + STRSZ + STRTAB + NULL
         let strtab_off = dyn_off + dyn_entries * 16;
         let mut strings = vec![0u8];
         let mut offsets = Vec::new();
@@ -641,7 +742,7 @@ mod tests {
             strings.push(0);
             off
         });
-        let total = strtab_off + strings.len();
+        let total = (strtab_off + strings.len()).max(total_len);
 
         let mut out = vec![0u8; total];
         out[0..4].copy_from_slice(b"\x7fELF");
@@ -675,13 +776,34 @@ mod tests {
             out[at + 8..at + 16].copy_from_slice(&off.to_le_bytes());
             at += 16;
         }
+        out[at..at + 8].copy_from_slice(&10_u64.to_le_bytes()); // DT_STRSZ
+        out[at + 8..at + 16].copy_from_slice(&(strings.len() as u64).to_le_bytes());
+        at += 16;
         out[at..at + 8].copy_from_slice(&5_u64.to_le_bytes()); // DT_STRTAB
         out[at + 8..at + 16].copy_from_slice(&(strtab_off as u64).to_le_bytes());
-        at += 16;
-        // DT_NULL
-        let _ = at;
+        // DT_NULL rides the zero padding.
         out[strtab_off..strtab_off + strings.len()].copy_from_slice(&strings);
         out
+    }
+
+    fn elf64(needed: &[&str], runpath: Option<&str>) -> Vec<u8> {
+        elf64_deep(0, 0, needed, runpath)
+    }
+
+    /// Serve a header-named region from an in-memory image, clipped at
+    /// the image end — the test double for the caller's file-backed
+    /// region reader (which `parse`'s own in-memory reader mirrors).
+    fn region_reader(bytes: &[u8]) -> impl FnMut(u64, u64) -> Option<Vec<u8>> + '_ {
+        move |off, size| {
+            let start = usize::try_from(off).ok()?;
+            if start > bytes.len() {
+                return None;
+            }
+            let end = start
+                .saturating_add(usize::try_from(size).ok()?)
+                .min(bytes.len());
+            Some(bytes[start..end].to_vec())
+        }
     }
 
     #[test]
@@ -699,6 +821,139 @@ mod tests {
             parsed.rpaths,
             vec!["$ORIGIN/../lib".to_string(), "/opt/payload/lib".to_string()]
         );
+    }
+
+    #[test]
+    fn elf64_dynamic_beyond_the_header_window_parses_through_backed_reads() {
+        // tebako#1096's byte-exact numpy shape (the issue's repro):
+        // numpy 2.5.5's manylinux _multiarray_umath.cpython-314-
+        // x86_64-linux-gnu.so is 10,609,009 bytes with PT_DYNAMIC at
+        // file offset 9,901,576 — past the 1,048,576-byte probe
+        // window — carrying DT_NEEDED libscipy_openblas64_-4b78795a.so
+        // and DT_RUNPATH $ORIGIN/../numpy.libs. The window-only parse
+        // is the bug's silent failure (None — the module "rode alone"
+        // and the openblas sibling never materialized); the file-backed
+        // parse reads the regions the program headers name and walks.
+        let bytes = elf64_deep(
+            9_901_576,
+            10_609_009,
+            &["libscipy_openblas64_-4b78795a.so"],
+            Some("$ORIGIN/../numpy.libs"),
+        );
+        assert_eq!(bytes.len(), 10_609_009);
+        let window = &bytes[..HEADER_WINDOW];
+        assert_eq!(
+            parse(window),
+            None,
+            "the windowed parse is the bug's silent failure"
+        );
+        let parsed = parse_backed(window, &mut region_reader(&bytes))
+            .expect("the backed parse walks the deep dynamic segment");
+        assert_eq!(parsed.format, ImageFormat::Elf);
+        assert_eq!(
+            parsed.deps,
+            vec!["libscipy_openblas64_-4b78795a.so".to_string()]
+        );
+        assert_eq!(parsed.rpaths, vec!["$ORIGIN/../numpy.libs".to_string()]);
+        // The whole-image parse agrees (the same regions, window-served).
+        let whole = parse(&bytes).expect("the whole image parses");
+        assert_eq!(whole, parsed);
+    }
+
+    #[test]
+    fn elf64_window_resident_image_never_reads_beyond_the_window() {
+        // The cost discipline the window protected (tebako#1096): an
+        // image whose dep-metadata rides the probe window costs zero
+        // region reads — the reader is never invoked.
+        let bytes = elf64(&["libfoo.so.1"], Some("$ORIGIN/../lib"));
+        let parsed = parse_backed(&bytes, &mut |_, _| {
+            panic!("a window-resident image never triggers a region read")
+        })
+        .expect("a compact ELF parses");
+        assert_eq!(parsed.deps, vec!["libfoo.so.1".to_string()]);
+        assert_eq!(parsed.rpaths, vec!["$ORIGIN/../lib".to_string()]);
+    }
+
+    #[test]
+    fn elf64_dynamic_straddling_the_window_is_read_whole_from_the_file() {
+        // A dynamic segment starting inside the window but ending past
+        // it is served by the file read WHOLE — never by a clipped
+        // window slice (the clipped answer is the malformed None).
+        let bytes = elf64_deep(HEADER_WINDOW - 16, 0, &["libedge.so"], None);
+        let window = &bytes[..HEADER_WINDOW];
+        assert_eq!(parse(window), None, "the window alone truncates it");
+        let parsed = parse_backed(window, &mut region_reader(&bytes))
+            .expect("the backed parse reads the straddling segment whole");
+        assert_eq!(parsed.deps, vec!["libedge.so".to_string()]);
+    }
+
+    #[test]
+    fn elf64_undeclared_strsz_still_parses_bounded() {
+        // DT_STRSZ is universal in linker output, but the walk
+        // tolerates its absence: the string-table read runs bounded to
+        // the region cap (clipped at EOF) and names NUL-scan within —
+        // the old in-buffer scan's file-backed analogue.
+        let mut bytes = elf64(&["libfoo.so.1"], None);
+        // Retag the STRSZ entry (NEEDED, STRSZ, STRTAB, NULL order) to
+        // an unknown tag → strsz undeclared.
+        let dyn_off = (64 + 56 * 2 + 7) & !7;
+        bytes[dyn_off + 16..dyn_off + 24].copy_from_slice(&0x6FFF_0001_u64.to_le_bytes());
+        let parsed = parse(&bytes).expect("an undeclared DT_STRSZ is tolerated");
+        assert_eq!(parsed.deps, vec!["libfoo.so.1".to_string()]);
+    }
+
+    #[test]
+    fn elf64_malformed_headers_are_not_images_and_never_panic() {
+        // The named answer for a malformed ELF is None — no
+        // dependencies parsed; the OS loader answers for the file
+        // exactly as before (the truncated-header contract). Never a
+        // panic, never a partial dep set.
+        let good = elf64(&["libfoo.so.1"], None);
+        let dyn_off = (64 + 56 * 2 + 7) & !7;
+        let dph = 64 + 56; // the PT_DYNAMIC program header
+                           // A truncated header: the bare magic, then mid-Ehdr.
+        assert_eq!(parse(b"\x7fELF"), None);
+        assert_eq!(parse(&good[..40]), None);
+        // PT_DYNAMIC's p_offset beyond EOF — the region read fails.
+        let mut bad = good.clone();
+        bad[dph + 8..dph + 16].copy_from_slice(&0x00FF_FFFF_F000_u64.to_le_bytes());
+        assert_eq!(parse(&bad), None);
+        // An absurd e_phnum/e_phentsize product: the declared
+        // program-header table outruns the region cap — None, and the
+        // read is never attempted.
+        let mut bad = good.clone();
+        bad[54..56].copy_from_slice(&0xFFFF_u16.to_le_bytes());
+        bad[56..58].copy_from_slice(&0xFFFF_u16.to_le_bytes());
+        assert_eq!(
+            parse_backed(&bad, &mut |_, _| panic!(
+                "an over-cap declared table is never read"
+            )),
+            None
+        );
+        // An absurd e_phnum at the real entry size: the table read
+        // clipped at EOF runs off the image mid-table — None.
+        let mut bad = good.clone();
+        bad[56..58].copy_from_slice(&0xFFFF_u16.to_le_bytes());
+        assert_eq!(parse(&bad), None);
+        // PT_DYNAMIC's p_filesz beyond the region cap.
+        let mut bad = good.clone();
+        bad[dph + 32..dph + 40].copy_from_slice(&(ELF_REGION_CAP + 0x1000).to_le_bytes());
+        assert_eq!(
+            parse_backed(&bad, &mut |_, _| panic!(
+                "an over-cap dynamic segment is never read"
+            )),
+            None
+        );
+        // DT_STRSZ beyond the region cap — the honest failure, never a
+        // truncated string table answering a partial dep set. (NEEDED,
+        // STRSZ, STRTAB, NULL order — the value word of entry 1.)
+        let mut bad = good.clone();
+        bad[dyn_off + 24..dyn_off + 32].copy_from_slice(&(ELF_REGION_CAP + 0x1000).to_le_bytes());
+        assert_eq!(parse(&bad), None);
+        // An e_phentsize too small to hold the fields read is malformed.
+        let mut bad = good;
+        bad[54..56].copy_from_slice(&8_u16.to_le_bytes());
+        assert_eq!(parse(&bad), None);
     }
 
     #[test]
