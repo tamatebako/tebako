@@ -29,6 +29,9 @@ const CONTRACT_VARS: &[&str] = &[
     "TEBAKO_JAIL",
     "TEBAKO_JAIL_SOURCE",
     "TEBAKO_JAIL_JOURNAL",
+    // spec 08 §2.2 — the wall deadline the arming driver exports; every
+    // descendant boot clamps its wall to the inherited deadline
+    crate::resources::DEADLINE_VAR,
     // resolution + lazy behavior (spec 39)
     "TEBAKO_OFFLINE",
     "TEBAKO_LAZY_SEAL",

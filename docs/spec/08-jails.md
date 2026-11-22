@@ -219,13 +219,23 @@ therefore kernel-bounded and never re-applies). The mapping:
 | key | POSIX mechanism | the payload-visible answer at the bound |
 |-----|-----------------|------------------------------------------|
 | `cpu_seconds` | `setrlimit(RLIMIT_CPU)` soft = hard | `SIGXCPU` death (128+24 from the parent) |
-| `memory` | `setrlimit(RLIMIT_AS)` | address-space growth fails — the interpreter's own allocator error (ruby: `NoMemoryError`) |
+| `memory` | `setrlimit(RLIMIT_AS)` — Linux (the macOS kernel refuses realistic values, below) | address-space growth fails — the interpreter's own allocator error (ruby: `NoMemoryError`) |
 | `processes` | `setrlimit(RLIMIT_NPROC)` | `fork`/`spawn` fails `EAGAIN` |
 | `wall_seconds` | the driver's watchdog (below) | the named stderr line + process-group `SIGKILL`; the observed exit is the signal |
 
 A `setrlimit` the kernel refuses (e.g. a spawned-runtime child whose
 composed union would exceed the tree's inherited hard limit) fails the
 boot by name, exit 73 — a bound is never silently loosened.
+
+**Platform reality (macOS).** The macOS kernel refuses
+`setrlimit(RLIMIT_AS)` for any value below its address-space floor —
+2^39 bytes on arm64, the user map's maximum extent (measured 2026-11-22:
+2^38 → `EINVAL`, 2^39 accepted; `RLIMIT_DATA` and `RLIMIT_RSS` share the
+refusal and enforce nothing) — and nothing at or above the floor is a
+bound. A `memory` declaration that cannot hold therefore fails the boot
+by name (exit 73 — never a silent clamp): the axis is enforceable on
+Linux; on macOS the named refusal IS the answer (§7 row 30), and row
+26's control arm declares its memory bound on Linux only.
 
 **The honesty notes (what the bounds ARE):**
 - `cpu_seconds` counts CPU, not wall: a sleeping payload never reaches
@@ -565,10 +575,12 @@ regression reddens the release matrix, not a dashboard nobody reads.
 | 23 | a fork bomb under a declared `processes` bound | bounded — `fork` fails `EAGAIN` at the `RLIMIT_NPROC` ceiling; the bomb dies by name at the bound and the watchdog reaps its sleeper children with the root (§2.2's die-with-root) | the conformance suite's resource arm (`ci/jail-conformance.sh` — POSIX, `--pair`); `resources::tests` (the rlimit mapping + the syscall-level fork probes) |
 | 24 | an infinite-looper under a declared `wall_seconds` bound | killed at the bound — the watchdog's named stderr line, the `event=jail-resource` journal line, the process group's `SIGKILL`; the observed exit is the signal | the conformance suite's `wall` arm; `resources::tests::the_watchdog_kills_the_group_at_the_deadline` |
 | 25 | an infinite-looper under a declared `cpu_seconds` bound | `SIGXCPU` death at the `RLIMIT_CPU` ceiling | the conformance suite's `cpu` arm; the `resources::tests` rlimit mapping |
-| 26 | an under-bounds control run (generous `cpu_seconds`/`memory`/`processes`/`wall_seconds` declared, nothing stressed) | passes byte-identically to the unbounded run — the axis never perturbs an in-budget payload | the conformance suite's `control` arm |
+| 26 | an under-bounds control run (generous `cpu_seconds`/`memory`/`processes`/`wall_seconds` declared, nothing stressed) | passes byte-identically to the unbounded run — the axis never perturbs an in-budget payload (the memory declaration rides on Linux only; macOS omits it — the kernel's RLIMIT_AS floor, §2.2) | the conformance suite's `control` arm |
 | 27 | windows resource enforcement | PLANNED — Job Objects (§2.2); until the arm lands the windows driver boot fails closed (exit 73) on any declared bound — never silently unbounded | — (named, not claimed) |
 | 28 | the preload-only delivery (`tfs exec`) of the resource axis | PLANNED — the preload constructor is the named seam; today the `tfs exec` surfaces refuse a `resources:`-carrying spec by name, and a driver-rooted bounded tree's native children are kernel-inherited-bounded (§2.2) | §2.2 |
 | 29 | a payload calling `setsid(2)` to escape the wall group | OUT OF SCOPE — POSIX userland without cgroups cannot hold a determined escapee (the escape needs the payload's own syscall); cgroup-grade per-tree accounting is the named non-goal (§5) | §2.2 |
+| 30 | a declared `memory` bound on macOS | refused by name at boot (exit 73) — the kernel refuses `RLIMIT_AS` below its 2^39-byte address-space floor (arm64); never a silent clamp | the conformance suite's macOS `memory-refusal` arm; `resources::tests`' rlimit mapping |
+| 31 | a memory hog under a declared `memory` bound (Linux) | address-space growth fails at the `RLIMIT_AS` ceiling — the interpreter's own allocator answer (ruby: `NoMemoryError`, or its fatal-allocation abort), never a silent overshoot | the conformance suite's Linux `memory` arm |
 
 Row 16 is the one open vector that is IN scope and not yet proven: it is
 named here so nobody reads the matrix as "done", and it does not close
