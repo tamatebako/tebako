@@ -182,7 +182,7 @@ pub use envelope::{
 pub use error::{strerror, TpkgError};
 pub use ext::{ExtBlock, ExtError};
 pub use io::{read_from, write_to};
-pub use jail::{ArgumentFiles, HostJail, JailAccess, JailError, JailMount};
+pub use jail::{ArgumentFiles, HostJail, JailAccess, JailError, JailMount, ResourceBounds};
 pub use macho::trailer_end;
 pub use manifest::{
     check_check_name, checks_map, qualify_mount, valid_interp_env_key, valid_registry_alias,

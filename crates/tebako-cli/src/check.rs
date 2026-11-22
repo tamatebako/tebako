@@ -1100,6 +1100,7 @@ fn load_composition(path: &Path, ctx: &Ctx) -> Result<CheckTarget, TebakoError> 
             mounts: grants,
             network: Vec::new(),
             argument_files: tpkg::ArgumentFiles::default(),
+            resources: tpkg::jail::ResourceBounds::EMPTY,
         })
     } else {
         None
@@ -1796,6 +1797,7 @@ fn check_jail_env(
             mounts: grants,
             network: Vec::new(),
             argument_files: tpkg::ArgumentFiles::default(),
+            resources: tpkg::jail::ResourceBounds::EMPTY,
         },
         Some(mut base) => {
             base.mounts.extend(grants);
@@ -2533,6 +2535,7 @@ mod tests {
                     mounts: Vec::new(),
                     network: Vec::new(),
                     argument_files: tpkg::ArgumentFiles::default(),
+                    resources: tpkg::jail::ResourceBounds::EMPTY,
                 }),
             },
         };
