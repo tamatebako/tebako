@@ -40,6 +40,32 @@
 # the journal must carry lines — a record mode that denies, or that allows
 # silently, is broken in the direction the audit trail depends on.
 #
+# The resource axis (spec 08 §2.2) adds a fifth section — same philosophy,
+# different judgement: the consumption bounds must HOLD, not just parse.
+# Those arms run POSIX + --pair only (they exercise the driver baked into
+# the candidate pair directly; press mode resolves a PUBLISHED pair, a
+# different moment; the windows arm is PLANNED — Job Objects):
+#
+#   wall      a busy looper under wall_seconds=3 dies by SIGKILL at the
+#             deadline — the watchdog's named stderr line + the
+#             event=jail-resource journal line
+#   cpu       the looper under cpu_seconds=2 dies by SIGXCPU
+#   bomber    a fork bomb under processes=<uid count>+30 hits EAGAIN,
+#             exits 42, and the watchdog reaps its sleeper children with
+#             the root (the orphan guard proves the group emptied)
+#   memory    (Linux) a memory hog under memory=1G stops at the
+#             RLIMIT_AS ceiling — NoMemoryError or the VM's fatal
+#             allocation abort, never a silent overshoot
+#   memory-refusal (macOS) a declared memory bound fails the boot by
+#             name (exit 73) — the kernel's RLIMIT_AS floor, never a
+#             silent clamp
+#   control   generous bounds, nothing stressed: the run is
+#             byte-identical to the open arm
+#
+# A pair that predates the axis answers the gate probe with the old
+# parser's "invalid jail spec" — the arms then SKIP by name (armed, not
+# applicable to this pair), never silently absent.
+#
 # Every refusal must be EACCES/EPERM. ENOENT is NOT a refusal: it means
 # the engine passed the path to the host and the host had nothing there,
 # which is a different answer and never counts as a block.
@@ -83,14 +109,32 @@ run_bounded() {
     return $?
   fi
   perl -MPOSIX=setpgid -e 'setpgid(0, 0) or die "setpgid: $!\n"; exec @ARGV or die "exec: $!\n"' -- "$@" &
-  local pid=$!
+  wait_bounded "$label" "$DEADLINE" "$!"
+}
+
+# The unisolated variant for the resource arms: no harness setpgid, so
+# the DRIVER's own watchdog arm can create its group (pgid == the arm's
+# pid — the group ops below still address it). A perl-wrapped arm would
+# make the payload a group leader already, and the watchdog's root-exit
+# reap would stay out by design (spec 08 §2.2's job-control caveat) —
+# exactly the mechanism the bomber arm proves.
+run_bounded_bare() {
+  local label="$1" deadline="$2"; shift 2
+  "$@" &
+  wait_bounded "$label" "$deadline" "$!"
+}
+
+wait_bounded() {
+  local label="$1" deadline="$2" pid="$3"
   local waited=0
   while kill -0 "$pid" 2>/dev/null; do
-    if [ "$waited" -ge "$DEADLINE" ]; then
-      echo "   DEADLINE: $label exceeded ${DEADLINE}s — tearing down the process group" >&2
+    if [ "$waited" -ge "$deadline" ]; then
+      echo "   DEADLINE: $label exceeded ${deadline}s — tearing down the process group" >&2
       kill -TERM -- -"$pid" 2>/dev/null
+      kill -TERM "$pid" 2>/dev/null
       sleep 3
       kill -KILL -- -"$pid" 2>/dev/null
+      kill -KILL "$pid" 2>/dev/null
       wait "$pid" 2>/dev/null
       return 124
     fi
@@ -100,14 +144,23 @@ run_bounded() {
   wait "$pid"
   local rc=$?
   # The orphan guard: the arm's group must be EMPTY once its leader is
-  # gone. A live member is a reaped-and-failed arm, named in the matrix.
-  if kill -0 -- -"$pid" 2>/dev/null; then
-    echo "   ORPHAN: $label left a live process group — tearing it down" >&2
-    ps -eo pid,pgid,etime,command 2>/dev/null | awk -v g="$pid" '$2 == g' | sed 's/^/   /' >&2
-    kill -KILL -- -"$pid" 2>/dev/null
-    ORPHANS=$((ORPHANS + 1))
-    return 125
-  fi
+  # gone — but poll briefly first: a watchdog-armed arm's watchdog reaps
+  # its own group within ~100 ms of the leader's exit (spec 08 §2.2's
+  # die-with-root), and the guard must not mistake that reap for an
+  # orphan. A member still live after 3 s is a reaped-and-failed arm,
+  # named in the matrix.
+  local polls=0
+  while kill -0 -- -"$pid" 2>/dev/null; do
+    if [ "$polls" -ge 15 ]; then
+      echo "   ORPHAN: $label left a live process group — tearing it down" >&2
+      ps -eo pid,pgid,etime,command 2>/dev/null | awk -v g="$pid" '$2 == g' | sed 's/^/   /' >&2
+      kill -KILL -- -"$pid" 2>/dev/null
+      ORPHANS=$((ORPHANS + 1))
+      return 125
+    fi
+    sleep 0.2
+    polls=$((polls + 1))
+  done
   return "$rc"
 }
 
@@ -267,6 +320,56 @@ end
 
 RUBY
 
+# The resource arm's payloads ride the same image (spec 08 §2.2, §7 rows
+# 23–26/30–31). What each dies of names the bound that held.
+cat > "$WORK/app/looper.rb" <<'RUBY'
+# The runaway vector (rows 24/25): pure CPU, no sleep, no allocation.
+loop {}
+RUBY
+cat > "$WORK/app/bomber.rb" <<'RUBY'
+# The fork-bomb vector (row 23): fork sleeping children until the kernel
+# refuses. RLIMIT_NPROC holding surfaces as Errno::EAGAIN — or as a STALL:
+# ruby retries a refused fork in a backoff instead of raising promptly
+# (process.c), so a fork that has not returned in 8 s is the bound holding
+# just the same; the timer thread names it and exits 42. Nothing holding
+# prints UNBOUNDED at the cap and exits 44 — self-limiting, and the arm's
+# wall backstop then reaps the tree. sync: the record must survive the
+# watchdog's group kill whenever it lands.
+$stdout.sync = true
+children = 0
+timer = Thread.new do
+  sleep 8
+  puts "BOUND:processes children=#{children} (stalled)"
+  exit! 42
+end
+begin
+  100.times do
+    fork { sleep }
+    children += 1
+  end
+rescue Errno::EAGAIN
+  timer.kill
+  puts "BOUND:processes children=#{children} (EAGAIN)"
+  exit 42
+end
+timer.kill
+puts "UNBOUNDED:processes children=#{children}"
+exit 44
+RUBY
+cat > "$WORK/app/eater.rb" <<'RUBY'
+# The memory-hog vector (row 31, Linux): grow address space until the
+# kernel refuses. NoMemoryError at the ceiling prints BOUND and exits 43;
+# a fatal-allocation abort (SIGABRT from the VM's own mmap path) is the
+# same ceiling seen from inside — the arm accepts either, never silence.
+chunks = []
+begin
+  loop { chunks << (" " * (16 * 1024 * 1024)) }
+rescue NoMemoryError
+  puts "BOUND:memory chunks=#{chunks.size}"
+  exit 43
+end
+RUBY
+
 if [ -n "$PAIR" ]; then
   [ -f "$PAIR" ] || { echo "no runtime executable at $PAIR"; exit 2; }
   [ -f "$PAIR.tfs" ] || { echo "no env image at $PAIR.tfs"; exit 2; }
@@ -339,6 +442,173 @@ arm open ""
 arm deny "deny"
 arm deny-grant "deny;$(hostpath "$WORK/host/granted"):/grant:ro"
 arm record "record"
+
+# --- the resource axis (spec 08 §2.2): the bounds must HOLD, not just
+# parse. POSIX + --pair only — every other shape is a named note, never
+# a silent absence. The gate probe boots the pair under a wall-only
+# spec: a pair whose driver predates the axis rejects `resources:` at
+# parse ("invalid jail spec"), and the arms then report
+# armed-not-applicable. rsrc_fail = a bound did not hold (leak class);
+# rsrc_broken = the arms could not run (harness class).
+rsrc_fail=0
+rsrc_broken=0
+rsrc_note=""
+rsrc_rows=""
+rsrc_row() {
+  rsrc_rows="$rsrc_rows$(printf '   %-16s %s\n' "$1" "$2")"$'\n'
+}
+echo "== resources"
+if [ -z "$PAIR" ]; then
+  rsrc_note="press mode resolves a PUBLISHED pair — the resource arms exercise the candidate pair's driver directly, so they run under --pair only"
+elif [ "$WIN" = "1" ]; then
+  rsrc_note="windows resource enforcement is PLANNED (Job Objects — spec 08 §2.2; a boot with any bound declared fails closed, exit 73)"
+else
+  # SIGXCPU's default action cores on some hosts; the arms prove death
+  # by signal, and the suite leaves no core files behind.
+  ulimit -c 0 2>/dev/null || true
+  run_bounded_bare "rsrc-gate" 30 env \
+    "TEBAKO_JAIL=open;resources:wall_seconds=600" \
+    "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+    "$EXE" --tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /probe.rb \
+    "$(hostpath "$SECRET")" "$(hostpath "$WORK/otherdir")" "" \
+    "$(hostpath "$WORK/otherdir/target.txt")" "$(hostpath "$WORK/scratch")" "" \
+    >"$WORK/rsrc-gate.out" 2>"$WORK/rsrc-gate.err"
+  gate_rc=$?
+  if [ "$gate_rc" != "0" ] && grep -q "invalid jail spec" "$WORK/rsrc-gate.err" 2>/dev/null; then
+    rsrc_note="the pair predates the resource axis (its driver rejected resources: at parse) — arms armed, not applicable to this pair"
+  elif [ "$gate_rc" != "0" ]; then
+    rsrc_note="the gate probe failed to boot (rc $gate_rc — see rsrc-gate.err) — the pair or the harness, never a silent pass"
+    rsrc_broken=1
+  else
+    UID_PROCS=$(ps -eo uid= 2>/dev/null | awk -v u="$(id -u)" '$1 == u' | wc -l | tr -d ' ')
+    OS="$(uname -s)"
+
+    # wall (spec row 24): the watchdog fires at the deadline — SIGKILL,
+    # the named stderr line, the jail-resource journal line.
+    start=$(date +%s)
+    run_bounded_bare "rsrc-wall" 45 env \
+      "TEBAKO_JAIL=open;resources:wall_seconds=3" \
+      "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+      "$EXE" --tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /looper.rb \
+      >"$WORK/rsrc-wall.out" 2>"$WORK/rsrc-wall.err"
+    rc=$?
+    elapsed=$(( $(date +%s) - start ))
+    if [ "$rc" = 137 ] && [ "$elapsed" -ge 3 ] && [ "$elapsed" -le 30 ] \
+       && grep -q "resource bound exceeded (wall_seconds=3)" "$WORK/rsrc-wall.err" 2>/dev/null \
+       && grep -q "event=jail-resource .*cause=wall" "$WORK/journal.log" 2>/dev/null; then
+      rsrc_row wall "held — SIGKILL at ${elapsed}s, the named stderr line, the jail-resource journal line"
+    else
+      rsrc_row wall "LEAK — rc=$rc after ${elapsed}s (want 137 at 3s + the stderr line + the journal line): $(tail -1 "$WORK/rsrc-wall.err")"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+
+    # cpu (spec row 25): SIGXCPU at the RLIMIT_CPU ceiling; the wall
+    # backstop (25s) must NOT fire first.
+    start=$(date +%s)
+    run_bounded_bare "rsrc-cpu" 45 env \
+      "TEBAKO_JAIL=open;resources:cpu_seconds=2,wall_seconds=25" \
+      "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+      "$EXE" --tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /looper.rb \
+      >"$WORK/rsrc-cpu.out" 2>"$WORK/rsrc-cpu.err"
+    rc=$?
+    elapsed=$(( $(date +%s) - start ))
+    if [ "$rc" = 152 ] && [ "$elapsed" -ge 2 ] && [ "$elapsed" -le 30 ] \
+       && ! grep -q "resource bound exceeded" "$WORK/rsrc-cpu.err" 2>/dev/null; then
+      rsrc_row cpu "held — SIGXCPU at ${elapsed}s (the wall backstop never fired)"
+    else
+      rsrc_row cpu "LEAK — rc=$rc after ${elapsed}s (want 152 = 128+SIGXCPU at ~2s, no wall line): $(tail -1 "$WORK/rsrc-cpu.err")"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+
+    # bomber (spec row 23): fork stops at the RLIMIT_NPROC ceiling — the
+    # kernel's refusal surfaces as EAGAIN or, through ruby's retry backoff,
+    # as a stall the vector names on its own timer; the watchdog reaps the
+    # sleeper children with the root (the orphan guard proves the group
+    # emptied).
+    run_bounded_bare "rsrc-bomber" 90 env \
+      "TEBAKO_JAIL=open;resources:processes=$((UID_PROCS + 30)),wall_seconds=60" \
+      "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+      "$EXE" --tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /bomber.rb \
+      >"$WORK/rsrc-bomber.out" 2>"$WORK/rsrc-bomber.err"
+    rc=$?
+    if [ "$rc" = 42 ] && grep -q "BOUND:processes children=" "$WORK/rsrc-bomber.out" 2>/dev/null; then
+      rsrc_row bomber "held — fork failed EAGAIN at the ceiling ($(grep -o 'children=[0-9]*' "$WORK/rsrc-bomber.out" | head -1)), exit 42, the tree reaped with the root"
+    else
+      rsrc_row bomber "LEAK — rc=$rc (want 42 + the BOUND line; 44 = unbounded at the 100-fork cap, 137 = the backstop fired): $(tail -1 "$WORK/rsrc-bomber.out")"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+
+    case "$OS" in
+      Linux)
+        # memory (spec row 31): growth stops at the RLIMIT_AS ceiling —
+        # ruby's NoMemoryError (exit 43 + BOUND) or the VM's
+        # fatal-allocation abort (SIGABRT), never a silent overshoot.
+        run_bounded_bare "rsrc-memory" 75 env \
+          "TEBAKO_JAIL=open;resources:memory=1G,wall_seconds=45" \
+          "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+          "$EXE" --tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /eater.rb \
+          >"$WORK/rsrc-memory.out" 2>"$WORK/rsrc-memory.err"
+        rc=$?
+        if [ "$rc" = 43 ] && grep -q "BOUND:memory chunks=" "$WORK/rsrc-memory.out" 2>/dev/null; then
+          rsrc_row memory "held — NoMemoryError at the ceiling ($(grep -o 'chunks=[0-9]*' "$WORK/rsrc-memory.out" | head -1))"
+        elif [ "$rc" = 134 ] && grep -qi "failed to allocate memory" "$WORK/rsrc-memory.err" 2>/dev/null; then
+          rsrc_row memory "held — the VM's fatal-allocation abort at the ceiling"
+        else
+          rsrc_row memory "LEAK — rc=$rc (want 43 + BOUND, or 134 + the fatal line): $(tail -1 "$WORK/rsrc-memory.out" "$WORK/rsrc-memory.err" 2>/dev/null)"
+          rsrc_fail=$((rsrc_fail + 1))
+        fi
+        ;;
+      Darwin)
+        # memory-refusal (spec row 30): the kernel's RLIMIT_AS floor
+        # refuses every realistic bound — fail closed, exit 73, by name.
+        run_bounded_bare "rsrc-memory-refusal" 30 env \
+          "TEBAKO_JAIL=open;resources:memory=256M" \
+          "$EXE" --tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /probe.rb \
+          "$(hostpath "$SECRET")" "$(hostpath "$WORK/otherdir")" "" \
+          "$(hostpath "$WORK/otherdir/target.txt")" "$(hostpath "$WORK/scratch")" "" \
+          >"$WORK/rsrc-memory-refusal.out" 2>"$WORK/rsrc-memory-refusal.err"
+        rc=$?
+        if [ "$rc" = 73 ] && grep -q "resources: memory:" "$WORK/rsrc-memory-refusal.err" 2>/dev/null \
+           && grep -q "address-space floor" "$WORK/rsrc-memory-refusal.err" 2>/dev/null; then
+          rsrc_row memory-refusal "held — refused by name (exit 73, the kernel's RLIMIT_AS floor)"
+        else
+          rsrc_row memory-refusal "LEAK — rc=$rc (want 73 + the named refusal): $(tail -1 "$WORK/rsrc-memory-refusal.err")"
+          rsrc_fail=$((rsrc_fail + 1))
+        fi
+        ;;
+      *)
+        rsrc_row memory "note: no memory arm defined for $OS"
+        ;;
+    esac
+
+    # control (spec row 26): generous bounds, nothing stressed — the run
+    # is byte-identical to the open arm. Linux adds the memory bound;
+    # macOS omits it (row 30's floor).
+    if [ "$OS" = "Linux" ]; then
+      control_spec="cpu_seconds=300,memory=2G,processes=$((UID_PROCS + 400)),wall_seconds=120"
+    else
+      control_spec="cpu_seconds=300,processes=$((UID_PROCS + 400)),wall_seconds=120"
+    fi
+    run_bounded_bare "rsrc-control" 150 env \
+      "TEBAKO_JAIL=open;resources:$control_spec" \
+      "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+      "$EXE" --tebako-image "$WORK/app.tfs:0:/app" --tebako-entry /probe.rb \
+      "$(hostpath "$SECRET")" "$(hostpath "$WORK/otherdir")" "" \
+      "$(hostpath "$WORK/otherdir/target.txt")" "$(hostpath "$WORK/scratch")" "" \
+      >"$WORK/rsrc-control.out" 2>"$WORK/rsrc-control.err"
+    rc=$?
+    if [ "$rc" = 0 ] && diff -q "$WORK/rsrc-control.out" "$WORK/open.out" >/dev/null 2>&1; then
+      rsrc_row control "held — byte-identical to the open arm under generous bounds"
+    else
+      rsrc_row control "LEAK — rc=$rc and/or output drifted from the open arm: $(diff "$WORK/rsrc-control.out" "$WORK/open.out" 2>/dev/null | head -3 | tr '\n' ' ')"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+  fi
+fi
+if [ -n "$rsrc_note" ]; then
+  echo "   note: $rsrc_note"
+fi
+[ -n "$rsrc_rows" ] && printf '%s' "$rsrc_rows"
 
 leaks=0
 incomplete=0
@@ -447,6 +717,14 @@ if [ "$leaks" -ne 0 ]; then
   [ "$journal_bad" -ne 0 ] && echo "   and the record journal stayed empty — the same blind spot, seen from the audit side"
   exit 1
 fi
+if [ "$rsrc_fail" -ne 0 ]; then
+  echo "   LEAK: $rsrc_fail resource arm(s) failed — a declared bound did not hold (the resource rows name it)"
+  exit 1
+fi
+if [ "$rsrc_broken" -ne 0 ]; then
+  echo "   INCOMPLETE: the resource arms could not run — $rsrc_note"
+  exit 2
+fi
 if [ "$journal_bad" -ne 0 ]; then
   echo "   INCOMPLETE: the record journal is empty — a record policy that allows silently is not an audit trail"
   exit 2
@@ -464,3 +742,8 @@ if [ "$knowngaps" -ne 0 ]; then
 else
   echo "   CONFORMANT: every covered vector live under the open policy, refused under deny, the grant admits its own directory while refusing its neighbour, and record allows while journaling"
 fi
+[ -n "$rsrc_rows" ] && echo "   and the resource axis held — wall, cpu, processes, memory (per-platform), and the under-bounds control (the rows above)"
+# Every failure family exited explicitly above; reaching the end is the
+# conformant verdict — never the && list's status (an empty rsrc_rows on
+# a pre-axis pair would otherwise read as exit 1).
+exit 0
