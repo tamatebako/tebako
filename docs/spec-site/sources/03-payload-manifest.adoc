@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/03-payload-manifest.md @ 970c71031d7a5448d8da4112768fb3d5e30156af
+// source: docs/spec/03-payload-manifest.md @ 4dc30fb24b5bed7a549cb0dbd6f07b1dcd4a3fa4
 
 Normative specification of the in-image manifest: every payload is a
 *self-describing artifact*, not a blob. Status: SHIPPED (the block + the
@@ -107,7 +107,8 @@ capabilities: {exec: true, read: true}
 `capabilities` may also carry *`host`* (any kind): the host-access jail
 the payload was built to need — a REQUEST the dispatch surfaces compose
 with the user's tightening, never a grant to itself. spec 08 §4 is
-normative for its shape (`default`, `mounts`, `argument_files`).
+normative for its shape (`default`, `mounts`, `network`, `argument_files`,
+and `resources` — the §2.2 consumption bounds).
 
 *Zero-runtime entrypoints (locked):* an entrypoint whose executable is
 native (or self-contained) needs NO interpreter payload — inkscape-class
