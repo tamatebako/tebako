@@ -988,7 +988,9 @@ fn mount_image(
 
 /// `TEBAKO_JAIL` → the host policy, installed AFTER the mounts (spec 08
 /// §3: the mount family's image read is itself policy-gated once a
-/// policy is active). Malformed policy fails closed (exit 73).
+/// policy is active), then the resource axis's bounds around the
+/// interpreter handoff (spec 08 §2.2 — rlimits + the wall watchdog).
+/// Malformed policy fails closed (exit 73).
 fn apply_jail(env: &dyn Env) -> Result<(), DriverError> {
     let Some(spec_str) = env_var(env, "TEBAKO_JAIL") else {
         return Ok(());
@@ -1012,7 +1014,9 @@ fn apply_jail(env: &dyn Env) -> Result<(), DriverError> {
     context()
         .write()
         .unwrap()
-        .set_host_policy(policy.with_source(source), journal);
+        .set_host_policy(policy.with_source(source.clone()), journal);
+    crate::resources::enforce(&spec.resources, &source, env)
+        .map_err(|m| jail(format!("TEBAKO_JAIL: {m}")))?;
     Ok(())
 }
 

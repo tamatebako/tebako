@@ -52,6 +52,7 @@ pub mod lazy;
 pub mod materialize;
 pub mod on_runtime;
 pub mod path_env;
+pub(crate) mod resources;
 pub mod spawn;
 pub mod wrapper;
 
