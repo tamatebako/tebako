@@ -15,13 +15,19 @@
 //!   network:                      # the outbound-peer grants (the network axis)
 //!     - example.com               # any port
 //!     - example.com:443           # one port
+//!   resources:                    # the consumption bounds (spec 08 §2.2)
+//!     cpu_seconds: 60             #   CPU ceiling, seconds
+//!     memory: 256M                #   address-space ceiling, bytes (K/M/G suffix, 1024-based)
+//!     processes: 64               #   process-count ceiling
+//!     wall_seconds: 300           #   wall-clock ceiling, seconds (the driver's watchdog)
 //!   argument_files: auto-allowed  # the input file you hand the command is allowed even under deny
 //!   ```
 //!
 //! - **env** (`TEBAKO_JAIL`, spec 08 §1 — the form the runtime driver and
 //!   the preload shim consume): `open|deny` + `;host:mount:ro|rw` grants +
 //!   `;net:host[:port]` outbound-peer grants +
-//!   `;@file` argument files, e.g. `deny;/home/u/src:/work:rw;@/home/u/in.csv;net:example.com:443`.
+//!   `;resources:k=v,k=v` consumption bounds +
+//!   `;@file` argument files, e.g. `deny;/home/u/src:/work:rw;@/home/u/in.csv;net:example.com:443;resources:wall_seconds=300`.
 //!
 //! This module is the AUTHORED model: it parses, validates, serializes and
 //! composes policies; it never touches the filesystem for enforcement.
@@ -184,6 +190,290 @@ impl<'de> Deserialize<'de> for NetGrant {
     }
 }
 
+/// The resource axis (spec 08 §2.2 — bounded consumption): the four
+/// consumption bounds a policy may declare, all optional. Absent entirely
+/// = unbounded (today's behavior; bounding is opt-in like the jail).
+///
+/// - `cpu_seconds` — CPU-time ceiling (POSIX: `RLIMIT_CPU` → `SIGXCPU`).
+/// - `memory_bytes` — address-space ceiling, always stored as bytes
+///   (POSIX: `RLIMIT_AS`); the authored forms accept a 1024-based K/M/G
+///   suffix.
+/// - `processes` — process-count ceiling (POSIX: `RLIMIT_NPROC`, a
+///   per-real-uid ceiling — spec 08 §2.2's honesty note).
+/// - `wall_seconds` — wall-clock ceiling (the driver's watchdog).
+///
+/// The YAML block form is a mapping (`resources: {cpu_seconds: 60,
+/// memory: 256M, processes: 64, wall_seconds: 300}`); the env form is one
+/// directive of comma-separated assignments
+/// (`resources:cpu_seconds=60,memory=256M`). The parse and the message set
+/// mirror the engine's `tfs::policy::ResourceBounds` — one grammar, one
+/// message set.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ResourceBounds {
+    /// CPU-time ceiling, seconds.
+    pub cpu_seconds: Option<u64>,
+    /// Address-space ceiling, bytes.
+    pub memory_bytes: Option<u64>,
+    /// Process-count ceiling.
+    pub processes: Option<u64>,
+    /// Wall-clock ceiling, seconds.
+    pub wall_seconds: Option<u64>,
+}
+
+impl ResourceBounds {
+    /// The zero value (unbounded).
+    pub const EMPTY: ResourceBounds = ResourceBounds {
+        cpu_seconds: None,
+        memory_bytes: None,
+        processes: None,
+        wall_seconds: None,
+    };
+
+    /// True when nothing is declared (unbounded — the axis is inert).
+    pub fn is_empty(&self) -> bool {
+        *self == ResourceBounds::EMPTY
+    }
+
+    /// Parse the env directive's payload (after the `resources:` prefix):
+    /// comma-separated `key=value` assignments, any order, each key at
+    /// most once. The message text mirrors `tfs::policy::ResourceBounds`
+    /// token-for-token.
+    pub fn parse(text: &str) -> Result<ResourceBounds, JailError> {
+        if text.is_empty() {
+            return Err(JailError::Spec("empty resources directive".to_string()));
+        }
+        let mut b = ResourceBounds::EMPTY;
+        for pair in text.split(',') {
+            let Some((key, value)) = pair.split_once('=') else {
+                return Err(JailError::Spec(format!(
+                    "resources assignment {pair:?} is not key=value"
+                )));
+            };
+            let slot = match key {
+                "cpu_seconds" => &mut b.cpu_seconds,
+                "memory" => &mut b.memory_bytes,
+                "processes" => &mut b.processes,
+                "wall_seconds" => &mut b.wall_seconds,
+                other => {
+                    return Err(JailError::Spec(format!(
+                        "unknown resources key {other:?} (want cpu_seconds|memory|processes|wall_seconds)"
+                    )))
+                }
+            };
+            if slot.is_some() {
+                return Err(JailError::Spec(format!("duplicate resources key {key:?}")));
+            }
+            *slot = Some(match key {
+                "memory" => parse_memory(value)?,
+                _ => parse_resource_count(value, key)?,
+            });
+        }
+        Ok(b)
+    }
+
+    /// The env directive's payload spelling (no `resources:` prefix), in
+    /// the locked key order. Memory renders canonically as bytes.
+    pub fn to_spec(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(v) = self.cpu_seconds {
+            parts.push(format!("cpu_seconds={v}"));
+        }
+        if let Some(v) = self.memory_bytes {
+            parts.push(format!("memory={v}"));
+        }
+        if let Some(v) = self.processes {
+            parts.push(format!("processes={v}"));
+        }
+        if let Some(v) = self.wall_seconds {
+            parts.push(format!("wall_seconds={v}"));
+        }
+        parts.join(",")
+    }
+
+    /// The intersect composition (request ∩ user tightening, spec 08 §4):
+    /// per key the TIGHTER bound wins; a key present on either side
+    /// survives (neither side's silence loosens the other's bound).
+    pub fn tighter(&self, other: &ResourceBounds) -> ResourceBounds {
+        fn per_key(x: Option<u64>, y: Option<u64>) -> Option<u64> {
+            match (x, y) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
+        }
+        ResourceBounds {
+            cpu_seconds: per_key(self.cpu_seconds, other.cpu_seconds),
+            memory_bytes: per_key(self.memory_bytes, other.memory_bytes),
+            processes: per_key(self.processes, other.processes),
+            wall_seconds: per_key(self.wall_seconds, other.wall_seconds),
+        }
+    }
+
+    /// The union composition (the spec 30 §4 spawn bridge, spec 08 §4):
+    /// per key the LOOSER bound wins — the child must be able to do what
+    /// EITHER side declared — still clamped downstream by the kernel's
+    /// inherited hard limits and the inherited wall deadline.
+    pub fn looser(&self, other: &ResourceBounds) -> ResourceBounds {
+        fn per_key(x: Option<u64>, y: Option<u64>) -> Option<u64> {
+            match (x, y) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            }
+        }
+        ResourceBounds {
+            cpu_seconds: per_key(self.cpu_seconds, other.cpu_seconds),
+            memory_bytes: per_key(self.memory_bytes, other.memory_bytes),
+            processes: per_key(self.processes, other.processes),
+            wall_seconds: per_key(self.wall_seconds, other.wall_seconds),
+        }
+    }
+}
+
+/// A positive decimal count for the non-memory keys (`0` is out of range;
+/// a unit suffix is never spellable on them).
+fn parse_resource_count(text: &str, key: &str) -> Result<u64, JailError> {
+    if text.is_empty() {
+        return Err(JailError::Spec(format!(
+            "empty value for resources key {key}"
+        )));
+    }
+    if !text.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(JailError::Spec(format!(
+            "resources key {key} value {text:?} is not a number"
+        )));
+    }
+    let v: u64 = text.parse().map_err(|_| {
+        JailError::Spec(format!(
+            "resources key {key} value {text:?} is out of range"
+        ))
+    })?;
+    if v == 0 {
+        return Err(JailError::Spec(format!(
+            "resources key {key} must be positive (got 0)"
+        )));
+    }
+    Ok(v)
+}
+
+/// The memory value: decimal bytes with an optional 1024-based suffix —
+/// `K`/`M`/`G`, case-insensitive, an optional trailing `B` (so `256M` and
+/// `256MB` are the same bound). A bare integer is bytes.
+fn parse_memory(text: &str) -> Result<u64, JailError> {
+    if text.is_empty() {
+        return Err(JailError::Spec(
+            "empty value for resources key memory".to_string(),
+        ));
+    }
+    let digits_end = text.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digits_end == 0 {
+        return Err(JailError::Spec(format!(
+            "resources key memory value {text:?} is not a byte count"
+        )));
+    }
+    let (mantissa, suffix) = text.split_at(digits_end);
+    let shift = match suffix.to_ascii_uppercase().as_str() {
+        "" => 0u32,
+        "K" | "KB" => 10,
+        "M" | "MB" => 20,
+        "G" | "GB" => 30,
+        _ => {
+            return Err(JailError::Spec(format!(
+            "resources key memory value {text:?} carries an unknown unit (want K|M|G, 1024-based)"
+        )))
+        }
+    };
+    let m: u64 = mantissa.parse().map_err(|_| {
+        JailError::Spec(format!(
+            "resources key memory value {text:?} is out of range"
+        ))
+    })?;
+    let v = m.checked_mul(1u64 << shift).ok_or_else(|| {
+        JailError::Spec(format!(
+            "resources key memory value {text:?} is out of range"
+        ))
+    })?;
+    if v == 0 {
+        return Err(JailError::Spec(
+            "resources key memory must be positive (got 0)".to_string(),
+        ));
+    }
+    Ok(v)
+}
+
+impl Serialize for ResourceBounds {
+    /// The YAML block form: a mapping of the declared keys only; memory
+    /// renders canonically as bytes.
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let n = [
+            self.cpu_seconds,
+            self.memory_bytes,
+            self.processes,
+            self.wall_seconds,
+        ]
+        .iter()
+        .flatten()
+        .count();
+        let mut map = s.serialize_map(Some(n))?;
+        if let Some(v) = self.cpu_seconds {
+            map.serialize_entry("cpu_seconds", &v)?;
+        }
+        if let Some(v) = self.memory_bytes {
+            map.serialize_entry("memory", &v)?;
+        }
+        if let Some(v) = self.processes {
+            map.serialize_entry("processes", &v)?;
+        }
+        if let Some(v) = self.wall_seconds {
+            map.serialize_entry("wall_seconds", &v)?;
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ResourceBounds {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<ResourceBounds, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Memory {
+            Int(u64),
+            Text(String),
+        }
+        #[derive(Deserialize)]
+        struct Repr {
+            cpu_seconds: Option<u64>,
+            memory: Option<Memory>,
+            processes: Option<u64>,
+            wall_seconds: Option<u64>,
+        }
+        let r = Repr::deserialize(d)?;
+        let positive = |v: u64, key: &str| -> Result<u64, D::Error> {
+            if v == 0 {
+                return Err(serde::de::Error::custom(format_args!(
+                    "resources key {key} must be positive (got 0)"
+                )));
+            }
+            Ok(v)
+        };
+        let memory = match r.memory {
+            Some(Memory::Int(v)) => Some(positive(v, "memory")?),
+            Some(Memory::Text(t)) => Some(parse_memory(&t).map_err(serde::de::Error::custom)?),
+            None => None,
+        };
+        Ok(ResourceBounds {
+            cpu_seconds: r
+                .cpu_seconds
+                .map(|v| positive(v, "cpu_seconds"))
+                .transpose()?,
+            memory_bytes: memory,
+            processes: r.processes.map(|v| positive(v, "processes")).transpose()?,
+            wall_seconds: r
+                .wall_seconds
+                .map(|v| positive(v, "wall_seconds"))
+                .transpose()?,
+        })
+    }
+}
+
 /// The `argument_files:` block: EITHER the scalar `auto-allowed` (dispatch
 /// surfaces resolve the argv entries that name existing files into
 /// read-only grants) OR an explicit list of granted paths. The model keeps
@@ -266,6 +556,10 @@ pub struct HostJail {
     /// exactly the fs axis); deny-by-default with explicit grants.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub network: Vec<NetGrant>,
+    /// The resource axis (spec 08 §2.2): the consumption bounds. Absent =
+    /// unbounded (today's behavior — bounding is opt-in like the jail).
+    #[serde(default, skip_serializing_if = "ResourceBounds::is_empty")]
+    pub resources: ResourceBounds,
     #[serde(default, skip_serializing_if = "ArgumentFiles::is_empty")]
     pub argument_files: ArgumentFiles,
 }
@@ -349,6 +643,7 @@ impl HostJail {
             record: false,
             mounts: Vec::new(),
             network: Vec::new(),
+            resources: ResourceBounds::EMPTY,
             argument_files: ArgumentFiles {
                 auto: false,
                 files: Vec::new(),
@@ -363,6 +658,7 @@ impl HostJail {
             record: false,
             mounts: Vec::new(),
             network: Vec::new(),
+            resources: ResourceBounds::EMPTY,
             argument_files: ArgumentFiles {
                 auto: false,
                 files: Vec::new(),
@@ -379,6 +675,7 @@ impl HostJail {
             record: false,
             mounts: Vec::new(),
             network: Vec::new(),
+            resources: ResourceBounds::EMPTY,
             argument_files: ArgumentFiles {
                 auto: true,
                 files: Vec::new(),
@@ -396,6 +693,7 @@ impl HostJail {
             record: true,
             mounts: Vec::new(),
             network: Vec::new(),
+            resources: ResourceBounds::EMPTY,
             argument_files: ArgumentFiles {
                 auto: false,
                 files: Vec::new(),
@@ -408,12 +706,14 @@ impl HostJail {
     /// grants nothing the default does not already allow). Surfaces skip
     /// exporting such a policy, keeping the no-policy path byte-identical.
     /// `record` is NEVER trivially open: it must export so the engine
-    /// journals.
+    /// journals. Resources (spec 08 §2.2) are never trivial either: a
+    /// declared bound must reach the driver to be enforced.
     pub fn is_trivially_open(&self) -> bool {
         !self.record
             && self.default_open
             && self.mounts.is_empty()
             && self.network.is_empty()
+            && self.resources.is_empty()
             && self.argument_files.files.is_empty()
     }
 
@@ -528,20 +828,26 @@ impl HostJail {
     /// directive = "open" | "deny" | "record" # namespace default (default: open)
     ///           | host ":" mount ":" mode    # docker -v grant; mount absolute
     ///           | "@" path                   # argument file (read-only grant)
+    ///           | "resources:" r=r *("," r=r)  # the §2.2 consumption bounds
     /// mode      = "ro" | "rw"
+    /// r         = "cpu_seconds" / "memory" / "processes" / "wall_seconds"
     /// ```
     ///
     /// `record` (spec 23 §8) is allow-all + audit: it journals every host
     /// access so `tebako trace run` can draft a `needs:` block, so it takes
     /// no grants — a spec mixing `record` with mounts or argument files is
-    /// a named error, not a silently inert combination.
+    /// a named error, not a silently inert combination. Resource bounds are
+    /// not grants: they compose with `record` (the watchdog's kill lands in
+    /// the same journal, spec 08 §2.2).
     ///
     /// Errors on: empty spec, conflicting or duplicated
     /// `open`/`deny`/`record`, unknown access modes, non-absolute mount
     /// points, empty hosts/mounts/argument files, a `record` default
-    /// carrying grants, and unrecognised directive shapes. The messages
-    /// mirror the engine's `tfs::policy::JailSpec` parser — one grammar,
-    /// one message set.
+    /// carrying grants, malformed `resources:` assignments (unknown or
+    /// duplicated keys, empty/non-numeric/zero/overflowing values, a unit
+    /// suffix on a non-memory key), and unrecognised directive shapes. The
+    /// messages mirror the engine's `tfs::policy::JailSpec` parser — one
+    /// grammar, one message set.
     pub fn parse_env_spec(spec: &str) -> Result<HostJail, JailError> {
         let err = |msg: String| JailError::Spec(format!("{msg} in {spec:?}"));
         if spec.trim().is_empty() {
@@ -551,6 +857,7 @@ impl HostJail {
         let mut record = false;
         let mut mounts = Vec::new();
         let mut net_grants = Vec::new();
+        let mut resources: Option<ResourceBounds> = None;
         let mut files = Vec::new();
         for token in spec.split(';') {
             if token.is_empty() {
@@ -583,6 +890,22 @@ impl HostJail {
                 _ if token.starts_with("net:") => {
                     net_grants.push(NetGrant::parse(&token[4..]).map_err(|m| err(m.to_string()))?);
                 }
+                // The resource axis (spec 08 §2.2): one directive of
+                // comma-separated assignments. Same fallthrough argument
+                // as `net:` — a relative host path starting literally
+                // "resources:" is pathological and loses the token.
+                _ if token.starts_with("resources:") => {
+                    if resources.is_some() {
+                        return Err(err(
+                            "duplicate resources directive — one directive carries all bounds"
+                                .to_string(),
+                        ));
+                    }
+                    resources = Some(ResourceBounds::parse(&token[10..]).map_err(|e| match e {
+                        JailError::Spec(m) => err(m),
+                        other => err(other.to_string()),
+                    })?);
+                }
                 _ => {
                     mounts.push(parse_mount_directive(token).map_err(|m| err(m.to_string()))?);
                 }
@@ -599,6 +922,7 @@ impl HostJail {
             record,
             mounts,
             network: net_grants,
+            resources: resources.unwrap_or(ResourceBounds::EMPTY),
             argument_files: ArgumentFiles { auto: false, files },
         }
         .normalized())
@@ -627,6 +951,10 @@ impl HostJail {
         for g in &self.network {
             out.push_str(";net:");
             out.push_str(&g.to_spec());
+        }
+        if !self.resources.is_empty() {
+            out.push_str(";resources:");
+            out.push_str(&self.resources.to_spec());
         }
         let mut emitted = std::collections::BTreeSet::new();
         for f in &self.argument_files.files {
@@ -812,6 +1140,9 @@ pub fn intersect(request: &HostJail, tightening: &HostJail) -> HostJail {
         record: false,
         mounts: coalesced,
         network: coalesce_net(net),
+        // The resource axis intersects per key (spec 08 §4): the tighter
+        // bound wins; a key present on either side survives.
+        resources: request.resources.tighter(&tightening.resources),
         argument_files: ArgumentFiles {
             auto: request.argument_files.auto || tightening.argument_files.auto,
             files,
@@ -866,6 +1197,9 @@ pub fn union(runtime_needs: &HostJail, payload_needs: &HostJail) -> HostJail {
         record: false,
         mounts,
         network: net,
+        // The resource axis unions per key (spec 08 §4): the looser bound
+        // wins — the child must be able to do what EITHER side declared.
+        resources: runtime_needs.resources.looser(&payload_needs.resources),
         argument_files: ArgumentFiles {
             auto: runtime_needs.argument_files.auto || payload_needs.argument_files.auto,
             files,
@@ -1572,6 +1906,212 @@ mod tests {
             u.network,
             vec![net("example.com", None), net("other.net", Some(53))],
             "the port-open grant absorbs the pinned one"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // The resource axis (spec 08 §2.2 — bounded consumption)
+    // ---------------------------------------------------------------
+
+    fn bounds(
+        cpu: Option<u64>,
+        mem: Option<u64>,
+        procs: Option<u64>,
+        wall: Option<u64>,
+    ) -> ResourceBounds {
+        ResourceBounds {
+            cpu_seconds: cpu,
+            memory_bytes: mem,
+            processes: procs,
+            wall_seconds: wall,
+        }
+    }
+
+    #[test]
+    fn resources_parse_all_keys_and_round_trip() {
+        let b = ResourceBounds::parse("cpu_seconds=60,memory=256M,processes=64,wall_seconds=300")
+            .unwrap();
+        assert_eq!(
+            b,
+            bounds(Some(60), Some(256 * 1024 * 1024), Some(64), Some(300))
+        );
+        // Order-free, and a subset parses.
+        let b2 = ResourceBounds::parse("wall_seconds=5,cpu_seconds=2").unwrap();
+        assert_eq!(b2, bounds(Some(2), None, None, Some(5)));
+        // to_spec renders the locked order with canonical byte counts and
+        // round-trips by value.
+        assert_eq!(
+            b.to_spec(),
+            "cpu_seconds=60,memory=268435456,processes=64,wall_seconds=300"
+        );
+        assert_eq!(ResourceBounds::parse(&b.to_spec()).unwrap(), b);
+        assert_eq!(ResourceBounds::EMPTY.to_spec(), "");
+        assert!(ResourceBounds::EMPTY.is_empty());
+        assert!(!b.is_empty());
+    }
+
+    #[test]
+    fn resources_memory_units() {
+        for (text, want) in [
+            ("memory=1024", 1024u64),
+            ("memory=1K", 1024),
+            ("memory=1k", 1024),
+            ("memory=1KB", 1024),
+            ("memory=1Kb", 1024),
+            ("memory=256M", 256 * 1024 * 1024),
+            ("memory=256MB", 256 * 1024 * 1024),
+            ("memory=256mb", 256 * 1024 * 1024),
+            ("memory=1G", 1024 * 1024 * 1024),
+            ("memory=1GB", 1024 * 1024 * 1024),
+            ("memory=8589934592G", 1u64 << 63),
+        ] {
+            let b = ResourceBounds::parse(text).unwrap();
+            assert_eq!(b.memory_bytes, Some(want), "{text}");
+        }
+    }
+
+    #[test]
+    fn resources_rejections_are_named() {
+        for (spec, frag) in [
+            ("", "empty resources directive"),
+            ("cpu_seconds", "is not key=value"),
+            ("cpu_seconds=", "empty value"),
+            ("cpu_seconds=abc", "is not a number"),
+            ("cpu_seconds=0", "must be positive"),
+            ("cpu_seconds=60s", "is not a number"),
+            ("cpu_seconds=-1", "is not a number"),
+            ("cpu_seconds=99999999999999999999999999", "out of range"),
+            ("memory=", "empty value"),
+            ("memory=M", "is not a byte count"),
+            ("memory=12.5M", "unknown unit"),
+            ("memory=1T", "unknown unit"),
+            ("memory=0", "must be positive"),
+            ("memory=17179869184G", "out of range"),
+            ("processes=0", "must be positive"),
+            ("wall_seconds=5m", "is not a number"),
+            ("cpu=1", "unknown resources key"),
+            ("memory=1M,memory=2M", "duplicate resources key"),
+            ("cpu_seconds=1,,wall_seconds=2", "is not key=value"),
+        ] {
+            let e = ResourceBounds::parse(spec).unwrap_err();
+            assert!(
+                e.to_string().contains(frag),
+                "spec {spec:?}: error {e} should mention {frag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn resources_env_directive_parses_and_round_trips() {
+        let j = HostJail::parse_env_spec(
+            "deny;/a:/w:rw;resources:cpu_seconds=60,wall_seconds=300;net:example.com",
+        )
+        .unwrap();
+        assert_eq!(
+            j.resources,
+            bounds(Some(60), None, None, Some(300)),
+            "one directive carries the bounds beside the other grant forms"
+        );
+        let env = j.to_env_spec(&[]);
+        assert_eq!(
+            env,
+            "deny;/a:/w:rw;net:example.com;resources:cpu_seconds=60,wall_seconds=300"
+        );
+        assert_eq!(HostJail::parse_env_spec(&env).unwrap(), j);
+        // A second resources: token is a named error, never a merge.
+        let e = HostJail::parse_env_spec("resources:cpu_seconds=1;resources:wall_seconds=2")
+            .unwrap_err();
+        assert!(
+            e.to_string().contains("duplicate resources directive"),
+            "{e}"
+        );
+        // Malformed payloads fail closed through the env form too.
+        let e = HostJail::parse_env_spec("deny;resources:mem=1").unwrap_err();
+        assert!(e.to_string().contains("unknown resources key"), "{e}");
+    }
+
+    #[test]
+    fn resources_compose_with_record() {
+        // Bounds are not grants: record carries them (the watchdog's kill
+        // lands in the same journal, spec 08 §2.2).
+        let j = HostJail::parse_env_spec("record;resources:wall_seconds=60").unwrap();
+        assert!(j.record);
+        assert_eq!(j.resources, bounds(None, None, None, Some(60)));
+        // …but grants under record stay the named error.
+        assert!(HostJail::parse_env_spec("record;/h:/w:ro").is_err());
+    }
+
+    #[test]
+    fn resources_yaml_block_round_trips() {
+        let text = "default: deny\n\
+                    resources:\n\
+                    \x20 cpu_seconds: 60\n\
+                    \x20 memory: 256M\n\
+                    \x20 processes: 64\n\
+                    \x20 wall_seconds: 300\n";
+        let j = HostJail::from_yaml(text).unwrap();
+        assert_eq!(
+            j.resources,
+            bounds(Some(60), Some(256 * 1024 * 1024), Some(64), Some(300))
+        );
+        let back = HostJail::from_yaml(&j.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, j);
+        // The YAML memory form takes bare bytes too, and unknown keys in
+        // the block are tolerated (the manifest convention).
+        let j = HostJail::from_yaml("resources: {memory: 1073741824, future: yes}\n").unwrap();
+        assert_eq!(
+            j.resources,
+            bounds(None, Some(1024 * 1024 * 1024), None, None)
+        );
+        // Bad values are named errors.
+        for (text, frag) in [
+            ("resources: {cpu_seconds: 0}\n", "must be positive"),
+            ("resources: {memory: \"10X\"}\n", "unknown unit"),
+            ("resources: {wall_seconds: \"soon\"}\n", "invalid type"),
+        ] {
+            let e = HostJail::from_yaml(text).unwrap_err();
+            assert!(
+                e.to_string().contains(frag),
+                "{text:?}: error {e} should mention {frag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn resources_make_a_policy_non_trivial() {
+        // A resources-only policy must export: unbounded-by-default means
+        // a DECLARED bound that never reaches the driver is a silent drop.
+        let mut j = HostJail::open();
+        assert!(j.is_trivially_open());
+        j.resources = bounds(None, None, None, Some(60));
+        assert!(!j.is_trivially_open());
+    }
+
+    #[test]
+    fn intersect_resources_tighter_wins_per_key() {
+        let mut request = HostJail::deny();
+        request.resources = bounds(Some(60), Some(1024), None, Some(300));
+        let mut user = HostJail::deny();
+        user.resources = bounds(Some(30), None, Some(10), Some(600));
+        let eff = intersect(&request, &user);
+        assert_eq!(
+            eff.resources,
+            bounds(Some(30), Some(1024), Some(10), Some(300)),
+            "min per key; a key on either side survives"
+        );
+    }
+
+    #[test]
+    fn union_resources_looser_wins_per_key() {
+        let mut runtime = HostJail::deny();
+        runtime.resources = bounds(Some(60), Some(1024), None, None);
+        let mut payload = HostJail::deny();
+        payload.resources = bounds(Some(300), None, Some(64), None);
+        let u = union(&runtime, &payload);
+        assert_eq!(
+            u.resources,
+            bounds(Some(300), Some(1024), Some(64), None),
+            "max per key — the child must be able to do what either side declared"
         );
     }
 }

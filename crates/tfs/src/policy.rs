@@ -571,6 +571,147 @@ impl HostPolicy {
     }
 }
 
+/// The resource axis (spec 08 §2.2 — bounded consumption): the four
+/// consumption bounds a jail spec may declare, all optional. The engine
+/// mirror of `tpkg::jail::ResourceBounds` — one grammar, one message set.
+///
+/// The bounds are NOT part of [`HostPolicy`]: they judge no path or peer,
+/// so they peel off at the consumer — the runtime driver installs them
+/// around the interpreter handoff (`crates/tebako-driver`'s resources
+/// module), and the preload shim re-parses them by design (a
+/// preload-delivered child of a driver-rooted bounded tree is
+/// kernel-inherited-bounded and never re-applies; the preload-only
+/// `tfs exec` delivery is the PLANNED arm — spec 08 §2.2, §7 row 28).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ResourceBounds {
+    /// CPU-time ceiling, seconds (`RLIMIT_CPU` → `SIGXCPU`).
+    pub cpu_seconds: Option<u64>,
+    /// Address-space ceiling, bytes (`RLIMIT_AS`).
+    pub memory_bytes: Option<u64>,
+    /// Process-count ceiling (`RLIMIT_NPROC`, per-real-uid).
+    pub processes: Option<u64>,
+    /// Wall-clock ceiling, seconds (the driver's watchdog).
+    pub wall_seconds: Option<u64>,
+}
+
+impl ResourceBounds {
+    /// True when nothing is declared (unbounded — the axis is inert).
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Parse the env directive's payload (after the `resources:` prefix):
+    /// comma-separated `key=value` assignments, any order, each key at
+    /// most once. The message text mirrors `tpkg::jail::ResourceBounds`
+    /// token-for-token.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        if text.is_empty() {
+            return Err("empty resources directive".to_string());
+        }
+        let mut b = ResourceBounds::default();
+        for pair in text.split(',') {
+            let Some((key, value)) = pair.split_once('=') else {
+                return Err(format!("resources assignment {pair:?} is not key=value"));
+            };
+            let slot = match key {
+                "cpu_seconds" => &mut b.cpu_seconds,
+                "memory" => &mut b.memory_bytes,
+                "processes" => &mut b.processes,
+                "wall_seconds" => &mut b.wall_seconds,
+                other => {
+                    return Err(format!(
+                        "unknown resources key {other:?} (want cpu_seconds|memory|processes|wall_seconds)"
+                    ))
+                }
+            };
+            if slot.is_some() {
+                return Err(format!("duplicate resources key {key:?}"));
+            }
+            *slot = Some(match key {
+                "memory" => parse_resource_memory(value)?,
+                _ => parse_resource_count(value, key)?,
+            });
+        }
+        Ok(b)
+    }
+
+    /// The env directive's payload spelling (no `resources:` prefix), in
+    /// the locked key order. Memory renders canonically as bytes.
+    pub fn to_spec(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(v) = self.cpu_seconds {
+            parts.push(format!("cpu_seconds={v}"));
+        }
+        if let Some(v) = self.memory_bytes {
+            parts.push(format!("memory={v}"));
+        }
+        if let Some(v) = self.processes {
+            parts.push(format!("processes={v}"));
+        }
+        if let Some(v) = self.wall_seconds {
+            parts.push(format!("wall_seconds={v}"));
+        }
+        parts.join(",")
+    }
+}
+
+/// A positive decimal count for the non-memory keys (`0` is out of range;
+/// a unit suffix is never spellable on them).
+fn parse_resource_count(text: &str, key: &str) -> Result<u64, String> {
+    if text.is_empty() {
+        return Err(format!("empty value for resources key {key}"));
+    }
+    if !text.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!(
+            "resources key {key} value {text:?} is not a number"
+        ));
+    }
+    let v: u64 = text
+        .parse()
+        .map_err(|_| format!("resources key {key} value {text:?} is out of range"))?;
+    if v == 0 {
+        return Err(format!("resources key {key} must be positive (got 0)"));
+    }
+    Ok(v)
+}
+
+/// The memory value: decimal bytes with an optional 1024-based suffix —
+/// `K`/`M`/`G`, case-insensitive, an optional trailing `B` (so `256M` and
+/// `256MB` are the same bound). A bare integer is bytes.
+fn parse_resource_memory(text: &str) -> Result<u64, String> {
+    if text.is_empty() {
+        return Err("empty value for resources key memory".to_string());
+    }
+    let digits_end = text.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digits_end == 0 {
+        return Err(format!(
+            "resources key memory value {text:?} is not a byte count"
+        ));
+    }
+    let (mantissa, suffix) = text.split_at(digits_end);
+    let shift = match suffix.to_ascii_uppercase().as_str() {
+        "" => 0u32,
+        "K" | "KB" => 10,
+        "M" | "MB" => 20,
+        "G" | "GB" => 30,
+        _ => {
+            return Err(format!(
+            "resources key memory value {text:?} carries an unknown unit (want K|M|G, 1024-based)"
+        ))
+        }
+    };
+    let m: u64 = mantissa
+        .parse()
+        .map_err(|_| format!("resources key memory value {text:?} is out of range"))?;
+    let v = m
+        .checked_mul(1u64 << shift)
+        .ok_or_else(|| format!("resources key memory value {text:?} is out of range"))?;
+    if v == 0 {
+        return Err("resources key memory must be positive (got 0)".to_string());
+    }
+    Ok(v)
+}
+
 /// The parsed form of a `TEBAKO_JAIL` / `--jail` spec string (spec 08 §1,
 /// env encoding shared by the preload shim and the dispatch surfaces).
 ///
@@ -583,15 +724,18 @@ impl HostPolicy {
 ///           | "@" path                   # argument file (read-only grant)
 ///           | "net:" net-host [ ":" port ] # outbound peer grant (spec 08 §1's
 ///                                        #   network axis)
+///           | "resources:" r=r *("," r=r)  # the §2.2 consumption bounds
 /// mode      = "ro" | "rw"
+/// r         = "cpu_seconds" / "memory" / "processes" / "wall_seconds"
 /// ```
 ///
-/// Example: `deny;/home/u/src:/work:rw;@/home/u/input.csv;net:example.com:443`.
+/// Example: `deny;/home/u/src:/work:rw;@/home/u/input.csv;net:example.com:443;resources:wall_seconds=300`.
 ///
 /// `record` (spec 23 §8) is allow-all + audit: it journals every host
 /// access (`event=jail-allow`) for the `tfs needs` generator. It carries
 /// no grants — a spec mixing `record` with mounts, argument files, or net
-/// grants is a named error, never silently-inert configuration.
+/// grants is a named error, never silently-inert configuration. Resource
+/// bounds are not grants: they compose with `record`.
 ///
 /// Bind with [`HostPolicy::bind`]; serialize a bound policy back with
 /// [`HostPolicy::to_env_spec`].
@@ -605,6 +749,11 @@ pub struct JailSpec {
     pub arg_files: Vec<PathBuf>,
     /// Outbound-peer grants (the network axis).
     pub net_grants: Vec<NetGrant>,
+    /// The resource axis's consumption bounds (spec 08 §2.2). NOT bound
+    /// into [`HostPolicy`] — the bounds judge no path or peer; the
+    /// consumer peels them off (the runtime driver installs them around
+    /// the interpreter handoff).
+    pub resources: ResourceBounds,
 }
 
 /// A named, human-readable jail-spec parse error (the offending token is
@@ -624,8 +773,11 @@ impl JailSpec {
     /// Parse a `TEBAKO_JAIL` / `--jail` spec. Errors on: empty spec,
     /// conflicting or duplicated `open`/`deny`/`record`, unknown access
     /// modes, non-absolute mount points, empty hosts/mounts/argument
-    /// files, malformed `net:` grants, a `record` default carrying
-    /// grants, and unrecognised directive shapes.
+    /// files, malformed `net:` grants, malformed `resources:` assignments
+    /// (unknown or duplicated keys, empty/non-numeric/zero/overflowing
+    /// values, a unit suffix on a non-memory key, a second `resources:`
+    /// token), a `record` default carrying grants, and unrecognised
+    /// directive shapes.
     pub fn parse(spec: &str) -> Result<Self, JailSpecError> {
         let err = |msg: String| JailSpecError(format!("{msg} in {spec:?}"));
         if spec.trim().is_empty() {
@@ -635,6 +787,7 @@ impl JailSpec {
         let mut mounts = Vec::new();
         let mut arg_files = Vec::new();
         let mut net_grants = Vec::new();
+        let mut resources: Option<ResourceBounds> = None;
         for token in spec.split(';') {
             if token.is_empty() {
                 return Err(err("empty directive (stray ';')".to_string()));
@@ -667,6 +820,18 @@ impl JailSpec {
                 _ if token.starts_with("net:") => {
                     let grant = NetGrant::parse(&token[4..]).map_err(&err)?;
                     net_grants.push(grant);
+                }
+                // The resource axis (spec 08 §2.2): one directive of
+                // comma-separated assignments, same fallthrough argument
+                // as `net:`.
+                _ if token.starts_with("resources:") => {
+                    if resources.is_some() {
+                        return Err(err(
+                            "duplicate resources directive — one directive carries all bounds"
+                                .to_string(),
+                        ));
+                    }
+                    resources = Some(ResourceBounds::parse(&token[10..]).map_err(&err)?);
                 }
                 _ => {
                     // host:mount:access — split from the RIGHT so host paths
@@ -716,6 +881,7 @@ impl JailSpec {
             mounts,
             arg_files,
             net_grants,
+            resources: resources.unwrap_or_default(),
         })
     }
 }
@@ -1648,5 +1814,92 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, libc::EINVAL);
+    }
+
+    // ---------------------------------------------------------------
+    // The resource axis (spec 08 §2.2 — `resources:` bounds)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn resource_bounds_parse_and_render() {
+        let b = ResourceBounds::parse("cpu_seconds=60,memory=256M,processes=64,wall_seconds=300")
+            .unwrap();
+        assert_eq!(b.cpu_seconds, Some(60));
+        assert_eq!(b.memory_bytes, Some(256 * 1024 * 1024));
+        assert_eq!(b.processes, Some(64));
+        assert_eq!(b.wall_seconds, Some(300));
+        // Order-free; a subset parses; memory renders canonically as bytes.
+        let b = ResourceBounds::parse("wall_seconds=5,memory=1GB").unwrap();
+        assert_eq!(b.memory_bytes, Some(1024 * 1024 * 1024));
+        assert_eq!(b.to_spec(), "memory=1073741824,wall_seconds=5");
+        let full =
+            ResourceBounds::parse("cpu_seconds=60,memory=256M,processes=64,wall_seconds=300")
+                .unwrap();
+        assert_eq!(ResourceBounds::parse(&full.to_spec()).unwrap(), full);
+        assert!(ResourceBounds::default().is_empty());
+        assert!(!full.is_empty());
+    }
+
+    #[test]
+    fn resource_bounds_rejections_mirror_the_authored_model() {
+        // One grammar, one message set with tpkg::jail::ResourceBounds.
+        for (spec, frag) in [
+            ("", "empty resources directive"),
+            ("cpu_seconds", "is not key=value"),
+            ("cpu_seconds=", "empty value"),
+            ("cpu_seconds=abc", "is not a number"),
+            ("cpu_seconds=0", "must be positive"),
+            ("cpu_seconds=60s", "is not a number"),
+            ("cpu_seconds=99999999999999999999999999", "out of range"),
+            ("memory=", "empty value"),
+            ("memory=M", "is not a byte count"),
+            ("memory=12.5M", "unknown unit"),
+            ("memory=1T", "unknown unit"),
+            ("memory=0", "must be positive"),
+            ("memory=17179869184G", "out of range"),
+            ("processes=0", "must be positive"),
+            ("wall_seconds=5m", "is not a number"),
+            ("cpu=1", "unknown resources key"),
+            ("memory=1M,memory=2M", "duplicate resources key"),
+            ("cpu_seconds=1,,wall_seconds=2", "is not key=value"),
+        ] {
+            let e = ResourceBounds::parse(spec).unwrap_err();
+            assert!(
+                e.contains(frag),
+                "spec {spec:?}: error {e:?} should mention {frag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn jail_spec_parses_resource_directives() {
+        let s = JailSpec::parse(
+            "deny;/a:/w:rw;resources:cpu_seconds=60,wall_seconds=300;net:example.com",
+        )
+        .unwrap();
+        assert_eq!(s.resources.cpu_seconds, Some(60));
+        assert_eq!(s.resources.wall_seconds, Some(300));
+        assert_eq!(s.resources.memory_bytes, None);
+        assert_eq!(s.net_grants.len(), 1);
+        assert_eq!(s.mounts.len(), 1);
+        // Named rejections through the env form.
+        for (spec, frag) in [
+            ("deny;resources:", "empty resources directive"),
+            ("deny;resources:cpu=1", "unknown resources key"),
+            (
+                "deny;resources:memory=1M;resources:wall_seconds=2",
+                "duplicate resources directive",
+            ),
+        ] {
+            let e = JailSpec::parse(spec).unwrap_err();
+            assert!(
+                e.to_string().contains(frag),
+                "spec {spec:?}: error {e} should mention {frag:?}"
+            );
+        }
+        // record composes with resources (bounds are not grants).
+        let s = JailSpec::parse("record;resources:wall_seconds=60").unwrap();
+        assert_eq!(s.default, PolicyDefault::Record);
+        assert_eq!(s.resources.wall_seconds, Some(60));
     }
 }
