@@ -84,7 +84,8 @@ capabilities: {exec: true, read: true}
 `capabilities` may also carry **`host`** (any kind): the host-access jail
 the payload was built to need — a REQUEST the dispatch surfaces compose
 with the user's tightening, never a grant to itself. spec 08 §4 is
-normative for its shape (`default`, `mounts`, `argument_files`).
+normative for its shape (`default`, `mounts`, `network`, `argument_files`,
+and `resources` — the §2.2 consumption bounds).
 
 **Zero-runtime entrypoints (locked):** an entrypoint whose executable is
 native (or self-contained) needs NO interpreter payload — inkscape-class
