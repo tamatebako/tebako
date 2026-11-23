@@ -67,10 +67,16 @@ tfs = { version = "2.0.0", path = "../tfs", default-features = false, features =
 # LockFileEx on one byte at offset 0, the tebako-resolve cache.rs
 # shape). Unix uses libc's flock(2); all Win32 FFI is confined to that
 # module's lock submodule.
+# The resource axis's windows arm (resources.rs, spec 08 §2.2): Job
+# Objects + the process pseudo-handle, same windows-sys crate — the
+# workspace's one Win32 FFI home (0.61 everywhere).
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
 ] }
 
 # build.rs compiles the interpose dylib for darwin targets only (its
