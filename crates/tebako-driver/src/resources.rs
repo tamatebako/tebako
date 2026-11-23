@@ -22,8 +22,30 @@
 //! descendant without one arms nothing (the root's watchdog covers it).
 //! The rlimits are kernel-inherited by construction.
 //!
-//! Windows: PLANNED (Job Objects — spec 08 §2.2). Until that arm lands a
-//! boot with any bound declared fails closed, never silently unbounded.
+//! Windows (tebako#1101): the Job Object arm. The boot creates a Job
+//! Object, installs the limit mirrors on it, and assigns the payload
+//! process (the interpreter exe the driver is linked into) BEFORE the
+//! handoff, so the limits cover the interpreter and every descendant it
+//! spawns (children join the job by default — Windows 8+ nests, and a
+//! breakaway needs a grant the job never gives):
+//!
+//! - `cpu_seconds` → `JOB_OBJECT_LIMIT_PROCESS_TIME` (per-process
+//!   user-mode execution time — the RLIMIT_CPU mirror),
+//! - `memory` → `JOB_OBJECT_LIMIT_PROCESS_MEMORY` (per-process commit —
+//!   the RLIMIT_AS mirror: allocation fails at the bound),
+//! - `processes` → `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` (children created
+//!   past the ceiling are terminated at creation — the windows spelling
+//!   of "fork fails EAGAIN"; per-JOB, the per-tree primitive POSIX
+//!   lacks),
+//! - `wall_seconds` → the SAME wall deadline algebra as POSIX
+//!   ([`plan_wall`], one owner), fired by a watchdog thread that
+//!   `TerminateJobObject`s the tree at the deadline — the POSIX fork
+//!   child's shape without the fork discipline. The job carries
+//!   `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and the armer's handle is the
+//!   only one, so the kernel's close at process teardown reaps the tree
+//!   with its root (the die-with-root orphan closure — kernel-enforced
+//!   where POSIX needs a surviving watchdog, and unjournalable by
+//!   construction: nothing survives the root to write the line).
 //!
 //! # The fork discipline (tebako#920's lesson)
 //!
@@ -47,18 +69,153 @@ use crate::driver::Env;
 /// name's single owner: the scrub's contract list references this const.
 pub(crate) const DEADLINE_VAR: &str = "TEBAKO_RESOURCE_DEADLINE";
 
+/// The event name of the watchdog's audit-journal line (the resource
+/// axis's violation record, beside `jail-deny`).
+const JAIL_RESOURCE_EVENT: &str = "jail-resource";
+
+/// What the boot decided about the wall bound (spec 08 §2.2's
+/// inheritance rule), computed in safe Rust before any platform call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WallPlan {
+    /// Nothing to arm: no wall in play, or the inherited deadline
+    /// covers this subtree fully (the ancestor's watchdog owns the
+    /// kill — arming a second one would let a middle layer's exit
+    /// nuke the whole tree).
+    Skip,
+    /// Arm the watchdog: `seconds` to the deadline, exporting
+    /// `deadline_unix` for descendants. `regroup` when this subtree
+    /// must own its process group (the tree root, or a descendant
+    /// TIGHTENING the inherited deadline — its kill must not reach
+    /// the rest of the tree). POSIX consumes `regroup` as the
+    /// `setpgid` decision; on windows the fresh Job Object is
+    /// definitionally exclusive to the subtree, so the flag is
+    /// informational there (plan_wall only arms on an owned subtree).
+    Arm {
+        seconds: u64,
+        deadline_unix: u64,
+        regroup: bool,
+    },
+}
+
+/// The inheritance algebra (spec 08 §2.2), pure for tests — the single
+/// owner of the wall decision for BOTH arms (the POSIX fork watchdog
+/// and the windows watchdog thread):
+///
+/// - no own wall → nothing to arm (an inherited deadline is the
+///   ancestor's watchdog's business — arming a second one would let
+///   a middle layer's exit nuke the whole tree);
+/// - an own wall at-or-looser than the inherited deadline → covered
+///   (the ancestor's watchdog fires first);
+/// - an own wall tighter than the inherited deadline, or no
+///   inherited deadline at all → arm on the subtree's own group.
+fn plan_wall(own: Option<u64>, inherited: Option<u64>, now_unix: u64) -> WallPlan {
+    let own_deadline = own.map(|w| now_unix.saturating_add(w));
+    match (own_deadline, inherited) {
+        (None, _) => WallPlan::Skip,
+        // The inherited deadline is at-or-earlier — it covers this
+        // subtree (an already-passed inherited deadline included:
+        // the ancestor's watchdog owns the imminent kill).
+        (Some(own_d), Some(inh)) if own_d >= inh => WallPlan::Skip,
+        (Some(own_d), _) => WallPlan::Arm {
+            seconds: own_d.saturating_sub(now_unix),
+            deadline_unix: own_d,
+            regroup: true,
+        },
+    }
+}
+
+/// The inherited deadline, if any. A malformed value is a torn
+/// channel — named, never a guessed-around boot (spec 08 §2.2).
+fn inherited_deadline(env: &dyn Env) -> Result<Option<u64>, String> {
+    let Some(raw) = env.var(DEADLINE_VAR).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let v: u64 = raw.parse().map_err(|_| {
+        format!(
+            "resources: {DEADLINE_VAR} {raw:?} is malformed — the wall-deadline inheritance channel is torn"
+        )
+    })?;
+    Ok(Some(v))
+}
+
+/// The grammar → Job Object limit mapping (spec 08 §2.2's windows
+/// table), pure for tests — the windows arm folds these into
+/// `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`. Compiled for tests on every
+/// host so the mapping is proven without a windows runner; the FFI
+/// application of it is `cfg(windows)`-only.
+#[cfg(any(windows, test))]
+mod win_plan {
+    use tfs::policy::ResourceBounds;
+
+    /// One Job Object limit, in the grammar's key order. The variants
+    /// name the WINDOWS semantics — the honest mirrors of the POSIX
+    /// arm's rlimits, not renamings:
+    ///
+    /// - `ProcessTime` (`cpu_seconds` →
+    ///   `JOB_OBJECT_LIMIT_PROCESS_TIME`): per-process USER-MODE
+    ///   execution time, the `RLIMIT_CPU` mirror. Windows exposes no
+    ///   user+kernel total through Job Objects, and the per-job
+    ///   variant (`JOB_OBJECT_LIMIT_JOB_TIME`) would bound the tree's
+    ///   AGGREGATE — a different, tree-shared semantics the POSIX arm
+    ///   does not have (rlimits hand each child its own full budget).
+    ///   CPU RATE control throttles instead of bounding — a payload
+    ///   under a rate cap runs forever, which is not "the bound kills
+    ///   the runaway".
+    /// - `ProcessMemory` (`memory` → `JOB_OBJECT_LIMIT_PROCESS_MEMORY`):
+    ///   per-process COMMIT ceiling, the `RLIMIT_AS` mirror —
+    ///   allocation fails at the bound. The per-job variant
+    ///   (`JOB_OBJECT_LIMIT_JOB_MEMORY`, aggregate commit) diverges
+    ///   from the POSIX arm the same way.
+    /// - `ActiveProcess` (`processes` →
+    ///   `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`): the job's
+    ///   simultaneous-process ceiling — children created past it are
+    ///   terminated at creation (the windows spelling of "fork fails
+    ///   EAGAIN"; per-JOB — the per-tree primitive POSIX lacks, so
+    ///   the windows arm is per-tree where the POSIX arm is
+    ///   per-real-uid).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) enum JobLimit {
+        /// 100-ns ticks of user-mode execution (the LARGE_INTEGER
+        /// quantum of `PerProcessUserTimeLimit`).
+        ProcessTime(i64),
+        /// Bytes of commit (`ProcessMemoryLimit`).
+        ProcessMemory(u64),
+        /// Simultaneous processes (`ActiveProcessLimit`).
+        ActiveProcess(u32),
+    }
+
+    /// 100-ns ticks in one second.
+    const TICKS_PER_SECOND: u64 = 10_000_000;
+
+    /// Map the declared bounds to the job's limits, in the grammar's
+    /// key order (the POSIX arm's `rlimit_plan` shape). Values clamp at
+    /// the kernel type's ceiling — saturating, never wrapping a
+    /// declared bound negative or small.
+    pub(super) fn job_limits(bounds: &ResourceBounds) -> Vec<JobLimit> {
+        let mut plan = Vec::with_capacity(3);
+        if let Some(v) = bounds.cpu_seconds {
+            plan.push(JobLimit::ProcessTime(
+                v.saturating_mul(TICKS_PER_SECOND).min(i64::MAX as u64) as i64,
+            ));
+        }
+        if let Some(v) = bounds.memory_bytes {
+            plan.push(JobLimit::ProcessMemory(v));
+        }
+        if let Some(v) = bounds.processes {
+            plan.push(JobLimit::ActiveProcess(v.min(u32::MAX as u64) as u32));
+        }
+        plan
+    }
+}
+
 #[cfg(unix)]
 mod imp {
     use std::path::Path;
 
     use tfs::policy::ResourceBounds;
 
-    use super::DEADLINE_VAR;
+    use super::{inherited_deadline, plan_wall, WallPlan, DEADLINE_VAR, JAIL_RESOURCE_EVENT};
     use crate::driver::Env;
-
-    /// The event name of the watchdog's audit-journal line (the resource
-    /// axis's violation record, beside `jail-deny`).
-    const JAIL_RESOURCE_EVENT: &str = "jail-resource";
 
     /// libc spells the `setrlimit` resource argument per-platform:
     /// `c_uint` on linux-gnu, `c_int` everywhere else the workspace
@@ -76,52 +233,6 @@ mod imp {
     /// Fixed-capacity byte slots carried across the fork (the child never
     /// allocates — see the module docs).
     const CAP: usize = 768;
-
-    /// What the boot decided about the wall bound (spec 08 §2.2's
-    /// inheritance rule), computed in safe Rust before any fork.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub(super) enum WallPlan {
-        /// Nothing to arm: no wall in play, or the inherited deadline
-        /// covers this subtree fully (the ancestor's watchdog owns the
-        /// kill — arming a second one would let a middle layer's exit
-        /// nuke the whole tree).
-        Skip,
-        /// Arm the watchdog: `seconds` to the deadline, exporting
-        /// `deadline_unix` for descendants. `regroup` when this subtree
-        /// must own its process group (the tree root, or a descendant
-        /// TIGHTENING the inherited deadline — its kill must not reach
-        /// the rest of the tree).
-        Arm {
-            seconds: u64,
-            deadline_unix: u64,
-            regroup: bool,
-        },
-    }
-
-    /// The inheritance algebra (spec 08 §2.2), pure for tests:
-    ///
-    /// - no own wall → nothing to arm (an inherited deadline is the
-    ///   ancestor's watchdog's business — arming a second one would let
-    ///   a middle layer's exit nuke the whole tree);
-    /// - an own wall at-or-looser than the inherited deadline → covered
-    ///   (the ancestor's watchdog fires first);
-    /// - an own wall tighter than the inherited deadline, or no
-    ///   inherited deadline at all → arm on the subtree's own group.
-    pub(super) fn plan_wall(own: Option<u64>, inherited: Option<u64>, now_unix: u64) -> WallPlan {
-        let own_deadline = own.map(|w| now_unix.saturating_add(w));
-        match (own_deadline, inherited) {
-            (None, _) => WallPlan::Skip,
-            // The inherited deadline is at-or-earlier — it covers this
-            // subtree (an already-passed inherited deadline included:
-            // the ancestor's watchdog owns the imminent kill).
-            (Some(own_d), Some(inh)) if own_d >= inh => WallPlan::Skip,
-            (Some(own_d), _) => WallPlan::Arm {
-                seconds: own_d.saturating_sub(now_unix),
-                deadline_unix: own_d,
-                regroup: true,
-            },
-        }
-    }
 
     /// The pre-fork rendering of everything the watchdog child may need,
     /// in fixed buffers. `len == 0` marks an absent slot (no journal).
@@ -202,20 +313,6 @@ mod imp {
 
     fn unix_seconds() -> u64 {
         unsafe { libc::time(std::ptr::null_mut()) as u64 }
-    }
-
-    /// The inherited deadline, if any. A malformed value is a torn
-    /// channel — named, never a guessed-around boot (spec 08 §2.2).
-    fn inherited_deadline(env: &dyn Env) -> Result<Option<u64>, String> {
-        let Some(raw) = env.var(DEADLINE_VAR).filter(|s| !s.is_empty()) else {
-            return Ok(None);
-        };
-        let v: u64 = raw.parse().map_err(|_| {
-            format!(
-                "resources: {DEADLINE_VAR} {raw:?} is malformed — the wall-deadline inheritance channel is torn"
-            )
-        })?;
-        Ok(Some(v))
     }
 
     /// Give the watchdog a group to kill (spec 08 §2.2): returns `true`
@@ -442,22 +539,274 @@ mod imp {
 mod imp {
     use tfs::policy::ResourceBounds;
 
+    use super::win_plan::job_limits;
+    use super::{inherited_deadline, plan_wall, WallPlan, DEADLINE_VAR, JAIL_RESOURCE_EVENT};
     use crate::driver::Env;
 
-    /// Fail closed until the Job Object arm lands (spec 08 §2.2): a
-    /// declared bound is never silently unbounded.
+    /// The exit code the watchdog's `TerminateJobObject` hands every
+    /// process in the job: 128 + SIGKILL — the POSIX arm's observed
+    /// exit for the same verdict, so the two arms read ONE number for
+    /// "killed at the declared wall" (the conformance suite's wall row
+    /// asserts it identically on both).
+    const WALL_KILL_EXIT: u32 = 137;
+
+    /// Unix seconds, for the deadline algebra and the journal
+    /// timestamp (the POSIX arm's `libc::time` shape through std).
+    fn now_unix() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+
+    /// The Job Object FFI boundary — every `windows-sys` call the arm
+    /// makes, behind one owned handle. Safe Rust drives it; the only
+    /// `unsafe` in the windows arm lives here.
+    #[allow(unsafe_code)]
+    mod job {
+        use std::io;
+
+        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows_sys::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOB_OBJECT_LIMIT_PROCESS_TIME,
+        };
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+        use super::super::win_plan::JobLimit;
+
+        /// An owned Job Object handle. Deliberately NO `Drop`: the
+        /// watchdog path leaks the handle on purpose — the kernel
+        /// closes it at process teardown, and that close is the
+        /// `KILL_ON_JOB_CLOSE` trigger (the root-exit reap). The
+        /// no-watchdog path calls [`Job::close`] explicitly.
+        pub(super) struct Job {
+            handle: HANDLE,
+        }
+
+        // A job handle is process-global kernel state — any thread of
+        // the process may use it (the watchdog thread owns it after
+        // the arm). No `Sync`: the handle moves into exactly one
+        // thread, never shared.
+        unsafe impl Send for Job {}
+
+        impl Job {
+            /// A fresh anonymous job, non-inheritable by construction
+            /// (null security attributes): children never hold a handle
+            /// to it, so the armer's handle is the ONLY one — which is
+            /// what makes its close at process exit the root-exit reap.
+            pub(super) fn create() -> Result<Job, String> {
+                // SAFETY: null attributes + null name create an
+                // anonymous job; the returned handle is owned by this
+                // process (null on failure, checked below).
+                let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+                if handle.is_null() {
+                    let e = io::Error::last_os_error();
+                    return Err(format!(
+                        "resources: cannot create the Job Object the bounds ride on: {e} — refusing to arm a bound that cannot hold"
+                    ));
+                }
+                Ok(Job { handle })
+            }
+
+            /// Install the extended limits. `kill_on_close` arms the
+            /// root-exit reap (spec 08 §2.2's die-with-root): the
+            /// kernel terminates every process in the job when the
+            /// LAST handle to it closes — and only the armer holds one
+            /// (above).
+            pub(super) fn set_limits(
+                &self,
+                limits: &[JobLimit],
+                kill_on_close: bool,
+            ) -> Result<(), String> {
+                // SAFETY: all-zero is the valid neutral state for this
+                // POD repr(C) struct (every field scalar).
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+                let mut flags = if kill_on_close {
+                    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                } else {
+                    0
+                };
+                for limit in limits {
+                    match *limit {
+                        JobLimit::ProcessTime(ticks) => {
+                            flags |= JOB_OBJECT_LIMIT_PROCESS_TIME;
+                            info.BasicLimitInformation.PerProcessUserTimeLimit = ticks;
+                        }
+                        JobLimit::ProcessMemory(bytes) => {
+                            flags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+                            info.ProcessMemoryLimit = bytes as usize;
+                        }
+                        JobLimit::ActiveProcess(count) => {
+                            flags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+                            info.BasicLimitInformation.ActiveProcessLimit = count;
+                        }
+                    }
+                }
+                info.BasicLimitInformation.LimitFlags = flags;
+                // SAFETY: `info` is a live, correctly-sized
+                // extended-limit struct; the handle is ours.
+                let ok = unsafe {
+                    SetInformationJobObject(
+                        self.handle,
+                        JobObjectExtendedLimitInformation,
+                        &info as *const _ as *const core::ffi::c_void,
+                        std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                    )
+                };
+                if ok == 0 {
+                    let e = io::Error::last_os_error();
+                    return Err(format!(
+                        "resources: the kernel refused the Job Object limits ({e}) — refusing to arm a bound that cannot hold (never silently loosened, spec 08 §2.2)"
+                    ));
+                }
+                Ok(())
+            }
+
+            /// Put THIS process in the job — the interpreter exe the
+            /// driver is linked into; every child it spawns joins the
+            /// job by default (Windows 8+ nests; a breakaway needs a
+            /// grant the job never gives).
+            pub(super) fn assign_current_process(&self) -> Result<(), String> {
+                // SAFETY: GetCurrentProcess yields the process's own
+                // pseudo-handle — always valid, never closed.
+                let this = unsafe { GetCurrentProcess() };
+                // SAFETY: both handles are valid.
+                let ok = unsafe { AssignProcessToJobObject(self.handle, this) };
+                if ok == 0 {
+                    let e = io::Error::last_os_error();
+                    return Err(format!(
+                        "resources: cannot assign the payload process to its Job Object: {e} — refusing to arm a bound that cannot hold (a pre-Windows-8 kernel refuses a second job; a sandbox that forbids nesting surfaces HERE, named)"
+                    ));
+                }
+                Ok(())
+            }
+
+            /// Terminate every process in the job at `exit_code` (the
+            /// watchdog's fire — this process included).
+            pub(super) fn terminate(&self, exit_code: u32) -> bool {
+                // SAFETY: the handle is ours and live.
+                unsafe { TerminateJobObject(self.handle, exit_code) != 0 }
+            }
+
+            /// Drop the armer's handle WITHOUT the root-exit semantics
+            /// (the no-watchdog path): the job lives on through its
+            /// member processes — the kernel destroys it when the last
+            /// member exits.
+            pub(super) fn close(self) {
+                // SAFETY: the handle is ours; this is its only close.
+                unsafe {
+                    CloseHandle(self.handle);
+                }
+            }
+        }
+    }
+
+    /// Arm the wall watchdog: a thread that sleeps out the deadline and
+    /// fires — the named stderr line, the `jail-resource` journal
+    /// line, then `TerminateJobObject` across the tree (the POSIX fork
+    /// child's shape; a thread is safe on windows — no fork
+    /// discipline). The thread OWNS the job handle and never closes
+    /// it: the kernel's close at process teardown is the
+    /// `KILL_ON_JOB_CLOSE` trigger, so the root-exit reap engages by
+    /// construction, kernel-enforced with no survivor needed to write
+    /// the line (POSIX's `cause=root-exit` journal record has no
+    /// windows spelling — nothing outlives the root to write it).
+    fn arm_watchdog(job: job::Job, seconds: u64, source: &str) -> Result<(), String> {
+        let wall_line = format!(
+            "tebako-driver: resource bound exceeded (wall_seconds={seconds}) — the payload process tree was killed (the job object)\n"
+        );
+        let journal_wall = format!(
+            " event={JAIL_RESOURCE_EVENT} bound=wall_seconds value={seconds} op=kill cause=wall source={source}\n"
+        );
+        let journal = tfs::journal::journal_file();
+        std::thread::Builder::new()
+            .name("tebako-wall-watchdog".to_string())
+            .spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(seconds));
+                use std::io::Write as _;
+                let _ = std::io::stderr().write_all(wall_line.as_bytes());
+                // Best effort, exactly the POSIX arm's discipline: a
+                // kill is never delayed for its record.
+                if let Some(path) = journal.as_deref() {
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                    {
+                        let _ = write!(f, "{} {}", now_unix(), journal_wall);
+                    }
+                }
+                if !job.terminate(WALL_KILL_EXIT) {
+                    let e = std::io::Error::last_os_error();
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "tebako-driver: the wall watchdog's TerminateJobObject failed ({e}) — the tree may outlive the declared deadline"
+                    );
+                }
+            })
+            .map(|_| ())
+            .map_err(|e| {
+                format!(
+                    "resources: cannot spawn the wall watchdog thread: {e} — refusing to arm a bound that cannot hold"
+                )
+            })
+    }
+
     pub(super) fn enforce(
         bounds: &ResourceBounds,
-        _source: &str,
-        _env: &dyn Env,
+        source: &str,
+        env: &dyn Env,
     ) -> Result<(), String> {
         if bounds.is_empty() {
             return Ok(());
         }
-        Err(
-            "resources: bounds are declared but not enforceable on windows yet — Job Object enforcement is the follow-up (spec 08 §2.2); refusing to run unbounded"
-                .to_string(),
-        )
+        // A torn inheritance channel is named before any kernel call
+        // (both arms share the rule).
+        let inherited = inherited_deadline(env)?;
+        let limits = job_limits(bounds);
+        match plan_wall(bounds.wall_seconds, inherited, now_unix()) {
+            WallPlan::Skip if limits.is_empty() => {
+                // A wall-only boot covered by an ancestor's watchdog
+                // (the inherited deadline fires first): nothing to
+                // arm — the ancestor's job already holds this process.
+                Ok(())
+            }
+            WallPlan::Skip => {
+                // Limits only, or a wall covered by the ancestor: the
+                // job carries the rlimit mirrors with NO kill-on-close
+                // and NO watchdog — the root-exit reap is the wall's
+                // mechanism on both arms, and a covered wall is the
+                // ancestor's business (a descendant reap here would
+                // nuke a tree the ancestor still owns).
+                let job = job::Job::create()?;
+                job.set_limits(&limits, false)?;
+                job.assign_current_process()?;
+                job.close();
+                Ok(())
+            }
+            WallPlan::Arm {
+                seconds,
+                deadline_unix,
+                regroup,
+            } => {
+                // plan_wall only arms on an owned subtree; on windows
+                // the fresh job IS the group — definitionally
+                // exclusive to this process and its future children,
+                // so the root-exit reap always engages (the POSIX
+                // arm's job-control-leader caveat has no spelling
+                // here).
+                let _owns_group = regroup;
+                let job = job::Job::create()?;
+                job.set_limits(&limits, true)?;
+                job.assign_current_process()?;
+                arm_watchdog(job, seconds, source)?;
+                env.set_var(DEADLINE_VAR, &deadline_unix.to_string());
+                Ok(())
+            }
+        }
     }
 }
 
@@ -469,10 +818,12 @@ pub(crate) fn enforce(bounds: &ResourceBounds, source: &str, env: &dyn Env) -> R
     imp::enforce(bounds, source, env)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::imp::*;
-    use super::DEADLINE_VAR;
+    use super::win_plan::{job_limits, JobLimit};
+    use super::{enforce, plan_wall, WallPlan, DEADLINE_VAR};
     use crate::driver::{Env, ProcessEnv};
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -518,8 +869,10 @@ mod tests {
     // process: between fork and _exit the children call ONLY
     // async-signal-safe libc entries (the module's own discipline). All
     // specs are rendered in the parent BEFORE the fork.
+    #[cfg(unix)]
     static FORK_LOCK: Mutex<()> = Mutex::new(());
 
+    #[cfg(unix)]
     fn child_status(pid: libc::pid_t) -> libc::c_int {
         let mut status: libc::c_int = 0;
         unsafe {
@@ -528,10 +881,12 @@ mod tests {
         status
     }
 
+    #[cfg(unix)]
     fn signaled_by(status: libc::c_int, sig: libc::c_int) -> bool {
         libc::WIFSIGNALED(status) && libc::WTERMSIG(status) == sig
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_rlimit_plan_maps_each_key_to_its_resource() {
         let plan = rlimit_plan(&bounds(Some(60), Some(1024), Some(8), Some(300)));
@@ -545,6 +900,42 @@ mod tests {
         );
         assert!(rlimit_plan(&bounds(None, None, None, Some(5))).is_empty());
         assert!(rlimit_plan(&bounds(None, None, None, None)).is_empty());
+    }
+
+    #[test]
+    fn the_job_limits_map_each_key_to_its_windows_limit() {
+        // The windows arm's mapping (spec 08 §2.2's table): cpu_seconds
+        // → per-process user-mode 100-ns ticks, memory → per-process
+        // commit bytes, processes → the active-process ceiling, in the
+        // grammar's key order — the rlimit plan's windows mirror.
+        let plan = job_limits(&bounds(Some(60), Some(1 << 30), Some(8), Some(300)));
+        assert_eq!(
+            plan,
+            vec![
+                JobLimit::ProcessTime(600_000_000),
+                JobLimit::ProcessMemory(1 << 30),
+                JobLimit::ActiveProcess(8),
+            ]
+        );
+        // A wall-only declaration installs no limit (the watchdog and
+        // the kill-on-close carry it).
+        assert!(job_limits(&bounds(None, None, None, Some(5))).is_empty());
+        assert!(job_limits(&bounds(None, None, None, None)).is_empty());
+    }
+
+    #[test]
+    fn the_job_limits_saturate_at_the_kernel_type_ceilings() {
+        // A declared bound beyond the kernel type's range clamps at its
+        // ceiling — never wraps negative or small (a wrapped bound would
+        // be a silently loosened one, spec 08 §2.2's named failure).
+        let plan = job_limits(&bounds(Some(u64::MAX), None, Some(u64::MAX), None));
+        assert_eq!(
+            plan,
+            vec![
+                JobLimit::ProcessTime(i64::MAX),
+                JobLimit::ActiveProcess(u32::MAX),
+            ]
+        );
     }
 
     #[test]
@@ -599,6 +990,7 @@ mod tests {
         assert!(env.var(DEADLINE_VAR).is_none());
     }
 
+    #[cfg(unix)]
     #[test]
     fn setrlimit_applies_and_reads_back_in_a_child() {
         let _g = FORK_LOCK.lock().unwrap();
@@ -656,6 +1048,7 @@ mod tests {
     /// process group so a watchdog fire can never reach the test runner;
     /// the spec's `owns_group` decides only whether the root-exit reap
     /// engages (its production semantics).
+    #[cfg(unix)]
     fn fork_payload(spec: &WatchdogSpec, behave: unsafe fn()) -> libc::pid_t {
         unsafe {
             let pid = libc::fork();
@@ -671,6 +1064,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     unsafe fn sleep_forever() {
         let slice = libc::timespec {
             tv_sec: 1,
@@ -683,6 +1077,7 @@ mod tests {
 
     /// Leak one sleeping grandchild, then exit cleanly (the payload root
     /// is gone; the sleeper is what the watchdog's fire must answer for).
+    #[cfg(unix)]
     unsafe fn leak_and_exit() {
         if libc::fork() == 0 {
             sleep_forever();
@@ -693,8 +1088,10 @@ mod tests {
     /// The pipe write end `leak_report_and_exit` publishes the leaked
     /// pid through (a shared-group probe needs the leaked pid to poll —
     /// no group kill may answer for it before the deadline).
+    #[cfg(unix)]
     static LEAK_PIPE_W: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
 
+    #[cfg(unix)]
     unsafe fn leak_report_and_exit() {
         let pid = libc::fork();
         if pid == 0 {
@@ -708,6 +1105,7 @@ mod tests {
         libc::_exit(0);
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_watchdog_kills_the_group_at_the_deadline() {
         let _g = FORK_LOCK.lock().unwrap();
@@ -730,6 +1128,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_watchdog_reaps_the_tree_when_the_root_exits() {
         let _g = FORK_LOCK.lock().unwrap();
@@ -762,6 +1161,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_root_exit_reap_stays_out_of_a_shared_group() {
         let _g = FORK_LOCK.lock().unwrap();
@@ -822,6 +1222,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_spec_renders_the_named_line_and_journal_payloads() {
         let spec = format_spec(
@@ -845,6 +1246,7 @@ mod tests {
         assert_eq!(spec.journal_path_len, 0);
     }
 
+    #[cfg(unix)]
     #[test]
     fn utoa_renders_the_timestamp_prefix() {
         let mut buf = [0u8; 32];
@@ -854,6 +1256,7 @@ mod tests {
         assert_eq!(&buf[..n], b"0 ");
     }
 
+    #[cfg(unix)]
     #[test]
     fn enforce_arms_and_exports_the_deadline() {
         let _g = FORK_LOCK.lock().unwrap();
@@ -880,8 +1283,14 @@ mod tests {
         let v: u64 = exported.parse().unwrap();
         let now = unsafe { libc::time(std::ptr::null_mut()) as u64 };
         assert!(v >= now + 3500 && v <= now + 3600, "deadline {v} now {now}");
-        // The ProcessEnv facade compiles against the same Env (the shipped
-        // path passes it).
-        let _ = ProcessEnv;
+    }
+
+    #[test]
+    fn the_process_env_facade_speaks_the_env_trait() {
+        // The shipped path passes the process environment — a
+        // compile-time proof against the same trait the MapEnv doubles
+        // implement (the facade compiles against Env on every platform).
+        fn assert_env<T: Env>() {}
+        assert_env::<ProcessEnv>();
     }
 }

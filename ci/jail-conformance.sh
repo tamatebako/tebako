@@ -42,20 +42,27 @@
 #
 # The resource axis (spec 08 §2.2) adds a fifth section — same philosophy,
 # different judgement: the consumption bounds must HOLD, not just parse.
-# Those arms run POSIX + --pair only (they exercise the driver baked into
-# the candidate pair directly; press mode resolves a PUBLISHED pair, a
-# different moment; the windows arm is PLANNED — Job Objects):
+# The arms run --pair only (they exercise the driver baked into the
+# candidate pair directly; press mode resolves a PUBLISHED pair, a
+# different moment):
 #
-#   wall      a busy looper under wall_seconds=3 dies by SIGKILL at the
-#             deadline — the watchdog's named stderr line + the
-#             event=jail-resource journal line
-#   cpu       the looper under cpu_seconds=2 dies by SIGXCPU
-#   bomber    a fork bomb under processes=<uid count>+30 hits EAGAIN,
-#             exits 42, and the watchdog reaps its sleeper children with
-#             the root (the orphan guard proves the group emptied)
+#   wall      a busy looper under wall_seconds=3 dies at the deadline —
+#             the watchdog's named stderr line + the event=jail-resource
+#             journal line (POSIX: the process group's SIGKILL; windows:
+#             TerminateJobObject — one observed exit, 137, on both)
+#   cpu       the looper under cpu_seconds=2 dies at the CPU ceiling
+#             (POSIX: SIGXCPU; windows: the kernel terminates the process
+#             at its per-process user-time ceiling)
+#   bomber    (POSIX) a fork bomb under processes=<uid count>+30 hits
+#             EAGAIN, exits 42, and the watchdog reaps its sleeper
+#             children with the root (the orphan guard proves the group
+#             emptied); (windows) a SPAWN bomb under processes=8 — ruby
+#             has no fork here — stops at the job's ACTIVE_PROCESS
+#             ceiling, its over-ceiling children terminated at creation
 #   memory    (Linux) a memory hog under memory=1G stops at the
 #             RLIMIT_AS ceiling — NoMemoryError or the VM's fatal
-#             allocation abort, never a silent overshoot
+#             allocation abort, never a silent overshoot; (windows) the
+#             same hog stops at the job's per-process commit ceiling
 #   memory-refusal (macOS) a declared memory bound fails the boot by
 #             name (exit 73) — the kernel's RLIMIT_AS floor, never a
 #             silent clamp
@@ -356,6 +363,43 @@ timer.kill
 puts "UNBOUNDED:processes children=#{children}"
 exit 44
 RUBY
+cat > "$WORK/app/spawner.rb" <<'RUBY'
+# The WINDOWS process-bomb vector (row 23): ruby has no fork on windows —
+# spawn is the creation spelling, and the Job Object's ACTIVE_PROCESS
+# ceiling is the kernel's answer: children created past the ceiling are
+# terminated at creation. ARGV: <ceiling> <storm>. Spawn <storm> sleeping
+# children, give the kernel a moment, then count the LIVING: at most
+# ceiling-1 may survive (the interpreter itself holds one job slot).
+# BOUND exits 42 (the POSIX bomber's number); more alive than the ceiling
+# permits exits 44 (unbounded). The probe reaps its own spawn either way
+# — the bounded case's job kills the tree with the root
+# (KILL_ON_JOB_CLOSE), but an UNBOUNDED run has no such backstop and the
+# CI runner must never leak the storm.
+$stdout.sync = true
+ceiling = Integer(ARGV[0])
+storm = Integer(ARGV[1])
+children = storm.times.map do
+  Process.spawn(RbConfig.ruby, "-e", "sleep", out: File::NULL, err: File::NULL)
+end
+sleep 2
+# waitpid(WNOHANG) answers pid for a dead child (reaping it) and nil for
+# a live one — the windows-portable aliveness probe (kill(0) is not).
+alive = children.count { |pid| Process.waitpid(pid, Process::WNOHANG).nil? }
+children.each do |pid|
+  begin
+    Process.kill("KILL", pid)
+  rescue SystemCallError
+    nil
+  end
+end
+if alive <= ceiling - 1
+  puts "BOUND:processes children=#{alive} (ceiling #{ceiling})"
+  exit 42
+else
+  puts "UNBOUNDED:processes children=#{alive} (ceiling #{ceiling})"
+  exit 44
+end
+RUBY
 cat > "$WORK/app/eater.rb" <<'RUBY'
 # The memory-hog vector (row 31, Linux): grow address space until the
 # kernel refuses. NoMemoryError at the ceiling prints BOUND and exits 43;
@@ -444,12 +488,14 @@ arm deny-grant "deny;$(hostpath "$WORK/host/granted"):/grant:ro"
 arm record "record"
 
 # --- the resource axis (spec 08 §2.2): the bounds must HOLD, not just
-# parse. POSIX + --pair only — every other shape is a named note, never
+# parse. --pair only — every other shape is a named note, never
 # a silent absence. The gate probe boots the pair under a wall-only
 # spec: a pair whose driver predates the axis rejects `resources:` at
-# parse ("invalid jail spec"), and the arms then report
-# armed-not-applicable. rsrc_fail = a bound did not hold (leak class);
-# rsrc_broken = the arms could not run (harness class).
+# parse ("invalid jail spec"), a windows pair predating the Job Object
+# arm fails closed on the bound by name ("not enforceable on windows"),
+# and the arms then report armed-not-applicable. rsrc_fail = a bound did
+# not hold (leak class); rsrc_broken = the arms could not run (harness
+# class).
 rsrc_fail=0
 rsrc_broken=0
 rsrc_note=""
@@ -461,7 +507,131 @@ echo "== resources"
 if [ -z "$PAIR" ]; then
   rsrc_note="press mode resolves a PUBLISHED pair — the resource arms exercise the candidate pair's driver directly, so they run under --pair only"
 elif [ "$WIN" = "1" ]; then
-  rsrc_note="windows resource enforcement is PLANNED (Job Objects — spec 08 §2.2; a boot with any bound declared fails closed, exit 73)"
+  # === the windows arm (Job Objects — spec 08 §2.2, §7 row 27) ===
+  # Same judgements as the POSIX arm, windows spellings. The arms run
+  # BARE and synchronous: the harness's deadline/orphan guard is POSIX
+  # machinery (perl setpgid + the process-group kill — named in
+  # run_bounded), and on windows the Job Object IS the guard: a bounded
+  # run's tree dies with its root (KILL_ON_JOB_CLOSE) or at its wall
+  # backstop, by the kernel, with no harness involvement. Every arm
+  # declares its own wall_seconds backstop, so a bound failing open
+  # still terminates (a wedged pair is the CI job timeout's case). The
+  # invocations ride the suite's conversions: windows path spellings in
+  # the image triple, MSYS argument conversion off (see arm()).
+  RSRC_TRIPLE="$(hostpath "$WORK/app.tfs"):0:/app"
+  MSYS2_ARG_CONV_EXCL='*' env \
+    "TEBAKO_JAIL=open;resources:wall_seconds=600" \
+    "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+    "$EXE" --tebako-image "$RSRC_TRIPLE" --tebako-entry /probe.rb \
+    "$(hostpath "$SECRET")" "$(hostpath "$WORK/otherdir")" "" \
+    "$(hostpath "$WORK/otherdir/target.txt")" "$(hostpath "$WORK/scratch")" "" \
+    >"$WORK/rsrc-gate.out" 2>"$WORK/rsrc-gate.err"
+  gate_rc=$?
+  if [ "$gate_rc" != "0" ] && grep -q "invalid jail spec" "$WORK/rsrc-gate.err" 2>/dev/null; then
+    rsrc_note="the pair predates the resource axis (its driver rejected resources: at parse) — arms armed, not applicable to this pair"
+  elif [ "$gate_rc" != "0" ] && grep -q "not enforceable on windows" "$WORK/rsrc-gate.err" 2>/dev/null; then
+    rsrc_note="the pair predates the windows resource arm (its driver fails closed on any declared bound — the pre-Job-Object named refusal) — arms armed, not applicable to this pair"
+  elif [ "$gate_rc" != "0" ]; then
+    rsrc_note="the gate probe failed to boot (rc $gate_rc — see rsrc-gate.err) — the pair or the harness, never a silent pass"
+    rsrc_broken=1
+  else
+    # wall (spec row 24): the watchdog thread fires at the deadline —
+    # TerminateJobObject at exit 137 (the POSIX SIGKILL's number — one
+    # observed exit for one verdict), the named stderr line, the
+    # jail-resource journal line.
+    start=$(date +%s)
+    MSYS2_ARG_CONV_EXCL='*' env \
+      "TEBAKO_JAIL=open;resources:wall_seconds=3" \
+      "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+      "$EXE" --tebako-image "$RSRC_TRIPLE" --tebako-entry /looper.rb \
+      >"$WORK/rsrc-wall.out" 2>"$WORK/rsrc-wall.err"
+    rc=$?
+    elapsed=$(( $(date +%s) - start ))
+    if [ "$rc" = 137 ] && [ "$elapsed" -ge 3 ] && [ "$elapsed" -le 30 ] \
+       && grep -q "resource bound exceeded (wall_seconds=3)" "$WORK/rsrc-wall.err" 2>/dev/null \
+       && grep -q "event=jail-resource .*cause=wall" "$WORK/journal.log" 2>/dev/null; then
+      rsrc_row wall "held — the job terminated at ${elapsed}s (exit 137), the named stderr line, the jail-resource journal line"
+    else
+      rsrc_row wall "LEAK — rc=$rc after ${elapsed}s (want 137 at 3s + the stderr line + the journal line): $(tail -1 "$WORK/rsrc-wall.err")"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+
+    # cpu (spec row 25): the per-process user-time ceiling terminates
+    # the looper at ~2s; the wall backstop (25s) must NOT fire first.
+    # Windows has no signal spelling — the kernel chooses the exit
+    # code — so the arm asserts death-in-window + no wall line and
+    # names the observed code.
+    start=$(date +%s)
+    MSYS2_ARG_CONV_EXCL='*' env \
+      "TEBAKO_JAIL=open;resources:cpu_seconds=2,wall_seconds=25" \
+      "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+      "$EXE" --tebako-image "$RSRC_TRIPLE" --tebako-entry /looper.rb \
+      >"$WORK/rsrc-cpu.out" 2>"$WORK/rsrc-cpu.err"
+    rc=$?
+    elapsed=$(( $(date +%s) - start ))
+    if [ "$rc" != "0" ] && [ "$elapsed" -ge 2 ] && [ "$elapsed" -le 20 ] \
+       && ! grep -q "resource bound exceeded" "$WORK/rsrc-cpu.err" 2>/dev/null; then
+      rsrc_row cpu "held — terminated at ${elapsed}s (kernel exit $rc; the wall backstop never fired)"
+    else
+      rsrc_row cpu "LEAK — rc=$rc after ${elapsed}s (want a kill at ~2s, no wall line): $(tail -1 "$WORK/rsrc-cpu.err")"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+
+    # bomber (spec row 23): ruby has no fork on windows — spawn is the
+    # creation spelling, and the job's ACTIVE_PROCESS ceiling
+    # terminates the over-ceiling children at creation. The probe
+    # counts the LIVING: at most ceiling-1 survive (the interpreter
+    # holds one slot).
+    MSYS2_ARG_CONV_EXCL='*' env \
+      "TEBAKO_JAIL=open;resources:processes=8,wall_seconds=60" \
+      "$EXE" --tebako-image "$RSRC_TRIPLE" --tebako-entry /spawner.rb \
+      8 16 \
+      >"$WORK/rsrc-bomber.out" 2>"$WORK/rsrc-bomber.err"
+    rc=$?
+    if [ "$rc" = 42 ] && grep -q "BOUND:processes children=" "$WORK/rsrc-bomber.out" 2>/dev/null; then
+      rsrc_row bomber "held — children died at creation past the job's ceiling ($(grep -o 'children=[0-9]*' "$WORK/rsrc-bomber.out" | head -1)), exit 42"
+    else
+      rsrc_row bomber "LEAK — rc=$rc (want 42 + the BOUND line; 44 = more children alive than the ceiling): $(tail -1 "$WORK/rsrc-bomber.out")"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+
+    # memory (spec row 31): commit growth fails at the job's
+    # per-process ceiling — ruby's NoMemoryError (exit 43 + BOUND). The
+    # macOS refusal class has no windows spelling: the limit ENFORCES
+    # here, so the row proves it exactly like Linux's.
+    MSYS2_ARG_CONV_EXCL='*' env \
+      "TEBAKO_JAIL=open;resources:memory=1G,wall_seconds=45" \
+      "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+      "$EXE" --tebako-image "$RSRC_TRIPLE" --tebako-entry /eater.rb \
+      >"$WORK/rsrc-memory.out" 2>"$WORK/rsrc-memory.err"
+    rc=$?
+    if [ "$rc" = 43 ] && grep -q "BOUND:memory chunks=" "$WORK/rsrc-memory.out" 2>/dev/null; then
+      rsrc_row memory "held — NoMemoryError at the commit ceiling ($(grep -o 'chunks=[0-9]*' "$WORK/rsrc-memory.out" | head -1))"
+    else
+      rsrc_row memory "LEAK — rc=$rc (want 43 + BOUND; a run to the wall backstop means the ceiling failed open): $(tail -1 "$WORK/rsrc-memory.out" "$WORK/rsrc-memory.err" 2>/dev/null)"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+
+    # control (spec row 26): generous bounds, nothing stressed — the
+    # run is byte-identical to the open arm. processes=64 is the
+    # windows spelling of the POSIX generous ceiling (no per-uid count
+    # exists here; the probe peaks at 2 — the interpreter + its
+    # shellout child).
+    MSYS2_ARG_CONV_EXCL='*' env \
+      "TEBAKO_JAIL=open;resources:cpu_seconds=300,memory=2G,processes=64,wall_seconds=120" \
+      "TEBAKO_JAIL_JOURNAL=$(hostpath "$WORK/journal.log")" \
+      "$EXE" --tebako-image "$RSRC_TRIPLE" --tebako-entry /probe.rb \
+      "$(hostpath "$SECRET")" "$(hostpath "$WORK/otherdir")" "" \
+      "$(hostpath "$WORK/otherdir/target.txt")" "$(hostpath "$WORK/scratch")" "" \
+      >"$WORK/rsrc-control.out" 2>"$WORK/rsrc-control.err"
+    rc=$?
+    if [ "$rc" = 0 ] && diff -q "$WORK/rsrc-control.out" "$WORK/open.out" >/dev/null 2>&1; then
+      rsrc_row control "held — byte-identical to the open arm under generous bounds"
+    else
+      rsrc_row control "LEAK — rc=$rc and/or output drifted from the open arm: $(diff "$WORK/rsrc-control.out" "$WORK/open.out" 2>/dev/null | head -3 | tr '\n' ' ')"
+      rsrc_fail=$((rsrc_fail + 1))
+    fi
+  fi
 else
   # SIGXCPU's default action cores on some hosts; the arms prove death
   # by signal, and the suite leaves no core files behind.

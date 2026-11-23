@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/08-jails.md @ 0b60cf5d198310fdfcf8ab11b0c61f9e841af2d1
+// source: docs/spec/08-jails.md @ 93e1d51ad2d93c1f7fffb313ba78c9ba0d05cb40
 
 Normative specification of host-filesystem access control for running
 payloads. Status: SHIPPED (roadmaps 09 + 30 + 35) — the TFS enforcement
@@ -32,11 +32,13 @@ violations (`event=jail-deny`) are SHIPPED with roadmap 35. Enforcement
 exists because every file access already flows through the TFS layer —
 one choke point covers every consumer. The RESOURCE axis (§2.2 — bounded
 consumption: `cpu_seconds` / `memory` / `processes` / `wall_seconds`) is
-SHIPPED for the POSIX runtime-driver delivery in this amendment's PR
-(the 2026-10-26 scar: a jail probe's child ran 96.9 % CPU for 1d21h
-unnoticed — the jail confined access but nothing bounded consumption);
-its windows arm (Job Objects) and the preload-only (`tfs exec`) arm are
-PLANNED, named in §2.2 and §7 — never silently unbounded.
+SHIPPED for the runtime-driver delivery on both arms — POSIX (rlimits +
+the forked wall watchdog; the 2026-11-22 amendment, closing the
+2026-10-26 scar: a jail probe's child ran 96.9 % CPU for 1d21h
+unnoticed — the jail confined access but nothing bounded consumption)
+and windows (Job Objects + the watchdog thread; 2026-11-23,
+tebako#1101). The preload-only (`tfs exec`) arm is PLANNED, named in
+§2.2 and §7 — never silently unbounded.
 
 
 [%unnumbered]
@@ -207,7 +209,7 @@ library.
 
 
 [%unnumbered]
-== 2.2 The resource axis — bounded consumption (locked 2026-11-22)
+== 2.2 The resource axis — bounded consumption (locked 2026-11-22; the windows arm, 2026-11-23)
 
 The jail's first axis confines ACCESS (fs, network). The resource axis
 bounds CONSUMPTION. The evidence for requiring it is ours: on
@@ -240,26 +242,50 @@ exit 73 (`EX_TEBAKO_JAIL`) — unknown or duplicated keys, empty or
 non-numeric values, zero, `u64` overflow, a unit suffix on a non-memory
 key — never a guess.
 
-*Enforcement (POSIX — SHIPPED in this amendment's PR; windows
-PLANNED below).* The runtime driver installs the resource arm in
-`apply_jail` — the same boot moment as the jail itself (after the
-mounts, before the interpreter handoff), so the limits cover the
-interpreter and every descendant it spawns (rlimits inherit across
-fork/exec; a preload-delivered native child of a bounded tree is
-therefore kernel-bounded and never re-applies). The mapping:
+*Enforcement (the runtime driver — SHIPPED on POSIX and windows; the
+preload-only arm PLANNED below).* The runtime driver installs the
+resource arm in `apply_jail` — the same boot moment as the jail itself
+(after the mounts, before the interpreter handoff), so the limits cover
+the interpreter and every descendant it spawns (on POSIX the rlimits
+inherit across fork/exec; on windows every child the interpreter spawns
+is inside the parent's Job Object — either arm's preload-delivered
+native child of a bounded tree is therefore kernel-bounded and never
+re-applies). The mapping:
 
-[cols="<,<,<",options="header"]
+[cols="<,<,<,<",options="header"]
 |===
-| key | POSIX mechanism | the payload-visible answer at the bound
-| `cpu_seconds` | `setrlimit(RLIMIT_CPU)` soft = hard | `SIGXCPU` death (128+24 from the parent)
-| `memory` | `setrlimit(RLIMIT_AS)` — Linux (the macOS kernel refuses realistic values, below) | address-space growth fails — the interpreter's own allocator error (ruby: `NoMemoryError`)
-| `processes` | `setrlimit(RLIMIT_NPROC)` | `fork`/`spawn` fails `EAGAIN`
-| `wall_seconds` | the driver's watchdog (below) | the named stderr line + process-group `SIGKILL`; the observed exit is the signal
+| key | POSIX mechanism | windows mechanism | the payload-visible answer at the bound
+| `cpu_seconds` | `setrlimit(RLIMIT_CPU)` soft = hard | `JOB_OBJECT_LIMIT_PROCESS_TIME` (per-process user-mode) | POSIX: `SIGXCPU` death (128+24 from the parent); windows: the kernel terminates the process at the ceiling (no signal spelling — the kernel's chosen exit)
+| `memory` | `setrlimit(RLIMIT_AS)` — Linux (the macOS kernel refuses realistic values, below) | `JOB_OBJECT_LIMIT_PROCESS_MEMORY` (per-process commit) | address-space growth fails — the interpreter's own allocator error (ruby: `NoMemoryError`)
+| `processes` | `setrlimit(RLIMIT_NPROC)` | `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` (per-JOB — the per-tree primitive POSIX lacks) | POSIX: `fork`/`spawn` fails `EAGAIN`; windows: children past the ceiling are terminated at creation
+| `wall_seconds` | the driver's watchdog (below) | the driver's watchdog thread (below) + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` | the named stderr line + the tree's kill (POSIX: the process group's `SIGKILL`; windows: `TerminateJobObject` at exit 137 — one verdict on both arms)
 |===
+
+The windows mapping is deliberate where the primitives do not line up:
+`cpu_seconds` rides the per-process user-mode clock
+(`JOB_OBJECT_LIMIT_PROCESS_TIME`) because Windows offers no user+kernel
+ceiling — the job-wide aggregate (`JOB_OBJECT_LIMIT_JOB_TIME`) would let
+one hungry child spend the tree's whole budget, and CPU rate control
+throttles where the axis promises death (a throttled runaway is still
+running at the deadline). `memory` is per-process commit
+(`JOB_OBJECT_LIMIT_PROCESS_MEMORY`), never the per-job aggregate
+(`JOB_OBJECT_LIMIT_JOB_MEMORY`): a sibling's footprint must not kill an
+innocent process — the POSIX arm's per-process shape. `processes` is the
+one bound where windows is the stronger arm:
+`JOB_OBJECT_LIMIT_ACTIVE_PROCESS` is per-JOB — genuinely per-tree, the
+primitive POSIX lacks without cgroups — so a bound at or below the
+tree's current size forbids exactly the new children, never the uid's
+unrelated processes. The job's `KILL_ON_JOB_CLOSE` flag arms exactly
+when the watchdog arms (`wall_seconds`, below): the job's sole handle is
+the arming process's, so the root's exit closes it and the kernel reaps
+the tree — the windows spelling of die-with-root.
 
 A `setrlimit` the kernel refuses (e.g. a spawned-runtime child whose
 composed union would exceed the tree's inherited hard limit) fails the
-boot by name, exit 73 — a bound is never silently loosened.
+boot by name, exit 73 — a bound is never silently loosened; on windows
+the same posture covers the Job Object calls (a create, limit-set, or
+assign the kernel refuses — e.g. a spawned-runtime child nesting under
+the ancestor's job).
 
 *Platform reality (macOS).* The macOS kernel refuses
 `setrlimit(RLIMIT_AS)` for any value below its address-space floor —
@@ -274,7 +300,10 @@ Linux; on macOS the named refusal IS the answer (§7 row 30), and row
 *The honesty notes (what the bounds ARE):*
 
 * `cpu_seconds` counts CPU, not wall: a sleeping payload never reaches
-it. Pair with `wall_seconds` for runaways that do not burn.
+it. Pair with `wall_seconds` for runaways that do not burn. On windows
+the clock charges user-mode time only
+(`JOB_OBJECT_LIMIT_PROCESS_TIME`); kernel-mode time is uncharged —
+Windows exposes no user+kernel ceiling.
 * `memory` covers the WHOLE process — the runtime's own footprint is
 inside the budget (a runtime that needs 300 MB dies under
 `memory: 256M` at boot; budget the interpreter).
@@ -282,7 +311,9 @@ inside the budget (a runtime that needs 300 MB dies under
 per-tree one (linux counts tasks, macOS processes) — POSIX userland
 has no per-tree process primitive without cgroups (the named
 non-goal, §5). Declare it against the uid's current count; a bound at
-or below that count forbids ALL forking.
+or below that count forbids ALL forking. On windows the same key is
+per-JOB — genuinely per-tree (`JOB_OBJECT_LIMIT_ACTIVE_PROCESS`, the
+table above).
 * `wall_seconds` is the tree's wall-clock budget (below). Clock-set
 jumps skew the cross-process inheritance note below by their jump —
 wall is not a precision instrument across `adjtime`.
@@ -309,10 +340,28 @@ run's tree dies with its root* — the orphan class of the 2026-10-26
 scar closed by construction, transitively: every armed watchdog
 watches its own armer, so a middle layer's death reaps its subtree.
 
+*The wall watchdog, windows.* The same plan algebra and the same
+`TEBAKO_RESOURCE_DEADLINE` contract variable; the mechanism is a thread
+inside the arming process, not a fork. The tree-root driver creates the
+Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, assigns itself,
+exports the deadline, and spawns the watchdog thread, which sleeps to
+the deadline and fires: the same named stderr line (`+++tebako-driver:
+resource bound exceeded (wall_seconds=&lt;n&gt;) — the payload process tree
+was killed (the job object)+++`), the same `+++event=jail-resource
+bound=wall_seconds op=kill cause=wall+++` journal line, then
+`TerminateJobObject(job, 137)` — 137 because it is the POSIX arm's
+observed number (128+9): one verdict on both arms. The root-exit reap
+needs no watcher and writes no journal line: the job's sole handle is
+the arming process's, so the root's exit closes it and the kernel kills
+the tree (`KILL_ON_JOB_CLOSE`) — die-with-root enforced below userland;
+nothing survives the root to journal `cause=root-exit`, and nothing
+needs to.
+
 *Deadline inheritance.* A descendant driver boot (the spec 30
 spawned-runtime child) reads the inherited deadline: a descendant whose
 composed `wall_seconds` is TIGHTER than the inherited remaining budget
-re-groups its own subtree and arms its own watchdog at
+re-groups its own subtree (a `setpgid` on POSIX, a nested Job Object on
+windows) and arms its own watchdog at
 `min(own, inherited)`; a descendant without a tighter wall arms nothing
 (the root's watchdog covers it). The tree's ceiling therefore holds
 through every composition — no spawn chain outlives the root's declared
@@ -337,13 +386,18 @@ supervisor's signal group: the supervisor's SIGTERM/Ctrl-C no longer
 reaches it and the declared wall remains the ceiling. This is the
 tree-kill mechanism's price; it engages only when `wall_seconds` is
 declared.
-* *Windows: PLANNED* — Job Objects with
+* *Windows: SHIPPED (2026-11-23, tebako#1101)* — Job Objects with
 `JOB_OBJECT_LIMIT_PROCESS_TIME` / `JOB_OBJECT_LIMIT_PROCESS_MEMORY` /
-`JOB_OBJECT_LIMIT_ACTIVE_PROCESS` / `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
-(the per-tree primitive POSIX lacks) are the immediate follow-up PR;
-until it lands a windows driver boot with ANY resource bound declared
-fails closed, exit 73, by name — never silently unbounded. The grammar
-is stable across both arms.
+`JOB_OBJECT_LIMIT_ACTIVE_PROCESS` (+ `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
+when the watchdog arms) and the watchdog thread's
+`TerminateJobObject(…, 137)` wall verdict. The honesty deltas against
+the POSIX arm: `cpu_seconds` charges user-mode time only; `memory` is
+per-process commit, never the per-job aggregate; `processes` is
+per-JOB — genuinely per-tree, the primitive POSIX lacks; and the
+`setsid` escape class has no windows spelling — the arm grants no
+breakaway (`JOB_OBJECT_LIMIT_BREAKAWAY_OK` /
+`JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` are never set), so a windows
+payload cannot leave its job. The grammar is stable across both arms.
 * *The preload-only delivery (`tfs exec`): PLANNED* — the preload
 constructor is the named seam for the same rlimits; today the
 `tfs exec` surfaces REFUSE a `resources:`-carrying spec by name (never
@@ -591,7 +645,7 @@ environment vector lives beside its implementation
 (`+++crates/tebako-driver/src/env_scrub.rs+++`); the resource axis's grammar
 lives beside its owners (`+++crates/tpkg/src/jail.rs+++` the authored model,
 `+++crates/tfs/src/policy.rs+++` the engine mirror — one grammar, one message
-set) and its POSIX mechanism beside its armer
+set) and its platform mechanisms beside their armer
 (`+++crates/tebako-driver/src/resources.rs+++`), with the end-to-end arms
 (fork bomb, infinite looper, under-bounds control) in the release-gate
 suite's resource arm (`+++ci/jail-conformance.sh+++`). All run on every
@@ -628,7 +682,7 @@ regression reddens the release matrix, not a dashboard nobody reads.
 | 24 | an infinite-looper under a declared `wall_seconds` bound | killed at the bound — the watchdog's named stderr line, the `event=jail-resource` journal line, the process group's `SIGKILL`; the observed exit is the signal | the conformance suite's `wall` arm; `resources::tests::the_watchdog_kills_the_group_at_the_deadline`
 | 25 | an infinite-looper under a declared `cpu_seconds` bound | `SIGXCPU` death at the `RLIMIT_CPU` ceiling | the conformance suite's `cpu` arm; the `resources::tests` rlimit mapping
 | 26 | an under-bounds control run (generous `cpu_seconds`/`memory`/`processes`/`wall_seconds` declared, nothing stressed) | passes byte-identically to the unbounded run — the axis never perturbs an in-budget payload (the memory declaration rides on Linux only; macOS omits it — the kernel's RLIMIT_AS floor, §2.2) | the conformance suite's `control` arm
-| 27 | windows resource enforcement | PLANNED — Job Objects (§2.2); until the arm lands the windows driver boot fails closed (exit 73) on any declared bound — never silently unbounded | — (named, not claimed)
+| 27 | windows resource enforcement | SHIPPED (2026-11-23, tebako#1101) — Job Objects (§2.2): `PROCESS_TIME` / `PROCESS_MEMORY` / `ACTIVE_PROCESS` (+ `KILL_ON_JOB_CLOSE` when the wall arms), the watchdog thread's exit-137 wall verdict, the kernel's close-at-exit reap; the fail-closed stub is gone | the conformance suite's windows resource arm (`+++ci/jail-conformance.sh+++` — windows, `+++--pair+++`); `resources::tests` (the job-limit mapping, the shared deadline algebra)
 | 28 | the preload-only delivery (`tfs exec`) of the resource axis | PLANNED — the preload constructor is the named seam; today the `tfs exec` surfaces refuse a `resources:`-carrying spec by name, and a driver-rooted bounded tree's native children are kernel-inherited-bounded (§2.2) | §2.2
 | 29 | a payload calling `setsid(2)` to escape the wall group | OUT OF SCOPE — POSIX userland without cgroups cannot hold a determined escapee (the escape needs the payload's own syscall); cgroup-grade per-tree accounting is the named non-goal (§5) | §2.2
 | 30 | a declared `memory` bound on macOS | refused by name at boot (exit 73) — the kernel refuses `RLIMIT_AS` below its `2^39`-byte address-space floor (arm64); never a silent clamp | the conformance suite's macOS `memory-refusal` arm; `resources::tests`' rlimit mapping
@@ -638,6 +692,6 @@ regression reddens the release matrix, not a dashboard nobody reads.
 
 Row 16 is the one open vector that is IN scope and not yet proven: it is
 named here so nobody reads the matrix as "done", and it does not close
-until a windows test stands behind it. Rows 27 and 28 name the resource
-axis's own two open arms the same way — the axis ships POSIX-first and
-says so.
+until a windows test stands behind it. Row 28 names the resource axis's
+remaining open arm the same way — the axis ships driver-first (POSIX and
+windows) and says so.
