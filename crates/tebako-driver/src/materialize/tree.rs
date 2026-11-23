@@ -210,7 +210,12 @@ pub fn boot_tier(
             ),
         ));
     }
-    let env_root = ensure_tree(&trees, &tree_key(Path::new(path), slot)?, runtime_root)?;
+    let env_root = ensure_tree(
+        &trees,
+        &tree_key(Path::new(path), slot)?,
+        &crate::exec_cache::image_key(Path::new(path)),
+        runtime_root,
+    )?;
     let mut payloads = Vec::new();
     for spec in images {
         let host = match &spec.source {
@@ -223,7 +228,12 @@ pub fn boot_tier(
             ImageSource::File(_, SlotRef::Slot(n)) => Some(*n),
             ImageSource::File(_, SlotRef::Whole) => None,
         };
-        let dir = ensure_tree(&trees, &tree_key(&host, slot)?, &spec.mount)?;
+        let dir = ensure_tree(
+            &trees,
+            &tree_key(&host, slot)?,
+            &crate::exec_cache::image_key(&host),
+            &spec.mount,
+        )?;
         payloads.push((spec.mount.clone(), dir));
     }
     // The documented deviation (spec 17 §7): host IO under the extracted
@@ -284,9 +294,16 @@ fn tree_key(image: &Path, slot: Option<u32>) -> Result<String, DriverError> {
 }
 
 /// Serve the image tree keyed `key`, extracting from the mounted VFS at
-/// `vfs_root` on a miss (the module doc's protocol). Returns the
+/// `vfs_root` on a miss (the module doc's protocol). `image_key` is the
+/// mount's exec-cache segregation key — the quota's attribution id
+/// (tebako#1102); `key` may carry the slot suffix. Returns the
 /// extracted tree's host root.
-fn ensure_tree(trees: &Path, key: &str, vfs_root: &str) -> Result<PathBuf, DriverError> {
+fn ensure_tree(
+    trees: &Path,
+    key: &str,
+    image_key: &str,
+    vfs_root: &str,
+) -> Result<PathBuf, DriverError> {
     let target = trees.join(key);
     let record = record_path(trees, key);
     with_tree_lock(trees, key, || {
@@ -303,7 +320,7 @@ fn ensure_tree(trees: &Path, key: &str, vfs_root: &str) -> Result<PathBuf, Drive
             // Tampered or corrupt: wipe and re-extract ONCE (spec 17
             // §7); a tree still failing after that is the named 70.
             wipe(&target, &record, key)?;
-            extract_and_install(&target, &record, vfs_root, key)?;
+            extract_and_install(&target, &record, vfs_root, key, image_key)?;
             verify_tree(&target, &record, key).map_err(|_| {
                 sha(format!(
                     "the re-extracted tree '{key}' in the exec cache still fails verification against its recorded digest — the cache is tampered or corrupt; remove '{}' to force a clean re-extraction",
@@ -312,7 +329,7 @@ fn ensure_tree(trees: &Path, key: &str, vfs_root: &str) -> Result<PathBuf, Drive
             })?;
             return Ok(target);
         }
-        extract_and_install(&target, &record, vfs_root, key)?;
+        extract_and_install(&target, &record, vfs_root, key, image_key)?;
         Ok(target)
     })
 }
@@ -325,12 +342,15 @@ fn record_path(trees: &Path, key: &str) -> PathBuf {
 
 /// Extract the mounted tree at `vfs_root` and install it at `target`:
 /// stage → verify the staging against the served digest → record first,
-/// then the tree (the module doc's install order).
+/// then the tree (the module doc's install order). The quota tracker
+/// (tebako#1102) begins AFTER any wipe — the replaced tree's bytes
+/// never double-count against the ceiling.
 fn extract_and_install(
     target: &Path,
     record: &Path,
     vfs_root: &str,
     key: &str,
+    image_key: &str,
 ) -> Result<(), DriverError> {
     let trees = target.parent().ok_or_else(|| {
         io(format!(
@@ -346,7 +366,12 @@ fn extract_and_install(
     })?;
     let staging = trees.join(format!(".{key}.part-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&staging);
-    let served = extract_tree(vfs_root, &staging)?;
+    // tebako#1102: the per-mount materialization ceiling — one tracker
+    // across the whole tree write (the flock above serializes this
+    // tree's boots; a measurement failure refuses named, never an
+    // unmeasured write).
+    let mut tracker = tfs::quota::QuotaTracker::begin(image_key, vfs_root).map_err(io)?;
+    let served = extract_tree(vfs_root, &staging, &mut tracker)?;
     // The staged tree must carry exactly the bytes the image served —
     // the record describes the copy, or the boot never installs it
     // (the parent's R3 refusal, lifted to trees).
@@ -379,11 +404,15 @@ fn extract_and_install(
 
 /// Stream the mounted tree at `vfs_root` into `staging` (created),
 /// returning the tree digest of the bytes the image served. Any
-/// failure abandons the staging dir — the final path never sees a
-/// partial tree.
-fn extract_tree(vfs_root: &str, staging: &Path) -> Result<String, DriverError> {
+/// failure — the quota refusal included — abandons the staging dir: the
+/// final path never sees a partial tree.
+fn extract_tree(
+    vfs_root: &str,
+    staging: &Path,
+    tracker: &mut Option<tfs::quota::QuotaTracker>,
+) -> Result<String, DriverError> {
     let mut hasher = sha2::Sha256::new();
-    let result = walk_vfs(vfs_root, "", staging, &mut hasher);
+    let result = walk_vfs(vfs_root, "", staging, &mut hasher, tracker);
     if let Err(e) = result {
         let _ = force_remove_dir_all(staging);
         return Err(e);
@@ -403,6 +432,7 @@ fn walk_vfs(
     rel: &str,
     host: &Path,
     hasher: &mut sha2::Sha256,
+    tracker: &mut Option<tfs::quota::QuotaTracker>,
 ) -> Result<(), DriverError> {
     std::fs::create_dir_all(host)
         .map_err(|e| io(format!("cannot create '{}': {e}", host.display())))?;
@@ -432,11 +462,11 @@ fn walk_vfs(
         match stat.entry_type {
             tfs::EntryType::Directory => {
                 hasher.update(format!("D {child_rel}/\n"));
-                walk_vfs(&child_vfs, &child_rel, &host.join(&name), hasher)?;
+                walk_vfs(&child_vfs, &child_rel, &host.join(&name), hasher, tracker)?;
             }
             tfs::EntryType::File => {
                 let target = host.join(&name);
-                let served = super::stream_out(&child_vfs, &target)?;
+                let served = super::stream_out(&child_vfs, &target, tracker.as_mut())?;
                 super::set_readonly(&target)?;
                 hasher.update(format!(
                     "F {child_rel} {}\n",
@@ -788,7 +818,7 @@ mod tests {
         mount(&image, "/rt");
         let trees = trees_dir(&g);
         let key = tree_key(&image, None).unwrap();
-        let target = ensure_tree(&trees, &key, "/rt").unwrap();
+        let target = ensure_tree(&trees, &key, &key, "/rt").unwrap();
         // The whole tree landed, read-only (Rule R3), with its record.
         assert_eq!(
             std::fs::read(target.join("lib/lang/core.txt")).unwrap(),
@@ -819,13 +849,13 @@ mod tests {
         mount(&image, "/rt");
         let trees = trees_dir(&g);
         let key = tree_key(&image, None).unwrap();
-        let target = ensure_tree(&trees, &key, "/rt").unwrap();
+        let target = ensure_tree(&trees, &key, &key, "/rt").unwrap();
         // The image is gone from the VFS AND from the host: the second
         // call serves the verified cache tree — zero extraction is
         // proven by construction (either read would fail the test).
         context().write().unwrap().unmount();
         let record_before = std::fs::read(record_path(&trees, &key)).unwrap();
-        let again = ensure_tree(&trees, &key, "/rt").unwrap();
+        let again = ensure_tree(&trees, &key, &key, "/rt").unwrap();
         assert_eq!(again, target);
         assert_eq!(
             std::fs::read(record_path(&trees, &key)).unwrap(),
@@ -840,7 +870,7 @@ mod tests {
         mount(&image, "/rt");
         let trees = trees_dir(&g);
         let key = tree_key(&image, None).unwrap();
-        let target = ensure_tree(&trees, &key, "/rt").unwrap();
+        let target = ensure_tree(&trees, &key, &key, "/rt").unwrap();
         // Tamper (clear the read-only bit first — the cache's own
         // discipline).
         let victim = target.join("lib/lang/core.txt");
@@ -849,7 +879,7 @@ mod tests {
         perms.set_readonly(false);
         std::fs::set_permissions(&victim, perms).unwrap();
         std::fs::write(&victim, b"FORGED\n").unwrap();
-        let healed = ensure_tree(&trees, &key, "/rt").unwrap();
+        let healed = ensure_tree(&trees, &key, &key, "/rt").unwrap();
         assert_eq!(healed, target);
         assert_eq!(
             std::fs::read(target.join("lib/lang/core.txt")).unwrap(),
@@ -857,7 +887,7 @@ mod tests {
         );
         // Foreign extra content is the same corruption verdict.
         std::fs::write(target.join("lib/lang/planted.txt"), b"planted\n").unwrap();
-        ensure_tree(&trees, &key, "/rt").unwrap();
+        ensure_tree(&trees, &key, &key, "/rt").unwrap();
         assert!(!target.join("lib/lang/planted.txt").exists());
     }
 
@@ -868,10 +898,10 @@ mod tests {
         mount(&image, "/rt");
         let trees = trees_dir(&g);
         let key = tree_key(&image, None).unwrap();
-        let target = ensure_tree(&trees, &key, "/rt").unwrap();
+        let target = ensure_tree(&trees, &key, &key, "/rt").unwrap();
         // Content without a record is foreign by construction.
         std::fs::remove_file(record_path(&trees, &key)).unwrap();
-        ensure_tree(&trees, &key, "/rt").unwrap();
+        ensure_tree(&trees, &key, &key, "/rt").unwrap();
         assert!(record_path(&trees, &key).is_file());
         assert_eq!(
             std::fs::read(target.join("lib/lang/core.txt")).unwrap(),
@@ -879,7 +909,7 @@ mod tests {
         );
         // A corrupt record is the same family.
         std::fs::write(record_path(&trees, &key), b"not a digest\n").unwrap();
-        ensure_tree(&trees, &key, "/rt").unwrap();
+        ensure_tree(&trees, &key, &key, "/rt").unwrap();
         assert_eq!(
             std::fs::read(target.join("lib/lang/core.txt")).unwrap(),
             b"core\n"
@@ -903,7 +933,7 @@ mod tests {
         mount(&p, "/rt");
         let trees = trees_dir(&g);
         let key = tree_key(&p, None).unwrap();
-        match ensure_tree(&trees, &key, "/rt") {
+        match ensure_tree(&trees, &key, &key, "/rt") {
             Err(e) => {
                 assert_eq!(e.code, EX_TEBAKO_IO, "{}", e.message);
                 assert!(e.message.contains("link.txt"), "{}", e.message);
@@ -916,6 +946,66 @@ mod tests {
                 // refusal is proven where the entry IS a symlink.
             }
         }
+    }
+
+    #[test]
+    fn a_tree_past_the_mount_quota_fails_named_and_installs_nothing() {
+        // tebako#1102: filling past the armed per-mount ceiling fails
+        // with the named 74, abandons the staging dir (nothing partial
+        // reaches the namespace), and journals event=quota-exceeded
+        // with the mount identity and the byte counts; unarmed, the
+        // same tree then installs and verifies.
+        let g = MountGuard::new("quota");
+        let image = write_image(&g, "env.tfs");
+        mount(&image, "/rt");
+        let trees = trees_dir(&g);
+        let key = tree_key(&image, None).unwrap();
+        // The fixture's walk order (sorted, depth-first): core.txt (5
+        // bytes) fits the 6-byte ceiling, std.txt (4) crosses it.
+        let journal = g.tmp.join("quota-journal.log");
+        let jf = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&journal)
+            .unwrap();
+        tfs::quota::arm_with_journal(
+            tpkg::mount_quota::MountQuota::Limited(6),
+            g.tmp.join("cache"),
+            Some(std::sync::Arc::new(jf)),
+        );
+        let err = ensure_tree(&trees, &key, &key, "/rt").unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_IO, "{}", err.message);
+        assert!(
+            err.message.contains("mount quota exceeded"),
+            "{}",
+            err.message
+        );
+        // The staging dir was abandoned — nothing partial reached the
+        // namespace (the tmp+rename discipline held under the refusal).
+        assert!(!trees.join(&key).exists());
+        assert!(!record_path(&trees, &key).exists());
+        let litter: Vec<_> = std::fs::read_dir(&trees)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".part-"))
+            .collect();
+        assert!(litter.is_empty(), "{litter:?}");
+        // The journal line carries the mount identity and the counts.
+        let text = std::fs::read_to_string(&journal).unwrap();
+        let line = text.lines().next().unwrap();
+        let (_, rest) = line.split_once(' ').unwrap();
+        assert_eq!(
+            rest,
+            format!("event=quota-exceeded key={key} mount=/rt installed=0 delta=4 ceiling=6")
+        );
+        assert_eq!(text.lines().count(), 1, "{text}");
+        tfs::quota::disarm();
+        // Unarmed, the same tree installs and serves verified.
+        let target = ensure_tree(&trees, &key, &key, "/rt").unwrap();
+        assert_eq!(
+            std::fs::read(target.join("lib/lang/core.txt")).unwrap(),
+            b"core\n"
+        );
     }
 
     #[test]
@@ -1006,7 +1096,7 @@ mod tests {
         mount(&payload, "A:/");
         let trees = trees_dir(&g);
         let key = tree_key(&payload, None).unwrap();
-        let target = ensure_tree(&trees, &key, "A:/").unwrap();
+        let target = ensure_tree(&trees, &key, &key, "A:/").unwrap();
         // The payload's own bytes landed — the entrypoint included.
         assert_eq!(
             std::fs::read(target.join("bin/xml2rfc")).unwrap(),
@@ -1024,7 +1114,7 @@ mod tests {
         );
         // And the env tree at the runtime root is the env's own.
         let env_key = tree_key(&env, None).unwrap();
-        let env_target = ensure_tree(&trees, &env_key, "A:/t").unwrap();
+        let env_target = ensure_tree(&trees, &env_key, &env_key, "A:/t").unwrap();
         assert!(env_target.join("lib/tebako/layout.yaml").is_file());
         assert!(!env_target.join("bin").exists());
     }

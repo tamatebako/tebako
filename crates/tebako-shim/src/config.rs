@@ -6,8 +6,11 @@
 //!   `<registry>/<payload>` KEY is the tebako#667 payload-level pin
 //!   covering every entrypoint of the payload), `registries:`
 //!   (spec 04 refs), `runtimes:` (per-engine runtime preferences, written
-//!   by `tebako use --runtime <engine>@<version>`). The dispatcher only
-//!   READS this file; the one write path is `tebako add-registry`
+//!   by `tebako use --runtime <engine>@<version>`), `mounts:` (the
+//!   per-mount exec-cache materialization ceiling — tebako#1102;
+//!   enforced by the runtime driver at boot, validated here at READ).
+//!   The dispatcher only READS this file; the one write path is
+//!   `tebako add-registry`
 //!   ([`add_registry`]) — a structural edit that preserves keys, not
 //!   comments.
 //! - `~/.tebako/shims/.disabled.yaml` — SHIM-managed state (enable /
@@ -82,6 +85,65 @@ pub struct UserConfig {
     /// Set by hand or by `tebako-shim env`; a dispatch never writes it.
     #[serde(default)]
     pub env: BTreeMap<String, BTreeMap<String, String>>,
+    /// The `mounts:` section (store-config schema minor 6, tebako#1102):
+    /// the per-mount exec-cache materialization ceiling, resolved and
+    /// enforced by the runtime driver at boot (`tfs::quota`). The shim
+    /// never applies it — but a malformed value is the named grammar
+    /// error at READ, never a silent skip (the grammar's single owner
+    /// is `tpkg::mount_quota`; the parse here is eager).
+    #[serde(default)]
+    pub mounts: MountsSection,
+}
+
+/// The `mounts:` section of `~/.tebako/config.yaml` — all keys optional.
+#[derive(Debug, Default, Deserialize)]
+pub struct MountsSection {
+    /// `mounts.quota` — the per-mount ceiling: a positive byte count
+    /// (a bare integer is bytes; a string may carry the 1024-based
+    /// K|M|G suffix, e.g. `512M`) or `off` (unbounded). Absent binds
+    /// the documented default (`tpkg::mount_quota::DEFAULT_BYTES`).
+    #[serde(default)]
+    pub quota: Option<MountQuotaValue>,
+}
+
+/// The validated `mounts.quota` value — parsed eagerly through
+/// `tpkg::mount_quota` (the grammar's owner), so a malformed value
+/// fails [`load_config`]'s named "cannot parse … fix or remove it".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MountQuotaValue(tpkg::mount_quota::MountQuota);
+
+impl MountQuotaValue {
+    /// The parsed ceiling.
+    pub fn quota(&self) -> tpkg::mount_quota::MountQuota {
+        self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for MountQuotaValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error as _;
+        match serde_yaml::Value::deserialize(deserializer)? {
+            serde_yaml::Value::Number(n) => {
+                let Some(v) = n.as_u64() else {
+                    return Err(D::Error::custom(format!(
+                        "`mounts.quota` value {n} is not a byte count (want a positive integer, a K|M|G-suffixed string, or `off`)"
+                    )));
+                };
+                tpkg::mount_quota::from_count(v)
+                    .map(MountQuotaValue)
+                    .map_err(D::Error::custom)
+            }
+            serde_yaml::Value::String(s) => tpkg::mount_quota::parse(&s)
+                .map(MountQuotaValue)
+                .map_err(D::Error::custom),
+            other => Err(D::Error::custom(format!(
+                "`mounts.quota` value {other:?} is not a byte count (want a positive integer, a K|M|G-suffixed string, or `off`)"
+            ))),
+        }
+    }
 }
 
 /// One `defaults:` entry (spec 07 §4; `registry:` added by spec 37 §3).
@@ -1886,6 +1948,45 @@ mod tests {
             err.message.contains("TEBAKO_JAIL") && err.message.contains("InvalidInterpEnvKey"),
             "{err:?}"
         );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_mounts_section_parses_every_spelling() {
+        let home = fresh_home("mounts");
+        // Absent: the section defaults (the driver binds the documented
+        // default at boot).
+        std::fs::write(config_path(&home), "defaults:\n  app: \"1.0\"\n").unwrap();
+        assert!(load_config(&home).unwrap().mounts.quota.is_none());
+        std::fs::write(config_path(&home), "mounts:\n  quota: 512M\n").unwrap();
+        assert_eq!(
+            load_config(&home).unwrap().mounts.quota.map(|q| q.quota()),
+            Some(tpkg::mount_quota::MountQuota::Limited(512 << 20))
+        );
+        std::fs::write(config_path(&home), "mounts:\n  quota: 1048576\n").unwrap();
+        assert_eq!(
+            load_config(&home).unwrap().mounts.quota.map(|q| q.quota()),
+            Some(tpkg::mount_quota::MountQuota::Limited(1 << 20))
+        );
+        std::fs::write(config_path(&home), "mounts:\n  quota: off\n").unwrap();
+        assert_eq!(
+            load_config(&home).unwrap().mounts.quota.map(|q| q.quota()),
+            Some(tpkg::mount_quota::MountQuota::Unlimited)
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn load_config_rejects_a_malformed_mount_quota() {
+        let home = fresh_home("mounts-bad");
+        for bad in ["lots", "1T", "-5", "0"] {
+            std::fs::write(config_path(&home), format!("mounts:\n  quota: {bad}\n")).unwrap();
+            let err = load_config(&home).unwrap_err();
+            assert!(
+                err.message.contains("cannot parse") && err.message.contains("fix or remove it"),
+                "{bad}: {err:?}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&home);
     }
 

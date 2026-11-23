@@ -3070,6 +3070,143 @@ fn a_tampered_extracted_resource_fails_verification() {
     let _ = std::fs::remove_dir_all(&resources);
 }
 
+/// tebako#1102: a materialization that crosses the configured per-mount
+/// ceiling fails named (74), the journal records event=quota-exceeded
+/// with the mount identity and the byte counts, and the store stays
+/// consistent — nothing partial installed, and installed content keeps
+/// serving verified (the ceiling never re-gates a cache hit).
+#[test]
+fn a_materialization_past_the_mount_quota_fails_named_and_the_store_stays_consistent() {
+    let g = guard("mat-quota");
+    let small = write_payload_image_with_resource(g.path(), b"SMALL-01\n");
+    write_sidecar(&small, &"a1".repeat(32));
+    let big = g.path().join("big.tfs");
+    let big_pem = vec![b'x'; 128];
+    build_zip(
+        &big,
+        &["bin/", "lib/", "__tpkg__/"],
+        &[
+            ("bin/app", b"#!/usr/bin/env ruby\nputs 'hi'\n".as_slice()),
+            ("lib/app.pem", big_pem.as_slice()),
+            (
+                "__tpkg__/manifest.yaml",
+                app_manifest(&["/lib/app.pem"]).as_bytes(),
+            ),
+        ],
+    );
+    write_sidecar(&big, &"b2".repeat(32));
+    let small_resources = resources_dir(&small, None);
+    let big_resources = resources_dir(&big, None);
+    let _ = std::fs::remove_dir_all(&small_resources);
+    let _ = std::fs::remove_dir_all(&big_resources);
+    // The ceiling resolves from the store config; the journal path is
+    // process-env (tfs-internal), pointed at the scratch dir for this
+    // test only (every boot test serializes on LOCK).
+    let home = g.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("config.yaml"), "mounts:\n  quota: 1M\n").unwrap();
+    let journal = g.path().join("quota-journal.log");
+    std::env::set_var("TEBAKO_JAIL_JOURNAL", &journal);
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_HOME", home.display().to_string());
+
+    // Under the ceiling: the boot installs verified, read-only.
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", small.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    let extracted = small_resources.join("lib/app.pem");
+    assert_eq!(std::fs::read(&extracted).unwrap(), b"SMALL-01\n");
+    assert!(
+        std::fs::metadata(&extracted)
+            .unwrap()
+            .permissions()
+            .readonly(),
+        "the materialized resource is read-only"
+    );
+
+    // Fill to the ceiling: the boot fails named, unmounting everything…
+    std::fs::write(home.join("config.yaml"), "mounts:\n  quota: 64\n").unwrap();
+    reset();
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", big.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 74, "{}", err.message);
+    assert!(
+        err.message.contains("mount quota exceeded"),
+        "{}",
+        err.message
+    );
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refusal unmounts everything"
+    );
+    // …the store holds nothing partial for the refused mount (the
+    // tmp+rename discipline held under the failure)…
+    let mut files = Vec::new();
+    let mut stack = vec![big_resources.clone()];
+    while let Some(dir) = stack.pop() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else {
+                    files.push(path);
+                }
+            }
+        }
+    }
+    assert!(files.is_empty(), "no partial install: {files:?}");
+    // …the journal records the crossing with the mount identity and the
+    // byte counts…
+    let text = std::fs::read_to_string(&journal).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 1, "{text}");
+    let (_, rest) = lines[0].split_once(' ').unwrap();
+    assert_eq!(
+        rest,
+        "event=quota-exceeded key=b2b2b2b2b2b2b2b2 mount=/ installed=0 delta=128 ceiling=64"
+    );
+    // …and the installed content keeps serving verified — the ceiling
+    // never re-gates a cache hit (the fsck-class check: the store the
+    // refusal left still serves on the tier's own reuse path).
+    reset();
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", small.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    assert_eq!(std::fs::read(&extracted).unwrap(), b"SMALL-01\n");
+    std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+    let _ = std::fs::remove_dir_all(&small_resources);
+    let _ = std::fs::remove_dir_all(&big_resources);
+}
+
 /// Spec 23's composition at DEPTH, through the driver's own argv surface:
 /// five `--tebako-image` triples mount once, in order, and the table
 /// dispatches by longest prefix. The tfs-level suite pins the same

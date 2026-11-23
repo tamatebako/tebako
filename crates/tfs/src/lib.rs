@@ -120,6 +120,7 @@ pub mod mount_spec;
 pub mod needs;
 pub mod overlay_spec;
 pub mod policy;
+pub mod quota;
 #[cfg(feature = "enc")]
 pub mod secure_buf;
 pub mod source;

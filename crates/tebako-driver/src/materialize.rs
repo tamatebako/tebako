@@ -223,12 +223,11 @@ fn extract_image(cache: &str, image: &Path, mount: &str) -> Result<Option<CertHi
     if manifest.materialize.is_empty() {
         return Ok(None);
     }
-    let dir = Path::new(cache)
-        .join("resources")
-        .join(crate::exec_cache::image_key(image));
+    let key = crate::exec_cache::image_key(image);
+    let dir = Path::new(cache).join("resources").join(&key);
     let mut cert = None;
     for declared in &manifest.materialize {
-        let target = extract_one(&dir, mount, declared)?;
+        let target = extract_one(&dir, mount, declared, &key)?;
         if cert.is_none() && is_cert(declared) {
             cert = Some(CertHit {
                 host: target,
@@ -828,7 +827,15 @@ fn hash_host_file(path: &Path) -> Result<MerkleDigest, DriverError> {
 
 /// Stream one mounted regular file to a staging file, hashing in
 /// flight; the returned digest commits the bytes the image served.
-fn stream_out(vfs: &str, tmp: &Path) -> Result<MerkleDigest, DriverError> {
+/// `tracker` is the per-mount materialization ceiling's in-flight
+/// accountant (tebako#1102): each chunk is accounted BEFORE it lands,
+/// and the crossing refuses mid-write — the staging file is abandoned,
+/// never renamed into place (the tmp+rename discipline's atomicity).
+fn stream_out(
+    vfs: &str,
+    tmp: &Path,
+    mut tracker: Option<&mut tfs::quota::QuotaTracker>,
+) -> Result<MerkleDigest, DriverError> {
     let mut ctx = context().write().unwrap();
     let fd = ctx.open(vfs, libc::O_RDONLY).map_err(|e| {
         io(format!(
@@ -851,6 +858,11 @@ fn stream_out(vfs: &str, tmp: &Path) -> Result<MerkleDigest, DriverError> {
             if n == 0 {
                 break;
             }
+            if let Some(tracker) = tracker.as_deref_mut() {
+                tracker
+                    .account(n as u64)
+                    .map_err(|exceeded| io(exceeded.to_string()))?;
+            }
             hasher.update(&buf[..n]);
             std::io::Write::write_all(&mut out, &buf[..n])
                 .map_err(|e| io(format!("cannot stage '{}': {e}", tmp.display())))?;
@@ -862,9 +874,16 @@ fn stream_out(vfs: &str, tmp: &Path) -> Result<MerkleDigest, DriverError> {
 }
 
 /// Extract one declared path: whole-file, read-only, verified (the
-/// module doc's protocol). `dir` is the image's resources namespace.
-/// Returns the materialized host path (fresh or verified cache hit).
-fn extract_one(dir: &Path, mount: &str, declared: &str) -> Result<PathBuf, DriverError> {
+/// module doc's protocol). `dir` is the image's resources namespace;
+/// `image_key` is the mount's exec-cache segregation key (the quota
+/// attribution, tebako#1102). Returns the materialized host path (fresh
+/// or verified cache hit).
+fn extract_one(
+    dir: &Path,
+    mount: &str,
+    declared: &str,
+    image_key: &str,
+) -> Result<PathBuf, DriverError> {
     let vfs = join_mount(mount, declared);
     // Whole files only: a declared-but-absent or non-file path is the
     // manifest lying (Rule R3) — a named 65, never a skipped entry.
@@ -909,7 +928,23 @@ fn extract_one(dir: &Path, mount: &str, declared: &str) -> Result<PathBuf, Drive
             .unwrap_or_default(),
         std::process::id()
     ));
-    let served = stream_out(&vfs, &tmp)?;
+    // tebako#1102: the per-mount materialization ceiling — measured once
+    // at write start (the cache-hit path above installs nothing and
+    // never checks), then accounted in flight by stream_out. A
+    // measurement failure refuses named (74), never an unmeasured write.
+    let mut tracker = tfs::quota::QuotaTracker::begin(image_key, mount).map_err(io)?;
+    let served = match stream_out(&vfs, &tmp, tracker.as_mut()) {
+        Ok(served) => served,
+        Err(e) => {
+            // A quota refusal's staging is cleaned (the tmp sibling is
+            // never left for the next run to trip over); other failures
+            // keep the pre-quota litter rule.
+            if tracker.as_ref().is_some_and(|t| t.exceeded()) {
+                let _ = std::fs::remove_file(&tmp);
+            }
+            return Err(e);
+        }
+    };
     // The staged copy must carry exactly the bytes the image served —
     // the record describes the copy, or the boot never installs it.
     if hash_host_file(&tmp)? != served {
