@@ -60,8 +60,8 @@ not `-o myapp` when `-r ./myapp`)
 Install an app someone else published (a `.tfs` payload in a registry):
 
 ```console
-$ tebako add-registry tfs:github:tebako-packages/index
-$ tebako install metanorma@1.16.9
+$ tebako setup                        # seeds the official registry (one time)
+$ tebako install metanorma
 $ metanorma --version            # its runtime + deps resolved automatically
 ```
 
