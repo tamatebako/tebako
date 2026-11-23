@@ -1091,6 +1091,19 @@ Payload authors and runtime factories may rely on, forever:
   per-boot-rehash discipline, and per-entry flock as the per-file
   convention. Its content is an implementation detail; the
   per-image-sha segregation is contractual.
+- **The per-mount materialization ceiling (tebako#1102).** One mount's
+  materialized footprint — the sum of its persistent keyed namespaces
+  `resources/<image-key>/`, `trees/<tree-key>/` (slot spellings and
+  digest records included), and `tebako-dlcache/<image-key>/` — is
+  bounded by the store-config `mounts.quota` ceiling (spec 05 §4 owns
+  the rule: the 1 GiB documented default, the `off` spelling, the
+  driver-armed enforcement, the `event=quota-exceeded` journal line).
+  The per-process `tebako-dl-<hex>` leaf (process-lifetime, reaped at
+  exit) and the run's ephemeral COW scratch are out of the ceiling's
+  scope; `resources/store-trust/` is the operator's own CA material
+  (§4 Rule R4), unattributed. Payload authors size against the default
+  or document the override their mount needs — a mount that cannot
+  materialize within the armed ceiling fails named, never partially.
 - **The discovery surface.** `TEBAKO_MOUNT_<SLUG>` per dependency mount
   (spec 17 §2's env table; v2-1/20) — the portable way to reference a
   dependency payload's files, windows included. **The slug grammar is

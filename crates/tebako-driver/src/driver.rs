@@ -1385,6 +1385,12 @@ pub fn boot_with_mount_modes(
     // The exec cache (spec 22 §6) is named before anything can
     // materialize: both boot paths below export it to the handoff env.
     crate::exec_cache::export(env);
+    // The per-mount materialization ceiling (tebako#1102): resolved from
+    // the store config and armed against the just-named exec-cache root,
+    // before any materialize seam can write (the class-R resources tier,
+    // the windows tree tier, the persistent dlcache tier). A malformed
+    // `mounts.quota` is a named 65 here — the boot never guesses.
+    crate::quota::resolve_and_arm(env)?;
     // Windows: qualify the declared mounts onto the VFS drive (spec 17
     // §1) before any mount/entry use — the mount table, the union-mode
     // rows, and the entry resolution all see the physical points.

@@ -2621,10 +2621,38 @@ impl FsContext {
     /// Non-recursive, count/byte-capped; an over-cap dir or a failing
     /// sibling is a debug note, never the token's failure — the primary
     /// file already landed and the consumer's own error stands.
-    fn materialize_data_siblings(&self, path: &str, owner: i32, root: &std::path::Path) {
+    /// `quota_key` is the persistent tier's (image key, mount point)
+    /// when `root` IS the keyed namespace: the sibling bytes grow that
+    /// namespace, so they write against the armed per-mount ceiling
+    /// (tebako#1102) — one tracker for the pass, the first crossing
+    /// journals `event=quota-exceeded` and stops the pass. The
+    /// per-process leaf and the store destination carry no key: they
+    /// are out of the ceiling's scope and write unchecked.
+    fn materialize_data_siblings(
+        &self,
+        path: &str,
+        owner: i32,
+        root: &std::path::Path,
+        quota_key: Option<(String, String)>,
+    ) {
         const MAX_DATA_SIBLINGS: usize = 512;
         const MAX_DATA_SIBLING_BYTES: u64 = 64 * 1024 * 1024;
         let debug = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
+        let mut tracker = match quota_key {
+            Some((key, point)) => match crate::quota::QuotaTracker::begin(&key, &point) {
+                Ok(tracker) => tracker,
+                // The measurement could not answer — the pass skips
+                // rather than writes unmeasured (the ceiling's
+                // fail-closed rule, best-effort arm).
+                Err(e) => {
+                    if debug {
+                        eprintln!("[tfs] siblings: the quota measure failed ({e}); the pass skips");
+                    }
+                    return;
+                }
+            },
+            None => None,
+        };
         let parent = memfs_dirname(path);
         let Some(mount) = self.mounts.get(&owner) else {
             return;
@@ -2683,7 +2711,7 @@ impl FsContext {
             if !dir_ok {
                 continue;
             }
-            match extract_file(mount.backend.as_ref(), &sib_rel, &host) {
+            match extract_file(mount.backend.as_ref(), &sib_rel, &host, tracker.as_mut()) {
                 Ok(ExtractStep::Written) => {
                     written += 1;
                     bytes += size;
@@ -2697,6 +2725,12 @@ impl FsContext {
                         eprintln!(
                             "[tfs] siblings: {sib_vfs} — extraction failed errno={e} (the consumer's own error stands)"
                         );
+                    }
+                    // The ceiling's answer: the crossing is journaled
+                    // (once, by the tracker) and ends the pass — every
+                    // further sibling could only refuse too.
+                    if tracker.as_ref().is_some_and(|t| t.exceeded()) {
+                        break;
                     }
                 }
             }
@@ -2866,12 +2900,28 @@ impl FsContext {
                 let install = dlcache_install(&host_path, st.perms, |part| {
                     use sha2::Digest as _;
                     let mut hasher = sha2::Sha256::new();
+                    // tebako#1102: the per-mount materialization ceiling
+                    // (tfs::quota) — in-flight accounting of the staged
+                    // bytes against the armed ceiling; unarmed (a bare
+                    // consumer, or the config's `off`) writes unchecked.
+                    // A measurement failure refuses named (EIO), never
+                    // an unmeasured write.
+                    let mut tracker = crate::quota::QuotaTracker::begin(
+                        &dlcache_image_key(mount),
+                        &mount.mount_point,
+                    )
+                    .map_err(|_| libc::EIO)?;
                     let mut out = std::fs::File::create(part).map_err(|_| libc::EIO)?;
                     let mut buf = vec![0u8; 8192];
                     loop {
                         let n = mount.backend.pread(&rel_owned, &mut buf, offset)?;
                         if n == 0 {
                             break;
+                        }
+                        if let Some(tracker) = tracker.as_mut() {
+                            tracker
+                                .account(n as u64)
+                                .map_err(|_| crate::quota::exceeded_errno())?;
                         }
                         use std::io::Write as _;
                         out.write_all(&buf[..n]).map_err(|_| libc::EIO)?;
@@ -3020,7 +3070,13 @@ impl FsContext {
                     );
                 }
             } else {
-                self.materialize_data_siblings(path, owner, &root);
+                // tebako#1102: the persistent tier's sibling bytes grow
+                // the keyed namespace — they write against the armed
+                // ceiling; the per-process leaf and the store
+                // destination are out of the ceiling's scope.
+                let quota_key =
+                    persistent.then(|| (dlcache_image_key(mount), mount.mount_point.clone()));
+                self.materialize_data_siblings(path, owner, &root, quota_key);
             }
             return Ok(host_path);
         };
@@ -3664,7 +3720,9 @@ fn extract_dir_recursive(
         let child_host = host_dir.join(&entry.name);
         if entry.is_dir {
             extract_dir_recursive(backend, &child_rel, &child_host, skipped_symlinks)?;
-        } else if extract_file(backend, &child_rel, &child_host)? == ExtractStep::SkippedSymlink {
+        } else if extract_file(backend, &child_rel, &child_host, None)?
+            == ExtractStep::SkippedSymlink
+        {
             *skipped_symlinks += 1;
         }
     }
@@ -3709,6 +3767,7 @@ fn extract_file(
     backend: &dyn Backend,
     rel: &str,
     host: &std::path::Path,
+    mut quota: Option<&mut crate::quota::QuotaTracker>,
 ) -> Result<ExtractStep, i32> {
     use std::io::Write as _;
     #[cfg_attr(windows, allow(unused_variables))]
@@ -3723,6 +3782,16 @@ fn extract_file(
         let n = backend.pread(rel, &mut buf, offset)?;
         if n == 0 {
             break;
+        }
+        // tebako#1102: account the chunk BEFORE it lands; on the
+        // crossing the partial copy is removed — the mirrored tree
+        // grows only whole siblings, never past the armed ceiling.
+        if let Some(tracker) = quota.as_deref_mut() {
+            if tracker.account(n as u64).is_err() {
+                drop(out);
+                let _ = std::fs::remove_file(host);
+                return Err(crate::quota::exceeded_errno());
+            }
         }
         out.write_all(&buf[..n]).map_err(|_| libc::EIO)?;
         offset += n as u64;
@@ -5758,6 +5827,147 @@ mod tests {
         assert_eq!(std::fs::read(&again).unwrap(), b"recorded\n");
         let _ = std::fs::remove_dir_all(&dir);
         sweep_dlcache(&again);
+    }
+
+    #[test]
+    fn the_persistent_tier_refuses_past_the_mount_quota_and_stays_consistent() {
+        // tebako#1102: filling to the ceiling fails with the named
+        // errno (EDQUOT where the platform names it), installs nothing
+        // partial (no content, no record, no staging litter), journals
+        // event=quota-exceeded with the mount identity and the byte
+        // counts, and leaves the store consistent — the under-ceiling
+        // control then installs and re-verifies on the tier's own
+        // reuse path.
+        let dir = std::env::temp_dir().join(format!("tfs-dlquota-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // The armed state is process-global — serialize against the
+        // quota module's own tests driving it.
+        let _armed = crate::quota::ARMED_TEST_LOCK.lock().unwrap();
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("data")).unwrap();
+        std::fs::write(img.join("data/big.dat"), vec![b'x'; 2048]).unwrap();
+        std::fs::write(img.join("data/small.dat"), vec![b'y'; 512]).unwrap();
+        let point = format!("/t1102q{}", std::process::id());
+        let image_key =
+            dlcache_sha256_hex(format!("/dev/null/{point}.tfs").as_bytes())[..16].to_string();
+        let namespace = std::env::temp_dir().join(DLCACHE_MARKER).join(&image_key);
+        let journal = dir.join("journal.log");
+        let jf = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&journal)
+            .unwrap();
+        crate::quota::arm_with_journal(
+            tpkg::mount_quota::MountQuota::Limited(1024),
+            std::env::temp_dir(),
+            Some(std::sync::Arc::new(jf)),
+        );
+
+        // The fill: the first chunk already crosses.
+        let refused = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/big.dat"))
+                .map(|c| c.to_string_lossy().into_owned())
+        };
+        let err = refused.expect_err("the fill must cross the ceiling");
+        assert_eq!(err, crate::quota::exceeded_errno(), "the named errno");
+        // …and nothing partial reached the namespace (the tmp+rename
+        // discipline held under the failure): no content, no digest
+        // record, no staging litter. The empty parent-directory chain
+        // the create opened is the residue ANY mid-write failure leaves
+        // (the pre-quota EIO shape) — zero bytes, unattributed.
+        let mut files = Vec::new();
+        let mut stack = vec![namespace.clone()];
+        while let Some(dir) = stack.pop() {
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        stack.push(path);
+                    } else {
+                        files.push(path);
+                    }
+                }
+            }
+        }
+        assert!(files.is_empty(), "no partial install: {files:?}");
+
+        // The control installs under the ceiling — its own bytes fit.
+        // The data-sibling companion rule (spec 22 Rule E4) then tries
+        // the sibling big.dat against the same ceiling and refuses it:
+        // the sibling write is quota-tracked too, its partial copy is
+        // removed, and the journal records the crossing — while the
+        // control's own answer stands (a sibling never fails the token).
+        let small = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/small.dat"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert!(std::path::Path::new(&small).is_file());
+        // …and the ceiling now counts the installed bytes: the same
+        // fill refuses again, measured against the grown footprint.
+        let refused_again = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/big.dat"))
+                .map(|c| c.to_string_lossy().into_owned())
+        };
+        assert_eq!(
+            refused_again.expect_err("the grown footprint still refuses"),
+            crate::quota::exceeded_errno()
+        );
+        crate::quota::disarm();
+
+        // The journal carries one line per refusal, mount identity and
+        // byte counts included. Lines two and three measure the
+        // control's installed bytes (512 content + 65 record): line two
+        // is the control's SIBLING pass refusing big.dat, line three
+        // the explicit re-fill — and line three's installed=577 proves
+        // the sibling refusal removed its partial copy.
+        let text = std::fs::read_to_string(&journal).unwrap();
+        let bodies: Vec<String> = text
+            .lines()
+            .map(|l| l.split_once(' ').unwrap().1.to_string())
+            .collect();
+        assert_eq!(
+            bodies,
+            vec![
+                format!(
+                    "event=quota-exceeded key={image_key} mount={point} installed=0 delta=2048 ceiling=1024"
+                ),
+                format!(
+                    "event=quota-exceeded key={image_key} mount={point} installed=577 delta=2048 ceiling=1024"
+                ),
+                format!(
+                    "event=quota-exceeded key={image_key} mount={point} installed=577 delta=2048 ceiling=1024"
+                ),
+            ],
+            "{text}"
+        );
+
+        // fsck-class: the control's install still verifies on the
+        // tier's own reuse path (content rehashes to its record), and
+        // with the ceiling off the fill installs cleanly.
+        assert!(dlcache_serve_verified(std::path::Path::new(&small)));
+        let big = {
+            let mut ctx = FsContext::new();
+            ctx.dl_persist = true;
+            mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+            ctx.dlmap2file(&format!("{point}/data/big.dat"))
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert!(dlcache_serve_verified(std::path::Path::new(&big)));
+        let _ = std::fs::remove_dir_all(&dir);
+        sweep_dlcache(&big);
     }
 
     #[test]

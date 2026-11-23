@@ -169,6 +169,14 @@ trust/<FINGERPRINT>.pub                       # add-registry TOFU pins, read-onl
 trust/ca/<name>.pem                           # the operator CA store, read-only (spec 22 §4 Rule R4)
 ```
 
+**Bounding the exec cache (tebako#1102).** The tree above is the
+install-side store; the run-side exec cache (`TEBAKO_EXEC_CACHE`, spec
+22 §6) is bounded per mount: `mounts.quota` in `config.yaml`
+(store-config MINOR 6) caps what ONE mount's keyed materialization
+namespaces may grow to — a positive byte count (integer bytes or a
+1024-based K/M/G string), default **1 GiB**, `off` unbounded. §4's
+per-mount materialization ceiling owns the enforcement semantics.
+
 The interpreter/image file names in a cache entry keep the index entry's
 `filename` / `image.filename` spellings verbatim (§2 — on windows the exe
 is suffix-less; the loader execs by full path and CreateProcess needs no
@@ -306,6 +314,27 @@ audit journal degrades to best-effort silence.
   - `TPKG_FLAG_NO_INSTALL` packages never seed (spec 02 §5).
   The shared-runtime preset needs no exception: its artifacts arrive
   through the ordinary resolve-download-verify-install path.
+- **Per-mount materialization ceiling (locked 2026-11-23, tebako#1102):**
+  what ONE mount's keyed exec-cache namespaces (spec 22 §6 —
+  `resources/<image-key>`, `trees/<image-key>[…]`,
+  `tebako-dlcache/<image-key>`) may materialize to is bounded by a
+  configured ceiling: `mounts.quota` in `~/.tebako/config.yaml`
+  (store-config MINOR 6 — a positive byte count as an integer, a
+  1024-based K/M/G-suffixed string, or `off`; absent binds the
+  documented default, **1 GiB**). The runtime driver resolves and arms
+  the ceiling at boot against the boot's exec-cache root; every
+  materialize seam accounts its staged bytes BEFORE they land, and on
+  the crossing the write is refused — the named `EX_TEBAKO_IO` (74) at
+  the driver seams, `EDQUOT` (unix; `ENOSPC` on windows) at the tfs
+  dlcache seam — the staging artifact is abandoned (tmp + rename holds:
+  nothing partial reaches the namespace), and the journal gains
+  `event=quota-exceeded` with the mount identity and the byte counts.
+  A malformed `mounts.quota` value is the named grammar error
+  (`EX_TEBAKO_MANIFEST`, 65) at shim config load AND at driver boot —
+  the ceiling is never guessed. Content already installed is never
+  re-gated: a verified cache hit serves at any ceiling. A bare tfs
+  consumer (tfs-cli, a preload-shim child with no driver boot) is never
+  armed and never enforced — the ceiling is a driver-armed policy.
 
 ## 4a. Run-time payload resolution + lazy seeding (tebako#460, locked 2026-08-25 — the fat/lean unification)
 

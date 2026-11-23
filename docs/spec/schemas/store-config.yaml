@@ -16,7 +16,7 @@
 
 schema: store-config
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 5 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them; 3: env per-tool interpreter-option maps — tebako#559; 4: defaults values may carry slices: + top-level auto_slices: — spec 07 §4 extension slices; 5: defaults keys gain the <registry>/<payload> payload-pin form covering every entrypoint of the payload — tebako#667)
+schema_minor: 6 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them; 3: env per-tool interpreter-option maps — tebako#559; 4: defaults values may carry slices: + top-level auto_slices: — spec 07 §4 extension slices; 5: defaults keys gain the <registry>/<payload> payload-pin form covering every entrypoint of the payload — tebako#667; 6: mounts.quota — the per-mount exec-cache materialization ceiling, enforced by the runtime driver at boot — tebako#1102)
 status: normative
 owner: crates/tebako-shim (the config model of record) in tamatebako/tebako
 edge: C13 (everything local → store)
@@ -125,6 +125,25 @@ grammar:
       never a silent skip). Written by hand or by `tebako-shim env
       <tool> KEY=VALUE` / `--unset`; a dispatch NEVER writes it
       implicitly.
+  mounts:
+    type: map
+    required: false
+    notes: >-
+      MINOR 6 (tebako#1102): mount-behavior policy. `quota` = the
+      per-mount exec-cache materialization ceiling — a positive byte
+      count as an integer (bytes), or a string with a 1024-based
+      K/M/G suffix (optional trailing B, case-insensitive: "512M",
+      "1G", "256K" all parse), or the literal `off` (no ceiling).
+      Absent binds the documented default, 1 GiB
+      (tpkg::mount_quota::DEFAULT_BYTES is the ONE owner of the
+      number). The ceiling bounds what ONE mount's keyed exec-cache
+      namespaces may materialize to (resources/<image-key>,
+      trees/<image-key>[…], tebako-dlcache/<image-key> — spec 22 §6's
+      layout); the runtime driver resolves and arms it at boot,
+      exhaustion is the named EX_TEBAKO_IO refusal with an
+      event=quota-exceeded journal line, and content already
+      installed is never re-gated (a verified cache hit serves at
+      any ceiling). Written by hand only.
 
 store_layout_marker:
   path: ~/.tebako/layout-version
@@ -152,5 +171,10 @@ refusals:
       the NAMED grammar / ambiguity error at dispatch
       (EX_TEBAKO_MANIFEST, naming the keys), never a silent no-match or
       a silent winner
+  - case: a mounts.quota value outside the grammar (MINOR 6, tebako#1102) — zero or negative, an unknown suffix, a non-integer count, a non-scalar
+    behavior: >-
+      the NAMED grammar error at READ (EX_TEBAKO_MANIFEST, naming
+      config.yaml and the value) — at shim config load AND at driver
+      boot; the ceiling is never guessed
 
 deprecated: [] # no field is in a deprecation window

@@ -157,6 +157,7 @@ mod manifest;
 pub mod merkle;
 pub mod merkle_host;
 mod model;
+pub mod mount_quota;
 mod package;
 pub mod payload_store;
 mod pe;
