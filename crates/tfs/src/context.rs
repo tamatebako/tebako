@@ -2442,8 +2442,19 @@ impl FsContext {
     /// the dlmap layout's own discipline) once per process and answers
     /// that. A path no mount covers is ENOENT — the spawn keeps its
     /// spelling and the child answers honestly, exec_materialize's own
-    /// rule. Not traced on its own surface: the extraction's reads ride
-    /// the read/exec trace as their own events.
+    /// rule. A path a mount COVERS but nothing HOLDS is host territory
+    /// by the mount law (spec 08): coverage is the namespace claim and
+    /// `path_is_held`'s deepest-existing-ancestor walk finds no in-image
+    /// claim — with the setup image mounted at `/` this is EVERY host
+    /// dir, and rubygems' ext builder spawns extconf with `chdir:`
+    /// naming exactly one (tebako-runtime-ruby#387's acceptance — the
+    /// spec22-gems sassc leg). The arm gates the fall-through through
+    /// host_check (open()/stat()'s own spec-08 discipline — never a
+    /// silent passthrough) and answers the caller's spelling unchanged;
+    /// ENOENT is never the answer there, the fail-closed spawn consumer
+    /// (tamatebako/ruby#157) would raise it. Not traced on its own
+    /// surface: the extraction's reads ride the read/exec trace as
+    /// their own events.
     pub fn exec_materialize_dir(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
         let normalized = Self::normalize(path);
         let probe = self.find_mount(&normalized).map(|mount| {
@@ -2455,6 +2466,19 @@ impl FsContext {
         let Some((handle, rel)) = probe else {
             return Err(libc::ENOENT);
         };
+        // Covered but not held: host territory by the mount law (spec 08
+        // — with a `/`-shaped mount this is every host dir). Gate the
+        // fall-through exactly like open()/stat() do, then answer the
+        // caller's own spelling: the child chdirs the genuine host dir.
+        // Never the in-image stat's ENOENT below — the fail-closed spawn
+        // consumer (tamatebako/ruby#157) raises it. Before the home
+        // branch: a home mount's tree never held the path either, so no
+        // twin exists to answer (exec_materialize's own covered-not-held
+        // rule — never a twin that does not exist).
+        if !self.path_is_held(&normalized) {
+            self.host_check(path, HostAccess::Ro)?;
+            return std::ffi::CString::new(path).map_err(|_| libc::EIO);
+        }
         // The home-layout answer is exec_materialize's own: the tree
         // root plus rel (the mount ROOT answers the tree root).
         if self.mount_is_home(handle) {
@@ -4838,6 +4862,163 @@ mod tests {
             .unwrap_err();
         assert_eq!(e, libc::ENOTDIR, "{e}");
         let e = ctx.exec_materialize_dir("/elsewhere").unwrap_err();
+        assert_eq!(e, libc::ENOENT, "{e}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// tebako-runtime-ruby#387's acceptance (the spec22-gems sassc
+    /// leg): a `/`-shaped mount covers the whole POSIX namespace, so a
+    /// chdir target in a host temp dir — rubygems' ext builder spawns
+    /// extconf with `chdir:` naming the host's gem ext dir — is COVERED
+    /// but held by nothing: host territory by the mount law. The verb
+    /// answers the caller's spelling unchanged (gated through
+    /// host_check), never the in-image stat's ENOENT — the fail-closed
+    /// consumer (tamatebako/ruby#157) raises any NULL. A held in-image
+    /// dir still extracts; a held file stays ENOTDIR (the caller's
+    /// dirname fallback).
+    #[cfg(unix)]
+    #[test]
+    fn exec_materialize_dir_passes_a_covered_but_unheld_host_dir_through() {
+        use std::io::Write as _;
+        let dir = std::env::temp_dir().join(format!("tfs-dir-pass-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("img.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        // The zip backend stats a directory only through its explicit
+        // `path/` entry (production images are limnifs, which records
+        // them) — declare it.
+        writer.add_directory("setup/", options).unwrap();
+        writer.start_file("setup/gem.rb", options).unwrap();
+        writer.write_all(b"# gem\n").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(path.to_str().unwrap(), "/").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        // The probe: the host ext dir sits under the `/` mount's
+        // coverage and nothing in the image holds it — the caller's
+        // spelling comes back unchanged and the child chdirs the
+        // genuine host dir (the spawn succeeds).
+        let host_ext = dir.join("gems/sassc-2.4.0/ext");
+        std::fs::create_dir_all(&host_ext).unwrap();
+        let spelled = host_ext.to_str().unwrap();
+        let answer = ctx.exec_materialize_dir(spelled).unwrap();
+        assert_eq!(answer.to_string_lossy(), spelled);
+
+        // A held in-image dir still answers from the image: the
+        // extracted subtree lands its files.
+        let extracted = ctx.exec_materialize_dir("/setup").unwrap();
+        let host = std::path::PathBuf::from(extracted.to_string_lossy().into_owned());
+        assert!(host.join("gem.rb").is_file(), "the twin lands: {host:?}");
+
+        // A held file is ENOTDIR, the caller's dirname fallback.
+        let e = ctx.exec_materialize_dir("/setup/gem.rb").unwrap_err();
+        assert_eq!(e, libc::ENOTDIR, "{e}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The passthrough is never silent: covered-but-unheld is host
+    /// territory only past the host-policy gate — under a deny jail the
+    /// same chdir target is refused by name (EPERM), exactly like
+    /// open()/stat()'s fall-through.
+    #[test]
+    fn exec_materialize_dir_gates_the_host_passthrough_through_the_policy() {
+        use std::io::Write as _;
+        let dir = std::env::temp_dir().join(format!("tfs-dir-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("img.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.add_directory("setup/", options).unwrap();
+        writer.start_file("setup/gem.rb", options).unwrap();
+        writer.write_all(b"# gem\n").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(path.to_str().unwrap(), "/").unwrap();
+        ctx.mount_checked(mount).unwrap();
+        ctx.set_host_policy(
+            crate::policy::HostPolicy::bind(
+                crate::policy::PolicyDefault::Deny,
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
+            None,
+        );
+
+        // The covered-but-unheld target a permissive policy passes
+        // through is REFUSED under the jail — no silent host visibility.
+        let e = ctx
+            .exec_materialize_dir("/host/gems/sassc-2.4.0/ext")
+            .unwrap_err();
+        assert_eq!(e, libc::EPERM, "{e}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The pre-passthrough rule stands where no mount claims the path:
+    /// an uncovered spelling keeps the honest ENOENT (the spawn keeps
+    /// its spelling, the child answers honestly). Windows is unaffected
+    /// by construction: the drive-qualified host spellings sit outside
+    /// the mount table's coverage — under the shipped `A:/` table AND
+    /// under a POSIX `/` mount alike — so the consumer's own gate
+    /// (path_is_embedded) never routes them to the verb, and the verb's
+    /// uncovered answer is the pre-#387 ENOENT.
+    #[test]
+    fn exec_materialize_dir_keeps_the_uncovered_spellings_honest_enoent() {
+        use std::io::Write as _;
+        let dir = std::env::temp_dir().join(format!("tfs-dir-uncov-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("img.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.add_directory("setup/", options).unwrap();
+        writer.start_file("setup/gem.rb", options).unwrap();
+        writer.write_all(b"# gem\n").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+
+        // A POSIX mount at a non-root point: the host spelling outside
+        // it is uncovered — ENOENT, exactly the pre-#387 answer.
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(path.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+        let e = ctx.exec_materialize_dir("/elsewhere").unwrap_err();
+        assert_eq!(e, libc::ENOENT, "{e}");
+
+        // The shipped windows table (`A:/…` points): the drive-qualified
+        // HOST spelling is never covered — the consumer gate never
+        // routes it to the verb, and the verb itself answers ENOENT.
+        let mut ctx_dl = FsContext::new();
+        let mount_dl = crate::mount::build_from_file(path.to_str().unwrap(), "A:/t").unwrap();
+        ctx_dl.mount_checked(mount_dl).unwrap();
+        assert!(!ctx_dl.path_is_embedded("C:/Users/gems/ext"));
+        let e = ctx_dl
+            .exec_materialize_dir("C:/Users/gems/ext")
+            .unwrap_err();
+        assert_eq!(e, libc::ENOENT, "{e}");
+
+        // Even a `/`-shaped mount never claims a drive-qualified
+        // spelling — the POSIX-root coverage is a no-op on windows host
+        // paths by construction.
+        let mut ctx_root = FsContext::new();
+        let mount_root = crate::mount::build_from_file(path.to_str().unwrap(), "/").unwrap();
+        ctx_root.mount_checked(mount_root).unwrap();
+        assert!(!ctx_root.path_is_embedded("C:/Users/gems/ext"));
+        let e = ctx_root
+            .exec_materialize_dir("C:/Users/gems/ext")
+            .unwrap_err();
         assert_eq!(e, libc::ENOENT, "{e}");
 
         let _ = std::fs::remove_dir_all(&dir);
