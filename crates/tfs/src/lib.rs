@@ -115,6 +115,7 @@ pub mod exec_closure;
 pub mod journal;
 #[cfg(feature = "backend-remote")]
 pub mod lazy_entry;
+mod macho_dyld;
 pub mod mount;
 pub mod mount_spec;
 pub mod needs;

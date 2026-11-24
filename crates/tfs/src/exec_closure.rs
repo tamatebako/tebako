@@ -130,13 +130,16 @@ pub fn sniffs_load_module(head: &[u8]) -> bool {
 // Mach-O
 // ---------------------------------------------------------------------
 
-const MH_MAGIC_64: u32 = 0xFEED_FACF;
-const MH_MAGIC: u32 = 0xFEED_FACE;
-const FAT_MAGIC: u32 = 0xCAFE_BABE;
-const FAT_MAGIC_64: u32 = 0xCAFE_BABF;
+// The Mach-O magics and CPU ids are load-format ABI (`<mach-o/loader.h>`)
+// — pub(crate) so `macho_dyld`'s dyld probe picks the host slice with the
+// same grammar constants this parser uses (the two can never drift).
+pub(crate) const MH_MAGIC_64: u32 = 0xFEED_FACF;
+pub(crate) const MH_MAGIC: u32 = 0xFEED_FACE;
+pub(crate) const FAT_MAGIC: u32 = 0xCAFE_BABE;
+pub(crate) const FAT_MAGIC_64: u32 = 0xCAFE_BABF;
 
-const CPU_TYPE_ARM64: u32 = 0x0100_000C;
-const CPU_TYPE_X86_64: u32 = 0x0100_0007;
+pub(crate) const CPU_TYPE_ARM64: u32 = 0x0100_000C;
+pub(crate) const CPU_TYPE_X86_64: u32 = 0x0100_0007;
 
 const LC_LOAD_DYLIB: u32 = 0x0C;
 const LC_ID_DYLIB: u32 = 0x0D;

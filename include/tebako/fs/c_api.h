@@ -825,6 +825,34 @@ char* tebako_fs_exec_materialize(const char* path);
 char* tebako_fs_exec_materialize_dir(const char* path);
 
 /**
+ * @brief Would the platform's preload-injection variable reach a spawn of
+ * this host file? (packed-metanorma#305; spec 22 §3.1's macOS row.)
+ *
+ * On darwin 23 dyld silently drops DYLD_INSERT_LIBRARIES when the target
+ * image is hardened-runtime signed without the
+ * com.apple.security.cs.allow-dyld-environment-variables entitlement
+ * (spec 22 §2's "macOS 14 insertion drop") — such a child runs without
+ * the preload shim, and every in-image argv operand is dead in it. The
+ * interpreter's spawn hook asks per spawn: 0 means bridge the embedded
+ * operand tokens to their materialized host twins instead of relying on
+ * the injection. Darwin 24+ honors the insertion; ELF has no
+ * entitlement plane (LD_PRELOAD always rides), so this answers 1
+ * everywhere except the one named macOS shape.
+ *
+ * The probe never fails closed: NULL/non-UTF-8 (EINVAL), an unreadable
+ * file, a non-Mach-O file, or an unparseable signature all answer 1
+ * (attempt the injection — the spawn's own error surface stands).
+ *
+ * @param path Host path of the spawn target (a materialized host twin,
+ *        never a VFS spelling — the probe reads the real file)
+ * @return 1 when the injection is honored, 0 when it is stripped
+ *         (errno via tebako_get_errno(): EINVAL on a NULL or non-UTF-8
+ *         argument, 0 otherwise — the attempt answers carry no failure
+ *         detail; the spawn's own error surface stands)
+ */
+int tebako_fs_exec_dyld_insertion_honored(const char* path);
+
+/**
  * @brief Serialize the mount table in the TEBAKO_TFS_MOUNTS grammar
  * ("image:mount,image:mount,…").
  *
