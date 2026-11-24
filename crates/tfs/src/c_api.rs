@@ -1334,6 +1334,52 @@ pub unsafe extern "C" fn tebako_fs_exec_materialize_dir(path: *const c_char) -> 
     out
 }
 
+/// `tebako_fs_exec_dyld_insertion_honored`: would the platform's
+/// preload-injection environment variable reach a spawn of this host
+/// file? (packed-metanorma#305; spec 22 §3.1's macOS row.)
+///
+/// On darwin 23 dyld silently drops `DYLD_INSERT_LIBRARIES` when the
+/// target image is hardened-runtime signed without the
+/// `com.apple.security.cs.allow-dyld-environment-variables` entitlement
+/// (spec 22 §2's "macOS 14 insertion drop") — such a child runs without
+/// the preload shim and every in-image argv operand is dead in it. The
+/// interpreter's spawn hook asks per spawn: `0` means bridge the
+/// embedded operand tokens to their materialized host twins instead of
+/// relying on the injection. Darwin 24+ honors the insertion; ELF has no
+/// entitlement plane at all (`LD_PRELOAD` always rides), so this answers
+/// `1` everywhere except the one named macOS shape.
+///
+/// The probe never fails closed: NULL/non-UTF-8 (EINVAL), an unreadable
+/// file, a non-Mach-O file, or an unparseable signature all answer `1`
+/// (the pre-probe behavior — attempt the injection; the spawn's own
+/// error surface stands if the file never execs).
+///
+/// @param path Host path of the spawn target (a materialized twin, never
+///        a VFS spelling — the probe reads the real file).
+/// @return 1 = the injection is honored, 0 = it is stripped (errno via
+///         tebako_get_errno(): EINVAL on a NULL or non-UTF-8 argument, 0
+///         otherwise — the attempt answers carry no failure detail; the
+///         spawn's own error surface stands).
+///
+/// # Safety
+/// `path` must be a valid C string.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_exec_dyld_insertion_honored(
+    path: *const c_char,
+) -> libc::c_int {
+    let _io = engine_io_guard();
+    let path = match unsafe { path_arg(path) } {
+        Ok(p) => p,
+        Err(e) => {
+            fail(e);
+            return 1;
+        }
+    };
+    let honored = crate::macho_dyld::dyld_insertion_honored(std::path::Path::new(path));
+    set_errno(0);
+    libc::c_int::from(honored)
+}
+
 /// `tebako_fs_mount_of`: the mount point of the longest-prefix mount
 /// covering `path` — spec 22 phase 1's mount-decision helper, so an
 /// interposed dlopen error line can name the mount (the later exec

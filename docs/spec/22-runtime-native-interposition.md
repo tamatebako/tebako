@@ -508,7 +508,7 @@ pinned empirically in §3.1.
 | Platform | The runtime process | Array form, absolute VFS path | Shell string (`system("java -jar /vfs/x.jar")`) |
 |---|---|---|---|
 | **ELF (gnu/musl)** | exe-defined Class-L symbols; the runtime itself is never preload-injected | the spawn hook materializes and injects the child (`LD_PRELOAD` + `TEBAKO_TFS_MOUNTS` in its env) | **works unmodified** — the handoff env's `LD_PRELOAD` injects every child at its exec, `/bin/sh` included; the shell's PATH search and `execvp` loop route through the interposed surface |
-| **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **named boundary, enforced by the spawn hook** — an inherited `DYLD_INSERT_LIBRARIES` is FATAL to Apple platform binaries on darwin24 (dyld TERMINATES `/bin/sh` and `/usr/bin/cc` under a foreign insertion — factory run 31699651270; darwin23 stripped the variable instead), so the interpreter's spawn hook DROPS the variable per spawn whose target is restricted (any shell form; anything resolving into Apple's system binary dirs). The JVM behind a shell string then answers its own `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one. darwin24 x86_64 CI runners HONOR the insertion into sh's exec child (runs 31685052887/31692800485) — a relaxed-SIP artifact the scrub deliberately erases: every host behaves like the strictest one |
+| **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored — **one entitlement-plane exception (packed-metanorma#305): a hardened-runtime child WITHOUT `com.apple.security.cs.allow-dyld-environment-variables` drops the variable on darwin 23 (§2's insertion drop applies to children exactly as to the interpreter), so for that one shape the hook bridges the embedded operand tokens parent-side instead of relying on the injection — the per-spawn probe below** | **named boundary, enforced by the spawn hook** — an inherited `DYLD_INSERT_LIBRARIES` is FATAL to Apple platform binaries on darwin24 (dyld TERMINATES `/bin/sh` and `/usr/bin/cc` under a foreign insertion — factory run 31699651270; darwin23 stripped the variable instead), so the interpreter's spawn hook DROPS the variable per spawn whose target is restricted (any shell form; anything resolving into Apple's system binary dirs). The JVM behind a shell string then answers its own `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one. darwin24 x86_64 CI runners HONOR the insertion into sh's exec child (runs 31685052887/31692800485) — a relaxed-SIP artifact the scrub deliberately erases: every host behaves like the strictest one |
 | **windows** | — | the §3.2 host tier materializes the target through the exec cache (whole-tree for a home-layout mount, the file itself otherwise) and the host copy execs — no injection exists on the platform, so the child runs plain-host against its declared tree; **argument tokens naming embedded paths are bridged to their host twins by the interpreter's spawn hook (§3.2's argv bridge)** | **works through the §3.2 host tier's `PATH` lead** — `CreateProcess`'s own PATH search finds the materialized host copy (a home-layout tool's tree came with it by declaration); nothing re-arms, there is no injection var; argument tokens naming embedded paths ride the same argv bridge |
 
 Where the launcher tier (§3.2) is armed, the shell-string form works
@@ -689,6 +689,38 @@ while any `_msys` patch family touches `process.c` (today:
 a windows runtime WITHOUT the bridge and no build step fails; the
 packed-mn acceptance is the tripwire and a selection lint gate is
 tracked debt.
+
+**The injection-stripped POSIX bridge (packed-metanorma#305; the probe
+is the tfs C ABI's `tebako_fs_exec_dyld_insertion_honored`, the bridge
+is the windows argv bridge's own primitive fired per spawn).** The
+macOS array-form cell's "the materialized child is a non-Apple binary,
+so `DYLD_INSERT_LIBRARIES` is honored" has one entitlement-plane
+exception: a child hardened-runtime signed WITHOUT
+`com.apple.security.cs.allow-dyld-environment-variables` drops the
+variable on darwin 23 — §2's insertion drop governs children exactly as
+it governs the interpreter (dart-aot's `dartaotruntime` is the
+tripwire: hardened, entitled only for unsigned-executable-memory and
+library-validation, so the injected shim never enters it, and the
+in-image snapshot operand answers `File::Open` ENOENT — which the
+AOT loader reports as "not an AOT snapshot", the packed-metanorma#305
+EOFError chain). The spawn hook therefore probes the materialized
+target per spawn: `0` (stripped) routes the spawn through the SAME
+token bridge the windows host tier uses — each embedded operand is
+materialized through `tebako_fs_exec_materialize` (Rule E4's sibling
+sweep included, so a snapshot's sibling resources ride along) and the
+injection pair is omitted for that child; `1` keeps the injection path
+byte-identical. The probe is a pure byte parse of the host twin's code
+signature (fat slice per host CPU → `LC_CODE_SIGNATURE` → superblob →
+slot-0 code directory's `CS_RUNTIME` flag → the DER (slot 7,
+authoritative when present) and XML (slot 5, legacy fallback)
+entitlement blobs), never fails closed (unreadable,
+non-Mach-O, unparseable, or a NULL argument all answer `1` — attempt
+the injection; the spawn's own error surface stands), and on ELF
+answers `1` always (`LD_PRELOAD` has no entitlement plane). A `#!`
+script is not Mach-O, so the probe answers `1` for the script itself —
+the hook applies it to the shebang's INTERPRETER when one is resolvable
+(the restricted-check's own resolution order), and darwin 24+ answers
+`1` for every non-Apple target regardless.
 
 ### 3.3 The class-E proof fixture
 

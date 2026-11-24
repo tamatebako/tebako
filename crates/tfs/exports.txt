@@ -9,6 +9,7 @@ tebako_fs_closedir
 tebako_fs_dir_is_embedded
 tebako_fs_dlalias2file
 tebako_fs_dlmap2file
+tebako_fs_exec_dyld_insertion_honored
 tebako_fs_exec_materialize
 tebako_fs_exec_materialize_dir
 tebako_fs_extract_all
