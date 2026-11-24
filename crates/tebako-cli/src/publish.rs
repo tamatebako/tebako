@@ -1269,10 +1269,17 @@ pub fn publish_full_with_oci_sink(
             }
         }
     };
+    // spec 38 §3's serial rule (tebako#1114): a serial-carrying release
+    // tag (<version>-<serial>) bases every OCI payload tag on the TAG,
+    // so a repair publish never collides with the published
+    // bare-version tag; any other tag shape keeps the bare version. One
+    // base for the push and the row mirror alike.
+    let oci_tag_base = tebako_resolve::payload_tag_base(&version, &tag);
     if let Some((oci_host, oci_repo_name)) = &oci_repo {
         for (i, input) in opts.payloads.iter().enumerate() {
             let (artifact_name, _, bytes) = &artifacts[i];
-            let tag = tebako_resolve::payload_tag(&version, input.triplet.map(|p| p.as_triplet()));
+            let tag =
+                tebako_resolve::payload_tag(oci_tag_base, input.triplet.map(|p| p.as_triplet()));
             let annotations = payload_annotations(
                 artifact_name,
                 &opts.name,
@@ -1408,12 +1415,13 @@ pub fn publish_full_with_oci_sink(
                     sha256: artifacts[i].1.clone(),
                     // spec 38 §7's per-triplet mirror: the dual publish
                     // records the row's OCI locator (the tag derives
-                    // exactly as the push derived it); the sha256 pin
+                    // exactly as the push derived it — the serial base
+                    // included, §3's serial rule); the sha256 pin
                     // binds both channels.
                     oci: oci_repo.as_ref().map(|(oci_host, oci_repo_name)| {
                         format!(
                             "tfs+oci://{oci_host}/{oci_repo_name}:{}",
-                            tebako_resolve::payload_tag(&version, Some(triplet.as_triplet()))
+                            tebako_resolve::payload_tag(oci_tag_base, Some(triplet.as_triplet()))
                         )
                     }),
                     blksum: Some(pin),

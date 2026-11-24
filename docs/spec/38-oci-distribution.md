@@ -3,7 +3,9 @@
 Status: **SHIPPED** — the grammar, the artifact model, and the credential
 amendments are implemented (`crates/tebako-oci/` +
 `crates/tebako-resolve/src/oci.rs`); the resolver speaks `tfs+oci://`
-(`crates/tebako-resolve/src/reference.rs`).
+(`crates/tebako-resolve/src/reference.rs`). Amended 2026-11-24
+(tebako#1114): the §3 payload tag derivation carries the release tag's
+serial on serial rebuilds.
 
 Normative specification of the **OCI distribution channel**: payload
 images, runtime bundles, and registry indexes published to any OCI
@@ -143,7 +145,22 @@ section):**
 
 - payload: `<version>` for `universal`, `<version>-<triplet>` per
   triplet (tebako version/triplet characters are a subset of the OCI
-  tag grammar by construction).
+  tag grammar by construction). **The serial rule (amendment,
+  tebako#1114):** when the publish rides a serial-carrying release tag
+  — `<version>-<serial>`, the serial one or more ASCII digits, the
+  registry's serial-rebuild spelling (the row version stays bare, the
+  git tag carries the serial, the row's `release.ref` moves to the
+  newest serial) — the payload tag derives from the TAG:
+  `<version>-<serial>` for universal, `<version>-<serial>-<triplet>`
+  per triplet. A repair publish then never collides with the
+  already-published bare-version tag, and the row's `oci:` mirror
+  carries the serial-carrying tag (§7), so `channel: oci` consumers
+  resolve the newest serial exactly as the moved `release.ref` resolves
+  it on the git-host lane. Any other release-tag shape keeps the bare
+  `<version>` base — byte-for-byte the pre-amendment rule; a tag that
+  merely ends in digits but is not exactly `<version>-<serial>` (a
+  `v`-prefixed or otherwise foreign tag) is NOT a serial and changes
+  nothing.
 - runtime bundle: the bundle STEM verbatim
   (`tebako-runtime-<ver>-<lang>-<lv>-<triplet>` — spec 36 §2's spelling;
   the factory declares it, consumers flow it). The OCI lane opened with
@@ -369,10 +386,30 @@ tests; ORAS in a CI workflow is permitted sugar, never the contract).
       oci: tfs+oci://ghcr.io/tebako-packages/metanorma:1.2.3-linux-gnu-x86_64
   ```
 
+  The mirror locator derives from the same string the push derived
+  (§3): a serial rebuild's publish (release tag `1.2.3-2` — §3's
+  serial rule) mirrors the serial-carrying tag —
+
+  ```yaml
+  platforms:
+    x86_64-linux-gnu:
+      artifact: metanorma-1.2.3-linux-gnu-x86_64.tfs
+      sha256: "…"
+      oci: tfs+oci://ghcr.io/tebako-packages/metanorma:1.2.3-2-linux-gnu-x86_64
+  ```
+
+  — while the row version stays `1.2.3` and the row's `release.ref`
+  moves to `…:1.2.3-2`: the registry's serial-rebuild law, on both
+  lanes at once.
+
 - **Write-once (the release-immutability rule transferred, spec 13
   §2a):** publish refuses to point an existing tag at a DIFFERENT
   digest — `OciTagConflict` (69) naming the tag and both digests.
-  Re-publish of identical bytes is the idempotent skip, as today. Tags
+  Re-publish of identical bytes is the idempotent skip, as today. The
+  rule is PER TAG: a serial rebuild publishes under the serial-carrying
+  tag (§3's serial rule), so the repair never moves the bare-version
+  tag it supersedes — write-once and serial repairs compose with no
+  escape hatch. Tags
   are mutable in the OCI model; tebako treats them as immutable by
   policy, and withdrawal stays `status: withdrawn` (spec 04 §2), never
   a tag delete.
@@ -479,7 +516,9 @@ never pays for it.
 - **Unit** (tebako-resolve): the §2 grammar — round-trip
   parse/display for every form (tag, digest, both pins, port,
   loopback, IPv6), every malformed class by name; tag and signature-tag
-  derivation; the §3 annotation map; challenge parsing; docker-config
+  derivation (the §3 serial rule included: a serial-carrying release
+  tag derives the serial-carrying payload tag, any other shape the bare
+  version base); the §3 annotation map; challenge parsing; docker-config
   parsing and the helper refusal; the credential chain order
   (tier-1 confinement into OCI hosts, realm-host lookup).
 - **Property** (proptest, the crate's existing harness): arbitrary
@@ -499,7 +538,9 @@ never pays for it.
   exactly the §8 loopback carve-out. Legs: publish payload + signature
   → `add-registry` over OCI → install → run the entrypoint;
   digest-pinned pull; offline refusal; `TEBAKO_REQUIRE_SIGNED=1`
-  pass/fail; tag write-once conflict on re-publish; (with spec 36) the
+  pass/fail; tag write-once conflict on re-publish; a serial-tag
+  publish derives the serial-carrying tag and never conflicts with the
+  bare-version tag; (with spec 36) the
   runtime-bundle leg — factory-shaped bundle push → dispatch-time
   runtime fetch → run. A nightly live-GHCR smoke leg mirrors the
   existing live-GitHub legs.
@@ -534,7 +575,9 @@ never pays for it.
    enters through the registry-derived toolchain channel.
 8. **Tag mutability.** Recommended and locked: write-once by publish
    policy (`OciTagConflict`); the digest form is the pin; withdrawal
-   stays `status: withdrawn`, never a tag delete.
+   stays `status: withdrawn`, never a tag delete. Serial repairs ride
+   the serial-carrying tag (§3's serial rule, tebako#1114) — a repair
+   is a new name, never a moved one.
 9. **Image indexes for multi-triplet artifacts.** Recommended and
    locked: rejected (§3) — platform selection is the registry's
    declarative law; OCI's os/arch vocabulary cannot speak tebako

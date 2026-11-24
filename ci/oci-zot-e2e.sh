@@ -10,6 +10,10 @@
 #   2. an identical re-publish is the idempotent skip (a note, exit 0).
 #   3. a MUTATED re-publish under the same tag is the write-once
 #      refusal: exit 69, OciTagConflict.
+#  3b. the serial repair (§3's serial rule, tebako#1114): the same
+#      mutated bytes publish under <version>-<serial>-<triplet> — no
+#      conflict, the bare-version tag never moved, the row's mirror and
+#      release.ref carry the serial.
 #   4. a signed publish lands the `sha256-<hex>.asc` sibling artifact,
 #      its annotations keying the signature to the signed blob.
 #   5. `tebako install` through a `channel: oci` book entry fetches the
@@ -214,6 +218,37 @@ set -e
 grep -q "OciTagConflict" "$WORK/publish3.out" \
   || { cat "$WORK/publish3.out"; fail "leg 3: no OciTagConflict in the error"; }
 echo "   ok — exit 69, OciTagConflict"
+
+# --- leg 3b: the serial repair rides the serial-carrying tag ----------
+# (spec 38 §3's serial rule, tebako#1114): the SAME mutated bytes leg 3
+# refused under the bare tag publish cleanly under <version>-<serial>-
+# <triplet> — a repair never collides, and the bare-version tag stays
+# pinned at the leg-1 bytes (write-once per tag, never a move).
+echo "== leg 3b: serial re-publish (the repair lane)"
+"$TEBAKO_BIN" publish --name zotool --version 1.0 \
+  --release tfs:github:acme/zotool:1.0-2 \
+  --payload "$TRIPLET=$WORK/zotool-mutated.tfs" \
+  --upload-mirror "$WORK/mirror" \
+  --oci "tfs+oci://$REGISTRY/e2e/zotool" \
+  --registry-out "$WORK/registry-serial.yaml" \
+  --skip-verify > "$WORK/publish3b.out" 2>&1 \
+  || { cat "$WORK/publish3b.out"; fail "leg 3b: the serial publish failed"; }
+SERIAL_MANIFEST=$(curl -sf "http://$REGISTRY/v2/e2e/zotool/manifests/1.0-2-$TRIPLET") \
+  || fail "leg 3b: zot serves no 1.0-2-$TRIPLET manifest"
+echo "$SERIAL_MANIFEST" | grep -q "\"sha256:$(sha256_of "$WORK/zotool-mutated.tfs")\"" \
+  || fail "leg 3b: the serial tag's layer is not the repair bytes"
+# the bare-version tag never moved: still the leg-1 bytes
+curl -sf "http://$REGISTRY/v2/e2e/zotool/manifests/1.0-$TRIPLET" | grep -q "\"sha256:$LAYER_SHA\"" \
+  || fail "leg 3b: the bare-version tag moved off the leg-1 bytes"
+# the row mirrors the serial-carrying locator; the release.ref moved to
+# the serial tag; the row version stays bare
+grep -q "oci: tfs+oci://$REGISTRY/e2e/zotool:1.0-2-$TRIPLET" "$WORK/registry-serial.yaml" \
+  || { cat "$WORK/registry-serial.yaml"; fail "leg 3b: the row mirror carries no serial tag"; }
+grep -q "ref: tfs:github:acme/zotool:1.0-2" "$WORK/registry-serial.yaml" \
+  || fail "leg 3b: the release.ref did not move to the serial tag"
+grep -Eq '^[[:space:]]*- version: 1\.0[[:space:]]*$' "$WORK/registry-serial.yaml" \
+  || { cat "$WORK/registry-serial.yaml"; fail "leg 3b: the row version did not stay bare"; }
+echo "   ok — the serial tag placed, the bare tag unmoved, the row follows"
 
 # --- leg 4: the signed publish lands the sibling asc artifact ----------
 echo "== leg 4: signed publish (signature sibling tag)"

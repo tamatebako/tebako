@@ -349,6 +349,27 @@ impl Manifest {
 // single code owner)
 // ---------------------------------------------------------------------
 
+/// The payload tag's version base (spec 38 §3's serial rule,
+/// tebako#1114): a serial-carrying release tag — exactly
+/// `<version>-<serial>`, the serial one or more ASCII digits, the
+/// registry's serial-rebuild spelling (the row version stays bare, the
+/// git tag carries the serial) — bases the payload tag on the TAG, so a
+/// repair publish never collides with the already-published
+/// bare-version tag. Any other release-tag shape keeps the bare
+/// version — byte-for-byte the pre-amendment rule; a tag merely ending
+/// in digits (`nightly-2026`, `v1.2.3-2`) is not a serial.
+pub fn payload_tag_base<'a>(version: &'a str, release_tag: &'a str) -> &'a str {
+    match release_tag
+        .strip_prefix(version)
+        .and_then(|rest| rest.strip_prefix('-'))
+    {
+        Some(serial) if !serial.is_empty() && serial.bytes().all(|b| b.is_ascii_digit()) => {
+            release_tag
+        }
+        _ => version,
+    }
+}
+
 /// The payload tag: `<version>` for universal, `<version>-<triplet>`
 /// per triplet.
 pub fn payload_tag(version: &str, triplet: Option<&str>) -> String {
@@ -611,6 +632,46 @@ mod tests {
             blksum_tag(&"f".repeat(64)),
             format!("sha256-{}.blksum.json", "f".repeat(64))
         );
+    }
+
+    /// spec 38 §3's serial rule (tebako#1114): the payload tag's
+    /// version base is the release TAG exactly when it is
+    /// `<version>-<serial>` (digits); every other shape keeps the bare
+    /// version — the pre-amendment rule byte-for-byte.
+    #[test]
+    fn payload_tag_base_is_the_serial_rule() {
+        // the serial-carrying tag bases the derivation on the tag
+        assert_eq!(
+            payload_tag_base("1.18.7.pre.20261121", "1.18.7.pre.20261121-2"),
+            "1.18.7.pre.20261121-2"
+        );
+        assert_eq!(payload_tag_base("1.2.3", "1.2.3-2"), "1.2.3-2");
+        // leading zeros are digits — the feedstock's spelling rides verbatim
+        assert_eq!(payload_tag_base("1.2.3", "1.2.3-02"), "1.2.3-02");
+        // the composed derivation (universal + per-triplet)
+        let base = payload_tag_base("1.18.7.pre.20261121", "1.18.7.pre.20261121-2");
+        assert_eq!(payload_tag(base, None), "1.18.7.pre.20261121-2");
+        assert_eq!(
+            payload_tag(base, Some("aarch64-macos")),
+            "1.18.7.pre.20261121-2-aarch64-macos"
+        );
+
+        // every other shape keeps the bare version
+        for (version, tag) in [
+            ("1.2.3", "1.2.3"),        // the bare tag: today's default
+            ("1.2.3", "1.2.3-"),       // an empty serial is not a serial
+            ("1.2.3", "1.2.3-2a"),     // a non-numeric serial
+            ("1.2.3", "1.2.3-2-3"),    // a serial carries no further suffix
+            ("1.2.3", "v1.2.3-2"),     // a v-prefix is not the serial shape
+            ("1.2.3", "nightly-2026"), // a foreign tag, digits or not
+            ("1.2", "1.2.3-2"),        // not this version's tag at all
+        ] {
+            assert_eq!(
+                payload_tag_base(version, tag),
+                version,
+                "{version} / {tag}: the bare base"
+            );
+        }
     }
 
     #[test]
