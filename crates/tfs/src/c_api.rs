@@ -1295,7 +1295,11 @@ pub unsafe extern "C" fn tebako_fs_exec_materialize(path: *const c_char) -> *mut
 /// and answers it. A path no mount covers is NULL with ENOENT (the
 /// spawn's chdir passes through and the child answers honestly — the
 /// exec-materialize rule); a covered-but-file path is NULL with ENOTDIR
-/// (the caller falls back to the file's materialized dirname).
+/// (the caller falls back to the file's materialized dirname). A
+/// covered-but-unheld path is host territory by the mount law (spec 08 —
+/// with the setup image at `/`, every host dir): the caller's own
+/// spelling after the host-policy gate, never NULL — the ruby#157
+/// consumer fail-closes on NULL.
 ///
 /// # Safety
 /// `path` must be a valid C string.
