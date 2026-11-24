@@ -49,8 +49,18 @@ triplets:
     runner: macos-15-intel
     v1_asset: null # packed-mn dropped darwin-x86_64 after ~v1.13 — the v1 arm is the gap
     v2_payload: true
-    runtime_gaps:
-      python: the published macos-x86_64 runtime computes pure-Python at ~half the on-system speed (tebako-runtime-python#79, covenant run 42525964214) — the pair is gapped until the factory ships a corrected leg
+    # python is NOT a runtime gap here. tebako#1095's closing verdict
+    # exonerated the pair on the current macos-15-intel fleet: the tebako
+    # runtime reads fib(35) best-of-3 at 4.270 s against the same-leg
+    # on-system arm (setup-python 3.14.7, the covenant's own provisioner)
+    # at 4.258 s — ratio ≈1.00 (runs 45324096740/45330380303/45338794570;
+    # Apple's /usr/bin/python3 reads 7.9–12.1 s, raw C fib(40) 0.399–0.512 s,
+    # so the slow class is interpreter dispatch on Coffee Lake, every
+    # x86_64 CPython alike). The old ~0.5x reading was the runner class
+    # moving under the covenant, never the pair. The steady.cpu
+    # expectation re-baselines to the ≈1.0 ratio-class (covenant.yaml's
+    # note); the factory's compute-floor tripwire became a same-leg ratio
+    # gate in the same pass (tebako-runtime-python#108).
   windows-ucrt64:
     runner: windows-latest
     v1_asset: metanorma-windows-x86_64.exe
