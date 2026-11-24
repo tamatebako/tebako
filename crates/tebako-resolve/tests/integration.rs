@@ -180,12 +180,13 @@ static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[test]
 fn default_branch_form_resolves_through_git_when_anonymous() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN"]
+    let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"]
         .iter()
         .map(|k| (*k, std::env::var(k).ok()))
         .collect();
     std::env::remove_var("TEBAKO_GITHUB_TOKEN");
     std::env::remove_var("GITHUB_TOKEN");
+    std::env::remove_var("GH_TOKEN");
 
     let t = MockTransport::with(&[]);
     let fetcher = Fetcher::with_transport(t).with_git_reader(|url, git_ref, path| {
@@ -431,4 +432,101 @@ fn unparsable_registry_is_a_named_error() {
     assert!(matches!(err, ResolveError::Registry(_)));
     assert!(err.to_string().contains("schema_version 99"));
     let _ = fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------
+// tebako#1113 — the anonymous tier's rate-limit degrade, install-shaped:
+// the release listing 403s but the tag-name download URL serves, and
+// the artifact still verifies byte-exact against the pin.
+// ---------------------------------------------------------------------
+
+/// The mock releases endpoint: api.github.com answers the anonymous
+/// throttle (403 with the rate-limit shape) on EVERY read; the
+/// browser/CDN download URL serves the bytes.
+struct ThrottledListingTransport {
+    asset_url: String,
+    asset_bytes: Vec<u8>,
+    api_calls: std::sync::Mutex<usize>,
+}
+impl Transport for ThrottledListingTransport {
+    fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+        if url.starts_with("https://api.github.com/") {
+            *self.api_calls.lock().unwrap() += 1;
+            return Err(FetchError::Throttled {
+                url: url.to_string(),
+                status: 403,
+                retry_after: None,
+            });
+        }
+        if url == self.asset_url {
+            return Ok(self.asset_bytes.clone());
+        }
+        Err(FetchError::IndexUnavailable(url.to_string()))
+    }
+}
+
+#[test]
+fn a_throttled_listing_installs_through_the_tag_url_degrade() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    // The ambient token must not steer the read off the anonymous tier.
+    let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"]
+        .iter()
+        .map(|k| (*k, std::env::var(k).ok()))
+        .collect();
+    std::env::remove_var("TEBAKO_GITHUB_TOKEN");
+    std::env::remove_var("GITHUB_TOKEN");
+    std::env::remove_var("GH_TOKEN");
+
+    let dir = scratch("ratelimit");
+    let payload = b"degraded-path-payload";
+    let pin = sha256_hex(payload);
+    let t = ThrottledListingTransport {
+        asset_url: "https://github.com/o/tool/releases/download/1.0/tool-1.0.tfs".to_string(),
+        asset_bytes: payload.to_vec(),
+        api_calls: std::sync::Mutex::new(0),
+    };
+    let fetcher = Fetcher::with_transport(t);
+    let reference =
+        Reference::parse(&format!("tfs:github:o/tool:1.0?sha256={pin}#tool-1.0.tfs")).unwrap();
+
+    // The fetch boundary: the listing throttled once, the bytes came
+    // from the tag-name URL — no listing was ever served.
+    let got = fetcher.fetch(&reference).unwrap();
+    assert_eq!(got.bytes, payload);
+    assert_eq!(got.sha256, pin);
+    assert_eq!(
+        got.origin,
+        "https://github.com/o/tool/releases/download/1.0/tool-1.0.tfs"
+    );
+
+    // The install shape: through the cache's trust discipline —
+    // anchor-verified, atomically placed.
+    let cache = PayloadCache::with_root(dir.join("cache"));
+    let (entry, status) = cache
+        .install("tool", "1.0", Some(&pin), || fetcher.fetch(&reference))
+        .unwrap();
+    assert_eq!(status, InstallStatus::Installed);
+    assert_eq!(fs::read(&entry.path).unwrap(), payload);
+
+    // The trust discipline does not bend on the degraded path: a wrong
+    // anchor is the named sha error and caches nothing.
+    let cache2 = PayloadCache::with_root(dir.join("cache2"));
+    let err = cache2
+        .install("tool", "1.0", Some(&"0".repeat(64)), || {
+            fetcher.fetch(&reference)
+        })
+        .unwrap_err();
+    assert!(matches!(err, ResolveError::Sha256Mismatch { .. }));
+    assert!(!dir.join("cache2/payloads/tool/1.0.tfs").exists());
+
+    // One API read per fetch — the degrade never burns the anonymous
+    // budget retrying what cannot clear inside the install.
+    assert_eq!(*fetcher.transport().api_calls.lock().unwrap(), 3);
+    let _ = fs::remove_dir_all(&dir);
+    for (k, v) in saved {
+        match v {
+            Some(v) => std::env::set_var(k, v),
+            None => std::env::remove_var(k),
+        }
+    }
 }

@@ -200,7 +200,8 @@ credentials:
   basic). Authored config never spells header mechanics.
 - Every fetch journals host + credential CLASS (`token:env:NIST_GH_TOKEN`,
   `anonymous`) with the value REDACTED — the mixed-federation audit
-  trail. The ambient `TEBAKO_GITHUB_TOKEN`/`GITHUB_TOKEN` amendment is
+  trail. The ambient `TEBAKO_GITHUB_TOKEN`/`GITHUB_TOKEN`/`GH_TOKEN`
+  amendment (the first non-empty wins, in that order) is
   unchanged and ranks as tier 2 for github.com when no tier-1 entry
   matched.
 

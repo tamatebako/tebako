@@ -1935,12 +1935,14 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner());
         // The ambient github token must not leak into the decision (CI
         // runners export GITHUB_TOKEN) — pin it absent, then present.
-        let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN"]
-            .iter()
-            .map(|k| (*k, std::env::var(k).ok()))
-            .collect();
+        let saved: Vec<(&str, Option<String>)> =
+            ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"]
+                .iter()
+                .map(|k| (*k, std::env::var(k).ok()))
+                .collect();
         std::env::remove_var("TEBAKO_GITHUB_TOKEN");
         std::env::remove_var("GITHUB_TOKEN");
+        std::env::remove_var("GH_TOKEN");
 
         let f = Fetcher::new();
         assert_eq!(

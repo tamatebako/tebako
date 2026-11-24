@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/05-resolution-and-cache.md @ 142f1d78f09370032df0b983ef4f70446277a361
+// source: docs/spec/05-resolution-and-cache.md @ b191be15b0874b8e40d9376c91db88cdf33a3e6f
 
 Normative specification of runtime/payload resolution and the shared
 machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL
@@ -158,7 +158,7 @@ consumer already speaks).
 An edge no channel answers is a NAMED error enumerating the channels
 tried, *each with its own failure reason* (tebako#281): a throttled
 read names the throttle and its retry budget plus the ambient-token
-remedy (`+++TEBAKO_GITHUB_TOKEN+++` / `+++GITHUB_TOKEN+++` raise the
+remedy (`+++TEBAKO_GITHUB_TOKEN+++` / `+++GITHUB_TOKEN+++` / `+++GH_TOKEN+++` raise the
 api.github.com budget), a not-found says so, a clean-but-empty read
 says so — never a silent query of a base that hosts no such engine
 (a wrong-line 404 is diagnosed as what it is), and never a bare

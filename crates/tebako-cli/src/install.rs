@@ -105,6 +105,10 @@ pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
         // the message names the registry (or host), the env var looked
         // for, and the `credentials:` steer.
         ResolveError::CredentialRequired { .. } => EX_TEBAKO_UNAVAILABLE,
+        // tebako#1113's anonymous rate limit — the unavailable class
+        // (69): the message names the host, the exhausted backoff
+        // budget, and the authenticated-tier remediation.
+        ResolveError::AnonymousRateLimited { .. } => EX_TEBAKO_UNAVAILABLE,
         ResolveError::Registry(_) | ResolveError::InvalidCacheKey { .. } => EX_TEBAKO_MANIFEST,
         ResolveError::InvalidFetchJobs { .. } => EX_TEBAKO_MANIFEST,
         // The commit closures' cancel marker — the caller's error slot

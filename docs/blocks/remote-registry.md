@@ -201,7 +201,8 @@ At fetch time the lookup is two-tier, then ambient, then anonymous:
    host chain, never to the tier-1 token.
 2. A tier-2 entry matching the URL's exact host (no suffix games — a
    subdomain of a named host is a different host).
-3. The ambient `TEBAKO_GITHUB_TOKEN` / `GITHUB_TOKEN`, on the GitHub
+3. The ambient `TEBAKO_GITHUB_TOKEN` / `GITHUB_TOKEN` / `GH_TOKEN` (the
+   first non-empty wins, in that order), on the GitHub
    API host only (the pre-spec-37 behavior).
 4. Anonymous.
 

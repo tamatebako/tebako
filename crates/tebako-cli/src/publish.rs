@@ -414,7 +414,9 @@ impl ReleaseStore for MirrorStore {
 }
 
 /// The GitHub releases store (live API via tebako-http; token from
-/// `TEBAKO_GITHUB_TOKEN` or `GITHUB_TOKEN`). Never constructed in tests.
+/// `TEBAKO_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN` — the ambient
+/// order [`tebako_http::github_token_from_env`] honors). Never
+/// constructed in tests.
 struct GithubStore {
     token: String,
 }
@@ -1205,7 +1207,7 @@ pub fn publish_full_with_oci_sink(
             let token = tebako_http::github_token_from_env().ok_or_else(|| {
                 err(
                     EX_USAGE,
-                    "uploading to the live GitHub API needs TEBAKO_GITHUB_TOKEN (or GITHUB_TOKEN); --upload-mirror <dir> rehearses file://-only",
+                    "uploading to the live GitHub API needs TEBAKO_GITHUB_TOKEN (or GITHUB_TOKEN / GH_TOKEN); --upload-mirror <dir> rehearses file://-only",
                 )
             })?;
             Box::new(GithubStore { token })

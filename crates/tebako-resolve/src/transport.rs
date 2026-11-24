@@ -134,6 +134,28 @@ pub trait Transport {
         )))
     }
 
+    /// [`Transport::get`] as ONE classified attempt — no retry, no
+    /// throttle schedule: the caller owns both (the release-enumeration
+    /// degrade law, tebako#1113: the anonymous tier's 403/429 degrades to
+    /// the tag-name download URL or rides the caller's own jittered
+    /// backoff). The default rides `get` (URL-keyed test mocks answer
+    /// with their canned bodies); the production transport overrides
+    /// with a single tebako-http GET.
+    fn get_once(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+        self.get(url)
+    }
+
+    /// [`Transport::get_with_header`] as ONE classified attempt (see
+    /// [`Transport::get_once`]). The default rides `get_with_header`;
+    /// the production transport overrides with a single tebako-http GET.
+    fn get_once_with_header(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+    ) -> Result<Vec<u8>, FetchError> {
+        self.get_with_header(url, header)
+    }
+
     /// A raw, UNCLASSIFIED GET for the OCI distribution adapter (spec
     /// 38 §5): any status returns with headers and body — the 401's
     /// `WWW-Authenticate` challenge and the error body's `code` are the
@@ -379,6 +401,20 @@ impl Transport for HttpTransport {
         // ambient bearer; `None` rides anonymous (the caller's
         // decision already accounted for the ambient tier).
         self.get_with_retry(url, || tebako_http::get_with_explicit(url, None, header))
+    }
+
+    fn get_once(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+        // ONE attempt: the caller owns the retry/throttle schedule
+        // (tebako#1113's enumeration degrade law).
+        tebako_http::get(url)
+    }
+
+    fn get_once_with_header(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+    ) -> Result<Vec<u8>, FetchError> {
+        tebako_http::get_with_explicit(url, None, header)
     }
 
     fn get_asset_with_header(

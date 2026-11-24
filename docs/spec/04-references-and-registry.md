@@ -260,8 +260,9 @@ payloads:
 - Atomic fetch: download to tmp, verify digest, rename; concurrent
   fetchers coordinate via the cache lock (spec 05); a partial fetch is
   invisible. `TEBAKO_OFFLINE=1`: cache hit or hard error.
-- **Private GitHub repos (2026-09-15 amendment):** with
-  `TEBAKO_GITHUB_TOKEN`/`GITHUB_TOKEN` ambient, the GitHub adapter
+- **Private GitHub repos (2026-09-15 amendment):** with an ambient token
+  (`TEBAKO_GITHUB_TOKEN`, then `GITHUB_TOKEN`, then `GH_TOKEN` — the
+  first non-empty wins), the GitHub adapter
   resolves assets to their API URL
   (`/repos/{o}/{r}/releases/assets/{id}`) instead of
   `browser_download_url` — private repos answer 404 on the anonymous
@@ -274,6 +275,27 @@ payloads:
   the CDN path spends no API rate budget and carries no credential. A
   private asset with NO token is the ordinary named `NotFound`, never a
   fallback chain.
+- **The anonymous release-enumeration degrade (2026-11-24,
+  tebako#1113):** on the anonymous tier the GitHub releases/tags listing
+  read owns its own throttle schedule — never the transport's hidden
+  retry. On a 403/429 carrying the rate-limit shape the read degrades in
+  order: (a) when the asset name is already known — every `#artifact`
+  reference, the registry row's per-triplet pick, and the
+  release-artifact registry form — the read answers the tag-name
+  download URL (`releases/download/<tag>/<asset>`, the browser/CDN
+  shape), which needs NO listing; the artifact still verifies byte-exact
+  against the row's sha256 pin (enumeration is discovery only — the
+  trust discipline is unchanged); (b) otherwise the read backs off with
+  jitter and retries a bounded budget — the server's own schedule hint
+  (Retry-After / X-RateLimit-Reset) honored exactly, else tebako-http's
+  60 s × 2ⁿ under a deterministic ±25 % jitter keyed on the URL and the
+  round — then fails with the named `AnonymousRateLimited` error (exit
+  69) naming the host, the exhausted budget, and the remediation (an
+  ambient token raises the api.github.com budget from 60 to 5000
+  requests/h per the env order above). Never a bare 403. The
+  credentialed tier is untouched: its listing rides the transport's own
+  retry discipline, and the tag-URL degrade never substitutes for the
+  API asset URL a private repo needs.
 - Digest mismatch → the named sha error (exit 70); nothing enters the
   cache.
 

@@ -542,17 +542,19 @@ pub fn file_path_from_url(remainder: &str) -> &str {
     remainder
 }
 
-/// The ambient GitHub token: `TEBAKO_GITHUB_TOKEN` wins, `GITHUB_TOKEN`
-/// is the CI spelling (Actions sets it ambiently). Resolution reads
-/// against the GitHub API authenticate when one is present — the
-/// anonymous budget is 60 requests/h per egress IP and CI NAT pools
-/// share theirs across tenants, so an unauthenticated install in CI is
-/// a coin flip against a bucket other tenants already drained.
+/// The ambient GitHub token: `TEBAKO_GITHUB_TOKEN` wins, then
+/// `GITHUB_TOKEN` (the CI spelling — Actions sets it ambiently), then
+/// `GH_TOKEN` (the GitHub CLI's spelling). Resolution reads against the
+/// GitHub API authenticate when one is present — the anonymous budget is
+/// 60 requests/h per egress IP and CI NAT pools share theirs across
+/// tenants, so an unauthenticated install in CI is a coin flip against a
+/// bucket other tenants already drained.
 pub fn github_token_from_env() -> Option<String> {
     std::env::var("TEBAKO_GITHUB_TOKEN")
         .ok()
         .filter(|t| !t.is_empty())
         .or_else(|| std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty()))
+        .or_else(|| std::env::var("GH_TOKEN").ok().filter(|t| !t.is_empty()))
 }
 
 /// The one host the ambient token may ride. Browser-URL asset downloads
@@ -1352,8 +1354,8 @@ fn apply_options<'a>(
 
 /// GET `url` and return the response body. `https://` (redirects
 /// followed, HTTPS-only) or `file://`. A `TEBAKO_GITHUB_TOKEN` /
-/// `GITHUB_TOKEN` env authenticates `api.github.com` reads (see
-/// [`github_token_from_env`]); every other host rides anonymous.
+/// `GITHUB_TOKEN` / `GH_TOKEN` env authenticates `api.github.com` reads
+/// (see [`github_token_from_env`]); every other host rides anonymous.
 pub fn get(url: &str) -> Result<Vec<u8>, FetchError> {
     get_with_options(url, &GetOptions::default())
 }
@@ -1964,13 +1966,18 @@ mod tests {
 
     #[test]
     fn ambient_token_env_precedence_and_request_shaping() {
-        let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN"]
-            .iter()
-            .map(|k| (*k, std::env::var(k).ok()))
-            .collect();
+        let saved: Vec<(&str, Option<String>)> =
+            ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"]
+                .iter()
+                .map(|k| (*k, std::env::var(k).ok()))
+                .collect();
         std::env::remove_var("TEBAKO_GITHUB_TOKEN");
         std::env::remove_var("GITHUB_TOKEN");
+        std::env::remove_var("GH_TOKEN");
         assert_eq!(github_token_from_env(), None);
+
+        std::env::set_var("GH_TOKEN", "cli-token");
+        assert_eq!(github_token_from_env().as_deref(), Some("cli-token"));
 
         std::env::set_var("GITHUB_TOKEN", "ci-token");
         assert_eq!(github_token_from_env().as_deref(), Some("ci-token"));
@@ -1980,6 +1987,14 @@ mod tests {
 
         std::env::set_var("TEBAKO_GITHUB_TOKEN", "");
         assert_eq!(github_token_from_env().as_deref(), Some("ci-token"));
+
+        std::env::remove_var("TEBAKO_GITHUB_TOKEN");
+        std::env::set_var("GITHUB_TOKEN", "");
+        assert_eq!(github_token_from_env().as_deref(), Some("cli-token"));
+
+        // The shaping half reads the ambient token — pin it to one value.
+        std::env::remove_var("GH_TOKEN");
+        std::env::set_var("GITHUB_TOKEN", "ci-token");
 
         // apply_options shapes the request: the declared Accept always
         // lands; the ambient bearer lands iff `authenticate` AND the

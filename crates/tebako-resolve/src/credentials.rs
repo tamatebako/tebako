@@ -14,10 +14,10 @@
 //!   on the alias of the registry whose row directed the fetch
 //!   (registry-file fetches match their own registry's alias, via
 //!   [`CredentialBook::alias_of`]); tier 2 keys on the URL's exact
-//!   host; then the ambient `TEBAKO_GITHUB_TOKEN` / `GITHUB_TOKEN`
-//!   (unchanged — tebako-http's one host rule, ranked as the github.com
-//!   tier); else anonymous. No third tier, no chain: a matched entry
-//!   whose env var is unset does NOT fall through.
+//!   host; then the ambient `TEBAKO_GITHUB_TOKEN` / `GITHUB_TOKEN` /
+//!   `GH_TOKEN` (unchanged — tebako-http's one host rule, ranked as the
+//!   github.com tier); else anonymous. No third tier, no chain: a
+//!   matched entry whose env var is unset does NOT fall through.
 //! - **Confinement (locked).** A credential is presented ONLY to the
 //!   host it was minted for: tier-1 to the registry ref's own host plus
 //!   that service's API host, tier-2 to the named host exactly — never
@@ -182,9 +182,9 @@ impl CredentialBook {
                 return attach_or_absent(token_env, service);
             }
         }
-        // The ambient tier: TEBAKO_GITHUB_TOKEN / GITHUB_TOKEN rides
-        // tebako-http's ONE host rule (the github.com tier of spec 37
-        // §5, unchanged by the book).
+        // The ambient tier: TEBAKO_GITHUB_TOKEN / GITHUB_TOKEN /
+        // GH_TOKEN rides tebako-http's ONE host rule (the github.com
+        // tier of spec 37 §5, unchanged by the book).
         if tebako_http::carries_ambient_github_token(url) {
             if let Some(token) = tebako_http::github_token_from_env() {
                 let (header_name, header_value) = header_for(service, &token);
@@ -240,12 +240,15 @@ fn attach_or_absent(token_env: &str, service: Option<Service>) -> Decision {
     }
 }
 
-/// Which ambient env var supplied the token (the journal class).
+/// Which ambient env var supplied the token (the journal class) — the
+/// same precedence [`tebako_http::github_token_from_env`] honors.
 fn ambient_env_name() -> &'static str {
     if token_set("TEBAKO_GITHUB_TOKEN") {
         "TEBAKO_GITHUB_TOKEN"
-    } else {
+    } else if token_set("GITHUB_TOKEN") {
         "GITHUB_TOKEN"
+    } else {
+        "GH_TOKEN"
     }
 }
 
@@ -511,11 +514,13 @@ mod tests {
     #[test]
     fn the_ambient_token_rides_the_github_api_host_only() {
         let _guard = env_guard();
-        let saved: Vec<(&str, Option<String>)> = ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN"]
-            .iter()
-            .map(|k| (*k, std::env::var(k).ok()))
-            .collect();
+        let saved: Vec<(&str, Option<String>)> =
+            ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"]
+                .iter()
+                .map(|k| (*k, std::env::var(k).ok()))
+                .collect();
         std::env::remove_var("TEBAKO_GITHUB_TOKEN");
+        std::env::remove_var("GH_TOKEN");
         std::env::set_var("GITHUB_TOKEN", "ci-token");
         let book = CredentialBook::default();
         let d = book.decide(
@@ -529,6 +534,23 @@ mod tests {
                 header_name: "Authorization",
                 header_value: "Bearer ci-token".to_string(),
                 class: "token:env:GITHUB_TOKEN".to_string(),
+            }
+        );
+        // GH_TOKEN is the third honored name (the CLI spelling); it loses
+        // to GITHUB_TOKEN and names itself when it wins alone.
+        std::env::remove_var("GITHUB_TOKEN");
+        std::env::set_var("GH_TOKEN", "cli-token");
+        let d = book.decide(
+            None,
+            "https://api.github.com/repos/o/r/releases/tags/v1",
+            Some(Service::Github),
+        );
+        assert_eq!(
+            d,
+            Decision::Attach {
+                header_name: "Authorization",
+                header_value: "Bearer cli-token".to_string(),
+                class: "token:env:GH_TOKEN".to_string(),
             }
         );
         // …and nowhere else
@@ -549,10 +571,14 @@ mod tests {
     #[test]
     fn an_empty_book_and_no_alias_answer_anonymous() {
         let _guard = env_guard();
-        let saved_te = std::env::var("TEBAKO_GITHUB_TOKEN").ok();
-        let saved_gh = std::env::var("GITHUB_TOKEN").ok();
+        let saved: Vec<(&str, Option<String>)> =
+            ["TEBAKO_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"]
+                .iter()
+                .map(|k| (*k, std::env::var(k).ok()))
+                .collect();
         std::env::remove_var("TEBAKO_GITHUB_TOKEN");
         std::env::remove_var("GITHUB_TOKEN");
+        std::env::remove_var("GH_TOKEN");
         let book = CredentialBook::default();
         assert!(book.is_empty());
         assert_eq!(
@@ -571,13 +597,11 @@ mod tests {
             book.decide(Some("nist"), "file:///tmp/x.tfs", None),
             Decision::Anonymous { looked_for: None }
         );
-        match saved_te {
-            Some(v) => std::env::set_var("TEBAKO_GITHUB_TOKEN", v),
-            None => std::env::remove_var("TEBAKO_GITHUB_TOKEN"),
-        }
-        match saved_gh {
-            Some(v) => std::env::set_var("GITHUB_TOKEN", v),
-            None => std::env::remove_var("GITHUB_TOKEN"),
+        for (k, v) in saved {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
         }
     }
 

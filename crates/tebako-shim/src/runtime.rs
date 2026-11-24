@@ -837,7 +837,7 @@ fn index_selected_target(
 
 /// The none-read refusal's per-source enumeration (tebako#281): each
 /// channel names its own failure — a throttled read carries the ambient
-/// token hint (TEBAKO_GITHUB_TOKEN / GITHUB_TOKEN raise the
+/// token hint (TEBAKO_GITHUB_TOKEN / GITHUB_TOKEN / GH_TOKEN raise the
 /// api.github.com budget), a read that answered carries its reason, a
 /// read that answered cleanly but held nothing says so.
 fn no_source_why(notes: &SourceNotes) -> String {
@@ -847,7 +847,7 @@ fn no_source_why(notes: &SourceNotes) -> String {
             why.push_str(&format!("\n  - factory registry: {reason}"));
             if reason.contains("throttled") {
                 why.push_str(
-                    " (an ambient TEBAKO_GITHUB_TOKEN or GITHUB_TOKEN raises the api.github.com budget)",
+                    " (an ambient TEBAKO_GITHUB_TOKEN or GITHUB_TOKEN / GH_TOKEN raises the api.github.com budget)",
                 );
             }
         }
