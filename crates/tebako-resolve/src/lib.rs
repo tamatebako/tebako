@@ -59,7 +59,9 @@ pub use registry::{
     RegistryRuntimeRequirement, RegistrySigning, RegistryVersion, ReleaseRef,
 };
 #[cfg(feature = "oci")]
-pub use tebako_oci::{blksum_tag, payload_tag, signature_tag, Annotations, ArtifactClass};
+pub use tebako_oci::{
+    blksum_tag, payload_tag, payload_tag_base, signature_tag, Annotations, ArtifactClass,
+};
 pub use transport::{HttpTransport, Transport};
 
 /// The default tebako runtime release line (tamatebako/tebako-runtime-ruby)

@@ -31,8 +31,8 @@ use tebako_http::FetchError;
 use tebako_json::{parse as json_parse, Value as JsonValue};
 
 pub use model::{
-    blksum_tag, payload_tag, signature_tag, Annotations, ArtifactClass, Descriptor, Manifest,
-    ShapeExpectation, EMPTY_CONFIG_DIGEST, EMPTY_CONFIG_MT, MANIFEST_MT,
+    blksum_tag, payload_tag, payload_tag_base, signature_tag, Annotations, ArtifactClass,
+    Descriptor, Manifest, ShapeExpectation, EMPTY_CONFIG_DIGEST, EMPTY_CONFIG_MT, MANIFEST_MT,
 };
 
 /// The credential presentation on one request.
