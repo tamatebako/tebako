@@ -136,7 +136,7 @@ monolith.
   An edge no channel answers is a NAMED error enumerating the channels
   tried, **each with its own failure reason** (tebako#281): a throttled
   read names the throttle and its retry budget plus the ambient-token
-  remedy (`TEBAKO_GITHUB_TOKEN` / `GITHUB_TOKEN` raise the
+  remedy (`TEBAKO_GITHUB_TOKEN` / `GITHUB_TOKEN` / `GH_TOKEN` raise the
   api.github.com budget), a not-found says so, a clean-but-empty read
   says so — never a silent query of a base that hosts no such engine
   (a wrong-line 404 is diagnosed as what it is), and never a bare

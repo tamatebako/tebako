@@ -121,10 +121,7 @@ pub fn release_download_locator(reference: &Reference) -> Option<ReleaseDownload
             version,
             ..
         } => Some(ReleaseDownloadLocator::Release {
-            base: format!(
-                "https://{}/{owner}/{repo}/releases/download",
-                host.as_deref().unwrap_or("github.com")
-            ),
+            base: github_download_base(host.as_deref(), owner, repo),
             tag: version.clone(),
             asset_infix: "",
         }),
@@ -414,6 +411,19 @@ fn strings(v: &JsonValue, key: &str) -> Option<String> {
     v.find(key).and_then(|x| x.as_string())
 }
 
+/// The GitHub release-asset directory's ONE spelling (SaaS and GHE
+/// alike — spec 37 §4's one-shape rule):
+/// `https://<host>/<owner>/<repo>/releases/download`. Everything that
+/// derives a GitHub tag-name download URL flows from here — the runtime
+/// chain's [`release_download_locator`] and the tebako#1113 anonymous
+/// enumerate-degrade alike.
+fn github_download_base(host: Option<&str>, owner: &str, repo: &str) -> String {
+    format!(
+        "https://{}/{owner}/{repo}/releases/download",
+        host.unwrap_or("github.com")
+    )
+}
+
 /// Raw GET through the transport with the crate's error mapping (404 →
 /// [`ResolveError::NotFound`], anything else → [`ResolveError::DownloadFailed`]).
 fn get_bytes(transport: &dyn Transport, url: &str) -> Result<Vec<u8>, ResolveError> {
@@ -429,19 +439,194 @@ fn get_bytes(transport: &dyn Transport, url: &str) -> Result<Vec<u8>, ResolveErr
 /// is the only parameter).
 pub struct GithubAdapter {
     api_base: String,
+    /// The host the browser/CDN download URLs spell (tebako#1113's
+    /// tag-URL degrade): `github.com` on the SaaS form, the explicit
+    /// host verbatim — GHE serves the same shape as github.com.
+    download_host: String,
 }
 
 impl GithubAdapter {
     /// The adapter at the SaaS host (`None`) or an explicit one (spec 37
     /// §4: API base `https://<host>/api/v3`).
     pub fn at(host: Option<&str>) -> Self {
-        let api_base = match host {
-            None => "https://api.github.com".to_string(),
-            Some(h) => format!("https://{h}/api/v3"),
+        let (api_base, download_host) = match host {
+            None => (
+                "https://api.github.com".to_string(),
+                "github.com".to_string(),
+            ),
+            Some(h) => (format!("https://{h}/api/v3"), h.to_string()),
         };
-        GithubAdapter { api_base }
+        GithubAdapter {
+            api_base,
+            download_host,
+        }
+    }
+
+    /// The release-index URL the listing reads.
+    fn listing_url(&self, owner: &str, repo: &str, version: &str) -> String {
+        format!(
+            "{}/repos/{owner}/{repo}/releases/tags/{version}",
+            self.api_base
+        )
+    }
+
+    /// The tag-name download URL of a release asset — derivable WITHOUT
+    /// any listing (tebako#1113's anonymous degrade): the browser/CDN
+    /// shape the API's `browser_download_url` spells, from the SAME
+    /// base the runtime chain's [`release_download_locator`] records.
+    fn tag_download_url(&self, owner: &str, repo: &str, version: &str, name: &str) -> String {
+        format!(
+            "{}/{version}/{name}",
+            github_download_base(Some(&self.download_host), owner, repo)
+        )
+    }
+
+    /// ONE listing attempt (tebako#1113): the single-shot read — the
+    /// caller owns the throttle schedule (the tag-URL degrade or the
+    /// jittered backoff), never the transport's hidden retry.
+    fn listing_once(
+        &self,
+        transport: &dyn Transport,
+        owner: &str,
+        repo: &str,
+        version: &str,
+    ) -> ListingRead {
+        let url = self.listing_url(owner, repo, version);
+        let body = match transport.get_once(&url) {
+            Ok(body) => body,
+            Err(FetchError::Throttled { retry_after, .. }) => {
+                return ListingRead::Throttled { hint: retry_after };
+            }
+            Err(e) => return ListingRead::Failed(map_fetch(&url, e)),
+        };
+        match parse_release_assets(&url, body, transport.authenticated()) {
+            Ok(assets) => ListingRead::Listed(assets),
+            Err(e) => ListingRead::Failed(e),
+        }
+    }
+
+    /// The credentialed `#artifact` read (the pre-tebako#1113 path,
+    /// unchanged): the listing rides the transport's own retry
+    /// discipline; the stale-index race keeps its bounded backoff.
+    fn asset_named_listed(
+        &self,
+        transport: &dyn Transport,
+        owner: &str,
+        repo: &str,
+        version: &str,
+        name: &str,
+    ) -> Result<Option<Asset>, ResolveError> {
+        for attempt in 0..5u32 {
+            if let Some(asset) = self
+                .assets(transport, owner, repo, version)?
+                .into_iter()
+                .find(|a| a.name == name)
+            {
+                return Ok(Some(asset));
+            }
+            if let Some(&backoff) = ASSET_INDEX_BACKOFF_SECS.get(attempt as usize) {
+                std::thread::sleep(std::time::Duration::from_secs(backoff));
+            }
+        }
+        Ok(None)
     }
 }
+
+/// What one anonymous listing attempt answered (tebako#1113's degrade
+/// inputs): the parsed assets, the throttle shape carrying the server's
+/// own schedule hint when it sent one, or the ordinary named failure.
+enum ListingRead {
+    Listed(Vec<Asset>),
+    Throttled { hint: Option<std::time::Duration> },
+    Failed(ResolveError),
+}
+
+/// The release index body's asset list. The URL-selection law is the
+/// happy path's own: credentialed reads take the API asset URL (private
+/// repos 404 the anonymous browser URL) and declare its fetch
+/// requirements on the descriptor; anonymous reads keep the
+/// credential-free browser URL (the CDN path spends no API rate
+/// budget).
+fn parse_release_assets(
+    url: &str,
+    body: Vec<u8>,
+    authenticated: bool,
+) -> Result<Vec<Asset>, ResolveError> {
+    let text = String::from_utf8(body).map_err(|e| ResolveError::ServiceFailed {
+        service: Service::Github,
+        reason: format!("{e} decoding {url}"),
+    })?;
+    let doc = json_parse(&text).map_err(|e| ResolveError::ServiceFailed {
+        service: Service::Github,
+        reason: format!("invalid JSON from {url}: {e}"),
+    })?;
+    let Some(JsonValue::Array(assets)) = doc.find("assets") else {
+        return Err(ResolveError::ServiceFailed {
+            service: Service::Github,
+            reason: format!("{url} has no assets array"),
+        });
+    };
+    Ok(assets
+        .iter()
+        .filter_map(|a| {
+            let name = strings(a, "name")?;
+            // Private repos 404 the anonymous browser URL, so an
+            // authenticated transport takes the API asset URL — and
+            // the descriptor DECLARES what that choice needs: the
+            // bytes ride Accept: application/octet-stream (else the
+            // API answers JSON metadata), and the fetch is
+            // credential-eligible (tebako-http attaches the ambient
+            // token to api.github.com only; ureq never forwards it
+            // on redirect). Anonymous transports keep the browser
+            // URL: the CDN path spends no API rate budget and
+            // carries no credential.
+            Some(if authenticated {
+                Asset {
+                    name,
+                    url: strings(a, "url")?,
+                    accept: Some("application/octet-stream".to_string()),
+                    authenticate: true,
+                }
+            } else {
+                Asset::plain(name, strings(a, "browser_download_url")?)
+            })
+        })
+        .collect())
+}
+
+/// The anonymous enumeration's throttle schedule (tebako#1113): the
+/// server's own hint honored EXACTLY (the shared law — a throttled
+/// answer is a schedule, never a failure); otherwise tebako-http's
+/// 60 s × 2ⁿ under a deterministic ±25 % jitter keyed on the URL and
+/// the round, so a fleet of cold anonymous installs does not retry in
+/// lockstep against the reset window.
+fn enum_backoff(round: u32, hint: Option<std::time::Duration>, key: &str) -> std::time::Duration {
+    match hint {
+        Some(d) => d,
+        None => {
+            let base = tebako_http::throttle_backoff(round, None).as_secs();
+            // FNV-1a over the key and the round — stable across runs,
+            // no dependency.
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            for b in key.bytes().chain(round.to_le_bytes()) {
+                h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+            let pct = 75 + h % 51; // 75..=125
+            std::time::Duration::from_secs(base * pct / 100)
+        }
+    }
+}
+
+/// The wait between anonymous enumeration retries — real in
+/// production, a no-op under cfg(test) (the retry contract is
+/// exercised without wall-clock cost — the ASSET_INDEX_BACKOFF_SECS
+/// idiom).
+#[cfg(not(test))]
+fn enum_sleep(d: std::time::Duration) {
+    std::thread::sleep(d);
+}
+#[cfg(test)]
+fn enum_sleep(_: std::time::Duration) {}
 
 impl Default for GithubAdapter {
     fn default() -> Self {
@@ -470,43 +655,39 @@ impl ServiceAdapter for GithubAdapter {
         repo: &str,
         version: &str,
     ) -> Result<Vec<Asset>, ResolveError> {
-        let url = format!(
-            "{}/repos/{owner}/{repo}/releases/tags/{version}",
-            self.api_base
-        );
-        let doc = get_json(transport, Service::Github, &url)?;
-        let Some(JsonValue::Array(assets)) = doc.find("assets") else {
-            return Err(ResolveError::ServiceFailed {
-                service: Service::Github,
-                reason: format!("{url} has no assets array"),
-            });
-        };
-        Ok(assets
-            .iter()
-            .filter_map(|a| {
-                let name = strings(a, "name")?;
-                // Private repos 404 the anonymous browser URL, so an
-                // authenticated transport takes the API asset URL — and
-                // the descriptor DECLARES what that choice needs: the
-                // bytes ride Accept: application/octet-stream (else the
-                // API answers JSON metadata), and the fetch is
-                // credential-eligible (tebako-http attaches the ambient
-                // token to api.github.com only; ureq never forwards it
-                // on redirect). Anonymous transports keep the browser
-                // URL: the CDN path spends no API rate budget and
-                // carries no credential.
-                Some(if transport.authenticated() {
-                    Asset {
-                        name,
-                        url: strings(a, "url")?,
-                        accept: Some("application/octet-stream".to_string()),
-                        authenticate: true,
+        if transport.authenticated() {
+            // The credentialed read keeps the transport's own retry
+            // discipline (the authed budget is high; a secondary limit
+            // is the transport throttle loop's subject, unchanged).
+            let url = self.listing_url(owner, repo, version);
+            let body = transport.get(&url).map_err(|e| map_fetch(&url, e))?;
+            return parse_release_assets(&url, body, true);
+        }
+        // The anonymous tier (tebako#1113): the enumerate-degrade law —
+        // bounded jittered backoff against the rate limit, then the
+        // NAMED error naming the limit and the remediation, never a
+        // bare 403.
+        let mut throttles = 0u32;
+        loop {
+            match self.listing_once(transport, owner, repo, version) {
+                ListingRead::Listed(assets) => return Ok(assets),
+                ListingRead::Failed(e) => return Err(e),
+                ListingRead::Throttled { hint } => {
+                    throttles += 1;
+                    if throttles >= tebako_http::THROTTLE_ROUNDS {
+                        return Err(ResolveError::AnonymousRateLimited {
+                            host: host_of(&self.api_base),
+                            rounds: throttles,
+                        });
                     }
-                } else {
-                    Asset::plain(name, strings(a, "browser_download_url")?)
-                })
-            })
-            .collect())
+                    enum_sleep(enum_backoff(
+                        throttles,
+                        hint,
+                        &self.listing_url(owner, repo, version),
+                    ));
+                }
+            }
+        }
     }
 
     /// `#artifact` fetches race the release's asset INDEX on GitHub: the
@@ -516,6 +697,15 @@ impl ServiceAdapter for GithubAdapter {
     /// app's listing still lacked its assets at +7 s). Retry the listing
     /// on absence before declaring the asset missing; a genuine absence
     /// (a `#typo`) costs the same bounded wait and still names itself.
+    ///
+    /// tebako#1113's anonymous degrade: the FIRST throttle-shaped
+    /// answer on the anonymous tier yields the tag-name download URL —
+    /// the asset name is already known, the browser/CDN shape needs no
+    /// listing, and the bytes still verify byte-exact against the
+    /// caller's sha256 pin downstream (enumeration is discovery only;
+    /// the trust discipline is unchanged). A name the release does not
+    /// carry then fails at the download with the ordinary named
+    /// NotFound.
     fn asset_named(
         &self,
         transport: &dyn Transport,
@@ -524,16 +714,28 @@ impl ServiceAdapter for GithubAdapter {
         version: &str,
         name: &str,
     ) -> Result<Option<Asset>, ResolveError> {
+        if transport.authenticated() {
+            // The credentialed read keeps the pre-tebako#1113 path:
+            // the listing rides the transport's own retry discipline.
+            return self.asset_named_listed(transport, owner, repo, version, name);
+        }
         for attempt in 0..5u32 {
-            if let Some(asset) = self
-                .assets(transport, owner, repo, version)?
-                .into_iter()
-                .find(|a| a.name == name)
-            {
-                return Ok(Some(asset));
-            }
-            if let Some(&backoff) = ASSET_INDEX_BACKOFF_SECS.get(attempt as usize) {
-                std::thread::sleep(std::time::Duration::from_secs(backoff));
+            match self.listing_once(transport, owner, repo, version) {
+                ListingRead::Listed(assets) => {
+                    if let Some(asset) = assets.into_iter().find(|a| a.name == name) {
+                        return Ok(Some(asset));
+                    }
+                    if let Some(&backoff) = ASSET_INDEX_BACKOFF_SECS.get(attempt as usize) {
+                        std::thread::sleep(std::time::Duration::from_secs(backoff));
+                    }
+                }
+                ListingRead::Throttled { .. } => {
+                    return Ok(Some(Asset::plain(
+                        name.to_string(),
+                        self.tag_download_url(owner, repo, version, name),
+                    )));
+                }
+                ListingRead::Failed(e) => return Err(e),
             }
         }
         Ok(None)
@@ -1069,6 +1271,228 @@ mod tests {
                 .asset_named(&t, "o", "r", "v1", "nope.tfs")
                 .unwrap(),
             None
+        );
+    }
+
+    // ---- tebako#1113: the anonymous tier's rate-limit degrade law -----
+
+    /// Every GET answers the throttle shape (403/429 with the rate-limit
+    /// schedule) and records the call — the bounded-backoff assertions
+    /// read the call count.
+    struct AlwaysThrottled {
+        calls: std::sync::Mutex<Vec<String>>,
+        status: u16,
+    }
+    impl AlwaysThrottled {
+        fn new(status: u16) -> Self {
+            AlwaysThrottled {
+                calls: std::sync::Mutex::new(Vec::new()),
+                status,
+            }
+        }
+        fn calls(&self) -> usize {
+            self.calls.lock().unwrap().len()
+        }
+    }
+    impl Transport for AlwaysThrottled {
+        fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+            self.calls.lock().unwrap().push(url.to_string());
+            Err(FetchError::Throttled {
+                url: url.to_string(),
+                status: self.status,
+                retry_after: None,
+            })
+        }
+    }
+
+    /// `throttles` throttle answers, then the body — the listing clears
+    /// mid-backoff.
+    struct ScriptedThrottle {
+        script: std::sync::Mutex<std::collections::VecDeque<Result<Vec<u8>, FetchError>>>,
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+    impl ScriptedThrottle {
+        fn new(throttles: usize, then_body: &str) -> Self {
+            let mut script = std::collections::VecDeque::new();
+            for _ in 0..throttles {
+                script.push_back(Err(FetchError::Throttled {
+                    url: "https://api.github.com/repos/o/r/releases/tags/v1".to_string(),
+                    status: 403,
+                    retry_after: None,
+                }));
+            }
+            script.push_back(Ok(then_body.as_bytes().to_vec()));
+            ScriptedThrottle {
+                script: std::sync::Mutex::new(script),
+                calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+        fn calls(&self) -> usize {
+            self.calls.lock().unwrap().len()
+        }
+    }
+    impl Transport for ScriptedThrottle {
+        fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+            self.calls.lock().unwrap().push(url.to_string());
+            self.script
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err(FetchError::IndexUnavailable(url.to_string())))
+        }
+    }
+
+    #[test]
+    fn anonymous_throttle_degrades_asset_named_to_the_tag_download_url() {
+        // The listing 403s (the anonymous rate limit) — the #artifact
+        // form needs no listing: the tag-name download URL is derived,
+        // one attempt, no retries spent.
+        let t = AlwaysThrottled::new(403);
+        let got = GithubAdapter::default()
+            .asset_named(&t, "o", "r", "v1", "r-v1.tfs")
+            .unwrap();
+        assert_eq!(
+            got,
+            Some(Asset::plain(
+                "r-v1.tfs".to_string(),
+                "https://github.com/o/r/releases/download/v1/r-v1.tfs".to_string()
+            ))
+        );
+        assert_eq!(t.calls(), 1, "the degrade completes the discovery NOW");
+
+        // The explicit host (GHE) spells the same shape on its own host.
+        let t = AlwaysThrottled::new(429);
+        let got = GithubAdapter::at(Some("ghe.corp.internal"))
+            .asset_named(&t, "o", "r", "v1", "r-v1.tfs")
+            .unwrap();
+        assert_eq!(
+            got,
+            Some(Asset::plain(
+                "r-v1.tfs".to_string(),
+                "https://ghe.corp.internal/o/r/releases/download/v1/r-v1.tfs".to_string()
+            ))
+        );
+        assert_eq!(t.calls(), 1);
+    }
+
+    #[test]
+    fn anonymous_assets_back_off_and_retry_until_the_listing_serves() {
+        // The no-# form cannot synthesize the asset name: bounded
+        // backoff, and the read completes when the limit clears.
+        let body =
+            r#"{"assets":[{"name":"r-v1.tfs","browser_download_url":"https://dl/r-v1.tfs"}]}"#;
+        let t = ScriptedThrottle::new(2, body);
+        let assets = GithubAdapter::default().assets(&t, "o", "r", "v1").unwrap();
+        assert_eq!(
+            assets,
+            vec![Asset::plain(
+                "r-v1.tfs".to_string(),
+                "https://dl/r-v1.tfs".to_string()
+            )]
+        );
+        assert_eq!(t.calls(), 3, "two throttles, then the served listing");
+    }
+
+    #[test]
+    fn anonymous_assets_exhaust_the_budget_into_the_named_rate_limit() {
+        let t = AlwaysThrottled::new(403);
+        let err = GithubAdapter::default()
+            .assets(&t, "o", "r", "v1")
+            .unwrap_err();
+        let ResolveError::AnonymousRateLimited { host, rounds } = &err else {
+            panic!("expected AnonymousRateLimited, got {err:?}")
+        };
+        assert_eq!(host, "api.github.com");
+        assert_eq!(rounds, &tebako_http::THROTTLE_ROUNDS);
+        assert_eq!(
+            t.calls(),
+            tebako_http::THROTTLE_ROUNDS as usize,
+            "the bounded budget, exactly"
+        );
+        let msg = err.to_string();
+        assert!(msg.contains("rate-limited"), "{msg}");
+        assert!(msg.contains("TEBAKO_GITHUB_TOKEN"), "{msg}");
+        assert!(msg.contains("GITHUB_TOKEN / GH_TOKEN"), "{msg}");
+        assert!(msg.contains("(AnonymousRateLimited)"), "{msg}");
+    }
+
+    /// A throttled transport WITH a credential (the authed tier): no
+    /// degrade, no adapter-owned retry — the transport's own throttle
+    /// discipline answers, exactly the pre-tebako#1113 shape.
+    struct AuthAlwaysThrottled {
+        inner: AlwaysThrottled,
+    }
+    impl Transport for AuthAlwaysThrottled {
+        fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+            self.inner.get(url)
+        }
+        fn authenticated(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn credentialed_listing_never_degrades_and_keeps_the_old_error_shape() {
+        let t = AuthAlwaysThrottled {
+            inner: AlwaysThrottled::new(403),
+        };
+        let err = GithubAdapter::default()
+            .asset_named(&t, "o", "r", "v1", "r-v1.tfs")
+            .unwrap_err();
+        assert!(
+            matches!(err, ResolveError::DownloadFailed { .. }),
+            "the credentialed throttle keeps the old shape, got {err:?}"
+        );
+        let t = AuthAlwaysThrottled {
+            inner: AlwaysThrottled::new(403),
+        };
+        let err = GithubAdapter::default()
+            .assets(&t, "o", "r", "v1")
+            .unwrap_err();
+        assert!(
+            matches!(err, ResolveError::DownloadFailed { .. }),
+            "the credentialed throttle keeps the old shape, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn enum_backoff_honors_the_hint_and_jitters_the_hintless_schedule() {
+        // The server's own schedule wins, exactly.
+        assert_eq!(
+            enum_backoff(3, Some(std::time::Duration::from_secs(17)), "https://x"),
+            std::time::Duration::from_secs(17)
+        );
+        // Hint-less: within ±25% of tebako-http's 60 s × 2ⁿ, and stable
+        // for the same (key, round).
+        let key = "https://api.github.com/repos/o/r/releases/tags/v1";
+        for round in 1..=5u32 {
+            let base = tebako_http::throttle_backoff(round, None).as_secs();
+            let d = enum_backoff(round, None, key);
+            assert!(
+                d.as_secs() >= base * 3 / 4,
+                "{d:?} below the floor for round {round}"
+            );
+            assert!(
+                d.as_secs() <= base * 5 / 4,
+                "{d:?} above the cap for round {round}"
+            );
+            assert_eq!(d, enum_backoff(round, None, key), "deterministic");
+        }
+        // The jitter spreads across keys — a fleet of cold installs does
+        // not march in lockstep against the reset window.
+        let distinct: std::collections::BTreeSet<u64> = (0..8)
+            .map(|i| {
+                enum_backoff(
+                    1,
+                    None,
+                    &format!("https://api.github.com/repos/o/r{i}/releases/tags/v1"),
+                )
+                .as_secs()
+            })
+            .collect();
+        assert!(
+            distinct.len() > 1,
+            "the jitter must not be constant across keys: {distinct:?}"
         );
     }
 

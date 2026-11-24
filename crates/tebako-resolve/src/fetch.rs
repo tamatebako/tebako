@@ -215,6 +215,16 @@ impl<T: Transport + ?Sized> Transport for CredTransport<'_, T> {
             .map_err(|e| self.remap(url, &outcome, e))
     }
 
+    fn get_once(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+        // One classified attempt (tebako#1113's enumeration degrade
+        // law owns the schedule): the decided credential rides exactly
+        // like `get`, the refusal remaps the same way.
+        let outcome = self.decide(url);
+        self.inner
+            .get_once_with_header(url, outcome.header_ref())
+            .map_err(|e| self.remap(url, &outcome, e))
+    }
+
     fn get_asset(
         &self,
         url: &str,

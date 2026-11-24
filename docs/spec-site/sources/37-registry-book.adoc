@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/37-registry-book.md @ 2926ce8218a0817ee668a2849f2ee925fb703bde
+// source: docs/spec/37-registry-book.md @ 15fb087d83d44b16ca5009b1d26c96103496f2bd
 
 Status: *SHIPPED* — §2's registry book (the config model, alias
 grammar + derivation, `DuplicateRegistryAlias` /
@@ -231,7 +231,8 @@ directing registry's credential does not follow.
 basic). Authored config never spells header mechanics.
 * Every fetch journals host + credential CLASS (`token:env:NIST_GH_TOKEN`,
 `anonymous`) with the value REDACTED — the mixed-federation audit
-trail. The ambient `TEBAKO_GITHUB_TOKEN`/`GITHUB_TOKEN` amendment is
+trail. The ambient `TEBAKO_GITHUB_TOKEN`/`GITHUB_TOKEN`/`GH_TOKEN`
+amendment (the first non-empty wins, in that order) is
 unchanged and ranks as tier 2 for github.com when no tier-1 entry
 matched.
 

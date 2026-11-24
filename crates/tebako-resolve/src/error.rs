@@ -168,6 +168,13 @@ pub enum ResolveError {
         host: String,
         looked_for: Option<String>,
     },
+    /// The anonymous release-API enumeration was rate-limited (403/429
+    /// carrying the throttle schedule) and the bounded jittered backoff
+    /// exhausted (tebako#1113 — exit class 69). The `#artifact` forms
+    /// never reach here: they degrade to the tag-name download URL,
+    /// which needs no listing. `host` is the service API host that
+    /// rate-limited the read, `rounds` the backoff budget that ran out.
+    AnonymousRateLimited { host: String, rounds: u32 },
     /// The git adapter failed (clone, ref resolution, blob lookup).
     Git { url: String, reason: String },
     /// A `tfs+git:` reference without `#path` names a registry repo, not a
@@ -321,6 +328,10 @@ impl fmt::Display for ResolveError {
                     "{host} refused the fetch (401/403) and {scope} has no usable credential{env} register one under `credentials:` in ~/.tebako/config.yaml (CredentialRequired)"
                 )
             }
+            ResolveError::AnonymousRateLimited { host, rounds } => write!(
+                f,
+                "{host} rate-limited the anonymous release enumeration (403/429) and the jittered backoff exhausted after {rounds} rounds — the anonymous tier serves 60 requests/h per egress IP and shared-egress machines drain it; set TEBAKO_GITHUB_TOKEN (or GITHUB_TOKEN / GH_TOKEN) for the authenticated tier, or register a `credentials:` entry for {host} in ~/.tebako/config.yaml (AnonymousRateLimited)"
+            ),
             ResolveError::Git { url, reason } => write!(f, "git fetch of {url} failed: {reason}"),
             ResolveError::GitPathRequired { url } => write!(
                 f,
