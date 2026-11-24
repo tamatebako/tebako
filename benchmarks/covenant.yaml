@@ -70,7 +70,7 @@ cells:
     bound: 0.80
     comparison: ge
     unit: ratio-to-native
-    note: a CPU-bound workload must keep at least this share of native throughput; measured worst 0.84 (macos-arm64 python, run 42525964214) on the healthy matrix — the defective python/macos-x86_64 pair (tebako-runtime-python#79) is a declared gap, never averaged in
+    note: a CPU-bound workload must keep at least this share of native throughput; measured worst 0.84 (macos-arm64 python, run 42525964214) on the healthy matrix. The python/macos-x86_64 pair re-joined at the ≈1.0 ratio-class — tebako#1095's closing verdict measured the published pair at parity with the same-leg on-system arm on the current macos-15-intel fleet (4.270 s vs 4.258 s fib(35) best-of-3, ratio ≈1.00, runs 45324096740/45330380303/45338794570); the old ~0.5x cell was the runner class moving under the covenant, never the pair, and platforms.yaml's declared gap is lifted in the same change
     source: {workloads: ["-fib"], target: "tebako-", mode: warm, measure: wall, shape: speedup, aggregate: worst}
   - id: steady.io.throughput
     bound: 0.20
