@@ -2895,8 +2895,15 @@ impl FsContext {
         // Persistent-tier reuse: a copy whose record re-verifies skips
         // the write entirely. The closure walk below STILL runs — it is
         // the completeness check, healing a previous boot's mid-closure
-        // crash member by member.
-        let served = persistent && dlcache_serve_verified(&host_path);
+        // crash member by member. The ephemeral tier's verdict is the
+        // size-exact witness (tebako#1112, see install_atomic) — the
+        // store destination always re-extracts (an install's freshness)
+        // but lands atomically too.
+        let served = if persistent {
+            dlcache_serve_verified(&host_path)
+        } else {
+            matches!(dest, ClosureDest::Dlcache) && serve_existing(&host_path, &st)
+        };
         let mut offset = 0u64;
         if served {
             self.dl_cache.insert(path.to_string(), host_path.clone());
@@ -2905,7 +2912,17 @@ impl FsContext {
                     trace::Event::new(trace::Op::Materialize, path, "cache-hit")
                         .detail("dest", Value::String(dest_token.to_string()))
                         .detail("host", Value::String(host_path.display().to_string()))
-                        .detail("tier", Value::String("persistent".to_string()))
+                        .detail(
+                            "tier",
+                            Value::String(
+                                if persistent {
+                                    "persistent"
+                                } else {
+                                    "per-process"
+                                }
+                                .to_string(),
+                            ),
+                        )
                         .dur(start),
                 );
             }
@@ -2959,46 +2976,41 @@ impl FsContext {
                     return Err(e);
                 }
             } else {
-                // Stream the file out in chunks.
-                let mut out = match std::fs::File::create(&host_path) {
-                    Ok(out) => out,
-                    Err(_) => {
-                        trace_err(libc::EIO);
-                        return Err(libc::EIO);
-                    }
-                };
-                let mut buf = vec![0u8; 8192];
-                loop {
-                    let n = match mount.backend.pread(&rel_owned, &mut buf, offset) {
-                        Ok(n) => n,
-                        Err(e) => {
-                            trace_err(e);
-                            return Err(e);
+                // tebako#1112: install atomically (stage + rename,
+                // install_atomic's contract) — never an in-place
+                // File::create rewrite of a target another process may
+                // be demand-paging right now (the aarch64 java-child
+                // franken-mapping SIGSEGV).
+                let install = install_atomic(&host_path, |part| {
+                    let mut out = std::fs::File::create(part).map_err(|_| libc::EIO)?;
+                    let mut buf = vec![0u8; 8192];
+                    loop {
+                        let n = mount.backend.pread(&rel_owned, &mut buf, offset)?;
+                        if n == 0 {
+                            break;
                         }
-                    };
-                    if n == 0 {
-                        break;
+                        use std::io::Write as _;
+                        out.write_all(&buf[..n]).map_err(|_| libc::EIO)?;
+                        offset += n as u64;
                     }
-                    use std::io::Write as _;
-                    if let Err(e) = out.write_all(&buf[..n]).map_err(|_| {
-                        let _ = std::fs::remove_file(&host_path);
-                        libc::EIO
-                    }) {
-                        trace_err(e);
-                        return Err(e);
+                    // Final mode on the STAGED copy, before the rename
+                    // (dlcache_install's tebako#1083 discipline): an
+                    // inode at the final path carries its final mode
+                    // from the first instant it is visible (dlopen needs
+                    // a readable file).
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt as _;
+                        let _ = std::fs::set_permissions(
+                            part,
+                            std::fs::Permissions::from_mode(st.perms),
+                        );
                     }
-                    offset += n as u64;
-                }
-                drop(out);
-
-                // Permissions, best effort (dlopen needs a readable file).
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt as _;
-                    let _ = std::fs::set_permissions(
-                        &host_path,
-                        std::fs::Permissions::from_mode(st.perms),
-                    );
+                    Ok(())
+                });
+                if let Err(e) = install {
+                    trace_err(e);
+                    return Err(e);
                 }
             }
 
@@ -3624,6 +3636,52 @@ fn dlcache_serve_verified(host_path: &std::path::Path) -> bool {
     }
 }
 
+/// The ephemeral tier's reuse verdict (tebako#1112): a file at the
+/// extraction target whose byte count matches the image's stat is a
+/// COMPLETE earlier installation — installation is atomic
+/// ([`install_atomic`]), so size-exactness is the finished-write
+/// witness — and is served as-is. Anything else (absent, or the torn
+/// product of a crashed installer) is re-extracted. Rewriting a live
+/// target in place is never the answer: a process demand-paging it
+/// right then — an LD_PRELOAD shim mid-boot, a materialized exe
+/// mid-execve — would watch the kernel serve it mixed-generation pages
+/// (the aarch64 Open3.capture3 java-child franken-mapping SIGSEGV).
+fn serve_existing(host_path: &std::path::Path, st: &RawStat) -> bool {
+    std::fs::metadata(host_path).is_ok_and(|m| m.is_file() && m.len() == st.size.max(0) as u64)
+}
+
+/// Atomically install one extracted file at `host_path`: stage at a
+/// unique sibling name, then rename over the target. The per-process dl
+/// leaf is shared across fork (the FsContext copy carries the tmpdir),
+/// and the exe shape runs sibling engine copies against one exec cache,
+/// so an extraction target can be demand-paged by ANOTHER process's
+/// loader while a second materialization lands (tebako#1112). Staging +
+/// rename gives every reader a complete inode — the previous one or the
+/// new one, never a partially streamed file — and the final mode rides
+/// the staged copy (the writer sets it pre-rename, dlcache_install's
+/// tebako#1083 discipline). Concurrent installers race benignly:
+/// distinct part names, identical bytes, last rename wins. The
+/// persistent tier's [`dlcache_install`] is the same protocol plus the
+/// digest record the ephemeral leaf does not carry.
+fn install_atomic(
+    host_path: &std::path::Path,
+    write_staged: impl FnOnce(&std::path::Path) -> Result<(), i32>,
+) -> Result<(), i32> {
+    let part = {
+        let mut p = host_path.as_os_str().to_os_string();
+        p.push(format!(".part-{}", std::process::id()));
+        std::path::PathBuf::from(p)
+    };
+    if let Err(e) = write_staged(&part) {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
+    }
+    std::fs::rename(&part, host_path).map_err(|_| {
+        let _ = std::fs::remove_file(&part);
+        libc::EIO
+    })
+}
+
 /// Install one extracted file under the persistent tier's write-once
 /// protocol: stage per-process, hash in flight, re-read the staged copy
 /// (a write-path lie is EIO, never an installed corruption), record
@@ -3786,7 +3844,10 @@ enum ExtractStep {
 }
 
 /// Stream one file out of a backend onto the host (permissions and
-/// modification time preserved, best effort).
+/// modification time preserved, best effort). A complete earlier copy
+/// is served, never rewritten (tebako#1112); the write itself lands
+/// atomically ([`install_atomic`]) since a mirrored-tree file can be
+/// another process's live exe or dylib.
 fn extract_file(
     backend: &dyn Backend,
     rel: &str,
@@ -3794,40 +3855,44 @@ fn extract_file(
     mut quota: Option<&mut crate::quota::QuotaTracker>,
 ) -> Result<ExtractStep, i32> {
     use std::io::Write as _;
-    #[cfg_attr(windows, allow(unused_variables))]
     let st = backend.stat(rel)?;
     if st.entry_type == EntryType::Symlink {
         return Ok(ExtractStep::SkippedSymlink);
     }
-    let mut out = std::fs::File::create(host).map_err(|_| libc::EIO)?;
-    let mut offset = 0u64;
-    let mut buf = vec![0u8; 8192];
-    loop {
-        let n = backend.pread(rel, &mut buf, offset)?;
-        if n == 0 {
-            break;
-        }
-        // tebako#1102: account the chunk BEFORE it lands; on the
-        // crossing the partial copy is removed — the mirrored tree
-        // grows only whole siblings, never past the armed ceiling.
-        if let Some(tracker) = quota.as_deref_mut() {
-            if tracker.account(n as u64).is_err() {
-                drop(out);
-                let _ = std::fs::remove_file(host);
-                return Err(crate::quota::exceeded_errno());
+    if serve_existing(host, &st) {
+        return Ok(ExtractStep::Written);
+    }
+    install_atomic(host, |part| {
+        let mut out = std::fs::File::create(part).map_err(|_| libc::EIO)?;
+        let mut offset = 0u64;
+        let mut buf = vec![0u8; 8192];
+        loop {
+            let n = backend.pread(rel, &mut buf, offset)?;
+            if n == 0 {
+                break;
             }
+            // tebako#1102: account the chunk BEFORE it lands; on the
+            // crossing the staged copy is removed (install_atomic) — the
+            // mirrored tree grows only whole siblings, never past the
+            // armed ceiling.
+            if let Some(tracker) = quota.as_deref_mut() {
+                if tracker.account(n as u64).is_err() {
+                    return Err(crate::quota::exceeded_errno());
+                }
+            }
+            out.write_all(&buf[..n]).map_err(|_| libc::EIO)?;
+            offset += n as u64;
         }
-        out.write_all(&buf[..n]).map_err(|_| libc::EIO)?;
-        offset += n as u64;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let _ = std::fs::set_permissions(host, std::fs::Permissions::from_mode(st.perms));
-        let _ = out.set_modified(
-            std::time::UNIX_EPOCH + std::time::Duration::from_secs(st.mtime.max(0) as u64),
-        );
-    }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(part, std::fs::Permissions::from_mode(st.perms));
+            let _ = out.set_modified(
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(st.mtime.max(0) as u64),
+            );
+        }
+        Ok(())
+    })?;
     Ok(ExtractStep::Written)
 }
 
@@ -6008,6 +6073,141 @@ mod tests {
         assert_eq!(std::fs::read(&again).unwrap(), b"recorded\n");
         let _ = std::fs::remove_dir_all(&dir);
         sweep_dlcache(&again);
+    }
+
+    #[test]
+    fn the_ephemeral_tier_serves_a_complete_copy_and_never_rewrites_it() {
+        // tebako#1112: the per-process leaf's extraction targets can be
+        // ANOTHER process's live LD_PRELOAD shim or exe (fork shares the
+        // leaf; the exe shape runs sibling engine copies against one
+        // exec cache). A second materialization serves the complete
+        // earlier copy — an in-place File::create rewrite hands the
+        // reader's loader a mixed-generation franken-mapping (the
+        // aarch64 Open3.capture3 java-child SIGSEGV).
+        let dir = std::env::temp_dir().join(format!("tfs-dlserve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("lib")).unwrap();
+        std::fs::write(img.join("lib/tool.so"), b"generation-A").unwrap();
+        let point = format!("/t1112s{}", std::process::id());
+
+        let mut ctx = FsContext::new();
+        // The ephemeral tier on every leg (macOS boots default to the
+        // persistent one, which installs read-only by design).
+        ctx.dl_persist = false;
+        mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+        let host = ctx
+            .dlmap2file(&format!("{point}/lib/tool.so"))
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        #[cfg(unix)]
+        let ino_before = {
+            use std::os::unix::fs::MetadataExt as _;
+            std::fs::metadata(&host).unwrap().ino()
+        };
+        // The fork-shared-leaf re-extraction shape (the cache miss in a
+        // second engine copy): served, never rewritten — same path,
+        // same inode.
+        ctx.dl_cache.clear();
+        let again = ctx
+            .dlmap2file(&format!("{point}/lib/tool.so"))
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(host, again);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            assert_eq!(
+                ino_before,
+                std::fs::metadata(&again).unwrap().ino(),
+                "no rewrite on the size-exact serve"
+            );
+        }
+        // A size-mismatched leftover is the torn product of a crashed
+        // installer: re-extracted, and no staged residue either way.
+        std::fs::write(&host, b"torn").unwrap();
+        ctx.dl_cache.clear();
+        let healed = ctx
+            .dlmap2file(&format!("{point}/lib/tool.so"))
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(std::fs::read(&healed).unwrap(), b"generation-A");
+        let staged: Vec<_> = std::fs::read_dir(std::path::Path::new(&healed).parent().unwrap())
+            .unwrap()
+            .filter_map(|e| {
+                let name = e.unwrap().file_name().to_string_lossy().into_owned();
+                name.contains(".part-").then_some(name)
+            })
+            .collect();
+        assert!(staged.is_empty(), "staging residue: {staged:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_store_destination_reextracts_but_lands_atomically() {
+        // tebako install's permanent tree keeps its always-fresh write
+        // (the serve-once verdict is the ephemeral leaf's), but the
+        // write stages + renames like every extraction (tebako#1112).
+        let dir = std::env::temp_dir().join(format!("tfs-dlstore-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("lib")).unwrap();
+        std::fs::write(img.join("lib/tool.so"), b"store-gen-A").unwrap();
+        let dest = dir.join("store");
+        let point = format!("/t1112d{}", std::process::id());
+
+        let mut ctx = FsContext::new();
+        mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+        let host = ctx
+            .extract_exec_closure(&format!("{point}/lib/tool.so"), &dest)
+            .unwrap();
+        assert_eq!(std::fs::read(&host).unwrap(), b"store-gen-A");
+        // Freshness despite equal size: the install verb re-extracts.
+        std::fs::write(img.join("lib/tool.so"), b"store-gen-B").unwrap();
+        let again = ctx
+            .extract_exec_closure(&format!("{point}/lib/tool.so"), &dest)
+            .unwrap();
+        assert_eq!(host, again);
+        assert_eq!(std::fs::read(&again).unwrap(), b"store-gen-B");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_atomic_preserves_a_live_readers_complete_inode() {
+        // The load-safety property itself: a reader holding the earlier
+        // copy open (ld.so's demand-paged mapping's userspace shadow)
+        // keeps ITS complete inode across an install; fresh opens land
+        // the new complete copy. A failed write stages nothing and
+        // leaves the target untouched.
+        use std::io::Read as _;
+        let dir = std::env::temp_dir().join(format!("tfs-dlatomic-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let host = dir.join("tool.so");
+        std::fs::write(&host, b"generation-A").unwrap();
+        let mut reader = std::fs::File::open(&host).unwrap();
+        install_atomic(&host, |part| {
+            std::fs::write(part, b"generation-B").map_err(|_| libc::EIO)
+        })
+        .unwrap();
+        let mut served = Vec::new();
+        reader.read_to_end(&mut served).unwrap();
+        assert_eq!(served, b"generation-A", "the live reader's inode stands");
+        assert_eq!(std::fs::read(&host).unwrap(), b"generation-B");
+        assert_eq!(install_atomic(&host, |_| Err(libc::EIO)), Err(libc::EIO));
+        assert_eq!(std::fs::read(&host).unwrap(), b"generation-B");
+        let staged: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| {
+                let name = e.unwrap().file_name().to_string_lossy().into_owned();
+                name.contains(".part-").then_some(name)
+            })
+            .collect();
+        assert!(staged.is_empty(), "staging residue: {staged:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
