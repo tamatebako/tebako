@@ -40,7 +40,7 @@ fn mach_o_hardened_no_entitlement() -> Vec<u8> {
     b.extend_from_slice(&1u32.to_be_bytes());
     b.extend_from_slice(&0u32.to_be_bytes()); // CSSLOT_CODE_DIRECTORY
     b.extend_from_slice(&20u32.to_be_bytes()); // blob offset (relative)
-    // Code directory: magic, length, version, flags (0x10000 CS_RUNTIME).
+                                               // Code directory: magic, length, version, flags (0x10000 CS_RUNTIME).
     b.extend_from_slice(&0xFADE_0C02u32.to_be_bytes());
     b.extend_from_slice(&20u32.to_be_bytes());
     b.extend_from_slice(&0x20500u32.to_be_bytes());
@@ -52,18 +52,27 @@ fn mach_o_hardened_no_entitlement() -> Vec<u8> {
 #[test]
 fn null_and_non_utf8_arguments_answer_attempt_with_einval() {
     // NULL: the pre-probe default (attempt the injection), errno EINVAL.
-    assert_eq!(unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(std::ptr::null()) }, 1);
+    assert_eq!(
+        unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(std::ptr::null()) },
+        1
+    );
     assert_eq!(get_errno(), libc::EINVAL);
     // Non-UTF-8: same contract.
     let bad = CString::new(vec![0x2f, 0xff, 0xfe]).unwrap();
-    assert_eq!(unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(bad.as_ptr()) }, 1);
+    assert_eq!(
+        unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(bad.as_ptr()) },
+        1
+    );
     assert_eq!(get_errno(), libc::EINVAL);
 }
 
 #[test]
 fn an_unreadable_path_answers_attempt() {
     let missing = CString::new("/definitely/not/here/tee").unwrap();
-    assert_eq!(unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(missing.as_ptr()) }, 1);
+    assert_eq!(
+        unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(missing.as_ptr()) },
+        1
+    );
 }
 
 #[test]
@@ -71,7 +80,10 @@ fn a_non_macho_file_answers_honored() {
     let dir = std::env::temp_dir().join(format!("tfs-dyld-probe-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let script = write_fixture(&dir, "script.sh", b"#!/bin/sh\necho hi\n");
-    assert_eq!(unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(script.as_ptr()) }, 1);
+    assert_eq!(
+        unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(script.as_ptr()) },
+        1
+    );
     assert_eq!(get_errno(), 0);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -124,6 +136,9 @@ fn a_hardened_unentitled_image_verdicts_by_host_os() {
 fn the_test_binary_itself_is_adhoc_and_honored() {
     let exe = std::env::current_exe().unwrap();
     let c = CString::new(exe.to_string_lossy().as_ref()).unwrap();
-    assert_eq!(unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(c.as_ptr()) }, 1);
+    assert_eq!(
+        unsafe { c_api::tebako_fs_exec_dyld_insertion_honored(c.as_ptr()) },
+        1
+    );
     assert_eq!(get_errno(), 0);
 }
