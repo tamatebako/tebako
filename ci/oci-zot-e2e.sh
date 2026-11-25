@@ -246,7 +246,7 @@ grep -q "oci: tfs+oci://$REGISTRY/e2e/zotool:1.0-2-$TRIPLET" "$WORK/registry-ser
   || { cat "$WORK/registry-serial.yaml"; fail "leg 3b: the row mirror carries no serial tag"; }
 grep -q "ref: tfs:github:acme/zotool:1.0-2" "$WORK/registry-serial.yaml" \
   || fail "leg 3b: the release.ref did not move to the serial tag"
-grep -Eq '^[[:space:]]*- version: 1\.0[[:space:]]*$' "$WORK/registry-serial.yaml" \
+grep -Eq "^[[:space:]]*- version: '?1\\.0'?[[:space:]]*\$" "$WORK/registry-serial.yaml" \
   || { cat "$WORK/registry-serial.yaml"; fail "leg 3b: the row version did not stay bare"; }
 echo "   ok — the serial tag placed, the bare tag unmoved, the row follows"
 
