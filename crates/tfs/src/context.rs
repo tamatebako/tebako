@@ -6147,6 +6147,52 @@ mod tests {
     }
 
     #[test]
+    fn the_ephemeral_tiers_serve_never_reopens_the_copy_for_writing() {
+        // tebako#1112's load-safety pin — the observable the same-inode
+        // verdict above cannot give (an in-place O_TRUNC rewrite KEEPS
+        // the inode): the serve must not open the target for writing at
+        // all. A served copy with every write bit dropped fails an
+        // O_TRUNC rewrite with EACCES while a stat-only serve answers
+        // straight through it. (A root-run leg's DAC override lets the
+        // old write through regardless — the pin bites on the
+        // ordinary-user legs, dev and CI alike.)
+        let dir = std::env::temp_dir().join(format!("tfs-dlro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("lib")).unwrap();
+        std::fs::write(img.join("lib/tool.so"), b"generation-A").unwrap();
+        let point = format!("/t1112r{}", std::process::id());
+
+        let mut ctx = FsContext::new();
+        ctx.dl_persist = false;
+        mount_hostdir_keyed(&mut ctx, &img, &point, &point);
+        let host = ctx
+            .dlmap2file(&format!("{point}/lib/tool.so"))
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&host, std::fs::Permissions::from_mode(0o444)).unwrap();
+        }
+        ctx.dl_cache.clear();
+        let again = ctx
+            .dlmap2file(&format!("{point}/lib/tool.so"))
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(host, again);
+        assert_eq!(std::fs::read(&again).unwrap(), b"generation-A");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(&host, std::fs::Permissions::from_mode(0o644));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn the_store_destination_reextracts_but_lands_atomically() {
         // tebako install's permanent tree keeps its always-fresh write
         // (the serve-once verdict is the ephemeral leaf's), but the
