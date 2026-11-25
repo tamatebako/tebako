@@ -30,7 +30,9 @@
 //!   `<sha>.oci-manifest` sidecar recorded at fetch time) re-serves
 //!   WITHOUT the blob pull — the fetched-at marker is touched;
 //! - `tebako update-registries` ([`refresh`]) force-renews the cache;
-//!   `tebako add-registry` primes it with the bytes it already fetched.
+//!   `tebako add-registry` primes it with the bytes it already fetched;
+//! - the chase (spec 04 §2a, tebako#1100 — [`chase`]) rides this cache
+//!   per hop: a chased registry is just another dispatch-time read.
 
 use std::path::{Path, PathBuf};
 
@@ -367,6 +369,33 @@ pub fn registry_for_with<T: Transport>(
         }
         Err(e) => Err(map_resolve(home, &canonical, e)),
     }
+}
+
+/// The chase at dispatch time (spec 04 §2a, tebako#1100): a payload-name
+/// miss in a registry carrying `packages:` rows chases each row's
+/// `registry:` exactly ONE bounded hop, fetched through THIS cache —
+/// 24 h TTL, stale-serve, and `TEBAKO_OFFLINE` cache-or-named-error
+/// apply per hop exactly as they apply to any dispatch-time registry
+/// read. Every hop is journaled (`event=registry-chase`); a row naming
+/// the chasing registry itself is the hard `ChaseCycle` refusal (the
+/// manifest class — a malformation of the chasing document, not a miss).
+pub fn chase(
+    home: &Path,
+    primary_ref: &str,
+    primary: &Registry,
+    name: &str,
+    ctx: &Ctx,
+) -> Result<tebako_resolve::ChaseReport, ShimError> {
+    let report = tebako_resolve::chase_packages(primary_ref, primary, name, |chased_ref| {
+        registry_for(home, chased_ref, ctx).map_err(|e| e.message)
+    })
+    // The engine's one hard refusal is ChaseCycle (spec 04 §2a) — the
+    // chasing document's malformation, the manifest class (65).
+    .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
+    for line in report.journal_lines(primary_ref, name) {
+        crate::runtime::journal(home, &line);
+    }
+    Ok(report)
 }
 
 /// What [`refresh`] did with one registry ref.

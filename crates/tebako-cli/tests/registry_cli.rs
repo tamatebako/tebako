@@ -468,3 +468,179 @@ fn trust_and_keys_verbs_smoke() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+// ---------------------------------------------------------------------
+// tebako#1100 (spec 04 §2a) — the registry-of-registries chase at the
+// binary level: a catalog (packages: rows only) registered, a payload
+// resolved through ONE bounded hop into the feedstock's registry.
+// ---------------------------------------------------------------------
+
+/// The feedstock document: one payload row for `name` whose universal
+/// release ref is the mirror's image.
+fn chase_feedstock_yaml(name: &str, image_url: &str) -> String {
+    format!(
+        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {image_url}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{name}]\n    default: 1.0\n"
+    )
+}
+
+/// The catalog document: `packages:` rows only, (name, registry ref)
+/// pairs in document order.
+fn chase_catalog_yaml(rows: &[(&str, &str)]) -> String {
+    let mut yaml = "schema_version: 1\npackages:\n".to_string();
+    for (name, registry) in rows {
+        yaml.push_str(&format!(
+            "  - name: {name}\n    kind: app\n    summary: the {name} feedstock\n    registry: {registry}\n"
+        ));
+    }
+    yaml
+}
+
+/// The mirror pair: the hello image + the feedstock registry carrying
+/// it. Answers the feedstock registry's file:// ref.
+fn write_feedstock(mirror: &std::path::Path) -> String {
+    fs::write(mirror.join("hello-1.0.tfs"), entry_image(b"hello-bytes")).unwrap();
+    let image_url = tebako_http::file_url(&mirror.join("hello-1.0.tfs"));
+    fs::write(
+        mirror.join("feedstock-registry.yaml"),
+        chase_feedstock_yaml("hello", &image_url),
+    )
+    .unwrap();
+    tebako_http::file_url(&mirror.join("feedstock-registry.yaml"))
+}
+
+#[test]
+fn the_chase_resolves_through_a_catalog() {
+    let dir = scratch("chase");
+    let home = dir.join("home");
+    let mirror = dir.join("mirror");
+    fs::create_dir_all(&mirror).unwrap();
+    let shim = dir.join("tebako-shim");
+    fs::write(&shim, b"#!/bin/sh\n").unwrap();
+
+    let feedstock_ref = write_feedstock(&mirror);
+    fs::write(
+        mirror.join("catalog-registry.yaml"),
+        chase_catalog_yaml(&[("hello", &feedstock_ref)]),
+    )
+    .unwrap();
+    let catalog_ref = tebako_http::file_url(&mirror.join("catalog-registry.yaml"));
+
+    // add-registry probes the chase and reports it — the add succeeds on
+    // the catalog document alone.
+    let (code, text) = run(&home, &shim, &["add-registry", &catalog_ref]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("registered registry"), "{text}");
+    assert!(
+        text.contains("chase probe: 1 feedstock registries, 1 payload rows"),
+        "{text}"
+    );
+
+    // the payload resolves through the chase — the catalog carries no
+    // payload rows at all.
+    let (code, text) = run(&home, &shim, &["install", "hello"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("installed hello 1.0"), "{text}");
+    assert!(home.join("payloads/hello/1.0.tfs").is_file(), "{text}");
+    assert!(shim_path(&home, "hello").exists(), "{text}");
+
+    // every hop journaled: the chasing registry, the chased ref, the
+    // payload name, the outcome.
+    let journal = fs::read_to_string(home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains("event=registry-chase")
+            && journal.contains(&format!("chased={feedstock_ref}"))
+            && journal.contains("name=hello outcome=hit"),
+        "{journal}"
+    );
+
+    // an overall miss is the same named miss, extended with the chased
+    // registries by name.
+    let (code, text) = run(&home, &shim, &["install", "bogus"]);
+    assert_eq!(code, 65, "{text}");
+    assert!(
+        text.contains("no registered registry carries a payload named 'bogus'"),
+        "{text}"
+    );
+    assert!(text.contains("chased from "), "{text}");
+    assert!(text.contains(&feedstock_ref), "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_chase_refuses_a_self_naming_row() {
+    let dir = scratch("chasecycle");
+    let home = dir.join("home");
+    let mirror = dir.join("mirror");
+    fs::create_dir_all(&mirror).unwrap();
+    let shim = dir.join("tebako-shim");
+    fs::write(&shim, b"#!/bin/sh\n").unwrap();
+
+    // the catalog's row names the catalog itself — the add parses (the
+    // cycle is a LOOKUP-time malformation, not a document one) …
+    let catalog_path = mirror.join("catalog-registry.yaml");
+    let catalog_ref = tebako_http::file_url(&catalog_path);
+    fs::write(
+        &catalog_path,
+        chase_catalog_yaml(&[("hello", &catalog_ref)]),
+    )
+    .unwrap();
+    let (code, text) = run(&home, &shim, &["add-registry", &catalog_ref]);
+    assert_eq!(code, 0, "{text}");
+
+    // … and the lookup refuses by name: ChaseCycle, never a fetch loop.
+    let (code, text) = run(&home, &shim, &["install", "hello"]);
+    assert_eq!(code, 65, "{text}");
+    assert!(text.contains("ChaseCycle"), "{text}");
+    assert!(text.contains("naming itself"), "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_broken_chase_row_is_named_and_the_chase_proceeds() {
+    let dir = scratch("chasebroken");
+    let home = dir.join("home");
+    let mirror = dir.join("mirror");
+    fs::create_dir_all(&mirror).unwrap();
+    let shim = dir.join("tebako-shim");
+    fs::write(&shim, b"#!/bin/sh\n").unwrap();
+
+    let feedstock_ref = write_feedstock(&mirror);
+    let broken_ref = tebako_http::file_url(&mirror.join("no-such-registry.yaml"));
+    fs::write(
+        mirror.join("catalog-registry.yaml"),
+        chase_catalog_yaml(&[("gone", &broken_ref), ("hello", &feedstock_ref)]),
+    )
+    .unwrap();
+    let catalog_ref = tebako_http::file_url(&mirror.join("catalog-registry.yaml"));
+
+    // the add succeeds on the catalog document; the probe names the
+    // broken row as a warning, never a failure.
+    let (code, text) = run(&home, &shim, &["add-registry", &catalog_ref]);
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains("chase probe: 2 feedstock registries, 2 payload rows"),
+        "{text}"
+    );
+    assert!(
+        text.contains("warning: chase probe") && text.contains(&broken_ref),
+        "{text}"
+    );
+
+    // the broken row never takes the good one down with it.
+    let (code, text) = run(&home, &shim, &["install", "hello"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("installed hello 1.0"), "{text}");
+    let journal = fs::read_to_string(home.join("journal.log")).unwrap();
+    assert!(journal.contains("outcome=failed"), "{journal}");
+    assert!(journal.contains("outcome=hit"), "{journal}");
+
+    // an overall miss lists the failed hop with its reason.
+    let (code, text) = run(&home, &shim, &["install", "bogus"]);
+    assert_eq!(code, 65, "{text}");
+    assert!(text.contains("chase failed:"), "{text}");
+    assert!(text.contains(&broken_ref), "{text}");
+
+    let _ = fs::remove_dir_all(&dir);
+}

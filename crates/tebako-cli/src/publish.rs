@@ -1536,6 +1536,9 @@ pub fn publish_full_with_oci_sink(
             // tebako#617).
             signing: None,
             payloads: Vec::new(),
+            // A fresh registry carries no packages: rows; publishing
+            // into an EXISTING file round-trips them through the parse.
+            packages: Vec::new(),
         }
     } else {
         let path = Path::new(&registry_out);
@@ -1550,6 +1553,7 @@ pub fn publish_full_with_oci_sink(
                 schema_version: Some(tebako_resolve::registry::REGISTRY_SCHEMA_VERSION),
                 signing: None,
                 payloads: Vec::new(),
+                packages: Vec::new(),
             },
             Err(e) => {
                 return Err(err(

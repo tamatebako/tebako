@@ -5,7 +5,9 @@ Status: syntax LOCKED (multi-artifact + repo/release-class rules locked
 2026-07-26); resolver + registry listing + `tebako install` SHIPPED
 (roadmap 07/28.1); `tebako publish` SHIPPED (roadmap 41 — GitHub
 releases + file:// mirrors; the GitLab/Bitbucket write legs and the
-brew/install.sh channels remain PLANNED).
+brew/install.sh channels remain PLANNED); the registry-of-registries
+chase SHIPPED (tebako#1100 — `packages:` rows resolve one bounded hop,
+§2a).
 
 ## 1. The reference syntax (MECE, no default service)
 
@@ -240,6 +242,79 @@ payloads:
   cache, never the payload store.
 - A developer's release flow: press → sign → upload payloads → commit
   `tpkg-registry.yaml` (a `tebako publish` helper later; manual first).
+
+## 2a. The registry-of-registries (the chase — tebako#1100)
+
+A registry document MAY carry `packages:` rows — the catalog axis that
+makes a registry a registry-OF-registries (tebako-packages/index is the
+first; a community index any third party opens is the general case).
+One row points at one feedstock's own registry document:
+
+```yaml
+schema_version: 1
+packages:
+  - name: hello                          # the payload the feedstock serves
+    kind: toolkit                        # informational; the chased row's own kind governs
+    summary: GNU hello                   # optional, display only
+    registry: tfs:github:tebako-packages/hello   # a §2 registry reference (any form, ?sha256= pin honored)
+```
+
+- **The chase (locked).** When a payload-name lookup MISSES in a
+  registered registry that carries `packages:` rows — at install time,
+  at dispatch time, in a dependency edge's walk — resolution chases each
+  row's `registry:` exactly ONE bounded hop: the referenced registry is
+  fetched and the payload resolves there. Rows are chased in document
+  order; a registry already fetched under another row is not re-fetched.
+  The chased document is fetched through the SAME machinery as any
+  registry: `?sha256=` pins verify, the dispatch-time cache (24 h TTL)
+  and the stale-serve rule apply, and `TEBAKO_OFFLINE=1` is
+  cache-or-named-error per hop (spec 05 §4).
+- **The one-hop bound (locked).** A chased document's own `packages:`
+  rows are INERT — their presence is recorded in the journal, they are
+  never followed. There is no transitive chase and no recursion, so a
+  chase graph can never loop. A row naming the registry that carries it
+  (canonical reference equality) is the named `ChaseCycle` refusal — a
+  cycle is a malformation of the chasing document, not a miss.
+- **Hop failures are soft, never silent.** A hop whose registry fails
+  to fetch or parse is recorded with the row's ref and the failure
+  reason, and the rest of the chase proceeds (a broken feedstock never
+  takes the catalog down with it). An overall miss is the same named
+  miss as before the chase existed, extended to list every chased
+  registry by name — each failed hop with its own reason, the
+  channel-enumeration discipline of spec 05 §2 applied to the chase.
+- **The trust discipline is unchanged (locked).** The chase extends
+  RESOLUTION only. A chased registry mirrors resolution fields (spec 03
+  §4 tier 3) exactly like a registered one; every artifact still
+  verifies against its own row's sha256 pin and its own `signature:`
+  block at fetch/install (spec 09) — never per run. The book entry's
+  policy (`require_signed`, spec 37 §2) applies to a chase hit
+  unchanged: the policy binds the channel the operator registered, and
+  the chase is that channel's namespace extension. The origin binding
+  (spec 37 §7) records the REGISTERED registry's reference as the
+  origin — a payload installed through the chase re-resolves through
+  the same book entry, never through a reference the book does not
+  hold. The journal records every hop (`event=registry-chase`, the
+  chasing registry, the chased ref, the payload name, the outcome).
+- `tebako add-registry` of a registry carrying `packages:` rows probes
+  the chase and reports it — `N feedstock registries, M payload rows` —
+  with each hop failure named as a warning; the add itself succeeds or
+  fails on the registry document alone (a broken chase ref never blocks
+  a registration, and the probe never writes to the book).
+- **Scope of this amendment (locked):** payload-row resolution only.
+  The runtime download-base chain (spec 05 §2) reads the registered
+  registries exactly as before — a chased document's `kind: runtime`
+  entries are not a runtime channel in this amendment.
+- **Producer gate.** A `packages:` row whose `name` is not a single
+  path component, whose `registry:` does not parse as a §2 registry
+  reference, or that duplicates another row's name is a named registry
+  validation error at `Registry::from_yaml` — the same client-side gate
+  the payload rows ride (`tebako registry validate` reports it).
+- **Reader tolerance (the evolution law, spec 18 §3):** pre-chase
+  readers ignore `packages:` rows as unknown keys — a catalog registered
+  with an old tebako resolves zero chased rows, exactly the pre-chase
+  behavior (never a mis-resolution, and the user-facing steer to the
+  aggregate is unaffected). Fields a row carries beyond the grammar
+  above (`key_url:` and future keys) are ignored on read.
 
 ## 3. Fetch discipline
 

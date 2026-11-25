@@ -758,7 +758,9 @@ fn auto_scan(
 
 /// The pin's fetch-on-miss (spec 07 §4 — parity with the runtime fetch):
 /// the pinned `<slice>@<version>` resolves through the registered
-/// registries (first hit wins, the ambiguity named), fetches, verifies
+/// registries (first hit wins, the ambiguity named; a miss in a
+/// registry carrying `packages:` rows runs the spec 04 §2a chase —
+/// tebako#1100), fetches, verifies
 /// (the registry's sha256 pin through the cache install + the optional
 /// OpenPGP signature BEFORE the bytes land), and installs. Offline was
 /// refused by the caller; a registry that does not list the pin is the
@@ -771,6 +773,7 @@ fn fetch_slice(
 ) -> Result<(), ShimError> {
     let bound = tebako_resolve::PayloadCache::with_root(home).bound_registries(&pin.name);
     let mut hits = Vec::new();
+    let mut chased: Vec<String> = Vec::new();
     for entry in &cfg.registries {
         let reg_ref = entry.reference();
         // Spec 37 §7's origin binding: a slice name already bound by an
@@ -783,21 +786,47 @@ fn fetch_slice(
             if let Some(entry) = payload.versions.iter().find(|v| v.version == pin.version) {
                 hits.push((
                     reg_ref.to_string(),
+                    None,
+                    payload.default_variant.clone(),
+                    entry.clone(),
+                ));
+            }
+            continue;
+        }
+        // tebako#1100 (spec 04 §2a): a miss in a registry carrying
+        // packages: rows chases one bounded hop. The hit records the
+        // REGISTERED registry's ref (the origin binding rides the
+        // registered channel) plus the row it came through.
+        if registry.packages.is_empty() {
+            continue;
+        }
+        let report = crate::regcache::chase(home, reg_ref, &registry, &pin.name, ctx)?;
+        chased.extend(report.chased_listing().lines().map(str::to_string));
+        for (chased_ref, payload) in report.hits() {
+            if let Some(entry) = payload.versions.iter().find(|v| v.version == pin.version) {
+                hits.push((
+                    reg_ref.to_string(),
+                    Some(chased_ref.to_string()),
                     payload.default_variant.clone(),
                     entry.clone(),
                 ));
             }
         }
     }
-    let (reg_ref, default_variant, entry) = match hits.len() {
+    let (reg_ref, _, default_variant, entry) = match hits.len() {
         0 => {
+            let chased = if chased.is_empty() {
+                String::new()
+            } else {
+                format!("\n  chased registries:\n{}", chased.join("\n"))
+            };
             return fail(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "pinned slice {}@{} (from {}): no registered registry lists it\n  add the registry (`tebako add-registry <ref>`), or install the slice explicitly: `tebako install {}@{}`",
+                    "pinned slice {}@{} (from {}): no registered registry lists it{chased}\n  add the registry (`tebako add-registry <ref>`), or install the slice explicitly: `tebako install {}@{}`",
                     pin.name, pin.version, pin.source, pin.name, pin.version
                 ),
-            )
+            );
         }
         1 => hits.remove(0),
         n => {
@@ -809,7 +838,10 @@ fn fetch_slice(
                     pin.version,
                     pin.source,
                     hits.iter()
-                        .map(|(r, _, _)| format!("    - {r}"))
+                        .map(|(r, via, _, _)| match via {
+                            Some(chased) => format!("    - {r} (via {chased})"),
+                            None => format!("    - {r}"),
+                        })
                         .collect::<Vec<_>>()
                         .join("\n"),
                     pin.name,

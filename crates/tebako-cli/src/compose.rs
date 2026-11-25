@@ -254,11 +254,17 @@ pub fn resolve_closure<T: Transport>(
             continue;
         }
 
-        let mut found = install::find_in_registries(home, fetcher, &pending.name, None)?;
+        let (mut found, chases) = install::find_in_registries(home, fetcher, &pending.name, None)?;
         let hit = match found.len() {
             0 => {
+                let chased = install::chased_listing(&chases);
+                let chased = if chased.is_empty() {
+                    chased
+                } else {
+                    format!("\n{chased}")
+                };
                 return Err(err(format!(
-                    "compose slice '{}'{} is not carried by any registered registry — register one with: tebako add-registry <ref>",
+                    "compose slice '{}'{} is not carried by any registered registry{chased} — register one with: tebako add-registry <ref>",
                     pending.name,
                     pending
                         .consumer
@@ -273,7 +279,7 @@ pub fn resolve_closure<T: Transport>(
                     pending.name,
                     found
                         .iter()
-                        .map(|hit| format!("    - {}", hit.reference))
+                        .map(install::hit_listing)
                         .collect::<Vec<_>>()
                         .join("\n")
                 )));

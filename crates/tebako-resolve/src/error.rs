@@ -233,6 +233,11 @@ pub enum ResolveError {
     /// TEBAKO_OFFLINE is set and the entry is not cached (spec 05 §4:
     /// cache hit or hard error).
     Offline { what: String },
+    /// A `packages:` row names the registry that carries it — a
+    /// self-cycle (spec 04 §2a's one-hop bound, tebako#1100). A cycle
+    /// is a malformation of the chasing document, never a miss. Exit
+    /// class 65.
+    ChaseCycle { registry: String, row: String },
     /// The per-entry flock was not acquired within the timeout (spec 05 §4:
     /// 120 s with stale-lock hint).
     LockTimeout { lockfile: PathBuf, waited_secs: u64 },
@@ -393,6 +398,10 @@ impl fmt::Display for ResolveError {
             ResolveError::Offline { what } => write!(
                 f,
                 "{what} is not cached and downloads are disabled (TEBAKO_OFFLINE is set)"
+            ),
+            ResolveError::ChaseCycle { registry, row } => write!(
+                f,
+                "ChaseCycle: registry '{registry}' carries a packages: row ('{row}') naming itself — a chase cycle is a malformation of the chasing document, never a miss; fix the registry"
             ),
             ResolveError::LockTimeout {
                 lockfile,

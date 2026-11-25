@@ -3,7 +3,9 @@
 Normative specification of runtime/payload resolution and the shared
 machine cache. Status: SHIPPED for runtimes and payloads (the payload
 store's `payloads/<name>/<version>.tfs` grammar is load-bearing —
-tpkg's payload_store, consumed by install and the shim's dispatch).
+tpkg's payload_store, consumed by install and the shim's dispatch);
+the registry chase SHIPPED (tebako#1100 — §4's chase bullet; the
+grammar is spec 04 §2a's).
 
 ## 1. runtime_ref (the resolution hint in the v1 trailer)
 
@@ -272,6 +274,18 @@ audit journal degrades to best-effort silence.
   artifact's `.sha256` / `.asc` verified at fetch time, never the
   registry's freshness, and a stale index can name only artifacts whose
   own anchors still verify at install.
+- **The registry chase rides the same machinery (tebako#1100; the
+  grammar and the one-hop bound are spec 04 §2a's).** A chased
+  registry document is fetched, pinned, cached, and served EXACTLY like
+  a registered one: the dispatch-time cache (`registries/<sha>.yaml` +
+  `.fetched-at`, 24 h TTL), the stale-serve rule above,
+  `TEBAKO_OFFLINE=1` as cache-or-named-error per hop. The trust
+  invariants are the registered-registry case unchanged: the chase is
+  resolution metadata, the artifact's sha256 pin and `signature:` block
+  verify at fetch/install — never per run — and the origin binding
+  records the registered (chasing) registry. The journal records every
+  hop (`event=registry-chase` with the chasing registry, the chased
+  ref, the payload name, and the outcome).
 - `tebako cache list` (runtimes and payloads) / `cache prune
   [--runtimes] [--payloads] [--all | --older-than Nd]` manage the cache.
   Bare `cache prune` touches runtimes only; `--payloads` adds the

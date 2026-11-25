@@ -895,6 +895,64 @@ fn pin_miss_fetches_through_the_registry_then_demands_the_mirror() {
     );
 }
 
+#[test]
+fn pin_miss_fetches_through_the_chase() {
+    // tebako#1100 (spec 04 §2a): the registered registry is a CATALOG —
+    // the slice's document lives one bounded hop away.
+    let (tmp, home) = base_setup("slice-chase", "metanorma", "1.16.2");
+    let mirror = tmp.path().join("mirror");
+    std::fs::create_dir_all(&mirror).unwrap();
+    let image_bytes = b"fake slice image bytes\n";
+    std::fs::write(mirror.join("metanorma-bsi-1.2.0.tfs"), image_bytes).unwrap();
+    let payload_ref = tebako_http::file_url(&mirror.join("metanorma-bsi-1.2.0.tfs"));
+    std::fs::write(
+        mirror.join("feedstock.yaml"),
+        format!(
+            "schema_version: 1\npayloads:\n  - name: metanorma-bsi\n    kind: data\n    versions:\n      - version: 1.2.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n"
+        ),
+    )
+    .unwrap();
+    let feedstock_ref = tebako_http::file_url(&mirror.join("feedstock.yaml"));
+    std::fs::write(
+        mirror.join("catalog.yaml"),
+        format!(
+            "schema_version: 1\npackages:\n  - name: metanorma-bsi\n    registry: {feedstock_ref}\n"
+        ),
+    )
+    .unwrap();
+    let catalog_ref = tebako_http::file_url(&mirror.join("catalog.yaml"));
+    write_config(
+        &home,
+        &format!(
+            "registries:\n  - {catalog_ref}\ndefaults:\n  metanorma:\n    version: \"1.16.2\"\n    slices: [metanorma-bsi@1.2.0]\n"
+        ),
+    );
+
+    let ctx = ctx(&home, tmp.path());
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+
+    // the chase fetched + installed the bytes (the mirror-gap refusal
+    // below is the SAME post-fetch shape the direct path answers).
+    let cached = home
+        .join("payloads")
+        .join("metanorma-bsi")
+        .join("1.2.0.tfs");
+    assert_eq!(std::fs::read(&cached).unwrap(), image_bytes);
+    let journal = read_journal(&home);
+    assert!(
+        journal.contains("event=registry-chase")
+            && journal.contains(&format!("chased={feedstock_ref}"))
+            && journal.contains("name=metanorma-bsi outcome=hit"),
+        "{journal}"
+    );
+    assert!(
+        journal.contains("event=payload-installed name=metanorma-bsi version=1.2.0"),
+        "{journal}"
+    );
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE, "{err:?}");
+    assert!(err.message.contains("manifest mirror"), "{}", err.message);
+}
+
 // ---------------------------------------------------------------------
 // The runtime form (spec 03 §2.8's layout grants): slices augmenting the
 // RUNTIME's declared roles mount the role form; the driver resolves

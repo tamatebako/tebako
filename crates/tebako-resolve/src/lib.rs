@@ -55,8 +55,9 @@ pub use plan::{
 };
 pub use reference::{Reference, Service};
 pub use registry::{
-    PlatformSelection, Registry, RegistryPayload, RegistryPlatforms, RegistryRef,
-    RegistryRuntimeRequirement, RegistrySigning, RegistryVersion, ReleaseRef,
+    chase_packages, ChaseHop, ChaseReport, PlatformSelection, Registry, RegistryPackage,
+    RegistryPayload, RegistryPlatforms, RegistryRef, RegistryRuntimeRequirement, RegistrySigning,
+    RegistryVersion, ReleaseRef,
 };
 #[cfg(feature = "oci")]
 pub use tebako_oci::{
