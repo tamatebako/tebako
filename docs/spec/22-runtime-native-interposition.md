@@ -91,7 +91,9 @@ mechanics above are uniform; the DELIVERY is platform-split:
   adhoc signature has no CMS blob, so an UNSIGNED exe (a dev build, a
   CI test binary) skips the re-exec and boots uninserted with the loud
   warning, the fallback this section already promises. A signed runtime
-  carries the blob and inserts exactly as before.
+  carries the blob and inserts exactly as before. The micro dylib
+  carries the class-L tuples only — the file-IO family's in-process
+  macOS delivery is §3.6's boot-tail shim re-exec (tebako#1125).
 
   **The macOS 14 insertion drop (tebako#1080).** On darwin 23, dyld
   silently drops `DYLD_INSERT_LIBRARIES` when the target image carries
@@ -834,7 +836,7 @@ the authored `<jre>:ro` ingredient remains the spelling for an
 operator-INSTALLED host JRE (the non-wrapper pattern this section was
 locked on).
 
-### 3.6 The exe shape's own file-IO family (PLANNED — the mechanism and the driver's arm are DELIVERED 2026-10-28; the runtime link and its jail proof are pending; tebako-runtime-ruby#126)
+### 3.6 The exe shape's own file-IO family (PLANNED — the mechanism and the driver's arm are DELIVERED 2026-10-28; the macOS in-process delivery is DELIVERED 2026-11-25 (tebako#1125, the boot-tail shim re-exec below); the ELF runtime link and its jail proof are pending; tebako-runtime-ruby#126)
 
 The runtime exe defines class L's `dlopen`/`dlerror` for the whole
 process (§2 Rule L2), so a loader call routes through the mounts. It
@@ -868,12 +870,43 @@ invents one):**
   DISCOVERY does: the driver resolves the entry with
   `dlsym(RTLD_DEFAULT, …)` (below), which searches the dynamic symbol
   table, so the same link line adds `-Wl,--export-dynamic`.
-- **macOS.** The driver's micro interpose-dylib (§2's phase-1 delivery,
-  `loader_interpose.c`, `__interpose` tuples bound to the exe's
-  `tebako_fs_*` exports with `-undefined dynamic_lookup`) gains the
-  family's tuples: one VFS context in the process, no third artifact.
-  The staticlib delivery above is ELF-only, because dyld honours
-  `__interpose` tuples solely from a dylib image.
+- **macOS (DELIVERED 2026-11-25, tebako#1125).** The boot tail's shim
+  re-exec: after the mounts and the §3 injection export, the driver
+  re-execs the interpreter once with `DYLD_INSERT_LIBRARIES` naming the
+  materialized preload shim FIRST and the phase-1 micro dylib SECOND
+  (`crates/tebako-driver/src/ffi/shim_reexec.rs`). dyld inserts both at
+  the exec; the shim's constructor rebuilds the namespace from
+  `TEBAKO_TFS_MOUNTS` — the §3 child-injection path, shipped and
+  proven — and its tuples cover the whole process, the exe's own
+  C-library reads included (dyld interposition is fixup-format
+  agnostic, so the ffi/rebind.rs dlcache scope and its chained-fixups
+  blind spot do not apply here). The re-exec'd boot is a fresh process
+  — no double mount, no partial-mount window, the discipline the
+  phase-1 self-insertion already proves — with the same once-only
+  sentinel shape (`TEBAKO_DRIVER_SHIM_BOOTED`, captured and cleared at
+  the next boot's head, never inherited) and the same argv replay.
+  The model is the R runtime's two-incarnation boot
+  (tebako-runtime-r's `tebako_r_main.c`), generalized into the driver:
+  every runtime whose env image declares `preload_shim` arms the
+  family in-process with NO factory change. §2's AMFI gate guards the
+  re-exec identically (an insert-killing exe boots without the family,
+  loudly), a dropped insertion is a loud degraded line and never a
+  silent fallback, and a respawned child that inherited the insertion
+  is already armed — its tail does not re-exec again. The child env
+  is byte-identical with the pre-change shape (the re-exec'd boot's
+  head scrub strips the micro entry; the injection export re-exports
+  its own value), and a user's own foreign insert entries are carried
+  across the re-exec. macOS needs NO exe-shape archive link: dyld
+  honours `__interpose` tuples solely from a dylib image, so the
+  staticlib delivery above stays ELF-only. The delivery this bullet
+  replaces — the phase-1 micro dylib gaining the family's tuples — is
+  SUPERSEDED on two counts: the family's pass-through originals make a
+  tuple dylib's re-entrancy a dyld rebinding trap (dyld rebinds the
+  exe's own tuple-replacee call sites to the dylib's replacements, so
+  a replacement's pass-through original recurses), and a hard
+  `tebako_preload_*` reference from the embedded dylib would couple
+  every product release to the factory's archive link — the release
+  lockstep the arm's dlsym discovery (below) exists to avoid.
 
 **The decision (recorded 2026-10-28; it was open before code landed).**
 The crate is linked. #951 made that deliverable: `crate-type` gains
@@ -1203,3 +1236,16 @@ runtime releases.
   EPERM and the denial appears in the audit journal; with no jail
   bound, the same run is byte-identical to the pre-change runtime. Both
   on the exe shape, through the §3 proof harness.
+- The macOS in-process file-IO family (§3.6, tebako#1125 — the driver's
+  boot-tail shim re-exec is delivered; the factory tripwire flips after
+  a product release reaches the runtime build): an unpatched native
+  extension's raw `open(2)`/`read(2)` of an in-image path answers in
+  the INTERPRETER process, not only in spawned children. Proven
+  unsigned by `crates/tebako-driver/tests/ioprobe.rs` (the loud AMFI
+  skip on macOS 15+ adhoc, the armed `IOPROBE-OK` verdict elsewhere,
+  the micro dylib still inserted beside the shim) and signed by
+  ci/macos-signed-dlopen.sh's shim leg; the factory's ruby#388 probe
+  then flips `expected_native_open_state` for `env_image_raw_open` /
+  `payload_image_raw_open` from "unsupported" to "ok" on macOS, and its
+  boot-head insertion check stays green (the final process carries the
+  micro dylib beside the shim).

@@ -847,17 +847,23 @@ jobs:
   # factory's boot smoke caught it one indirection too late). The probe
   # (crates/tebako-driver/src/bin/tebako-dlprobe.rs) is the runtime exe's
   # shape in miniature: the driver's self-insertion boot plus the
-  # tebako_fs_* link seal. The leg signs it with the spec 31 §3
-  # entitlement pair and requires the DLPROBE-OK verdict — a gate
+  # tebako_fs_* link seal. tebako#1125 rides the same leg: a second probe
+  # (src/bin/tebako-ioprobe.rs) boots against a shim-carrying fixture
+  # image and requires the IOPROBE-OK verdict — the spec 22 §3.6
+  # boot-tail shim re-exec arming the file-IO family IN the interpreter
+  # process (an unpatched extension's raw open(2) of an in-VFS path
+  # answers). The leg signs both with the spec 31 §3
+  # entitlement pair and requires both verdicts — a gate
   # regression dies HERE, on the PR's push run, not in a factory
   # pin-roll. Like the macOS matrix rows it never runs on PRs
   # (tebako#279's tier map; the signing plane is PR-barred anyway —
   # release.yml's rehearsal rule). Disarmed (APPLE_SIGNING_ENABLED unset)
-  # the leg builds the probe + fixture, notices loudly, and skips the
+  # the leg builds the probes + fixtures, notices loudly, and skips the
   # signing plane (spec 00 invariant 7); the unsigned AMFI-skip truth
-  # rides tests/interpose_dlopen.rs in the workspace sweep.
+  # rides tests/interpose_dlopen.rs and tests/ioprobe.rs in the
+  # workspace sweep.
   test-macos-signed-dlopen:
-    name: signed class-L dlopen (macos-15, tebako#989)
+    name: signed class-L dlopen + in-process file-IO (macos-15, tebako#989/#1125)
     runs-on: macos-15
     if: github.event_name != 'pull_request'
     permissions:
@@ -934,7 +940,7 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/arm64-osx-static" >> "$GITHUB_ENV"
 
-      - name: Build the probe + the fixture image
+      - name: Build the probes + the fixture images
         working-directory: tebako-rs
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
@@ -952,7 +958,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: bash ci/macos-sign-setup.sh
 
-      - name: Sign the probe and require DLPROBE-OK
+      - name: Sign the probes and require DLPROBE-OK + IOPROBE-OK
         if: vars.APPLE_SIGNING_ENABLED == 'true'
         working-directory: tebako-rs
         env:
@@ -963,7 +969,7 @@ jobs:
       - name: Disarmed — the signing plane skips (loud)
         if: vars.APPLE_SIGNING_ENABLED != 'true'
         run: |
-          echo "::notice::tebako#989: APPLE_SIGNING_ENABLED != true — the signed class-L dlopen leg is DISARMED: the probe and fixture built; the signing plane and the DLPROBE-OK requirement skip (spec 00 invariant 7). The unsigned AMFI-skip truth rides tebako-driver's interpose_dlopen test in the workspace sweep."
+          echo "::notice::tebako#989/#1125: APPLE_SIGNING_ENABLED != true — the signed class-L dlopen + in-process file-IO legs are DISARMED: the probes and fixtures built; the signing plane and the DLPROBE-OK/IOPROBE-OK requirements skip (spec 00 invariant 7). The unsigned AMFI-skip truth rides tebako-driver's interpose_dlopen and ioprobe tests in the workspace sweep."
 
   fmt:
     name: fmt

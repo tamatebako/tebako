@@ -916,6 +916,7 @@ mod tests {
             runtime_root: "/__tfs__".to_string(),
             on_runtime: None,
             entry_index: None,
+            preload_shim_host: None,
         };
         let launch = compose("/cache/java".to_string(), &outcome);
         assert_eq!(launch.program, "/cache/java");
@@ -927,6 +928,7 @@ mod tests {
             runtime_root: "/__tfs__".to_string(),
             on_runtime: None,
             entry_index: None,
+            preload_shim_host: None,
         };
         let launch = compose("/cache/java".to_string(), &outcome);
         assert_eq!(launch.argv, vec!["/cache/java", "--version"]);

@@ -152,6 +152,11 @@ pub struct BootOutcome {
     /// composed one (the path/bare-name entry arms) — the wrapper tail's
     /// exec-cache bridge target. `None` on the entry-less forms.
     pub entry_index: Option<usize>,
+    /// The materialized HOST path of the env image's declared preload
+    /// shim (spec 22 §3), when one was delivered. The macOS boot tail's
+    /// shim re-exec (spec 22 §3.6, tebako#1125) names it in the
+    /// re-exec's insert list; every other consumer ignores it.
+    pub preload_shim_host: Option<String>,
 }
 
 /// The mount-mode source (spec 17 §1, locked 2026-08-04): mount
@@ -1433,7 +1438,7 @@ pub fn boot_with_mount_modes(
             let tree_boot: Option<crate::materialize::tree::TreeBoot> = None;
             // The standalone interpreter spawns too — arm its children
             // the same way (spec 22 §3).
-            crate::injection::export(env, declaration.as_ref(), runtime_root)?;
+            let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
             // The exe shape's own file-IO family (spec 22 §3.6): the env
             // image is mounted and `TEBAKO_TFS_MOUNTS` now names it, so a
             // runtime that linked the family arms it here — before the
@@ -1462,6 +1467,7 @@ pub fn boot_with_mount_modes(
                     .unwrap_or_else(|| runtime_root.to_string()),
                 on_runtime: None,
                 entry_index: None,
+                preload_shim_host: shim_host,
             })
         })();
         if result.is_err() {
@@ -1701,6 +1707,7 @@ pub fn boot_with_mount_modes(
                     mount: on.mount.clone(),
                 }),
             entry_index,
+            preload_shim_host: shim_host,
         })
     })();
     if result.is_err() {

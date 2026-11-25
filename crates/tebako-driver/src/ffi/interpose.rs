@@ -84,8 +84,9 @@ fn dylib_path(dir: &Path, sha: &str) -> PathBuf {
 
 /// The `DYLD_INSERT_LIBRARIES` value: our dylib FIRST, any existing
 /// value preserved after it (colon-separated; an empty existing value is
-/// no value). dyld dedupes a path already listed.
-fn compose_insert_libraries(dylib: &Path, existing: Option<OsString>) -> OsString {
+/// no value). dyld dedupes a path already listed. pub(crate): the shim
+/// re-exec (shim_reexec.rs) composes its own list with the same rule.
+pub(crate) fn compose_insert_libraries(dylib: &Path, existing: Option<OsString>) -> OsString {
     let mut out = dylib.as_os_str().to_os_string();
     if let Some(prev) = existing.filter(|v| !v.is_empty()) {
         out.push(":");
@@ -223,14 +224,17 @@ fn exe_carries_cms_blob(exe: &Path) -> bool {
 /// build, a CI test binary) must not re-exec into it; the boot's
 /// documented fallback (warn loudly, boot uninserted) fires instead.
 /// The signed production runtime carries the CMS blob and is untouched.
-fn amfi_kills_this_exe(exe: &Path) -> bool {
+/// pub(crate): the shim re-exec (shim_reexec.rs) gates on the same
+/// verdict — an insert re-exec is an insert re-exec.
+pub(crate) fn amfi_kills_this_exe(exe: &Path) -> bool {
     macos_major().is_some_and(|v| v >= 15) && !exe_carries_cms_blob(exe)
 }
 
 /// The cache-dir marker every inserted micro-dylib path carries
 /// (`<temp>/tebako-interpose/<sha256>.dylib`). Any tebako version's entry
 /// matches — an ancestor runtime's micro is as foreign to a child as ours.
-fn is_micro_dylib_entry(entry: &OsStr) -> bool {
+/// pub(crate): the shim re-exec's foreign-entry capture filters on it.
+pub(crate) fn is_micro_dylib_entry(entry: &OsStr) -> bool {
     let bytes = entry.as_bytes();
     bytes
         .windows(b"tebako-interpose/".len())
@@ -331,6 +335,16 @@ fn ensure_dylib(path: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+/// The micro dylib's content-keyed path under `cache_base`, installed on
+/// first use. The boot-head self-insertion and the shim re-exec
+/// (shim_reexec.rs) name the SAME dylib in their insert lists, so the
+/// ensure is shared, never duplicated.
+pub(crate) fn ensure_micro_dylib(cache_base: &Path) -> Result<PathBuf, String> {
+    let path = dylib_path(&cache_dir(cache_base), &sha256_hex(DYLIB_BYTES));
+    ensure_dylib(&path, DYLIB_BYTES)?;
+    Ok(path)
+}
+
 /// The insertion proper, split from [`self_insert`] for tests (the
 /// cache root is a parameter; the execv never happens on any failure
 /// path). Every step BEFORE the execv returns the failure as the reason;
@@ -339,10 +353,7 @@ fn try_insert(cache_base: &Path, c_argv: *const *const c_char) -> Result<(), Str
     if c_argv.is_null() {
         return Err("the process argv is unavailable".to_string());
     }
-    let sha = sha256_hex(DYLIB_BYTES);
-    let dir = cache_dir(cache_base);
-    let path = dylib_path(&dir, &sha);
-    ensure_dylib(&path, DYLIB_BYTES)?;
+    let path = ensure_micro_dylib(cache_base)?;
     std::env::set_var(
         INSERT_VAR,
         compose_insert_libraries(&path, std::env::var_os(INSERT_VAR)),

@@ -39,9 +39,12 @@
 //! — the cost §3.6 records for the link-the-crate decision.
 //!
 //! macOS is not this delivery. dyld honours `__interpose` tuples only from a
-//! dylib image, so the exe shape there is the driver's micro interpose-dylib
-//! (§2's phase-1 delivery) gaining the family's tuples; the archive's
-//! definitions are not preemptive in a Mach-O executable.
+//! dylib image, so the archive's definitions are not preemptive in a Mach-O
+//! executable. The in-process delivery there is the boot tail's shim re-exec
+//! (`crate::ffi::shim_reexec`, tebako#1125): the interpreter re-execs once
+//! with the preload shim inserted, and the shim's tuples cover the process —
+//! the same family, the dylib spelling. Its coverage verdict tells [`arm`]
+//! the covered incarnation has no gap to name.
 
 #![allow(unsafe_code)]
 // The crate root denies `unsafe_code`; `dlsym` is a libc call and needs the
@@ -109,6 +112,13 @@ fn jailed() -> bool {
 #[cfg(unix)]
 pub(crate) fn arm() -> bool {
     let Some(init) = resolve() else {
+        // macOS: the shim re-exec's incarnation carries the SAME family
+        // as an interposed dylib (tebako#1125) — the coverage gap the
+        // warning below names does not exist there.
+        #[cfg(target_os = "macos")]
+        if crate::ffi::shim_reexec::shim_covers_in_process() {
+            return true;
+        }
         if jailed() {
             eprintln!(
                 "tebako-driver: TEBAKO_JAIL is bound but this runtime defines no file-IO \
