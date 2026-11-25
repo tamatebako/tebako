@@ -207,6 +207,83 @@ fn project_registry_scope_wins_over_the_user_default_scope() {
 }
 
 // ---------------------------------------------------------------------
+// tebako#1100 (spec 04 §2a) — the chase at dispatch time
+// ---------------------------------------------------------------------
+
+#[test]
+fn registry_default_resolves_through_the_chase() {
+    let tmp = TempDir::new("chase-default");
+    let home = tmp.path().join("home");
+    seed_metanorma(&home);
+    // The registered registry is a CATALOG (packages: rows only); the
+    // payload lives in the feedstock document the row names.
+    let feedstock = tmp.path().join("feedstock.yaml");
+    std::fs::write(
+        &feedstock,
+        "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: 1.0.0\n    versions:\n      - version: 1.0.0\n        platforms: universal\n        release: {ref: file:///metanorma-1.0.0.tfs}\n        entrypoints: [metanorma]\n",
+    )
+    .unwrap();
+    let feedstock_ref = tebako_http::file_url(&feedstock);
+    let catalog = tmp.path().join("catalog.yaml");
+    std::fs::write(
+        &catalog,
+        format!(
+            "schema_version: 1\npackages:\n  - name: metanorma\n    kind: app\n    registry: {feedstock_ref}\n"
+        ),
+    )
+    .unwrap();
+    let catalog_ref = tebako_http::file_url(&catalog);
+    write_config(&home, &format!("registries:\n  - {catalog_ref}\n"));
+
+    let res = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap();
+    assert_eq!(res.version, "1.0.0");
+    match &res.source {
+        // the origin-binding rule (spec 04 §2a): the answer records the
+        // REGISTERED registry, never the chased one.
+        VersionSource::RegistryDefault(reg) => assert_eq!(reg, &catalog_ref),
+        other => panic!("expected the registry default, got {other:?}"),
+    }
+    let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains("event=registry-chase")
+            && journal.contains(&format!("chased={feedstock_ref}"))
+            && journal.contains("name=metanorma outcome=hit"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn registry_default_chase_miss_is_the_plain_no_answer() {
+    let tmp = TempDir::new("chase-miss");
+    let home = tmp.path().join("home");
+    seed_metanorma(&home);
+    // The catalog chases a document that does not carry the payload —
+    // the default chain answers None exactly as before the chase.
+    let feedstock = tmp.path().join("feedstock.yaml");
+    std::fs::write(&feedstock, "schema_version: 1\npayloads: []\n").unwrap();
+    let feedstock_ref = tebako_http::file_url(&feedstock);
+    let catalog = tmp.path().join("catalog.yaml");
+    std::fs::write(
+        &catalog,
+        format!(
+            "schema_version: 1\npackages:\n  - name: metanorma\n    registry: {feedstock_ref}\n"
+        ),
+    )
+    .unwrap();
+    let catalog_ref = tebako_http::file_url(&catalog);
+    write_config(&home, &format!("registries:\n  - {catalog_ref}\n"));
+
+    let err = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap_err();
+    assert!(
+        err.message.contains("no version resolved"),
+        "the plain chain-found-nothing refusal, not a chase artifact: {}",
+        err.message
+    );
+    let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+    assert!(journal.contains("outcome=miss"), "{journal}");
+}
+
+// ---------------------------------------------------------------------
 // spec 37 §7 — origin binding confines the registry default
 // ---------------------------------------------------------------------
 

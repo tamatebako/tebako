@@ -67,6 +67,37 @@ pub struct Registry {
     pub signing: Option<RegistrySigning>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub payloads: Vec<RegistryPayload>,
+    /// The registry-of-registries axis (spec 04 §2a, tebako#1100):
+    /// `packages:` rows point at OTHER registries' documents — a
+    /// catalog. A payload-name miss in this registry chases each row's
+    /// `registry:` exactly ONE bounded hop (a chased document's own
+    /// `packages:` rows are inert — never a transitive chase, never a
+    /// loop; [`chase_packages`] owns the walk).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packages: Vec<RegistryPackage>,
+}
+
+/// One `packages:` row of a registry-of-registries (spec 04 §2a): the
+/// catalog entry pointing at the feedstock registry that serves
+/// `name`. Only resolution-relevant fields are modeled — a row's extra
+/// keys (the intake lane's `key_url:`, future additions) parse and are
+/// ignored, the schema's evolution law (spec 18 §3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegistryPackage {
+    /// The payload the row's feedstock serves (a cache key — the same
+    /// path-component rule as a payload name).
+    pub name: String,
+    /// The row's declared kind — informational at resolution time (the
+    /// chased registry's own payload row governs). Optional on read so
+    /// already-published catalogs keep resolving.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<PayloadKind>,
+    /// The one-line display summary (optional, never resolved).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// The feedstock registry document — a spec 04 §2 registry
+    /// reference (any form; a `?sha256=` pin verifies the document).
+    pub registry: String,
 }
 
 /// The registry head's `signing:` block (spec 09 §9.1): the publisher's
@@ -498,6 +529,24 @@ impl Registry {
         names.sort();
         if names.windows(2).any(|w| w[0] == w[1]) {
             return Err(invalid_entry("duplicate payload name"));
+        }
+        // spec 04 §2a's producer gate: a `packages:` row is validated
+        // where it is read — a bad name, an unparsable chase ref, or a
+        // duplicate is a named error at from_yaml (the same gate
+        // `tebako registry validate` reports).
+        for row in &self.packages {
+            check_path_safe("packages row name", &row.name)?;
+            RegistryRef::parse(&row.registry).map_err(|e| {
+                invalid_entry(format!(
+                    "packages row '{}' carries an unresolvable registry ref: {e}",
+                    row.name
+                ))
+            })?;
+        }
+        let mut chased: Vec<&str> = self.packages.iter().map(|p| p.name.as_str()).collect();
+        chased.sort();
+        if chased.windows(2).any(|w| w[0] == w[1]) {
+            return Err(invalid_entry("duplicate packages row name"));
         }
         Ok(())
     }
@@ -1879,6 +1928,194 @@ impl<T: Transport> Fetcher<T> {
     }
 }
 
+// ---------------------------------------------------------------------
+// The chase (spec 04 §2a, tebako#1100): `packages:` rows resolve one
+// bounded hop
+// ---------------------------------------------------------------------
+
+/// One chased hop's outcome. A hop is ONE row's `registry:` reference,
+/// fetched once (a registry two rows name is fetched once) and probed
+/// for the payload name that missed in the chasing registry.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChaseHop {
+    /// The chased registry fetched and carries the payload — the
+    /// resolution hit. `registry_ref` is the row's reference as
+    /// authored; the payload is the chased document's own row.
+    Hit {
+        registry_ref: String,
+        payload: RegistryPayload,
+    },
+    /// The chased registry fetched but does not carry the payload.
+    Miss { registry_ref: String },
+    /// The chased registry failed to fetch or parse — soft, never
+    /// silent (spec 04 §2a): the rest of the chase proceeds, and the
+    /// miss report names this ref with its `reason`.
+    Failed {
+        registry_ref: String,
+        reason: String,
+    },
+    /// The chased registry carries its own `packages:` rows — INERT by
+    /// the one-hop bound: recorded (the journal line), never followed.
+    /// The payload probe of the SAME document already happened — this
+    /// marker rides alongside a Hit or a Miss, never replaces one.
+    NestedInert { registry_ref: String, rows: usize },
+}
+
+/// What a chase did: the ordered hop outcomes of one payload-name chase.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ChaseReport {
+    pub hops: Vec<ChaseHop>,
+}
+
+impl ChaseReport {
+    /// True when no hop ran (the chasing registry carries no
+    /// `packages:` rows — the pre-chase shape).
+    pub fn is_empty(&self) -> bool {
+        self.hops.is_empty()
+    }
+
+    /// The hits — (the row's registry ref, the chased payload row).
+    pub fn hits(&self) -> impl Iterator<Item = (&str, &RegistryPayload)> {
+        self.hops.iter().filter_map(|h| match h {
+            ChaseHop::Hit {
+                registry_ref,
+                payload,
+            } => Some((registry_ref.as_str(), payload)),
+            _ => None,
+        })
+    }
+
+    /// The chased registries by name for the miss listing (spec 04 §2a:
+    /// an overall miss is the same named miss as before, extended to
+    /// list every chased registry, each failed hop with its reason).
+    pub fn chased_listing(&self) -> String {
+        let mut lines = Vec::new();
+        for hop in &self.hops {
+            match hop {
+                ChaseHop::Hit { registry_ref, .. } | ChaseHop::Miss { registry_ref } => {
+                    lines.push(format!("    - {registry_ref}"))
+                }
+                ChaseHop::Failed {
+                    registry_ref,
+                    reason,
+                } => lines.push(format!("    - {registry_ref} (chase failed: {reason})")),
+                ChaseHop::NestedInert { .. } => {}
+            }
+        }
+        lines.join("\n")
+    }
+
+    /// One journal line per hop (`event=registry-chase` — spec 04 §2a:
+    /// the journal records every hop). The caller owns the journal.
+    pub fn journal_lines(&self, primary_ref: &str, name: &str) -> Vec<String> {
+        self.hops
+            .iter()
+            .map(|hop| {
+                let (outcome, registry_ref, detail) = match hop {
+                    ChaseHop::Hit { registry_ref, .. } => ("hit", registry_ref.as_str(), ""),
+                    ChaseHop::Miss { registry_ref } => ("miss", registry_ref.as_str(), ""),
+                    ChaseHop::Failed {
+                        registry_ref,
+                        reason,
+                    } => ("failed", registry_ref.as_str(), reason.as_str()),
+                    ChaseHop::NestedInert { registry_ref, rows } => {
+                        return format!(
+                            "event=registry-chase primary={primary_ref} chased={registry_ref} name={name} outcome=nested-inert rows={rows}"
+                        );
+                    }
+                };
+                let suffix = if detail.is_empty() {
+                    String::new()
+                } else {
+                    format!(" reason={detail}")
+                };
+                format!(
+                    "event=registry-chase primary={primary_ref} chased={registry_ref} name={name} outcome={outcome}{suffix}"
+                )
+            })
+            .collect()
+    }
+}
+
+/// Chase a chasing registry's `packages:` rows for the payload `name`
+/// that missed in it (spec 04 §2a): each row's `registry:` resolves
+/// exactly ONE bounded hop — fetched through the caller's `fetch`
+/// (the install path's fetcher, the shim's dispatch cache — the same
+/// machinery any registry document rides) and probed for `name`.
+///
+/// The walk:
+///
+/// - rows chase in document order; a registry two rows name fetches once;
+/// - a row naming the chasing registry itself (canonical equality) is
+///   the hard `ChaseCycle` refusal — a malformation, never a miss;
+/// - a hop that fails to fetch or parse is recorded soft (`Failed`) and
+///   the rest of the chase proceeds;
+/// - a chased document's own `packages:` rows are INERT (`NestedInert`,
+///   journaled) — never followed, so the graph can never loop.
+///
+/// `primary_ref` is the chasing registry's canonical reference (the
+/// cycle check's comparison and the journal's `primary=`).
+pub fn chase_packages(
+    primary_ref: &str,
+    primary: &Registry,
+    name: &str,
+    mut fetch: impl FnMut(&str) -> Result<Registry, String>,
+) -> Result<ChaseReport, ResolveError> {
+    let mut report = ChaseReport::default();
+    let mut fetched: Vec<String> = Vec::new();
+    for row in &primary.packages {
+        let canonical = match RegistryRef::parse(&row.registry) {
+            Ok(r) => r.as_canonical_string(),
+            Err(e) => {
+                // from_yaml's producer gate refuses unparsable refs, so
+                // this is unreachable from a validated registry — the
+                // soft arm keeps a hand-built model honest.
+                report.hops.push(ChaseHop::Failed {
+                    registry_ref: row.registry.clone(),
+                    reason: format!("the row's registry ref does not parse: {e}"),
+                });
+                continue;
+            }
+        };
+        if canonical == primary_ref {
+            return Err(ResolveError::ChaseCycle {
+                registry: primary_ref.to_string(),
+                row: row.registry.clone(),
+            });
+        }
+        if fetched.iter().any(|seen| seen == &canonical) {
+            continue;
+        }
+        fetched.push(canonical);
+        let registry = match fetch(&row.registry) {
+            Ok(registry) => registry,
+            Err(reason) => {
+                report.hops.push(ChaseHop::Failed {
+                    registry_ref: row.registry.clone(),
+                    reason,
+                });
+                continue;
+            }
+        };
+        report.hops.push(match registry.payload(name) {
+            Some(payload) => ChaseHop::Hit {
+                registry_ref: row.registry.clone(),
+                payload: payload.clone(),
+            },
+            None => ChaseHop::Miss {
+                registry_ref: row.registry.clone(),
+            },
+        });
+        if !registry.packages.is_empty() {
+            report.hops.push(ChaseHop::NestedInert {
+                registry_ref: row.registry.clone(),
+                rows: registry.packages.len(),
+            });
+        }
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3239,6 +3476,301 @@ payloads:
             err.to_string()
                 .contains("blksum at the version level has no meaning on a variants entry"),
             "{err}"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // The chase (spec 04 §2a, tebako#1100)
+    // -----------------------------------------------------------------
+
+    /// A catalog document: `packages:` rows only, (name, registry ref)
+    /// pairs in document order.
+    fn catalog_yaml(rows: &[(&str, &str)]) -> String {
+        let mut yaml = "schema_version: 1\npackages:\n".to_string();
+        for (name, registry) in rows {
+            yaml.push_str(&format!(
+                "  - name: {name}\n    kind: toolkit\n    summary: the {name} feedstock\n    registry: {registry}\n"
+            ));
+        }
+        yaml
+    }
+
+    /// A feedstock document carrying the one payload `name`.
+    fn feedstock_yaml(name: &str) -> String {
+        format!(
+            "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    default: 1.0\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: tfs:github:o/{name}:1.0}}\n        entrypoints: [{name}]\n"
+        )
+    }
+
+    /// The in-memory chase fixture: refs → documents, plus the fetch log
+    /// (the dedup and inertness proofs read it).
+    struct FixtureFetcher {
+        registries: std::collections::HashMap<String, Registry>,
+        fetched: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl FixtureFetcher {
+        fn new(pairs: &[(&str, &str)]) -> Self {
+            Self {
+                registries: pairs
+                    .iter()
+                    .map(|(r, yaml)| (r.to_string(), Registry::from_yaml(yaml).unwrap()))
+                    .collect(),
+                fetched: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+
+        fn fetch(&self, r: &str) -> Result<Registry, String> {
+            self.fetched.borrow_mut().push(r.to_string());
+            self.registries
+                .get(r)
+                .cloned()
+                .ok_or_else(|| format!("404: {r} is not served"))
+        }
+    }
+
+    #[test]
+    fn packages_rows_parse_and_round_trip() {
+        let yaml = "schema_version: 1\npackages:\n  - name: hello\n    kind: toolkit\n    summary: GNU hello\n    registry: tfs:github:tebako-packages/hello\n    key_url: https://example.com/hello.asc\n";
+        let registry = Registry::from_yaml(yaml).unwrap();
+        assert_eq!(registry.packages.len(), 1);
+        let row = &registry.packages[0];
+        assert_eq!(row.name, "hello");
+        assert_eq!(row.kind, Some(PayloadKind::Toolkit));
+        assert_eq!(row.summary.as_deref(), Some("GNU hello"));
+        assert_eq!(row.registry, "tfs:github:tebako-packages/hello");
+        // key_url: rides the evolution law — parsed, ignored, dropped on
+        // the round trip (only the grammar's fields serialize).
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+        // kind is optional on read — already-published catalogs keep
+        // resolving.
+        let bare = "schema_version: 1\npackages:\n  - name: hello\n    registry: tfs:github:tebako-packages/hello\n";
+        let registry = Registry::from_yaml(bare).unwrap();
+        assert_eq!(registry.packages[0].kind, None);
+        assert_eq!(registry.packages[0].summary, None);
+    }
+
+    #[test]
+    fn packages_row_validation_is_the_producer_gate() {
+        // a name that is not a single path component → named
+        let err = Registry::from_yaml(&catalog_yaml(&[("a/b", "tfs:github:o/r")])).unwrap_err();
+        assert!(err.to_string().contains("packages row name"), "{err}");
+        // an unresolvable registry ref → named, naming the row
+        let err = Registry::from_yaml(&catalog_yaml(&[(
+            "hello",
+            "https://example.com/tpkg-registry.yaml",
+        )]))
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("packages row 'hello'"), "{msg}");
+        assert!(msg.contains("unresolvable registry ref"), "{msg}");
+        // duplicate row names → named
+        let err = Registry::from_yaml(&catalog_yaml(&[
+            ("hello", "tfs:github:o/r1"),
+            ("hello", "tfs:github:o/r2"),
+        ]))
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("duplicate packages row name"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_chase_resolves_a_hit() {
+        let primary = catalog_yaml(&[
+            ("goodbye", "tfs:github:o/nocarry"),
+            ("hello", "tfs:github:tebako-packages/hello"),
+        ]);
+        let primary = Registry::from_yaml(&primary).unwrap();
+        let fixture = FixtureFetcher::new(&[
+            ("tfs:github:o/nocarry", "schema_version: 1\npayloads: []\n"),
+            ("tfs:github:tebako-packages/hello", &feedstock_yaml("hello")),
+        ]);
+        let report = chase_packages("tfs:github:o/catalog", &primary, "hello", |r| {
+            fixture.fetch(r)
+        })
+        .unwrap();
+        let hits: Vec<_> = report.hits().collect();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].0, "tfs:github:tebako-packages/hello");
+        assert_eq!(hits[0].1.name, "hello");
+        assert_eq!(hits[0].1.default.as_deref(), Some("1.0"));
+        // rows chase in document order — the miss precedes the hit
+        assert!(matches!(report.hops[0], ChaseHop::Miss { .. }));
+        assert!(matches!(report.hops[1], ChaseHop::Hit { .. }));
+        assert_eq!(
+            fixture.fetched.borrow().as_slice(),
+            ["tfs:github:o/nocarry", "tfs:github:tebako-packages/hello"]
+        );
+    }
+
+    #[test]
+    fn the_chase_miss_lists_every_chased_registry() {
+        let primary = Registry::from_yaml(&catalog_yaml(&[
+            ("hello", "tfs:github:o/r1"),
+            ("world", "tfs:github:o/r2"),
+        ]))
+        .unwrap();
+        let fixture = FixtureFetcher::new(&[
+            ("tfs:github:o/r1", "schema_version: 1\npayloads: []\n"),
+            ("tfs:github:o/r2", "schema_version: 1\npayloads: []\n"),
+        ]);
+        let report = chase_packages("tfs:github:o/catalog", &primary, "hello", |r| {
+            fixture.fetch(r)
+        })
+        .unwrap();
+        assert!(report.hits().next().is_none());
+        let listing = report.chased_listing();
+        assert!(listing.contains("tfs:github:o/r1"), "{listing}");
+        assert!(listing.contains("tfs:github:o/r2"), "{listing}");
+        assert!(!listing.contains("chase failed"), "{listing}");
+    }
+
+    #[test]
+    fn a_self_naming_row_is_the_chase_cycle_refusal() {
+        let primary =
+            Registry::from_yaml(&catalog_yaml(&[("hello", "tfs:github:o/catalog")])).unwrap();
+        let fixture = FixtureFetcher::new(&[]);
+        let err = chase_packages("tfs:github:o/catalog", &primary, "hello", |r| {
+            fixture.fetch(r)
+        })
+        .unwrap_err();
+        match err {
+            ResolveError::ChaseCycle { registry, row } => {
+                assert_eq!(registry, "tfs:github:o/catalog");
+                assert_eq!(row, "tfs:github:o/catalog");
+            }
+            other => panic!("expected ChaseCycle, got {other}"),
+        }
+        // the cycle is refused BEFORE any fetch — a malformation, never
+        // a miss
+        assert!(fixture.fetched.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_failed_hop_is_soft_and_the_chase_proceeds() {
+        let primary = Registry::from_yaml(&catalog_yaml(&[
+            ("gone", "tfs:github:o/broken"),
+            ("hello", "tfs:github:tebako-packages/hello"),
+        ]))
+        .unwrap();
+        let fixture =
+            FixtureFetcher::new(&[("tfs:github:tebako-packages/hello", &feedstock_yaml("hello"))]);
+        let report = chase_packages("tfs:github:o/catalog", &primary, "hello", |r| {
+            fixture.fetch(r)
+        })
+        .unwrap();
+        // the broken row is recorded with its reason …
+        match &report.hops[0] {
+            ChaseHop::Failed {
+                registry_ref,
+                reason,
+            } => {
+                assert_eq!(registry_ref, "tfs:github:o/broken");
+                assert!(reason.contains("404"), "{reason}");
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        // … and the rest of the chase still resolves
+        assert_eq!(report.hits().count(), 1);
+        let listing = report.chased_listing();
+        assert!(
+            listing.contains("- tfs:github:o/broken (chase failed: 404"),
+            "{listing}"
+        );
+    }
+
+    #[test]
+    fn a_chased_documents_own_packages_rows_are_inert() {
+        // The nested catalog carries hello AND its own packages: rows —
+        // the probe answers the hit, the nested rows are recorded and
+        // NEVER followed (the one-hop bound: no transitive chase, no
+        // loop).
+        let nested = format!(
+            "{}\npackages:\n  - name: other\n    registry: tfs:github:o/never-fetched\n",
+            feedstock_yaml("hello").trim_end()
+        );
+        let primary =
+            Registry::from_yaml(&catalog_yaml(&[("hello", "tfs:github:o/nested-catalog")]))
+                .unwrap();
+        let fixture = FixtureFetcher::new(&[("tfs:github:o/nested-catalog", &nested)]);
+        let report = chase_packages("tfs:github:o/catalog", &primary, "hello", |r| {
+            fixture.fetch(r)
+        })
+        .unwrap();
+        assert_eq!(report.hits().count(), 1);
+        match &report.hops[1] {
+            ChaseHop::NestedInert { registry_ref, rows } => {
+                assert_eq!(registry_ref, "tfs:github:o/nested-catalog");
+                assert_eq!(*rows, 1);
+            }
+            other => panic!("expected NestedInert, got {other:?}"),
+        }
+        assert_eq!(
+            fixture.fetched.borrow().as_slice(),
+            ["tfs:github:o/nested-catalog"]
+        );
+    }
+
+    #[test]
+    fn two_rows_naming_one_registry_fetch_once() {
+        let primary = Registry::from_yaml(&catalog_yaml(&[
+            ("hello", "tfs:github:tebako-packages/hello"),
+            ("hello-tools", "tfs:github:tebako-packages/hello"),
+        ]))
+        .unwrap();
+        let fixture =
+            FixtureFetcher::new(&[("tfs:github:tebako-packages/hello", &feedstock_yaml("hello"))]);
+        let report = chase_packages("tfs:github:o/catalog", &primary, "hello", |r| {
+            fixture.fetch(r)
+        })
+        .unwrap();
+        assert_eq!(report.hits().count(), 1);
+        assert_eq!(
+            fixture.fetched.borrow().as_slice(),
+            ["tfs:github:tebako-packages/hello"]
+        );
+    }
+
+    #[test]
+    fn the_journal_records_every_hop() {
+        let nested = format!(
+            "{}\npackages:\n  - name: other\n    registry: tfs:github:o/never-fetched\n",
+            feedstock_yaml("hello").trim_end()
+        );
+        let primary = Registry::from_yaml(&catalog_yaml(&[
+            ("gone", "tfs:github:o/broken"),
+            ("hello", "tfs:github:o/nested-catalog"),
+            ("absent", "tfs:github:o/nocarry"),
+        ]))
+        .unwrap();
+        let fixture = FixtureFetcher::new(&[
+            ("tfs:github:o/nested-catalog", &nested),
+            ("tfs:github:o/nocarry", "schema_version: 1\npayloads: []\n"),
+        ]);
+        let report = chase_packages("tfs:github:o/catalog", &primary, "hello", |r| {
+            fixture.fetch(r)
+        })
+        .unwrap();
+        let lines = report.journal_lines("tfs:github:o/catalog", "hello");
+        assert_eq!(lines.len(), 4);
+        assert_eq!(
+            lines[0],
+            "event=registry-chase primary=tfs:github:o/catalog chased=tfs:github:o/broken name=hello outcome=failed reason=404: tfs:github:o/broken is not served"
+        );
+        assert_eq!(
+            lines[1],
+            "event=registry-chase primary=tfs:github:o/catalog chased=tfs:github:o/nested-catalog name=hello outcome=hit"
+        );
+        assert_eq!(
+            lines[2],
+            "event=registry-chase primary=tfs:github:o/catalog chased=tfs:github:o/nested-catalog name=hello outcome=nested-inert rows=1"
+        );
+        assert_eq!(
+            lines[3],
+            "event=registry-chase primary=tfs:github:o/catalog chased=tfs:github:o/nocarry name=hello outcome=miss"
         );
     }
 }

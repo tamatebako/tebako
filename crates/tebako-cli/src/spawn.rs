@@ -502,11 +502,17 @@ fn spawned_payload_row<T: Transport>(
     // Registry resolution (the compose closure's tail): one registry
     // carrying the provider, the newest satisfying version, fetched +
     // verified + cached. Press is not install — no mirrors, no shims.
-    let mut found = install::find_in_registries(home, fetcher, provider, None)?;
+    let (mut found, chases) = install::find_in_registries(home, fetcher, provider, None)?;
     let hit = match found.len() {
         0 => {
+            let chased = install::chased_listing(&chases);
+            let chased = if chased.is_empty() {
+                chased
+            } else {
+                format!("\n{chased}")
+            };
             return Err(err(format!(
-                "{consumer} requires executable {edge_name} but its provider payload '{provider}' is not carried by any registered registry — register one with: tebako add-registry <ref>"
+                "{consumer} requires executable {edge_name} but its provider payload '{provider}' is not carried by any registered registry{chased} — register one with: tebako add-registry <ref>"
             )));
         }
         1 => found.pop().expect("len == 1 checked"),
@@ -515,7 +521,7 @@ fn spawned_payload_row<T: Transport>(
                 "{consumer} requires executable {edge_name} and its provider payload '{provider}' is listed by {n} registered registries (AmbiguousRegistries):\n{}\n  narrow it with an explicit registry set",
                 found
                     .iter()
-                    .map(|hit| format!("    - {}", hit.reference))
+                    .map(install::hit_listing)
                     .collect::<Vec<_>>()
                     .join("\n")
             )));

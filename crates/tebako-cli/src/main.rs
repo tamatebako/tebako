@@ -530,8 +530,9 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
         }
         None => tebako_cli::install::SigningConsent::Unattended,
     };
+    let home = tebako_home()?;
     let (outcome, registry) =
-        tebako_cli::install::add_registry_opts(&tebako_home()?, registry_ref, &opts, consent)?;
+        tebako_cli::install::add_registry_opts(&home, registry_ref, &opts, consent)?;
     let names: Vec<&str> = registry.payloads.iter().map(|p| p.name.as_str()).collect();
     match outcome {
         tebako_shim::config::AddRegistryOutcome::Added => println!(
@@ -548,6 +549,21 @@ fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
                 names.len(),
                 names.join(", ")
             )
+        }
+    }
+    // tebako#1100 (spec 04 §2a): a registry carrying packages: rows gets
+    // its chase probed at registration — the add already succeeded on
+    // the document alone; hop failures are warnings, never a failure.
+    if !registry.packages.is_empty() {
+        let (registries, rows, failures) = tebako_cli::install::chase_probe(
+            &home,
+            registry_ref,
+            &registry,
+            &tebako_resolve::Fetcher::new(),
+        );
+        println!("chase probe: {registries} feedstock registries, {rows} payload rows");
+        for (chased, reason) in failures {
+            eprintln!("tebako: warning: chase probe of {chased} failed: {reason}");
         }
     }
     Ok(())

@@ -6,12 +6,16 @@
 //!   registry once (proving it parses), and appends it to
 //!   `~/.tebako/config.yaml` `registries:` (the one authored-config write;
 //!   other keys preserved). Shipped config has ZERO registries — explicit
-//!   only.
+//!   only. A registry carrying `packages:` rows gets its chase probed at
+//!   registration (spec 04 §2a, tebako#1100 — the probe reports, never
+//!   blocks).
 //! - **install <ref | name[@ver]>** — a REFERENCE resolves directly
 //!   (download → verify → cache → register shims); a NICKNAME searches
 //!   the REGISTERED registries only (zero hits → a named error listing
 //!   them plus the add-registry hint; several → AmbiguousRegistries).
-//!   Version omitted → the registry default; `@ver` → exactly that. The
+//!   A miss in a registry carrying `packages:` rows chases each row's
+//!   `registry:` one bounded hop (spec 04 §2a). Version omitted → the
+//!   registry default; `@ver` → exactly that. The
 //!   host-triplet artifact is selected DECLARATIVELY from the registry
 //!   entry (`universal` or `platforms[host]`) — never adapter-side
 //!   guessing.
@@ -38,7 +42,8 @@ use tebako_resolve::plan::{
     execute_plan, CommitReport, FetchItem, FetchPlan, OciClass, StagedArtifact,
 };
 use tebako_resolve::registry::{
-    PlatformSelection, RegistryPayload, RegistryRef, RegistryVersion, SignaturePin, VariantView,
+    chase_packages, ChaseReport, PlatformSelection, RegistryPayload, RegistryRef, RegistryVersion,
+    SignaturePin, VariantView,
 };
 use tebako_resolve::{
     CacheEntry, FetchedPayload, Fetcher, InstallStatus, PayloadCache, Reference, RegistryError,
@@ -110,6 +115,10 @@ pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
         // budget, and the authenticated-tier remediation.
         ResolveError::AnonymousRateLimited { .. } => EX_TEBAKO_UNAVAILABLE,
         ResolveError::Registry(_) | ResolveError::InvalidCacheKey { .. } => EX_TEBAKO_MANIFEST,
+        // tebako#1100's chase cycle refusal — the manifest class (65): a
+        // registry carrying a packages: row that names itself is a
+        // malformation, never a miss.
+        ResolveError::ChaseCycle { .. } => EX_TEBAKO_MANIFEST,
         ResolveError::InvalidFetchJobs { .. } => EX_TEBAKO_MANIFEST,
         // The commit closures' cancel marker — the caller's error slot
         // carries the precise named error; a bare Commit surfacing here
@@ -269,6 +278,76 @@ pub fn add_registry_full<T: Transport>(
         }
     }
     Ok((outcome, registry))
+}
+
+/// The add-registry chase probe (spec 04 §2a, tebako#1100): a registry
+/// carrying `packages:` rows gets its chase probed at registration —
+/// each row's `registry:` fetched once through the same machinery, the
+/// failures named as warnings in the return. The probe never fails the
+/// add (a broken chase ref never blocks a registration) and never
+/// writes the book; every hop is journaled (`name=-` — the probe is not
+/// a payload lookup). Returns (feedstock registries, payload rows,
+/// failures as (row ref, reason)).
+pub fn chase_probe<T: Transport>(
+    home: &Path,
+    registry_ref: &str,
+    registry: &tebako_resolve::Registry,
+    fetcher: &Fetcher<T>,
+) -> (usize, usize, Vec<(String, String)>) {
+    let primary = RegistryRef::parse(registry_ref)
+        .map(resolve_registry_directory)
+        .map(|r| r.as_canonical_string())
+        .unwrap_or_else(|_| registry_ref.to_string());
+    let mut seen: Vec<String> = Vec::new();
+    let mut failures = Vec::new();
+    for row in &registry.packages {
+        let parsed = match RegistryRef::parse(&row.registry) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                // from_yaml's producer gate refuses unparsable refs, so
+                // this is unreachable from a validated registry — the
+                // warning arm keeps a hand-built model honest.
+                let reason = e.to_string();
+                journal(
+                    home,
+                    &format!(
+                        "event=registry-chase primary={primary} chased={} name=- outcome=probe-failed reason={reason}",
+                        row.registry
+                    ),
+                );
+                failures.push((row.registry.clone(), reason));
+                continue;
+            }
+        };
+        let canonical = parsed.as_canonical_string();
+        if seen.iter().any(|s| s == &canonical) {
+            continue;
+        }
+        seen.push(canonical);
+        let outcome = match fetcher.resolve_registry(&parsed) {
+            Ok(_) => "probe-ok",
+            Err(e) => {
+                let reason = e.to_string();
+                journal(
+                    home,
+                    &format!(
+                        "event=registry-chase primary={primary} chased={} name=- outcome=probe-failed reason={reason}",
+                        row.registry
+                    ),
+                );
+                failures.push((row.registry.clone(), reason));
+                continue;
+            }
+        };
+        journal(
+            home,
+            &format!(
+                "event=registry-chase primary={primary} chased={} name=- outcome={outcome}",
+                row.registry
+            ),
+        );
+    }
+    (seen.len(), registry.packages.len(), failures)
 }
 
 /// The trust-on-first-use gate of `add_registry` (spec 09 §9.1,
@@ -1615,18 +1694,24 @@ fn plan_from_nickname<T: Transport>(
     host: Option<Platform>,
 ) -> Result<InstallPlan, TebakoError> {
     let (scope, name, version_req) = parse_nickname(target)?;
-    let mut found = find_in_registries(home, fetcher, &name, scope.as_deref())?;
+    let (mut found, chases) = find_in_registries(home, fetcher, &name, scope.as_deref())?;
     match found.len() {
         0 => {
             let registries = registered_registries_listing(home)?;
+            let chased = chased_listing(&chases);
+            let chased = if chased.is_empty() {
+                chased
+            } else {
+                format!("\n{chased}")
+            };
             Err(err(
                 EX_TEBAKO_MANIFEST,
                 match &scope {
                     Some(alias) => format!(
-                        "registry '{alias}' carries no payload named '{name}'\n  registered registries:\n{registries}"
+                        "registry '{alias}' carries no payload named '{name}'\n  registered registries:\n{registries}{chased}"
                     ),
                     None => format!(
-                        "no registered registry carries a payload named '{name}'\n  registered registries:\n{registries}\n  register one with: tebako add-registry <ref>"
+                        "no registered registry carries a payload named '{name}'\n  registered registries:\n{registries}{chased}\n  register one with: tebako add-registry <ref>"
                     ),
                 },
             ))
@@ -1641,11 +1726,22 @@ fn plan_from_nickname<T: Transport>(
                 "payload '{name}' is listed by {n} registered registries (AmbiguousRegistries):\n{}\n  disambiguate with the full reference: tebako install tfs:<service>:owner/repo:version[#artifact]",
                 found
                     .iter()
-                    .map(|hit| format!("    - {}", hit.reference))
+                    .map(hit_listing)
                     .collect::<Vec<_>>()
                     .join("\n")
             ),
         )),
+    }
+}
+
+/// One hit's line in the AmbiguousRegistries listing — a chased hit
+/// names both the registered registry and the packages: row it came
+/// through (spec 04 §2a). pub(crate): compose and spawn render the
+/// same listing.
+pub(crate) fn hit_listing(hit: &RegistryHit) -> String {
+    match &hit.chased {
+        Some(chased) => format!("    - {} (via {chased})", hit.reference),
+        None => format!("    - {}", hit.reference),
     }
 }
 
@@ -1661,6 +1757,12 @@ pub(crate) struct RegistryHit {
     pub(crate) require_signed: Option<String>,
     pub(crate) alias: Option<String>,
     pub(crate) channel_oci: bool,
+    /// tebako#1100 (spec 04 §2a): `Some(chased ref)` when the hit came
+    /// through the chase — the packages: row's registry reference.
+    /// `reference` stays the REGISTERED registry: the book entry's
+    /// policy and spec 37 §7's origin binding record the registered
+    /// registry, never the chased one.
+    pub(crate) chased: Option<String>,
     pub(crate) payload: RegistryPayload,
 }
 
@@ -1669,12 +1771,25 @@ pub(crate) struct RegistryHit {
 /// set is the whole namespace). `scope` (spec 37 §3's qualified form)
 /// narrows the set to the one registry the alias names; an unknown
 /// alias is `UnknownRegistryAlias`.
+///
+/// A miss in a registry carrying `packages:` rows runs the chase (spec
+/// 04 §2a, tebako#1100): each row's `registry:` ref resolves exactly one
+/// bounded hop through the same fetcher, and a chased hit joins the
+/// found set with `chased` set — the book entry's policy and the origin
+/// binding still ride the REGISTERED registry. The returned reports (one
+/// per chasing registry) feed the miss errors' chased listing; every
+/// hop is journaled by the chase itself.
+/// The chase reports of one [`find_in_registries`] walk: (the chasing
+/// registry's canonical reference, its report) per registered registry
+/// that chased (spec 04 §2a) — the miss errors' chased-listing input.
+pub(crate) type ChaseReports = Vec<(String, ChaseReport)>;
+
 pub(crate) fn find_in_registries<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     name: &str,
     scope: Option<&str>,
-) -> Result<Vec<RegistryHit>, TebakoError> {
+) -> Result<(Vec<RegistryHit>, ChaseReports), TebakoError> {
     let cfg = config::load_config(home).map_err(map_shim)?;
     // Spec 37 §7's origin binding: an UNSCOPED search for a payload whose
     // installed versions are bound consults the origin registry set only
@@ -1688,6 +1803,7 @@ pub(crate) fn find_in_registries<T: Transport>(
         Vec::new()
     };
     let mut found = Vec::new();
+    let mut chases = Vec::new();
     for row in cfg.registry_book_scoped(scope).map_err(map_shim)? {
         let reg_ref = row.entry.reference();
         if !bound.is_empty() && !bound.iter().any(|b| b == reg_ref) {
@@ -1700,20 +1816,64 @@ pub(crate) fn find_in_registries<T: Transport>(
             )
         })?;
         let registry = fetcher.resolve_registry(&r).map_err(map_resolve)?;
+        let policy = || {
+            row.entry
+                .require_signed
+                .then(|| row.alias.clone().unwrap_or_else(|| reg_ref.to_string()))
+        };
         if let Some(payload) = registry.payload(name) {
             found.push(RegistryHit {
                 reference: reg_ref.to_string(),
-                require_signed: row
-                    .entry
-                    .require_signed
-                    .then(|| row.alias.clone().unwrap_or_else(|| reg_ref.to_string())),
+                require_signed: policy(),
                 alias: row.alias.clone(),
                 channel_oci: row.entry.channel == Some(config::BookChannel::Oci),
+                chased: None,
+                payload: payload.clone(),
+            });
+            continue;
+        }
+        if registry.packages.is_empty() {
+            continue;
+        }
+        // The chase (spec 04 §2a): hop failures are soft inside the
+        // report; a self-naming row is the hard ChaseCycle refusal.
+        let report = chase_packages(reg_ref, &registry, name, |chased_ref| {
+            let parsed = RegistryRef::parse(chased_ref).map_err(|e| e.to_string())?;
+            fetcher.resolve_registry(&parsed).map_err(|e| e.to_string())
+        })
+        .map_err(map_resolve)?;
+        for line in report.journal_lines(reg_ref, name) {
+            journal(home, &line);
+        }
+        for (chased_ref, payload) in report.hits() {
+            found.push(RegistryHit {
+                reference: reg_ref.to_string(),
+                require_signed: policy(),
+                alias: row.alias.clone(),
+                channel_oci: row.entry.channel == Some(config::BookChannel::Oci),
+                chased: Some(chased_ref.to_string()),
                 payload: payload.clone(),
             });
         }
+        chases.push((reg_ref.to_string(), report));
     }
-    Ok(found)
+    Ok((found, chases))
+}
+
+/// The chased registries' listing for the not-found errors (spec 04
+/// §2a): every registry the chase probed, grouped under the registered
+/// registry that chased it, each failed hop with its reason. Empty when
+/// no registered registry carried `packages:` rows.
+pub(crate) fn chased_listing(chases: &ChaseReports) -> String {
+    let mut lines = Vec::new();
+    for (primary, report) in chases {
+        if report.is_empty() {
+            continue;
+        }
+        lines.push(format!("  chased from {primary}:"));
+        lines.push(report.chased_listing());
+    }
+    lines.join("\n")
 }
 
 /// The registered-registries listing for the not-found errors (spec 37
@@ -1751,7 +1911,7 @@ fn plan_from_dependency_edge<T: Transport>(
     constraint: &tpkg::Constraint,
     scope: Option<&str>,
 ) -> Result<InstallPlan, TebakoError> {
-    let mut found = find_in_registries(home, fetcher, name, scope)?;
+    let (mut found, chases) = find_in_registries(home, fetcher, name, scope)?;
     let declares = || {
         format!(
             "{} {} requires {kind} {name} ({constraint})",
@@ -1762,10 +1922,16 @@ fn plan_from_dependency_edge<T: Transport>(
     match found.len() {
         0 => {
             let registries = registered_registries_listing(home)?;
+            let chased = chased_listing(&chases);
+            let chased = if chased.is_empty() {
+                chased
+            } else {
+                format!("\n{chased}")
+            };
             Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "{} but no registered registry carries it\n  registered registries:\n{registries}\n  register one with: tebako add-registry <ref>",
+                    "{} but no registered registry carries it\n  registered registries:\n{registries}{chased}\n  register one with: tebako add-registry <ref>",
                     declares()
                 ),
             ))
@@ -1805,7 +1971,7 @@ fn plan_from_dependency_edge<T: Transport>(
                 declares(),
                 found
                     .iter()
-                    .map(|hit| format!("    - {}", hit.reference))
+                    .map(hit_listing)
                     .collect::<Vec<_>>()
                     .join("\n")
             ),

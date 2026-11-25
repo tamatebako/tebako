@@ -1584,7 +1584,11 @@ pub fn set_runtime_pref(
 /// alias names — an unknown alias is `UnknownRegistryAlias` at
 /// pin-resolution time, fail-closed. Every registry form of spec 04 §2
 /// resolves through the dispatch-time cache ([`crate::regcache`]); the
-/// registry model is tebako-resolve's.
+/// registry model is tebako-resolve's. A miss in a registry carrying
+/// `packages:` rows runs the chase (spec 04 §2a, tebako#1100 —
+/// [`crate::regcache::chase`]): a chased default answers with the
+/// REGISTERED registry's ref, never the chased one (the origin
+/// binding's rule).
 pub fn registry_default(
     home: &Path,
     config: &UserConfig,
@@ -1603,6 +1607,21 @@ pub fn registry_default(
         let registry = crate::regcache::registry_for(home, reg_ref, ctx)?;
         if let Some(p) = registry.payload(payload_name) {
             if let Some(default) = &p.default {
+                return Ok(Some((default.clone(), reg_ref.to_string())));
+            }
+            continue;
+        }
+        // tebako#1100 (spec 04 §2a): a miss in a registry carrying
+        // packages: rows chases one bounded hop; a chased default answers
+        // with the REGISTERED registry's ref (the origin binding and the
+        // book entry's policy ride the registered channel).
+        if registry.packages.is_empty() {
+            continue;
+        }
+        let report = crate::regcache::chase(home, reg_ref, &registry, payload_name, ctx)?;
+        let hit = report.hits().next().map(|(_, p)| p.clone());
+        if let Some(payload) = hit {
+            if let Some(default) = &payload.default {
                 return Ok(Some((default.clone(), reg_ref.to_string())));
             }
         }

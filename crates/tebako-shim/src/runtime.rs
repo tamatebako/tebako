@@ -4496,8 +4496,23 @@ pub fn fetch_payload_by_lock(
     let rows = cfg.registry_book_scoped(Some(registry_alias))?;
     let registry_reference = rows[0].entry.reference().to_string();
     let registry = crate::regcache::registry_for(&ctx.home, &registry_reference, ctx)?;
-    let Some(payload) = registry.payload(name) else {
-        return Ok(None);
+    let payload = match registry.payload(name) {
+        Some(payload) => payload.clone(),
+        None => {
+            // tebako#1100 (spec 04 §2a): a miss in a registry carrying
+            // packages: rows chases one bounded hop through the dispatch
+            // cache; a chase miss keeps the caller's cache-only refusal.
+            if registry.packages.is_empty() {
+                return Ok(None);
+            }
+            let report =
+                crate::regcache::chase(&ctx.home, &registry_reference, &registry, name, ctx)?;
+            let hit = match report.hits().next() {
+                Some((_, payload)) => payload.clone(),
+                None => return Ok(None),
+            };
+            hit
+        }
     };
     let host = tpkg::Platform::host();
     let _ = constraint;
