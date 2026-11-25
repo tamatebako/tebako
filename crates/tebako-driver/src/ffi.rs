@@ -29,6 +29,13 @@ pub(crate) mod interpose;
 #[cfg(target_os = "macos")]
 pub(crate) mod rebind;
 
+/// The post-boot shim re-exec (tebako#1125, spec 22 §3.6): after the
+/// mounts and the injection export, re-exec once with the preload shim
+/// inserted so the file-IO family covers the interpreter PROCESS, not
+/// only its children. Compiles out on every other target.
+#[cfg(target_os = "macos")]
+pub(crate) mod shim_reexec;
+
 use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::OnceLock;
@@ -214,6 +221,11 @@ fn boot_impl(argc: *mut c_int, argv: *mut *mut *mut c_char, runtime_root: *const
     // the interpreter starts — re-exec once with the embedded interpose
     // dylib inserted. Loud-continue on any failure. Never reached by
     // miniruby: tebako_main's build-time pass-through returns above.
+    // The shim re-exec's head half runs FIRST (tebako#1125): it captures
+    // the tail's sentinel and the insert list before the scrub below
+    // rewrites either.
+    #[cfg(target_os = "macos")]
+    shim_reexec::head();
     #[cfg(target_os = "macos")]
     interpose::self_insert(argvp);
     // tebako#1080: the insertion above is silently dropped by dyld on
@@ -245,6 +257,18 @@ fn boot_impl(argc: *mut c_int, argv: *mut *mut *mut c_char, runtime_root: *const
 
     match crate::driver::boot(&args, &root, &ProcessEnv) {
         Ok(outcome) => {
+            // tebako#1125 (spec 22 §3.6): the mounts are up and the
+            // injection export delivered the preload shim — re-exec once
+            // with it inserted so the file-IO family covers THIS
+            // process, not only spawned children. On success this never
+            // returns; every failure names itself and the boot
+            // continues. BEFORE the argv write-back: the re-exec replays
+            // the caller's ORIGINAL argv (argvp), so the write-back
+            // happens exactly once, in the final incarnation.
+            #[cfg(target_os = "macos")]
+            if let Some(host) = outcome.preload_shim_host.as_deref() {
+                shim_reexec::tail(host, argvp);
+            }
             let mut cstrings = Vec::with_capacity(outcome.argv.len());
             for s in &outcome.argv {
                 let Ok(c) = CString::new(s.as_str()) else {
