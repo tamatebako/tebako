@@ -56,8 +56,7 @@ const CSSLOT_ENTITLEMENTS: u32 = 5;
 const CSSLOT_DER_ENTITLEMENTS: u32 = 7;
 
 /// The entitlement whose presence unblocks the environment plane.
-const DYLD_ENTITLEMENT_KEY: &[u8] =
-    b"com.apple.security.cs.allow-dyld-environment-variables";
+const DYLD_ENTITLEMENT_KEY: &[u8] = b"com.apple.security.cs.allow-dyld-environment-variables";
 
 /// What the image's signature says about the hardened runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,7 +152,7 @@ fn code_signature_offset(slice: &[u8]) -> Option<usize> {
 }
 
 /// One slot's blob bytes from the superblob.
-fn slot_blob<'a>(superblob: &'a [u8], want_type: u32) -> Option<&'a [u8]> {
+fn slot_blob(superblob: &[u8], want_type: u32) -> Option<&[u8]> {
     if u32be(superblob.get(..4)?)? != CSMAGIC_SUPERBLOB {
         return None;
     }
@@ -173,7 +172,9 @@ fn slot_blob<'a>(superblob: &'a [u8], want_type: u32) -> Option<&'a [u8]> {
 /// `<key>KEY</key>` followed (whitespace aside) by `<true/>` or
 /// `<false/>` — the first of the two tokens after the key decides.
 fn xml_entitlement_true(blob: &[u8]) -> Option<bool> {
-    let at = blob.windows(DYLD_ENTITLEMENT_KEY.len()).position(|w| w == DYLD_ENTITLEMENT_KEY)?;
+    let at = blob
+        .windows(DYLD_ENTITLEMENT_KEY.len())
+        .position(|w| w == DYLD_ENTITLEMENT_KEY)?;
     let rest = &blob[at + DYLD_ENTITLEMENT_KEY.len()..];
     let t = rest.windows(5).position(|w| w == b"<true");
     let f = rest.windows(6).position(|w| w == b"<false");
@@ -190,7 +191,9 @@ fn xml_entitlement_true(blob: &[u8]) -> Option<bool> {
 /// followed by BOOLEAN (`0x01 0x01 0xFF` true / `0x01 0x01 0x00`
 /// false) — the three bytes right after the key decide.
 fn der_entitlement_true(blob: &[u8]) -> Option<bool> {
-    let at = blob.windows(DYLD_ENTITLEMENT_KEY.len()).position(|w| w == DYLD_ENTITLEMENT_KEY)?;
+    let at = blob
+        .windows(DYLD_ENTITLEMENT_KEY.len())
+        .position(|w| w == DYLD_ENTITLEMENT_KEY)?;
     let rest = &blob[at + DYLD_ENTITLEMENT_KEY.len()..];
     match rest.get(..3)? {
         [0x01, 0x01, v] => Some(*v != 0),
@@ -419,8 +422,16 @@ mod tests {
     fn hardened_with_the_entitlement_is_honored_everywhere() {
         for (xml, der, note) in [
             (Some(XML_TRUE), None, "XML true"),
-            (None, Some(&der_pair(DYLD_ENTITLEMENT_KEY, true)[..]), "DER true"),
-            (Some(XML_FALSE), Some(&der_pair(DYLD_ENTITLEMENT_KEY, true)[..]), "DER wins when XML says false and DER says true"),
+            (
+                None,
+                Some(&der_pair(DYLD_ENTITLEMENT_KEY, true)[..]),
+                "DER true",
+            ),
+            (
+                Some(XML_FALSE),
+                Some(&der_pair(DYLD_ENTITLEMENT_KEY, true)[..]),
+                "DER wins when XML says false and DER says true",
+            ),
         ] {
             let img = mach_o_with_signature(CS_RUNTIME, xml, der);
             let h = hardening_of(&img[code_signature_offset(&img).unwrap()..]);

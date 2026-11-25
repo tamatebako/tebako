@@ -1364,9 +1364,7 @@ pub unsafe extern "C" fn tebako_fs_exec_materialize_dir(path: *const c_char) -> 
 /// # Safety
 /// `path` must be a valid C string.
 #[no_mangle]
-pub unsafe extern "C" fn tebako_fs_exec_dyld_insertion_honored(
-    path: *const c_char,
-) -> libc::c_int {
+pub unsafe extern "C" fn tebako_fs_exec_dyld_insertion_honored(path: *const c_char) -> libc::c_int {
     let _io = engine_io_guard();
     let path = match unsafe { path_arg(path) } {
         Ok(p) => p,
