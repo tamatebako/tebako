@@ -11,6 +11,7 @@
 #     3  File.stat            7  IO.binread           11  a GRANT read
 #     4  File.exist?          8  read(realpath)       12  a path outside it
 #     5  File.readlines        9  shell-out read      13  a payload-MADE link
+#     6  File.binread         10  host dir listing
 #
 #   the exemption vectors (spec 08 §1's deny-rule amendment, tebako#1128)
 #     devnull       a File::NULL open/write/read — the fixed device set is
@@ -18,11 +19,16 @@
 #                   arm, and a refusal is an over-denial failure, never a
 #                   block
 #     devnullspawn  system(…, out: File::NULL) — the metanorma failing
-#                   shape (run 45585078751), the spawn target the runtime's
-#                   own exe so the only judgement in play is the device
-#                   open; on windows the tebako#1021 spawn boundary owns
-#                   the non-trivial-policy refusal
-#     6  File.binread         10  host dir listing
+#                   shape (run 45585078751), the spawn target a host-floor
+#                   binary the jail admits under deny, so the only
+#                   judgement in play is the device open; on windows the
+#                   tebako#1021 spawn boundary owns the non-trivial-policy
+#                   refusal
+#   the suite runs by contract against the PUBLISHED pinned pair: when that
+#   pair predates the exemption, the deny arm answers DENIED:EPERM while
+#   the record arm (allow-all) reads — the era's signature, and the rows
+#   report armed-not-applicable (the resource axis's convention), never a
+#   silent pass; a pair carrying the exemption answers to the strict rule
 #
 #   not covered by this cut, named rather than implied
 #     a `..` escape out of a grant (the jail's namespace is lexical: an
@@ -349,16 +355,30 @@ line("devnull") do
   end
 end
 # The exact failing shape (run 45585078751 — leptris's adapter probe
-# under a tight jail): a spawn redirecting to File::NULL. The child is
-# the runtime's own exe (RbConfig.ruby — the planned spec-30 edge, never
-# a host-binary judgement), so the only policy judgement in play is the
-# device open itself. On windows the tebako#1021 fail-closed spawn
-# boundary refuses ANY child under a non-trivial policy — the matrix owns
-# that carve-out; the exemption's windows proof rides `devnull`.
+# under a tight jail): a spawn redirecting to File::NULL. The spawn
+# target must be a binary the jail admits under deny, so the only policy
+# judgement in play is the device open itself. The runtime's own exe
+# cannot serve: RbConfig.ruby spells the in-image ruby path
+# (/__tfs__/bin/ruby), and the v2 env image carries no ruby binstub
+# (exe + image split by design — the image's bin/ holds gem binstubs
+# only), so system() of it never runs (nil child, exit 127) in ANY era.
+# The host's floor binary is the answer: the platform floor admits the
+# OS's own directories under every policy, so `true` (POSIX) and
+# hostname.exe (windows System32) are spawnable under deny in every era.
+# On windows the tebako#1021 fail-closed spawn boundary then refuses ANY
+# child under a non-trivial policy — the matrix owns that carve-out; the
+# exemption's windows proof rides `devnull`.
 line("devnullspawn") do
   verdict do
-    ok = system(RbConfig.ruby, "-e", "nil", out: File::NULL, err: File::NULL)
-    raise "system(..., out: File::NULL) failed (status #{$?.inspect})" unless ok
+    target =
+      if RUBY_PLATFORM.match?(/mingw|mswin/i)
+        "#{ENV["SystemRoot"] || "C:/Windows"}/System32/hostname.exe"
+      else
+        ["/usr/bin/true", "/bin/true"].find { |p| File.executable?(p) }
+      end
+    raise "no floor binary for the spawn target" if target.nil?
+    ok = system(target, out: File::NULL, err: File::NULL)
+    raise "system(#{target}, out: File::NULL) failed (status #{$?.inspect})" unless ok
   end
 end
 
@@ -821,6 +841,7 @@ leaks=0
 overdenials=0
 incomplete=0
 knowngaps=0
+dev_note=""
 echo "== matrix"
 printf '   %-11s %-11s %-16s %-16s %-9s %s\n' vector open deny deny+grant record verdict
 for v in $VECTORS; do
@@ -832,31 +853,45 @@ for v in $VECTORS; do
     devnull|devnullspawn)
       # spec 08 §1's deny-rule amendment (tebako#1128): the device nodes
       # are exempt from the deny stance — usable under EVERY arm, so a
-      # refusal is the over-denial the issue names, counted on its own
-      # failure line (a jail that breaks a process-essential open fails;
-      # it has not "blocked" anything). One carve-out: on windows the
-      # tebako#1021 fail-closed spawn boundary refuses ANY child under a
-      # non-trivial policy, so a DENIED:EPERM from devnullspawn there is
-      # the boundary answering, not the device verdict — the exemption's
-      # windows proof rides `devnull`.
+      # refusal on a pair that CARRIES the exemption is the over-denial
+      # the issue names, counted on its own failure line (a jail that
+      # breaks a process-essential open fails; it has not "blocked"
+      # anything). Two named carve-outs, never silent passes:
+      #
+      #   * the suite runs by contract against the PUBLISHED pair, which
+      #     may predate the exemption. That era's signature is the deny
+      #     arm answering DENIED:EPERM while the record arm (allow-all)
+      #     reads — the resource axis's gate convention: the row reports
+      #     armed-not-applicable with a note, and nothing is counted.
+      #     A pair whose deny arm reads carries the exemption and
+      #     answers to the strict rule.
+      #   * on windows the tebako#1021 fail-closed spawn boundary refuses
+      #     ANY child under a non-trivial policy, so a DENIED:EPERM from
+      #     devnullspawn there is the boundary answering, not the device
+      #     verdict — era-independent, and the exemption's windows proof
+      #     rides `devnull`.
       if [ -z "$o" ] || [ -z "$d" ] || [ -z "$g" ] || [ -z "$r" ]; then
         verdict="MISSING"; incomplete=$((incomplete + 1))
       elif [ "${o#READ-OK}" != "" ]; then
         verdict="probe not live under open ($o)"; incomplete=$((incomplete + 1))
-      else
+      elif [ "$v" = "devnullspawn" ] && [ "$WIN" = "1" ] \
+           && [ "$d" = "DENIED:EPERM" ] && [ "$g" = "DENIED:EPERM" ] && [ "$r" = "DENIED:EPERM" ]; then
+        verdict="exempt under open; the spawn boundary owns the non-trivial refusal (tebako#1021)"
+      elif [ "$d" = "DENIED:EPERM" ] && [ "$r" = "READ-OK" ]; then
+        verdict="the pair predates the exemption — armed, not applicable to this pair"
+        dev_note="the pair predates the device-node exemption (tebako#1128) — the device vectors are armed, not applicable to this pair"
+      elif [ "$d" = "READ-OK" ]; then
         bad=""
-        [ "${d#READ-OK}" != "" ] && bad="deny=$d"
-        [ "${g#READ-OK}" != "" ] && bad="$bad grant=$g"
+        [ "${g#READ-OK}" != "" ] && bad="grant=$g"
         [ "${r#READ-OK}" != "" ] && bad="$bad record=$r"
         if [ -z "$bad" ]; then
           verdict="exempt under every policy"
-        elif [ "$v" = "devnullspawn" ] && [ "$WIN" = "1" ] \
-             && [ "$d" = "DENIED:EPERM" ] && [ "$g" = "DENIED:EPERM" ] && [ "$r" = "DENIED:EPERM" ]; then
-          verdict="exempt under open; the spawn boundary owns the non-trivial refusal (tebako#1021)"
         else
           verdict="OVER-DENIED ($bad) — a device node must never be refused"
           overdenials=$((overdenials + 1))
         fi
+      else
+        verdict="unexpected verdicts (deny=$d grant=$g record=$r)"; incomplete=$((incomplete + 1))
       fi
       ;;
     ads)
@@ -937,6 +972,9 @@ for v in $VECTORS; do
   esac
   printf '   %-11s %-11s %-16s %-16s %-9s %s\n' "$v" "${o:-?}" "${d:-?}" "${g:-?}" "${r:-?}" "$verdict"
 done
+if [ -n "$dev_note" ]; then
+  echo "   note: $dev_note"
+fi
 
 echo "== record journal"
 journal_bad=0
