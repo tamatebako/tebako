@@ -1184,6 +1184,46 @@ fn jail_deny_blocks_host_reads_but_not_the_payload() {
 }
 
 #[test]
+#[cfg(unix)] // the POSIX device set; windows' NUL rides the same verdict layer
+fn jail_deny_exempts_the_device_nodes() {
+    let g = guard("jail-devnull");
+    let payload = write_payload_image(g.path());
+    let journal = g.path().join("journal.log");
+    // The journal path is process-env (tfs-internal); point it at the
+    // scratch dir for this test only.
+    std::env::set_var("TEBAKO_JAIL_JOURNAL", &journal);
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_JAIL", "deny");
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/opt/app", payload.display()),
+            "--tebako-entry",
+            "bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    // The full apply_jail path (TEBAKO_JAIL → parse → bind → install):
+    // under a grant-less deny the fixed device set answers the allowed
+    // pass-through (ENOENT — "not ours"), never EPERM (tebako#1128 — the
+    // metanorma dogfood's `system(…, out: File::NULL)` died here)…
+    let mut ctx = context().write().unwrap();
+    for dev in ["/dev/null", "/dev/zero", "/dev/random", "/dev/urandom"] {
+        let err = ctx.open(dev, libc::O_RDWR).unwrap_err();
+        assert_eq!(err, libc::ENOENT, "{dev} must pass through");
+    }
+    // …and a lookalike stays refused by name.
+    let err = ctx.open("/dev/nullify", libc::O_RDONLY).unwrap_err();
+    assert_eq!(err, libc::EPERM, "a lookalike is host content");
+    drop(ctx);
+    std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+}
+
+#[test]
 fn malformed_jail_is_named_73_and_rolls_back() {
     let g = guard("jail-bad");
     let payload = write_payload_image(g.path());

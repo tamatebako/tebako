@@ -340,6 +340,51 @@ fn deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected() {
     assert_eq!(unsafe { c_api::tebako_fs_closedir(dir) }, 0);
 }
 
+/// spec 08 §1's deny-rule amendment (tebako#1128): the fixed device-node
+/// set is exempt from the deny stance — under deny-all the devices answer
+/// ENOENT ("not ours, pass through" — the allowed answer), never EPERM,
+/// for reads AND writes, while a lookalike and every other device node
+/// stay refused by name.
+#[test]
+#[cfg(unix)]
+fn device_nodes_pass_through_under_deny_all_but_lookalikes_are_refused() {
+    let f = setup("devnull");
+    let _ = &f;
+    assert_eq!(install_policy(0, &[], &[]), 0);
+
+    for dev in ["/dev/null", "/dev/zero", "/dev/random", "/dev/urandom"] {
+        assert_eq!(open(Path::new(dev), libc::O_RDONLY), -1, "{dev}");
+        assert_eq!(errno(), libc::ENOENT, "{dev} read must pass through");
+        assert_eq!(open(Path::new(dev), libc::O_WRONLY), -1, "{dev}");
+        assert_eq!(errno(), libc::ENOENT, "{dev} write must pass through");
+    }
+    for lookalike in ["/dev/nullify", "/dev/sda"] {
+        assert_eq!(open(Path::new(lookalike), libc::O_RDONLY), -1);
+        assert_eq!(errno(), libc::EPERM, "{lookalike} read must be refused");
+        assert_eq!(open(Path::new(lookalike), libc::O_WRONLY), -1);
+        assert_eq!(errno(), libc::EPERM, "{lookalike} write must be refused");
+    }
+}
+
+/// The windows arm of the same exemption: the NUL DOS device passes
+/// through under deny-all; a lookalike name stays refused.
+#[test]
+#[cfg(target_os = "windows")]
+fn nul_passes_through_under_deny_all() {
+    let f = setup("nul");
+    let _ = &f;
+    assert_eq!(install_policy(0, &[], &[]), 0);
+
+    for spelling in ["NUL", "nul"] {
+        assert_eq!(open(Path::new(spelling), libc::O_RDONLY), -1, "{spelling}");
+        assert_eq!(errno(), libc::ENOENT, "{spelling} read must pass through");
+        assert_eq!(open(Path::new(spelling), libc::O_WRONLY), -1, "{spelling}");
+        assert_eq!(errno(), libc::ENOENT, "{spelling} write must pass through");
+    }
+    assert_eq!(open(Path::new("NULLED.txt"), libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::EPERM, "a lookalike name must be refused");
+}
+
 /// The v2 app-payload shape (the image mounted at "/"): every host path
 /// is COVERED by the mount, but the image holds none of them. A covered
 /// path the image does not hold takes the host-passthrough decision

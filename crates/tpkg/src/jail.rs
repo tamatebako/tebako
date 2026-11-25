@@ -33,6 +33,11 @@
 //! composes policies; it never touches the filesystem for enforcement.
 //! Binding (realpath canonicalization) and per-path gating live in the
 //! engine (`tfs::policy`), which consumes the env form this module emits.
+//! The grammar governs host filesystem CONTENT, so nothing here spells
+//! the device-node exemption (spec 08 §1's deny-rule amendment,
+//! tebako#1128 — the fixed device set always permitted read+write): it
+//! is not authorable surface — no grammar, no opt-in — the engine's
+//! verdict applies it to every policy this model emits.
 //!
 //! **Precedence (locked, spec 08 §2/§4):** the package's manifest REQUESTS
 //! access (`capabilities.host` / the package `jail:` block); the user can
