@@ -15,7 +15,11 @@
 //! "perm all and monitor" mode); mounts
 //! are (host dir, virtual point, ro|rw) grants matched by longest host
 //! prefix on path-component boundaries; argument files are allowed for
-//! reading even under deny. Host paths are realpath-canonicalized at bind
+//! reading even under deny; and the fixed device-node set (spec 08 §1's
+//! deny-rule amendment, tebako#1128 — `/dev/null` and its siblings on
+//! POSIX, `NUL` on windows) is allowed for reading AND writing under
+//! every policy, because the grammar governs host content and a kernel
+//! device is not content. Host paths are realpath-canonicalized at bind
 //! time and RE-CANONICALIZED on every check, so a symlink swapped in after
 //! the policy was installed resolves to its target and escapes fail.
 //!
@@ -219,6 +223,54 @@ fn floor_mount_point(host: &Path) -> String {
 fn floor_mount_point(host: &Path) -> String {
     let s = host.to_string_lossy().replace('\\', "/");
     s.strip_prefix("//?/").unwrap_or(&s).to_string()
+}
+
+/// The device-node exemption set (spec 08 §1's deny-rule amendment,
+/// tebako#1128). The jail grammar governs host filesystem CONTENT;
+/// device files are process-essential kernel devices, not host content —
+/// no secret leaks through them and no payload widens its reach by
+/// opening them — so the fixed set is always permitted read+write
+/// regardless of the bound policy, and no grant narrows it. POSIX:
+/// exactly `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`;
+/// windows: the `NUL` DOS device in its bare and device-namespace
+/// spellings. Like the floor, the set amends only with a proven
+/// platform-process consumer, never by anticipation. Also the needs
+/// generator's exclusion input (spec 23 §8): a manifest never claims a
+/// device node — it is the platform's, granted implicitly.
+#[cfg(unix)]
+pub fn device_nodes() -> &'static [&'static str] {
+    &["/dev/null", "/dev/zero", "/dev/random", "/dev/urandom"]
+}
+
+/// The device-node exemption set on windows (see the unix variant).
+#[cfg(target_os = "windows")]
+pub fn device_nodes() -> &'static [&'static str] {
+    &["NUL", r"\\.\NUL", r"\\?\NUL"]
+}
+
+/// True when the path names a member of the device-node exemption set
+/// (spec 08 §1, tebako#1128). `canon` is the check-time canonical form
+/// (the as-spelled path re-validated through realpath — the same input
+/// the grants judge); `raw` is the path as handed in, for the windows
+/// spellings canonicalization cannot produce. The match is EXACT, never
+/// a prefix: a lookalike (`/dev/nullify`) and every other device node
+/// (`/dev/sda`) fall to the policy's verdict.
+#[cfg(unix)]
+fn device_node_exempt(_raw: &Path, canon: &Path) -> bool {
+    device_nodes().iter().any(|node| canon.as_os_str() == *node)
+}
+
+/// The windows match: the bare `NUL` name and its device-namespace
+/// spellings, case-insensitive (the DOS device names are).
+#[cfg(target_os = "windows")]
+fn device_node_exempt(raw: &Path, canon: &Path) -> bool {
+    let matches = |p: &Path| {
+        let s = p.to_string_lossy().replace('/', "\\");
+        device_nodes()
+            .iter()
+            .any(|node| s.eq_ignore_ascii_case(node))
+    };
+    matches(raw) || matches(canon)
 }
 
 /// The host-access policy of a process (spec 08 §1).
@@ -447,7 +499,12 @@ impl HostPolicy {
     /// Ok(()) means "allowed" — the caller answers ENOENT and the consumer
     /// passes through to the host fs, exactly like today. Err(EPERM) when no
     /// grant covers the path under a deny default; Err(EROFS) for a write
-    /// against an ro grant.
+    /// against an ro grant. The device-node exemption (spec 08 §1,
+    /// tebako#1128) precedes every other verdict: the fixed device set is
+    /// kernel surface, not host content, so it answers Ok for read AND
+    /// write under any policy — the deny stance cannot deny it and no
+    /// grant narrows it — while a lookalike or unknown device path falls
+    /// to the verdicts below.
     pub fn check(&self, path: &Path, need: HostAccess) -> Result<(), i32> {
         // Open policy with no mounts: today's behavior, zero overhead.
         // Record: allow everything (bind guarantees no grants; the context
@@ -460,6 +517,15 @@ impl HostPolicy {
         // Re-validate realpath on each open: the target is canonicalized at
         // check time, so symlink swaps after bind resolve to their target.
         let canon = canonicalize_lenient(path);
+
+        // The device-node exemption (spec 08 §1's deny-rule amendment,
+        // tebako#1128): exact canonical match on the fixed set, read+write,
+        // ahead of the grants — a grant covering a device node (an ro bind
+        // over /dev) never narrows it, because the grammar governs host
+        // content and a kernel device is not content.
+        if device_node_exempt(path, &canon) {
+            return Ok(());
+        }
 
         // Argument files: exact (canonical) match, read grant only, even
         // under deny — "the input file you hand the command is allowed".
@@ -1303,6 +1369,96 @@ mod tests {
         assert_eq!(p.check(&tree.input, HostAccess::Rw), Err(libc::EPERM));
         assert_eq!(
             p.check(&tree.sibling.join("secret.txt"), HostAccess::Ro),
+            Err(libc::EPERM)
+        );
+    }
+
+    #[test]
+    #[cfg(unix)] // the POSIX device set; the windows arm is its own test
+    fn device_nodes_are_exempt_under_deny_all() {
+        // spec 08 §1's deny-rule amendment (tebako#1128): the fixed device
+        // set answers read AND write under a grant-less deny — the
+        // metanorma dogfood's `system(…, out: File::NULL)` shape (run
+        // 45585078751) died EPERM on /dev/null before the exemption.
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![], vec![]).unwrap();
+        for dev in device_nodes() {
+            assert_eq!(
+                p.check(Path::new(dev), HostAccess::Ro),
+                Ok(()),
+                "read {dev}"
+            );
+            assert_eq!(
+                p.check(Path::new(dev), HostAccess::Rw),
+                Ok(()),
+                "write {dev}"
+            );
+        }
+        // A lookalike is not a member: `/dev/nullify` is host content and
+        // stays denied, as does every other device node (/dev/sda) and the
+        // device directory itself — the exemption never enumerates.
+        for lookalike in ["/dev/nullify", "/dev/sda", "/dev"] {
+            assert_eq!(
+                p.check(Path::new(lookalike), HostAccess::Ro),
+                Err(libc::EPERM),
+                "read {lookalike}"
+            );
+            assert_eq!(
+                p.check(Path::new(lookalike), HostAccess::Rw),
+                Err(libc::EPERM),
+                "write {lookalike}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)] // the fixture path is unix-shaped; the narrowing rule it pins is platform-free
+    fn device_exemption_is_not_narrowed_by_a_grant() {
+        // The exemption is not a grant and no grant narrows it: an authored
+        // ro bind over /dev still leaves /dev/null writable — the grammar
+        // governs host content, and a kernel device is not content.
+        let p = HostPolicy::bind(
+            PolicyDefault::Deny,
+            vec![HostMountSpec {
+                host: PathBuf::from("/dev"),
+                mount: "/dev".to_string(),
+                access: HostAccess::Ro,
+            }],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(p.check(Path::new("/dev/null"), HostAccess::Rw), Ok(()));
+        // …while the mount's own bit still governs the device-tree content
+        // it actually covers.
+        assert_eq!(
+            p.check(Path::new("/dev/sda"), HostAccess::Rw),
+            Err(libc::EROFS)
+        );
+        assert_eq!(p.check(Path::new("/dev/sda"), HostAccess::Ro), Ok(()));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn nul_is_exempt_under_deny_all() {
+        // The windows arm of tebako#1128: the NUL DOS device, by its bare
+        // and device-namespace spellings, case-insensitive.
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![], vec![]).unwrap();
+        for spelling in device_nodes() {
+            assert_eq!(
+                p.check(Path::new(spelling), HostAccess::Ro),
+                Ok(()),
+                "read {spelling}"
+            );
+            assert_eq!(
+                p.check(Path::new(spelling), HostAccess::Rw),
+                Ok(()),
+                "write {spelling}"
+            );
+        }
+        assert_eq!(p.check(Path::new("nul"), HostAccess::Rw), Ok(()));
+        // A lookalike name is host content and stays the policy's verdict.
+        assert_eq!(
+            p.check(Path::new("NULLED.txt"), HostAccess::Ro),
             Err(libc::EPERM)
         );
     }

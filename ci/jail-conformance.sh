@@ -11,6 +11,17 @@
 #     3  File.stat            7  IO.binread           11  a GRANT read
 #     4  File.exist?          8  read(realpath)       12  a path outside it
 #     5  File.readlines        9  shell-out read      13  a payload-MADE link
+#
+#   the exemption vectors (spec 08 §1's deny-rule amendment, tebako#1128)
+#     devnull       a File::NULL open/write/read — the fixed device set is
+#                   kernel surface, not host content: READ-OK under EVERY
+#                   arm, and a refusal is an over-denial failure, never a
+#                   block
+#     devnullspawn  system(…, out: File::NULL) — the metanorma failing
+#                   shape (run 45585078751), the spawn target the runtime's
+#                   own exe so the only judgement in play is the device
+#                   open; on windows the tebako#1021 spawn boundary owns
+#                   the non-trivial-policy refusal
 #     6  File.binread         10  host dir listing
 #
 #   not covered by this cut, named rather than implied
@@ -84,7 +95,8 @@
 #                  executable, `P.tfs` its env image — which is how a
 #                  release gate uses this suite before a pair is published
 #   exit 0  every covered vector live under `open` and refused under deny
-#   exit 1  at least one vector leaked (the matrix names it)
+#   exit 1  at least one vector leaked, or an exempt device was refused
+#           (the matrix names it)
 #   exit 2  the harness could not run (press, runtime, or a broken probe)
 #
 # This is a RELEASE-rung check, not a PR gate: it needs a runtime pair,
@@ -325,6 +337,31 @@ line("ads") do
   base.empty? ? "SKIPPED:not-ntfs" : verdict { File.read("#{base}:sota") }
 end
 
+# The device-node exemption (spec 08 §1's deny-rule amendment,
+# tebako#1128): /dev/null and its siblings (NUL on windows) are
+# process-essential kernel devices, not host content — usable under EVERY
+# policy, so these vectors must READ-OK in every arm. A refusal is the
+# over-denial the issue names, never a block.
+line("devnull") do
+  verdict do
+    File.write(File::NULL, "devnull\n")
+    File.read(File::NULL)
+  end
+end
+# The exact failing shape (run 45585078751 — leptris's adapter probe
+# under a tight jail): a spawn redirecting to File::NULL. The child is
+# the runtime's own exe (RbConfig.ruby — the planned spec-30 edge, never
+# a host-binary judgement), so the only policy judgement in play is the
+# device open itself. On windows the tebako#1021 fail-closed spawn
+# boundary refuses ANY child under a non-trivial policy — the matrix owns
+# that carve-out; the exemption's windows proof rides `devnull`.
+line("devnullspawn") do
+  verdict do
+    ok = system(RbConfig.ruby, "-e", "nil", out: File::NULL, err: File::NULL)
+    raise "system(..., out: File::NULL) failed (status #{$?.inspect})" unless ok
+  end
+end
+
 RUBY
 
 # The resource arm's payloads ride the same image (spec 08 §2.2, §7 rows
@@ -443,7 +480,7 @@ else
   echo "   pressed: $EXE"
 fi
 
-VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir granted outside madetlink ads"
+VECTORS="read open stat exist? readlines binread IO.binread realpath shellout hostdir granted outside madetlink ads devnull devnullspawn"
 
 arm() {
   local label="$1"; local jail="$2"
@@ -781,6 +818,7 @@ fi
 [ -n "$rsrc_rows" ] && printf '%s' "$rsrc_rows"
 
 leaks=0
+overdenials=0
 incomplete=0
 knowngaps=0
 echo "== matrix"
@@ -791,6 +829,36 @@ for v in $VECTORS; do
   g=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/deny-grant.out")
   r=$(awk -F'\t' -v v="$v" '$1 == v {print $2}' "$WORK/record.out")
   case "$v" in
+    devnull|devnullspawn)
+      # spec 08 §1's deny-rule amendment (tebako#1128): the device nodes
+      # are exempt from the deny stance — usable under EVERY arm, so a
+      # refusal is the over-denial the issue names, counted on its own
+      # failure line (a jail that breaks a process-essential open fails;
+      # it has not "blocked" anything). One carve-out: on windows the
+      # tebako#1021 fail-closed spawn boundary refuses ANY child under a
+      # non-trivial policy, so a DENIED:EPERM from devnullspawn there is
+      # the boundary answering, not the device verdict — the exemption's
+      # windows proof rides `devnull`.
+      if [ -z "$o" ] || [ -z "$d" ] || [ -z "$g" ] || [ -z "$r" ]; then
+        verdict="MISSING"; incomplete=$((incomplete + 1))
+      elif [ "${o#READ-OK}" != "" ]; then
+        verdict="probe not live under open ($o)"; incomplete=$((incomplete + 1))
+      else
+        bad=""
+        [ "${d#READ-OK}" != "" ] && bad="deny=$d"
+        [ "${g#READ-OK}" != "" ] && bad="$bad grant=$g"
+        [ "${r#READ-OK}" != "" ] && bad="$bad record=$r"
+        if [ -z "$bad" ]; then
+          verdict="exempt under every policy"
+        elif [ "$v" = "devnullspawn" ] && [ "$WIN" = "1" ] \
+             && [ "$d" = "DENIED:EPERM" ] && [ "$g" = "DENIED:EPERM" ] && [ "$r" = "DENIED:EPERM" ]; then
+          verdict="exempt under open; the spawn boundary owns the non-trivial refusal (tebako#1021)"
+        else
+          verdict="OVER-DENIED ($bad) — a device node must never be refused"
+          overdenials=$((overdenials + 1))
+        fi
+      fi
+      ;;
     ads)
       # NTFS-only: a skip in the open arm marks the vector inapplicable
       # on this host, never incomplete. Once live, it answers to the
@@ -880,6 +948,13 @@ else
 fi
 
 echo "== verdict"
+# An over-denial outranks nothing but ranks with a leak: a device node
+# the policy refused is the jail breaking a process-essential open
+# (tebako#1128) — the same exit class, its own line.
+if [ "$overdenials" -ne 0 ]; then
+  echo "   OVER-DENIAL: $overdenials device vector(s) refused — the fixed device set must be usable under every policy (tebako#1128)"
+  exit 1
+fi
 # A leak outranks an empty journal: bytes reached a payload the policy
 # refused is the harm; the missing trail is how it went unseen.
 if [ "$leaks" -ne 0 ]; then

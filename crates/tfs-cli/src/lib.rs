@@ -1485,9 +1485,10 @@ pub fn cmd_exec(_opts: &ExecOptions) -> Result<(), (String, i32)> {
 
 /// `tfs needs --from-journal <log>` — draft a payload `needs:` block from
 /// a record-mode journal. `$HOME`/`$TMPDIR` are re-substituted as the
-/// manifest grammar's atoms; the platform floor, the tebako home, and the
-/// exec cache are excluded (a manifest never claims the platform's or
-/// tebako's own surface). Returns the YAML.
+/// manifest grammar's atoms; the platform floor, the device-node set
+/// (spec 08 §1's exemption — kernel devices, not host content), the
+/// tebako home, and the exec cache are excluded (a manifest never claims
+/// the platform's or tebako's own surface). Returns the YAML.
 pub fn cmd_needs_from_journal(journal_path: &str) -> Result<String, (String, i32)> {
     let text = std::fs::read_to_string(journal_path).map_err(|e| {
         (
@@ -1504,6 +1505,7 @@ pub fn cmd_needs_from_journal(journal_path: &str) -> Result<String, (String, i32
         }
     }
     let mut exclusions = tfs::policy::platform_floor();
+    exclusions.extend(tfs::policy::device_nodes().iter().map(PathBuf::from));
     if let Some(home) = tfs::journal::tebako_home_dir() {
         exclusions.push(home);
     }
@@ -1771,6 +1773,29 @@ mod tests {
             compose: None,
             cmd: cmd.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    #[test]
+    #[cfg(unix)] // the POSIX device set; the windows arm excludes the NUL spellings
+    fn needs_from_journal_excludes_the_device_nodes() {
+        // tebako#1128: a record-mode journal carries the exempted device
+        // opens; the draft never claims them (a manifest never names a
+        // device node — it is the platform's, granted implicitly).
+        let dir = std::env::temp_dir().join(format!("tfs-cli-needs-dev-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let journal = dir.join("journal.log");
+        std::fs::write(
+            &journal,
+            "1 event=jail-allow path=/dev/null op=write source=record\n\
+             2 event=jail-allow path=/dev/urandom op=read source=record\n\
+             3 event=jail-allow path=/work/app/file op=read source=record\n",
+        )
+        .unwrap();
+        let yaml = cmd_needs_from_journal(journal.to_str().unwrap()).unwrap();
+        assert!(!yaml.contains("/dev/null"), "{yaml}");
+        assert!(!yaml.contains("/dev/urandom"), "{yaml}");
+        assert!(yaml.contains("/work/app/file"), "{yaml}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

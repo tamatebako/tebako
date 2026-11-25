@@ -15,7 +15,7 @@
 :local-cache-only:
 :data-uri-image:
 
-// source: docs/spec/08-jails.md @ 93e1d51ad2d93c1f7fffb313ba78c9ba0d05cb40
+// source: docs/spec/08-jails.md @ d977329c43210646b4ae1a02a5473b0b6ab8d1d1
 
 Normative specification of host-filesystem access control for running
 payloads. Status: SHIPPED (roadmaps 09 + 30 + 35) — the TFS enforcement
@@ -38,7 +38,10 @@ the forked wall watchdog; the 2026-11-22 amendment, closing the
 unnoticed — the jail confined access but nothing bounded consumption)
 and windows (Job Objects + the watchdog thread; 2026-11-23,
 tebako#1101). The preload-only (`tfs exec`) arm is PLANNED, named in
-§2.2 and §7 — never silently unbounded.
+§2.2 and §7 — never silently unbounded. The §1 deny rule's device-node
+amendment (2026-11-25, tebako#1128 — the fixed device set is exempt from
+every deny stance) is SHIPPED with the verdict-layer change and the
+conformance suite's `devnull`/`devnullspawn` vectors.
 
 
 [%unnumbered]
@@ -107,6 +110,27 @@ directive — `+++deny;resources:cpu_seconds=60,wall_seconds=300+++`,
 grant form, duplicate keys a named error. Like `+++net:+++`, a `resources:`
 token is never `+++host:mount:ro|rw+++` (a RELATIVE host path literally
 starting `resources:` is pathological and loses the token).
+
+*The device-node exemption (2026-11-25 amendment, tebako#1128).* The
+grammar governs host filesystem CONTENT; device files — `/dev/null`,
+`/dev/zero`, `/dev/random`, `/dev/urandom` on POSIX; `NUL` on windows —
+are process-essential kernel devices, not host content: no secret leaks
+through them, and no payload widens its reach by opening them. The fixed
+set is therefore always permitted read+write under EVERY policy — a deny
+stance cannot deny it, and no grant narrows it (an ro bind over `/dev`
+leaves `/dev/null` writable) — with no new grammar and no payload
+opt-in: the exemption IS the jail semantics, applied at the verdict
+(`HostPolicy::check`) ahead of every grant. The match is exact on the
+canonical path: a lookalike (`/dev/nullify`), every other device node
+(`/dev/sda`), and the device directory's enumeration all fall to the
+policy's verdict — named-error discipline holds for anything the set
+does not name. Like the floor (§2.1), the set amends only with a proven
+platform-process consumer, never by anticipation. The evidence is the
+metanorma tight-jail dogfood (run 45585078751, aarch64-macos):
+`+++system(…, out: File::NULL)+++` — the gem ecosystem's adapter-probe
+idiom — died `EPERM` on `/dev/null` under
+`+++deny;&lt;cwd&gt;:rw+++`, a jail that broke programs without buying
+any confinement.
 
 
 [%unnumbered]
@@ -476,6 +500,11 @@ namespace test; a namespace test is not an enforcement point.
 is ro in an otherwise open namespace, docker-style); longest host
 prefix wins on path-component boundaries; argument files are an exact
 read-only grant, even under deny.
+* The device-node set (§1's 2026-11-25 amendment, tebako#1128) answers
+allowed for read AND write ahead of every grant — the verdict's first
+check after canonicalization, so the deny stance cannot deny it and an
+ro bind over `/dev` does not narrow it. The needs generator (spec 23
+§8) excludes the same set: a manifest never claims a device node.
 * Bind-time realpath covers mount sources and argument files (a missing
 one fails the install with its errno); every gated decision
 re-canonicalizes the target, so symlinks swapped in after install
@@ -687,6 +716,7 @@ regression reddens the release matrix, not a dashboard nobody reads.
 | 29 | a payload calling `setsid(2)` to escape the wall group | OUT OF SCOPE — POSIX userland without cgroups cannot hold a determined escapee (the escape needs the payload's own syscall); cgroup-grade per-tree accounting is the named non-goal (§5) | §2.2
 | 30 | a declared `memory` bound on macOS | refused by name at boot (exit 73) — the kernel refuses `RLIMIT_AS` below its `2^39`-byte address-space floor (arm64); never a silent clamp | the conformance suite's macOS `memory-refusal` arm; `resources::tests`' rlimit mapping
 | 31 | a memory hog under a declared `memory` bound (Linux) | address-space growth fails at the `RLIMIT_AS` ceiling — the interpreter's own allocator answer (ruby: `NoMemoryError`, or its fatal-allocation abort), never a silent overshoot | the conformance suite's Linux `memory` arm
+| 32 | a fixed-set device node under a deny stance (`/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`; `NUL` on windows) — the `+++system(…, out: File::NULL)+++` idiom (tebako#1128) | exempt from the 2026-11-25 §1 amendment — always read+write under every policy, no grant narrows it; a lookalike (`/dev/nullify`) or any other node (`/dev/sda`) stays the policy's verdict | `policy::tests::device_nodes_are_exempt_under_deny_all` + `device_exemption_is_not_narrowed_by_a_grant` (the windows arm `nul_is_exempt_under_deny_all`), `jails.rs`'s `+++device_nodes_pass_through_under_deny_all_but_lookalikes_are_refused+++`, the driver boot leg `jail_deny_exempts_the_device_nodes`, the conformance suite's `devnull`/`devnullspawn` vectors
 |===
 
 
