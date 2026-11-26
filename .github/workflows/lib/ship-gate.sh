@@ -8,7 +8,9 @@
 #   ship-gate.sh <platform> <binary> [<binary> ...]
 #
 # Runs on the STAGED out/ artifacts (the exact shipped bytes), before
-# any upload step of the leg. Two phases per binary:
+# any upload step of the leg. Two phases per binary (a *.dylib/*.so
+# argument — the preload shim, tebako#1099 — skips the launch: a library
+# cannot be bare-run, so it is dependency-audited only):
 #
 #   SMOKE — a bare no-op launch (--version / --help; tebako-bootstrap
 #   has no flags and must answer with its named bare-trailer error,
@@ -204,6 +206,13 @@ audit_ldd() {
 audit_macos() {
   bin=$1
   deps=$(otool -L "$bin" | tail -n +2 | awk '{print $1}')
+  case $bin in
+    # A dylib's first otool -L entry is its own LC_ID_DYLIB (the install
+    # name — DYLD_INSERT_LIBRARIES loads by path and never resolves it),
+    # not a dependency: drop it before the whitelist, which otherwise
+    # (correctly) refuses every non-/usr/lib//System entry.
+    *.dylib) deps=$(printf '%s\n' "$deps" | tail -n +2) ;;
+  esac
   printf '%s\n' "$deps" | sed 's/^/    /'
   for dep in $deps; do
     case $dep in
@@ -213,12 +222,19 @@ audit_macos() {
   done
 }
 
-note "platform $PLATFORM — gating $# binar$( [ "$#" -eq 1 ] && echo y || echo ies)"
+note "platform $PLATFORM — gating $# artifact(s)"
 
 for bin in "$@"; do
   [ -f "$bin" ] || { echo "ship-gate: no such file: $bin" >&2; exit 66; }
   note "=== $bin ==="
-  smoke_one "$bin"
+  case $bin in
+    # A library cannot be bare-launched, so there is no smoke launch —
+    # the dependency audit below still applies in full (a preload shim
+    # is injected into ARBITRARY user processes: its closure matters
+    # more, not less, than a binary's).
+    *.dylib|*.so) note "smoke: n/a (library — dependency audit only)" ;;
+    *) smoke_one "$bin" ;;
+  esac
   case $PLATFORM in
     windows-*)
       # objdump-based PE import audit (the windows-gnu legs' own gate);

@@ -40,10 +40,11 @@ declares the axis honestly per spec 03 §3.
 
 ### 3.1 Homebrew
 
-- **`tamatebako/homebrew-tap`** hosts the `tebako` formula: all four
-  binaries (tebako, tfs, tebako-pkg, tebako-shim) + shell completions,
-  per-platform `url` + `sha256` blocks (the standard binary-formula
-  pattern — no build, no bottles-to-build).
+- **`tamatebako/homebrew-tap`** hosts the `tebako` formula: the five
+  binaries (tebako, tfs, tebako-pkg, tebako-shim, tebako-bootstrap) +
+  the preload shim library (§3.2a) + shell completions, per-platform
+  `url` + `sha256` blocks (the standard binary-formula pattern — no
+  build, no bottles-to-build).
 - **Each app project hosts its own tap with our template** (e.g.
   `metanorma/homebrew-tap` with a `metanorma` formula pointing at the
   app's standalone binaries). We provide the template + the `tebako
@@ -52,11 +53,27 @@ declares the axis honestly per spec 03 §3.
 
 ### 3.2 curl|sh installer (tebako CLI only)
 
-`install.sh`: detects platform → downloads the binary + `SHA256SUMS` from
-the tebako-rs release → **verifies sha256 before installing anything** →
-installs to `~/.local/bin` (NEVER sudo) → offers the managed PATH block.
-After the root-key ceremony it also verifies the detached `.asc`. This is
-the Linux-without-brew path and the CI path.
+`install.sh`: detects platform → downloads the binaries + the preload
+shim library (§3.2a) + `SHA256SUMS` from the tebako-rs release →
+**verifies sha256 before installing anything** → installs to
+`~/.local/bin` (NEVER sudo) → offers the managed PATH block. After the
+root-key ceremony it also verifies the detached `.asc`. This is the
+Linux-without-brew path and the CI path.
+
+### 3.2a The preload shim is install-lane cargo (locked, tebako#1099)
+
+`tfs exec` (spec 07 §8 tier 1) injects the VFS through the preload shim
+library `libtfs_preload.{dylib,so}`, located as the **sibling of the
+`tfs` binary** (the `TEBAKO_TFS_PRELOAD` env override wins). The
+audience law therefore makes the library **release cargo, not a build
+product**: the release ships `libtfs_preload-<v>-<platform>.{dylib,so}`
+for every POSIX triplet (windows has no LD_PRELOAD/DYLD_INSERT_LIBRARIES
+delivery — `tfs exec` there answers its own not-supported named error),
+and every tebako-tool install lane (this chapter's formula, install.sh,
+and the `tamatebako/setup-tebako` action) places it beside the CLI it
+installs, verified against the same `SHA256SUMS` as the binaries. A lane
+that predates the asset warns loudly and installs the binaries anyway;
+the absent-shim error names the lanes, never a build command.
 
 ### 3.3 tebako-native install
 

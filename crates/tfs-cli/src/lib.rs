@@ -1273,6 +1273,23 @@ fn errno_text(e: i32) -> String {
     tfs::errno::strerror_text(e).to_string()
 }
 
+/// The absent-shim error (tebako#1099): names the install lanes that
+/// place the library, never a build instruction — a user of an install
+/// lane has no toolchain by construction (the audience law).
+#[cfg(unix)]
+fn preload_missing_error(cand: &Path) -> (String, i32) {
+    (
+        format!(
+            "Error: the preload shim {} is not installed beside the tfs binary — \
+             the install lanes place it there (re-run https://tebako.org/install.sh \
+             or `brew reinstall tamatebako/tap/tebako`), or set TEBAKO_TFS_PRELOAD \
+             to an existing copy",
+            cand.display()
+        ),
+        1,
+    )
+}
+
 /// Locate the preload shim: `TEBAKO_TFS_PRELOAD` wins, else the sibling
 /// of this binary (`libtfs_preload.{dylib,so}` — same artifact directory).
 #[cfg(unix)]
@@ -1298,14 +1315,7 @@ fn exec_shim_path() -> Result<PathBuf, (String, i32)> {
     if cand.is_file() {
         return Ok(cand);
     }
-    Err((
-        format!(
-            "Error: the preload shim is not available at {} \
-             (build it with `cargo build -p libtfs-preload`, or set TEBAKO_TFS_PRELOAD)",
-            cand.display()
-        ),
-        1,
-    ))
+    Err(preload_missing_error(&cand))
 }
 
 /// `tfs exec` — launch a dynamic native command with the VFS injected
@@ -1473,7 +1483,7 @@ fn compose_exists(path: &str) -> bool {
 pub fn cmd_exec(_opts: &ExecOptions) -> Result<(), (String, i32)> {
     Err((
         "Error: tfs exec is not supported on this platform yet \
-         (the preload shim targets macOS and linux-gnu first; windows is not implemented yet)"
+         (the preload shim targets macOS and linux — gnu and musl; windows is not implemented yet)"
             .to_string(),
         1,
     ))
@@ -1897,6 +1907,31 @@ mod tests {
             assert_eq!(preload_var(), "LD_PRELOAD");
             assert_eq!(preload_lib_name(), "libtfs_preload.so");
         }
+    }
+
+    /// tebako#1099: the absent-shim error names the install lanes (the
+    /// audience law — a lane user has no toolchain, so it must never
+    /// name a build command) and keeps the TEBAKO_TFS_PRELOAD override.
+    #[test]
+    #[cfg(all(unix, any(target_os = "macos", target_os = "linux")))]
+    fn preload_absent_error_names_the_install_lanes() {
+        let looked = Path::new("/nonexistent/bin").join(preload_lib_name());
+        let (msg, rc) = preload_missing_error(&looked);
+        assert_eq!(rc, 1);
+        assert!(
+            msg.contains(&looked.display().to_string()),
+            "names the looked-at path: {msg}"
+        );
+        assert!(
+            msg.contains("install.sh"),
+            "names the one-liner lane: {msg}"
+        );
+        assert!(msg.contains("brew"), "names the brew lane: {msg}");
+        assert!(
+            msg.contains("TEBAKO_TFS_PRELOAD"),
+            "keeps the override: {msg}"
+        );
+        assert!(!msg.contains("cargo"), "never names a build command: {msg}");
     }
 
     /// fnmatch flag-0 semantics. Runs on every platform: on unix it
