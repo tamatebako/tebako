@@ -170,6 +170,7 @@ fn witness_line(cell: &tebako_bench::covenant::CellVerdict) -> String {
             image_os,
             image_version,
             image_changed,
+            history_entries,
             note,
         }) => {
             let mode = match mode {
@@ -191,12 +192,16 @@ fn witness_line(cell: &tebako_bench::covenant::CellVerdict) -> String {
                 .as_deref()
                 .map(|n| format!(" · note: {n}"))
                 .unwrap_or_default();
+            let history = history_entries
+                .map(|n| format!(" · history {n} published"))
+                .unwrap_or_default();
             format!(
-                "witness: leg {triplet} · {workload} · {mode} · {target} vs {} · native_drift {} · pair_delta {}{}{}",
+                "witness: leg {triplet} · {workload} · {mode} · {target} vs {} · native_drift {} · pair_delta {}{}{}{}",
                 reference.as_deref().unwrap_or("(none)"),
                 drift(*native_drift),
                 drift(*pair_delta),
                 image,
+                history,
                 note
             )
         }
