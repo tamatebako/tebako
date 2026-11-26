@@ -393,6 +393,16 @@ mod imp {
     /// calls (the module docs' discipline); the parent continues the boot.
     pub(super) fn fork_watchdog(spec: &WatchdogSpec) -> Result<(), String> {
         unsafe {
+            // The armer's pid on the SAFE side of the fork: the child's
+            // own getppid() is already 1 when the armer outruns the
+            // child's first timeslice (tebako#1132 — a loaded runner can
+            // schedule the child only AFTER the armer's exit, and a
+            // launchd snapshot would disarm the root-exit reap forever:
+            // getppid() never changes again). The pre-fork getpid()
+            // cannot be wrong: the child's parent IS this pid at fork
+            // time, so a later mismatch means exactly one thing — the
+            // armer is gone.
+            let armer = libc::getpid();
             match libc::fork() {
                 -1 => {
                     let e = std::io::Error::last_os_error();
@@ -400,16 +410,20 @@ mod imp {
                         "resources: cannot fork the wall watchdog: {e} — refusing to arm a bound that cannot hold"
                     ))
                 }
-                0 => watchdog_child(spec),
+                0 => watchdog_child(spec, armer),
                 _ => Ok(()),
             }
         }
     }
 
     /// The watchdog loop. Never returns; raw libc only from here.
-    fn watchdog_child(spec: &WatchdogSpec) -> ! {
+    /// `armer` is the armer's pid captured BEFORE the fork (see
+    /// [`fork_watchdog`]); `getppid() != armer` therefore detects the
+    /// armer's exit even when the reparenting beat the child's first
+    /// timeslice. `pub(super)` so the gated-payload regression test can
+    /// park the child on a gate before this loop's first observation.
+    pub(super) fn watchdog_child(spec: &WatchdogSpec, armer: libc::pid_t) -> ! {
         unsafe {
-            let armer = libc::getppid();
             let mut deadline: libc::timespec = std::mem::zeroed();
             libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut deadline);
             deadline.tv_sec += spec.seconds as i64;
@@ -872,6 +886,18 @@ mod tests {
     #[cfg(unix)]
     static FORK_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Serialize the fork tests' raw-fork windows. The lock guards no
+    /// data — the guarded state is process-global fork hygiene — so a
+    /// panicking test must never poison it into unrelated verdicts
+    /// (tebako#1132's cascade: one timing assertion's panic failed three
+    /// tests). Recover and continue.
+    #[cfg(unix)]
+    fn fork_lock() -> std::sync::MutexGuard<'static, ()> {
+        FORK_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[cfg(unix)]
     fn child_status(pid: libc::pid_t) -> libc::c_int {
         let mut status: libc::c_int = 0;
@@ -993,7 +1019,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn setrlimit_applies_and_reads_back_in_a_child() {
-        let _g = FORK_LOCK.lock().unwrap();
+        let _g = fork_lock();
         unsafe {
             let pid = libc::fork();
             assert!(pid >= 0, "fork failed");
@@ -1054,7 +1080,11 @@ mod tests {
             let pid = libc::fork();
             assert!(pid >= 0, "fork failed");
             if pid == 0 {
-                libc::setpgid(0, 0);
+                if libc::setpgid(0, 0) != 0 {
+                    // Without its own group a watchdog fire would reach
+                    // the test runner — fail loudly instead.
+                    libc::_exit(94);
+                }
                 if fork_watchdog(spec).is_err() {
                     libc::_exit(93);
                 }
@@ -1062,6 +1092,58 @@ mod tests {
             }
             pid
         }
+    }
+
+    /// A payload that leaks a sleeper and forks the watchdog, but whose
+    /// watchdog child parks on the `gate_r` pipe BEFORE its first
+    /// getppid() observation; the harness releases the gate only after
+    /// reaping the armer. The tebako#1132 race — the reparenting beats
+    /// the watchdog's first observation — is thus forced
+    /// deterministically, never left to scheduling: a getppid()
+    /// snapshot taken there reads launchd (the pre-fix bug: the
+    /// root-exit reap is disarmed forever and the group survives to the
+    /// wall); the pre-fork armer pid fires the reap on the first poll.
+    #[cfg(unix)]
+    fn fork_gated_watchdog_payload(spec: &WatchdogSpec, gate_r: libc::c_int) -> libc::pid_t {
+        unsafe {
+            let pid = libc::fork();
+            assert!(pid >= 0, "fork failed");
+            if pid == 0 {
+                if libc::setpgid(0, 0) != 0 {
+                    libc::_exit(94);
+                }
+                if libc::fork() == 0 {
+                    sleep_forever();
+                }
+                // Mirror fork_watchdog's pre-fork armer capture.
+                let armer = libc::getpid();
+                if libc::fork() == 0 {
+                    let mut byte = 0u8;
+                    libc::read(gate_r, &mut byte as *mut u8 as *mut libc::c_void, 1);
+                    watchdog_child(spec, armer);
+                }
+                libc::close(gate_r);
+                libc::_exit(0);
+            }
+            pid
+        }
+    }
+
+    /// Poll the process group `pgid` until it is empty (the watchdog's
+    /// fire took every member) or `millis` has elapsed. Early-break: a
+    /// healthy reap pays only the 50 ms poll slice; the cap is pure
+    /// margin for the watchdog's scheduling latency (the observed
+    /// macos-15 band is ~1 s, tebako#1132).
+    #[cfg(unix)]
+    fn group_emptied_within(pgid: libc::pid_t, millis: u64) -> bool {
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_millis(millis) {
+            if unsafe { libc::kill(-pgid, 0) } != 0 {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        false
     }
 
     #[cfg(unix)]
@@ -1108,7 +1190,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_watchdog_kills_the_group_at_the_deadline() {
-        let _g = FORK_LOCK.lock().unwrap();
+        let _g = fork_lock();
         let spec = format_spec(1, true, "test", None);
         let started = std::time::Instant::now();
         let pid = fork_payload(&spec, sleep_forever);
@@ -1131,7 +1213,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_watchdog_reaps_the_tree_when_the_root_exits() {
-        let _g = FORK_LOCK.lock().unwrap();
+        let _g = fork_lock();
         // A generous wall the test never reaches: the ROOT-EXIT fire is
         // what must reap the leaked child.
         let spec = format_spec(300, true, "test", None);
@@ -1145,35 +1227,75 @@ mod tests {
         // The payload's group (its own pid — it re-grouped) must empty
         // promptly: the watchdog fires on the root's exit and takes the
         // leaked sleeper with the group (and itself).
-        let mut emptied = false;
-        for _ in 0..30 {
-            let alive = unsafe { libc::kill(-payload, 0) } == 0;
-            if !alive {
-                emptied = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+        let emptied = group_emptied_within(payload, 10_000);
         assert!(
             emptied,
-            "the leaked child must die with the root within 3s (waited {:?})",
+            "the leaked child must die with the root well within 10s (waited {:?})",
             started.elapsed()
         );
     }
 
     #[cfg(unix)]
     #[test]
+    fn the_root_exit_reap_engages_when_the_root_outruns_the_watchdog() {
+        let _g = fork_lock();
+        // tebako#1132's implementation arm: the armer exits before the
+        // watchdog's first observation. The reap must engage anyway —
+        // the armer's pid is captured before the fork, so the
+        // already-reparented first poll fires instead of locking onto
+        // launchd.
+        let spec = format_spec(300, true, "test", None);
+        let mut fds = [0; 2];
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        let payload = fork_gated_watchdog_payload(&spec, fds[0]);
+        unsafe { libc::close(fds[0]) };
+        let status = child_status(payload);
+        assert!(
+            libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0,
+            "the root itself exits cleanly (status {status:#x})"
+        );
+        // The armer is reaped; the watchdog is still parked on the gate.
+        // Release it — its first getppid() now reads launchd.
+        assert_eq!(
+            unsafe { libc::write(fds[1], b"x".as_ptr() as *const libc::c_void, 1) },
+            1
+        );
+        unsafe { libc::close(fds[1]) };
+        let emptied = group_emptied_within(payload, 10_000);
+        assert!(
+            emptied,
+            "the root-exit reap must engage even when the reparenting beats the watchdog's first observation (tebako#1132)"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn the_root_exit_reap_stays_out_of_a_shared_group() {
-        let _g = FORK_LOCK.lock().unwrap();
+        let _g = fork_lock();
         // owns_group = false (the job-control-leader topology): the
         // root-exit reap must NOT fire (pipeline siblings may share the
         // group) — the leaked child survives past the root's exit and
         // dies at the deadline. The payload still takes its own group
         // (fork_payload) so the deadline fire never reaches the runner.
-        let spec = format_spec(2, false, "test", None);
+        //
+        // The clock anchoring (tebako#1132): the watchdog's deadline is
+        // CLOCK_MONOTONIC captured in the watchdog child — under ANY
+        // runner load the fire lands at least `seconds` after the fork
+        // below. The assertion's clock therefore starts BEFORE the fork,
+        // never at the root's reaping: a loaded macos-15 runner
+        // schedules the payload child 0.6–1.0 s late (the issue's five
+        // failed runs report "died at" 1100–1400 ms against the old 2 s
+        // wall — exactly that scheduling latency, not an early fire; a
+        // real root-exit reap lands within one 50 ms poll slice of the
+        // exit), and a post-waitpid clock inherits the latency. The wall
+        // is 5 s so the survival window (through t0+4 s) keeps ~4× the
+        // observed latency band AND a full second clear of the earliest
+        // possible deadline fire.
+        let spec = format_spec(5, false, "test", None);
         let mut fds = [0; 2];
         assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
         LEAK_PIPE_W.store(fds[1], std::sync::atomic::Ordering::Relaxed);
+        let t0 = std::time::Instant::now();
         let payload = fork_payload(&spec, leak_report_and_exit);
         LEAK_PIPE_W.store(-1, std::sync::atomic::Ordering::Relaxed);
         unsafe { libc::close(fds[1]) };
@@ -1181,6 +1303,11 @@ mod tests {
         assert!(
             libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0,
             "the root itself exits cleanly (status {status:#x})"
+        );
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(3),
+            "the payload root took {:?} to exit — runner scheduling latency beyond 3 s would vacate this test's survival window (a load failure, not a product one)",
+            t0.elapsed()
         );
         // The leaked pid rides the pipe (published before the exit).
         let mut leaked: libc::pid_t = 0;
@@ -1198,27 +1325,34 @@ mod tests {
         }
         unsafe { libc::close(fds[0]) };
         assert!(leaked > 0);
-        // Poll the leaked pid: it must SURVIVE the root's exit (no reap
-        // — a reap fires within ~100 ms) and die at the ~2 s deadline.
-        let mut died_at = None;
-        for i in 0..60 {
+        // Survival: alive at EVERY poll through t0+4 s. A spurious
+        // root-exit reap lands within one 50 ms poll slice of the root's
+        // exit — far inside this window; the deadline fire cannot land
+        // before t0+5 s (its clock starts after the fork).
+        while t0.elapsed() < std::time::Duration::from_secs(4) {
             let alive = unsafe { libc::kill(leaked, 0) } == 0;
-            if !alive {
-                died_at = Some(i);
+            assert!(
+                alive,
+                "the shared-group leak must SURVIVE the root's exit — it died {:?} after the fork, before the deadline can fire (t0+5s): the root-exit reap fired where it must not",
+                t0.elapsed()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        // Deadline: the fire lands at t0+5 s plus the watchdog's own
+        // scheduling latency and one poll slice; 3 s of margin absorbs
+        // the observed macos-15 band (~1 s) with room to spare.
+        let mut died = false;
+        while t0.elapsed() < std::time::Duration::from_secs(8) {
+            if unsafe { libc::kill(leaked, 0) } != 0 {
+                died = true;
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        let died_at = died_at.expect("the leaked child never died");
         assert!(
-            died_at >= 15,
-            "the shared-group leak must SURVIVE the root's exit (died at {}00ms — the root-exit reap fired where it must not)",
-            died_at
-        );
-        assert!(
-            died_at <= 30,
-            "…and must die at the deadline (died at {}00ms)",
-            died_at
+            died,
+            "…and must die at the deadline (still alive {:?} after the fork against the 5 s wall)",
+            t0.elapsed()
         );
     }
 
@@ -1259,7 +1393,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn enforce_arms_and_exports_the_deadline() {
-        let _g = FORK_LOCK.lock().unwrap();
+        let _g = fork_lock();
         // The armed watchdog outlives the test binary's interest and
         // fires (root-exit) when it exits — point the journal at a
         // scratch path so that fire never writes the real store's
