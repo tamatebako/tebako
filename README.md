@@ -72,6 +72,11 @@ image through the interposition shim — no extraction):
 $ tfs exec inkscape.tfs -- /bin/inkscape --version
 ```
 
+`tfs exec` looks for the shim library (`libtfs_preload.{dylib,so}`)
+beside the `tfs` binary — every install lane (brew, install.sh,
+setup-tebako) places it there; a bare `tfs` download pairs with the
+`libtfs_preload-<v>-<platform>` asset of the same release.
+
 ## Platforms and audiences
 
 Everything tebako ships is built per platform triplet. The axis is eight

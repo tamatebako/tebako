@@ -1,6 +1,8 @@
-# tebako-rs release pipeline (item 31): build and upload the five
-# binaries (tebako-bootstrap, tfs, tebako-pkg, tebako) per release
-# platform, with the size-gate table, SHA256SUMS and manifest.json.
+# tebako-rs release pipeline (item 31): build and upload the six
+# binaries (tebako-bootstrap, tfs, tebako-pkg, tebako, tebako-shim,
+# tebako-runtime-launcher) per release platform — plus the preload shim
+# cdylib on the POSIX legs (tebako#1099) — with the size-gate table,
+# SHA256SUMS and manifest.json.
 #
 # Triggers: a `v*` tag push IS the release event — `prepare` creates the
 # Release object itself (the v0.2.5 lesson: release:published alone left
@@ -482,7 +484,8 @@ jobs:
       # Notarize the SIGNED staged binaries and quarantine-mark every one:
       # the ship gate right after then smokes them under the exact
       # Gatekeeper path a user's download takes (bare Mach-O keeps an
-      # online ticket — stapling/spctl are bundle-only by design).
+      # online ticket — stapling/spctl are bundle-only by design). The
+      # preload shim dylib (tebako#1099) rides the same submission.
       - name: Notarize the staged binaries (spec 31)
         if: vars.APPLE_SIGNING_ENABLED == 'true' && github.event_name != 'pull_request'
         working-directory: tebako-rs
@@ -492,18 +495,19 @@ jobs:
           APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
-        run: bash ci/macos-notarize.sh out/*-"$VERSION-$PLATFORM"
+        run: bash ci/macos-notarize.sh out/*-"$VERSION-$PLATFORM" out/libtfs_preload-"$VERSION-$PLATFORM".dylib
 
       # The ship gate BEFORE any upload: bare-launch smoke (plain run on
       # the runner — with the notarized binaries' quarantine marks in
       # place when the spec 31 gate is armed) + the otool -L whitelist
-      # (/usr/lib + /System only).
+      # (/usr/lib + /System only). The preload dylib is audit-only (a
+      # library has no bare launch — ship-gate.sh skips its smoke).
       - name: Ship gate (bare-launch smoke + dylib audit)
         working-directory: tebako-rs
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
-        run: bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM"
+        run: bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM" out/libtfs_preload-"$VERSION-$PLATFORM".dylib
 
       # The exe shape's archive (spec 22 §3.6): the same crate as the
       # preload cdylib, built with --features exe-shape (no constructor —
@@ -666,11 +670,13 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
+        # The preload .so is audit-only at the gate (a library has no
+        # bare launch — ship-gate.sh skips its smoke).
         run: |
           docker run --rm \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             -w "$GITHUB_WORKSPACE/tebako-rs" \
-            ubuntu:20.04 bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM"
+            ubuntu:20.04 bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM" out/libtfs_preload-"$VERSION-$PLATFORM".so
 
       - name: Upload fragment artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -802,11 +808,13 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
+        # The preload .so is audit-only at the gate (a library has no
+        # bare launch — ship-gate.sh skips its smoke).
         run: |
           docker run --rm \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             -w "$GITHUB_WORKSPACE/tebako-rs" \
-            alpine:3.21 sh .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM"
+            alpine:3.21 sh .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM" out/libtfs_preload-"$VERSION-$PLATFORM".so
 
       - name: Upload fragment artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

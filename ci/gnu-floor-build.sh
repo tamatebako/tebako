@@ -186,8 +186,13 @@ export RUSTFLAGS="-C linker=$WS/tebako-rs/ci/linux-link-wrap.sh"
 # `git` feature (gix/reqwest/rustls) inside the size-gated loader
 # (run 32940980101 failed the 3 MiB gate on every leg for this reason).
 cargo build --release --target "$TARGET" -p tebako-bootstrap
+# libtfs-preload rides this invocation (tebako#1099): stage.sh below
+# ships the constructor-ful preload cdylib as a release asset, so the
+# build must precede the stage (the link-unit build later is its cache
+# hit; the constructor-less exe-shape keeps its own target dir).
 cargo build --release --target "$TARGET" \
-  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim -p tebako-runtime-launcher
+  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim -p tebako-runtime-launcher \
+  -p libtfs-preload
 
 echo "== stage / strip / size-gate =="
 export TARGET

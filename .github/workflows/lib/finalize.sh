@@ -13,24 +13,37 @@ FRAG=fragments
 
 # ---- SHA256SUMS (sorted, "<sha>  <file>") ------------------------------
 # Windows platform ids carry the .exe suffix on the uploaded asset name
-# (the frag files themselves are suffix-free).
+# (the frag files themselves are suffix-free); the preload shim
+# (tebako#1099, POSIX-only) carries its library extension — .dylib on
+# macOS, .so on linux.
 # tebako#493: each line also lands as the per-asset sidecar
 # out/sidecars/<asset>.sha256 — the sidecar-era authority the resolver
 # reads FIRST; the monoliths (SHA256SUMS, manifest.json) become
 # derived-only conveniences for old resolvers.
+asset_name() {  # <tool> <platform> → the released asset's file name
+  local tool="$1" platform="$2" ext=""
+  case "$platform" in windows-*) ext=".exe" ;; esac
+  if [ "$tool" = libtfs_preload ]; then
+    case "$platform" in
+      macos-*) ext=".dylib" ;;
+      linux-*) ext=".so" ;;
+    esac
+  fi
+  echo "${tool}-${VERSION}-${platform}${ext}"
+}
+
 mkdir -p out/sidecars
 : > out/SHA256SUMS
 for platform_dir in "$FRAG"/frag-*; do
   case "$platform_dir" in */frag-installers-*) continue ;; esac   # installer frags: their own section below
   platform="${platform_dir##*/frag-}"
-  exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
-  for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
+  for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher libtfs_preload; do
     # A partial platform leg (windows-ucrt-arm64 ships tfs + tebako-pkg
-    # + tebako-runtime-launcher, roadmap 02 phase 2) carries only its
-    # own fragments.
+    # + tebako-runtime-launcher, roadmap 02 phase 2; windows legs never
+    # carry the preload shim) carries only its own fragments.
     [ -f "$platform_dir/${tool}-${platform}.sha256" ] || continue
     sha=$(cat "$platform_dir/${tool}-${platform}.sha256")
-    name="${tool}-${VERSION}-${platform}${exe}"
+    name=$(asset_name "$tool" "$platform")
     echo "$sha  $name" >> out/SHA256SUMS
     echo "$sha  $name" > "out/sidecars/${name}.sha256"
   done
@@ -62,23 +75,24 @@ sort -k2 -o out/SHA256SUMS out/SHA256SUMS
 #   "version": "<VERSION>",
 #   "assets": [ {platform, file, sha256, size_bytes}, ... ],   # tebako-bootstrap
 #   "tools": { "tfs": [...], "tebako-pkg": [...], "tebako": [...],
-#              "tebako-shim": [...], "tebako-runtime-launcher": [...] }
+#              "tebako-shim": [...], "tebako-runtime-launcher": [...],
+#              "libtfs_preload": [...] }   # the POSIX preload shim (tebako#1099)
 # }
 # The `assets` array is exactly the BootstrapManager's consumed shape, so
 # the gem/tebako-cli resolve the Rust bootstrap unchanged. Windows asset
-# names carry .exe (both here and in SHA256SUMS).
+# names carry .exe, the preload shim its library extension (both here
+# and in SHA256SUMS — asset_name is the single resolver).
 jq_entries() {
   local tool="$1"
   for platform_dir in "$FRAG"/frag-*; do
     case "$platform_dir" in */frag-installers-*) continue ;; esac
     platform="${platform_dir##*/frag-}"
     [ -f "$platform_dir/${tool}-${platform}.sha256" ] || continue
-    exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
     sha=$(cat "$platform_dir/${tool}-${platform}.sha256")
     size=$(cat "$platform_dir/${tool}-${platform}.size")
     jq -cn \
       --arg platform "$platform" \
-      --arg file "${tool}-${VERSION}-${platform}${exe}" \
+      --arg file "$(asset_name "$tool" "$platform")" \
       --arg sha256 "$sha" \
       --argjson size_bytes "$size" \
       '{platform: $platform, file: $file, sha256: $sha256, size_bytes: $size_bytes}'
@@ -91,6 +105,7 @@ pkg_json=$(jq_entries tebako-pkg | jq -s 'sort_by(.platform)')
 cli_json=$(jq_entries tebako | jq -s 'sort_by(.platform)')
 shim_json=$(jq_entries tebako-shim | jq -s 'sort_by(.platform)')
 launcher_json=$(jq_entries tebako-runtime-launcher | jq -s 'sort_by(.platform)')
+preload_json=$(jq_entries libtfs_preload | jq -s 'sort_by(.platform)')
 
 # Installers (roadmap 83): platform parsed out of the asset name
 # (tebako-setup-<VERSION>-<platform>.<ext>); empty array when no leg
@@ -124,6 +139,7 @@ jq -n \
   --argjson cli "$cli_json" \
   --argjson shim "$shim_json" \
   --argjson launcher "$launcher_json" \
+  --argjson preload "$preload_json" \
   --argjson installers "$installers_json" \
   '{
     name: "tebako-rs",
@@ -135,7 +151,8 @@ jq -n \
       "tebako-pkg": $pkg,
       "tebako": $cli,
       "tebako-shim": $shim,
-      "tebako-runtime-launcher": $launcher
+      "tebako-runtime-launcher": $launcher,
+      "libtfs_preload": $preload
     }
   }' > out/manifest.json
 
@@ -153,7 +170,7 @@ cat out/manifest.json
   echo "|---|---|---|"
   for platform_dir in $(ls -d "$FRAG"/frag-* | grep -v '/frag-installers-' | sort); do
     platform="${platform_dir##*/frag-}"
-    for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
+    for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher libtfs_preload; do
       [ -f "$platform_dir/${tool}-${platform}.size" ] || continue
       size=$(cat "$platform_dir/${tool}-${platform}.size")
       echo "| $platform | $tool | $size |"
