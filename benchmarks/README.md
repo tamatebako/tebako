@@ -40,12 +40,16 @@ by design. The contract is `docs/spec/27-benchmarks.md`.
   `--history`), `pair_delta` (the current paired per-iteration ratio ÷
   its rolling median), and the full `witness` record (the leg the
   worst-of aggregate kept + its runner image identity, `image_changed`
-  vs the previous published run included). On a trip the cell's `class`
+  vs the previous published run, and `history_entries` — the leg's own
+  published-entry count — included). On a trip the cell's `class`
   names the reading: `fleet-move` (native drift large, pair delta
   small), `regression` (the tebako arm moved against a flat native
-  arm), or `ambiguous` (both moved divergently, or the trip has no
-  witness support) — adjudication is a read of the artifact. Degraded
-  witnesses are explicit `null`s with the reason in `note`.
+  arm), `mechanical` (the bound, not the pair, moved — neither arm left
+  its healthy band, or the leg has zero published entries and the trip
+  is the bound's first fleet calibration), or `ambiguous` (both arms
+  moved divergently) — adjudication is a read of the artifact.
+  Degraded witnesses with history on record are explicit `null`s with
+  the reason in `note`.
 - `platforms.yaml` — WHERE: triplet → runner (+ alpine container for musl
   legs), the packed-mn tag for the v1 arm, and the named gaps
   (`v1_asset: null`, `v2_payload: false`, `runtime_gaps` for the runtime

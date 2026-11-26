@@ -386,7 +386,9 @@ jobs:
             cat covenant-verdict.json
             # The fleet witness (tebako#1071): every tripped cell names
             # its class — fleet-move (runner image/infra, not a
-            # regression), regression, or ambiguous (adjudicate) — plus
+            # regression), regression, mechanical (the bound, not the
+            # pair, moved — a miscalibrated bound or the cell's first
+            # fleet calibration), or ambiguous (adjudicate) — plus
             # the leg and image identity the witness read.
             jq -r '.cells[] | select(.state == "over") |
               "covenant trip: \(.id) — class: \(.class // "unclassified") — \(.class_note // "no fleet witness available (the metrics carry the note); adjudicate by hand")\(.witness | if . == null then "" else " [leg \(.triplet) · \(.workload) · \(.mode)\(if .image_version then " · image \(.image_os // "?")/\(.image_version)\(if .image_changed == true then " (CHANGED vs the previous published run)" elif .image_changed == false then " (unchanged)" else "" end)" else "" end)]" end)"' \

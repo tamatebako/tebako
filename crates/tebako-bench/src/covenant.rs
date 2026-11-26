@@ -26,13 +26,16 @@
 //! worst-of aggregate kept, the reference (native) arm's drift against
 //! its own rolling published median, the pair delta (the current paired
 //! ratio against ITS rolling median), and the leg's runner image
-//! identity. When a cell trips, the verdict names the class those two
-//! numbers imply: `fleet-move` (native drift large, pair delta small),
-//! `regression` (the tebako arm moved against a flat native arm), or
-//! `ambiguous` (both moved divergently, or the trip has no witness
-//! support) — adjudication is a read of the artifact, not an
+//! identity. When a cell trips, the verdict names the class the witness
+//! implies: `fleet-move` (native drift large, pair delta small),
+//! `regression` (the tebako arm moved against a flat native arm),
+//! `mechanical` (the bound, not the pair, moved — neither arm left its
+//! healthy band, or the leg carries zero published entries and the trip
+//! is the bound's first fleet calibration), or `ambiguous` (both arms
+//! moved divergently) — adjudication is a read of the artifact, not an
 //! archaeology dig (the #1067 trip took three runs and a manual
-//! image-history dig).
+//! image-history dig; v2.8.85's three trips all landed in the
+//! then-unnamed mechanical bucket).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -236,6 +239,15 @@ pub struct CellWitness {
     /// side lacks the identity (off CI, or history predating the field).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_changed: Option<bool>,
+    /// How many entries the published trend feed carries for the kept
+    /// leg itself (suite × triplet × workload × target × mode), counted
+    /// before any rolling median is attempted — 0 means the run that
+    /// produced this witness is the cell's FIRST fleet measurement and
+    /// any trip on it is the bound's first calibration (the
+    /// `mechanical` class's structured input; additive, v2.8.85's
+    /// adjudication). Absent when no feed was handed over.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_entries: Option<u32>,
     /// Why a drift is null — never a silent null (invariant 9).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -252,8 +264,14 @@ pub enum Class {
     FleetMove,
     /// The tebako arm moved against a flat native arm — a real regression.
     Regression,
-    /// Both moved divergently, or the trip has no witness support — a
-    /// human adjudicates (the witness names the leg and its image).
+    /// The bound, not the pair, is what moved: neither arm left its
+    /// healthy band (a tight or miscalibrated bound), or the cell has no
+    /// published history at all (the trip is the bound's first fleet
+    /// calibration — the run that trips IS the calibration the bound
+    /// awaited). Adjudicate the bound, not the product.
+    Mechanical,
+    /// Both arms moved divergently — a human adjudicates (the witness
+    /// names the leg and its image).
     Ambiguous,
 }
 
@@ -262,6 +280,7 @@ impl Class {
         match self {
             Class::FleetMove => "fleet-move",
             Class::Regression => "regression",
+            Class::Mechanical => "mechanical",
             Class::Ambiguous => "ambiguous",
         }
     }
@@ -281,11 +300,25 @@ pub const WITNESS_MIN_HISTORY: usize = 3;
 /// native arm and ×2.24 on the pair.
 pub const WITNESS_TOLERANCE: f64 = 1.30;
 
-/// The classification rule (spec 27 §11.1): both witness numbers read
-/// against the tolerance band. None when either witness number degraded
-/// to null — the gate reports the trip unclassified and the note says
-/// why.
-pub fn classify(native_drift: Option<f64>, pair_delta: Option<f64>) -> Option<(Class, String)> {
+/// The classification rule (spec 27 §11.1). The first-calibration case
+/// reads the witness's structured history count before any band math: a
+/// leg with ZERO published entries trips on a bound that was authored
+/// before fleet numbers — the run that trips is the calibration the
+/// bound awaited (`mechanical`). Otherwise both witness numbers read
+/// against the tolerance band. None when the trip is genuinely
+/// unreadable — a degraded witness with history on record (1–2 entries,
+/// no feed, no reference arm) — and the note says why.
+pub fn classify(
+    native_drift: Option<f64>,
+    pair_delta: Option<f64>,
+    history_entries: Option<u32>,
+) -> Option<(Class, String)> {
+    if history_entries == Some(0) {
+        return Some((
+            Class::Mechanical,
+            "no published history for this cell's leg — the bound was authored before fleet numbers and this run is its first calibration; adjudicate the bound, not the product".to_string(),
+        ));
+    }
     let (drift, delta) = (native_drift?, pair_delta?);
     let moved = |x: f64| !(1.0 / WITNESS_TOLERANCE..=WITNESS_TOLERANCE).contains(&x);
     Some(match (moved(drift), moved(delta)) {
@@ -308,9 +341,9 @@ pub fn classify(native_drift: Option<f64>, pair_delta: Option<f64>) -> Option<(C
             ),
         ),
         (false, false) => (
-            Class::Ambiguous,
+            Class::Mechanical,
             format!(
-                "neither witness moved (native ×{drift:.2}, pair ×{delta:.2}) — the trip has no witness support (a tight or miscalibrated bound); adjudicate"
+                "neither witness moved (native ×{drift:.2}, pair ×{delta:.2}) — the bound sits inside the pair's healthy band: a tight or miscalibrated bound, not a fleet move and not a regression"
             ),
         ),
     })
@@ -337,8 +370,9 @@ pub struct CellVerdict {
     pub native_drift: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pair_delta: Option<f64>,
-    /// The trip's class (fleet-move | regression | ambiguous), set on
-    /// `over` cells whose witness carried both numbers.
+    /// The trip's class (fleet-move | regression | mechanical |
+    /// ambiguous), set on `over` cells whose witness supports a reading
+    /// (both drift numbers, or the zero-history first calibration).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class: Option<Class>,
     /// The classification sentence, as the report text prints it.
@@ -535,8 +569,9 @@ pub fn evaluate(
                 .as_ref()
                 .map(|w| (w.native_drift, w.pair_delta))
                 .unwrap_or((None, None));
+            let history_entries = witness.as_ref().and_then(|w| w.history_entries);
             let (class, class_note) = match state {
-                State::Over => classify(native_drift, pair_delta)
+                State::Over => classify(native_drift, pair_delta, history_entries)
                     .map(|(c, note)| (Some(c), Some(note)))
                     .unwrap_or((None, None)),
                 _ => (None, None),
@@ -782,6 +817,23 @@ fn derive_witness(
     let image_os = runner.and_then(|r| r.image_os.clone());
     let image_version = runner.and_then(|r| r.image_version.clone());
 
+    // The kept leg's own published-entry count — the `mechanical`
+    // class's first-calibration input. Computed before the reference
+    // early-return so a no-reference cell (the author loop) carries it
+    // too; 0 = this run is the cell's first fleet measurement.
+    let history_entries = history.map(|h| {
+        h.cells
+            .iter()
+            .filter(|c| {
+                c.suite == kept.suite
+                    && c.triplet == kept.triplet
+                    && c.workload == kept.workload
+                    && c.target == kept.target
+                    && c.mode == kept.mode
+            })
+            .count() as u32
+    });
+
     let mut notes: Vec<String> = Vec::new();
     let mut native_drift = None;
     let mut pair_delta = None;
@@ -802,6 +854,7 @@ fn derive_witness(
             image_os,
             image_version,
             image_changed: None,
+            history_entries,
             note: Some(notes.join("; ")),
         };
     };
@@ -886,6 +939,7 @@ fn derive_witness(
         image_os,
         image_version,
         image_changed,
+        history_entries,
         note: if notes.is_empty() {
             None
         } else {
@@ -1700,23 +1754,24 @@ mod tests {
 
     #[test]
     fn classify_is_the_truth_table() {
-        let class_of = |d: f64, p: f64| classify(Some(d), Some(p)).map(|(c, _)| c);
+        let class_of = |d: f64, p: f64| classify(Some(d), Some(p), Some(8)).map(|(c, _)| c);
         // fleet move: native drift large, pair delta small
         assert_eq!(class_of(2.0, 1.0), Some(Class::FleetMove));
         assert_eq!(class_of(0.5, 1.29), Some(Class::FleetMove));
         // regression: tebako arm moved, native flat
         assert_eq!(class_of(1.0, 2.0), Some(Class::Regression));
         assert_eq!(class_of(1.29, 1.31), Some(Class::Regression));
-        // ambiguous: both moved divergently, or neither witness supports
-        // the trip
+        // ambiguous: both moved divergently
         assert_eq!(class_of(0.6, 2.24), Some(Class::Ambiguous));
-        assert_eq!(class_of(1.0, 1.0), Some(Class::Ambiguous));
-        // the tolerance band's edges are flat (the trip then has no
-        // witness support → ambiguous); just outside them is a move
-        assert_eq!(class_of(WITNESS_TOLERANCE, 1.0), Some(Class::Ambiguous));
+        // mechanical: neither arm left its healthy band — the bound, not
+        // the pair, is what moved (a tight or miscalibrated bound)
+        assert_eq!(class_of(1.0, 1.0), Some(Class::Mechanical));
+        // the tolerance band's edges are flat (the trip then reads
+        // mechanical); just outside them is a move
+        assert_eq!(class_of(WITNESS_TOLERANCE, 1.0), Some(Class::Mechanical));
         assert_eq!(
             class_of(1.0 / WITNESS_TOLERANCE, 1.0),
-            Some(Class::Ambiguous)
+            Some(Class::Mechanical)
         );
         assert_eq!(
             class_of(WITNESS_TOLERANCE + 0.01, 1.0),
@@ -1726,9 +1781,19 @@ mod tests {
             class_of(1.0 / (WITNESS_TOLERANCE + 0.01), 1.0),
             Some(Class::FleetMove)
         );
-        // no witness numbers, no class
-        assert_eq!(classify(None, Some(2.0)), None);
-        assert_eq!(classify(Some(1.0), None), None);
+        // a degraded witness with history on record stays unclassified…
+        assert_eq!(classify(None, Some(2.0), Some(8)), None);
+        assert_eq!(classify(Some(1.0), None, Some(2)), None);
+        // …but zero published entries is the first-calibration case, and
+        // it wins over the band table (the band has no numbers yet) —
+        // v2.8.85's teardown.materialize_vs_extract and
+        // author-loop.repress trips land here
+        let first = classify(None, None, Some(0)).map(|(c, _)| c);
+        assert_eq!(first, Some(Class::Mechanical));
+        let first = classify(Some(55.51), Some(0.72), Some(0)).map(|(c, _)| c);
+        assert_eq!(first, Some(Class::Mechanical));
+        // no feed at all (None) is not the first-calibration case
+        assert_eq!(classify(None, None, None), None);
     }
 
     #[test]
@@ -1746,6 +1811,7 @@ mod tests {
             image_os: None,
             image_version: None,
             image_changed: None,
+            history_entries: Some(8),
             note: None,
         };
         a.witness.insert("x.y".to_string(), w("macos-arm64"));

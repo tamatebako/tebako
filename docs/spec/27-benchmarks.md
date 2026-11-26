@@ -1010,25 +1010,30 @@ rolling median — never a silent hole (invariant 9).
 
 **The verdict artifact gains, per cell, `native_drift`, `pair_delta`,
 and the full `witness` record** (the pass cells too — the witness is
-the record, not the alarm). When a cell trips (`over`), the evaluator
-classifies it from the two drift numbers against the tolerance band
-`WITNESS_TOLERANCE = 1.30` (a drift or delta inside [1/1.30, 1.30] is
-FLAT, outside is MOVED — set from the healthy fleet's observed spread,
-which reaches ×1.27 on the native statloop legs and ×1.19 on the
-published pair ratios, bench-history through 2026-11-15):
+the record, not the alarm). The witness also counts the kept leg's own
+published entries (`history_entries`, additive 2026-11-26) — the
+first-calibration rule's structured input. When a cell trips (`over`),
+the evaluator classifies it: first the history count, then the two
+drift numbers against the tolerance band `WITNESS_TOLERANCE = 1.30` (a
+drift or delta inside [1/1.30, 1.30] is FLAT, outside is MOVED — set
+from the healthy fleet's observed spread, which reaches ×1.27 on the
+native statloop legs and ×1.19 on the published pair ratios,
+bench-history through 2026-11-15):
 
-| native_drift | pair_delta | class | reading |
-|---|---|---|---|
-| MOVED | flat | `fleet-move` | both arms rode the same shift — a runner image/infra move, not a regression |
-| flat | MOVED | `regression` | the tebako arm moved against a flat native arm |
-| MOVED | MOVED | `ambiguous` | both arms moved divergently — adjudicate (the witness names the leg and its image; #1067's own shape lands here: ×0.59 native, ×2.24 pair) |
-| flat | flat | `ambiguous` | the trip has no witness support — a tight or miscalibrated bound; adjudicate |
+| history | native_drift | pair_delta | class | reading |
+|---|---|---|---|---|
+| 0 published entries for the cell's leg | — | — | `mechanical` | the cell's first fleet measurement: the bound was authored before fleet numbers and this run IS the calibration it awaited — adjudicate the bound, not the product (v2.8.85's `teardown.materialize_vs_extract` and `author-loop.repress.median` trips landed here) |
+| ≥ 1 | MOVED | flat | `fleet-move` | both arms rode the same shift — a runner image/infra move, not a regression |
+| ≥ 1 | flat | MOVED | `regression` | the tebako arm moved against a flat native arm |
+| ≥ 1 | MOVED | MOVED | `ambiguous` | both arms moved divergently — adjudicate (the witness names the leg and its image; #1067's own shape lands here: ×0.59 native, ×2.24 pair) |
+| ≥ 1 | flat | flat | `mechanical` | the bound, not the pair, moved — a tight or miscalibrated bound inside the pair's healthy band; adjudicate the bound |
 
-A trip whose witness degraded (null drifts) carries NO class — the gate
-says "unclassified" and the note says why. The covenant report text
-prints, under every OVER line, the witness line (leg, both drifts, the
-image identity with the changed-vs-history observation) and the class
-sentence; the fan-in's "Gate on the covenant" step and release.yml's
-covenant-gate print the same per-trip lines from the verdict JSON. The
-release-side gate's pass/fail law is unchanged: `over` fails, the class
-is the reading, never a pardon.
+A trip whose witness degraded with history on record (null drifts on
+1–2 published entries, a missing feed, an absent reference arm) carries
+NO class — the gate says "unclassified" and the note says why. The
+covenant report text prints, under every OVER line, the witness line
+(leg, both drifts, the image identity with the changed-vs-history
+observation) and the class sentence; the fan-in's "Gate on the
+covenant" step and release.yml's covenant-gate print the same per-trip
+lines from the verdict JSON. The release-side gate's pass/fail law is
+unchanged: `over` fails, the class is the reading, never a pardon.
