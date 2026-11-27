@@ -158,5 +158,6 @@ acceptance of the housekeeping sweep):
 | Trace tooling | README §Commands (trace run/cover/import) |
 | The virtual cwd | spec 07 §8a |
 | Release train (who ships what, recovery) | this file |
+| Vulnerability process (scheduled SBOM→CVE, findings) | docs/vulnerability-process.md |
 | Benchmarks | tebako.org/benchmarks |
 | v1→v2 migration | tebako.org/docs/architecture/migrate-v1-v2 + README banner |
