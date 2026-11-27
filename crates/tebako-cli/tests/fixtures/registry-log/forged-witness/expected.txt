@@ -1,0 +1,4 @@
+registry.log: 1 head(s), signature valid, witness invalid
+  head 0: the COUNTERSIGNATURE DOES NOT VALIDATE — the witness seal is forged or was re-written after witnessing
+  the roots agree but head 0 declares 1 rows while the registry holds 2 — the head's count is wrong
+log verify: PROBLEMS (see above)

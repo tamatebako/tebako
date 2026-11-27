@@ -39,21 +39,38 @@ or re-comment the YAML and the snapshot does not move. The columns:
 Each published snapshot is appended to a log as one signed head:
 
 ```
-0 ts=1761000000 root=f2d1141e… rows=3 prev=- key=abcdef0123456789 sig=…
+0 ts=1761000000 root=f2d1141e… rows=3 prev=- key=abcdef0123456789 sig=… wkey=0123456789abcdef wsig=…
 ```
 
 `prev` is the previous head's root, so heads chain and the log can only
 grow. A head whose `prev` does not match is a **fork**, named at the head
 where it happens: nothing after it can be trusted.
 
+`wkey`/`wsig` are the **countersignature slot** (tebako#1103): a second
+key, held under a separate org's custody, signs the same checkpoint
+payload the head key signed. Unilateral trust becomes witnessed trust —
+forging a checkpoint now needs both orgs' keys. The witness for the
+project's own registries is the tebako-packages org (tamatebako holds
+the head key); the full custody runbook — which vault, and how the
+witness key rotates — is `docs/registry-witness-custody.md`.
+
 ## Verifying
 
 ```console
 $ tebako registry log verify tpkg-registry.log --registry tpkg-registry.yaml
-tpkg-registry.log: 1 head(s), signature valid
+tpkg-registry.log: 1 head(s), signature valid, witness witnessed
   the registry IS head 0: 3 rows, root f2d1141e…
 log verify: sound
 ```
+
+Both signatures are checked on every countersigned head, never one
+instead of the other. A head sealed by the head key alone is **named a
+single-signature checkpoint** on the verify line and in the JSON
+document — the honest state of a pre-witness log, never silently read as
+witnessed, and never a failure by itself. A countersignature that does
+not validate is a forged second signature: it fails with the same
+signature class as a forged primary (exit 71), named as the
+COUNTERSIGNATURE, so a script can tell the two apart.
 
 Compare the **root** and you get two answers at once: every row in the file
 is in the tree, and no row was added or removed — because either would move
@@ -66,9 +83,9 @@ removed or edited after the seal
 ```
 
 Exit codes separate the classes: `0` sound, `80` an integrity finding
-(gap, fork, mismatch, a proof that does not verify), **`71` a head whose
-signature does not validate** — a forged head is a different event from a
-broken chain.
+(gap, fork, mismatch, a torn countersignature slot, a proof that does not
+verify), **`71` a head whose signature or countersignature does not
+validate** — a forged head is a different event from a broken chain.
 
 ## Proving one row
 

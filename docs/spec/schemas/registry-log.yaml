@@ -14,7 +14,7 @@
 
 schema: registry-log
 schema_version: 1 # MAJOR — the JSON documents' `registry_log_schema`; additive-only
-schema_minor: 0
+schema_minor: 1 # MINOR 1 (tebako#1103): the head's countersignature slot (wkey/wsig), the verify document's `witness` key
 status: normative
 owner: tebako-cli (crates/tebako-cli/src/registry_log.rs) in tamatebako/tebako
 spec: docs/spec/41-registry-transparency.md
@@ -66,7 +66,7 @@ tree:
 
 # ── the head (spec 41 §4) ────────────────────────────────────────────────
 head:
-  line: "<seq> ts=<unix> root=<sha256 hex> rows=<n> prev=<sha256 hex|-> key=<keyid hex|-> sig=<hex|->"
+  line: "<seq> ts=<unix> root=<sha256 hex> rows=<n> prev=<sha256 hex|-> key=<keyid hex|-> sig=<hex|-> wkey=<keyid hex|-> wsig=<hex|->"
   payload: |
     tebako-registry-log-1
     <seq>
@@ -87,6 +87,19 @@ head:
     declared head key (spec 09 §9.1's signing: block — no new key class).
     An unknown signer is reported as `unknown-key` and the chain still reads
     sound; an INVALID signature is the 71 class, never a chain finding.
+  countersignature: >-
+    MINOR 1 (tebako#1103): `wsig` is a detached OpenPGP signature over the
+    SAME canonical payload, issued by the witness key — a second key under
+    a SEPARATE org's custody (docs/registry-witness-custody.md). The slot
+    rides as two trailing named tokens: a pre-amendment reader ignores
+    them, a post-amendment reader defaults a pre-witness log to `-`/`-`.
+    The pair comes whole or not at all — a torn slot is a named finding
+    (a stripped countersignature never reads as a quiet single-signature
+    checkpoint). The newest head's witness verdict rides beside the
+    signature verdict: `witnessed` / `single-signature` (NAMED, never
+    silently downgraded) / `unknown-key` / `invalid` (the 71 class — a
+    forged second signature is a forgery finding in its own right) /
+    `unsigned`.
 
 # ── the documents (spec 41 §5) ───────────────────────────────────────────
 documents:
@@ -95,8 +108,12 @@ documents:
     keys: [registry_log_schema, registry, rows, root, lines]
   verify:
     registry_log_schema: 1
-    keys: [registry_log_schema, log, heads, sound, signature, problems, row_drops, 'registry?']
+    keys: [registry_log_schema, log, heads, sound, signature, witness, problems, row_drops, 'registry?']
     registry_keys: [rows, sealed_rows, root_match, detail]
+    witness: >-
+      MINOR 1 (tebako#1103): the newest head's witness verdict —
+      `witnessed` | `single-signature` | `unknown-key` | `invalid` |
+      `unsigned`.
   prove:
     registry_log_schema: 1
     keys: [registry_log_schema, log, row, against, expected_root, proofs]
@@ -105,7 +122,7 @@ documents:
 # ── outcomes (spec 41 §7) ────────────────────────────────────────────────
 outcomes:
   sound: {exit: 0, meaning: "the chain holds and, with a registry, its root equals the newest head's"}
-  signature: {exit: 71, meaning: "the newest head's signature does not validate — a forged head, not a chain finding"}
-  finding: {exit: 80, meaning: "seq gap, fork, prev mismatch, unparseable head, a row set that is not what was sealed, or a proof that does not verify"}
+  signature: {exit: 71, meaning: "the newest head's signature OR countersignature does not validate — a forged head or a forged witness seal, named which, never a chain finding"}
+  finding: {exit: 80, meaning: "seq gap, fork, prev mismatch, a torn countersignature slot, unparseable head, a row set that is not what was sealed, or a proof that does not verify"}
   io: {exit: 74, meaning: "the log or registry cannot be read; a log with no heads"}
   usage: {exit: 64, meaning: "unknown verb/flag, a row that does not exist, --verify-root without a proof source"}

@@ -2,7 +2,13 @@
 
 **Status: SHIPPED** (the RFC 6962 tree, the canonical rows, and §5's
 three verbs — `registry snapshot`, `registry log verify`, `registry log
-prove` — are in tebako-cli; tebako#887, 17 tests).
+prove` — are in tebako-cli; tebako#887, 17 tests). Amended 2026-11-27
+(tebako#1103 — +5 unit tests and 3 golden transcript fixtures, 25
+tests): §4's checkpoint gains the countersignature slot — a second key
+held under a SEPARATE org's custody witnesses each head (the sigstore
+witness pattern: unilateral trust becomes witnessed trust); §5's
+verification checks BOTH signatures and names a single-signature
+checkpoint as such, never silently downgraded.
 
 ## 1. The property nobody has
 
@@ -98,10 +104,11 @@ proof; nothing else is needed.
 
 ## 4. The log head and the chain law
 
-Each snapshot is appended to the registry's log as one head record:
+Each snapshot is appended to the registry's log as one head record
+(amended 2026-11-27, tebako#1103 — the countersignature slot):
 
 ```
-<seq> ts=<unix> root=<hex> rows=<n> prev=<hex|-> key=<keyid> sig=<hex|->
+<seq> ts=<unix> root=<hex> rows=<n> prev=<hex|-> key=<keyid> sig=<hex|-> wkey=<keyid|-> wsig=<hex|->
 ```
 
 - `seq` — 0, 1, 2, … ; strictly increasing, no gaps (a gap is a named
@@ -121,6 +128,23 @@ Each snapshot is appended to the registry's log as one head record:
   block — the key the registry already carries; no new key class). The
   signature is verified against the pinned trust store, and an unknown
   signer is `unknown-key` (reported, never upgraded to trusted).
+- `wkey` / `wsig` — the **countersignature slot** (tebako#1103): `wsig` is
+  a detached OpenPGP signature over the SAME canonical payload, issued by
+  the **witness key** — a second key held under a SEPARATE org's custody
+  (tamatebako holds the head key, tebako-packages holds the witness; the
+  custody runbook is `docs/registry-witness-custody.md`). One payload, two
+  signatures: a checkpoint that survives one compromised or coerced signer
+  is the whole point. The slot is `-`/`-` when the head is unwitnessed.
+  Both fields come as a pair or not at all — a torn slot (one present,
+  one `-`) is a named finding, because a stripped countersignature must
+  never read as a quiet single-signature checkpoint.
+  The signed payload does NOT change and the payload tag stays
+  `tebako-registry-log-1`: the slot rides as two trailing named tokens, so
+  a pre-amendment reader parses a witnessed head and simply never looks at
+  them (v1 readers never break on v2 packages — spec 00 invariant 7), and
+  a post-amendment reader defaults a pre-witness log's slot to `-`. One
+  slot, one witness: plural invited witnesses are the documented end-state
+  (§8), and their grammar is their own amendment, not a guess here.
 
 The log file is a head record per line, in `seq` order:
 
@@ -148,6 +172,26 @@ tebako registry log prove <log> --registry <path> --row <name>@<version>
   agree, no row could have been added, removed or edited without moving it.
   A `rows` decrease is reported separately (the chain alone cannot see
   tombstones), and a forced deletion therefore surfaces by name.
+  Amended 2026-11-27 (tebako#1103) — **the countersignature is verified
+  with the primary, never instead of it.** Every countersigned head's
+  `wsig` is checked against the pinned trust store exactly like its `sig`;
+  the newest head carries a WITNESS VERDICT beside the signature verdict:
+  - `witnessed` — the countersignature validates. Both orgs' keys sealed
+    this checkpoint; forging it needs both.
+  - `single-signature` — the head is signed but carries no
+    countersignature. This is NAMED AS SUCH on the verify line and in the
+    JSON document — the honest state of a pre-witness log and of a
+    checkpoint the witness has not sealed yet. Never a failure by itself,
+    and never silently read as witnessed: those are the two downgrade
+    shapes, and both are forbidden.
+  - `unknown-key` — the witness's key is not in the trust store
+    (reported, never upgraded — §7's 72 row, mirrored).
+  - `invalid` — the countersignature DOES NOT VALIDATE. A forged second
+    signature is a forgery finding in its own right — §7's 71 class,
+    named at the head as the COUNTERSIGNATURE, so a script tells a forged
+    witness apart from a forged primary. It never degrades to
+    `single-signature`: a torn or tampered slot is evidence, not absence.
+  - `unsigned` — the head carries no signatures at all.
 - **`log prove`** emits the inclusion proof for `--row` against the newest
   head, and one proof per matching row: a version is often several rows (one
   per platform), and hiding all but one would understate what the registry
@@ -184,9 +228,9 @@ raise: never quiet.
 
 | code | class | meaning |
 |-----:|-------|---------|
-| 71 | `EX_TEBAKO_SIGNATURE` | a head's signature does not validate |
-| 72 | `EX_TEBAKO_TRUST` | a head's signer key is not in the trust store (`unknown-key` in JSON; the chain is still reported) |
-| 80 | `EX_TEBAKO_LEDGER` | an integrity finding: a `seq` gap, a fork, a `prev` mismatch, a proof that does not verify, a row missing without a tombstone, or a tree/file inconsistency (spec 40 §6's ledger class — both streams are record streams whose integrity findings are one kind of event) |
+| 71 | `EX_TEBAKO_SIGNATURE` | a head's signature OR COUNTERSIGNATURE does not validate (tebako#1103 — the message names which: a forged witness never masquerades as a forged primary, and never degrades to `single-signature`) |
+| 72 | `EX_TEBAKO_TRUST` | a head's signer key — the head key or the witness key — is not in the trust store (`unknown-key` in JSON; the chain is still reported) |
+| 80 | `EX_TEBAKO_LEDGER` | an integrity finding: a `seq` gap, a fork, a `prev` mismatch, a torn countersignature slot, a proof that does not verify, a row missing without a tombstone, or a tree/file inconsistency (spec 40 §6's ledger class — both streams are record streams whose integrity findings are one kind of event) |
 | 74 | `EX_TEBAKO_IO` | a log or registry cannot be read or written |
 | 64 | `EX_USAGE` | unknown flag, unparseable row reference, `--verify-proof` without a proof source |
 
@@ -200,3 +244,11 @@ Every message names the row, the head, or the file — never "invalid input".
   what a published log must satisfy, never when to publish one.
 - Rotation of the head key: spec 09 §11's successor statement — a log
   signed under a successor key chains through `prev` like any other head.
+- **Witness key custody** (tebako#1103): which org holds the witness key,
+  which vault stores it, and how it rotates —
+  `docs/registry-witness-custody.md` (the runbook; tamatebako holds the
+  head key, tebako-packages holds the first witness key, two vaults, two
+  operators). **Plural invited witnesses** — external organizations
+  countersigning the same checkpoints — are the documented end-state;
+  their multi-slot grammar is its own amendment when the first external
+  witness joins.

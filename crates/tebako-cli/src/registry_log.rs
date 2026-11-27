@@ -203,6 +203,13 @@ pub struct Head {
     pub key: String,
     /// The detached armored signature, hex-encoded, or `-`.
     pub sig: String,
+    /// The witness keyid (spec 41 §4's countersignature slot, tebako#1103)
+    /// — a second key under a separate org's custody, or `-` when the head
+    /// is unwitnessed.
+    pub wkey: String,
+    /// The detached armored countersignature over the same canonical
+    /// payload, hex-encoded, or `-`.
+    pub wsig: String,
     /// The log file's 1-based line this head came from.
     pub line: usize,
 }
@@ -212,8 +219,26 @@ impl Head {
         self.key != "-" && self.sig != "-"
     }
 
+    /// The countersignature slot is whole: BOTH fields present. A torn
+    /// slot (one present, one `-`) is not "no witness" — it is damage,
+    /// named by the verifier.
+    pub fn witnessed(&self) -> bool {
+        self.wkey != "-" && self.wsig != "-"
+    }
+
+    /// Exactly one of the slot's fields is present: the stripped-
+    /// countersignature shape that must never read as a quiet
+    /// single-signature checkpoint (spec 41 §4).
+    pub fn countersignature_torn(&self) -> bool {
+        (self.wkey != "-") != (self.wsig != "-")
+    }
+
     /// The canonical signed payload (spec 41 §4) — byte-exact, so a
     /// verifier reconstructs it instead of parsing the head's own line.
+    /// BOTH signatures sign this one payload: the witness attests "I saw
+    /// this checkpoint", and the payload tag stays
+    /// `tebako-registry-log-1` so a pre-amendment reader verifies a
+    /// witnessed head's primary signature unchanged.
     pub fn payload(&self) -> String {
         format!(
             "{HEAD_PAYLOAD_TAG}\n{}\n{}\n{}\n{}\n{}\n",
@@ -221,10 +246,69 @@ impl Head {
         )
     }
 
+    /// Sign the checkpoint with the head key (the producer side of spec 41
+    /// §4): fills `key`/`sig` from `signer`. A signing failure is a named
+    /// error, never a silently unsigned head.
+    pub fn sign(&mut self, signer: &tebako_signer::PressKey) -> Result<(), TebakoError> {
+        let sig = tebako_signer::sign_detached(
+            self.payload().as_bytes(),
+            &signer.secret_key,
+            &signer.fingerprint,
+        )
+        .map_err(|e| {
+            TebakoError::new(
+                format!(
+                    "cannot sign head {} with key {}: {e}",
+                    self.seq,
+                    signer.keyid_hex()
+                ),
+                EX_TEBAKO_SIGNATURE,
+            )
+        })?;
+        self.key = signer.keyid_hex();
+        self.sig = hex(&sig);
+        Ok(())
+    }
+
+    /// Countersign the checkpoint with the witness key (spec 41 §4's
+    /// countersignature slot, tebako#1103): fills `wkey`/`wsig` over the
+    /// SAME payload the primary signed. The witness countersigns only a
+    /// checkpoint it has itself seen — callers sign first, countersign
+    /// second; a countersigning failure is a named error, never a quietly
+    /// absent slot.
+    pub fn countersign(&mut self, witness: &tebako_signer::PressKey) -> Result<(), TebakoError> {
+        let wsig = tebako_signer::sign_detached(
+            self.payload().as_bytes(),
+            &witness.secret_key,
+            &witness.fingerprint,
+        )
+        .map_err(|e| {
+            TebakoError::new(
+                format!(
+                    "cannot countersign head {} with witness key {}: {e}",
+                    self.seq,
+                    witness.keyid_hex()
+                ),
+                EX_TEBAKO_SIGNATURE,
+            )
+        })?;
+        self.wkey = witness.keyid_hex();
+        self.wsig = hex(&wsig);
+        Ok(())
+    }
+
     pub fn render(&self) -> String {
         format!(
-            "{} ts={} root={} rows={} prev={} key={} sig={}",
-            self.seq, self.ts, self.root, self.rows, self.prev, self.key, self.sig
+            "{} ts={} root={} rows={} prev={} key={} sig={} wkey={} wsig={}",
+            self.seq,
+            self.ts,
+            self.root,
+            self.rows,
+            self.prev,
+            self.key,
+            self.sig,
+            self.wkey,
+            self.wsig
         )
     }
 }
@@ -310,6 +394,12 @@ pub fn parse_heads(text: &str) -> Result<Vec<Head>, (usize, String)> {
             prev: prev.to_ascii_lowercase(),
             key: need("key")?.to_string(),
             sig: need("sig")?.to_string(),
+            // The countersignature slot (tebako#1103) rides as optional
+            // trailing tokens: a pre-witness log has none and reads `-`,
+            // and tokens this reader does not know stay ignored — format
+            // version 1 forever (spec 41 §4).
+            wkey: fields.get("wkey").copied().unwrap_or("-").to_string(),
+            wsig: fields.get("wsig").copied().unwrap_or("-").to_string(),
             line: line_no,
         });
     }
@@ -328,6 +418,12 @@ pub struct ChainReport {
     pub row_drops: Vec<String>,
     /// The signature verdict of the newest head.
     pub signature: &'static str,
+    /// The witness verdict of the newest head (spec 41 §5, tebako#1103):
+    /// `witnessed` / `single-signature` / `unknown-key` / `invalid` /
+    /// `unsigned`. A single-signature checkpoint is NAMED AS SUCH — the
+    /// honest state of a pre-witness log, never silently read as
+    /// witnessed, never a failure by itself.
+    pub witness: &'static str,
 }
 
 impl ChainReport {
@@ -350,6 +446,15 @@ pub fn verify_chain(heads: &[Head], keyring: &[u8]) -> ChainReport {
             "unknown-key"
         } else {
             "unsigned"
+        },
+        // The witness verdict (tebako#1103) mirrors the signature
+        // verdict's shape: signed-and-witnessed starts at `unknown-key`
+        // and upgrades only when the countersignature verifies; a signed
+        // head without the slot is a single-signature checkpoint, NAMED.
+        witness: match heads.last() {
+            Some(h) if h.signed() && h.witnessed() => "unknown-key",
+            Some(h) if h.signed() => "single-signature",
+            _ => "unsigned",
         },
         ..ChainReport::default()
     };
@@ -417,6 +522,45 @@ pub fn verify_chain(heads: &[Head], keyring: &[u8]) -> ChainReport {
             report
                 .problems
                 .push(format!("head {}: the signature is not hex", head.seq));
+        }
+        // The countersignature (spec 41 §4, tebako#1103): verified WITH
+        // the primary, never instead of it. A forged second signature is
+        // a forgery finding in its own right — named as the
+        // COUNTERSIGNATURE so a script tells it apart from a forged
+        // primary — and it never degrades to `single-signature`: a torn
+        // or tampered slot is evidence, not absence.
+        if head.countersignature_torn() {
+            report.problems.push(format!(
+                "head {}: the countersignature slot is torn — wkey and wsig come as a pair or not at all (a stripped countersignature is a finding, never a quiet single-signature read)",
+                head.seq
+            ));
+        } else if head.witnessed() {
+            if let Ok(wsig) = from_hex(&head.wsig) {
+                match tebako_signer::verify_detached_full(keyring, head.payload().as_bytes(), &wsig)
+                {
+                    Ok(tebako_signer::VerifyOutcome::Invalid(_)) => {
+                        if i + 1 == heads.len() {
+                            report.witness = "invalid";
+                        }
+                        report.problems.push(format!(
+                            "head {}: the COUNTERSIGNATURE DOES NOT VALIDATE — the witness seal is forged or was re-written after witnessing",
+                            head.seq
+                        ));
+                    }
+                    Ok(tebako_signer::VerifyOutcome::Trusted(_)) if i + 1 == heads.len() => {
+                        report.witness = "witnessed"
+                    }
+                    Ok(tebako_signer::VerifyOutcome::Untrusted(_)) if i + 1 == heads.len() => {
+                        report.witness = "unknown-key"
+                    }
+                    _ => {}
+                }
+            } else {
+                report.problems.push(format!(
+                    "head {}: the countersignature is not hex",
+                    head.seq
+                ));
+            }
         }
     }
     report
@@ -667,7 +811,11 @@ pub fn log_verify(
         None => None,
     };
     let ok = chain.sound() && check.as_ref().map(|c| c.root_match).unwrap_or(true);
-    let code = if chain.signature == "invalid" {
+    let code = if chain.signature == "invalid" || chain.witness == "invalid" {
+        // A forged primary and a forged countersignature share the
+        // signature class (spec 41 §7): the message says WHICH, the exit
+        // says the class — a forged second signature is a forgery
+        // finding in its own right, never a downgrade to single-signature.
         EX_TEBAKO_SIGNATURE
     } else if ok {
         0
@@ -693,6 +841,10 @@ pub fn log_verify(
             (
                 "signature".to_string(),
                 tebako_json::Value::String(chain.signature.to_string()),
+            ),
+            (
+                "witness".to_string(),
+                tebako_json::Value::String(chain.witness.to_string()),
             ),
             (
                 "problems".to_string(),
@@ -749,14 +901,23 @@ pub fn log_verify(
 
     let mut out = String::new();
     out.push_str(&format!(
-        "{log}: {} head(s), signature {}\n",
-        chain.heads, chain.signature
+        "{log}: {} head(s), signature {}, witness {}\n",
+        chain.heads, chain.signature, chain.witness
     ));
     for problem in &chain.problems {
         out.push_str(&format!("  {problem}\n"));
     }
     for drop in &chain.row_drops {
         out.push_str(&format!("  row drop: {drop}\n"));
+    }
+    if chain.witness == "single-signature" {
+        // The named note (spec 41 §5, tebako#1103): the honest state of a
+        // pre-witness log — never silently read as witnessed, never a
+        // failure by itself.
+        out.push_str(&format!(
+            "  witness: head {} is a SINGLE-SIGNATURE checkpoint — sealed by the head key alone; the second-org countersignature is absent\n",
+            heads.last().map(|h| h.seq).unwrap_or(0)
+        ));
     }
     if let Some(c) = &check {
         out.push_str(&format!("  {}\n", c.detail));
@@ -1008,6 +1169,8 @@ mod tests {
             prev: prev.to_string(),
             key: "-".to_string(),
             sig: "-".to_string(),
+            wkey: "-".to_string(),
+            wsig: "-".to_string(),
             line: (seq + 1) as usize,
         }
     }
@@ -1175,6 +1338,8 @@ payloads:
             },
             key: "-".to_string(),
             sig: "-".to_string(),
+            wkey: "-".to_string(),
+            wsig: "-".to_string(),
             line: 1,
         }
     }
@@ -1260,18 +1425,19 @@ payloads:
             root: hex(&tree_root(&lines)),
             rows: 3,
             prev: "-".to_string(),
-            key: key.keyid_hex(),
-            sig: String::new(),
+            key: "-".to_string(),
+            sig: "-".to_string(),
+            wkey: "-".to_string(),
+            wsig: "-".to_string(),
             line: 1,
         };
-        head.sig = hex(&tebako_signer::sign_detached(
-            head.payload().as_bytes(),
-            &key.secret_key,
-            &key.fingerprint,
-        )
-        .expect("signed"));
+        head.sign(&key).expect("signed");
         let report = verify_chain(std::slice::from_ref(&head), &keyring);
         assert_eq!(report.signature, "valid", "{:?}", report.problems);
+        // A signed-but-unwitnessed head is named, never silently read as
+        // witnessed — and never a failure by itself.
+        assert_eq!(report.witness, "single-signature");
+        assert!(report.sound(), "{:?}", report.problems);
 
         // Any edit after signing breaks the signature: the chain is what
         // the head SAYS, and the signature is what makes saying it cost
@@ -1287,6 +1453,160 @@ payloads:
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Two custodies, honestly: the head key lives in one org's home, the
+    /// witness key in another (spec 41 §4, tebako#1103 —
+    /// docs/registry-witness-custody.md). Returns the two PressKeys plus a
+    /// verification keyring holding BOTH public halves (the verifier pins
+    /// both; the secrets never share a home).
+    fn two_org_custody(
+        tag: &str,
+    ) -> (
+        std::path::PathBuf,
+        tebako_signer::PressKey,
+        tebako_signer::PressKey,
+        Vec<u8>,
+    ) {
+        let root = std::env::temp_dir().join(format!(
+            "tebako-registry-log-witness-{tag}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        // tamatebako holds the head key, tebako-packages holds the
+        // witness — two homes, never one.
+        let head_org = root.join("tamatebako");
+        let witness_org = root.join("tebako-packages");
+        std::fs::create_dir_all(&head_org).unwrap();
+        std::fs::create_dir_all(&witness_org).unwrap();
+        let head_key = tebako_signer::press_local_key(&head_org).expect("head key");
+        let witness_key = tebako_signer::press_local_key(&witness_org).expect("witness key");
+        assert_ne!(
+            head_key.keyid_hex(),
+            witness_key.keyid_hex(),
+            "two keys in two orgs must be two keys"
+        );
+        // The verifier's store: both public halves pinned, no secrets.
+        let verifier = root.join("verifier");
+        std::fs::create_dir_all(&verifier).unwrap();
+        tebako_signer::register_trusted(&verifier, &head_key.public_key).expect("head pinned");
+        tebako_signer::register_trusted(&verifier, &witness_key.public_key)
+            .expect("witness pinned");
+        let keyring = tebako_signer::verification_keyring(&verifier).expect("keyring");
+        (root, head_key, witness_key, keyring)
+    }
+
+    fn checkpoint(seq: u64, rows: usize) -> Head {
+        let lines = lines(rows);
+        Head {
+            seq,
+            ts: 1_761_000_000,
+            root: hex(&tree_root(&lines)),
+            rows,
+            prev: "-".to_string(),
+            key: "-".to_string(),
+            sig: "-".to_string(),
+            wkey: "-".to_string(),
+            wsig: "-".to_string(),
+            line: 1,
+        }
+    }
+
+    #[test]
+    fn a_witnessed_checkpoint_verifies_both_signatures() {
+        let (root, head_key, witness_key, keyring) = two_org_custody("both");
+        let mut head = checkpoint(0, 3);
+        head.sign(&head_key).expect("signed by the head key");
+        head.countersign(&witness_key)
+            .expect("countersigned by the witness key");
+        assert!(head.signed());
+        assert!(head.witnessed());
+        // Both signatures ride the ONE payload — the witness attests the
+        // same checkpoint the head key sealed.
+        let report = verify_chain(std::slice::from_ref(&head), &keyring);
+        assert_eq!(report.signature, "valid", "{:?}", report.problems);
+        assert_eq!(report.witness, "witnessed", "{:?}", report.problems);
+        assert!(report.sound(), "{:?}", report.problems);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_forged_countersignature_is_named_and_never_a_downgrade() {
+        let (root, head_key, witness_key, keyring) = two_org_custody("forged");
+        let mut head = checkpoint(0, 3);
+        head.sign(&head_key).expect("signed");
+        head.countersign(&witness_key).expect("countersigned");
+        // The forge: the checkpoint is edited AFTER witnessing — the
+        // primary re-signed over the edit (a compromised head key), but
+        // the witness seal still covers the checkpoint as it was.
+        let mut forged = head.clone();
+        forged.rows = 1;
+        forged.sig = {
+            let mut re_sign = forged.clone();
+            re_sign.sign(&head_key).expect("re-signed over the edit");
+            re_sign.sig
+        };
+        let report = verify_chain(std::slice::from_ref(&forged), &keyring);
+        // The primary validates against the edited payload; the witness
+        // seal does not — the second org's key is exactly what stops the
+        // fork from reading as clean.
+        assert_eq!(report.signature, "valid", "{:?}", report.problems);
+        assert_eq!(report.witness, "invalid", "{:?}", report.problems);
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|p| p.contains("COUNTERSIGNATURE DOES NOT VALIDATE")),
+            "{:?}",
+            report.problems
+        );
+        // Named as a forgery, never degraded to `single-signature` —
+        // that degradation is the silent downgrade tebako#1103 forbids.
+        assert_ne!(report.witness, "single-signature");
+        assert!(!report.sound());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_unknown_witness_key_is_reported_never_trusted() {
+        let (root, head_key, witness_key, _) = two_org_custody("unknown");
+        let mut head = checkpoint(0, 3);
+        head.sign(&head_key).expect("signed");
+        head.countersign(&witness_key).expect("countersigned");
+        // The verifier pins ONLY the head key: the countersignature is
+        // well-formed, but its signer is nobody the machine knows.
+        let verifier = root.join("verifier-half");
+        std::fs::create_dir_all(&verifier).unwrap();
+        tebako_signer::register_trusted(&verifier, &head_key.public_key).expect("head pinned");
+        let keyring = tebako_signer::verification_keyring(&verifier).expect("keyring");
+        let report = verify_chain(std::slice::from_ref(&head), &keyring);
+        assert_eq!(report.signature, "valid", "{:?}", report.problems);
+        assert_eq!(report.witness, "unknown-key", "{:?}", report.problems);
+        // Reported, never upgraded — the chain still reads sound, exactly
+        // like the primary's unknown-key.
+        assert!(report.sound(), "{:?}", report.problems);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_torn_countersignature_slot_is_a_finding() {
+        let (root, head_key, witness_key, keyring) = two_org_custody("torn");
+        let mut head = checkpoint(0, 3);
+        head.sign(&head_key).expect("signed");
+        head.countersign(&witness_key).expect("countersigned");
+        // A stripped wsig must not read as a quiet single-signature
+        // checkpoint: the pair comes whole or not at all.
+        let mut torn = head.clone();
+        torn.wsig = "-".to_string();
+        assert!(torn.countersignature_torn());
+        let report = verify_chain(std::slice::from_ref(&torn), &keyring);
+        assert!(
+            report.problems.iter().any(|p| p.contains("slot is torn")),
+            "{:?}",
+            report.problems
+        );
+        assert!(!report.sound());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn heads_round_trip_through_their_rendered_line() {
         let r = "a".repeat(64);
@@ -1298,6 +1618,31 @@ payloads:
         assert_eq!(parsed[0].rows, 9);
         assert_eq!(parsed[0].payload(), h.payload());
         assert!(!parsed[0].signed());
+        assert!(!parsed[0].witnessed());
+        assert!(!parsed[0].countersignature_torn());
+    }
+
+    #[test]
+    fn the_countersignature_slot_round_trips_and_pre_witness_lines_read_bare() {
+        // A witnessed head: every field survives render → parse, and the
+        // payload — what BOTH signatures cover — is untouched by the slot.
+        let r = "c".repeat(64);
+        let mut h = head(0, &r, 1, "-");
+        h.wkey = "0123456789abcdef".to_string();
+        h.wsig = "deadbeef".repeat(8);
+        let parsed = parse_heads(&format!("{}\n", h.render())).expect("parses");
+        assert_eq!(parsed[0], h);
+        assert!(parsed[0].witnessed());
+        assert_eq!(parsed[0].payload(), h.payload());
+
+        // A pre-witness log line carries no wkey/wsig tokens at all: the
+        // reader defaults the slot to `-`/`-` — format version 1 forever,
+        // so yesterday's log parses on today's build (spec 41 §4).
+        let line = format!("0 ts=1 root={} rows=1 prev=- key=- sig=-\n", "a".repeat(64));
+        let parsed = parse_heads(&line).expect("a pre-witness head parses");
+        assert_eq!(parsed[0].wkey, "-");
+        assert_eq!(parsed[0].wsig, "-");
+        assert!(!parsed[0].witnessed());
     }
 
     #[test]

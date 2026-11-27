@@ -1,0 +1,4 @@
+registry.log: 1 head(s), signature valid, witness single-signature
+  witness: head 0 is a SINGLE-SIGNATURE checkpoint — sealed by the head key alone; the second-org countersignature is absent
+  the registry IS head 0: 2 rows, root e614359a2c72dceebc570bad1c922652e008a294951b4f85d2609140baf58055
+log verify: sound
