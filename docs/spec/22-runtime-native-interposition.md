@@ -509,7 +509,7 @@ pinned empirically in §3.1.
 |---|---|---|---|
 | **ELF (gnu/musl)** | exe-defined Class-L symbols; the runtime itself is never preload-injected | the spawn hook materializes and injects the child (`LD_PRELOAD` + `TEBAKO_TFS_MOUNTS` in its env) | **works unmodified** — the handoff env's `LD_PRELOAD` injects every child at its exec, `/bin/sh` included; the shell's PATH search and `execvp` loop route through the interposed surface |
 | **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored — **one entitlement-plane exception (packed-metanorma#305): a hardened-runtime child WITHOUT `com.apple.security.cs.allow-dyld-environment-variables` drops the variable on darwin 23 (§2's insertion drop applies to children exactly as to the interpreter), so for that one shape the hook bridges the embedded operand tokens parent-side instead of relying on the injection — the per-spawn probe below** | **named boundary, enforced by the spawn hook** — an inherited `DYLD_INSERT_LIBRARIES` is FATAL to Apple platform binaries on darwin24 (dyld TERMINATES `/bin/sh` and `/usr/bin/cc` under a foreign insertion — factory run 31699651270; darwin23 stripped the variable instead), so the interpreter's spawn hook DROPS the variable per spawn whose target is restricted (any shell form; anything resolving into Apple's system binary dirs). The JVM behind a shell string then answers its own `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one. darwin24 x86_64 CI runners HONOR the insertion into sh's exec child (runs 31685052887/31692800485) — a relaxed-SIP artifact the scrub deliberately erases: every host behaves like the strictest one |
-| **windows** | — | the §3.2 host tier materializes the target through the exec cache (whole-tree for a home-layout mount, the file itself otherwise) and the host copy execs — no injection exists on the platform, so the child runs plain-host against its declared tree; **argument tokens naming embedded paths are bridged to their host twins by the interpreter's spawn hook (§3.2's argv bridge)** | **works through the §3.2 host tier's `PATH` lead** — `CreateProcess`'s own PATH search finds the materialized host copy (a home-layout tool's tree came with it by declaration); nothing re-arms, there is no injection var; argument tokens naming embedded paths ride the same argv bridge |
+| **windows** | — | the §3.2 host tier materializes the target through the exec cache (whole-tree for a home-layout mount, the parent-directory subtree for an app-mount file operand — §3 Rule E5 — the file itself otherwise) and the host copy execs — no injection exists on the platform, so the child runs plain-host against its declared tree; **argument tokens naming embedded paths are bridged to their host twins by the interpreter's spawn hook (§3.2's argv bridge)** | **works through the §3.2 host tier's `PATH` lead** — `CreateProcess`'s own PATH search finds the materialized host copy (a home-layout tool's tree came with it by declaration); nothing re-arms, there is no injection var; argument tokens naming embedded paths ride the same argv bridge |
 
 Where the launcher tier (§3.2) is armed, the shell-string form works
 on every macOS host — the launcher's explicit re-arm passes the hook's
@@ -581,6 +581,34 @@ that fails to parse is a malformed module, not a data file: it rides
 alone exactly as before this rule — its consumer is the OS loader,
 which raises its own honest error (the exec-side analogue of §2.1's
 truncated-header contract).
+
+**Rule E5 (the app-dir rule, tebako#1139).** A covered
+materialization target that IS a held FILE under an app-kind mount
+(`identity.kind: app` in the in-image manifest) and parses as a load
+module rides Rule E2's closure — but its consumer can address
+resources relative to its own host path that no import table names:
+the .NET muxer's apphost-relative resolution files
+(`<name>.runtimeconfig.json` / `<name>.deps.json` beside the entry
+dll — the hello-runtimes tebako#1139 failure, run 45925634414: the
+bridged dll landed alone and the muxer answered
+`Invalid runtimeconfig.json`, on windows
+`... was not found` and the process ran as self-contained) are read
+by the platform component, never by the OS loader the closure walk
+serves. The operand's parent in-image directory IS the application's
+install prefix — the payload analog of §6's home annotation — so
+under an app-kind mount the parent's SUBTREE materializes into the
+same mirrored host tree the twin answers from: recursive (the prefix
+contains the app — a `runtimes/<rid>/native` probe subtree included),
+extract-once per directory per process, skipping the operand itself
+(the closure walk owns it), with Rule E4's failure discipline
+(per-file failures noted under `TEBAKO_DEBUG_TFS`, never fatal; an
+armed per-mount ceiling crossing journals `event=quota-exceeded` and
+stops the pass). The home annotation still wins where both apply — a
+home-annotated app mount extracts whole and the sweep never fires;
+a non-app mount's file operand rides its closure alone, exactly as
+before; and the rule never reaches `dlmap2file` — Class L keeps the
+linked-closure contract (a ruby extension under an app payload loads
+its own closure, not its gem dir).
 
 ### 3.2 Bare-name resolution — the composition layer wires PATH
 
@@ -1200,6 +1228,18 @@ Payload authors and runtime factories may rely on, forever:
   construction; `identity.annotations.java_home` is the already-shipped
   spelling and reads as the exact alias (spec 18's evolution law — the
   openjdk images carrying it keep working).
+- **The app-dir rule (tebako#1139).** `identity.kind: app` declares
+  the image IS an application payload, and an exec/spawn
+  materialization of a HELD FILE operand under its mount sweeps the
+  operand's parent-directory subtree into the twin's host tree before
+  the closure walk answers (§3 Rule E5 — recursive, extract-once per
+  directory per process, the operand itself owned by the closure
+  walk, per-file failures never fatal). Apphost-relative consumers —
+  the .NET muxer probing `<name>.runtimeconfig.json` beside the entry
+  dll — resolve on the host exactly as a runtime's own files do under
+  the home annotation. The annotation still wins where both apply; a
+  non-app mount's operand rides its closure alone; the rule never
+  reaches `dlmap2file` (Class L keeps the linked-closure contract).
 - **Dependency `PATH` wiring.** The handoff env's `PATH` leads with the
   launcher dir (`<exec-cache-leaf>/wrap-bin/`, when the shim is
   delivered — §3.2's host-launcher tier) followed by every co-mounted

@@ -409,8 +409,10 @@ fn materialize(vfs: &str, mech: Mechanism, root: &str) -> Result<String, DriverE
 /// The entry token under `exec-cache` (spec 29 §3's host-plain child):
 /// the interpreter cannot read the VFS, so an entry inside this boot's
 /// mounts is bridged to its materialized host twin (the same exec
-/// routing — a home mount answers whole-tree, anything else the file
-/// plus its spec 22 §3 Rule E4 siblings). An entry outside the mounts
+/// routing — a home mount answers whole-tree, an app-kind mount's file
+/// operand carries its spec 22 §3 Rule E5 parent subtree, anything
+/// else the file plus its closure or Rule E4 siblings). An entry
+/// outside the mounts
 /// passes through verbatim — it belongs to the interpreter's own
 /// startup (spec 17 §1) and answers with its own honest error (the
 /// spec 22 §3.2 argv bridge's discipline: never a silent rewrite of

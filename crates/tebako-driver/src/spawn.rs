@@ -1376,7 +1376,9 @@ fn carry_mounts(
 
 /// The spawn-safe materialization of one embedded argument (spec 22 §2's
 /// spawn routing: a home-annotated mount extracts whole — a JVM's
-/// self-located prefix never strands).
+/// self-located prefix never strands; an app-kind mount's file operand
+/// carries its §3 Rule E5 parent subtree — the .NET muxer's
+/// apphost-relative runtimeconfig never strands, tebako#1139).
 fn materialize_arg(arg: &str) -> Result<String, String> {
     context()
         .write()
@@ -2259,6 +2261,102 @@ mod tests {
             "{:?}",
             plan.argv
         );
+    }
+
+    /// tebako#1139's spawn shape (spec 22 §3 Rule E5): an argument
+    /// naming a held file under a memory-mounted APP payload has no
+    /// decl to carry, so the POSIX arm materializes it — and the
+    /// app-dir sweep lands the operand's parent subtree beside the
+    /// host twin. The nested native-probe member is the pin: Rule
+    /// E4's flat sibling sweep never brings subdirectory content, so
+    /// its presence proves the E5 sweep fired.
+    #[cfg(not(windows))]
+    #[test]
+    fn an_app_payloads_argument_carries_its_parent_subtree() {
+        let g = guard("appdir-spawn");
+        store_entry(
+            &g.home,
+            "dotnet",
+            "21.0.12",
+            "0.3.0",
+            &runtime_manifest(
+                "dotnet",
+                "  entrypoints: [{name: dotnet, path: /dotnet}]\n",
+                "",
+            ),
+        );
+        // The exec-cache base is this test's own tree — the twin and
+        // the swept subtree land inside it and die with the guard.
+        let prior_cache = std::env::var("TEBAKO_EXEC_CACHE").ok();
+        std::env::set_var("TEBAKO_EXEC_CACHE", g.home.join("exec-cache"));
+        // A REAL app image mounted in MEMORY (no archive to carry —
+        // the POSIX arm materializes), holding the .NET-shaped entry
+        // with its apphost-relative resolution files and a nested
+        // native-probe subtree.
+        let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        for d in [
+            "__tpkg__/",
+            "runtimes/",
+            "runtimes/osx-arm64/",
+            "runtimes/osx-arm64/native/",
+        ] {
+            zw.add_directory(d, opts).unwrap();
+        }
+        zw.start_file("__tpkg__/manifest.yaml", opts).unwrap();
+        zw.write_all(app_manifest("hello-dotnet", "1.0.0", "", "").as_bytes())
+            .unwrap();
+        zw.start_file("hello.dll", opts).unwrap();
+        zw.write_all(b"dll-bytes").unwrap();
+        zw.start_file("hello.runtimeconfig.json", opts).unwrap();
+        zw.write_all(b"{}").unwrap();
+        zw.start_file("runtimes/osx-arm64/native/libnative.dylib", opts)
+            .unwrap();
+        zw.write_all(b"dylib").unwrap();
+        let bytes = zw.finish().unwrap().into_inner();
+        let mount = tfs::mount::build_from_memory(&bytes, "/app").unwrap();
+        context().write().unwrap().mount_checked(mount).unwrap();
+        let mut exposes = HashMap::new();
+        exposes.insert(
+            "dotnet".to_string(),
+            SpawnEdge::Runtime {
+                engine: "dotnet".to_string(),
+                implementation: None,
+                constraint: tpkg::Constraint::new(">= 21").unwrap(),
+            },
+        );
+        state_with(exposes);
+        let plan = plan("dotnet", &["/app/hello.dll".to_string()], &[])
+            .unwrap()
+            .expect("planned");
+        let twin = plan
+            .argv
+            .iter()
+            .find(|a| a.contains("hello.dll"))
+            .expect("the bridged token")
+            .clone();
+        assert!(
+            !twin.starts_with("/app/"),
+            "the operand was rewritten to its host twin: {twin}"
+        );
+        let host = Path::new(&twin);
+        assert!(host.is_file(), "the twin landed: {twin}");
+        let dir = host.parent().unwrap();
+        assert!(
+            dir.join("hello.runtimeconfig.json").is_file(),
+            "the apphost-relative resolution file landed beside the twin: {}",
+            dir.display()
+        );
+        assert!(
+            dir.join("runtimes/osx-arm64/native/libnative.dylib")
+                .is_file(),
+            "Rule E5's recursion reached the native-probe subtree: {}",
+            dir.display()
+        );
+        match prior_cache {
+            Some(v) => std::env::set_var("TEBAKO_EXEC_CACHE", v),
+            None => std::env::remove_var("TEBAKO_EXEC_CACHE"),
+        }
     }
 
     #[test]
