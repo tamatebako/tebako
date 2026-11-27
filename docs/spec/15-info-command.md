@@ -209,7 +209,10 @@ format; SPDX is DEFERRED until a consumer asks with evidence (the arc's
 standing rule). The runtime artifacts' own SBOMs (env image inventory +
 the link-unit exe's crate set captured at factory build time) are
 tebako#1121's follow-up; the vulnerability-scan process that consumes
-these documents is tebako#1123's.
+these documents is tebako#1123's — SHIPPED as
+`docs/vulnerability-process.md` (the weekly `vuln-scan` workflow in
+tebako-packages/index scans the SBOM of record per feedstock and files
+one rolling findings issue per feedstock repo).
 
 `tebako sbom` emits a **CycloneDX 1.6 JSON** bill of materials for one
 payload — read-only, local-only, and deterministic by construction:
