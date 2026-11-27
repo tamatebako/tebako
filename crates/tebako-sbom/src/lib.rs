@@ -1,9 +1,16 @@
 //! tebako-sbom — the CycloneDX 1.6 document model and deterministic
 //! emitter for the tebako evidence plane. One owner of the document
 //! shape (the house's SSOT invariant): the spec 15 §8 verb
-//! (`tebako sbom`, the payload inventory) and the spec 13 §5a release
-//! generator (`sbom-cargo`, the workspace's own crate inventories) both
-//! emit through this crate.
+//! (`tebako sbom`, the payload inventory and the spec 15 §8a runtime
+//! artifacts) and the spec 13 §5a release generator (`sbom-cargo`, the
+//! workspace's own crate inventories) both emit through this crate.
+//!
+//! The crate also owns the build-time crate-inventory capture
+//! ([`capture`] — `crate-inventory.json`, schema 1): the intermediate
+//! that carries one cargo resolution's crate set from the build that
+//! produced it (the link-unit tarball) to the runtime exe's SBOM
+//! (`tebako sbom --runtime-exe`), so writer and reader can never
+//! diverge on the grammar.
 //!
 //! The determinism law (spec 15 §8): components sort by purl, the
 //! `serialNumber` is a name-based UUID (v5 shape) derived from the
@@ -14,6 +21,8 @@
 //! byte-identical; [`SerialMode::Random`] is the explicit opt-out.
 
 #![forbid(unsafe_code)]
+
+pub mod capture;
 
 use sha2::Digest as _;
 

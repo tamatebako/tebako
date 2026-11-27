@@ -1,16 +1,28 @@
-//! `tebako sbom` — the evidence surface (spec 15 §8): emit a CycloneDX
-//! 1.6 SBOM for one payload image (or an installed payload from the
-//! store).
+//! `tebako sbom` — the evidence surface (spec 15 §8 + §8a): emit a
+//! CycloneDX 1.6 SBOM for one payload image (or an installed payload
+//! from the store), for one runtime env image (`--runtime`), or for one
+//! runtime interpreter exe (`--runtime-exe --crates`).
 //!
-//! Inputs: the image's own L1 manifest (`/__tpkg__/manifest.yaml`, read
-//! through the tfs mount — nothing is extracted) carries the payload's
-//! identity/kind; the feedstock closure file, when passed, carries the
-//! complete per-artifact inventory (`<artifact> <sha256>`, or the
-//! sha256sum-shaped `<sha256> <artifact>` spelling — both parse through
-//! one grammar). Without a closure the inventory degrades to the image's
-//! own gem specifications (`specifications/*.gemspec` names + versions +
-//! licenses — no hashes, completeness not claimed) and the document says
-//! so (`tebako:closure:complete=false` plus an annotation).
+//! The payload lane's inputs: the image's own L1 manifest
+//! (`/__tpkg__/manifest.yaml`, read through the tfs mount — nothing is
+//! extracted) carries the payload's identity/kind; the feedstock
+//! closure file, when passed, carries the complete per-artifact
+//! inventory (`<artifact> <sha256>`, or the sha256sum-shaped
+//! `<sha256> <artifact>` spelling — both parse through one grammar).
+//! Without a closure the inventory degrades to the image's own gem
+//! specifications (`specifications/*.gemspec` names + versions +
+//! licenses — no hashes, completeness not claimed) and the document
+//! says so (`tebako:closure:complete=false` plus an annotation).
+//!
+//! The runtime lanes (spec 15 §8a): the env image document carries the
+//! manifest-declared interpreter build (engine, version, abi line,
+//! platform, source pin, patch set) plus the image's FULL gem inventory
+//! (the bundled `specifications/` class and the default-gem class —
+//! never "complete" in the closure sense; the annotation names what
+//! the inventory honestly is). The exe document re-subjects the
+//! build-time crate capture (`crate-inventory.json`, tebako-sbom's
+//! capture grammar) to the exe's bytes — the vendored crates are what
+//! the build resolved, never a post-hoc guess at stripped bytes.
 //!
 //! The emission rides the workspace's one CycloneDX owner (the
 //! tebako-sbom crate): components sort by purl, the serial derives from
@@ -22,7 +34,8 @@
 use std::path::{Path, PathBuf};
 
 use tebako_sbom::{
-    Annotation, Component, ComponentType, DependencyGraph, Document, SbomError, SerialMode,
+    Annotation, Component, ComponentType, Dependency, DependencyGraph, Document, SbomError,
+    SerialMode,
 };
 
 use crate::error::TebakoError;
@@ -39,7 +52,7 @@ fn sbom_err(e: SbomError) -> TebakoError {
     err(e.exit_code(), e.to_string())
 }
 
-const USAGE: &str = "usage: tebako sbom <image.tfs | name[@version]> [--closure <path>] [--ecosystem gem|pypi|npm|cargo|generic] [--triplet <triplet>] [--out <path>] [--random-serial]";
+const USAGE: &str = "usage: tebako sbom <image.tfs | name[@version]> [--closure <path>] [--ecosystem gem|pypi|npm|cargo|generic] [--triplet <triplet>] [--out <path>] [--random-serial]\n       tebako sbom --runtime <env-image.tfs> [--triplet <triplet>] [--out <path>] [--random-serial]\n       tebako sbom --runtime-exe <exe> --crates <crate-inventory.json> --version <ver> [--name <name>] [--engine <engine> --engine-version <ver>] [--triplet <triplet>] [--out <path>] [--random-serial]";
 
 /// The ecosystem a closure's rows (or the degraded inventory) map to
 /// purls under — spec 15 §8's mapping table.
@@ -658,14 +671,15 @@ struct GemspecInventory {
     skipped: Vec<String>,
 }
 
-fn gemspec_inventory(backend: &dyn tfs::Backend) -> Result<GemspecInventory, TebakoError> {
-    let Some(dir) = find_gemspec_dir(backend)? else {
-        return Err(err(
-            EX_TEBAKO_MANIFEST,
-            "no closure given and the image carries no gem specifications (no specifications/ directory) — pass --closure <feedstock closure> for the complete, hashed inventory",
-        ));
-    };
-    let entries = backend.read_dir(&dir).map_err(|e| {
+/// Read every parseable `*.gemspec` directly inside `dir` (never
+/// recursive — the default class lives in the `default/` child and gets
+/// its own pass). Rows carry the spec's declared name/version (the
+/// authoritative identity, never the filename's).
+fn gemspec_dir_inventory(
+    backend: &dyn tfs::Backend,
+    dir: &str,
+) -> Result<GemspecInventory, TebakoError> {
+    let entries = backend.read_dir(dir).map_err(|e| {
         err(
             EX_TEBAKO_IO,
             format!("cannot list {dir} inside the image (errno {e})"),
@@ -693,15 +707,164 @@ fn gemspec_inventory(backend: &dyn tfs::Backend) -> Result<GemspecInventory, Teb
             None => skipped.push(entry.name),
         }
     }
-    if rows.is_empty() {
+    Ok(GemspecInventory { rows, skipped })
+}
+
+fn gemspec_inventory(backend: &dyn tfs::Backend) -> Result<GemspecInventory, TebakoError> {
+    let Some(dir) = find_gemspec_dir(backend)? else {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            "no closure given and the image carries no gem specifications (no specifications/ directory) — pass --closure <feedstock closure> for the complete, hashed inventory",
+        ));
+    };
+    let mut inventory = gemspec_dir_inventory(backend, &dir)?;
+    if inventory.rows.is_empty() {
         return Err(err(
             EX_TEBAKO_MANIFEST,
             format!("{dir} inside the image carries no parseable gemspecs"),
         ));
     }
+    inventory
+        .rows
+        .sort_by(|a, b| a.0.name.cmp(&b.0.name).then(a.0.version.cmp(&b.0.version)));
+    inventory
+        .rows
+        .dedup_by(|a, b| a.0.name == b.0.name && a.0.version == b.0.version);
+    Ok(inventory)
+}
+
+// ---------------------------------------------------------------------
+// The runtime env image inventory (spec 15 §8a): the declared
+// interpreter build + the GEM_HOME's two specification classes
+// ---------------------------------------------------------------------
+
+/// The runtime facts the in-image manifest declares (kind: runtime —
+/// the authoritative read): the provided engine entries plus the
+/// build's source pin and patch set.
+#[derive(Debug, Clone)]
+struct RuntimeFacts {
+    /// One per DISTINCT provided engine entry (a multi-platform image
+    /// lists one entry per platform — each is a build facet of the same
+    /// interpreter, evidence in its own right).
+    engines: Vec<EngineFacts>,
+    src_sha256: Option<String>,
+    patch_set: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct EngineFacts {
+    engine: String,
+    version: String,
+    abi_line: String,
+    platform: String,
+}
+
+fn runtime_facts(manifest: &tpkg::PayloadManifest) -> Result<RuntimeFacts, TebakoError> {
+    if manifest.identity.kind != tpkg::PayloadKind::Runtime {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "--runtime describes the runtime env image (kind: runtime); '{}' is kind: {} — the payload lane (`tebako sbom <image>`) covers it",
+                manifest.identity.name,
+                payload_kind_label(Some(manifest.identity.kind))
+            ),
+        ));
+    }
+    let tpkg::Provides::Runtime(provides) = &manifest.provides else {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "'{}' declares kind: runtime but carries no runtime provides block — the manifest is malformed",
+                manifest.identity.name
+            ),
+        ));
+    };
+    if provides.provides.is_empty() {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "'{}' declares no provided engine — a runtime image without an interpreter is no runtime",
+                manifest.identity.name
+            ),
+        ));
+    }
+    let engines = provides
+        .provides
+        .iter()
+        .map(|e| EngineFacts {
+            engine: e.engine.clone(),
+            version: e.version.clone(),
+            abi_line: e.abi_line.clone(),
+            platform: e.platform.as_triplet().to_string(),
+        })
+        .collect();
+    Ok(RuntimeFacts {
+        engines,
+        src_sha256: Some(provides.built_from.src_sha256.clone()),
+        patch_set: Some(provides.built_from.patch_set.clone()),
+    })
+}
+
+/// The runtime image's gem inventory: `<gemhome>/specifications/` (the
+/// bundled class) plus its `default/` child (the interpreter's default
+/// gems) — BOTH classes are the shipped inventory, and the class is
+/// evidence (`tebako:gem:default`), never a purl facet. Rows:
+/// (artifact, licenses, is_default).
+struct RuntimeGems {
+    rows: Vec<(ArtifactId, Vec<String>, bool)>,
+    skipped: Vec<String>,
+    bundled: usize,
+    default: usize,
+    /// The specifications dir the classes were read from (the note's
+    /// evidence), when a gem layout was found at all.
+    dir: Option<String>,
+}
+
+fn runtime_gem_inventory(backend: &dyn tfs::Backend) -> Result<RuntimeGems, TebakoError> {
+    let Some(dir) = find_gemspec_dir(backend)? else {
+        return Ok(RuntimeGems {
+            rows: Vec::new(),
+            skipped: Vec::new(),
+            bundled: 0,
+            default: 0,
+            dir: None,
+        });
+    };
+    let mut rows = Vec::new();
+    let mut skipped = Vec::new();
+    let bundled_inv = gemspec_dir_inventory(backend, &dir)?;
+    let bundled = bundled_inv.rows.len();
+    rows.extend(
+        bundled_inv
+            .rows
+            .into_iter()
+            .map(|(id, licenses)| (id, licenses, false)),
+    );
+    skipped.extend(bundled_inv.skipped);
+    let mut default = 0;
+    let default_dir = format!("{dir}/default");
+    if let Ok(st) = backend.stat(&default_dir) {
+        if st.entry_type == tfs::EntryType::Directory {
+            let default_inv = gemspec_dir_inventory(backend, &default_dir)?;
+            default = default_inv.rows.len();
+            rows.extend(
+                default_inv
+                    .rows
+                    .into_iter()
+                    .map(|(id, licenses)| (id, licenses, true)),
+            );
+            skipped.extend(default_inv.skipped);
+        }
+    }
     rows.sort_by(|a, b| a.0.name.cmp(&b.0.name).then(a.0.version.cmp(&b.0.version)));
-    rows.dedup_by(|a, b| a.0.name == b.0.name && a.0.version == b.0.version);
-    Ok(GemspecInventory { rows, skipped })
+    rows.dedup_by(|a, b| a.0.name == b.0.name && a.0.version == b.0.version && a.2 == b.2);
+    Ok(RuntimeGems {
+        rows,
+        skipped,
+        bundled,
+        default,
+        dir: Some(dir),
+    })
 }
 
 // ---------------------------------------------------------------------
@@ -776,12 +939,34 @@ fn resolve_store(home: &Path, target: &str) -> Result<StoreResolution, TebakoErr
 /// The verb's parsed options.
 #[derive(Debug)]
 pub struct SbomOptions {
+    /// The payload image path (or store `name[@version]`), the runtime
+    /// env image path (`--runtime`), or the runtime exe path
+    /// (`--runtime-exe`).
     pub target: String,
     pub closure: Option<PathBuf>,
     pub ecosystem: Option<String>,
     pub triplet: Option<String>,
     pub out: Option<PathBuf>,
     pub random_serial: bool,
+    /// The spec 15 §8a runtime env image mode: the target is the image,
+    /// the inventory is the declared interpreter build + the image's own
+    /// gem specifications (bundled + default).
+    pub runtime: bool,
+    /// The spec 15 §8a runtime exe mode: the target is the interpreter
+    /// exe, the inventory is the build-time crate capture.
+    pub runtime_exe: bool,
+    /// `--crates <crate-inventory.json>` — the build-time capture the
+    /// exe mode re-subjects (required there, forbidden elsewhere).
+    pub crates: Option<PathBuf>,
+    /// The exe subject's name (default: the exe's file stem).
+    pub name: Option<String>,
+    /// The exe subject's version — required in the exe mode (the bytes
+    /// carry no recoverable version).
+    pub version: Option<String>,
+    /// The runtime's engine (evidence property in the exe mode).
+    pub engine: Option<String>,
+    /// The engine's version (evidence property in the exe mode).
+    pub engine_version: Option<String>,
 }
 
 /// The emission's outcome (counts for the progress line).
@@ -818,10 +1003,64 @@ fn decide_ecosystem(flag: Option<&str>, payload: &PayloadId) -> Result<Ecosystem
     }
 }
 
+/// The emission's shared tail: emit the document through the one
+/// CycloneDX owner, write/print it, and report the counts.
+fn finish(
+    document: Document,
+    out: &Option<PathBuf>,
+    complete: bool,
+    source: &str,
+) -> Result<SbomOutcome, TebakoError> {
+    let json = document.emit().map_err(sbom_err)?;
+    let output = match out {
+        Some(path) => {
+            std::fs::write(path, &json).map_err(|e| {
+                err(
+                    EX_TEBAKO_IO,
+                    format!("cannot write {}: {e}", path.display()),
+                )
+            })?;
+            Some(path.clone())
+        }
+        None => {
+            print!("{json}");
+            None
+        }
+    };
+    let count = document.components.len();
+    eprintln!(
+        "sbom: {} component(s), inventory {} ({}){}",
+        count,
+        if complete { "complete" } else { "degraded" },
+        source,
+        output
+            .as_ref()
+            .map(|p| format!(" -> {}", p.display()))
+            .unwrap_or_default()
+    );
+    Ok(SbomOutcome {
+        components: count,
+        complete,
+        output,
+    })
+}
+
 /// Build and emit the document. `tebako_home` is the store root the
 /// `name[@version]` form resolves against (the file form never touches
-/// the store).
+/// the store — and the runtime modes take paths only).
 pub fn sbom(opts: &SbomOptions, tebako_home: &Path) -> Result<SbomOutcome, TebakoError> {
+    if opts.runtime_exe {
+        return exe_document(opts);
+    }
+    if opts.runtime {
+        return runtime_document(opts);
+    }
+    payload_document(opts, tebako_home)
+}
+
+/// The payload lane (spec 15 §8): one payload image — complete mode from
+/// the feedstock closure, degraded mode from the image's own gemspecs.
+fn payload_document(opts: &SbomOptions, tebako_home: &Path) -> Result<SbomOutcome, TebakoError> {
     // -- the payload image: a file path, or the store's name[@version]
     let target_path = PathBuf::from(&opts.target);
     let (image_path, store_label, origin, registry) = if target_path.is_file() {
@@ -854,6 +1093,11 @@ pub fn sbom(opts: &SbomOptions, tebako_home: &Path) -> Result<SbomOutcome, Tebak
         );
     }
     let payload = payload_identity(&image_path, &view, image_sha256, origin, registry)?;
+    if payload.kind == Some(tpkg::PayloadKind::Runtime) {
+        eprintln!(
+            "sbom: note: the image is a runtime env image (kind: runtime) — `tebako sbom --runtime <image>` emits the runtime-artifact document (the declared interpreter build + the full gem inventory including the default-gem class); the payload lane stays on its degraded inventory below"
+        );
+    }
 
     // -- the ecosystem decision ONCE (closure mode: flag → manifest
     //    engine → generic-with-note; degraded mode is gem by
@@ -1016,39 +1260,351 @@ pub fn sbom(opts: &SbomOptions, tebako_home: &Path) -> Result<SbomOutcome, Tebak
         },
         epoch_override: None,
     };
-    let json = document.emit().map_err(sbom_err)?;
+    finish(document, &opts.out, complete, source)
+}
 
-    let output = match &opts.out {
-        Some(path) => {
-            std::fs::write(path, &json).map_err(|e| {
-                err(
-                    EX_TEBAKO_IO,
-                    format!("cannot write {}: {e}", path.display()),
-                )
-            })?;
-            Some(path.clone())
+// ---------------------------------------------------------------------
+// The runtime env image document (spec 15 §8a, --runtime)
+// ---------------------------------------------------------------------
+
+/// The runtime env image document: the declared interpreter build plus
+/// the image's own gem specifications (bundled + default). Never
+/// "complete" in the closure sense — no hashed closure exists for a
+/// runtime image — so the annotation names what the inventory honestly
+/// is, and `tebako:closure:complete` stays false by construction.
+fn runtime_document(opts: &SbomOptions) -> Result<SbomOutcome, TebakoError> {
+    let image_path = PathBuf::from(&opts.target);
+    if !image_path.is_file() {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "--runtime names the runtime env image (a .tfs file); '{}' is not a file — the runtime modes take paths, never store references",
+                opts.target
+            ),
+        ));
+    }
+    let image_sha256 = crate::resolve::sha256_file_hex(&image_path).ok_or_else(|| {
+        err(
+            EX_TEBAKO_IO,
+            format!("cannot hash {}", image_path.display()),
+        )
+    })?;
+    let view = mount_image(&image_path)?;
+    let Some(manifest) = &view.manifest else {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "{} carries no readable /__tpkg__/manifest.yaml — a runtime env image declares its interpreter in the manifest; the payload lane covers plain images",
+                image_path.display()
+            ),
+        ));
+    };
+    let facts = runtime_facts(manifest)?;
+    let gems = runtime_gem_inventory(&*view.backend)?;
+
+    // -- the components: one interpreter build per declared engine
+    //    entry, then the gem rows with their class evidence
+    let mut components: Vec<Component> = Vec::new();
+    for engine in &facts.engines {
+        let mut c = Component::new(
+            ComponentType::Platform,
+            &engine.engine,
+            &engine.version,
+            &format!(
+                "pkg:generic/{}@{}",
+                purl_encode(&engine.engine),
+                purl_encode(&engine.version)
+            ),
+        );
+        c.properties = vec![
+            (
+                "tebako:runtime:abi_line".to_string(),
+                engine.abi_line.clone(),
+            ),
+            (
+                "tebako:runtime:platform".to_string(),
+                engine.platform.clone(),
+            ),
+        ];
+        if let Some(src) = &facts.src_sha256 {
+            c.properties
+                .push(("tebako:runtime:src_sha256".to_string(), src.clone()));
         }
-        None => {
-            print!("{json}");
-            None
+        if let Some(patch) = &facts.patch_set {
+            c.properties
+                .push(("tebako:runtime:patch_set".to_string(), patch.clone()));
         }
+        components.push(c);
+    }
+    for (id, licenses, is_default) in gems.rows {
+        let mut c = Component::new(
+            ComponentType::Library,
+            &id.name,
+            &id.version,
+            &purl_of(Ecosystem::Gem, &id),
+        );
+        c.license_expression = (!licenses.is_empty()).then(|| licenses.join(" AND "));
+        c.properties = vec![(
+            "tebako:gem:default".to_string(),
+            if is_default { "true" } else { "false" }.to_string(),
+        )];
+        components.push(c);
+    }
+    components.sort_by(|a, b| a.purl.cmp(&b.purl).then(a.sha256.cmp(&b.sha256)));
+    // Two engine entries that differ only by platform are one
+    // interpreter — dedup the identical rows; distinct platforms keep
+    // their own entries (the property order is deterministic by
+    // construction).
+    components.dedup_by(|a, b| a.purl == b.purl && a.properties == b.properties);
+
+    // -- the subject: the env image itself
+    let platforms: Vec<&str> = facts
+        .engines
+        .iter()
+        .map(|e| e.platform.as_str())
+        .collect::<Vec<_>>();
+    let mut platforms_dedup = platforms.clone();
+    platforms_dedup.dedup();
+    let triplet = opts
+        .triplet
+        .clone()
+        .unwrap_or_else(|| platforms_dedup.join(","));
+    let payload_purl = format!(
+        "pkg:generic/{}@{}",
+        purl_encode(&manifest.identity.name),
+        purl_encode(&manifest.identity.version)
+    );
+    let mut subject = Component::new(
+        ComponentType::Platform,
+        &manifest.identity.name,
+        &manifest.identity.version,
+        &payload_purl,
+    );
+    subject.sha256 = Some(image_sha256);
+    subject.properties = vec![
+        ("tebako:payload:kind".to_string(), "runtime".to_string()),
+        ("tebako:triplet".to_string(), triplet),
+        (
+            "tebako:runtime:engine".to_string(),
+            facts.engines[0].engine.clone(),
+        ),
+        (
+            "tebako:runtime:engine_version".to_string(),
+            facts.engines[0].version.clone(),
+        ),
+    ];
+
+    // -- the annotation: what the inventory honestly IS
+    let engine_desc = facts
+        .engines
+        .iter()
+        .map(|e| format!("{} {}", e.engine, e.version))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let build_facts = [
+        facts
+            .src_sha256
+            .as_ref()
+            .map(|s| format!("source sha256 {s}")),
+        facts.patch_set.as_ref().map(|p| format!("patch set {p}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(", ");
+    let build_desc = if build_facts.is_empty() {
+        "no source pin declared".to_string()
+    } else {
+        build_facts
+    };
+    let gem_clause = match &gems.dir {
+        Some(dir) => format!(
+            "the image's own gem specifications under {dir} ({} bundled + {} default) — name+version+licenses only, no per-artifact hashes",
+            gems.bundled, gems.default
+        ),
+        None => "no gem specifications (the image carries no gem layout)".to_string(),
+    };
+    let mut text = format!(
+        "Runtime env image inventory: the manifest-declared interpreter build ({engine_desc}; {build_desc}) plus {gem_clause}. \
+         No hashed closure exists for a runtime image, so completeness is not claimed in the closure sense (tebako:closure:complete=false); \
+         the stdlib tree is the interpreter's own versioned content, represented by the interpreter component. \
+         The interpreter's native objects and the runtime exe's vendored Rust crates are the sibling exe SBOM's inventory \
+         (`tebako sbom --runtime-exe`, captured at build time)."
+    );
+    if !gems.skipped.is_empty() {
+        text.push_str(&format!(
+            " Unparseable specs skipped: {}.",
+            gems.skipped.join(", ")
+        ));
+    }
+
+    let document = Document {
+        metadata_component: subject,
+        metadata_properties: vec![
+            (
+                "tebako:sbom:inventory-source".to_string(),
+                "runtime-image".to_string(),
+            ),
+            ("tebako:closure:complete".to_string(), "false".to_string()),
+        ],
+        tool: ("tebako".to_string(), env!("CARGO_PKG_VERSION").to_string()),
+        components,
+        graph: DependencyGraph::Flat,
+        annotations: vec![Annotation {
+            subjects: vec![payload_purl],
+            text,
+        }],
+        serial_mode: if opts.random_serial {
+            SerialMode::Random
+        } else {
+            SerialMode::ContentDerived
+        },
+        epoch_override: None,
     };
     let count = document.components.len();
-    eprintln!(
-        "sbom: {} component(s), inventory {} ({}){}",
-        count,
-        if complete { "complete" } else { "degraded" },
-        source,
-        output
-            .as_ref()
-            .map(|p| format!(" -> {}", p.display()))
-            .unwrap_or_default()
+    let outcome = finish(document, &opts.out, false, "runtime-image")?;
+    debug_assert_eq!(count, outcome.components);
+    Ok(outcome)
+}
+
+// ---------------------------------------------------------------------
+// The runtime exe document (spec 15 §8a, --runtime-exe --crates)
+// ---------------------------------------------------------------------
+
+/// The runtime exe document: the interpreter exe as the subject, the
+/// build-time crate capture as the inventory. The crate set is complete
+/// by construction — the capture IS the build's full normal+build
+/// resolve closure — so this document carries
+/// `tebako:closure:complete=true` with no annotation.
+fn exe_document(opts: &SbomOptions) -> Result<SbomOutcome, TebakoError> {
+    let exe_path = PathBuf::from(&opts.target);
+    if !exe_path.is_file() {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "--runtime-exe names the runtime interpreter exe; '{}' is not a file",
+                opts.target
+            ),
+        ));
+    }
+    let crates = opts
+        .crates
+        .as_ref()
+        .expect("run() validates --crates in the exe mode");
+    let capture_text = std::fs::read_to_string(crates).map_err(|e| {
+        err(
+            EX_TEBAKO_IO,
+            format!("cannot read the crate capture {}: {e}", crates.display()),
+        )
+    })?;
+    let capture = tebako_sbom::capture::CrateCapture::parse(&capture_text)
+        .map_err(|e| err(e.exit_code(), e.to_string()))?;
+    let exe_sha256 = crate::resolve::sha256_file_hex(&exe_path)
+        .ok_or_else(|| err(EX_TEBAKO_IO, format!("cannot hash {}", exe_path.display())))?;
+
+    // -- the subject identity: the bytes carry no recoverable version,
+    //    so --version is required; the name defaults to the exe's file
+    //    name minus a windows .exe suffix (a suffix strip, never the
+    //    asset-name grammar — `file_stem` would eat the dotted version
+    //    inside `tebako-runtime-<ver>-<lang>-<lv>-<triplet>`).
+    let file_name = exe_path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .ok_or_else(|| {
+            err(
+                EX_USAGE,
+                format!("cannot derive a name from {}", exe_path.display()),
+            )
+        })?;
+    let stem = file_name
+        .strip_suffix(".exe")
+        .map(str::to_string)
+        .unwrap_or(file_name);
+    let name = opts.name.clone().unwrap_or(stem);
+    let version = opts
+        .version
+        .clone()
+        .expect("run() validates --version in the exe mode");
+    let subject_purl = format!(
+        "pkg:generic/{}@{}",
+        purl_encode(&name),
+        purl_encode(&version)
     );
-    Ok(SbomOutcome {
-        components: count,
-        complete,
-        output,
-    })
+    let mut subject = Component::new(ComponentType::Platform, &name, &version, &subject_purl);
+    subject.sha256 = Some(exe_sha256);
+    subject.properties = {
+        let mut p = vec![
+            ("tebako:payload:kind".to_string(), "runtime".to_string()),
+            (
+                "tebako:capture:package".to_string(),
+                capture.package.clone(),
+            ),
+            ("tebako:target".to_string(), capture.target.clone()),
+        ];
+        if let Some(triplet) = &opts.triplet {
+            p.push(("tebako:platform".to_string(), triplet.clone()));
+        }
+        if let Some(engine) = &opts.engine {
+            p.push(("tebako:runtime:engine".to_string(), engine.clone()));
+        }
+        if let Some(engine_version) = &opts.engine_version {
+            p.push((
+                "tebako:runtime:engine_version".to_string(),
+                engine_version.clone(),
+            ));
+        }
+        p
+    };
+
+    // -- the components + graph from the capture
+    let mut components: Vec<Component> = Vec::with_capacity(capture.components.len());
+    for c in &capture.components {
+        let mut component = Component::new(ComponentType::Library, &c.name, &c.version, &c.purl);
+        component.sha256 = c.sha256.clone();
+        component.license_expression = c.license.clone();
+        component.properties = tebako_sbom::capture::source_properties(&c.source)
+            .map_err(|e| err(e.exit_code(), e.to_string()))?;
+        components.push(component);
+    }
+    let mut edges: Vec<Dependency> = capture
+        .edges
+        .iter()
+        .map(|e| Dependency {
+            refr: e.refr.clone(),
+            depends_on: e.depends_on.clone(),
+        })
+        .collect();
+    edges.push(Dependency {
+        refr: subject_purl.clone(),
+        depends_on: vec![capture.root.clone()],
+    });
+
+    let document = Document {
+        metadata_component: subject,
+        metadata_properties: vec![
+            (
+                "tebako:sbom:inventory-source".to_string(),
+                "cargo-resolution-capture".to_string(),
+            ),
+            ("tebako:closure:complete".to_string(), "true".to_string()),
+            ("tebako:capture:tool".to_string(), capture.tool.0.clone()),
+            (
+                "tebako:capture:tool_version".to_string(),
+                capture.tool.1.clone(),
+            ),
+        ],
+        tool: ("tebako".to_string(), env!("CARGO_PKG_VERSION").to_string()),
+        components,
+        graph: DependencyGraph::Explicit(edges),
+        annotations: Vec::new(),
+        serial_mode: if opts.random_serial {
+            SerialMode::Random
+        } else {
+            SerialMode::ContentDerived
+        },
+        epoch_override: None,
+    };
+    finish(document, &opts.out, true, "cargo-capture")
 }
 
 /// `tebako sbom <target> [flags]` — the argv surface.
@@ -1059,6 +1615,13 @@ pub fn run(args: &[String]) -> Result<(), TebakoError> {
     let mut triplet: Option<String> = None;
     let mut out: Option<PathBuf> = None;
     let mut random_serial = false;
+    let mut runtime = false;
+    let mut runtime_exe = false;
+    let mut crates: Option<PathBuf> = None;
+    let mut name: Option<String> = None;
+    let mut version: Option<String> = None;
+    let mut engine: Option<String> = None;
+    let mut engine_version: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -1094,6 +1657,49 @@ pub fn run(args: &[String]) -> Result<(), TebakoError> {
                 random_serial = true;
                 i += 1;
             }
+            "--runtime" => {
+                runtime = true;
+                i += 1;
+            }
+            "--runtime-exe" => {
+                runtime_exe = true;
+                i += 1;
+            }
+            "--crates" => {
+                let value = args
+                    .get(i + 1)
+                    .ok_or_else(|| err(EX_USAGE, format!("--crates needs a path\n{USAGE}")))?;
+                crates = Some(PathBuf::from(value));
+                i += 2;
+            }
+            "--name" => {
+                let value = args
+                    .get(i + 1)
+                    .ok_or_else(|| err(EX_USAGE, format!("--name needs a value\n{USAGE}")))?;
+                name = Some(value.clone());
+                i += 2;
+            }
+            "--version" => {
+                let value = args
+                    .get(i + 1)
+                    .ok_or_else(|| err(EX_USAGE, format!("--version needs a value\n{USAGE}")))?;
+                version = Some(value.clone());
+                i += 2;
+            }
+            "--engine" => {
+                let value = args
+                    .get(i + 1)
+                    .ok_or_else(|| err(EX_USAGE, format!("--engine needs a value\n{USAGE}")))?;
+                engine = Some(value.clone());
+                i += 2;
+            }
+            "--engine-version" => {
+                let value = args.get(i + 1).ok_or_else(|| {
+                    err(EX_USAGE, format!("--engine-version needs a value\n{USAGE}"))
+                })?;
+                engine_version = Some(value.clone());
+                i += 2;
+            }
             flag if flag.starts_with('-') => {
                 return Err(err(EX_USAGE, format!("unknown option '{flag}'\n{USAGE}")));
             }
@@ -1112,6 +1718,57 @@ pub fn run(args: &[String]) -> Result<(), TebakoError> {
     let Some(target) = target else {
         return Err(err(EX_USAGE, USAGE));
     };
+    // -- the mode grammar (spec 15 §8a): the modes are MECE, their
+    //    flags never mix, and the exe mode's required identity is
+    //    explicit (the exe's bytes carry no recoverable version).
+    if runtime && runtime_exe {
+        return Err(err(
+            EX_USAGE,
+            format!("--runtime and --runtime-exe are mutually exclusive\n{USAGE}"),
+        ));
+    }
+    if runtime_exe {
+        let mut missing = Vec::new();
+        if crates.is_none() {
+            missing.push("--crates <crate-inventory.json>");
+        }
+        if version.is_none() {
+            missing.push("--version <ver>");
+        }
+        if !missing.is_empty() {
+            return Err(err(
+                EX_USAGE,
+                format!(
+                    "--runtime-exe requires {} (the exe's bytes carry no recoverable version; the crate set is the build-time capture)\n{USAGE}",
+                    missing.join(" and ")
+                ),
+            ));
+        }
+    }
+    if crates.is_some() && !runtime_exe {
+        return Err(err(
+            EX_USAGE,
+            format!("--crates belongs to --runtime-exe\n{USAGE}"),
+        ));
+    }
+    if (name.is_some() || engine.is_some() || engine_version.is_some()) && !runtime_exe {
+        return Err(err(
+            EX_USAGE,
+            format!("--name/--engine/--engine-version belong to --runtime-exe\n{USAGE}"),
+        ));
+    }
+    if closure.is_some() && (runtime || runtime_exe) {
+        return Err(err(
+            EX_USAGE,
+            format!("--closure belongs to the payload lane\n{USAGE}"),
+        ));
+    }
+    if ecosystem.is_some() && (runtime || runtime_exe) {
+        return Err(err(
+            EX_USAGE,
+            format!("--ecosystem belongs to the payload lane\n{USAGE}"),
+        ));
+    }
     let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
     let home = tebako_shim::tebako_home(&env).map_err(|e| {
         err(
@@ -1127,6 +1784,13 @@ pub fn run(args: &[String]) -> Result<(), TebakoError> {
             triplet,
             out,
             random_serial,
+            runtime,
+            runtime_exe,
+            crates,
+            name,
+            version,
+            engine,
+            engine_version,
         },
         &home,
     )?;
@@ -1295,5 +1959,102 @@ end
             decide_ecosystem(None, &unknown),
             Ok(Ecosystem::Generic)
         ));
+    }
+
+    fn runtime_manifest() -> String {
+        format!(
+            "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-ruby\n  version: \"0.0.7\"\n  producer: {{tool: tebako-runtime-ruby, tool_version: \"0.0.7\"}}\n  created: \"2026-11-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides:\n    engine: ruby\n    version: \"4.0.9\"\n    abi_line: \"4.0\"\n    platform: aarch64-macos\n  built_from:\n    src_sha256: \"{}\"\n    patch_set: test-chain\n  capabilities: {{exec: true, read: true, runtime: true}}\n",
+            "0".repeat(64),
+            "0".repeat(64),
+            "c".repeat(64)
+        )
+    }
+
+    #[test]
+    fn runtime_facts_read_the_declared_interpreter_build() {
+        let manifest = tpkg::PayloadManifest::from_yaml(&runtime_manifest()).unwrap();
+        let facts = runtime_facts(&manifest).unwrap();
+        assert_eq!(facts.engines.len(), 1);
+        let engine = &facts.engines[0];
+        assert_eq!(
+            (
+                engine.engine.as_str(),
+                engine.version.as_str(),
+                engine.abi_line.as_str(),
+                engine.platform.as_str()
+            ),
+            ("ruby", "4.0.9", "4.0", "aarch64-macos")
+        );
+        assert_eq!(facts.src_sha256.as_deref(), Some("c".repeat(64).as_str()));
+        assert_eq!(facts.patch_set.as_deref(), Some("test-chain"));
+    }
+
+    #[test]
+    fn runtime_facts_refuse_a_non_runtime_kind_named() {
+        let app = format!(
+            "identity:\n  schema_version: 1\n  kind: app\n  name: probe\n  version: \"1.0.0\"\n  producer: {{tool: probe, tool_version: \"1\"}}\n  created: \"2026-11-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: probe\n      path: /bin/probe\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+            "0".repeat(64),
+            "0".repeat(64)
+        );
+        let manifest = tpkg::PayloadManifest::from_yaml(&app).unwrap();
+        let error = runtime_facts(&manifest).unwrap_err();
+        assert_eq!(error.code, EX_TEBAKO_MANIFEST);
+        assert!(error.message.contains("kind: app"));
+        assert!(error.message.contains("payload lane"));
+    }
+
+    #[test]
+    fn mode_grammar_validates_before_any_io() {
+        // The modes are mutually exclusive.
+        let error = run(&[
+            "--runtime".to_string(),
+            "--runtime-exe".to_string(),
+            "x".to_string(),
+        ])
+        .unwrap_err();
+        assert_eq!(error.code, EX_USAGE);
+        assert!(error.message.contains("mutually exclusive"));
+        // The exe mode requires the capture AND the version — both
+        // named in one refusal (the exe's bytes carry no recoverable
+        // version).
+        let error = run(&["--runtime-exe".to_string(), "x".to_string()]).unwrap_err();
+        assert_eq!(error.code, EX_USAGE);
+        assert!(error.message.contains("--crates"));
+        assert!(error.message.contains("--version"));
+        // --crates without the exe mode.
+        let error = run(&[
+            "--crates".to_string(),
+            "c.json".to_string(),
+            "x".to_string(),
+        ])
+        .unwrap_err();
+        assert_eq!(error.code, EX_USAGE);
+        assert!(error.message.contains("--runtime-exe"));
+        // The payload-lane flags never mix into the runtime modes.
+        let error = run(&[
+            "--runtime".to_string(),
+            "--closure".to_string(),
+            "c.txt".to_string(),
+            "x".to_string(),
+        ])
+        .unwrap_err();
+        assert_eq!(error.code, EX_USAGE);
+        assert!(error.message.contains("payload lane"));
+        let error = run(&[
+            "--runtime-exe".to_string(),
+            "--ecosystem".to_string(),
+            "gem".to_string(),
+            "--crates".to_string(),
+            "c.json".to_string(),
+            "--version".to_string(),
+            "1".to_string(),
+            "x".to_string(),
+        ])
+        .unwrap_err();
+        assert_eq!(error.code, EX_USAGE);
+        assert!(error.message.contains("payload lane"));
+        // The exe identity flags belong to the exe mode only.
+        let error = run(&["--name".to_string(), "n".to_string(), "x".to_string()]).unwrap_err();
+        assert_eq!(error.code, EX_USAGE);
     }
 }

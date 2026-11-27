@@ -292,6 +292,11 @@ done
 mkdir -p out/link-unit-aarch64-windows-gnu
 ruby tools/stage_link_unit out/link-unit-aarch64-windows-gnu \
   --target "$TARGET" --skip-build --limnifs-only
+# The build-time crate capture rides IN the tarball (spec 15 §8a,
+# tebako#1121) — emitted before the tar so the shipped bytes carry the
+# inventory of the crates they vendored.
+TARGET="$TARGET" EXE_SUFFIX=.exe \
+  bash .github/workflows/lib/link-unit-capture.sh out/link-unit-aarch64-windows-gnu
 tar -czf "out/link-unit-${VERSION}-aarch64-windows-gnu.tar.gz" -C out link-unit-aarch64-windows-gnu
 
 # --- 4. ship gate -----------------------------------------------------------

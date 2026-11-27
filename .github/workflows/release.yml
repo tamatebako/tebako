@@ -1245,6 +1245,11 @@ jobs:
           mkdir -p out/link-unit-x86_64-windows-gnu
           ruby tools/stage_link_unit out/link-unit-x86_64-windows-gnu \
             --target x86_64-pc-windows-gnu --skip-build
+          # The build-time crate capture rides IN the tarball (spec 15
+          # §8a, tebako#1121) — emitted before the tar so the shipped
+          # bytes carry the inventory of the crates they vendored.
+          TARGET=x86_64-pc-windows-gnu EXE_SUFFIX=.exe \
+            bash .github/workflows/lib/link-unit-capture.sh out/link-unit-x86_64-windows-gnu
           tar -czf "out/link-unit-${VERSION}-x86_64-windows-gnu.tar.gz" -C out link-unit-x86_64-windows-gnu
 
       # The link unit's CycloneDX SBOM (spec 13 §5a, tebako#1120) — one

@@ -13,6 +13,11 @@ fn scratch(tag: &str) -> PathBuf {
     dir
 }
 
+/// Tests that pin `SOURCE_DATE_EPOCH` mutate process-global state; the
+/// determinism tests hold this lock across set → emit → remove so a
+/// parallel test in the same binary never observes the window.
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn manifest_yaml(name: &str, version: &str, kind: &str, requires: &str) -> String {
     format!(
         "identity:\n  schema_version: 1\n  kind: {kind}\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 2.8.85}}\n  created: \"2026-11-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \"~> 4.0.0\", implementation: mri, abi: \"arm64-darwin-24\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n{requires}",
@@ -80,6 +85,44 @@ fn opts(target: &Path, closure: Option<&Path>, out: &Path) -> tebako_cli::sbom::
         triplet: None,
         out: Some(out.to_path_buf()),
         random_serial: false,
+        runtime: false,
+        runtime_exe: false,
+        crates: None,
+        name: None,
+        version: None,
+        engine: None,
+        engine_version: None,
+    }
+}
+
+/// A kind:runtime manifest (the env image's shape — spec 03 §2.2): one
+/// provided engine entry plus the build's source pin and patch set.
+fn runtime_manifest_yaml() -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-ruby\n  version: \"0.0.7\"\n  producer: {{tool: tebako-runtime-ruby, tool_version: \"0.0.7\"}}\n  created: \"2026-11-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides:\n    engine: ruby\n    version: \"4.0.9\"\n    abi_line: \"4.0\"\n    platform: aarch64-macos\n  built_from:\n    src_sha256: \"{}\"\n    patch_set: test-chain\n  capabilities: {{exec: true, read: true, runtime: true}}\n",
+        "0".repeat(64),
+        "0".repeat(64),
+        "c".repeat(64)
+    )
+}
+
+/// The exe mode's SbomOptions: target = the exe path, the capture +
+/// version required, the rest defaults.
+fn exe_opts(target: &Path, crates: &Path, out: &Path) -> tebako_cli::sbom::SbomOptions {
+    tebako_cli::sbom::SbomOptions {
+        target: target.to_string_lossy().into_owned(),
+        closure: None,
+        ecosystem: None,
+        triplet: Some("macos-arm64".to_string()),
+        out: Some(out.to_path_buf()),
+        random_serial: false,
+        runtime: false,
+        runtime_exe: true,
+        crates: Some(crates.to_path_buf()),
+        name: None,
+        version: Some("0.17.15".to_string()),
+        engine: Some("ruby".to_string()),
+        engine_version: Some("4.0.9".to_string()),
     }
 }
 
@@ -142,6 +185,7 @@ fn closure_mode_is_deterministic_byte_for_byte_under_source_date_epoch() {
     fs::create_dir_all(&home).unwrap();
     // The operator's reproducibility pin (the press's convention): with
     // it set, two runs on unchanged inputs are byte-identical.
+    let _guard = ENV_LOCK.lock().unwrap();
     std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
     tebako_cli::sbom::sbom(&opts(&image, Some(&closure), &out1), &home).unwrap();
     tebako_cli::sbom::sbom(&opts(&image, Some(&closure), &out2), &home).unwrap();
@@ -325,6 +369,13 @@ fn store_resolve_carries_origin_and_newest_version() {
         triplet: None,
         out: Some(out.clone()),
         random_serial: false,
+        runtime: false,
+        runtime_exe: false,
+        crates: None,
+        name: None,
+        version: None,
+        engine: None,
+        engine_version: None,
     };
     let result = tebako_cli::sbom::sbom(&target_opts, &home).unwrap();
     assert_eq!(result.components, 1);
@@ -343,6 +394,13 @@ fn store_resolve_carries_origin_and_newest_version() {
         triplet: None,
         out: Some(out2),
         random_serial: false,
+        runtime: false,
+        runtime_exe: false,
+        crates: None,
+        name: None,
+        version: None,
+        engine: None,
+        engine_version: None,
     };
     tebako_cli::sbom::sbom(&exact, &home).unwrap();
     let absent = tebako_cli::sbom::SbomOptions {
@@ -352,8 +410,292 @@ fn store_resolve_carries_origin_and_newest_version() {
         triplet: None,
         out: Some(dir.join("out3.cdx.json")),
         random_serial: false,
+        runtime: false,
+        runtime_exe: false,
+        crates: None,
+        name: None,
+        version: None,
+        engine: None,
+        engine_version: None,
     };
     let error = tebako_cli::sbom::sbom(&absent, &home).unwrap_err();
     assert_eq!(error.code, 65);
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+// ---------------------------------------------------------------------
+// The runtime-artifact modes (spec 15 §8a, tebako#1121)
+// ---------------------------------------------------------------------
+
+#[test]
+fn runtime_mode_emits_the_interpreter_build_and_both_gem_classes() {
+    let dir = scratch("runtime");
+    let image = dir.join("tebako-runtime-0.0.7-ruby-4.0.9-macos-arm64.tfs");
+    let rake = gemspec("rake", "13.3.1", "\"MIT\".freeze");
+    let digest = gemspec("digest", "3.2.1", "\"Ruby\".freeze");
+    fs::write(
+        &image,
+        zip_image(&[
+            ("__tpkg__/manifest.yaml", runtime_manifest_yaml().as_bytes()),
+            (
+                "lib/ruby/gems/4.0.0/specifications/rake-13.3.1.gemspec",
+                rake.as_bytes(),
+            ),
+            (
+                "lib/ruby/gems/4.0.0/specifications/default/digest-3.2.1.gemspec",
+                digest.as_bytes(),
+            ),
+            ("lib/ruby/4.0.0/bundled_gems.rb", b"# stdlib\n"),
+        ]),
+    )
+    .unwrap();
+    let out = dir.join("out.cdx.json");
+    let home = dir.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let mut runtime_opts = opts(&image, None, &out);
+    runtime_opts.runtime = true;
+    let result = tebako_cli::sbom::sbom(&runtime_opts, &home).unwrap();
+    // Never complete in the closure sense; three components: the
+    // interpreter build + one bundled gem + one default gem.
+    assert!(!result.complete);
+    assert_eq!(result.components, 3);
+    let json = fs::read_to_string(&out).unwrap();
+    // The subject is the image (kind runtime → platform), manifest-named.
+    assert!(json.contains("\"purl\": \"pkg:generic/tebako-runtime-ruby@0.0.7\""));
+    assert!(json.contains("\"tebako:payload:kind\",\n          \"value\": \"runtime\""));
+    assert!(json.contains("\"tebako:triplet\",\n          \"value\": \"aarch64-macos\""));
+    // The interpreter build component: the declared engine with its
+    // build facts — the source pin and patch set are properties (never a
+    // binary hash: the interpreter is statically linked into the exe).
+    assert!(json.contains("\"purl\": \"pkg:generic/ruby@4.0.9\""));
+    assert!(json.contains("\"tebako:runtime:abi_line\",\n          \"value\": \"4.0\""));
+    assert!(json.contains("\"tebako:runtime:platform\",\n          \"value\": \"aarch64-macos\""));
+    assert!(json.contains(&format!(
+        "\"tebako:runtime:src_sha256\",\n          \"value\": \"{}\"",
+        "c".repeat(64)
+    )));
+    assert!(json.contains("\"tebako:runtime:patch_set\",\n          \"value\": \"test-chain\""));
+    // Both gem classes land, with the class evidence as a property —
+    // never a purl facet.
+    assert!(json.contains("\"purl\": \"pkg:gem/rake@13.3.1\""));
+    assert!(json.contains("\"purl\": \"pkg:gem/digest@3.2.1\""));
+    assert!(json.contains("\"tebako:gem:default\",\n          \"value\": \"false\""));
+    assert!(json.contains("\"tebako:gem:default\",\n          \"value\": \"true\""));
+    // The metadata frame: the runtime inventory source + the closure
+    // claim honestly false, and the annotation names what the inventory
+    // IS (counts, the sibling exe document).
+    assert!(
+        json.contains("\"tebako:sbom:inventory-source\",\n        \"value\": \"runtime-image\"")
+    );
+    assert!(json.contains("\"tebako:closure:complete\",\n        \"value\": \"false\""));
+    assert!(json.contains("\"annotations\""));
+    assert!(json.contains("1 bundled + 1 default"));
+    assert!(json.contains("--runtime-exe"));
+    // No component hashes: the subject's image hash is the only SHA-256.
+    assert_eq!(json.matches("\"alg\": \"SHA-256\"").count(), 1);
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn runtime_mode_refuses_non_runtime_images_named() {
+    let dir = scratch("runtime-refuse");
+    // An app manifest through the runtime gate is the named refusal.
+    let image = dir.join("probe-1.0.0.tfs");
+    fs::write(
+        &image,
+        zip_image(&[(
+            "__tpkg__/manifest.yaml",
+            manifest_yaml("probe", "1.0.0", "app", REQUIRES_RUBY).as_bytes(),
+        )]),
+    )
+    .unwrap();
+    let home = dir.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let mut runtime_opts = opts(&image, None, &dir.join("out.cdx.json"));
+    runtime_opts.runtime = true;
+    let error = tebako_cli::sbom::sbom(&runtime_opts, &home).unwrap_err();
+    assert_eq!(error.code, 65);
+    assert!(error.message.contains("kind: app"));
+    // A manifestless image likewise: no interpreter declaration, no
+    // runtime document.
+    let plain = dir.join("plain-1.0.0.tfs");
+    fs::write(&plain, zip_image(&[("bin/x", b"x\n")])).unwrap();
+    let mut plain_opts = opts(&plain, None, &dir.join("out2.cdx.json"));
+    plain_opts.runtime = true;
+    let error = tebako_cli::sbom::sbom(&plain_opts, &home).unwrap_err();
+    assert_eq!(error.code, 65);
+    assert!(error.message.contains("manifest"));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn payload_lane_on_a_runtime_image_stays_on_its_own_inventory() {
+    let dir = scratch("runtime-payload-lane");
+    let image = dir.join("tebako-runtime-0.0.7-ruby-4.0.9-macos-arm64.tfs");
+    let rake = gemspec("rake", "13.3.1", "\"MIT\".freeze");
+    let digest = gemspec("digest", "3.2.1", "\"Ruby\".freeze");
+    fs::write(
+        &image,
+        zip_image(&[
+            ("__tpkg__/manifest.yaml", runtime_manifest_yaml().as_bytes()),
+            (
+                "lib/ruby/gems/4.0.0/specifications/rake-13.3.1.gemspec",
+                rake.as_bytes(),
+            ),
+            (
+                "lib/ruby/gems/4.0.0/specifications/default/digest-3.2.1.gemspec",
+                digest.as_bytes(),
+            ),
+        ]),
+    )
+    .unwrap();
+    let out = dir.join("out.cdx.json");
+    let home = dir.join("home");
+    fs::create_dir_all(&home).unwrap();
+    // The payload lane (no --runtime) keeps its own degraded-inventory
+    // discipline: the bundled specifications dir only, never the
+    // default-gem class — the runtime mode is the lane that widens.
+    let result = tebako_cli::sbom::sbom(&opts(&image, None, &out), &home).unwrap();
+    assert!(!result.complete);
+    assert_eq!(result.components, 1);
+    let json = fs::read_to_string(&out).unwrap();
+    assert!(json.contains("pkg:gem/rake@13.3.1"));
+    assert!(!json.contains("pkg:gem/digest@3.2.1"));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The exe mode's capture fixture (schema 1, hand-spelled — the wire
+/// grammar itself is under test, not the emitter).
+fn capture_fixture() -> String {
+    format!(
+        "{{\n  \"capture_schema\": 1,\n  \"tool\": \"sbom-cargo\",\n  \"tool_version\": \"2.8.85\",\n  \"package\": \"tebako-driver\",\n  \"target\": \"aarch64-testos\",\n  \"root\": \"pkg:cargo/tebako-driver@2.8.85\",\n  \"components\": [\n    {{\"name\": \"tebako-driver\", \"version\": \"2.8.85\", \"purl\": \"pkg:cargo/tebako-driver@2.8.85\", \"sha256\": null, \"license\": \"BSD-3-Clause\", \"source\": \"workspace\"}},\n    {{\"name\": \"dep\", \"version\": \"1.0.0\", \"purl\": \"pkg:cargo/dep@1.0.0\", \"sha256\": \"{}\", \"license\": \"MIT\", \"source\": \"registry\"}}\n  ],\n  \"edges\": [\n    {{\"ref\": \"pkg:cargo/tebako-driver@2.8.85\", \"depends_on\": [\"pkg:cargo/dep@1.0.0\"]}},\n    {{\"ref\": \"pkg:cargo/dep@1.0.0\", \"depends_on\": []}}\n  ]\n}}\n",
+        "a".repeat(64)
+    )
+}
+
+#[test]
+fn exe_mode_resubjects_the_capture_to_the_exes_bytes() {
+    let dir = scratch("exe");
+    let exe = dir.join("tebako-runtime-0.17.15-ruby-4.0.9-macos-arm64");
+    fs::write(&exe, b"fake exe bytes\n").unwrap();
+    let crates = dir.join("crate-inventory.json");
+    fs::write(&crates, capture_fixture()).unwrap();
+    let out = dir.join("out.cdx.json");
+    let home = dir.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let result = tebako_cli::sbom::sbom(&exe_opts(&exe, &crates, &out), &home).unwrap();
+    assert!(result.complete);
+    assert_eq!(result.components, 2);
+    let json = fs::read_to_string(&out).unwrap();
+    // The subject: name defaults to the exe's stem, the version is the
+    // explicit flag, and the digest is the exe's own bytes.
+    assert!(json.contains(
+        "\"purl\": \"pkg:generic/tebako-runtime-0.17.15-ruby-4.0.9-macos-arm64@0.17.15\""
+    ));
+    let exe_sha = tebako_resolve::sha256_hex(b"fake exe bytes\n");
+    assert!(json.contains(&exe_sha));
+    assert!(json.contains("\"tebako:payload:kind\",\n          \"value\": \"runtime\""));
+    assert!(json.contains("\"tebako:platform\",\n          \"value\": \"macos-arm64\""));
+    assert!(json.contains("\"tebako:target\",\n          \"value\": \"aarch64-testos\""));
+    assert!(json.contains("\"tebako:runtime:engine\",\n          \"value\": \"ruby\""));
+    assert!(json.contains("\"tebako:runtime:engine_version\",\n          \"value\": \"4.0.9\""));
+    // The crates: the workspace root names its source, the registry dep
+    // carries its lock checksum and license.
+    assert!(json.contains("\"purl\": \"pkg:cargo/tebako-driver@2.8.85\""));
+    assert!(json.contains("\"tebako:crate:source\",\n          \"value\": \"workspace\""));
+    assert!(json.contains(&"a".repeat(64)));
+    assert!(json.contains("\"expression\": \"MIT\""));
+    // The capture's provenance and completeness frame.
+    assert!(json.contains(
+        "\"tebako:sbom:inventory-source\",\n        \"value\": \"cargo-resolution-capture\""
+    ));
+    assert!(json.contains("\"tebako:closure:complete\",\n        \"value\": \"true\""));
+    assert!(json.contains("\"tebako:capture:tool\",\n        \"value\": \"sbom-cargo\""));
+    // The graph: the subject roots at the capture's root crate, and the
+    // capture's own edges survive.
+    let deps = json.split("\"dependencies\"").nth(1).unwrap();
+    let root = deps
+        .split("\"ref\": \"pkg:generic/tebako-runtime-0.17.15-ruby-4.0.9-macos-arm64@0.17.15\"")
+        .nth(1)
+        .unwrap();
+    assert!(root.contains("pkg:cargo/tebako-driver@2.8.85"));
+    let driver = deps
+        .split("\"ref\": \"pkg:cargo/tebako-driver@2.8.85\"")
+        .nth(1)
+        .unwrap();
+    assert!(driver.contains("pkg:cargo/dep@1.0.0"));
+    // Complete by construction — no annotation.
+    assert!(!json.contains("\"annotations\""));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn exe_mode_refuses_a_wrong_schema_capture_named() {
+    let dir = scratch("exe-schema");
+    let exe = dir.join("tebako-runtime-0.17.15-ruby-4.0.9-macos-arm64");
+    fs::write(&exe, b"fake exe bytes\n").unwrap();
+    let crates = dir.join("crate-inventory.json");
+    fs::write(
+        &crates,
+        capture_fixture().replace("\"capture_schema\": 1", "\"capture_schema\": 2"),
+    )
+    .unwrap();
+    let home = dir.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let error = tebako_cli::sbom::sbom(&exe_opts(&exe, &crates, &dir.join("out.cdx.json")), &home)
+        .unwrap_err();
+    assert_eq!(error.code, 65);
+    assert!(error.message.contains("capture_schema"));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn exe_and_runtime_modes_are_deterministic_byte_for_byte_under_source_date_epoch() {
+    let dir = scratch("runtime-determinism");
+    let image = dir.join("tebako-runtime-0.0.7-ruby-4.0.9-macos-arm64.tfs");
+    let rake = gemspec("rake", "13.3.1", "\"MIT\".freeze");
+    fs::write(
+        &image,
+        zip_image(&[
+            ("__tpkg__/manifest.yaml", runtime_manifest_yaml().as_bytes()),
+            (
+                "lib/ruby/gems/4.0.0/specifications/rake-13.3.1.gemspec",
+                rake.as_bytes(),
+            ),
+        ]),
+    )
+    .unwrap();
+    let exe = dir.join("tebako-runtime-0.17.15-ruby-4.0.9-macos-arm64");
+    fs::write(&exe, b"fake exe bytes\n").unwrap();
+    let crates = dir.join("crate-inventory.json");
+    fs::write(&crates, capture_fixture()).unwrap();
+    let home = dir.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let _guard = ENV_LOCK.lock().unwrap();
+    std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
+    // The runtime env image document: two runs, one pinned epoch,
+    // byte-identical.
+    let r1 = dir.join("r1.cdx.json");
+    let r2 = dir.join("r2.cdx.json");
+    let mut runtime_opts1 = opts(&image, None, &r1);
+    runtime_opts1.runtime = true;
+    let mut runtime_opts2 = opts(&image, None, &r2);
+    runtime_opts2.runtime = true;
+    tebako_cli::sbom::sbom(&runtime_opts1, &home).unwrap();
+    tebako_cli::sbom::sbom(&runtime_opts2, &home).unwrap();
+    assert_eq!(fs::read(&r1).unwrap(), fs::read(&r2).unwrap());
+    assert!(fs::read_to_string(&r1)
+        .unwrap()
+        .contains("\"timestamp\": \"2023-11-14T22:13:20Z\""));
+    // The exe document: same law.
+    let e1 = dir.join("e1.cdx.json");
+    let e2 = dir.join("e2.cdx.json");
+    tebako_cli::sbom::sbom(&exe_opts(&exe, &crates, &e1), &home).unwrap();
+    tebako_cli::sbom::sbom(&exe_opts(&exe, &crates, &e2), &home).unwrap();
+    assert_eq!(fs::read(&e1).unwrap(), fs::read(&e2).unwrap());
+    assert!(fs::read_to_string(&e1)
+        .unwrap()
+        .contains("\"timestamp\": \"2023-11-14T22:13:20Z\""));
+    std::env::remove_var("SOURCE_DATE_EPOCH");
     fs::remove_dir_all(&dir).unwrap();
 }

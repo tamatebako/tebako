@@ -17,6 +17,15 @@
 //! `SOURCE_DATE_EPOCH`-pinned — a pipeline re-run on unchanged inputs
 //! reproduces byte-identical SBOMs.
 //!
+//! `--inventory-only` (spec 15 §8a, tebako#1121) is the capture mode:
+//! no document, no asset — just the crate-inventory capture
+//! (`crate-inventory.json`, the tebako-sbom capture grammar) from the
+//! same resolution walk. The link-unit legs run it BEFORE the tar so
+//! the capture rides inside the link-unit tarball; the runtime
+//! factories re-emit it as the exe's CycloneDX document (`tebako sbom
+//! --runtime-exe`) — the exe's vendored crates are exactly what the
+//! build resolved, never a post-hoc guess at stripped bytes.
+//!
 //! Exit codes (the spec 15 grammar): 0 emitted; 64 usage; 65 the
 //! metadata/lock inputs are malformed or the named package is not a
 //! workspace member; 74 I/O.
@@ -26,6 +35,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use tebako_json::Value as Json;
+use tebako_sbom::capture::{self, CaptureEdge, CapturedCrate, CrateCapture};
 use tebako_sbom::{Component, ComponentType, Dependency, DependencyGraph, Document, SerialMode};
 
 const EX_USAGE: u8 = 64;
@@ -61,20 +71,24 @@ impl Fatal {
     }
 }
 
-const USAGE: &str = "usage: sbom-cargo --package <cargo-pkg> --tool <tool-id> --asset <file> --name <asset-name> --version <ver> --platform <tebako-platform> --target <rust-triple> --metadata <cargo-metadata.json> --lock <Cargo.lock> --out <file> [--release-url <base>]";
+const USAGE: &str = "usage: sbom-cargo --package <cargo-pkg> --tool <tool-id> --asset <file> --name <asset-name> --version <ver> --platform <tebako-platform> --target <rust-triple> --metadata <cargo-metadata.json> --lock <Cargo.lock> --out <file> [--release-url <base>]\n       sbom-cargo --inventory-only --package <cargo-pkg> --target <rust-triple> --metadata <cargo-metadata.json> --lock <Cargo.lock> --out <crate-inventory.json>";
 
-/// The verb's parsed options.
+/// The verb's parsed options. The document mode's fields are options so
+/// the capture mode can forbid them by name (a capture run naming an
+/// asset is a usage error, not a silently ignored flag).
+#[derive(Debug)]
 struct Options {
     package: String,
-    tool: String,
-    asset: PathBuf,
-    name: String,
-    version: String,
-    platform: String,
     target: String,
     metadata: PathBuf,
     lock: PathBuf,
     out: PathBuf,
+    inventory_only: bool,
+    tool: Option<String>,
+    asset: Option<PathBuf>,
+    name: Option<String>,
+    version: Option<String>,
+    platform: Option<String>,
     release_url: Option<String>,
 }
 
@@ -90,6 +104,7 @@ fn parse_args(args: &[String]) -> Result<Options, Fatal> {
     let mut lock = None;
     let mut out = None;
     let mut release_url = None;
+    let mut inventory_only = false;
     let mut i = 0;
     let value_of = |flag: &str, i: &mut usize| -> Result<String, Fatal> {
         let value = args
@@ -101,6 +116,10 @@ fn parse_args(args: &[String]) -> Result<Options, Fatal> {
     while i < args.len() {
         let flag = args[i].as_str();
         match flag {
+            "--inventory-only" => {
+                inventory_only = true;
+                i += 1;
+            }
             "--package" => package = Some(value_of(flag, &mut i)?),
             "--tool" => tool = Some(value_of(flag, &mut i)?),
             "--asset" => asset = Some(PathBuf::from(value_of(flag, &mut i)?)),
@@ -117,51 +136,68 @@ fn parse_args(args: &[String]) -> Result<Options, Fatal> {
             }
         }
     }
-    let missing = [
-        ("--package", &package),
-        ("--tool", &tool),
-        (
-            "--asset",
-            &asset.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        ),
-        ("--name", &name),
-        ("--version", &version),
-        ("--platform", &platform),
-        ("--target", &target),
-        (
-            "--metadata",
-            &metadata.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        ),
-        (
-            "--lock",
-            &lock.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        ),
-        (
-            "--out",
-            &out.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        ),
+    let missing_common = [
+        ("--package", package.is_none()),
+        ("--target", target.is_none()),
+        ("--metadata", metadata.is_none()),
+        ("--lock", lock.is_none()),
+        ("--out", out.is_none()),
     ]
     .into_iter()
-    .filter(|(_, v)| v.is_none())
+    .filter(|(_, absent)| *absent)
     .map(|(f, _)| f)
     .collect::<Vec<_>>();
-    if !missing.is_empty() {
+    if !missing_common.is_empty() {
         return Err(Fatal::usage(format!(
             "missing required option(s): {}\n{USAGE}",
-            missing.join(", ")
+            missing_common.join(", ")
         )));
+    }
+    let document_flags = [
+        ("--tool", tool.is_some()),
+        ("--asset", asset.is_some()),
+        ("--name", name.is_some()),
+        ("--version", version.is_some()),
+        ("--platform", platform.is_some()),
+        ("--release-url", release_url.is_some()),
+    ];
+    if inventory_only {
+        let forbidden = document_flags
+            .into_iter()
+            .filter(|(_, present)| *present)
+            .map(|(f, _)| f)
+            .collect::<Vec<_>>();
+        if !forbidden.is_empty() {
+            return Err(Fatal::usage(format!(
+                "--inventory-only takes no document flag(s): {}\n{USAGE}",
+                forbidden.join(", ")
+            )));
+        }
+    } else {
+        let missing = document_flags
+            .into_iter()
+            .filter(|(f, present)| !present && *f != "--release-url")
+            .map(|(f, _)| f)
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(Fatal::usage(format!(
+                "missing required option(s): {}\n{USAGE}",
+                missing.join(", ")
+            )));
+        }
     }
     Ok(Options {
         package: package.unwrap(),
-        tool: tool.unwrap(),
-        asset: asset.unwrap(),
-        name: name.unwrap(),
-        version: version.unwrap(),
-        platform: platform.unwrap(),
         target: target.unwrap(),
         metadata: metadata.unwrap(),
         lock: lock.unwrap(),
         out: out.unwrap(),
+        inventory_only,
+        tool,
+        asset,
+        name,
+        version,
+        platform,
         release_url,
     })
 }
@@ -408,9 +444,16 @@ fn build_document(
     metadata_text: &str,
     lock_text: &str,
 ) -> Result<(Document, usize), Fatal> {
+    let (tool, asset, name, version, platform) = (
+        opts.tool.as_deref().unwrap(),
+        opts.asset.as_ref().unwrap(),
+        opts.name.as_deref().unwrap(),
+        opts.version.as_deref().unwrap(),
+        opts.platform.as_deref().unwrap(),
+    );
     let lock = parse_lock(lock_text)?;
     let rows = resolve_crates(metadata_text, &opts.package, &lock)?;
-    let asset_sha256 = sha256_file(&opts.asset)?;
+    let asset_sha256 = sha256_file(asset)?;
     let count = rows.len();
 
     // -- the crate components + edges. purl per crate; the resolve id
@@ -431,25 +474,14 @@ fn build_document(
         );
         c.sha256 = row.checksum.clone();
         c.license_expression = row.license.clone();
-        // Non-registry sources name themselves — a hash can never be
-        // claimed for them, and a silent absence would read as a gap.
-        match &row.source {
-            None => {
-                c.properties
-                    .push(("tebako:crate:source".to_string(), "workspace".to_string()));
-            }
-            Some(source) if source.starts_with("git+") => {
-                c.properties
-                    .push(("tebako:crate:source".to_string(), source.clone()));
-            }
-            Some(source) if source.starts_with("path+") => {
-                c.properties
-                    .push(("tebako:crate:source".to_string(), "path".to_string()));
-                c.properties
-                    .push(("tebako:crate:source:url".to_string(), source.clone()));
-            }
-            _ => {}
-        }
+        // The source property mapping is the capture grammar's own
+        // (tebako-sbom owns it): non-registry sources name themselves —
+        // a hash can never be claimed for them, and a silent absence
+        // would read as a gap.
+        let source = capture::classify_cargo_source(row.source.as_deref())
+            .map_err(|e| Fatal::malformed(e.to_string()))?;
+        c.properties =
+            capture::source_properties(&source).map_err(|e| Fatal::malformed(e.to_string()))?;
         components.push(c);
         edges.push(Dependency {
             refr: crate_purl(&row.name, &row.version),
@@ -462,31 +494,19 @@ fn build_document(
     }
 
     // -- the subject: the asset itself, with its staged bytes' digest
-    let subject_purl = format!(
-        "pkg:generic/{}@{}",
-        purl_encode(&opts.tool),
-        purl_encode(&opts.version)
-    );
-    let mut subject = Component::new(
-        asset_type(&opts.name),
-        &opts.name,
-        &opts.version,
-        &subject_purl,
-    );
+    let subject_purl = format!("pkg:generic/{}@{}", purl_encode(tool), purl_encode(version));
+    let mut subject = Component::new(asset_type(name), name, version, &subject_purl);
     subject.sha256 = Some(asset_sha256);
     subject.properties = vec![
-        ("tebako:tool".to_string(), opts.tool.clone()),
-        ("tebako:platform".to_string(), opts.platform.clone()),
+        ("tebako:tool".to_string(), tool.to_string()),
+        ("tebako:platform".to_string(), platform.to_string()),
         ("tebako:target".to_string(), opts.target.clone()),
         ("tebako:cargo:package".to_string(), opts.package.clone()),
     ];
     if let Some(base) = &opts.release_url {
         let base = base.trim_end_matches('/');
         subject.external_references = vec![
-            (
-                "attestation".to_string(),
-                format!("{base}/{}.asc", opts.name),
-            ),
+            ("attestation".to_string(), format!("{base}/{name}.asc")),
             ("distribution".to_string(), format!("{base}/SHA256SUMS")),
         ];
     }
@@ -526,6 +546,70 @@ fn build_document(
     Ok((document, count))
 }
 
+/// The capture mode (spec 15 §8a): the same resolution walk, emitted as
+/// the crate-inventory capture the link-unit tarball carries and
+/// `tebako sbom --runtime-exe` re-subjects. No asset, no document —
+/// the exe's bytes do not exist in this pipeline; what exists is the
+/// resolution, and that is exactly what the capture claims.
+fn build_capture(
+    opts: &Options,
+    metadata_text: &str,
+    lock_text: &str,
+) -> Result<(CrateCapture, usize), Fatal> {
+    let lock = parse_lock(lock_text)?;
+    let rows = resolve_crates(metadata_text, &opts.package, &lock)?;
+
+    let mut purl_of_id: BTreeMap<String, String> = BTreeMap::new();
+    for row in &rows {
+        purl_of_id.insert(row.id.clone(), crate_purl(&row.name, &row.version));
+    }
+    let root = rows
+        .iter()
+        .find(|r| r.name == opts.package)
+        .ok_or_else(|| {
+            Fatal::malformed(format!(
+                "the resolve set carries no '{}''s own crate row",
+                opts.package
+            ))
+        })?;
+    let count = rows.len();
+    let mut components = Vec::with_capacity(count);
+    let mut edges = Vec::with_capacity(count);
+    for row in &rows {
+        components.push(CapturedCrate {
+            name: row.name.clone(),
+            version: row.version.clone(),
+            purl: crate_purl(&row.name, &row.version),
+            sha256: row.checksum.clone(),
+            license: row.license.clone(),
+            source: capture::classify_cargo_source(row.source.as_deref())
+                .map_err(|e| Fatal::malformed(e.to_string()))?,
+        });
+        edges.push(CaptureEdge {
+            refr: crate_purl(&row.name, &row.version),
+            depends_on: row
+                .edges
+                .iter()
+                .filter_map(|id| purl_of_id.get(id).cloned())
+                .collect(),
+        });
+    }
+    Ok((
+        CrateCapture {
+            tool: (
+                "sbom-cargo".to_string(),
+                env!("CARGO_PKG_VERSION").to_string(),
+            ),
+            package: opts.package.clone(),
+            target: opts.target.clone(),
+            root: crate_purl(&root.name, &root.version),
+            components,
+            edges,
+        },
+        count,
+    ))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
@@ -551,6 +635,17 @@ fn run(args: &[String]) -> Result<(), Fatal> {
             opts.lock.display()
         ))
     })?;
+    if opts.inventory_only {
+        let (capture, count) = build_capture(&opts, &metadata_text, &lock_text)?;
+        std::fs::write(&opts.out, capture.emit())
+            .map_err(|e| Fatal::io(format!("cannot write {}: {e}", opts.out.display())))?;
+        eprintln!(
+            "sbom-cargo: {} crate component(s) captured -> {}",
+            count,
+            opts.out.display()
+        );
+        return Ok(());
+    }
     let (document, count) = build_document(&opts, &metadata_text, &lock_text)?;
     let json = document
         .emit()
@@ -559,7 +654,7 @@ fn run(args: &[String]) -> Result<(), Fatal> {
         .map_err(|e| Fatal::io(format!("cannot write {}: {e}", opts.out.display())))?;
     eprintln!(
         "sbom-cargo: {} — {} crate component(s) -> {}",
-        opts.name,
+        opts.name.as_deref().unwrap_or("<capture>"),
         count,
         opts.out.display()
     );
@@ -639,21 +734,23 @@ source = "git+https://example.com/thing?rev=abc123"
         std::fs::write(&asset, b"staged bytes").unwrap();
         Options {
             package: "probe".to_string(),
-            tool: "probe".to_string(),
-            asset,
-            name: "probe-2.0.0-testos-arm64".to_string(),
-            version: "2.0.0".to_string(),
-            platform: "testos-arm64".to_string(),
             target: "aarch64-testos".to_string(),
             metadata: dir.join("metadata.json"),
             lock: dir.join("Cargo.lock"),
             out: dir.join("out.json"),
+            inventory_only: false,
+            tool: Some("probe".to_string()),
+            asset: Some(asset),
+            name: Some("probe-2.0.0-testos-arm64".to_string()),
+            version: Some("2.0.0".to_string()),
+            platform: Some("testos-arm64".to_string()),
             release_url: Some("https://example.com/releases/download/v2.0.0".to_string()),
         }
     }
 
-    fn scratch() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("sbom-cargo-test-{}", std::process::id()));
+    fn scratch(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("sbom-cargo-test-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -692,7 +789,7 @@ source = "git+https://example.com/thing?rev=abc123"
 
     #[test]
     fn document_content_model_and_determinism() {
-        let dir = scratch();
+        let dir = scratch("document");
         let opts = options(&dir);
         let (doc, count) = build_document(&opts, &metadata_fixture(), &lock_fixture()).unwrap();
         assert_eq!(count, 4);
@@ -756,5 +853,101 @@ source = "git+https://example.com/thing?rev=abc123"
     #[test]
     fn lock_parse_requires_package_rows() {
         assert!(parse_lock("version = 4\n").is_err());
+    }
+
+    #[test]
+    fn capture_mode_carries_the_same_resolution() {
+        let dir = scratch("capture");
+        let mut opts = options(&dir);
+        opts.inventory_only = true;
+        let (capture, count) = build_capture(&opts, &metadata_fixture(), &lock_fixture()).unwrap();
+        assert_eq!(count, 4);
+        assert_eq!(capture.root, "pkg:cargo/probe@2.0.0");
+        assert_eq!(capture.package, "probe");
+        assert_eq!(capture.target, "aarch64-testos");
+        // The capture round-trips through its own grammar (the reader's
+        // gate: schema, required members, the root among the crates).
+        let text = capture.emit();
+        let parsed = CrateCapture::parse(&text).unwrap();
+        assert_eq!(parsed.components.len(), 4);
+        let dep = parsed.components.iter().find(|c| c.name == "dep").unwrap();
+        assert_eq!(
+            dep.sha256.as_deref(),
+            Some("aaaa111111111111111111111111111111111111111111111111111111111111")
+        );
+        assert_eq!(dep.source, "registry");
+        let thing = parsed
+            .components
+            .iter()
+            .find(|c| c.name == "thing")
+            .unwrap();
+        assert_eq!(thing.source, "git+https://example.com/thing?rev=abc123");
+        // dev-tool never enters the capture (dev edges excluded).
+        assert!(!parsed.components.iter().any(|c| c.name == "dev-tool"));
+        // The edges survive: probe → dep + thing, dep → buildme only.
+        let probe_edge = parsed
+            .edges
+            .iter()
+            .find(|e| e.refr == "pkg:cargo/probe@2.0.0")
+            .unwrap();
+        assert!(probe_edge
+            .depends_on
+            .contains(&"pkg:cargo/dep@1.0.0".to_string()));
+        assert!(probe_edge
+            .depends_on
+            .contains(&"pkg:cargo/thing@0.4.0".to_string()));
+        let dep_edge = parsed
+            .edges
+            .iter()
+            .find(|e| e.refr == "pkg:cargo/dep@1.0.0")
+            .unwrap();
+        assert_eq!(dep_edge.depends_on, vec!["pkg:cargo/buildme@0.1.0"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn arg_modes_validate_their_flag_sets() {
+        let base = [
+            "--package",
+            "probe",
+            "--target",
+            "aarch64-testos",
+            "--metadata",
+            "m.json",
+            "--lock",
+            "Cargo.lock",
+            "--out",
+            "out.json",
+        ]
+        .map(String::from);
+        // The document mode needs its flags.
+        assert!(parse_args(&base).is_err());
+        let document = [
+            &base[..],
+            &[
+                "--tool",
+                "probe",
+                "--asset",
+                "a",
+                "--name",
+                "n",
+                "--version",
+                "1",
+                "--platform",
+                "p",
+            ]
+            .map(String::from),
+        ]
+        .concat();
+        assert!(parse_args(&document).is_ok());
+        // The capture mode stands on the common flags alone …
+        let capture = [&base[..], &["--inventory-only".to_string()]].concat();
+        assert!(parse_args(&capture).unwrap().inventory_only);
+        // … and refuses document flags by name.
+        let mixed = [&capture[..], &["--asset".to_string(), "a".to_string()]].concat();
+        let err = parse_args(&mixed).unwrap_err();
+        assert!(err
+            .message
+            .contains("--inventory-only takes no document flag"));
     }
 }

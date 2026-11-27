@@ -264,6 +264,21 @@ CycloneDX document shape has exactly one owner.
   name), and a `.cdx.json` name matches none of them on any leg, so
   the smoke/audit arms never see a document (a JSON file has no bare
   launch and no dynamic closure to audit anyway).
+- **The link-unit legs carry the build-time crate capture INSIDE the
+  tarball** (spec 15 §8a, tebako#1121): before the tar, each link-unit
+  leg runs `sbom-cargo --inventory-only` against the leg's own
+  `cargo metadata --filter-platform <target>` + `Cargo.lock` (the same
+  inputs the leg's `.cdx.json` consumes — one resolution, two
+  serializations) and stages the result as `crate-inventory.json`
+  beside the staticlibs. One tarball hash then covers the staticlibs
+  AND the inventory their build resolved, so a runtime factory's exe
+  SBOM (`tebako sbom --runtime-exe --crates …`) can never silently
+  drift from the build's real crate set — on the pin-hit lane (the
+  capture ships in the tarball) and the source-build lane (the factory
+  runs the generator itself) alike. The capture grammar
+  (`capture_schema: 1`) is owned by the `tebako-sbom` model crate's
+  `capture` module; the consumer gates fail-closed on the schema
+  version and tolerate additive members.
 
 ## 6. Matrix and tier policy (locked)
 

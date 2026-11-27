@@ -207,8 +207,8 @@ closure resolution (dispatcher), no network fetches (info is local-only;
 section are the SBOM arc's keystone: CycloneDX 1.6 is the primary
 format; SPDX is DEFERRED until a consumer asks with evidence (the arc's
 standing rule). The runtime artifacts' own SBOMs (env image inventory +
-the link-unit exe's crate set captured at factory build time) are
-tebako#1121's follow-up; the vulnerability-scan process that consumes
+the link-unit exe's crate set captured at factory build time) are §8a
+(SHIPPED, tebako#1121); the vulnerability-scan process that consumes
 these documents is tebako#1123's.
 
 `tebako sbom` emits a **CycloneDX 1.6 JSON** bill of materials for one
@@ -296,3 +296,130 @@ Consumer proof: `osv-scanner --sbom=<file>` parses the emitted document
 (the metanorma closure's ≈237 components is the arc's acceptance case);
 the vulnerability mapping itself is downstream tooling's job
 (tebako#1123), never the verb's.
+
+## 8a. The runtime-artifact family (`--runtime` / `--runtime-exe`) — SHIPPED (tebako#1121)
+
+**Status block (tebako#1121, tracker tebako#1124).** A runtime release
+pair (the interpreter exe + its env image) gets its own two documents,
+emitted lane-agnostically from the published artifact files. The §8
+payload lane is unchanged: a `kind: runtime` image through it keeps the
+degraded discipline (the bundled specifications class only) and now
+prints a stderr pointer at `--runtime`. The exe's crate inventory is
+captured AT BUILD TIME and rides inside the link-unit tarball (spec 13
+§5a) — the verb never re-derives a build's resolution after the fact,
+so a release cannot silently drift from the build's real crate set.
+
+The two documents are named after the artifact files themselves (the
+family's naming rule): `<env-image-file-name>.cdx.json` and
+`<exe-file-name>.cdx.json` — e.g.
+`tebako-runtime-0.17.15-ruby-4.0.9-macos-arm64.tfs.cdx.json` and
+`tebako-runtime-0.17.15-ruby-4.0.9-macos-arm64.cdx.json` (the windows
+artifact keeps its suffix: `….exe.cdx.json`).
+
+**The verb grammar** — three forms, the mode grammar validated before
+any I/O (violations are exit 64):
+
+```
+tebako sbom <image.tfs | name[@version]> [--closure <path>] [--ecosystem …] [--triplet <triplet>] [--out <path>] [--random-serial]
+tebako sbom --runtime <env-image.tfs> [--triplet <triplet>] [--out <path>] [--random-serial]
+tebako sbom --runtime-exe <exe> --crates <crate-inventory.json> --version <ver> [--name <name>] [--engine <engine> --engine-version <ver>] [--triplet <triplet>] [--out <path>] [--random-serial]
+```
+
+`--runtime` and `--runtime-exe` are mutually exclusive; the exe mode
+requires `--crates` + `--version`; `--crates`/`--name`/`--engine`/
+`--engine-version` are forbidden outside it; `--closure`/`--ecosystem`
+are forbidden in both runtime modes (each mode's inventory source is
+fixed, never mixed). The runtime modes take PATHS, never store
+references.
+
+**The env-image document** (`--runtime`):
+
+- **Target and gate**: the env image file, mounted through the tfs
+  detection chain (never extracted). It must carry a readable
+  `/__tpkg__/manifest.yaml` declaring `kind: runtime`; a non-runtime
+  kind or a manifestless image is the named refusal (exit 65), pointing
+  at the payload lane.
+- **Subject**: the image itself — type `platform`, the manifest's
+  identity name+version, `pkg:generic/<name>@<version>`, the image's
+  sha256 in `hashes`; properties `tebako:payload:kind=runtime`,
+  `tebako:triplet` (the flag, else the manifest's declared platforms),
+  `tebako:runtime:engine` / `tebako:runtime:engine_version`.
+- **Components — the interpreter build**: one component per engine
+  entry the manifest's runtime provides declares (type `platform`,
+  `pkg:generic/<engine>@<version>`; properties
+  `tebako:runtime:abi_line`, `tebako:runtime:platform`, and — when the
+  manifest's `built_from` declares them — `tebako:runtime:src_sha256`
+  and `tebako:runtime:patch_set`). NO binary hashes: the interpreter is
+  statically linked into the exe, so its build facts are the source pin
+  and the patch set; the stdlib tree is the interpreter's own versioned
+  content, represented by this component. Engine entries that differ
+  only by platform dedup to one row.
+- **Components — the gem inventory**: the image's GEM_HOME
+  specifications, BOTH classes — the bundled `specifications/*.gemspec`
+  (`tebako:gem:default=false`) and the interpreter's own default gems
+  `specifications/default/*.gemspec` (`tebako:gem:default=true`); the
+  class is a property, never a purl facet. Name + version + licenses
+  only, no per-artifact hashes. An image with no gem layout emits the
+  interpreter-only document — never a refusal (a non-ruby runtime is a
+  first-class shape).
+- **The completeness frame**: `tebako:sbom:inventory-source=
+  runtime-image` and `tebako:closure:complete=false` — NEVER "complete"
+  in the closure sense, because no hashed closure exists for a runtime
+  image. A CycloneDX annotation against the subject names what the
+  inventory honestly IS: the interpreter build description (engine,
+  version, source pin / patch set), the gem counts per class, the
+  no-closure framing, and the sibling exe document's role (the exe's
+  vendored crates, captured at build time).
+
+**The exe document** (`--runtime-exe`):
+
+- **Subject**: the exe itself — type `platform`, the EXE's OWN sha256
+  in `hashes` (the capture's crates are re-subjected to the shipped
+  bytes). `--version` is REQUIRED (the bytes carry no recoverable
+  version); the name defaults to the exe's file name minus a windows
+  `.exe` suffix (a suffix strip, never the asset-name grammar), `--name`
+  overrides. Properties: `tebako:payload:kind=runtime`,
+  `tebako:capture:package` + `tebako:target` (from the capture),
+  `tebako:platform` (from `--triplet`, when given),
+  `tebako:runtime:engine` / `tebako:runtime:engine_version` (from the
+  flags, when given).
+- **Components**: the capture's crate set under spec 13 §5a's mapping
+  (`pkg:cargo/<name>@<version>` purls, the registry checksum in
+  `hashes` when present, the license expression, the
+  `tebako:crate:source` property for non-registry sources).
+- **The graph is EXPLICIT**: the capture's own dependency edges plus
+  one root edge from the subject to the capture's root crate — never
+  the payload lane's flat form.
+- **The completeness frame**: `tebako:sbom:inventory-source=
+  cargo-resolution-capture`, `tebako:closure:complete=true` — the
+  capture IS the build's full normal+build resolve closure, so
+  completeness holds by construction; NO annotation.
+  `tebako:capture:tool` / `tebako:capture:tool_version` name the
+  capture's generator.
+
+**The capture artifact** (`crate-inventory.json`, `capture_schema: 1`).
+The exe document's second input and the no-drift wire: the capture is
+emitted INTO the staged link-unit tree before the tar (spec 13 §5a), so
+one tarball hash covers the staticlibs AND the inventory their build
+resolved. The grammar's single owner is the `tebako-sbom` model crate's
+`capture` module; `sbom-cargo --inventory-only` is the single
+generator — the same `cargo metadata --filter-platform` + `Cargo.lock`
+inputs the release pipeline's own documents consume, so the capture and
+the tarball's `.cdx.json` are two serializations of ONE resolution.
+Members: `capture_schema`, `tool`, `tool_version`, `package`, `target`,
+`root`, `components[]` (`name`, `version`, `purl`, `sha256`|null,
+`license`|null, `source`), `edges[]` (`ref`, `depends_on[]`). The
+`source` vocabulary mirrors §8's mapping: `workspace` (cargo's null) ·
+`registry` (the registry+/sparse+ spellings) · the verbatim `git+…` /
+`path+…` strings. The consumer gates FAIL-CLOSED on `capture_schema`
+(an unsupported version is the named error, exit 65) while tolerating
+unknown MEMBERS (additive evolution inside a schema version); an empty
+component set or a root naming no component is malformed.
+
+**Determinism and exit codes**: §8's determinism law applies unchanged
+to both documents (components sort by purl, the serial derives from the
+document's identity content, the timestamp pins to `SOURCE_DATE_EPOCH`)
+— two runs on unchanged inputs are byte-identical. Exit codes are §8's
+grammar: 0 emitted; 64 usage (the mode grammar); 65 target/capture/
+manifest malformed or missing, wrong-kind image, unsupported capture
+schema; 74 I/O.

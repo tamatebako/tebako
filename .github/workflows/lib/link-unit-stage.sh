@@ -85,4 +85,10 @@ done
 # the release profile is fat-LTO and binutils nm reads no bitcode symtab —
 # an nm check is blind exactly where it matters.
 
+# The build-time crate capture rides IN the tarball (spec 15 §8a,
+# tebako#1121): emitted into the staged tree before the tar, so the
+# shipped bytes carry the inventory of the crates they vendored — the
+# runtime factories' exe SBOM reads it back out of the same tarball.
+TARGET="$TARGET" bash .github/workflows/lib/link-unit-capture.sh "out/link-unit-$PLATFORM"
+
 tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
