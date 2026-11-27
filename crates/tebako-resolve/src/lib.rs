@@ -114,7 +114,15 @@ pub use transport::{HttpTransport, Transport};
 /// bare press today produced yesterday's behavior. The default tracks
 /// the current published line from here on. 0.17.12: the line ships
 /// ruby 3.3.13 / 4.0.9 (the registry's default: 4.0.9-0.17.12).
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.17.15";
+/// 0.17.16 (2026-11-27, the v2.8.85-linked line): the atomic exec-cache
+/// install (tebako#1112 — the java-child race, gate-proven 6/6), the
+/// macOS in-process file-IO arm (tebako#1126 — the tripwire's flipped
+/// expectation verified in the factory's own legs), the jail device
+/// exemption (tebako#1128), the registry chase (tebako#1100), the spawn
+/// probe (tebako#1127). The registry's default row moved to
+/// 4.0.9-0.17.16 on the publish; the canary this constant feeds fired
+/// as designed.
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.17.16";
 
 /// The first runtime line whose embedded driver locates the tpkg
 /// trailer by spec 02 §1's LOGICAL EOF — the floor for RUNNING a
