@@ -3,7 +3,8 @@
 Normative specification of how users and tooling inspect payloads (`.tfs`
 images) and packed binaries (tpkg executables). Status: SHIPPED
 (`crates/tebako-info` + the tfs-cli/tebako-pkg/tebako-cli wiring; the
-digest-agreement note in §5).
+digest-agreement note in §5). §8's SBOM evidence surface (`tebako sbom`,
+CycloneDX 1.6) SHIPPED with tebako#1120.
 
 ## 1. Principle
 
@@ -199,3 +200,99 @@ result, detail}). JSON consumers pin to `info_schema`, not to field order.
 No mutation (set/edit belongs to tebako-pkg surgery), no full dependency
 closure resolution (dispatcher), no network fetches (info is local-only;
 `--verify` against the keyring never downloads keys).
+
+## 8. The SBOM evidence surface (`tebako sbom`) — SHIPPED (tebako#1120)
+
+**Status block (tebako#1120, tracker tebako#1124).** The verb and this
+section are the SBOM arc's keystone: CycloneDX 1.6 is the primary
+format; SPDX is DEFERRED until a consumer asks with evidence (the arc's
+standing rule). The runtime artifacts' own SBOMs (env image inventory +
+the link-unit exe's crate set captured at factory build time) are
+tebako#1121's follow-up; the vulnerability-scan process that consumes
+these documents is tebako#1123's.
+
+`tebako sbom` emits a **CycloneDX 1.6 JSON** bill of materials for one
+payload — read-only, local-only, and deterministic by construction:
+
+```
+tebako sbom <image.tfs | name[@version]>
+            [--closure <path>] [--ecosystem gem|pypi|npm|cargo|generic]
+            [--triplet <triplet>] [--out <path>] [--random-serial]
+```
+
+- **Target**: a `.tfs` image path (mounted through the tfs detection
+  chain — nothing is extracted), or an installed payload's
+  `name[@version]` resolved read-only against the machine store (an
+  exact version, else the name's newest installed; a miss is the named
+  error, never a guess — `tebako info payloads` lists the cache).
+- **Identity**: the payload's in-image `/__tpkg__/manifest.yaml` is the
+  authoritative identity (kind, name, version, the `kind: language`
+  require edge's engine, the single declared platform when exactly one).
+  An image without a readable manifest falls back to the filename's
+  `<name>-<version>…` stem, loudly; a stem with no version segment is a
+  named error (exit 65).
+- **Inventory — complete mode**: `--closure <path>` carries the
+  feedstock's closure file — the complete transitive artifact inventory
+  (`<artifact> <sha256>` or the sha256sum-shaped `<sha256> <artifact>`
+  spelling; the hash column is recognized BY SHAPE — 64 hex — never by
+  position, so both spellings parse through one grammar; `#` comments
+  and blank lines skip). Each row maps to one component under the
+  ecosystem grammar below; every component carries the closure's
+  sha256 in its `hashes` array (`tebako:closure:complete=true`).
+- **Inventory — degraded mode**: with no closure, the inventory degrades
+  to the image's own gem specifications (`specifications/*.gemspec`, or
+  the staged runtime layout's `lib/ruby/gems/<v>/specifications/`):
+  name + version + licenses only — **no per-artifact hashes, and
+  completeness is NOT claimed** (`tebako:closure:complete=false`, and a
+  CycloneDX annotation against the payload's bom-ref says so in words).
+  An image carrying no parseable gemspecs refuses with the named error
+  pointing at `--closure` (exit 65).
+- **Ecosystem mapping** (the component's purl and type): the explicit
+  `--ecosystem` flag first, then the manifest's language engine
+  (`ruby`→gem, `python`→pypi, `node`→npm), then `generic` with a loud
+  note — never a silent guess.
+
+| ecosystem | purl type | component type | name rule |
+|-----------|-----------|----------------|-----------|
+| gem | `pkg:gem/` | library | `<name>-<version>[-<platform>]`; the FIRST dash-segment starting with a digit opens the version |
+| pypi | `pkg:pypi/` | library | PEP 427 wheel stem; the name is PEP 503-normalized (lowercase, `[-_.]+`→`-`); the tag triplet is evidence, never purl |
+| npm | `pkg:npm/` | library | scoped names keep `/`; the leading `@` percent-encodes |
+| cargo | `pkg:cargo/` | library | the same digit rule |
+| generic | `pkg:generic/` | application | native tools/binaries |
+
+  Purls are canonical `pkg:<type>/<name>@<version>` — qualifiers (gem
+  platform, wheel tags) ride as component properties
+  (`tebako:gem:platform`, `tebako:pypi:tags`) because vulnerability
+  consumers match on name+version. Identical purls from distinct
+  artifacts keep the canonical purl and get disambiguating bom-refs
+  (`<purl>#artifact-N`) — the schema's bom-ref uniqueness law.
+- **The document**: `metadata.component` is the payload itself (type by
+  kind: app/toolkit→`application`, runtime/language→`platform`,
+  data→`data`; the image's own sha256 in `hashes`; properties
+  `tebako:payload:kind`, `tebako:triplet`, the manifest's signing state
+  as `tebako:payload:signing`, the language engine when declared);
+  `metadata.tools` is the emitting tebako version; `dependencies` is
+  flat (the payload depends on every component — intra-ecosystem edges
+  are the lockfile's knowledge, not the closure's); when the target was
+  store-resolved, the store's `.origin` marker rides as a
+  `distribution` external reference. **The SBOM DESCRIBES — it never
+  anchors trust**: verification stays spec 09's chain (the `.asc`
+  signature, the signed SHA256SUMS/sidecars); the signing-state
+  property is the manifest's declaration, not a verification outcome.
+- **The determinism law**: components sort by purl then hash; the
+  `serialNumber` is a NAME-BASED UUID (v5 shape) derived from the
+  document's identity content (payload purl + triplet + every
+  component's purl/hash); the timestamp reads `SOURCE_DATE_EPOCH` when
+  the operator pins it (the press's reproducibility convention — the
+  same variable the image writer reads), the wall clock otherwise. Two
+  runs on unchanged inputs are byte-identical. `--random-serial` opts
+  into a per-run v4 serial (an identifier, never a token).
+- **Exit codes** (the info surface's grammar): 0 emitted; 64 usage;
+  65 target/closure/image/manifest malformed or missing, empty
+  inventory, unparseable gemspec set; 74 I/O (store read, file
+  read/write).
+
+Consumer proof: `osv-scanner --sbom=<file>` parses the emitted document
+(the metanorma closure's ≈237 components is the arc's acceptance case);
+the vulnerability mapping itself is downstream tooling's job
+(tebako#1123), never the verb's.

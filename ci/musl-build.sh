@@ -155,3 +155,12 @@ cargo build --release -p libtfs-preload --features exe-shape --target-dir target
 # musl has no scandir64 (its scandir is 64-bit always): the keep list's
 # gnu-only lines drop out of the keep set on this leg.
 EXE_SHAPE_LIBC=musl TARGET= bash .github/workflows/lib/link-unit-stage.sh
+
+echo "== SBOMs (spec 13 §5a, tebako#1120) =="
+# After stage + the link unit, so the digests the documents claim are
+# the final staged bytes. linux ships unsigned, so sign-then-hash is
+# trivially satisfied here.
+TOOLS="tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher libtfs_preload" \
+LINK_UNIT=1 \
+TARGET= \
+bash .github/workflows/lib/sbom-stage.sh

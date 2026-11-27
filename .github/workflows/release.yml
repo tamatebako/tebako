@@ -188,6 +188,10 @@ jobs:
       tag_name: ${{ steps.vars.outputs.tag_name }}
       version: ${{ steps.vars.outputs.version }}
       upload_url: ${{ steps.get_release.outputs.upload_url }}
+      # spec 13 §5a (tebako#1120): the SBOMs' deterministic stamp +
+      # download base for the attestation/distribution references.
+      sbom_epoch: ${{ steps.vars.outputs.sbom_epoch }}
+      sbom_release_url: ${{ steps.vars.outputs.sbom_release_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Refuse a release from a commit the CI matrix has not passed
@@ -307,6 +311,17 @@ jobs:
           # version lands in the staged artifact filenames — slashes
           # would make them paths. Real tags never contain one.
           echo "version=${VERSION//\//-}" >> "$GITHUB_OUTPUT"
+          # spec 13 §5a (tebako#1120): the SBOMs' deterministic stamp
+          # pins the released commit's own epoch (the rehearsal's sha
+          # works the same way), and the download base rides the upload
+          # gate like every release-facing value — rehearsals emit no
+          # references to a release that does not exist.
+          echo "sbom_epoch=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+          if [ -n "${{ steps.get_release.outputs.upload_url }}" ]; then
+            echo "sbom_release_url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "sbom_release_url=" >> "$GITHUB_OUTPUT"
+          fi
 
   # ==========================================================================
   # macOS (native runners, both arches — parsanol shape)
@@ -537,6 +552,22 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: bash .github/workflows/lib/link-unit-stage.sh
 
+      # One CycloneDX SBOM per staged part (spec 13 §5a, tebako#1120),
+      # from the leg's real Cargo resolution — after stage + the link
+      # unit, so the digests the documents claim are the final staged
+      # bytes (macos signs inside stage.sh — sign-then-hash holds).
+      - name: Stage the SBOMs (spec 13 §5a)
+        working-directory: tebako-rs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+          TOOLS: "tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher libtfs_preload"
+          LINK_UNIT: "1"
+          SBOM_EPOCH: ${{ needs.prepare.outputs.sbom_epoch }}
+          RELEASE_URL: ${{ needs.prepare.outputs.sbom_release_url }}
+        run: bash .github/workflows/lib/sbom-stage.sh
+
       - name: Upload fragment artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -651,12 +682,15 @@ jobs:
           RUST_VERSION: ${{ env.RUST_VERSION }}
           VCPKG_COMMIT: ${{ env.VCPKG_COMMIT }}
           BOOTSTRAP_SIZE_BUDGET: ${{ env.BOOTSTRAP_SIZE_BUDGET }}
+          SBOM_EPOCH: ${{ needs.prepare.outputs.sbom_epoch }}
+          RELEASE_URL: ${{ needs.prepare.outputs.sbom_release_url }}
         run: |
           docker run --rm \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             -v "$HOME/.cache/vcpkg:/root/.cache/vcpkg" \
             -e VERSION -e PLATFORM -e TARGET -e TRIPLET \
             -e RUST_VERSION -e VCPKG_COMMIT -e BOOTSTRAP_SIZE_BUDGET \
+            -e SBOM_EPOCH -e RELEASE_URL \
             -e GITHUB_STEP_SUMMARY -e GITHUB_WORKSPACE \
             ubuntu:20.04 bash "$GITHUB_WORKSPACE/tebako-rs/ci/gnu-floor-build.sh"
 
@@ -789,12 +823,15 @@ jobs:
           RUST_VERSION: ${{ env.RUST_VERSION }}
           VCPKG_COMMIT: ${{ env.VCPKG_COMMIT }}
           BOOTSTRAP_SIZE_BUDGET: ${{ env.BOOTSTRAP_SIZE_BUDGET }}
+          SBOM_EPOCH: ${{ needs.prepare.outputs.sbom_epoch }}
+          RELEASE_URL: ${{ needs.prepare.outputs.sbom_release_url }}
         run: |
           docker run --rm \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             -v "$HOME/.cache/vcpkg:/root/.cache/vcpkg" \
             -e VERSION -e PLATFORM -e TARGET -e TRIPLET -e DYN_TRIPLET \
             -e RUST_VERSION -e VCPKG_COMMIT -e BOOTSTRAP_SIZE_BUDGET \
+            -e SBOM_EPOCH -e RELEASE_URL \
             -e GITHUB_STEP_SUMMARY -e GITHUB_WORKSPACE \
             alpine:3.21 sh "$GITHUB_WORKSPACE/tebako-rs/ci/musl-build.sh"
 
@@ -1210,14 +1247,44 @@ jobs:
             --target x86_64-pc-windows-gnu --skip-build
           tar -czf "out/link-unit-${VERSION}-x86_64-windows-gnu.tar.gz" -C out link-unit-x86_64-windows-gnu
 
-      # SLSA L3 provenance for the shipped link-unit tarball — the staged
-      # bytes the publish job carries (gated with the upload; disarmed on
-      # rehearsals).
+      # The link unit's CycloneDX SBOM (spec 13 §5a, tebako#1120) — one
+      # per non-installer part, this leg's only part. No tools here, so
+      # TOOLS is empty; the staged bytes are final (windows-gnu ships
+      # unsigned, so sign-then-hash is trivially satisfied).
+      - name: Stage the SBOM (spec 13 §5a)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: x86_64-windows-gnu
+          TARGET: x86_64-pc-windows-gnu
+          TOOLS: ""
+          LINK_UNIT: "1"
+          EXE_SUFFIX: ".exe"
+          SBOM_EPOCH: ${{ needs.prepare.outputs.sbom_epoch }}
+          RELEASE_URL: ${{ needs.prepare.outputs.sbom_release_url }}
+        run: |
+          export PATH="/c/Users/runneradmin/.cargo/bin:$PATH"
+          bash .github/workflows/lib/sbom-stage.sh
+
+      # The SBOM's sha256 fragment rides the same frag-<platform> grammar
+      # every other leg uploads (finalize merges it into SHA256SUMS).
+      - name: Upload fragment artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frag-x86_64-windows-gnu
+          path: tebako-rs/fragments/frag-x86_64-windows-gnu
+
+      # SLSA L3 provenance for the shipped link-unit tarball + its SBOM —
+      # the staged bytes the publish job carries (gated with the upload;
+      # disarmed on rehearsals).
       - name: Attest build provenance
         if: needs.prepare.outputs.upload_url != ''
         uses: ./tebako-rs/.github/actions/attest-with-retry # bounded retry over actions/attest-build-provenance v4.2.2 (tebako#992)
         with:
-          subject-path: tebako-rs/out/link-unit-*.tar.gz
+          subject-path: |
+            tebako-rs/out/link-unit-*.tar.gz
+            tebako-rs/out/link-unit-*.cdx.json
 
       # The leg-complete marker (tebako#649): written only when every
       # gate above passed — a red leg ships NO artifact at all and its
@@ -1532,6 +1599,29 @@ jobs:
           export PATH="/d/a/_temp/msys64/ucrt64/bin:$PATH"
           bash .github/workflows/lib/ship-gate.sh windows-ucrt64 out/*.exe
 
+      # One CycloneDX SBOM per staged part (spec 13 §5a, tebako#1120),
+      # from the leg's real Cargo resolution — after the re-hash, so the
+      # digests the documents claim are the final SIGNED bytes
+      # (sign-then-hash, spec 34 §1.3 holds for the SBOMs too).
+      - name: Stage the SBOMs (spec 13 §5a)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: windows-ucrt64
+          TARGET: x86_64-pc-windows-gnu
+          TOOLS: "tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher"
+          EXE_SUFFIX: ".exe"
+          SBOM_EPOCH: ${{ needs.prepare.outputs.sbom_epoch }}
+          RELEASE_URL: ${{ needs.prepare.outputs.sbom_release_url }}
+          # The generator is a build-time tool (never shipped): it links
+          # like the leg's own gnu build, ucrt64 gcc behind the same
+          # job-level linker name the link-unit leg uses.
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: gcc.exe
+        run: |
+          export PATH="/d/a/_temp/msys64/ucrt64/bin:/c/Users/runneradmin/.cargo/bin:$PATH"
+          bash .github/workflows/lib/sbom-stage.sh
+
       - name: Dump vcpkg build logs on failure
         if: failure()
         shell: bash
@@ -1760,6 +1850,8 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          SBOM_EPOCH: ${{ needs.prepare.outputs.sbom_epoch }}
+          RELEASE_URL: ${{ needs.prepare.outputs.sbom_release_url }}
         run: bash ci/windows-arm64-gnullvm-ship.sh
 
       - name: Upload fragment artifact

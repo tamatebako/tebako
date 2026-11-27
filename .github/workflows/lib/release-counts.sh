@@ -23,10 +23,11 @@ release_installer_count() {
 # + their link-unit tarball (roadmap 02 phase 2; the launcher joined with
 # v2.8.46 — tebako#830, the repack factories' pair half) + the preload
 # shim cdylib x 6 POSIX platforms (tebako#1099 — windows has no preload
-# delivery) + the armed installers. (SHA256SUMS + manifest.json sign
-# separately.)
+# delivery) + one CycloneDX SBOM per non-installer part (59 — spec 13
+# §5a, tebako#1120) + the armed installers. (SHA256SUMS + manifest.json
+# sign separately.)
 release_expected_parts() {
-  echo $(( 59 + $(release_installer_count) ))
+  echo $(( 59 + 59 + $(release_installer_count) ))
 }
 
 # One .asc per part + SHA256SUMS.asc + manifest.json.asc.
@@ -36,13 +37,14 @@ release_expected_sigs() {
 
 # Every asset on the release: the parts + the 51 per-tool .sha256
 # sidecars (tebako#493 — the link-unit tarballs have none; the arm64
-# launcher and the six preload shims carry one like every tool) + the two
-# indexes + one .sha256 sidecar per installer + the .asc set when the
-# signing plane is armed.
+# launcher and the six preload shims carry one like every tool; the
+# SBOMs get NO sidecars — spec 13 §5a: a SBOM's anchor is its signed
+# SHA256SUMS row + its own .asc) + the two indexes + one .sha256 sidecar
+# per installer + the .asc set when the signing plane is armed.
 release_expected_assets() {
   local installers n
   installers=$(release_installer_count)
-  n=$(( 59 + 51 + 2 + installers * 2 ))
+  n=$(( 59 + 59 + 51 + 2 + installers * 2 ))
   if [ "${TEBAKO_RELEASE_SIGNING_ENABLED:-}" = "true" ]; then
     n=$(( n + $(release_expected_sigs) ))
   fi

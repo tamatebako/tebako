@@ -1,0 +1,15 @@
+[package]
+name = "tebako-sbom"
+description = "CycloneDX 1.6 document model + deterministic emitter for the tebako evidence plane (spec 15 §8, spec 13 §5a)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "sbom", "cyclonedx"]
+categories = ["encoding"]
+
+[dependencies]
+tebako-json = { version = "2.0.0", path = "../tebako-json" }
+sha2 = "0.10"

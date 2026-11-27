@@ -302,5 +302,18 @@ tar -czf "out/link-unit-${VERSION}-aarch64-windows-gnu.tar.gz" -C out link-unit-
 # a real launch, no cross-compile proxy.
 bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*.exe
 
+# --- 5. the SBOMs (spec 13 §5a, tebako#1120) --------------------------------
+# One CycloneDX document per staged part, from this leg's real Cargo
+# resolution — after the gate, so the digests the documents claim are the
+# final staged bytes (the arm64 leg ships unsigned: sign-then-hash is
+# trivially satisfied). The link unit's name token is NOT this leg's
+# platform id — its tarball spells aarch64-windows-gnu (section 3) — so
+# LINK_UNIT_PLATFORM carries the divergence and the frag stem keeps it
+# for finalize's merge.
+TARGET="$TARGET" PLATFORM="$PLATFORM" \
+  TOOLS="$TOOLS" LINK_UNIT=1 LINK_UNIT_PLATFORM=aarch64-windows-gnu \
+  EXE_SUFFIX=.exe \
+  bash .github/workflows/lib/sbom-stage.sh
+
 echo "staged for $PLATFORM:"
 ls -la out/

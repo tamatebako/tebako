@@ -1,0 +1,21 @@
+[package]
+name = "sbom-cargo"
+description = "The spec 13 §5a release-side SBOM generator: a released part's CycloneDX document from the build's real Cargo resolution (cargo metadata + the build's Cargo.lock)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "sbom", "cyclonedx", "release"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+tebako-sbom = { version = "2.0.0", path = "../tebako-sbom" }
+tebako-json = { version = "2.0.0", path = "../tebako-json" }
+sha2 = "0.10"
+toml_edit = "0.23"
+
+[[bin]]
+name = "sbom-cargo"
+path = "src/main.rs"

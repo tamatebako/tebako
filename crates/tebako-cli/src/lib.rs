@@ -34,6 +34,10 @@
 //!   tebako solve <request.yaml> --registry <path|ref> [--lock <path>] [--locked]
 //!                (the ONE producer of an image's lazy-mount digest
 //!                sidecar outside publish — spec 39 §3)
+//!   tebako sbom <image.tfs | name[@version]> [--closure <path>]
+//!                [--ecosystem gem|pypi|npm|cargo|generic] [--triplet <t>]
+//!                [--out <path>] [--random-serial]
+//!                (the CycloneDX 1.6 evidence surface — spec 15 §8)
 //!
 //! Lean press flow (gem's do_press_three_part): resolve the runtime into
 //! the shared cache (in-process HTTPS via crates/tebako-http) → seed the
@@ -107,6 +111,7 @@ pub mod resolve;
 pub mod run;
 pub mod runner;
 pub mod runtime_bundle;
+pub mod sbom;
 pub mod scenario;
 pub mod sdk;
 pub mod solve;

@@ -601,11 +601,11 @@ jobs:
       # and its lint coverage the workspace clippy on linux/mac.
       - name: cargo test (pure-Rust crates)
         working-directory: tebako-rs
-        run: cargo test -p tebako-bootstrap -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg -p tebako-bench
+        run: cargo test -p tebako-bootstrap -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg -p tebako-bench -p tebako-sbom -p sbom-cargo
 
       - name: clippy (pure-Rust crates)
         working-directory: tebako-rs
-        run: cargo clippy -p tebako-bootstrap -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg -p tebako-bench --all-targets -- -D warnings
+        run: cargo clippy -p tebako-bootstrap -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg -p tebako-bench -p tebako-sbom -p sbom-cargo --all-targets -- -D warnings
 
   # The bootstrap on the target the release binaries actually ship on
   # (x86_64-pc-windows-gnu, ucrt64). ring does not

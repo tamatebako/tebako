@@ -205,6 +205,66 @@ withdrawal bounds growth.
 - rnp-rs consumed from crates.io with `vendored` — zero system librnp
   provisioning anywhere.
 
+## 5a. The product release's SBOMs (tebako#1120, tracker tebako#1124)
+
+**Status block.** SHIPPED: every non-installer released part carries a
+sibling CycloneDX 1.6 document from the release pipeline on. SPDX is
+DEFERRED until a consumer asks with evidence (the arc's standing rule).
+The emitter is `sbom-cargo` (workspace bin crate, the `tebako-sbom`
+model crate's second consumer after the spec 15 §8 verb) — one
+CycloneDX document shape has exactly one owner.
+
+- **Coverage and naming**: one `.cdx.json` per NON-INSTALLER released
+  part (the six tools × seven platforms, the windows-arm64 trio, the
+  POSIX preload shims, and the eight link-unit tarballs), named
+  `<asset-stem>.cdx.json` — the asset's name minus its
+  `.exe`/`.dylib`/`.so`/`.tar.gz` suffix (the feedstock template's
+  spelling, e.g. `tebako-<ver>-macos-arm64.cdx.json`). Installer
+  containers (MSI/pkg) carry NO SBOM: their content is the legs' signed
+  tools, already SBOM'd per leg, and the container's own integrity
+  rides its SHA256SUMS row + `.asc` exactly as before (documented
+  exclusion, not a gap).
+- **The content model — the build's real inputs, captured at build
+  time**: each leg generates its parts' SBOMs at stage time, from
+  `cargo metadata --format-version 1 --filter-platform <rust target>`
+  (the target-filtered resolve set — windows-only crates never appear
+  in a linux SBOM — plus each crate's license string) joined with the
+  build's own `Cargo.lock` (the per-crate checksums; the workspace
+  lockfile floats by design, so the checksum evidence is captured in
+  CI at build time, never checked in). Components: `pkg:cargo/<name>@
+  <version>` purls, the lock checksum in `hashes` when registry-sourced
+  (workspace/path/git crates name their source in a
+  `tebako:crate:source` property instead), the license as a CycloneDX
+  `licenses` expression. The dependency edges are the resolve graph's
+  real edges (not the verb's flat form — cargo knows the graph).
+  `metadata.component` is the asset itself (type `application` for
+  exes, `library` for the preload shims, `file` for the link-unit
+  tarballs) with the staged bytes' sha256 in `hashes` — computed at the
+  same post-signing point as the sha256 fragments, so sign-then-hash
+  keeps the SBOM's digest on the shipped bytes — and external
+  references to the sibling `.asc` and the SHA256SUMS (spec 09 §2's
+  anchors — the SBOM DESCRIBES, never anchors trust).
+- **The determinism law** (spec 15 §8's, unchanged): components sort by
+  purl; the serial derives from the document's identity content; the
+  timestamp pins to `SOURCE_DATE_EPOCH`, which the prepare job exports
+  as the tag commit's epoch (`prepare.outputs.sbom_epoch`) so a
+  re-run of the pipeline on unchanged inputs reproduces byte-identical
+  SBOMs.
+- **The index rows**: SHA256SUMS carries one row per `.cdx.json` (the
+  finalize merge reads the legs' `<stem>.cdx.sha256` fragments);
+  `.cdx.json` assets get NO `.sha256` sidecar — the sidecar set stays
+  the per-tool (+installer) rows only, and the SBOM's own anchor is
+  spec 09's signed SHA256SUMS row plus its own `.asc` (they sign as
+  parts: `lib/release-counts.sh` counts the SBOM set into
+  `release_expected_parts`, the single owner of the arithmetic).
+- **Ship-gate discipline**: `.cdx.json` files ride the staged `out/`
+  tree through the same upload path as every asset; `ship-gate.sh`
+  needs no change — its operands are the explicit staged-name globs
+  (`out/*-"$VERSION-$PLATFORM"`, `out/*.exe`, the preload library
+  name), and a `.cdx.json` name matches none of them on any leg, so
+  the smoke/audit arms never see a document (a JSON file has no bare
+  launch and no dynamic closure to audit anyway).
+
 ## 6. Matrix and tier policy (locked)
 
 - Exhaustiveness lives where it's cheap: source factory lints ALL
