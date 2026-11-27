@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "metrics": {
+    "filesystem.stat.median": 20.592285586865433,
+    "first-response.cold.median": 2.4762781255000004,
+    "first-response.warm.median": 2.187258727,
+    "memory.rss.peak": 498880512.0,
+    "steady.cpu.throughput": 0.4938206159127222,
+    "steady.io.throughput": 0.36211134203434364,
+    "teardown.exit_seconds": 0.020341455000000064,
+    "teardown.materialize_vs_extract": 2.8314470528096027
+  },
+  "witness": {
+    "filesystem.stat.median": {
+      "triplet": "linux-musl-x86_64",
+      "workload": "ruby-statloop",
+      "target": "tebako-ruby",
+      "mode": "warm",
+      "reference": "on-system-ruby",
+      "native_drift": 0.6161602214042946,
+      "pair_delta": 2.1234395733389047,
+      "image_os": "ubuntu24",
+      "image_version": "20261122.23.1",
+      "history_entries": 11
+    },
+    "first-response.cold.median": {
+      "triplet": "macos-x86_64",
+      "workload": "java-boot",
+      "target": "tebako-java",
+      "mode": "cold",
+      "image_os": "macos15",
+      "image_version": "20260824.0482.1",
+      "history_entries": 11,
+      "note": "no reference arm for java-boot/tebako-java — the workload ran no baseline cell, the witness has nothing to compare against"
+    },
+    "first-response.warm.median": {
+      "triplet": "macos-x86_64",
+      "workload": "java-boot",
+      "target": "tebako-java",
+      "mode": "warm",
+      "reference": "on-system-java",
+      "native_drift": 0.9114445333918829,
+      "pair_delta": 1.3290359010854658,
+      "image_os": "macos15",
+      "image_version": "20260824.0482.1",
+      "history_entries": 11
+    },
+    "memory.rss.peak": {
+      "triplet": "windows-ucrt64",
+      "workload": "java-statloop",
+      "target": "tebako-java",
+      "mode": "warm",
+      "reference": "on-system-java",
+      "pair_delta": 0.9401077993385913,
+      "image_os": "win25-vs2026",
+      "image_version": "20261123.321.1",
+      "history_entries": 19,
+      "note": "history too thin for on-system-java on windows-ucrt64: 0 published entries (need 3)"
+    },
+    "steady.cpu.throughput": {
+      "triplet": "macos-x86_64",
+      "workload": "python-fib",
+      "target": "tebako-python",
+      "mode": "warm",
+      "reference": "on-system-python",
+      "native_drift": 38.75969433934441,
+      "pair_delta": 0.7401122109496063,
+      "image_os": "macos15",
+      "image_version": "20260824.0482.1",
+      "history_entries": 7
+    },
+    "steady.io.throughput": {
+      "triplet": "linux-musl-arm64",
+      "workload": "ruby-ioread",
+      "target": "tebako-ruby",
+      "mode": "warm",
+      "reference": "on-system-ruby",
+      "native_drift": 0.9456091903368302,
+      "pair_delta": 1.0888050565923748,
+      "image_os": "ubuntu24-arm64",
+      "image_version": "20261122.193.1",
+      "history_entries": 11
+    },
+    "teardown.exit_seconds": {
+      "triplet": "macos-x86_64",
+      "workload": "python-boot",
+      "target": "tebako-python",
+      "mode": "warm",
+      "reference": "on-system-python",
+      "native_drift": 1.2216321787658826,
+      "pair_delta": 1.2777152784262815,
+      "image_os": "macos15",
+      "image_version": "20260824.0482.1",
+      "history_entries": 7
+    },
+    "teardown.materialize_vs_extract": {
+      "triplet": "linux-gnu-arm64",
+      "workload": "ruby-spawn",
+      "target": "tebako-ruby",
+      "mode": "warm",
+      "reference": "extract-ruby",
+      "image_os": "ubuntu24-arm64",
+      "image_version": "20261122.193.1",
+      "history_entries": 0,
+      "note": "history too thin for extract-ruby on linux-gnu-arm64: 0 published entries (need 3); history too thin for tebako-ruby on linux-gnu-arm64: 0 published entries (need 3)"
+    }
+  }
+}

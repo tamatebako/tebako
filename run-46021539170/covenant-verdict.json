@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "verdict": "pass",
+  "cells": [
+    {
+      "id": "first-response.cold.median",
+      "state": "pass",
+      "measured": 2.4762781255000004,
+      "bound": 3.0,
+      "comparison": "<=",
+      "witness": {
+        "triplet": "macos-x86_64",
+        "workload": "java-boot",
+        "target": "tebako-java",
+        "mode": "cold",
+        "image_os": "macos15",
+        "image_version": "20260824.0482.1",
+        "history_entries": 11,
+        "note": "no reference arm for java-boot/tebako-java — the workload ran no baseline cell, the witness has nothing to compare against"
+      }
+    },
+    {
+      "id": "first-response.warm.median",
+      "state": "pass",
+      "measured": 2.187258727,
+      "bound": 3.0,
+      "comparison": "<=",
+      "native_drift": 0.9114445333918829,
+      "pair_delta": 1.3290359010854658,
+      "witness": {
+        "triplet": "macos-x86_64",
+        "workload": "java-boot",
+        "target": "tebako-java",
+        "mode": "warm",
+        "reference": "on-system-java",
+        "native_drift": 0.9114445333918829,
+        "pair_delta": 1.3290359010854658,
+        "image_os": "macos15",
+        "image_version": "20260824.0482.1",
+        "history_entries": 11
+      }
+    },
+    {
+      "id": "steady.cpu.throughput",
+      "state": "pass",
+      "measured": 0.4938206159127222,
+      "bound": 0.35,
+      "comparison": ">=",
+      "native_drift": 38.75969433934441,
+      "pair_delta": 0.7401122109496063,
+      "witness": {
+        "triplet": "macos-x86_64",
+        "workload": "python-fib",
+        "target": "tebako-python",
+        "mode": "warm",
+        "reference": "on-system-python",
+        "native_drift": 38.75969433934441,
+        "pair_delta": 0.7401122109496063,
+        "image_os": "macos15",
+        "image_version": "20260824.0482.1",
+        "history_entries": 7
+      }
+    },
+    {
+      "id": "steady.io.throughput",
+      "state": "pass",
+      "measured": 0.36211134203434364,
+      "bound": 0.2,
+      "comparison": ">=",
+      "native_drift": 0.9456091903368302,
+      "pair_delta": 1.0888050565923748,
+      "witness": {
+        "triplet": "linux-musl-arm64",
+        "workload": "ruby-ioread",
+        "target": "tebako-ruby",
+        "mode": "warm",
+        "reference": "on-system-ruby",
+        "native_drift": 0.9456091903368302,
+        "pair_delta": 1.0888050565923748,
+        "image_os": "ubuntu24-arm64",
+        "image_version": "20261122.193.1",
+        "history_entries": 11
+      }
+    },
+    {
+      "id": "filesystem.stat.median",
+      "state": "pass",
+      "measured": 20.592285586865433,
+      "bound": 26.0,
+      "comparison": "<=",
+      "native_drift": 0.6161602214042946,
+      "pair_delta": 2.1234395733389047,
+      "witness": {
+        "triplet": "linux-musl-x86_64",
+        "workload": "ruby-statloop",
+        "target": "tebako-ruby",
+        "mode": "warm",
+        "reference": "on-system-ruby",
+        "native_drift": 0.6161602214042946,
+        "pair_delta": 2.1234395733389047,
+        "image_os": "ubuntu24",
+        "image_version": "20261122.23.1",
+        "history_entries": 11
+      }
+    },
+    {
+      "id": "memory.rss.peak",
+      "state": "pass",
+      "measured": 498880512.0,
+      "bound": 671088640.0,
+      "comparison": "<=",
+      "pair_delta": 0.9401077993385913,
+      "witness": {
+        "triplet": "windows-ucrt64",
+        "workload": "java-statloop",
+        "target": "tebako-java",
+        "mode": "warm",
+        "reference": "on-system-java",
+        "pair_delta": 0.9401077993385913,
+        "image_os": "win25-vs2026",
+        "image_version": "20261123.321.1",
+        "history_entries": 19,
+        "note": "history too thin for on-system-java on windows-ucrt64: 0 published entries (need 3)"
+      }
+    },
+    {
+      "id": "teardown.exit_seconds",
+      "state": "pass",
+      "measured": 0.020341455000000064,
+      "bound": 0.5,
+      "comparison": "<=",
+      "native_drift": 1.2216321787658826,
+      "pair_delta": 1.2777152784262815,
+      "witness": {
+        "triplet": "macos-x86_64",
+        "workload": "python-boot",
+        "target": "tebako-python",
+        "mode": "warm",
+        "reference": "on-system-python",
+        "native_drift": 1.2216321787658826,
+        "pair_delta": 1.2777152784262815,
+        "image_os": "macos15",
+        "image_version": "20260824.0482.1",
+        "history_entries": 7
+      }
+    },
+    {
+      "id": "teardown.materialize_vs_extract",
+      "state": "pass",
+      "measured": 2.8314470528096027,
+      "bound": 3.7,
+      "comparison": "<=",
+      "witness": {
+        "triplet": "linux-gnu-arm64",
+        "workload": "ruby-spawn",
+        "target": "tebako-ruby",
+        "mode": "warm",
+        "reference": "extract-ruby",
+        "image_os": "ubuntu24-arm64",
+        "image_version": "20261122.193.1",
+        "history_entries": 0,
+        "note": "history too thin for extract-ruby on linux-gnu-arm64: 0 published entries (need 3); history too thin for tebako-ruby on linux-gnu-arm64: 0 published entries (need 3)"
+      }
+    },
+    {
+      "id": "author-loop.repress.median",
+      "state": "pass",
+      "measured": 6.463463721,
+      "bound": 8.5,
+      "comparison": "<=",
+      "witness": {
+        "triplet": "linux-musl-arm64",
+        "workload": "author-repress",
+        "target": "v2-tools",
+        "mode": "warm",
+        "history_entries": 0,
+        "note": "no reference arm for author-repress/v2-tools — the workload ran no baseline cell, the witness has nothing to compare against"
+      }
+    },
+    {
+      "id": "author-loop.first_run.median",
+      "state": "pass",
+      "measured": 1.835329125,
+      "bound": 2.5,
+      "comparison": "<=",
+      "witness": {
+        "triplet": "macos-arm64",
+        "workload": "author-first-run",
+        "target": "v2-tools",
+        "mode": "warm",
+        "image_os": "macos15",
+        "image_version": "20261118.0550.1",
+        "history_entries": 0,
+        "note": "no reference arm for author-first-run/v2-tools — the workload ran no baseline cell, the witness has nothing to compare against"
+      }
+    }
+  ]
+}

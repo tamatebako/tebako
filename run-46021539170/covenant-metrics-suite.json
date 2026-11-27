@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "metrics": {
+    "author-loop.first_run.median": 1.835329125,
+    "author-loop.repress.median": 6.463463721
+  },
+  "witness": {
+    "author-loop.first_run.median": {
+      "triplet": "macos-arm64",
+      "workload": "author-first-run",
+      "target": "v2-tools",
+      "mode": "warm",
+      "image_os": "macos15",
+      "image_version": "20261118.0550.1",
+      "history_entries": 0,
+      "note": "no reference arm for author-first-run/v2-tools — the workload ran no baseline cell, the witness has nothing to compare against"
+    },
+    "author-loop.repress.median": {
+      "triplet": "linux-musl-arm64",
+      "workload": "author-repress",
+      "target": "v2-tools",
+      "mode": "warm",
+      "history_entries": 0,
+      "note": "no reference arm for author-repress/v2-tools — the workload ran no baseline cell, the witness has nothing to compare against"
+    }
+  }
+}
