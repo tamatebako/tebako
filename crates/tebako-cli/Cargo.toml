@@ -21,6 +21,9 @@ tebako-json = { version = "2.0.0", path = "../tebako-json" }
 # The spec-15 introspection model (payload + package inspections, the
 # strict verify) — the `tebako inspect` surface renders through it.
 tebako-info = { version = "2.0.0", path = "../tebako-info" }
+# The CycloneDX document model (spec 15 §8) — the `tebako sbom` verb
+# emits through the workspace's one SBOM owner.
+tebako-sbom = { version = "2.0.0", path = "../tebako-sbom" }
 # Config writes (registries:), the manifest mirror and the shim link/unlink
 # — called as a library, never spawned (spec 14 §3: no shell-outs).
 tebako-shim = { version = "2.0.0", path = "../tebako-shim" }

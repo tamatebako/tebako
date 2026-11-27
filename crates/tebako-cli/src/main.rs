@@ -126,6 +126,13 @@ const USAGE: &str = "Usage:
   tebako inspect <artifact> [flags]    payload/package introspection;
                                        --contract prints the contract card
                                        (era, contract versions, mount_root, abi, trust + verdict)
+  tebako sbom <image.tfs | name[@version]>
+               [--closure <path>] [--ecosystem gem|pypi|npm|cargo|generic]
+               [--triplet <triplet>] [--out <path>] [--random-serial]
+                                       the SBOM evidence surface (spec 15 §8):
+                                       a deterministic CycloneDX 1.6 document
+                                       from the closure (complete, hashed) or the
+                                       image's own inventory (degraded, says so)
   tebako publish --name <app> [--version <v>] --release tfs:github:<owner>/<repo>[:<tag>]
                (--payload <path> | --payload <triplet>=<path>)...
                [--standalone <triplet>=<path>]... [--sign[=<keyid>]]
@@ -284,6 +291,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "info" => run_info(rest),
         "doctor" => run_doctor(rest),
         "audit" => tebako_cli::audit::run(rest).map_err(CliExit::Error),
+        "sbom" => tebako_cli::sbom::run(rest).map_err(CliExit::Error),
         "inspect" => run_inspect(rest),
         "publish" => run_publish(rest),
         "blksum" => tebako_cli::blksum::run(rest).map_err(CliExit::Error),

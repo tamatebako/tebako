@@ -4,6 +4,10 @@
 # with a per-tool `tools` map), and append the size table to the release
 # notes. Runs in the finalize job after actions/download-artifact has
 # laid every frag-<platform> directory flat into ./fragments.
+# spec 13 §5a (tebako#1120): the legs' `.cdx.sha256` fragments add one
+# SHA256SUMS row per CycloneDX SBOM asset (no sidecar — a SBOM's anchor
+# is its signed SHA256SUMS row + its own .asc); the SBOMs join no other
+# index (manifest.json carries the resolve-consumed parts only).
 #
 # Required env: VERSION (tag minus v), TAG (release tag).
 set -euo pipefail
@@ -46,6 +50,65 @@ for platform_dir in "$FRAG"/frag-*; do
     name=$(asset_name "$tool" "$platform")
     echo "$sha  $name" >> out/SHA256SUMS
     echo "$sha  $name" > "out/sidecars/${name}.sha256"
+  done
+done
+
+# The SBOM asset's file name for a (tool, platform-token) pair — the
+# staged asset's name minus its .exe/.dylib/.so/.tar.gz suffix, plus
+# .cdx.json (spec 13 §5a; sbom-stage.sh's sbom_name_of is the generating
+# sibling — the two stay in lockstep). The link unit's name token is NOT
+# always the leg's platform id (the windows-arm64 leg ships its tarball
+# as aarch64-windows-gnu), which is why the merge below reads the token
+# back off the fragment's file name instead of deriving it.
+sbom_asset_name() {  # <tool> <platform-token> → the SBOM asset's file name
+  local name
+  if [ "$1" = link-unit ]; then
+    name="link-unit-${VERSION}-$2.tar.gz"
+  else
+    name=$(asset_name "$1" "$2")
+  fi
+  name="${name%.exe}"
+  name="${name%.dylib}"
+  name="${name%.so}"
+  name="${name%.tar.gz}"
+  echo "${name}.cdx.json"
+}
+
+# ---- CycloneDX SBOM fragments (spec 13 §5a, tebako#1120) ------------------
+# One .cdx.json per non-installer part, generated in-leg from the real
+# Cargo resolution. A SBOM gets a SHA256SUMS row like every released
+# part but NO per-asset .sha256 sidecar: its anchor is the signed
+# SHA256SUMS row plus its own .asc — a sidecar would duplicate that
+# anchor without independent trust. The fragment stem is
+# <tool>-<platform-token>; the token rides the fragment's file name
+# because the link unit's spelling is not always the leg's platform id
+# (windows-arm64 ships link-unit-<VERSION>-aarch64-windows-gnu.tar.gz
+# from the windows-ucrt-arm64 leg). The classification tries the longest
+# tool ids first ("tebako" is a proper prefix of four sibling ids — a
+# prefix glob would misfile their rows), and an unclassifiable fragment
+# is a named failure: a silently-dropped row would pass every count
+# gate with the SBOM's anchor missing.
+for platform_dir in "$FRAG"/frag-*; do
+  case "$platform_dir" in */frag-installers-*) continue ;; esac
+  for cdxfrag in "$platform_dir"/*.cdx.sha256; do
+    [ -e "$cdxfrag" ] || continue
+    stem=$(basename "$cdxfrag" .cdx.sha256)
+    tool="" token=""
+    for candidate in tebako-runtime-launcher tebako-bootstrap tebako-pkg tebako-shim libtfs_preload link-unit tfs tebako; do
+      case "$stem" in
+        "$candidate"-*)
+          tool="$candidate"
+          token="${stem#"$candidate"-}"
+          break
+          ;;
+      esac
+    done
+    if [ -z "$tool" ]; then
+      echo "finalize: unclassifiable SBOM fragment $cdxfrag — the stem matches no known tool id" >&2
+      exit 1
+    fi
+    sha=$(cat "$cdxfrag")
+    echo "$sha  $(sbom_asset_name "$tool" "$token")" >> out/SHA256SUMS
   done
 done
 
