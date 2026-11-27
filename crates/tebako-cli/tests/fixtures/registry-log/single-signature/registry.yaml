@@ -1,0 +1,12 @@
+schema_version: 1
+payloads:
+  - name: hello
+    kind: app
+    versions:
+      - version: 1.0.0
+        platforms:
+          aarch64-macos: {artifact: hello-1.0.0-macos-arm64.tfs, sha256: "000000000000000000000000000000000000000000000000000000000000000a"}
+          x86_64-linux-gnu: {artifact: hello-1.0.0-linux-gnu-x86_64.tfs, sha256: "000000000000000000000000000000000000000000000000000000000000000b"}
+        release: {ref: "tfs:github:acme/hello:1.0.0"}
+        entrypoints: [hello]
+    default: 1.0.0
