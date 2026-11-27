@@ -240,12 +240,22 @@ pub struct FsContext {
     /// `identity.annotations.home`, or the shipped `java_home` alias),
     /// memoized on first exec probe — see `exec_materialize`.
     home_memos: BTreeMap<i32, bool>,
+    /// The app-kind verdict per mount handle (the in-image manifest's
+    /// `identity.kind == "app"`), memoized on first exec probe — the
+    /// app-dir rule's gate (tebako#1139, spec 22 §3 Rule E5).
+    app_memos: BTreeMap<i32, bool>,
     /// The home mounts whose whole tree already materialized into the
     /// dl tmpdir this process run (extract once per mount).
     home_trees: BTreeSet<i32>,
     /// The directories whose subtree already extracted into the dl
     /// tmpdir this process run (exec_materialize_dir's extract-once set).
     dl_dirs: BTreeSet<String>,
+    /// The app-operand parent directories whose subtree already
+    /// materialized into the exec-materialization root this process run
+    /// (the app-dir rule's extract-once set — keyed like `dl_dirs` but
+    /// rooted where the closure walk answers, which on the persistent
+    /// tier is NOT the dl tmpdir `dl_dirs` mirrors).
+    app_dirs: BTreeSet<String>,
     /// Host-access policy (spec 08 jails): consulted on every
     /// host-passthrough path decision (a path no memfs mount claims, and
     /// the mount family's image read). Process state, not namespace state:
@@ -285,8 +295,10 @@ impl FsContext {
             dl_persist: dlcache_persistent(),
             dl_cache: BTreeMap::new(),
             home_memos: BTreeMap::new(),
+            app_memos: BTreeMap::new(),
             home_trees: BTreeSet::new(),
             dl_dirs: BTreeSet::new(),
+            app_dirs: BTreeSet::new(),
             host_policy: HostPolicy::open(),
             journal: None,
             dlaliases: Vec::new(),
@@ -2262,8 +2274,12 @@ impl FsContext {
     /// boot class path (the metanorma dogfood's jing failure). The
     /// mount ROOT itself answers the tree root (never EISDIR) — spec 33
     /// §3's template bridge splices it for tokens naming the depending
-    /// runtime's mount (`-D…home={mount}`). Any
-    /// other mount answers via dlmap2file's closure walk, unchanged.
+    /// runtime's mount (`-D…home={mount}`). A mount whose manifest is
+    /// `identity.kind: app` keeps the closure walk for the operand but a
+    /// HELD FILE operand first carries its parent directory subtree into
+    /// the same root (tebako#1139, spec 22 §3 Rule E5 — the apphost-
+    /// relative install prefix). Any other mount answers via
+    /// dlmap2file's closure walk, unchanged.
     /// The `exec` trace event (spec 25 §2): `routed:<host>` with the
     /// `route` detail (`home-tree` | `dlmap-closure`), `host` on the
     /// ENOENT fallthrough (the §4 entrypoint-note signal), or
@@ -2297,7 +2313,20 @@ impl FsContext {
         if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
             eprintln!("[tfs] exec_materialize: path={path} probe={probe:?}");
         }
-        let Some((handle, rel)) = probe.filter(|(handle, _)| self.mount_is_home(*handle)) else {
+        let Some((handle, rel)) = probe
+            .clone()
+            .filter(|(handle, _)| self.mount_is_home(*handle))
+        else {
+            // tebako#1139 (spec 22 §3 Rule E5): before the closure walk,
+            // a FILE operand held by an APP-kind mount carries its parent
+            // directory subtree — the app dir is the application's
+            // install prefix (the payload analog of the home tree), and
+            // apphost-relative resolution files (the .NET muxer's
+            // `<name>.runtimeconfig.json` beside the entry dll) must land
+            // beside the host twin.
+            if let Some((handle, rel)) = &probe {
+                self.sweep_app_operand_dir(&normalized, *handle, rel);
+            }
             if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
                 eprintln!(
                     "[tfs] exec_materialize: path={path} -> dlmap2file fallback (no home mount)"
@@ -2582,6 +2611,136 @@ impl FsContext {
         }
         self.home_memos.insert(handle, verdict);
         verdict
+    }
+
+    /// The app-dir rule's gate (tebako#1139, spec 22 §3 Rule E5):
+    /// `identity.kind == "app"` in the mount's in-image manifest — the
+    /// mount IS an application payload, so a file operand's parent
+    /// directory is the application's install prefix. The same tolerant
+    /// value walk as [`Self::mount_is_home`] (tfs stays tpkg-free; a
+    /// schema newer than this engine must still answer — spec 03's
+    /// compat rule). An absent, unreadable, or malformed manifest
+    /// answers false: the per-file closure walk stays the default.
+    fn mount_is_app(&mut self, handle: i32) -> bool {
+        if let Some(verdict) = self.app_memos.get(&handle) {
+            return *verdict;
+        }
+        let verdict = self
+            .mounts
+            .get(&handle)
+            .and_then(|mount| {
+                read_backend_file(
+                    mount.backend.as_ref(),
+                    tpkg::PAYLOAD_MANIFEST_PATH.trim_start_matches('/'),
+                )
+            })
+            .and_then(|text| serde_yml::from_str::<serde_yml::Value>(&text).ok())
+            .and_then(|yaml| {
+                yaml.get("identity")?
+                    .get("kind")?
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .is_some_and(|kind| kind == "app");
+        self.app_memos.insert(handle, verdict);
+        verdict
+    }
+
+    /// The app-dir rule's sweep (tebako#1139, spec 22 §3 Rule E5): a
+    /// HELD FILE operand under an app-kind mount carries its parent
+    /// directory subtree into the exec-materialization root — the root
+    /// the closure walk then answers the operand's twin from, so twin
+    /// and siblings share one tree. Extract-once per directory per
+    /// process (`app_dirs`); per-file failures and an armed quota
+    /// crossing follow Rule E4's sibling discipline (debug-noted, never
+    /// fatal to the operand's own materialization — the consumer's own
+    /// error stands).
+    fn sweep_app_operand_dir(&mut self, normalized: &str, handle: i32, rel: &str) {
+        let debug = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
+        // Only a HELD FILE sweeps: a covered-but-unheld path is host
+        // territory (the fallback's own host_check answers — never a
+        // swept tree for content the image does not hold), and a
+        // directory rides the fallback's EISDIR discipline, never a
+        // sweep.
+        if rel.is_empty() || !self.path_is_held(normalized) {
+            return;
+        }
+        let held_file = self
+            .mounts
+            .get(&handle)
+            .and_then(|mount| mount.backend.stat(rel).ok())
+            .is_some_and(|st| st.entry_type == EntryType::File);
+        if !held_file || !self.mount_is_app(handle) {
+            return;
+        }
+        let parent = memfs_dirname(normalized);
+        if !self.app_dirs.insert(parent.clone()) {
+            return;
+        }
+        // extract_for_exec's own root selection for the dlcache
+        // destination: the persistent, image-key-segregated tier where
+        // armed, else the per-process dl tmpdir. The swept bytes grow
+        // the same namespace, so the persistent tier's quota accounting
+        // covers them exactly as it covers Rule E4's siblings.
+        let (root, mut tracker) = if self.dl_persist {
+            let Some(mount) = self.mounts.get(&handle) else {
+                return;
+            };
+            let key = dlcache_image_key(mount);
+            let point = mount.mount_point.clone();
+            let Some(root) = dlcache_root_under(dl_base(), &key) else {
+                if debug {
+                    eprintln!(
+                        "[tfs] app-dir: {parent} — no persistent root; the operand rides alone"
+                    );
+                }
+                return;
+            };
+            let tracker = match crate::quota::QuotaTracker::begin(&key, &point) {
+                // Ok(None) is the unenforced arm (unarmed or `off`) —
+                // the sweep writes unchecked, the pre-quota behavior.
+                Ok(tracker) => tracker,
+                // The measurement could not answer — the pass skips
+                // rather than writes unmeasured (the ceiling's
+                // fail-closed rule, materialize_data_siblings' own).
+                Err(e) => {
+                    if debug {
+                        eprintln!("[tfs] app-dir: the quota measure failed ({e}); the pass skips");
+                    }
+                    return;
+                }
+            };
+            (root, tracker)
+        } else {
+            match ensure_dl_tmpdir(&mut self.dl_tmpdir) {
+                Ok(root) => (root, None),
+                Err(_) => return,
+            }
+        };
+        let (parent_rel, host_dir) = {
+            let Some(mount) = self.mounts.get(&handle) else {
+                return;
+            };
+            (
+                Self::relative_path(mount, &parent).to_string(),
+                root.join(Self::host_tail(&parent)),
+            )
+        };
+        let Some(mount) = self.mounts.get(&handle) else {
+            return;
+        };
+        // The operand's own name — the closure walk owns the operand's
+        // host twin; the sweep skips it at the top level (Rule E4's own
+        // `own` basename comparison).
+        let own_name = rel.rsplit('/').next().unwrap_or(rel);
+        sweep_app_subtree(
+            mount.backend.as_ref(),
+            &parent_rel,
+            &host_dir,
+            Some(own_name),
+            &mut tracker,
+            debug,
+        );
     }
 
     /// The per-process whole-tree root for a home mount
@@ -3809,6 +3968,70 @@ fn extract_dir_recursive(
         }
     }
     Ok(())
+}
+
+/// The recursive half of the app-dir sweep (tebako#1139, spec 22 §3
+/// Rule E5): extract `rel_dir`'s subtree through `backend` into
+/// `host_dir`, skipping `own_name` at the top level (the operand
+/// itself — the closure walk's own extraction owns it; a nested file
+/// of the same name is legitimate content and sweeps). Per-file
+/// failures are debug-noted and the walk continues (Rule E4's sibling
+/// discipline: never fatal to the operand's own materialization — the
+/// consumer's own error stands); an armed quota crossing journals once
+/// and ends the pass.
+fn sweep_app_subtree(
+    backend: &dyn Backend,
+    rel_dir: &str,
+    host_dir: &std::path::Path,
+    own_name: Option<&str>,
+    tracker: &mut Option<crate::quota::QuotaTracker>,
+    debug: bool,
+) {
+    if std::fs::create_dir_all(host_dir).is_err() {
+        if debug {
+            eprintln!("[tfs] app-dir: cannot create {}", host_dir.display());
+        }
+        return;
+    }
+    let entries = match backend.read_dir(rel_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            if debug {
+                eprintln!(
+                    "[tfs] app-dir: readdir of {rel_dir} failed errno={e}; the subtree stays image-only"
+                );
+            }
+            return;
+        }
+    };
+    for entry in entries {
+        // The ceiling's answer: the crossing is journaled (once, by the
+        // tracker) and ends the pass — every further file could only
+        // refuse too.
+        if tracker.as_ref().is_some_and(|t| t.exceeded()) {
+            return;
+        }
+        let child_rel = if rel_dir.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{rel_dir}/{}", entry.name)
+        };
+        let child_host = host_dir.join(&entry.name);
+        if entry.is_dir {
+            sweep_app_subtree(backend, &child_rel, &child_host, None, tracker, debug);
+            continue;
+        }
+        if own_name.is_some_and(|own| entry.name == own) {
+            continue;
+        }
+        if let Err(e) = extract_file(backend, &child_rel, &child_host, tracker.as_mut()) {
+            if debug {
+                eprintln!(
+                    "[tfs] app-dir: {child_rel} — extraction failed errno={e} (the consumer's own error stands)"
+                );
+            }
+        }
+    }
 }
 
 /// Read a small in-image file whole (the manifest probe): pread chunks
@@ -5462,6 +5685,249 @@ mod tests {
             !host_dir.join("nested/deep.rng").exists() && !host_dir.join("nested").exists(),
             "non-recursive: a nested subdirectory stays image-only"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------------------------------------------------------------
+    // Rule E5 — the app-dir rule (tebako#1139, spec 22 §3)
+    // ---------------------------------------------------------------
+
+    /// The .NET-shaped app fixture: `kind: app` (or `manifest` None for
+    /// the gate pin's other-kind image), the entry dll carrying PE magic
+    /// (the closure walk parses it — Rule E4 never fires, tebako#1139's
+    /// gap), the muxer's apphost-relative resolution files beside it,
+    /// and a nested native-probe subtree (the recursion pin).
+    fn fixture_appdir_zip(
+        dir: &std::path::Path,
+        name: &str,
+        manifest: Option<&[u8]>,
+    ) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        // Every level carries its explicit record — the zip backend's
+        // read_dir enumerates explicit "name/" entries only; implicit
+        // parents are never synthesized. The files sit at the image
+        // root: the published .NET payload's own layout — mounted at
+        // `/app`, the entry's VFS spelling is `/app/hello.dll` with
+        // its resolution files beside it.
+        for d in [
+            "__tpkg__/",
+            "runtimes/",
+            "runtimes/osx-arm64/",
+            "runtimes/osx-arm64/native/",
+        ] {
+            writer.add_directory(d, options).unwrap();
+        }
+        if let Some(manifest) = manifest {
+            writer
+                .start_file("__tpkg__/manifest.yaml", options)
+                .unwrap();
+            writer.write_all(manifest).unwrap();
+        }
+        writer.start_file("hello.dll", options).unwrap();
+        writer
+            .write_all(&pe64_fixture(&["mscoree.dll"], &[]))
+            .unwrap();
+        writer
+            .start_file("hello.runtimeconfig.json", options)
+            .unwrap();
+        writer
+            .write_all(br#"{"runtimeOptions":{"framework":{"name":"Microsoft.NETCore.App"}}}"#)
+            .unwrap();
+        writer.start_file("hello.deps.json", options).unwrap();
+        writer
+            .write_all(br#"{"runtimeTarget":{"name":".NETCoreApp"}}"#)
+            .unwrap();
+        writer
+            .start_file("runtimes/osx-arm64/native/libnative.dylib", options)
+            .unwrap();
+        writer.write_all(b"dylib-bytes").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    /// tebako#1139 (spec 22 §3 Rule E5): a load-module-magic FILE
+    /// operand under an app-kind mount carries its parent subtree —
+    /// the apphost-relative resolution files the .NET muxer probes
+    /// land beside the host twin, recursively (the native-probe
+    /// subtree included), once per directory per process.
+    #[test]
+    fn exec_materialize_carries_the_parent_subtree_for_an_app_mount_operand() {
+        let dir = std::env::temp_dir().join(format!("tfs-appdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_appdir_zip(
+            &dir,
+            "app.zip",
+            Some(b"identity:\n  kind: app\n  name: hello\n"),
+        );
+        let mut ctx = FsContext::new();
+        ctx.dl_persist = false;
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/app").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/app/hello.dll").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(host.is_file(), "the twin lands: {host:?}");
+        let host_dir = host.parent().unwrap();
+        // The Rule E5 payload: the apphost-relative resolution files
+        // the muxer probes landed beside the twin.
+        assert_eq!(
+            std::fs::read(host_dir.join("hello.runtimeconfig.json")).unwrap(),
+            br#"{"runtimeOptions":{"framework":{"name":"Microsoft.NETCore.App"}}}"#
+        );
+        assert_eq!(
+            std::fs::read(host_dir.join("hello.deps.json")).unwrap(),
+            br#"{"runtimeTarget":{"name":".NETCoreApp"}}"#
+        );
+        // The recursion reached the apphost-relative native probe
+        // subtree — the sweep is the install PREFIX, not the flat dir
+        // (Rule E4's non-recursive answer does not reach here).
+        assert_eq!(
+            std::fs::read(host_dir.join("runtimes/osx-arm64/native/libnative.dylib")).unwrap(),
+            b"dylib-bytes"
+        );
+
+        // Extract-once per directory per process: a second exec of the
+        // same operand answers the same twin, and an exec of a SIBLING
+        // operand in the same dir answers from the same tree.
+        let again = ctx.exec_materialize("/app/hello.dll").unwrap();
+        assert_eq!(again, answer);
+        let deps = ctx.exec_materialize("/app/hello.deps.json").unwrap();
+        let deps_host = std::path::PathBuf::from(deps.to_string_lossy().into_owned());
+        assert_eq!(deps_host.parent().unwrap(), host_dir);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The gate pin: the sweep is kind-gated — a mount whose manifest
+    /// names another kind (a toolkit) sees its file operand ride its
+    /// closure alone, exactly as before the rule.
+    #[test]
+    fn exec_materialize_leaves_a_non_app_mounts_file_operand_riding_alone() {
+        let dir = std::env::temp_dir().join(format!("tfs-appdir-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_appdir_zip(
+            &dir,
+            "toolkit.zip",
+            Some(b"identity:\n  kind: toolkit\n  name: not-an-app\n"),
+        );
+        let mut ctx = FsContext::new();
+        ctx.dl_persist = false;
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/app").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/app/hello.dll").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(host.is_file(), "the twin lands: {host:?}");
+        let host_dir = host.parent().unwrap();
+        assert!(
+            !host_dir.join("hello.runtimeconfig.json").exists()
+                && !host_dir.join("hello.deps.json").exists()
+                && !host_dir.join("runtimes").exists(),
+            "a non-app mount sweeps nothing — the operand rides alone: {host_dir:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The operand gate: a covered-but-unheld path under an app mount
+    /// is host territory — no sweep, and the fallback's own honest
+    /// ENOENT stands.
+    #[test]
+    fn exec_materialize_app_mount_unheld_operand_answers_enoent_without_a_sweep() {
+        let dir = std::env::temp_dir().join(format!("tfs-appdir-unheld-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_appdir_zip(
+            &dir,
+            "app.zip",
+            Some(b"identity:\n  kind: app\n  name: hello\n"),
+        );
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/app").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let e = ctx.exec_materialize("/app/missing.dll").unwrap_err();
+        assert_eq!(e, libc::ENOENT, "{e}");
+        // Nothing materialized: the sweep never created the dl tmpdir.
+        assert!(ctx.dl_tmpdir.is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The tier pin (driven on every leg through the field, like the
+    /// tebako#1026 tests): on the persistent dlcache tier the swept
+    /// subtree lands in the image-keyed namespace beside the twin —
+    /// the path stable across boots that the platform loader's
+    /// first-seen scan prices once.
+    #[test]
+    fn exec_materialize_sweeps_the_app_subtree_on_the_persistent_tier() {
+        let dir = std::env::temp_dir().join(format!("tfs-appdir-persist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_appdir_zip(
+            &dir,
+            "app.zip",
+            Some(b"identity:\n  kind: app\n  name: hello\n"),
+        );
+        let mut ctx = FsContext::new();
+        ctx.dl_persist = true;
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/app").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/app/hello.dll").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(
+            host.to_string_lossy().contains(DLCACHE_MARKER),
+            "the persistent spelling: {host:?}"
+        );
+        let host_dir = host.parent().unwrap();
+        assert!(host_dir.join("hello.runtimeconfig.json").is_file());
+        assert!(
+            host_dir
+                .join("runtimes/osx-arm64/native/libnative.dylib")
+                .is_file(),
+            "the swept subtree landed in the keyed namespace: {host_dir:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        sweep_dlcache(&host.to_string_lossy());
+    }
+
+    /// The drive-qualified spelling (the windows memfs shape): the
+    /// sweep rides host_tail's flattening exactly as the closure walk
+    /// does — twin and subtree share the `A_/…` host tree.
+    #[test]
+    fn exec_materialize_flattens_a_drive_qualified_app_mounts_sweep() {
+        let dir = std::env::temp_dir().join(format!("tfs-appdir-drive-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_appdir_zip(
+            &dir,
+            "app.zip",
+            Some(b"identity:\n  kind: app\n  name: hello\n"),
+        );
+        let mut ctx = FsContext::new();
+        ctx.dl_persist = false;
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "A:/app").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("A:/app/hello.dll").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(
+            host.to_string_lossy().contains("A_/app"),
+            "the flattened tail mirrors the memfs path: {host:?}"
+        );
+        let host_dir = host.parent().unwrap();
+        assert!(host_dir.join("hello.runtimeconfig.json").is_file());
+        assert!(host_dir
+            .join("runtimes/osx-arm64/native/libnative.dylib")
+            .is_file());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
