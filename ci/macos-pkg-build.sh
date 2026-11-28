@@ -245,8 +245,40 @@ else
   echo "::notice::spec 31 §5a gate disarmed — the pkg is UNSIGNED (spec 00 invariant 7); the install rehearsal still gates it"
 fi
 
-# ---- 5. the install rehearsal (always — signed or not) --------------------
-sudo installer -pkg "out/$ASSET" -target /
+# ---- 5. the install rehearsal ----------------------------------------------
+# Signed pkgs (the armed path): the full install rehearsal — the trust path
+# runs. Unsigned pkgs (PR legs): the rehearsal still gates the mechanics, but
+# macOS 26's installer(8) refuses unsigned packages at trust evaluation
+# (PKInstallErrorDomain Code=101 — the runner image moved macos-latest to
+# macos-26, 20261123.0526.1; macOS 15's installer accepted them). The trust
+# path is the signed legs' surface; the unsigned arm runs the STRUCTURAL
+# rehearsal (the pkg's contents + the postinstall contract) and skips the
+# install-time assertions (nothing installed). A refusal that is NOT the
+# unsigned-signature class is a hard fail either way.
+STRUCTURAL=0
+if ! install_out=$(sudo installer -pkg "out/$ASSET" -target / 2>&1); then
+  if printf '%s' "$install_out" | grep -qE 'is not signed|PKInstallErrorDomain Code=101'; then
+    STRUCTURAL=1
+    echo "::notice::unsigned pkg refused by installer(8) on this OS (trust evaluation Code=101) — the structural rehearsal runs; the trust path is the signed legs' surface"
+    struct_root="$RUNNER_TEMP/pkg-struct"
+    rm -rf "$struct_root"; mkdir -p "$struct_root"
+    pkgutil --expand-full "out/$ASSET" "$struct_root"
+    component="$struct_root/$PRODUCT_NAME-component.pkg"
+    # expand-full leaves Payload as an unpacked DIRECTORY tree (not the
+    # gzipped cpio) — assert the tree directly, never re-decompress it.
+    [ -x "$component/Payload/opt/$PRODUCT_NAME/bin/tebako" ] || { echo "::error::the pkg Payload carries no executable opt/$PRODUCT_NAME/bin/tebako"; exit 1; }
+    for tool in tebako-shim tfs tebako-pkg; do
+      [ -x "$component/Payload/opt/$PRODUCT_NAME/bin/$tool" ] || { echo "::error::the pkg Payload is missing opt/$PRODUCT_NAME/bin/$tool"; exit 1; }
+    done
+    [ -f "$component/Scripts/postinstall" ] || { echo "::error::the pkg carries no postinstall script"; exit 1; }
+    echo "structural rehearsal OK (the pkg carries the four PATH tools + the postinstall contract; the install path is the signed legs' proof)"
+  else
+    printf '%s\n' "$install_out"
+    echo "::error::installer refused $ASSET (not the unsigned-signature class)"
+    exit 1
+  fi
+fi
+if [ "$STRUCTURAL" = 0 ]; then
 # The payload lays down the toolset as bin/tebako in EVERY product shape:
 # in the product's own shape (PRODUCT_NAME=tebako) and in a client
 # product's alike — a client's product name lives on its seeded shims
@@ -345,6 +377,7 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
 fi
 sudo rm -rf "$INSTALL_ROOT" "/etc/paths.d/$PRODUCT_NAME"
 echo "install rehearsal OK (payload lands, postinstall writes the paths.d entry, the installed tool runs)"
+fi
 
 # ---- 6. the fragment over the FINAL bytes (ship-armed runs only) --------
 # A disarmed run still builds + rehearses the pkg (the template's CI
