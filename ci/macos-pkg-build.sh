@@ -357,6 +357,20 @@ if [ -n "${BOOTSTRAP_REGISTRY:-}" ]; then
     if [ "$(date +%s)" -ge "$deadline" ]; then
       echo "== the detached seed did not land within ${SEED_BUDGET:-3600}s — seed.log tail:"; sudo tail -30 "$INSTALL_ROOT/home/seed.log" 2>/dev/null || true
       echo "== install.log tail:"; sudo grep -a "$PRODUCT_NAME" /var/log/install.log 2>/dev/null | tail -20 || true
+      # tebako#1147 forensics: name the seed's STATE, never a bare
+      # timeout. A silent full-budget stall is the anonymous
+      # api.github.com throttle — the shared CI egress drains the 60/h
+      # budget and the seed sleeps in tebako-http's backoff honoring the
+      # server's reset window (its wait lines land in seed.log). The
+      # rate_limit probe is anonymous too: remaining=0 + the reset epoch
+      # confirm the drained budget at this egress.
+      echo "== seed process state:"; pgrep -fl bootstrap-seed 2>/dev/null || echo "no bootstrap-seed process — the seed died without writing a marker"
+      ps -axo pid,ppid,stat,etime,command | grep -E 'bootstrap-seed|bin/tebako' | grep -v grep || true
+      echo "== home lock state:"; sudo ls -l "$INSTALL_ROOT/home/locks" 2>/dev/null || true
+      echo "== anonymous api.github.com budget at this egress:"; curl -s --max-time 15 https://api.github.com/rate_limit 2>/dev/null | grep -E '"remaining"|"reset"' | head -8 || true
+      if grep -q 'throttled by the host' "$INSTALL_ROOT/home/seed.log" 2>/dev/null; then
+        echo "::error::the detached seed is THROTTLE-STALLED (seed.log shows tebako's rate-limit wait) — the anonymous api.github.com budget is drained at this egress IP; the window resets hourly, the authenticated pass does not drain it"; exit 1
+      fi
       echo "::error::the detached seed's effects did not land within ${SEED_BUDGET:-3600}s (forensics above)"; exit 1
     fi
     sleep 5

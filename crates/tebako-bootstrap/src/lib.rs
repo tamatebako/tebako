@@ -744,7 +744,12 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
                 if throttles >= tebako_http::THROTTLE_ROUNDS {
                     return Err(());
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(url, wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             // Deterministic config answers (a set proxy/CA env on this
             // compiled-out build) share this arm; the terminal failure
@@ -798,7 +803,12 @@ fn fetch_sidecar(url: &str, local: bool, out: &Path) -> SidecarFetch {
                 if throttles >= tebako_http::THROTTLE_ROUNDS {
                     return SidecarFetch::Failed;
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(url, wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(e) => {
                 attempts += 1;
@@ -830,7 +840,12 @@ fn fetch_text(url: &str, local: bool) -> Result<String, ()> {
                 if throttles >= tebako_http::THROTTLE_ROUNDS {
                     return Err(());
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(url, wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             // Deterministic config answers (a set proxy/CA env on this
             // compiled-out build) share this arm; the terminal failure
@@ -968,7 +983,12 @@ fn fetch_asset(
                     let _ = std::fs::remove_file(out);
                     return Err(());
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(url, wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             // Nobody cancels a bootstrap fetch — terminal, never retried.
             Err(StreamFail::Transport(tebako_http::FetchError::Cancelled(_))) => {

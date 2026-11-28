@@ -142,7 +142,11 @@ monolith.
   api.github.com budget), a not-found says so, a clean-but-empty read
   says so — never a silent query of a base that hosts no such engine
   (a wrong-line 404 is diagnosed as what it is), and never a bare
-  "neither source read".
+  "neither source read". The throttle WAIT is loud too (tebako#1147,
+  packed-metanorma#1341): every throttle round emits a named stderr
+  line BEFORE sleeping — the origin, the wait, the round's budget, and
+  the ambient-token remedy — an hours-long server-scheduled sleep must
+  never read as a hang.
 - Signing of the index and the artifacts it names: spec 09 §5 (every
   consumable index form signed — the same-channel-MITM gap closes) and
   spec 09 §4's runtime-fetch verification point (the per-artifact
@@ -243,7 +247,12 @@ audit journal degrades to best-effort silence.
 ## 4. Install and trust rules (locked)
 
 - Per-entry **flock** (120 s timeout with stale-lock hint); install is
-  tmp + rename — a partial install is invisible.
+  tmp + rename — a partial install is invisible. The runtime download
+  path serializes per ENGINE on `locks/resolve-<engine>.lock` held
+  across probe + download (the same timeout, the same hint), re-scanning
+  the cache under it (tebako#1147): a scan that misses by a breath
+  against a concurrent installer's commit re-reads the store under the
+  lock and serves the hit without a network read.
 - **Commit order (locked 2026-09-16):** an install lands in three
   stages — the image + trust anchor stage first (dispatch-invisible
   bytes), the payload's `requires:` closure walks second, and the

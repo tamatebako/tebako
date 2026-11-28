@@ -445,7 +445,12 @@ pub fn fetch_artifact<T: Transport>(
                         ),
                     });
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(&r.reference_string(), wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(e) => return Err(named(alias, book.take_looked_for(), e)),
         }
@@ -541,7 +546,16 @@ pub fn push_artifact<T: Transport>(
                         ),
                     });
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(
+                        &format!("tfs+oci://{host}/{repo}:{tag}"),
+                        wait,
+                        throttles
+                    )
+                );
+                std::thread::sleep(wait);
             }
             Err(e) => return Err(named(None, book.take_looked_for(), e)),
         }
@@ -649,7 +663,12 @@ pub fn fetch_blksum_sidecar<T: Transport>(
                         ),
                     });
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(&r.reference_string(), wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(e) => return Err(named(alias, book.take_looked_for(), e)),
         }
@@ -853,7 +872,12 @@ pub fn resolve_runtime_bundle<T: Transport>(
                         ),
                     });
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(&r.reference_string(), wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(e) => return Err(named(alias, book.take_looked_for(), e)),
         }
@@ -936,7 +960,12 @@ pub fn fetch_signature<T: Transport>(
                         ),
                     });
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(&r.reference_string(), wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(e) => return Err(named(alias, book.take_looked_for(), e)),
         }
