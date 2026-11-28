@@ -587,7 +587,12 @@ impl HttpTransport {
                             tebako_http::THROTTLE_ROUNDS
                         )));
                     }
-                    std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                    let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                    eprintln!(
+                        "{}",
+                        tebako_http::throttle_wait_message(url, wait, throttles)
+                    );
+                    std::thread::sleep(wait);
                 }
                 Err(FetchError::DownloadFailed(msg)) => {
                     attempts += 1;

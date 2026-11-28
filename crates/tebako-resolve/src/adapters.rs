@@ -680,11 +680,13 @@ impl ServiceAdapter for GithubAdapter {
                             rounds: throttles,
                         });
                     }
-                    enum_sleep(enum_backoff(
-                        throttles,
-                        hint,
-                        &self.listing_url(owner, repo, version),
-                    ));
+                    let listing = self.listing_url(owner, repo, version);
+                    let wait = enum_backoff(throttles, hint, &listing);
+                    eprintln!(
+                        "{}",
+                        tebako_http::throttle_wait_message(&listing, wait, throttles)
+                    );
+                    enum_sleep(wait);
                 }
             }
         }

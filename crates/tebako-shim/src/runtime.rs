@@ -20,7 +20,11 @@
 //! the shard's stem probes dual-era, new-era spelling first — tebako#716's
 //! era law rule 3),
 //! `TEBAKO_RUNTIME_MIRROR` / `TEBAKO_OFFLINE` — reimplemented
-//! here rather than linked from the bootstrap crate.
+//! here rather than linked from the bootstrap crate. The download path
+//! serializes per engine on `locks/resolve-<engine>.lock` held across
+//! probe + download, re-scanning the cache under it (tebako#1147): a
+//! scan that misses by a breath against a concurrent installer's commit
+//! serves the committed entry without a network read.
 //!
 //! Two extensions over the bootstrap's path live here:
 //!
@@ -105,6 +109,46 @@ pub fn resolve_runtime(
     )
 }
 
+/// The cache-first probe of [`resolve_runtime_scoped`]: the scan, the
+/// min_runtime_tebako floor partition (spec 03 §2.9, tebako#666 — cached
+/// runtimes below the floor are discarded BEFORE the compatible pick and
+/// named in the miss note, never silently preferred), and the newest
+/// compatible pick. Runs twice — once before the download decision and
+/// again under the per-engine resolve lock (see [`acquire_resolve_lock`]).
+/// Returns the eligible entries and the stale note for diagnostics plus
+/// the pick.
+fn scan_eligible(
+    home: &Path,
+    reqs: &RuntimeRequirements,
+    floor: Option<&str>,
+) -> (Vec<CachedRuntime>, String, Option<CachedRuntime>) {
+    let cached = scan_cached(home, reqs.engine());
+    let (eligible, stale_note) = match floor {
+        Some(floor) => {
+            let (eligible, stale): (Vec<CachedRuntime>, Vec<CachedRuntime>) = cached
+                .into_iter()
+                .partition(|c| !tpkg::versions::below_floor(&c.tebako_version, floor));
+            let note = if stale.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; {} cached runtime(s) below the payload's min_runtime_tebako {floor} were skipped ({})",
+                    stale.len(),
+                    stale
+                        .iter()
+                        .map(|c| format!("{} (tebako {})", c.lang_version, c.tebako_version))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            (eligible, note)
+        }
+        None => (cached, String::new()),
+    };
+    let hit = newest_compatible_any(&eligible, reqs);
+    (eligible, stale_note, hit)
+}
+
 /// [`resolve_runtime`] with the spec 37 §3 edge scope: `scope` is the
 /// DEPENDS edge's optional `registry:` alias — it narrows the
 /// download-source chain's registry walk (channel 3) to the one book
@@ -140,33 +184,29 @@ fn resolve_runtime_scoped<T: Transport + Sync>(
     // the runtime's own version line; a language-level entry matches the
     // runtime's `language_version`, falling back to its version on
     // pre-field shards — see tpkg::runtime_store::entry_matches).
-    let cached = scan_cached(&ctx.home, reqs.engine());
-    // spec 03 §2.9 (tebako#666): the payload's min-runtime floor —
-    // discard cached runtimes below it BEFORE the compatible pick; they
-    // are named in the miss note, never silently preferred.
-    let (cached, stale_note) = match min_runtime_tebako {
-        Some(floor) => {
-            let (eligible, stale): (Vec<CachedRuntime>, Vec<CachedRuntime>) = cached
-                .into_iter()
-                .partition(|c| !tpkg::versions::below_floor(&c.tebako_version, floor));
-            let note = if stale.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "; {} cached runtime(s) below the payload's min_runtime_tebako {floor} were skipped ({})",
-                    stale.len(),
-                    stale
-                        .iter()
-                        .map(|c| format!("{} (tebako {})", c.lang_version, c.tebako_version))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            };
-            (eligible, note)
-        }
-        None => (cached, String::new()),
+    let (_, _, hit) = scan_eligible(&ctx.home, reqs, min_runtime_tebako);
+    if let Some(hit) = hit {
+        return Ok(RuntimeResolution::Ready(Box::new(hit)));
+    }
+    // tebako#1147 (packed-metanorma#1341): a scan that misses by a
+    // breath races a concurrent installer's commit — the pkg installer's
+    // detached seed scanned a breath before the authenticated pass's
+    // runtime commit landed, then probed api.github.com anonymously for
+    // a runtime that was already cached, and the throttle sleep read as
+    // a 60-minute hang. Serialize the download path per engine and
+    // RE-SCAN under the lock: the race's loser re-reads the store after
+    // the winner's commit and serves the cache hit without a network
+    // read. The offline / no-download refusal paths take no lock — a
+    // lockless re-scan is read-only; the lock guards the network fetch.
+    // The guard lives to the function's end (the drop is the release),
+    // covering every refusal below.
+    let _resolve_lock = if allow_download && !offline_mode(ctx) {
+        Some(acquire_resolve_lock(&ctx.home, reqs.engine())?)
+    } else {
+        None
     };
-    if let Some(hit) = newest_compatible_any(&cached, reqs) {
+    let (cached, stale_note, hit) = scan_eligible(&ctx.home, reqs, min_runtime_tebako);
+    if let Some(hit) = hit {
         return Ok(RuntimeResolution::Ready(Box::new(hit)));
     }
     // The abi line (spec 05 §5): a native-extension payload matches only
@@ -2146,6 +2186,68 @@ fn lock_release(lock: EntryLock) {
     }
 }
 
+/// The per-engine resolve lock's guard (tebako#1147 /
+/// packed-metanorma#1341): [`crate::runtime::resolve_runtime`] holds it
+/// across the download path (probe + download + commit) so a cache scan
+/// that misses by a breath re-reads the store AFTER a concurrent
+/// installer's commit instead of probing the network for bytes the
+/// winner already landed. Held as a guard — the drop is the release, so
+/// every refusal return of the download path is covered without a
+/// manual release pair that would rot against later early returns.
+struct ResolveLockGuard(Option<EntryLock>);
+
+impl ResolveLockGuard {
+    fn release(&mut self) {
+        if let Some(lock) = self.0.take() {
+            lock_release(lock);
+        }
+    }
+}
+
+impl Drop for ResolveLockGuard {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// Acquire the per-engine resolve lock (`locks/resolve-<engine>.lock`),
+/// the same 120 s timeout + stale-lock hint as the per-entry install
+/// lock. The loser of the scan-vs-commit race parks here and cache-hits
+/// on its re-scan without a network read — the pkg seed's anonymous
+/// api.github.com budget never burns on a needless probe.
+fn acquire_resolve_lock(home: &Path, engine: &str) -> Result<ResolveLockGuard, ShimError> {
+    let locks = home.join("locks");
+    std::fs::create_dir_all(&locks).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!(
+                "cannot create tebako cache directories under {}: {e}",
+                locks.display()
+            ),
+        )
+    })?;
+    let lock_path = locks.join(format!("resolve-{engine}.lock"));
+    flock_acquire(&lock_path, LOCK_TIMEOUT_MS)
+        .map(|lock| ResolveLockGuard(Some(lock)))
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::TimedOut {
+                ShimError::new(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "timed out after {}s waiting for another tebako process to finish resolving the {engine} runtime\n  lock: {}\n  if no other tebako process is running, remove the stale lock file",
+                        LOCK_TIMEOUT_MS / 1000,
+                        lock_path.display()
+                    ),
+                )
+            } else {
+                ShimError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot acquire resolve lock {}: {e}", lock_path.display()),
+                )
+            }
+        })
+}
+
 /// Fetch one URL (in-process HTTP; `file://`/local mirrors are copies).
 /// curl --retry 3 parity: transient failures get three attempts.
 #[allow(clippy::result_unit_err)]
@@ -2183,7 +2285,12 @@ fn fetch_url_detailed(url: &str, local: bool, out: &Path) -> Result<(), tebako_h
                 let tebako_http::FetchError::Throttled { retry_after, .. } = e else {
                     unreachable!()
                 };
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(url, wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(e) => {
                 attempts += 1;
@@ -3538,7 +3645,12 @@ fn fetch_sidecar(url: &str, local: bool) -> SidecarAnswer {
                         tebako_http::THROTTLE_ROUNDS
                     ));
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(url, wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(e) => {
                 attempts += 1;
@@ -4660,6 +4772,58 @@ mod tests {
             tebako: tebako.to_string(),
             source: source.map(str::to_string),
         }
+    }
+
+    /// A committed runtime entry as a concurrent installer leaves it
+    /// (exe + env image + the image's trust anchor — scan_entry's
+    /// well-formedness rule).
+    fn commit_fake_entry(home: &Path, engine: &str, lv: &str, tv: &str) {
+        let platform = platform_string();
+        let dir = home
+            .join("runtimes")
+            .join(format!("{engine}-{lv}-{tv}-{platform}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (exe, image) = entry_asset_names(&dir, engine, lv, tv, platform);
+        std::fs::write(dir.join(exe), b"fake exe").unwrap();
+        std::fs::write(dir.join(&image), b"fake image").unwrap();
+        std::fs::write(dir.join(format!("{image}.sha256")), "00  fake\n").unwrap();
+    }
+
+    /// tebako#1147 (packed-metanorma#1341): a resolve whose cache scan
+    /// misses by a breath against a concurrent installer's commit must
+    /// re-scan under the resolve lock and serve the committed entry —
+    /// never probe the network for bytes that landed after the first
+    /// scan. The loser parks on the resolve lock, the winner's commit
+    /// lands, the lock releases, and the loser cache-hits without a
+    /// single transport read.
+    #[test]
+    fn the_resolve_re_scan_under_lock_serves_the_concurrent_commit() {
+        let home = temp_home("resolve-race-1147");
+        let winner = acquire_resolve_lock(&home, "ruby").unwrap();
+        let loser_reqs = reqs("ruby", ">= 3.3");
+        let loser_ctx = test_ctx(&home);
+        let loser = std::thread::spawn(move || {
+            let mock = OciDistMock::new();
+            let out =
+                resolve_runtime_scoped(&mock, Some(&loser_reqs), None, None, true, &loser_ctx);
+            (out, mock.seen_len())
+        });
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        commit_fake_entry(&home, "ruby", "3.4.7", "2.8.86");
+        drop(winner);
+        let (out, seen) = loser.join().unwrap();
+        assert_eq!(
+            seen, 0,
+            "the re-scan under the lock must serve without a network read"
+        );
+        match out {
+            Ok(RuntimeResolution::Ready(rt)) => {
+                assert_eq!(rt.lang_version, "3.4.7");
+                assert_eq!(rt.tebako_version, "2.8.86");
+            }
+            other => panic!("expected the re-scan to cache-hit, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// Write a registry file and return its `file://` ref.
@@ -6347,6 +6511,10 @@ payloads:
 
         fn requested(&self, needle: &str) -> bool {
             self.seen.lock().unwrap().iter().any(|u| u.contains(needle))
+        }
+
+        fn seen_len(&self) -> usize {
+            self.seen.lock().unwrap().len()
         }
     }
 

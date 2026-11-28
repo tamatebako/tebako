@@ -458,6 +458,20 @@ pub fn throttle_backoff(attempt: u32, hint: Option<std::time::Duration>) -> std:
     })
 }
 
+/// The loud throttle-wait line every retry loop emits BEFORE it sleeps
+/// (spec 05 §2's named-throttle law extended to the wait itself —
+/// tebako#1147 / packed-metanorma#1341: a server-scheduled sleep of up
+/// to the host's hourly window must never read as a hang; the pkg
+/// installer's detached seed burned a whole 3600 s rehearsal budget
+/// silent). Pure string — each caller renders it through its own stderr
+/// channel, the same idiom as the loud stale-registry serve.
+pub fn throttle_wait_message(origin: &str, wait: std::time::Duration, round: u32) -> String {
+    format!(
+        "tebako: warning: throttled by the host's rate limit fetching {origin} — waiting {}s before retry (round {round}/{THROTTLE_ROUNDS}); an ambient token (TEBAKO_GITHUB_TOKEN / GITHUB_TOKEN / GH_TOKEN) raises the api.github.com budget",
+        wait.as_secs()
+    )
+}
+
 /// The one status→error mapping (http_status_as_error is false so the
 /// throttle headers survive to here): 2xx hands the response back, 404
 /// is IndexUnavailable, 429 / 403-with-rate-limit-headers is Throttled
@@ -1279,7 +1293,9 @@ fn get_range_inner(
                         "still throttled after {THROTTLE_ROUNDS} backoff rounds fetching {url} ({status})"
                     )));
                 }
-                std::thread::sleep(throttle_backoff(throttles, retry_after));
+                let wait = throttle_backoff(throttles, retry_after);
+                eprintln!("{}", throttle_wait_message(url, wait, throttles));
+                std::thread::sleep(wait);
             }
             Err(FetchError::DownloadFailed(msg)) => {
                 attempts += 1;
@@ -1820,6 +1836,27 @@ mod tests {
             throttle_backoff(3, Some(std::time::Duration::from_secs(17))),
             std::time::Duration::from_secs(17)
         );
+    }
+
+    #[test]
+    fn throttle_wait_message_names_origin_wait_round_and_remedy() {
+        let msg = throttle_wait_message(
+            "https://api.github.com/repos/o/r/releases",
+            std::time::Duration::from_secs(312),
+            2,
+        );
+        assert!(
+            msg.contains("https://api.github.com/repos/o/r/releases"),
+            "{msg}"
+        );
+        assert!(msg.contains("312s"), "{msg}");
+        assert!(
+            msg.contains(&format!("(round 2/{THROTTLE_ROUNDS})")),
+            "{msg}"
+        );
+        assert!(msg.contains("TEBAKO_GITHUB_TOKEN"), "{msg}");
+        assert!(msg.contains("GITHUB_TOKEN"), "{msg}");
+        assert!(msg.contains("GH_TOKEN"), "{msg}");
     }
 
     #[test]

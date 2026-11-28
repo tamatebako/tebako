@@ -632,7 +632,12 @@ fn run_item<T: Transport, W: std::io::Write + Send>(
                         ),
                     });
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(&item.display, wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(ItemFail::Transport(FetchError::DownloadFailed(msg))) => {
                 attempts += 1;

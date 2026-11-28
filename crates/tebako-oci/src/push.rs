@@ -83,7 +83,7 @@ pub struct PushOutcome {
 /// [`tebako_http::fetch_backoff`]'s schedule. Everything else is terminal by the
 /// crate's one law — the named answers (TagConflict, CredentialRequired,
 /// the malformed-artifact class) never retry.
-fn retry_push<T>(mut op: impl FnMut() -> Result<T, OciError>) -> Result<T, OciError> {
+fn retry_push<T>(origin: &str, mut op: impl FnMut() -> Result<T, OciError>) -> Result<T, OciError> {
     let mut attempts = 0;
     let mut throttles = 0;
     loop {
@@ -100,7 +100,12 @@ fn retry_push<T>(mut op: impl FnMut() -> Result<T, OciError>) -> Result<T, OciEr
                         tebako_http::THROTTLE_ROUNDS
                     ))));
                 }
-                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                let wait = tebako_http::throttle_backoff(throttles, retry_after);
+                eprintln!(
+                    "{}",
+                    tebako_http::throttle_wait_message(origin, wait, throttles)
+                );
+                std::thread::sleep(wait);
             }
             Err(OciError::Transport(FetchError::DownloadFailed(msg))) => {
                 attempts += 1;
@@ -157,7 +162,7 @@ pub fn push_artifact<H: Http, C: CredentialSource>(
     );
 
     // ---- 1. write-once -------------------------------------------------
-    let (resp, _) = retry_push(|| {
+    let (resp, _) = retry_push(&r.reference_string(), || {
         let (resp, class) = client.send_with_dance(&r, &scope, &|auth| {
             client.http.get(&manifest_url, Some(MANIFEST_MT), auth)
         })?;
@@ -199,7 +204,7 @@ pub fn push_artifact<H: Http, C: CredentialSource>(
     // blob is absent), then the layer. Mount attempt, then the
     // monolithic upload. A transport failure retries the WHOLE leg, so
     // a broken PUT never re-rides its stranded session.
-    retry_push(|| {
+    retry_push(&r.reference_string(), || {
         push_blob(
             client,
             &r,
@@ -213,7 +218,7 @@ pub fn push_artifact<H: Http, C: CredentialSource>(
     let hex = layer
         .digest_hex()
         .expect("the layer digest was built as sha256:<hex>");
-    retry_push(|| {
+    retry_push(&r.reference_string(), || {
         push_blob(
             client,
             &r,
@@ -226,7 +231,7 @@ pub fn push_artifact<H: Http, C: CredentialSource>(
     })?;
 
     // ---- 3. the manifest placement --------------------------------------
-    let (resp, _) = retry_push(|| {
+    let (resp, _) = retry_push(&r.reference_string(), || {
         let (resp, class) = client.send_with_dance(&r, &scope, &|auth| {
             client.http.put(&manifest_url, &manifest, MANIFEST_MT, auth)
         })?;

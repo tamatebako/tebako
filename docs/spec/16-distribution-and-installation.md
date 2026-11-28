@@ -266,7 +266,10 @@ asynchronously) AND for the seed's completion marker in `home/seed.log`:
 the dependency closure's spawned runtimes land during the install step,
 so the effects alone do not prove the warm finished — a dispatch that
 races the warm hits the root-held runtime install locks. A broken seed
-fails the leg, never a user machine.
+fails the leg, never a user machine. The timeout forensics name the
+seed's state (tebako#1147): process alive/dead, the home's locks, and
+the egress's anonymous api.github.com budget — a throttle-stalled seed
+is named THROTTLE-STALLED, never a bare timeout.
 
 The optional third knob `BOOTSTRAP_WARM` (a subset of
 `BOOTSTRAP_PAYLOADS`, default empty) makes the seed dispatch each named
